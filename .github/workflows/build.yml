@@ -25,13 +25,18 @@ jobs:
 
       - name: Build and cache SwarmVault Docker image
         uses: docker/build-push-action@v7
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+          DOCKER_BUILD_SUMMARY: false
         with:
           context: .
           file: Dockerfile
-          tags: swarmvault:latest
+          tags: dockerimg-nexus
           load: true
-          cache-from: type=gha,scope=swarmvault-cache
-          cache-to: type=gha,mode=min,scope=swarmvault-cache
+          cache-from: type=gha,scope=dockerimg-nexus
+          cache-to: type=gha,mode=min,scope=dockerimg-nexus
+          provenance: false
+          sbom: false
 
       - name: Download poc-agent
         uses: dawidd6/action-download-artifact@v6
