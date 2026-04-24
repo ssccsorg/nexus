@@ -1,0 +1,83 @@
+name: Build Nexus
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and cache SwarmVault Docker image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          tags: swarmvault:latest
+          load: true
+          cache-from: type=gha,scope=swarmvault-cache
+          cache-to: type=gha,mode=min,scope=swarmvault-cache
+
+      - name: Download poc-agent
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: check-poc.yml
+          repo: ssccsorg/ssccs
+          name: poc-agent
+          path: .
+          github_token: ${{ secrets.SSCCS_ACTIONS_READ_PAT }}
+
+      - name: Download docs-agent
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: deploy-docs-ghpage.yml
+          repo: ssccsorg/ssccs
+          name: docs-agent
+          path: .
+          github_token: ${{ secrets.SSCCS_ACTIONS_READ_PAT }}
+
+      - name: Build knowledge graph inside container
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/work \
+            -w /work \
+            swarmvault:latest \
+            sh -c '
+              swarmvault init &&
+              swarmvault source add ./poc &&
+              swarmvault source add ./docs/_llms &&
+              swarmvault graph export --html ./_site/index.html
+            '
+
+      - name: Upload Pages artifact
+        if: ${{ github.actor != 'nektos/act' }}
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: ./_site
+
+  deploy:
+    needs: build
+    if: ${{ github.ref == 'refs/heads/main' && github.actor != 'nektos/act' }}
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
