@@ -16,9 +16,25 @@ TUNNEL_CONFIG="${RAG_DIR}/config/tunnel-config-edgequake.yml"
 API_HEALTH_URL="${API_HEALTH_URL:-http://127.0.0.1:8080/health}"
 TIMEOUT_SEC=120
 
+# Refresh mode flag (default false)
+REFRESH_MODE="false"
+
 log_info()  { echo "[INFO]  $*"; }
 log_warn()  { echo "[WARN]  $*"; }
 log_error() { echo "[ERROR] $*"; }
+
+usage() {
+  cat <<EOF
+Usage: $0 [OPTIONS]
+
+Options:
+  --refresh   Completely reset EdgeQuake data (delete all containers AND database volumes).
+  --help      Show this message.
+
+Without --refresh, the script preserves existing database and data volumes.
+EOF
+  exit 0
+}
 
 ########################################
 # 1. PREREQUISITES
@@ -107,24 +123,31 @@ download_cloudflared() {
 # 2. CLEANUP PREVIOUS CONTAINERS
 ########################################
 cleanup_previous() {
-  log_info "Checking for leftover containers..."
-
   local compose_dir
   compose_dir="$(dirname "$COMPOSE_FILE")"
 
-  # If containers for this project are already up, tear them down gracefully
-  if docker compose -f "$COMPOSE_FILE" ps -q 2>/dev/null | grep -q .; then
-    log_warn "Existing EdgeQuake containers are running. Stopping them..."
-    (cd "$compose_dir" && docker compose -f "$(basename "$COMPOSE_FILE")" down)
-  fi
-
-  # Remove any orphan containers with the same names to avoid conflicts
-  for container in edgequake-postgres edgequake-api edgequake-frontend; do
-    if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
-      log_warn "Found conflicting container: ${container}. Removing it."
-      docker rm -f "$container" 2>/dev/null || true
+  if [ "$REFRESH_MODE" = "true" ]; then
+    log_warn "Refresh mode active: removing all containers AND database volumes."
+    if docker compose -f "$COMPOSE_FILE" ps -q 2>/dev/null | grep -q .; then
+      (cd "$compose_dir" && docker compose -f "$(basename "$COMPOSE_FILE")" down -v)
     fi
-  done
+    # Also remove any orphan containers (should not be needed after down -v, but safe)
+    for container in edgequake-postgres edgequake-api edgequake-frontend; do
+      docker rm -f "$container" 2>/dev/null || true
+    done
+  else
+    log_info "Preserving existing data. Removing containers only."
+    if docker compose -f "$COMPOSE_FILE" ps -q 2>/dev/null | grep -q .; then
+      (cd "$compose_dir" && docker compose -f "$(basename "$COMPOSE_FILE")" down)
+    fi
+    # Remove any orphan containers (same names) to avoid conflicts, but keep volumes
+    for container in edgequake-postgres edgequake-api edgequake-frontend; do
+      if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+        log_warn "Found conflicting container: ${container}. Removing it (volume intact)."
+        docker rm -f "$container" 2>/dev/null || true
+      fi
+    done
+  fi
 }
 
 ########################################
@@ -180,16 +203,16 @@ start_tunnel() {
 }
 
 ########################################
-# 5. CLEANUP
+# 5. CLEANUP ON EXIT (never removes volumes)
 ########################################
 cleanup() {
-  log_info "Shutting down..."
+  log_info "Shutting down gracefully (data preserved)..."
   if [ -n "${TUNNEL_PID:-}" ] && kill -0 "$TUNNEL_PID" 2>/dev/null; then
     log_info "Stopping tunnel..."
     kill "$TUNNEL_PID" 2>/dev/null || true
     wait "$TUNNEL_PID" 2>/dev/null || true
   fi
-  log_info "Stopping Docker stack..."
+  log_info "Stopping Docker containers (volumes are kept)."
   (cd "$(dirname "$COMPOSE_FILE")" && docker compose -f "$(basename "$COMPOSE_FILE")" down)
   log_info "All services stopped."
 }
@@ -200,6 +223,23 @@ trap cleanup EXIT INT TERM
 # MAIN
 ########################################
 main() {
+  # Parse arguments
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --refresh)
+        REFRESH_MODE="true"
+        shift
+        ;;
+      --help)
+        usage
+        ;;
+      *)
+        log_error "Unknown option: $1"
+        usage
+        ;;
+    esac
+  done
+
   check_deps
   cleanup_previous
   start_stack
@@ -215,4 +255,4 @@ main() {
   log_info "Tunnel exited."
 }
 
-main
+main "$@"
