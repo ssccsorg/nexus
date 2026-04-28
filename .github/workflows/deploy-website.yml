@@ -1,0 +1,117 @@
+name: Deploy Website to GitHub Pages
+
+on:
+  push:
+    branches: [edgequake-main]
+    paths:
+      - "edgequake-website/**"
+      - "docs/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  # Use Node.js 24 for GitHub Actions to avoid deprecation warnings
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: edgequake-website
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: edgequake-website/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build Astro site
+        run: pnpm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: edgequake-website/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  enable-https:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify HTTPS status for custom domain
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Optional: set PAGES_ADMIN_TOKEN secret (fine-grained PAT with pages:write
+          # + administration:write) to auto-enforce HTTPS after cert provisioning
+          PAGES_ADMIN_TOKEN: ${{ secrets.PAGES_ADMIN_TOKEN }}
+        run: |
+          # Use admin PAT if available, otherwise fall back to GITHUB_TOKEN
+          TOKEN="${PAGES_ADMIN_TOKEN:-$GITHUB_TOKEN}"
+
+          # Check current Pages status
+          PAGES_JSON=$(curl -s \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/pages")
+
+          HTTPS_ENFORCED=$(echo "$PAGES_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('https_enforced', False))" 2>/dev/null || echo "False")
+          CERT_STATE=$(echo "$PAGES_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('https_certificate', {}).get('state', 'none'))" 2>/dev/null || echo "none")
+
+          echo "📋 Pages status: cert=$CERT_STATE, https_enforced=$HTTPS_ENFORCED"
+
+          if [ "$HTTPS_ENFORCED" = "True" ]; then
+            echo "✅ HTTPS is already enforced for edgequake.com"
+            exit 0
+          fi
+
+          if [ "$CERT_STATE" != "approved" ]; then
+            echo "⏳ SSL certificate not yet provisioned (state: $CERT_STATE)."
+            echo "   GitHub will provision it within ~1 hour. Then enable at:"
+            echo "   https://github.com/${{ github.repository }}/settings/pages"
+            exit 0
+          fi
+
+          # Cert is approved — try to enforce HTTPS
+          HTTP_STATUS=$(curl -s -o response.txt -w "%{http_code}" \
+            -X PUT \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/pages" \
+            -d '{"cname":"edgequake.com","https_enforced":true}')
+
+          if [ "$HTTP_STATUS" = "204" ]; then
+            echo "✅ HTTPS enforcement enabled for edgequake.com"
+          else
+            echo "⚠️  Could not auto-enforce HTTPS (HTTP $HTTP_STATUS)."
+            echo "   Cert IS approved. To enforce HTTPS, go to:"
+            echo "   https://github.com/${{ github.repository }}/settings/pages"
+            echo "   Or add a PAGES_ADMIN_TOKEN secret (fine-grained PAT with"
+            echo "   pages:write + administration:write permissions)."
+          fi

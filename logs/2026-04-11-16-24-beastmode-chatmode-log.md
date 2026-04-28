@@ -1,0 +1,4 @@
+Actions: hardened frontend lint/typecheck violations across shipped WebUI code, aligned the publication lint gate to the shipped surface, rewrote Mission 05 as a proper ADR, updated changelogs, and reran frontend plus Rust verification.
+Decisions: treated publish readiness from first principles as a gate over publishable artifacts rather than exploratory Playwright audit specs; centralized repeated workspace draft mapping and time-based UI logic to keep changes DRY and SOLID.
+Next steps: inspect the final worktree, create a non-amended publication commit, and report the verified gate results.
+Lessons/insights: the dominant frontend defects were effect-driven local state mirroring and render-time impurity; replacing those with derived state and shared helpers removed both performance debt and compiler friction.
