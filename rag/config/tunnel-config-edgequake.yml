@@ -1,0 +1,10 @@
+tunnel: 84fd203d-bf64-4a17-98fe-51c2de22fde9
+
+ingress:
+  - hostname: rag-api.nexus.ssccs.org
+    service: http://127.0.0.1:8080
+    originRequest:
+      httpHostHeader: "127.0.0.1:8080"
+      noTLSVerify: true
+
+  - service: http_status:404
