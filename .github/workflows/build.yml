@@ -53,7 +53,7 @@ jobs:
       - name: Download poc-agent
         uses: dawidd6/action-download-artifact@v6
         with:
-          workflow: check-poc.yml
+          workflow: run-deploy-poc.yml
           repo: ssccsorg/ssccs
           name: poc-agent
           path: .
