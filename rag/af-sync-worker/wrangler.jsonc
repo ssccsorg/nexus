@@ -1,0 +1,42 @@
+{
+  "name": "nexus-af-sync",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-01-14",
+
+  "r2_buckets": [
+    {
+      "binding": "ARTIFACT_BUCKET",
+      "bucket_name": "ssccs-nexus-af"
+    }
+  ],
+
+  "kv_namespaces": [
+    {
+      "binding": "SYNC_KV",
+      "id": "ca04c701c6814db79341e0044a0cb90f"
+    }
+  ],
+
+  "queues": {
+    "producers": [
+      {
+        "binding": "SYNC_QUEUE",
+        "queue": "nexus-sync-queue"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "nexus-sync-queue",
+        "max_batch_size": 4,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "dead_letter_queue": "nexus-sync-dlq"
+      }
+    ]
+  },
+
+  "vars": {
+    "EDGEQUAKE_API_HOST": "https://rag-api.nexus.ssccs.org",
+    "WORKSPACE_ID": "nexus-af-sync"
+  }
+}
