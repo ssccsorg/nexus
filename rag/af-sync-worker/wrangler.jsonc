@@ -39,7 +39,10 @@
   },
 
   "vars": {
-    "EDGEQUAKE_API_HOST": "http://rag-api.nexus.ssccs.org", //SSL will be applied later
-    "WORKSPACE_ID": "nexus-af-sync"
+    "EDGEQUAKE_API_HOST": "http://rag-api.nexus.ssccs.org",
+    "EDGEQUAKE_TENANT_ID": "default",
+    "EDGEQUAKE_API_KEY": "",
+    "WORKSPACE_ID": "nexus-af-sync",
+    "R2_PREFIX": "ssccs/docs/"
   }
 }
