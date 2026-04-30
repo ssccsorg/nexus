@@ -17,20 +17,38 @@ use edgequake_llm::{
 };
 use futures::stream::BoxStream;
 
-/// Default maximum tokens for generation (8192).
-pub const DEFAULT_MAX_TOKENS: usize = 8192;
+/// Default maximum tokens for generation (16384).
+///
+/// WHY 16384: Entity extraction prompts generate structured JSON that can contain
+/// 100+ entities with descriptions. At an average of ~100 tokens per entity, a
+/// moderately complex chunk produces 10 000+ output tokens. 8 192 was too
+/// conservative and caused JSON-EOF truncation errors on attempt 3 of 3.
+/// 16 384 matches the `max_tokens` the LLM extractor already requests.
+pub const DEFAULT_MAX_TOKENS: usize = 16384;
 
 /// Default request timeout in seconds (600 = 10 minutes).
 pub const DEFAULT_TIMEOUT_SECS: u64 = 600;
 
-/// Absolute maximum tokens allowed (32768).
-pub const ABSOLUTE_MAX_TOKENS: usize = 32768;
+/// Absolute maximum tokens allowed (65536).
+///
+/// WHY 65536: Allows operators to configure larger budgets for very dense documents
+/// via `EDGEQUAKE_LLM_MAX_TOKENS`. The previous cap of 32 768 prevented legitimate
+/// extraction of large entity lists from complex technical PDFs.
+pub const ABSOLUTE_MAX_TOKENS: usize = 65536;
 
 /// Minimum timeout in seconds (10).
 pub const MINIMUM_TIMEOUT_SECS: u64 = 10;
 
-/// Maximum timeout in seconds (600 = 10 minutes).
-pub const MAXIMUM_TIMEOUT_SECS: u64 = 600;
+/// Maximum timeout in seconds (3600 = 1 hour).
+///
+/// WHY 3600: The previous cap of 600 s (10 min) was appropriate for cloud
+/// APIs (OpenAI, Anthropic) but too restrictive for local LLMs running on
+/// consumer hardware (Ollama on a single GPU can take 5–10 minutes per large
+/// chunk).  Raising to 1 hour lets operators set
+/// `EDGEQUAKE_LLM_TIMEOUT_SECS=1800` without hitting an invisible wall.
+/// The real per-chunk safeguard is `EDGEQUAKE_CHUNK_TIMEOUT_SECS` in the
+/// pipeline layer; this is the HTTP-level safety backstop.
+pub const MAXIMUM_TIMEOUT_SECS: u64 = 3600;
 
 /// Configuration for safety limits.
 #[derive(Debug, Clone)]
