@@ -12,7 +12,7 @@ EDGEQUAKE_REPO_DIR="${EDGEQUAKE_REPO_DIR:-${RAG_DIR}/edgequake}"
 # Local build compose file (the default compose file in the repo root)
 COMPOSE_FILE="${EDGEQUAKE_REPO_DIR}/edgequake/docker/docker-compose.yml"
 
-TUNNEL_CONFIG="${RAG_DIR}/config/tunnel-config-edgequake.yml"
+TUNNEL_CONFIG="${RAG_DIR}/tunnel-config-edgequake.yml"
 API_HEALTH_URL="${API_HEALTH_URL:-http://127.0.0.1:8080/health}"
 TIMEOUT_SEC=120
 
