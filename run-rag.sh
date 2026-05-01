@@ -19,6 +19,20 @@ TIMEOUT_SEC=120
 # Refresh mode flag (default false)
 REFRESH_MODE="false"
 
+# ── LLM Provider ─────────────────────────────────────────────────────────
+# Options: ollama (default), lmstudio (via OpenAI-compatible API)
+LLM_PROVIDER="${LLM_PROVIDER:-lmstudio}"
+LMSTUDIO_URL="${LMSTUDIO_URL:-http://host.docker.internal:1234}"
+LLM_MODEL="${LLM_MODEL:-liquid/lfm2-24b-a2b}"
+
+# ── Embedding Provider ────────────────────────────────────────────────────
+# When LLM_PROVIDER=lmstudio, embedding also uses LM Studio by default.
+EMBEDDING_PROVIDER="${EMBEDDING_PROVIDER:-lmstudio}"
+EMBEDDING_MODEL="${EMBEDDING_MODEL:-jina-embeddings-v5-text-small-mlx}"
+# Auto-detected from LM Studio API. Set manually only if detection fails:
+# EMBEDDING_DIMENSION=1024 ./run-rag.sh
+EMBEDDING_DIMENSION="${EMBEDDING_DIMENSION:-}"
+
 log_info()  { echo "[INFO]  $*"; }
 log_warn()  { echo "[WARN]  $*"; }
 log_error() { echo "[ERROR] $*"; }
@@ -73,6 +87,45 @@ check_deps() {
   fi
 
   return $missing
+}
+
+# ── Probe LM Studio for actual embedding dimension ───────────────────
+# Sends a test embedding request and reads the vector length from the
+# API response. Avoids hardcoding fragile dimension values.
+detect_embedding_dimension() {
+  local base_url="$1"
+  local model="$2"
+  local api_url="${base_url}/v1/embeddings"
+
+  # Use explicit override if provided via env var
+  if [ -n "${EMBEDDING_DIMENSION:-}" ]; then
+    echo "${EMBEDDING_DIMENSION}"
+    return 0
+  fi
+
+  log_info "Probing embedding dimension from ${api_url}..."
+  local response
+  response=$(curl -s -X POST "${api_url}" \
+    -H "Content-Type: application/json" \
+    -d "{\"model\":\"${model}\",\"input\":\"test\"}" 2>/dev/null) || true
+
+  local dim
+  dim=$(echo "$response" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    vec = data['data'][0]['embedding']
+    print(len(vec))
+except Exception:
+    print('')" 2>/dev/null) || true
+
+  if [ -n "$dim" ]; then
+    log_info "Detected embedding dimension: ${dim}"
+    echo "${dim}"
+  else
+    log_warn "Could not detect embedding dimension, falling back to 768"
+    echo "768"
+  fi
 }
 
 download_cloudflared() {
@@ -241,6 +294,37 @@ main() {
   done
 
   check_deps
+
+  # ── Bypass: LM Studio via OpenAI-compatible provider ───────────────
+  # LM Studio exposes an OpenAI-compatible API, so we use the openai
+  # provider with a custom base_url. No subtree edits needed.
+  if [ "$LLM_PROVIDER" = "lmstudio" ]; then
+    log_info "LLM Provider: LM Studio (${LMSTUDIO_URL})"
+    log_info "LLM Model: ${LLM_MODEL}"
+    export EDGEQUAKE_LLM_PROVIDER=openai
+    export EDGEQUAKE_LLM_MODEL="${LLM_MODEL}"
+    export OPENAI_BASE_URL="${LMSTUDIO_URL}/v1"
+    export OPENAI_API_KEY=not-needed
+  else
+    log_info "LLM Provider: Ollama"
+  fi
+
+  # Embedding: same bypass logic when using LM Studio
+  if [ "$EMBEDDING_PROVIDER" = "lmstudio" ] || [ "$LLM_PROVIDER" = "lmstudio" ]; then
+    # Auto-detect embedding dimension from LM Studio API
+    local detected_dim
+    detected_dim=$(detect_embedding_dimension "${LMSTUDIO_URL}" "${EMBEDDING_MODEL}")
+    export EDGEQUAKE_EMBEDDING_PROVIDER=openai
+    export EDGEQUAKE_EMBEDDING_MODEL="${EMBEDDING_MODEL}"
+    export EDGEQUAKE_EMBEDDING_BASE_URL="${LMSTUDIO_URL}/v1"
+    export EDGEQUAKE_EMBEDDING_DIMENSION="${detected_dim}"
+    log_info "Embedding: LM Studio / ${EMBEDDING_MODEL} (dim: ${detected_dim})"
+  else
+    export EDGEQUAKE_EMBEDDING_PROVIDER="${EMBEDDING_PROVIDER}"
+    export EDGEQUAKE_EMBEDDING_MODEL="${EMBEDDING_MODEL}"
+    log_info "Embedding: ${EMBEDDING_PROVIDER} / ${EMBEDDING_MODEL}"
+  fi
+
   cleanup_previous
   start_stack
   if ! wait_for_health; then
