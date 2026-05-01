@@ -1,0 +1,22 @@
+[package]
+name = "edgequake-pdf"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "PDF to Markdown conversion backends for EdgeQuake"
+
+[dependencies]
+async-trait.workspace = true
+serde = { workspace = true, features = ["derive"] }
+thiserror.workspace = true
+tokio = { workspace = true, features = ["full"] }
+tracing.workspace = true
+edgequake-llm = { workspace = true }
+edgequake-pdf2md = "=0.8.1"
+edgeparse-core = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

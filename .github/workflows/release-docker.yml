@@ -1,0 +1,341 @@
+name: Release — Docker (GHCR)
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag name to publish (e.g. v0.10.7)'
+        required: true
+        default: 'v0.10.7'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # ── Extract version once ──────────────────────────────────────────────────────
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      version:  ${{ steps.v.outputs.version }}
+      tag_name: ${{ steps.v.outputs.tag_name }}
+    steps:
+      - name: Resolve version
+        id: v
+        env:
+          INPUT_TAG_NAME: ${{ inputs.tag_name }}
+        run: |
+          TAG="${INPUT_TAG_NAME:-$GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          echo "version=$VERSION"   >> "$GITHUB_OUTPUT"
+          echo "tag_name=$TAG"      >> "$GITHUB_OUTPUT"
+
+  # ── Build amd64 — native ubuntu-latest runner ─────────────────────────────────
+  build-amd64:
+    needs: meta
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push (amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: edgequake
+          file: edgequake/docker/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: ghcr.io/${{ github.repository }}:${{ needs.meta.outputs.version }}-amd64
+          cache-from: type=gha,scope=amd64
+          cache-to:   type=gha,scope=amd64,mode=max
+
+  # ── Build arm64 — native ARM64 runner (no QEMU) ───────────────────────────────
+  build-arm64:
+    needs: meta
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push (arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: edgequake
+          file: edgequake/docker/Dockerfile
+          push: true
+          platforms: linux/arm64
+          tags: ghcr.io/${{ github.repository }}:${{ needs.meta.outputs.version }}-arm64
+          cache-from: type=gha,scope=arm64
+          cache-to:   type=gha,scope=arm64,mode=max
+
+  # ── Merge API into a single multi-arch manifest ───────────────────────────────
+  merge:
+    needs: [meta, build-amd64, build-arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push multi-arch manifest
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          docker buildx imagetools create \
+            --tag "$IMAGE:$VERSION" \
+            --tag "$IMAGE:latest" \
+            "$IMAGE:$VERSION-amd64" \
+            "$IMAGE:$VERSION-arm64"
+
+      - name: Inspect final manifest
+        run: |
+          docker buildx imagetools inspect \
+            "ghcr.io/${{ github.repository }}:${{ needs.meta.outputs.version }}"
+
+  # ── Build frontend amd64 — native ubuntu-latest runner ────────────────────────
+  build-frontend-amd64:
+    needs: meta
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push frontend (amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: edgequake_webui/Dockerfile
+          push: true
+          platforms: linux/amd64
+          # NEXT_PUBLIC_API_URL defaults to localhost:8080 — correct for docker-compose.prebuilt.yml
+          # where both containers run on the same host and the browser connects to port 8080 directly.
+          build-args: |
+            NEXT_PUBLIC_API_URL=http://localhost:8080
+          tags: ghcr.io/${{ github.repository_owner }}/edgequake-frontend:${{ needs.meta.outputs.version }}-amd64
+          cache-from: type=gha,scope=frontend-amd64
+          cache-to:   type=gha,scope=frontend-amd64,mode=max
+
+  # ── Build frontend arm64 — native ARM64 runner (no QEMU) ─────────────────────
+  build-frontend-arm64:
+    needs: meta
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push frontend (arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: edgequake_webui/Dockerfile
+          push: true
+          platforms: linux/arm64
+          build-args: |
+            NEXT_PUBLIC_API_URL=http://localhost:8080
+          tags: ghcr.io/${{ github.repository_owner }}/edgequake-frontend:${{ needs.meta.outputs.version }}-arm64
+          cache-from: type=gha,scope=frontend-arm64
+          cache-to:   type=gha,scope=frontend-arm64,mode=max
+
+  # ── Merge frontend into a single multi-arch manifest ──────────────────────────
+  merge-frontend:
+    needs: [meta, build-frontend-amd64, build-frontend-arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push frontend multi-arch manifest
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/edgequake-frontend
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          docker buildx imagetools create \
+            --tag "$IMAGE:$VERSION" \
+            --tag "$IMAGE:latest" \
+            "$IMAGE:$VERSION-amd64" \
+            "$IMAGE:$VERSION-arm64"
+
+      - name: Inspect frontend manifest
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/edgequake-frontend
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          docker buildx imagetools inspect "$IMAGE:$VERSION"
+
+  # ── Build PostgreSQL amd64 — native ubuntu-latest runner ──────────────────────
+  # Building postgres once in CI lets users pull a ready-to-go image instead of
+  # waiting for a local `docker build` every time they run `make stack`.
+  build-postgres-amd64:
+    needs: meta
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push postgres (amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: edgequake/docker
+          file: edgequake/docker/Dockerfile.postgres
+          push: true
+          platforms: linux/amd64
+          tags: ghcr.io/${{ github.repository_owner }}/edgequake-postgres:${{ needs.meta.outputs.version }}-amd64
+          cache-from: type=gha,scope=postgres-amd64
+          cache-to:   type=gha,scope=postgres-amd64,mode=max
+
+  # ── Build PostgreSQL arm64 — native ARM64 runner (no QEMU) ───────────────────
+  build-postgres-arm64:
+    needs: meta
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push postgres (arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: edgequake/docker
+          file: edgequake/docker/Dockerfile.postgres
+          push: true
+          platforms: linux/arm64
+          tags: ghcr.io/${{ github.repository_owner }}/edgequake-postgres:${{ needs.meta.outputs.version }}-arm64
+          cache-from: type=gha,scope=postgres-arm64
+          cache-to:   type=gha,scope=postgres-arm64,mode=max
+
+  # ── Merge PostgreSQL into a single multi-arch manifest ────────────────────────
+  merge-postgres:
+    needs: [meta, build-postgres-amd64, build-postgres-arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push postgres multi-arch manifest
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/edgequake-postgres
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          docker buildx imagetools create \
+            --tag "$IMAGE:$VERSION" \
+            --tag "$IMAGE:latest" \
+            "$IMAGE:$VERSION-amd64" \
+            "$IMAGE:$VERSION-arm64"
+
+      - name: Inspect postgres manifest
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/edgequake-postgres
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          docker buildx imagetools inspect "$IMAGE:$VERSION"
+
+  # ── Trigger GitHub Release after all images are published ────────────────────
+  release:
+    needs: [meta, merge, merge-frontend, merge-postgres]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION:  ${{ needs.meta.outputs.version }}
+          TAG:      ${{ needs.meta.outputs.tag_name }}
+        run: |
+          NOTES="## Docker Quickstart
+
+          \`\`\`bash
+          # Interactive one-command install (Docker only, no git clone)
+          curl -fsSL https://raw.githubusercontent.com/raphaelmansuy/edgequake/edgequake-main/quickstart.sh | sh
+          \`\`\`
+
+          Or with plain Docker Compose:
+          \`\`\`bash
+          curl -fsSL https://raw.githubusercontent.com/raphaelmansuy/edgequake/edgequake-main/docker-compose.quickstart.yml \\
+            -o docker-compose.quickstart.yml
+          docker compose -f docker-compose.quickstart.yml up -d
+          # → Web UI:  http://localhost:3000
+          # → API:     http://localhost:8080
+          # → Swagger: http://localhost:8080/swagger-ui
+          \`\`\`
+
+          Or with the Makefile:
+          \`\`\`bash
+          make stack           # start all three services (pulls from GHCR)
+          make stack-down      # stop and remove containers
+          make stack-logs      # tail logs
+          \`\`\`
+
+          ## Images (v${VERSION})
+
+          | Image | Architecture |
+          |-------|-------------|
+          | \`ghcr.io/raphaelmansuy/edgequake:${VERSION}\` | linux/amd64, linux/arm64 |
+          | \`ghcr.io/raphaelmansuy/edgequake-frontend:${VERSION}\` | linux/amd64, linux/arm64 |
+          | \`ghcr.io/raphaelmansuy/edgequake-postgres:${VERSION}\` | linux/amd64, linux/arm64 |
+
+          Full CHANGELOG: https://github.com/raphaelmansuy/edgequake/blob/edgequake-main/CHANGELOG.md"
+
+          gh release create "$TAG" \
+            --title "EdgeQuake $TAG" \
+            --notes "$NOTES" \
+            --repo "$GITHUB_REPOSITORY" \
+            2>/dev/null || \
+          gh release edit "$TAG" \
+            --title "EdgeQuake $TAG" \
+            --notes "$NOTES" \
+            --repo "$GITHUB_REPOSITORY"

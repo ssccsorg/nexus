@@ -1,0 +1,59 @@
+# EdgeQuake — API only (bring your own PostgreSQL)
+#
+# Use this file when you have an existing PostgreSQL instance with the
+# pgvector and apache_age extensions already installed.
+#
+# Prerequisites:
+#   - PostgreSQL with pgvector + apache_age extensions
+#   - A .env file (copy .env.example) with at minimum DATABASE_URL set
+#
+# Quick start:
+#   cp .env.example .env          # fill in DATABASE_URL and provider keys
+#   docker compose -f docker-compose.api-only.yml up -d
+#   curl http://localhost:8080/health
+
+services:
+  edgequake:
+    image: ghcr.io/raphaelmansuy/edgequake:latest
+    # Alternatively, build from source:
+    # build:
+    #   context: ..
+    #   dockerfile: docker/Dockerfile
+    container_name: edgequake
+    restart: unless-stopped
+    ports:
+      - "${EDGEQUAKE_PORT:-8080}:8080"
+    environment:
+      - EDGEQUAKE_HOST=0.0.0.0
+      - EDGEQUAKE_PORT=8080
+      # Required: point to your external PostgreSQL instance
+      - DATABASE_URL=${DATABASE_URL}
+      # LLM provider selection (default: ollama)
+      - EDGEQUAKE_LLM_PROVIDER=${EDGEQUAKE_LLM_PROVIDER:-ollama}
+      # Optional: separate embedding provider (hybrid mode)
+      - EDGEQUAKE_EMBEDDING_PROVIDER=${EDGEQUAKE_EMBEDDING_PROVIDER:-}
+      # Provider API keys — set the ones you need
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
+      - XAI_API_KEY=${XAI_API_KEY:-}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY:-}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT:-}
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-}
+      - GOOGLE_ACCESS_TOKEN=${GOOGLE_ACCESS_TOKEN:-}
+      # Ollama: use host.docker.internal to reach a host-side Ollama instance
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
+      - EDGEQUAKE_EMBEDDING_MODEL=${EDGEQUAKE_EMBEDDING_MODEL:-}
+      - EDGEQUAKE_EMBEDDING_DIMENSION=${EDGEQUAKE_EMBEDDING_DIMENSION:-}
+      - EDGEQUAKE_VISION_TIMEOUT_SECS=${EDGEQUAKE_VISION_TIMEOUT_SECS:-600}
+      - RUST_LOG=${RUST_LOG:-info}
+    # Linux only: lets host.docker.internal resolve to the Docker host IP
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

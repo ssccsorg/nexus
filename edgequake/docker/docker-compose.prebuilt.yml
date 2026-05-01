@@ -1,0 +1,124 @@
+# EdgeQuake — Full stack using prebuilt GHCR images
+#
+# This is the fastest way to get EdgeQuake running locally.
+# The API, frontend, and PostgreSQL images are all pulled from GitHub Container
+# Registry, so there is no Rust, Node.js, or local Docker build requirement.
+#
+# Quick start:
+#   cd edgequake/docker
+#   cp .env.example .env        # set your LLM provider + API key
+#   docker compose -f docker-compose.prebuilt.yml up -d
+#   curl http://localhost:8080/health
+#
+# Use a specific version:
+#   EDGEQUAKE_VERSION=0.10.6 docker compose -f docker-compose.prebuilt.yml up -d
+#
+# Use OPENAI instead of Ollama:
+#   EDGEQUAKE_LLM_PROVIDER=openai OPENAI_API_KEY=sk-... \
+#     docker compose -f docker-compose.prebuilt.yml up -d
+
+services:
+  # ── EdgeQuake API ─────────────────────────────────────────────────────────
+  # Pulled from GHCR — no build step needed.
+  # Multi-arch: linux/amd64 and linux/arm64 (Apple Silicon, AWS Graviton).
+  edgequake:
+    image: ghcr.io/raphaelmansuy/edgequake:${EDGEQUAKE_VERSION:-latest}
+    container_name: edgequake
+    restart: unless-stopped
+    ports:
+      - "${EDGEQUAKE_PORT:-8080}:8080"
+    environment:
+      - EDGEQUAKE_HOST=0.0.0.0
+      - EDGEQUAKE_PORT=8080
+      - DATABASE_URL=postgres://edgequake:${POSTGRES_PASSWORD:-edgequake_secret}@postgres:5432/edgequake
+      # LLM provider — default: ollama (no API key cost)
+      - EDGEQUAKE_LLM_PROVIDER=${EDGEQUAKE_LLM_PROVIDER:-ollama}
+      - EDGEQUAKE_EMBEDDING_PROVIDER=${EDGEQUAKE_EMBEDDING_PROVIDER:-}
+      # Provider API keys — leave empty if not using that provider
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
+      - XAI_API_KEY=${XAI_API_KEY:-}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY:-}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT:-}
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-}
+      - GOOGLE_ACCESS_TOKEN=${GOOGLE_ACCESS_TOKEN:-}
+      # WHY host.docker.internal: Ollama typically runs on the host, not inside
+      # Docker. Using the gateway address lets the container reach the host port.
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
+      - EDGEQUAKE_EMBEDDING_MODEL=${EDGEQUAKE_EMBEDDING_MODEL:-}
+      - EDGEQUAKE_EMBEDDING_DIMENSION=${EDGEQUAKE_EMBEDDING_DIMENSION:-}
+      - EDGEQUAKE_VISION_TIMEOUT_SECS=${EDGEQUAKE_VISION_TIMEOUT_SECS:-600}
+      - RUST_LOG=${RUST_LOG:-info}
+    # Linux only: lets host.docker.internal resolve to the Docker host IP.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - edgequake-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ── EdgeQuake Frontend (Next.js) ──────────────────────────────────────────
+  # Pulled from GHCR — no Node.js toolchain or build step needed.
+  # NEXT_PUBLIC_API_URL is baked in at build time as http://localhost:8080,
+  # which is correct when the browser and both containers run on the same host.
+  # If you deploy on a remote server set NEXT_PUBLIC_API_URL at build time and
+  # rebuild the image, or use the build-from-source docker-compose.yml instead.
+  frontend:
+    image: ghcr.io/raphaelmansuy/edgequake-frontend:${EDGEQUAKE_VERSION:-latest}
+    container_name: edgequake-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      edgequake:
+        condition: service_healthy
+    networks:
+      - edgequake-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ── PostgreSQL with pgvector + Apache AGE ─────────────────────────────────
+  postgres:
+    image: ghcr.io/raphaelmansuy/edgequake-postgres:${EDGEQUAKE_VERSION:-latest}
+    container_name: edgequake-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      - POSTGRES_USER=edgequake
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-edgequake_secret}
+      - POSTGRES_DB=edgequake
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-extensions.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - edgequake-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U edgequake -d edgequake"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  postgres-data:
+    driver: local
+
+networks:
+  edgequake-network:
+    driver: bridge
