@@ -39,7 +39,7 @@ EMBEDDING_MODEL="${EMBEDDING_MODEL:-text-embedding-embeddinggemma-300m-qat}"
 # EMBEDDING_DIMENSION=1024 ./run-rag.sh
 EMBEDDING_DIMENSION="${EMBEDDING_DIMENSION:-}"
 
-log_info()  { echo "[INFO]  $*"; }
+log_info()  { echo "[INFO]  $*" >&2; }
 log_warn()  { echo "[WARN]  $*"; }
 log_error() { echo "[ERROR] $*"; }
 
@@ -296,12 +296,17 @@ sync_workspace_config() {
   # Stable UUID for the built-in default workspace
   local default_ws_uuid="00000000-0000-0000-0000-000000000003"
 
+  # WHY: Embedding provider must be "openai" (not "lmstudio") so that
+  # create_safe_embedding_provider() takes the is_openai_compatible code
+  # path and picks up EDGEQUAKE_EMBEDDING_BASE_URL (host.docker.internal).
+  # LM Studio exposes an OpenAI-compatible API, so "openai" works correctly.
+  local effective_emb_provider="openai"
   local payload
   payload=$(cat <<EOF
 {
   "llm_provider": "openai",
   "llm_model": "${LLM_MODEL}",
-  "embedding_provider": "${EMBEDDING_PROVIDER}",
+  "embedding_provider": "${effective_emb_provider}",
   "embedding_model": "${EMBEDDING_MODEL}",
   "embedding_dimension": ${EMBEDDING_DIMENSION:-768}
 }
