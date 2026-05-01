@@ -27,6 +27,3 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
-
-# EdgeQuake
-docker-compose.*.yml

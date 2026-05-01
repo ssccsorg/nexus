@@ -42,6 +42,6 @@
     "EDGEQUAKE_API_HOST": "http://rag-api.nexus.ssccs.org",
     "EDGEQUAKE_TENANT_ID": "default",
     "EDGEQUAKE_API_KEY": "",
-    "WORKSPACE_ID": "default"
+    "WORKSPACE_ID": "nexus-af-sync"
   }
 }
