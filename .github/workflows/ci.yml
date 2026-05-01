@@ -1,0 +1,167 @@
+name: CI
+
+on:
+  push:
+    branches: [main, edgequake-main, "feat/**"]
+  pull_request:
+    branches: [main, edgequake-main]
+
+concurrency:
+  # WHY: When several pushes hit the same branch in quick succession, older CI
+  # runs provide stale signal while still consuming minutes and cache bandwidth.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  RUST_TOOLCHAIN: 1.95.0
+  # v0.4.0: pdfium is embedded via pdfium-auto in edgequake-pdf2md 0.4.1.
+  # No external library setup needed. The bundled feature is the default,
+  # so we do NOT use --no-default-features for edgequake-api / pdf-related crates.
+
+jobs:
+  # WHY: Migration immutability is the fastest check (no DB, no Rust build).
+  # Run it first so PRs get instant feedback if a migration file was mutated.
+  # Any byte change to a deployed .sql file breaks all existing deployments.
+  # This caught the regression in issue #195 (v0.11.0 checksum mismatch).
+  migration-checksum-guard:
+    name: Migration checksum guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify migration checksums against lockfile
+        run: |
+          chmod +x scripts/check_migration_checksums.sh
+          ./scripts/check_migration_checksums.sh --verbose
+
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: migration-checksum-guard
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: edgequake
+
+      - name: Check formatting
+        working-directory: edgequake
+        run: cargo fmt --all -- --check
+
+      - name: Check clippy
+        working-directory: edgequake
+        # Use --no-default-features only for non-pdf crates to avoid postgres dep at check time.
+        # The pdf bundled feature embeds pdfium at build time (no external library needed on CI).
+        run: cargo clippy --workspace --lib -- -D warnings
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: migration-checksum-guard
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: edgequake
+
+      - name: Run tests
+        working-directory: edgequake
+        # pdfium embedded via pdfium-auto — no external library needed on Ubuntu CI runner.
+        run: cargo test --workspace --lib --no-fail-fast
+        env:
+          # Use mock LLM provider for tests (no API key needed)
+          RUST_LOG: warn
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: migration-checksum-guard
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: edgequake
+
+      - name: Build release
+        working-directory: edgequake
+        # pdfium-auto downloads and embeds pdfium for linux/amd64 at build time.
+        run: cargo build --workspace --release --lib
+
+      # Note: Examples and binaries require postgres feature, tested in postgres-integration.yml
+
+  # Coverage is intentionally NOT run on automatic CI.
+  # Trigger manually via: Actions → "Coverage (Manual)" → Run workflow
+  # See .github/workflows/coverage.yml
+
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: Run security audit
+        working-directory: edgequake
+        run: cargo audit --ignore RUSTSEC-2023-0071 # Ignore rsa timing issue (no fix available)
+        continue-on-error: true # Don't fail on unmaintained warnings
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: edgequake
+
+      - name: Build docs
+        working-directory: edgequake
+        run: cargo doc --workspace --no-deps
+        env:
+          # Allow unresolved links (FEAT/BR/UC references) but error on other doc warnings
+          RUSTDOCFLAGS: -A rustdoc::broken_intra_doc_links -D warnings

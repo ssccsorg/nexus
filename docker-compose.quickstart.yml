@@ -1,0 +1,168 @@
+# EdgeQuake — One-Command Quickstart
+#
+# Pulls all three services from prebuilt GHCR images.
+# No Rust toolchain, no Node.js, no local build step required.
+#
+# Usage:
+#   docker compose -f docker-compose.quickstart.yml up -d
+#
+# Or via Makefile:
+#   make stack
+#
+# Access:
+#   Web UI  → http://localhost:3000
+#   API     → http://localhost:8080
+#   Swagger → http://localhost:8080/swagger-ui
+#   Health  → http://localhost:8080/health
+#
+# LLM provider (default: Ollama on the host at port 11434)
+# To use OpenAI:
+#   EDGEQUAKE_LLM_PROVIDER=openai OPENAI_API_KEY=sk-... \
+#     docker compose -f docker-compose.quickstart.yml up -d
+#
+# Pin to a specific release:
+#   EDGEQUAKE_VERSION=0.10.6 docker compose -f docker-compose.quickstart.yml up -d
+
+services:
+  # ── PostgreSQL with pgvector + Apache AGE ──────────────────────────────────
+  postgres:
+    image: ghcr.io/raphaelmansuy/edgequake-postgres:${EDGEQUAKE_VERSION:-latest}
+    container_name: edgequake-postgres
+    restart: unless-stopped
+    shm_size: '256m'
+    environment:
+      POSTGRES_USER:     edgequake
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-edgequake_secret}
+      POSTGRES_DB:       edgequake
+    volumes:
+      - edgequake-pg-data:/var/lib/postgresql/data
+    networks:
+      - edgequake
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U edgequake -d edgequake"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── EdgeQuake API ──────────────────────────────────────────────────────────
+  api:
+    image: ghcr.io/raphaelmansuy/edgequake:${EDGEQUAKE_VERSION:-latest}
+    container_name: edgequake-api
+    restart: unless-stopped
+    ports:
+      - "${EDGEQUAKE_PORT:-8080}:8080"
+    environment:
+      EDGEQUAKE_HOST: 0.0.0.0
+      EDGEQUAKE_PORT: 8080
+      DATABASE_URL: postgres://edgequake:${POSTGRES_PASSWORD:-edgequake_secret}@postgres:5432/edgequake
+      # ── LLM Provider ────────────────────────────────────────────────────────
+      # Default: Ollama running on the host machine.
+      # Override: EDGEQUAKE_LLM_PROVIDER=openai OPENAI_API_KEY=sk-...
+      EDGEQUAKE_LLM_PROVIDER:       ${EDGEQUAKE_LLM_PROVIDER:-ollama}
+      # Optional model override — when unset the API picks a sensible default
+      # for the resolved provider (e.g. gpt-5-mini for OpenAI, gemma4 for Ollama).
+      EDGEQUAKE_LLM_MODEL:          ${EDGEQUAKE_LLM_MODEL:-}
+      # ── Embedding Provider ───────────────────────────────────────────────────
+      # Default: same provider as LLM.  Set to "openai" when OPENAI_API_KEY is
+      # present and you want OpenAI embeddings regardless of the LLM provider.
+      EDGEQUAKE_EMBEDDING_PROVIDER: ${EDGEQUAKE_EMBEDDING_PROVIDER:-}
+      # Optional model override — when unset the API picks a sensible default
+      # (e.g. text-embedding-3-small for OpenAI, embeddinggemma for Ollama).
+      EDGEQUAKE_EMBEDDING_MODEL:    ${EDGEQUAKE_EMBEDDING_MODEL:-}
+      # ── Vision LLM Provider (PDF → Markdown) ────────────────────────────────
+      # Used exclusively for rendering PDF pages into Markdown (multimodal LLM).
+      # Default: same provider as EDGEQUAKE_LLM_PROVIDER (set by quickstart.sh).
+      # Override: EDGEQUAKE_VISION_PROVIDER=openai to use OpenAI even if Ollama
+      #           is the main entity-extraction LLM.
+      # WHY nested substitution: Docker Compose ${VAR:-} maps an unset host var to
+      # the empty string "" inside the container. std::env::var then returns Ok("")
+      # which looks like a valid value and bypasses fallback chains in the server code.
+      # Using ${VISION_VAR:-${LLM_VAR:-default}} ensures the container always has a
+      # non-empty value derived from the corresponding LLM setting when not explicit.
+      EDGEQUAKE_VISION_PROVIDER:    ${EDGEQUAKE_VISION_PROVIDER:-${EDGEQUAKE_LLM_PROVIDER:-ollama}}
+      # Vision model: when unset falls back to the main LLM model so Ollama users
+      # automatically use their configured model (e.g. gemma4:e4b) for vision too.
+      EDGEQUAKE_VISION_MODEL:       ${EDGEQUAKE_VISION_MODEL:-${EDGEQUAKE_LLM_MODEL:-}}
+      OPENAI_API_KEY:               ${OPENAI_API_KEY:-}
+      # WHY: OPENAI_BASE_URL must NOT be set to an empty string.
+      # When unset on the host ${OPENAI_BASE_URL:-} evaluates to "", which the
+      # OpenAI provider uses as the base URL, breaking every request with
+      # "builder error".  The API server strips empty env vars at startup, but
+      # setting a safe default here provides defence-in-depth.
+      # Override only when using a custom OpenAI-compatible endpoint
+      # (e.g. OPENAI_BASE_URL=http://localhost:11434/v1 for Ollama in compat mode).
+      OPENAI_BASE_URL:              ${OPENAI_BASE_URL:-}
+      ANTHROPIC_API_KEY:            ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY:               ${GEMINI_API_KEY:-}
+      MISTRAL_API_KEY:              ${MISTRAL_API_KEY:-}
+      # WHY host.docker.internal (NOT localhost):
+      #   Docker containers have their own network namespace. 'localhost' inside
+      #   a container refers to the container itself, NOT to the host where Ollama
+      #   runs. 'host.docker.internal' is the canonical name for the host machine:
+      #     macOS/Windows: provided natively by Docker Desktop
+      #     Linux:         mapped via extra_hosts below (host-gateway)
+      #
+      # IMPORTANT: If you set OLLAMA_HOST manually, never use 'localhost' or
+      #   '127.x.x.x' — use 'host.docker.internal' or a real IP/hostname.
+      #   quickstart.sh auto-translates loopback addresses when launching.
+      OLLAMA_HOST:                  ${OLLAMA_HOST:-http://host.docker.internal:11434}
+      PDFIUM_AUTO_CACHE_DIR:        /tmp/edgequake-pdfium-cache
+      RUST_LOG:                     ${RUST_LOG:-info}
+    extra_hosts:
+      # Maps host.docker.internal → host machine IP on Linux.
+      # On macOS/Windows, Docker Desktop provides this DNS name natively.
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - edgequake
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+
+  # ── Next.js Web UI ─────────────────────────────────────────────────────────
+  frontend:
+    image: ghcr.io/raphaelmansuy/edgequake-frontend:${EDGEQUAKE_VERSION:-latest}
+    container_name: edgequake-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      # WHY EDGEQUAKE_API_URL (not NEXT_PUBLIC_API_URL):
+      # NEXT_PUBLIC_* variables are baked into the JS bundle at image build time
+      # and cannot be changed at container startup. EDGEQUAKE_API_URL is read at
+      # request time by the Next.js server component (layout.tsx → getRuntimeConfig)
+      # and injected into window.__EDGEQUAKE_RUNTIME_CONFIG__ so the browser picks
+      # it up correctly — no rebuild required.
+      #
+      # Default: http://localhost:${EDGEQUAKE_PORT:-8080} — the URL the user's
+      # browser uses to reach the API (same host, host-mapped port).
+      #
+      # Override for remote/non-localhost access:
+      #   EDGEQUAKE_API_URL=http://192.168.1.10:8080 docker compose ... up -d
+      EDGEQUAKE_API_URL:  ${EDGEQUAKE_API_URL:-http://localhost:${EDGEQUAKE_PORT:-8080}}
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - edgequake
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 20s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  edgequake-pg-data:
+    driver: local
+
+networks:
+  edgequake:
+    driver: bridge
