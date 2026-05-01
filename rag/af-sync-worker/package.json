@@ -1,0 +1,21 @@
+{
+	"name": "quaisar-offchain-hub",
+	"version": "0.1",
+	"private": true,
+	"scripts": {
+		"deploy": "wrangler deploy",
+		"build": "wrangler build",
+		"dev": "wrangler dev",
+		"start": "wrangler dev",
+		"cf-typegen": "wrangler types",
+		"typecheck": "tsc --noEmit",
+		"lint": "eslint 'src/**/*.{ts,tsx}' --max-warnings=0"
+	},
+	"devDependencies": {
+		"@typescript-eslint/eslint-plugin": "^8.39.1",
+		"@typescript-eslint/parser": "^8.39.1",
+		"eslint": "^9.33.0",
+		"typescript": "^5.9.3",
+		"wrangler": "^4.29.1"
+	}
+}
