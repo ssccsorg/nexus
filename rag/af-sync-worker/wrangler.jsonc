@@ -39,6 +39,10 @@
   },
 
   "vars": {
+    // LightRAG (primary engine)
+    "LIGHTRAG_API_HOST": "http://rag-api.nexus.ssccs.org",
+    "LIGHTRAG_API_KEY": "",
+    // EdgeQuake (deprecated)
     "EDGEQUAKE_API_HOST": "http://rag-api.nexus.ssccs.org",
     "EDGEQUAKE_TENANT_ID": "default",
     "EDGEQUAKE_API_KEY": "",
