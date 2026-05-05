@@ -197,6 +197,7 @@ start_lightrag() {
     --host "${LIGHTRAG_HOST}" \
     --port "${LIGHTRAG_PORT}" \
     --working-dir "${LIGHTRAG_DATA}" \
+    --workspace default \
     --llm-binding openai \
     --embedding-binding openai \
     --log-level INFO
@@ -282,25 +283,57 @@ start_tunnel() {
 # Cleanup
 # =============================================================================
 
+TUNNEL_UUID="59c44ec1-6577-41ec-bb18-e53d95394147"
+
 cleanup() {
   log_info "Shutting down..."
-  kill_previous
+  stop_all_services
   log_info "All services stopped."
+}
+
+# Gracefully stop cloudflared — send SIGTERM, wait, fallback to SIGKILL
+graceful_stop_cloudflared() {
+  local pids
+  pids=$(pgrep -f "cloudflared.*tunnel" 2>/dev/null || true)
+  if [ -z "$pids" ]; then
+    return 0
+  fi
+  log_info "  Stopping cloudflared gracefully..."
+  # SIGTERM lets cloudflared deregister its connector & close QUIC connections
+  pkill -TERM -f "cloudflared.*tunnel" 2>/dev/null || true
+  local waited=0
+  while (( waited < 10 )); do
+    if ! pgrep -f "cloudflared.*tunnel" > /dev/null 2>&1; then
+      log_info "  cloudflared stopped cleanly."
+      return 0
+    fi
+    sleep 1
+    ((waited++))
+  done
+  log_warn "  cloudflared did not exit, force-killing..."
+  pkill -9 -f "cloudflared.*tunnel" 2>/dev/null || true
+  sleep 1
+}
+
+# Clean up stale tunnel connectors on Cloudflare's edge
+cleanup_tunnel_connections() {
+  log_info "Cleaning up stale tunnel connections..."
+  cloudflared tunnel cleanup "$TUNNEL_UUID" 2>&1 || true
+  log_info "Tunnel connections cleaned."
 }
 
 kill_previous() {
   log_info "Stopping any existing services..."
 
-  # Kill existing LightRAG server
-  if lsof -ti ":${LIGHTRAG_PORT}" > /dev/null 2>&1; then
-    log_info "  Killing LightRAG on port ${LIGHTRAG_PORT}..."
-    lsof -ti ":${LIGHTRAG_PORT}" | xargs kill -9 2>/dev/null || true
-  fi
+  # Gracefully stop existing cloudflared tunnels first (so connectors deregister)
+  graceful_stop_cloudflared
 
-  # Kill existing cloudflared tunnels
-  if pgrep -f "cloudflared.*tunnel" > /dev/null 2>&1; then
-    log_info "  Killing cloudflared tunnels..."
-    pkill -9 -f "cloudflared.*tunnel" 2>/dev/null || true
+  # Kill existing LightRAG server gracefully, then force
+  if lsof -ti ":${LIGHTRAG_PORT}" > /dev/null 2>&1; then
+    log_info "  Stopping LightRAG on port ${LIGHTRAG_PORT}..."
+    lsof -ti ":${LIGHTRAG_PORT}" | xargs kill -TERM 2>/dev/null || true
+    sleep 2
+    lsof -ti ":${LIGHTRAG_PORT}" | xargs kill -9 2>/dev/null || true
   fi
 
   # Kill existing EdgeQuake containers
@@ -312,6 +345,18 @@ kill_previous() {
 
   sleep 1
   log_info "Cleanup complete."
+}
+
+# Stop all services gracefully (called from trap on EXIT/INT/TERM)
+stop_all_services() {
+  log_info "Stopping all services..."
+  graceful_stop_cloudflared
+  if lsof -ti ":${LIGHTRAG_PORT}" > /dev/null 2>&1; then
+    log_info "  Stopping LightRAG on port ${LIGHTRAG_PORT}..."
+    lsof -ti ":${LIGHTRAG_PORT}" | xargs kill -TERM 2>/dev/null || true
+    sleep 2
+    lsof -ti ":${LIGHTRAG_PORT}" | xargs kill -9 2>/dev/null || true
+  fi
 }
 
 trap cleanup EXIT INT TERM
@@ -337,6 +382,9 @@ main() {
   echo ""
 
   kill_previous
+
+  # Clean up stale tunnel connectors on Cloudflare edge before starting
+  cleanup_tunnel_connections
 
   # Shared checks
   check_lm_studio || exit 1
@@ -374,17 +422,21 @@ main() {
       start_tunnel "$LIGHTRAG_TUNNEL" 2>&1 &
       TUNNEL_PID=$!
 
-      # Wait for tunnel to register (cloudflared prints "Registered tunnel connection")
-      local tunnel_ready=0
-      local tunnel_wait=0
-      while (( tunnel_wait < 30 )); do
-        if curl -s "http://127.0.0.1:${LIGHTRAG_PORT}/health" | grep -q '"healthy"'; then
-          tunnel_ready=1
-          break
-        fi
-        sleep 1
-        ((tunnel_wait++))
-      done
+          # Wait for tunnel to register
+          log_info "Waiting for tunnel connection..."
+          local tunnel_ready=0
+          local tunnel_wait=0
+          while (( tunnel_wait < 30 )); do
+            if curl -s "http://127.0.0.1:${LIGHTRAG_PORT}/health" | grep -q '"healthy"'; then
+              tunnel_ready=1
+              break
+            fi
+            sleep 1
+            ((tunnel_wait++))
+          done
+          if (( tunnel_ready == 0 )); then
+            log_warn "Tunnel may still be connecting; check logs at ${RAG_DIR}/logs/"
+          fi
 
       echo ""
       echo "============================================================"
