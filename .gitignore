@@ -1,6 +1,15 @@
 # Dependencies
 node_modules/
 
+# Python (LightRAG)
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.venv/
+venv/
+rag/lightrag-env/
+
 # Wrangler build output
 .wrangler/
 dist/
@@ -28,5 +37,11 @@ Thumbs.db
 *.log
 npm-debug.log*
 
-# EdgeQuake
+# LightRAG runtime
+inputs/
+rag/inputs/
+.pytest_cache/
+.python-version
+
+# EdgeQuake / Docker
 docker-compose.*.yml
