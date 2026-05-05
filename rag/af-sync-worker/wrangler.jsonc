@@ -10,6 +10,7 @@
     {
       "binding": "ARTIFACT_BUCKET",
       "bucket_name": "ssccs-nexus-af",
+      "preview_bucket_name": "ssccs-nexus-af-preview",
     },
   ],
 
@@ -17,6 +18,7 @@
     {
       "binding": "SYNC_KV",
       "id": "ca04c701c6814db79341e0044a0cb90f",
+      "preview_id": "2179b5c964f448faa2c53a3bde163a77",
     },
   ],
 
@@ -39,7 +41,7 @@
   },
 
   "vars": {
-    // LightRAG (primary engine)
+    // LightRAG (primary engine) – tunneled via rag-api.nexus.ssccs.org
     "LIGHTRAG_API_HOST": "http://rag-api.nexus.ssccs.org",
     "LIGHTRAG_API_KEY": "",
     // EdgeQuake (deprecated)
