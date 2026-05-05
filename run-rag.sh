@@ -8,7 +8,7 @@ set -euo pipefail
 #   ./run-rag.sh                          # LightRAG (default)
 #   ./run-rag.sh --engine lightrag        # LightRAG
 #   ./run-rag.sh --engine edgequake       # EdgeQuake (deprecated, Docker)
-#   ./run-rag.sh --refresh                # Reset data before start
+#   ./run-rag.sh --refresh                # ⚠️  Reset data before start
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -61,7 +61,7 @@ Usage: $0 [OPTIONS]
 
 Options:
   --engine lightrag|edgequake   Select RAG engine (default: lightrag)
-  --refresh                     Wipe all data before starting
+  --refresh                     ⚠️  Delete all data before starting
   --help                        Show this message
 
 Environment:
@@ -73,6 +73,46 @@ Environment:
   ENGINE             Engine override                  [default: lightrag]
 EOF
   exit 0
+}
+
+# =============================================================================
+# Data safety guard
+# =============================================================================
+
+# Absolute safety: refuse any operation that would delete data unless the
+# target directory is guaranteed to be a child of RAG_DIR.
+# This prevents catastrophic accidents (e.g. LIGHTRAG_DATA="" or "/").
+assert_data_dir_safe() {
+  local dir="$1"
+  if [ -z "$dir" ]; then
+    log_error "Data directory variable is empty! Aborting."
+    exit 1
+  fi
+  # Resolve to absolute path and check it's under RAG_DIR
+  local resolved
+  resolved="$(cd "$dir" 2>/dev/null && pwd)" || true
+  local rag_resolved
+  rag_resolved="$(cd "$RAG_DIR" 2>/dev/null && pwd)" || true
+  if [ -z "$rag_resolved" ]; then
+    log_error "RAG_DIR ($RAG_DIR) does not exist or is inaccessible. Aborting."
+    exit 1
+  fi
+  if [ -n "$resolved" ] && [ "${resolved}/" != "${resolved}" ]; then
+    resolved="${resolved}/"
+  fi
+  if [ -n "$rag_resolved" ] && [ "${rag_resolved}/" != "${rag_resolved}" ]; then
+    rag_resolved="${rag_resolved}/"
+  fi
+  case "${resolved}" in
+    "${rag_resolved}"*)
+      # Safe — dir is under RAG_DIR
+      ;;
+    *)
+      log_error "Data directory '${dir}' is not under RAG_DIR '${RAG_DIR}'!"
+      log_error "Refusing to proceed for safety."
+      exit 1
+      ;;
+  esac
 }
 
 # =============================================================================
@@ -395,6 +435,7 @@ main() {
       check_lightrag || exit 1
 
       if [ "$REFRESH_MODE" = "true" ]; then
+        assert_data_dir_safe "${LIGHTRAG_DATA}"
         log_warn "Refresh: clearing LightRAG data at ${LIGHTRAG_DATA}"
         rm -rf "${LIGHTRAG_DATA}"
       fi
