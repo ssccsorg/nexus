@@ -284,16 +284,34 @@ start_tunnel() {
 
 cleanup() {
   log_info "Shutting down..."
-  if [ -n "${TUNNEL_PID:-}" ] && kill -0 "$TUNNEL_PID" 2>/dev/null; then
-    kill "$TUNNEL_PID" 2>/dev/null || true
-    wait "$TUNNEL_PID" 2>/dev/null || true
+  kill_previous
+  log_info "All services stopped."
+}
+
+kill_previous() {
+  log_info "Stopping any existing services..."
+
+  # Kill existing LightRAG server
+  if lsof -ti ":${LIGHTRAG_PORT}" > /dev/null 2>&1; then
+    log_info "  Killing LightRAG on port ${LIGHTRAG_PORT}..."
+    lsof -ti ":${LIGHTRAG_PORT}" | xargs kill -9 2>/dev/null || true
   fi
+
+  # Kill existing cloudflared tunnels
+  if pgrep -f "cloudflared.*tunnel" > /dev/null 2>&1; then
+    log_info "  Killing cloudflared tunnels..."
+    pkill -9 -f "cloudflared.*tunnel" 2>/dev/null || true
+  fi
+
+  # Kill existing EdgeQuake containers
   if [ "$ENGINE" = "edgequake" ]; then
     local compose_dir
     compose_dir="$(dirname "$EDGEQUAKE_COMPOSE")"
     (cd "$compose_dir" && docker compose -f "$(basename "$EDGEQUAKE_COMPOSE")" down 2>/dev/null || true)
   fi
-  log_info "All services stopped."
+
+  sleep 1
+  log_info "Cleanup complete."
 }
 
 trap cleanup EXIT INT TERM
@@ -317,6 +335,8 @@ main() {
   echo "${CYAN}  RAG Launcher — Engine: ${ENGINE}"
   echo "${CYAN}============================================================"
   echo ""
+
+  kill_previous
 
   # Shared checks
   check_lm_studio || exit 1
