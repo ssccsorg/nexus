@@ -21,7 +21,7 @@ REFRESH_MODE="false"
 # ---- LLM / Embedding (shared) -----------------------------------------------
 LLM_PROVIDER="${LLM_PROVIDER:-lmstudio}"
 LMSTUDIO_URL="${LMSTUDIO_URL:-http://localhost:1234}"
-LLM_MODEL="${LLM_MODEL:-qwen2.5-coder-7b-instruct-mlx}"
+LLM_MODEL="${LLM_MODEL:-liquid/lfm2.5-1.2b}"
 EMBEDDING_PROVIDER="${EMBEDDING_PROVIDER:-lmstudio}"
 EMBEDDING_MODEL="${EMBEDDING_MODEL:-text-embedding-nomic-embed-text-v1.5}"
 EMBEDDING_DIMENSION="${EMBEDDING_DIMENSION:-}"
