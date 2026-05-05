@@ -9,6 +9,7 @@ __pycache__/
 .venv/
 venv/
 rag/lightrag-env/
+rag/lightrag-data/
 
 # Wrangler build output
 .wrangler/
