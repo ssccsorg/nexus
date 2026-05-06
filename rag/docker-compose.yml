@@ -16,7 +16,7 @@ services:
     ports:
       - "${LIGHTRAG_PORT:-9621}:9621"
     volumes:
-      - "${LIGHTRAG_DATA:-./lightrag/data}:/app/data"
+      - "${LIGHTRAG_DATA:-./lightrag/data}:/work/data"
     environment:
       - HOST=0.0.0.0
       - PORT=9621
@@ -25,14 +25,14 @@ services:
       - EMBEDDING_BINDING_HOST=${LMSTUDIO_URL:-http://localhost:1234}/v1
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-nomic-embed-text-v1.5}
       - EMBEDDING_DIM=${EMBEDDING_DIM:-768}
-      - WORKING_DIR=/app/data
+      - WORKING_DIR=/work/data
     command:
       - "--host"
       - "0.0.0.0"
       - "--port"
       - "9621"
       - "--working-dir"
-      - "/app/data"
+      - "/work/data"
       - "--workspace"
       - "default"
       - "--llm-binding"
@@ -42,7 +42,13 @@ services:
       - "--log-level"
       - "INFO"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; r=urllib.request.urlopen('http://localhost:9621/health'); exit(0 if b'healthy' in r.read() else 1)"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; r=urllib.request.urlopen('http://localhost:9621/health'); exit(0 if b'healthy' in r.read() else 1)",
+        ]
       interval: 10s
       timeout: 5s
       retries: 12
