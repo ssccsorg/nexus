@@ -136,6 +136,15 @@ pub struct AppState {
     /// LLM provider.
     pub llm_provider: Arc<dyn edgequake_llm::traits::LLMProvider>,
 
+    /// Vision-capable LLM provider for image queries (FEAT0203).
+    ///
+    /// WHY: Some models (e.g. mistral-small-latest) silently drop image content
+    /// even when the API accepts the request.  A separate vision provider —
+    /// configured via `EDGEQUAKE_VISION_PROVIDER` / `EDGEQUAKE_VISION_MODEL` —
+    /// is used whenever the request includes image attachments.
+    /// Falls back to `llm_provider` when `None`.
+    pub vision_llm_provider: Option<Arc<dyn edgequake_llm::traits::LLMProvider>>,
+
     /// Embedding provider.
     pub embedding_provider: Arc<dyn edgequake_llm::traits::EmbeddingProvider>,
 
