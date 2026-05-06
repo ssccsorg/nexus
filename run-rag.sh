@@ -370,8 +370,7 @@ cleanup_tunnel_connections() {
 kill_previous() {
   log_info "Stopping any existing services..."
 
-  # Gracefully stop existing cloudflared tunnels first (so connectors deregister)
-  graceful_stop_cloudflared
+  # Skip cloudflared process kill — supervisor (launchd/systemd) will just restart it
 
   # Stop LightRAG container if running
   if docker ps -q -f name="${LIGHTRAG_CONTAINER}" 2>/dev/null | grep -q .; then
@@ -393,7 +392,7 @@ kill_previous() {
 # Stop all services gracefully (called from trap on EXIT/INT/TERM)
 stop_all_services() {
   log_info "Stopping all services..."
-  graceful_stop_cloudflared
+  # Skip cloudflared process kill — supervisor (launchd/systemd) will just restart it
   if docker ps -q -f name="${LIGHTRAG_CONTAINER}" 2>/dev/null | grep -q .; then
     log_info "  Stopping LightRAG container ${LIGHTRAG_CONTAINER}..."
     docker rm -f "${LIGHTRAG_CONTAINER}" 2>/dev/null || true
