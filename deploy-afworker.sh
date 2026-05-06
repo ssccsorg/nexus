@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
-cd rag/af-sync-worker/
+cd workers/af-sync-worker/
 npx wrangler deploy
 cd -
