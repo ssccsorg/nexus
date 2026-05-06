@@ -1,0 +1,15 @@
+tunnel: 59c44ec1-6577-41ec-bb18-e53d95394147
+
+ingress:
+  - hostname: rag-api.nexus.ssccs.org
+    service: http://127.0.0.1:8080
+    originRequest:
+      httpHostHeader: "rag-api.nexus.ssccs.org"
+      noTLSVerify: true
+      connectTimeout: 30s
+      tcpKeepAlive: 30s
+      # Allow up to 300s (5 min) for large document upload processing
+      readTimeout: 300s
+      writeTimeout: 300s
+
+  - service: http_status:404
