@@ -5,14 +5,16 @@ import shutil
 import subprocess
 import time
 from urllib import request
-from urllib.error import URLError
 
 from runners.base import AbstractEngine, EngineInfo
 from runners.checks import detect_embedding_dimension
 
 
 class EdgeQuakeEngine(AbstractEngine):
-    name = "edgequake"
+    @property
+    def name(self) -> str:
+        return "edgequake"
+
     profile = "edgequake"
 
     def __init__(self, rag_dir: str) -> None:

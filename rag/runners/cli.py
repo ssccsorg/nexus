@@ -36,7 +36,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--engine",
         choices=choices,
         default=os.environ.get("ENGINE", "lightrag"),
-        help=f"Select RAG engine (default: lightrag)",
+        help="Select RAG engine (default: lightrag)",
     )
     parser.add_argument(
         "--refresh",
@@ -68,8 +68,6 @@ def main() -> None:
     # ------------------------------------------------------------------
     # Pre-flight
     # ------------------------------------------------------------------
-    cleanup_registered = []
-
     def cleanup() -> None:
         print("[INFO] Shutting down...")
         engine.stop()

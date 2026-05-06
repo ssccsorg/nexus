@@ -1,18 +1,16 @@
 """Shared dependency checks (LM Studio, cloudflared, embedding dimension)."""
 
+import json
 import os
 import platform
 import shutil
 import subprocess
-import sys
 from urllib import request
-from urllib.error import URLError
-
-import json
 
 # ---------------------------------------------------------------------------
 # LM Studio
 # ---------------------------------------------------------------------------
+
 
 def check_lm_studio(url: str = "http://localhost:1234") -> bool:
     print(f"  LM Studio ({url}) ... ", end="", flush=True)
@@ -32,6 +30,7 @@ def check_lm_studio(url: str = "http://localhost:1234") -> bool:
 # ---------------------------------------------------------------------------
 # cloudflared
 # ---------------------------------------------------------------------------
+
 
 def check_cloudflared() -> bool:
     if shutil.which("cloudflared"):
@@ -82,6 +81,7 @@ def check_cloudflared() -> bool:
 # ---------------------------------------------------------------------------
 # Embedding dimension detection
 # ---------------------------------------------------------------------------
+
 
 def detect_embedding_dimension(
     base_url: str,

@@ -7,6 +7,7 @@ RUN uv pip install --system --no-cache-dir "lightrag-hku[api]"
 
 EXPOSE 9621
 
+# docker-linter: disable=SecretsUsedInArgOrEnv
 ENV LLM_BINDING=openai \
     LLM_BINDING_API_KEY=lm-studio \
     EMBEDDING_BINDING=openai \
