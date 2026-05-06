@@ -5,14 +5,15 @@ import shutil
 import subprocess
 import time
 from urllib import request
-from urllib.error import URLError
 
 from runners.base import AbstractEngine, EngineInfo
 from runners.checks import detect_embedding_dimension
 
 
 class LightRAGEngine(AbstractEngine):
-    name = "lightrag"
+    @property
+    def name(self) -> str:
+        return "lightrag"
 
     def __init__(self, rag_dir: str) -> None:
         self.rag_dir = rag_dir

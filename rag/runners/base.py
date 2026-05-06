@@ -4,12 +4,12 @@ Base engine interface. All engines must inherit from AbstractEngine.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
 class EngineInfo:
     """Output displayed when an engine is ready."""
+
     name: str
     entries: dict[str, str]  # label -> value
 
