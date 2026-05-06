@@ -261,6 +261,7 @@ async function tryRefreshToken(): Promise<boolean> {
 
     if (!response.ok) {
       clearTokens();
+      dispatchAuthFailure();
       return false;
     }
 
@@ -272,7 +273,15 @@ async function tryRefreshToken(): Promise<boolean> {
     return true;
   } catch {
     clearTokens();
+    dispatchAuthFailure();
     return false;
+  }
+}
+
+/** Dispatch a browser event so AuthGuard can react to permanent auth failures. */
+function dispatchAuthFailure(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('auth:logout-required'));
   }
 }
 

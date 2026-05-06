@@ -43,12 +43,14 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
     BookOpen,
     GitBranch,
+    ImagePlus,
     Lightbulb,
     Plus,
     Search,
     Send,
     Sparkles,
-    StopCircle
+    StopCircle,
+    X,
 } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -209,6 +211,9 @@ export function QueryInterface() {
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const [pendingMessage, setPendingMessage] = useState<Message | null>(null);
   const [optimisticUserMessage, setOptimisticUserMessage] = useState<Message | null>(null);
+  /** Image attachments pending submission (Issue #203). */
+  const [attachedImages, setAttachedImages] = useState<Array<{ data: string; mime_type: string; preview: string }>>([]);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -482,6 +487,73 @@ export function QueryInterface() {
     e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
   }, []);
 
+  // ----- Image attachment helpers (Issue #203) ------------------------------
+
+  const MAX_IMAGES = 4;
+  const ACCEPTED_MIME = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
+  const addImages = useCallback(async (files: FileList | File[]) => {
+    const candidates = Array.from(files).filter(f => ACCEPTED_MIME.includes(f.type));
+    if (candidates.length === 0) return;
+
+    const remaining = MAX_IMAGES - attachedImages.length;
+    if (remaining <= 0) {
+      toast.error(`Maximum ${MAX_IMAGES} images allowed`);
+      return;
+    }
+
+    const toAdd = candidates.slice(0, remaining);
+    const results = await Promise.all(
+      toAdd.map(
+        (file) =>
+          new Promise<{ data: string; mime_type: string; preview: string }>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const dataUrl = reader.result as string;
+              // Strip the data URL prefix to get raw base64
+              const base64 = dataUrl.split(',')[1] ?? '';
+              resolve({ data: base64, mime_type: file.type, preview: dataUrl });
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          }),
+      ),
+    );
+    setAttachedImages((prev) => [...prev, ...results]);
+  }, [attachedImages.length]);
+
+  const removeImage = useCallback((idx: number) => {
+    setAttachedImages((prev) => prev.filter((_, i) => i !== idx));
+  }, []);
+
+  // Handle file input change
+  const handleImageInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      addImages(e.target.files);
+      // Reset input so same file can be re-selected
+      e.target.value = '';
+    }
+  }, [addImages]);
+
+  // Handle paste from clipboard
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = Array.from(e.clipboardData.items).filter(i => i.kind === 'file');
+    if (items.length > 0) {
+      const files = items.map(i => i.getAsFile()).filter(Boolean) as File[];
+      if (files.length > 0) addImages(files);
+    }
+  }, [addImages]);
+
+  // Handle drag-and-drop on the textarea wrapper
+  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    if (e.dataTransfer.files.length > 0) addImages(e.dataTransfer.files);
+  }, [addImages]);
+
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+  }, []);
+
   // Stop generation
   const handleStop = useCallback(() => {
     abortControllerRef.current?.abort();
@@ -489,7 +561,11 @@ export function QueryInterface() {
     setStreamingState('idle');
   }, []);
 
-  const handleStreamQuery = useCallback(async (queryText: string, conversationId: string | null) => {
+  const handleStreamQuery = useCallback(async (
+    queryText: string,
+    conversationId: string | null,
+    images?: Array<{ data: string; mime_type: string }>,
+  ) => {
     const messageId = generateUUID();
     setStreamingState('thinking');
     thinkingStartRef.current = Date.now();
@@ -527,6 +603,7 @@ export function QueryInterface() {
         language: i18n.language,
         system_prompt: querySettings.systemPrompt || undefined,
         document_filter: querySettings.documentFilter || undefined,
+        images,
       })) {
         if (abortControllerRef.current?.signal.aborted) {
           break;
@@ -683,7 +760,11 @@ export function QueryInterface() {
     if (!input.trim() || isStreamingOrLoading) return;
 
     const queryText = input.trim();
+    const currentImages = attachedImages.length > 0
+      ? attachedImages.map(({ data, mime_type }) => ({ data, mime_type }))
+      : undefined;
     setInput('');
+    setAttachedImages([]);
 
     // Reset textarea height
     if (inputRef.current) {
@@ -705,7 +786,7 @@ export function QueryInterface() {
     // Use streaming or regular query
     // The chat API will create a conversation if conversationId is null
     if (querySettings.stream) {
-      await handleStreamQuery(queryText, conversationId);
+      await handleStreamQuery(queryText, conversationId, currentImages);
     } else {
       // Non-streaming: use the unified chat API
       // Server handles conversation creation and message persistence
@@ -725,6 +806,7 @@ export function QueryInterface() {
           language: i18n.language,
           system_prompt: querySettings.systemPrompt || undefined,
           document_filter: querySettings.documentFilter || undefined,
+          images: currentImages,
         });
 
         // Update active conversation if a new one was created
@@ -955,11 +1037,57 @@ export function QueryInterface() {
         {/* Input - Fixed at bottom with improved spacing */}
         <div className="border-t px-4 sm:px-6 py-4 bg-background shrink-0" role="form" aria-label={t('query.form', 'Query form')}>
           <form onSubmit={handleSubmit} className="max-w-4xl lg:max-w-5xl mx-auto">
-            <div className="relative">
+            {/* Hidden file input for image attachments (Issue #203) */}
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              multiple
+              className="sr-only"
+              aria-label={t('query.attachImages', 'Attach images')}
+              onChange={handleImageInputChange}
+            />
+            {/* Image preview strip */}
+            {attachedImages.length > 0 && (
+              <div
+                className="flex flex-wrap gap-2 mb-2"
+                role="list"
+                aria-label={t('query.attachedImages', 'Attached images')}
+              >
+                {attachedImages.map((img, idx) => (
+                  <div
+                    key={idx}
+                    role="listitem"
+                    className="relative group w-16 h-16 rounded border overflow-hidden flex-shrink-0"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={img.preview}
+                      alt={`Attachment ${idx + 1}`}
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeImage(idx)}
+                      className="absolute top-0.5 right-0.5 bg-black/60 rounded-full p-0.5 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                      aria-label={t('query.removeImage', `Remove image ${idx + 1}`)}
+                    >
+                      <X className="h-3 w-3 text-white" aria-hidden="true" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div
+              className="relative"
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
+            >
               <Textarea
                 ref={inputRef}
                 value={input}
                 onChange={handleInputChange}
+                onPaste={handlePaste}
                 placeholder={t('query.placeholder', 'Ask a question...')}
                 className="min-h-[56px] max-h-[200px] resize-none pr-24 py-4 text-base query-input focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary transition-all duration-200"
                 rows={1}
@@ -977,6 +1105,19 @@ export function QueryInterface() {
                 Press Enter to send, Shift+Enter for new line
               </span>
               <div className="absolute right-3 bottom-3 flex items-center gap-2">
+                {/* Image attach button (Issue #203) */}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => imageInputRef.current?.click()}
+                  disabled={isLoading || attachedImages.length >= MAX_IMAGES}
+                  className="h-8 w-8 p-0"
+                  aria-label={t('query.attachImages', 'Attach images')}
+                  title={t('query.attachImages', 'Attach images')}
+                >
+                  <ImagePlus className="h-4 w-4" aria-hidden="true" />
+                </Button>
                 {isLoading ? (
                   <Button
                     type="button"

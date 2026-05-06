@@ -576,23 +576,24 @@ impl SOTAQueryEngine {
         workspace_id: Option<String>,
     ) -> Result<QueryContext> {
         let mut context = QueryContext::new();
-        let mf = MetadataFilter::from_tenant_workspace(tenant_id, workspace_id);
 
-        // SPEC-007: tenant/workspace filter pushed to storage layer via query_filtered.
+        // WHY: Use vector_type filter at the SQL layer so LIMIT operates only on chunk
+        // vectors. Without this, large graphs (60k+ entities) cause the top-k results
+        // to be dominated by entity vectors, leaving 0 chunks after in-memory filtering.
+        // SPEC-007: tenant/workspace/type filter pushed to storage layer via query_filtered.
+        let mf = MetadataFilter::from_tenant_workspace_type(tenant_id, workspace_id, "chunk");
+
         let results = self
             .vector_storage
             .query_filtered(
                 &embeddings.query,
-                self.config.max_chunks * 2,
+                self.config.max_chunks,
                 None,
                 mf.as_ref(),
             )
             .await?;
 
-        // Filter to chunk vectors only
-        let chunk_results = filter_by_type(results, VectorType::Chunk);
-
-        for result in chunk_results
+        for result in results
             .iter()
             .filter(|r| r.score >= self.config.min_score)
             .take(self.config.max_chunks)
@@ -643,5 +644,125 @@ impl SOTAQueryEngine {
         }
 
         Ok(context)
+    }
+}
+
+// ── Fix #208 integration tests — naive mode returns chunks at scale ──────────
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sota_engine::{SOTAQueryConfig, SOTAQueryEngine};
+    use edgequake_llm::MockProvider;
+    use edgequake_storage::traits::VectorStorage;
+    use edgequake_storage::{MemoryGraphStorage, MemoryVectorStorage};
+    use std::sync::Arc;
+
+    /// Create an engine with 4-dimensional vectors for testing.
+    fn make_engine(vector_storage: Arc<MemoryVectorStorage>) -> SOTAQueryEngine {
+        let graph_storage = Arc::new(MemoryGraphStorage::new("test"));
+        let embedding_provider: Arc<dyn crate::EmbeddingProvider> =
+            Arc::new(MockProvider::default());
+        let llm_provider: Arc<dyn crate::LLMProvider> = Arc::new(MockProvider::default());
+        SOTAQueryEngine::new(
+            SOTAQueryConfig::default(),
+            vector_storage as Arc<dyn edgequake_storage::traits::VectorStorage>,
+            graph_storage,
+            embedding_provider,
+            llm_provider,
+        )
+    }
+
+    /// WHY: Core regression for issue #208.
+    /// When the vector store is dominated by entity vectors, query_naive MUST
+    /// still return chunks. Before the fix, all top-k results were entities,
+    /// filter_by_type returned nothing, and users got an empty answer.
+    #[tokio::test]
+    async fn test_query_naive_returns_chunks_when_entities_dominate() {
+        let storage = Arc::new(MemoryVectorStorage::new("test", 4));
+
+        // 10 entity vectors with high similarity scores
+        for i in 0..10 {
+            let score = 1.0 - (i as f32 * 0.01);
+            storage
+                .upsert(&[(
+                    format!("entity_{i}"),
+                    vec![score, 0.0, 0.0, 0.0],
+                    serde_json::json!({"type": "entity"}),
+                )])
+                .await
+                .unwrap();
+        }
+        // 3 chunks with lower scores (outside top-10 without type filter)
+        for i in 0..3 {
+            storage
+                .upsert(&[(
+                    format!("chunk_{i}"),
+                    vec![0.85 - (i as f32 * 0.01), 0.01, 0.0, 0.0],
+                    serde_json::json!({"type": "chunk", "content": format!("chunk content {i}")}),
+                )])
+                .await
+                .unwrap();
+        }
+
+        let engine = make_engine(storage);
+        let embeddings = QueryEmbeddings {
+            query: vec![1.0, 0.0, 0.0, 0.0],
+            high_level: vec![1.0, 0.0, 0.0, 0.0],
+            low_level: vec![1.0, 0.0, 0.0, 0.0],
+        };
+
+        let ctx = engine
+            .query_naive(&embeddings, None, None)
+            .await
+            .expect("query_naive must not error");
+
+        // Must return chunks, not be empty
+        assert!(
+            !ctx.chunks.is_empty(),
+            "query_naive returned 0 chunks — issue #208 regression"
+        );
+        // Must NOT include entities (naive mode is chunk-only)
+        assert!(
+            ctx.entities.is_empty(),
+            "query_naive must not return entities"
+        );
+    }
+
+    /// WHY: Verify tenant+workspace scoping still works after the type filter change.
+    /// A chunk from tenant t1 must NOT appear in tenant t2's naive query.
+    #[tokio::test]
+    async fn test_query_naive_respects_tenant_isolation() {
+        let storage = Arc::new(MemoryVectorStorage::new("test", 4));
+
+        storage
+            .upsert(&[
+                (
+                    "chunk_t1".to_string(),
+                    vec![1.0, 0.0, 0.0, 0.0],
+                    serde_json::json!({"type": "chunk", "tenant_id": "t1", "content": "t1 data"}),
+                ),
+                (
+                    "chunk_t2".to_string(),
+                    vec![0.99, 0.01, 0.0, 0.0],
+                    serde_json::json!({"type": "chunk", "tenant_id": "t2", "content": "t2 data"}),
+                ),
+            ])
+            .await
+            .unwrap();
+
+        let engine = make_engine(storage);
+        let embeddings = QueryEmbeddings {
+            query: vec![1.0, 0.0, 0.0, 0.0],
+            high_level: vec![1.0, 0.0, 0.0, 0.0],
+            low_level: vec![1.0, 0.0, 0.0, 0.0],
+        };
+
+        let ctx = engine
+            .query_naive(&embeddings, Some("t1".into()), None)
+            .await
+            .expect("query_naive must not error");
+
+        assert_eq!(ctx.chunks.len(), 1, "must only return t1 chunks");
+        assert_eq!(ctx.chunks[0].id, "chunk_t1");
     }
 }

@@ -1,5 +1,7 @@
 //! Non-streaming chat completion handler.
 
+use std::sync::Arc;
+
 use axum::extract::State;
 use axum::Json;
 use tracing::{debug, error, info, warn};
@@ -49,6 +51,11 @@ pub async fn chat_completion(
         return Err(ApiError::ValidationError(
             "Message cannot be empty".to_string(),
         ));
+    }
+
+    // Validate image attachments (Issue #203) — delegated to shared helper (DRY).
+    if let Some(ref images) = request.images {
+        super::validation::validate_image_attachments(images)?;
     }
 
     let tenant_id = tenant_ctx
@@ -206,7 +213,18 @@ pub async fn chat_completion(
         }
     }
 
-    // SPEC-032 + OODA-227: Unified provider resolution with safety limits
+    // FEAT0203: Forward image attachments to the query engine for vision queries.
+    if let Some(ref images) = request.images {
+        let image_data: Vec<edgequake_llm::traits::ImageData> = images
+            .iter()
+            .map(|i| edgequake_llm::traits::ImageData::new(&i.data, &i.mime_type))
+            .collect();
+        if !image_data.is_empty() {
+            engine_request = engine_request.with_images(image_data);
+        }
+    }
+
+    // SPEC-032 + OADA-227: Unified provider resolution with safety limits
     // Priority order:
     //   1. Request-specified provider/model (explicit user selection)
     //   2. Workspace-configured provider/model (workspace settings)
@@ -246,7 +264,27 @@ pub async fn chat_completion(
             }
         };
 
-    // OODA-228: Get workspace-specific embedding provider and vector storage
+    // FEAT0203: When images are attached, prefer the vision-capable LLM provider.
+    // WHY: Some models (e.g. mistral-small-latest) silently drop image content.
+    // The vision provider (e.g. pixtral-large-latest) is used instead when available.
+    // A request-level provider override takes precedence over the server-default vision provider.
+    let (llm_override, used_provider, used_model) =
+        if llm_override.is_none() && engine_request.images.as_ref().is_some_and(|imgs| !imgs.is_empty()) {
+            if let Some(ref vision_provider) = state.vision_llm_provider {
+                debug!("Using vision LLM provider for image query (FEAT0203)");
+                (
+                    Some(Arc::clone(vision_provider) as Arc<dyn edgequake_llm::traits::LLMProvider>),
+                    Some("vision".to_string()),
+                    Some("vision-model".to_string()),
+                )
+            } else {
+                (llm_override, used_provider, used_model)
+            }
+        } else {
+            (llm_override, used_provider, used_model)
+        };
+
+    // OADA-228: Get workspace-specific embedding provider and vector storage
     // This ensures query embeddings match the dimension of stored vectors
     let workspace_id_str = workspace_id.as_ref().map(|id| id.to_string());
     let (ws_embedding_provider, ws_vector_storage) = if let Some(ref ws_id_str) = workspace_id_str {
