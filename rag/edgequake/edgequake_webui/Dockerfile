@@ -12,7 +12,8 @@ WORKDIR /app
 COPY edgequake_webui/package.json edgequake_webui/pnpm-lock.yaml ./
 
 # Install dependencies with pnpm
-# Use npmmirror for reliability (high-latency regions)
+# Use npmmirror — PNPM_REGISTRY prevents pnpm self-bootstrap timeout
+ENV PNPM_REGISTRY=https://registry.npmmirror.com
 RUN npm config set registry https://registry.npmmirror.com \
     && npm install -g pnpm \
     && pnpm config set registry https://registry.npmmirror.com \
@@ -32,6 +33,7 @@ WORKDIR /app
 COPY edgequake_webui/package.json edgequake_webui/pnpm-lock.yaml ./
 
 # Install pnpm
+ENV PNPM_REGISTRY=https://registry.npmmirror.com
 RUN npm config set registry https://registry.npmmirror.com \
     && npm install -g pnpm \
     && pnpm config set registry https://registry.npmmirror.com
@@ -77,6 +79,7 @@ RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
 COPY edgequake_webui/package.json edgequake_webui/pnpm-lock.yaml ./
 
 # Install pnpm and production dependencies only
+ENV PNPM_REGISTRY=https://registry.npmmirror.com
 RUN npm config set registry https://registry.npmmirror.com \
     && npm install -g pnpm \
     && pnpm config set registry https://registry.npmmirror.com \
