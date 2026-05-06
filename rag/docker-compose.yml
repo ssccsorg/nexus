@@ -2,7 +2,6 @@
 # Usage:
 #   docker compose --profile lightrag up -d
 #   docker compose --profile edgequake up -d
-#   docker compose --profile lightrag --profile edgequake up -d  (both)
 
 services:
   # ── LightRAG ──────────────────────────────────────────────────────────
@@ -43,34 +42,73 @@ services:
       - "--log-level"
       - "INFO"
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9621/health | grep -q healthy"]
+      test: ["CMD", "python", "-c", "import urllib.request; r=urllib.request.urlopen('http://localhost:9621/health'); exit(0 if b'healthy' in r.read() else 1)"]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 30s
 
-  # ── EdgeQuake (prebuilt image) ────────────────────────────────────────
+  # ── EdgeQuake (prebuilt GHCR images) ──────────────────────────────────
   edgequake:
     profiles: [edgequake]
-    image: ${EDGEQUAKE_IMAGE:-ghcr.io/ssccs/edgequake:latest}
+    image: ghcr.io/raphaelmansuy/edgequake:${EDGEQUAKE_VERSION:-latest}
     pull_policy: ${EDGEQUAKE_PULL:-missing}
     container_name: edgequake-nexus
     restart: unless-stopped
     ports:
       - "${EDGEQUAKE_PORT:-8080}:8080"
-      - "${FRONTEND_PORT:-3000}:3000"
     environment:
+      - EDGEQUAKE_HOST=0.0.0.0
+      - EDGEQUAKE_PORT=8080
+      - DATABASE_URL=postgres://edgequake:${POSTGRES_PASSWORD:-edgequake_secret}@postgres:5432/edgequake
       - EDGEQUAKE_LLM_PROVIDER=openai
-      - EDGEQUAKE_LLM_MODEL=${LLM_MODEL:-liquid/lfm2.5-1.2b}
       - OPENAI_BASE_URL=${LMSTUDIO_URL:-http://localhost:1234}/v1
       - OPENAI_API_KEY=not-needed
       - EDGEQUAKE_EMBEDDING_PROVIDER=openai
       - EDGEQUAKE_EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-nomic-embed-text-v1.5}
       - EDGEQUAKE_EMBEDDING_BASE_URL=${LMSTUDIO_URL:-http://localhost:1234}/v1
       - EDGEQUAKE_EMBEDDING_DIMENSION=${EMBEDDING_DIM:-768}
+      - RUST_LOG=${RUST_LOG:-info}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - edgequake-net
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  postgres:
+    profiles: [edgequake]
+    image: ghcr.io/raphaelmansuy/edgequake-postgres:${EDGEQUAKE_VERSION:-latest}
+    pull_policy: ${EDGEQUAKE_PULL:-missing}
+    container_name: edgequake-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      - POSTGRES_USER=edgequake
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-edgequake_secret}
+      - POSTGRES_DB=edgequake
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-extensions.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - edgequake-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U edgequake -d edgequake"]
       interval: 10s
       timeout: 5s
-      retries: 12
-      start_period: 30s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  postgres-data:
+
+networks:
+  edgequake-net:
