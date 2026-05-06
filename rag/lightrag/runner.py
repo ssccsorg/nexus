@@ -7,8 +7,8 @@ import time
 from urllib import request
 from urllib.error import URLError
 
-from ..base import AbstractEngine, EngineInfo
-from ..checks import detect_embedding_dimension
+from runners.base import AbstractEngine, EngineInfo
+from runners.checks import detect_embedding_dimension
 
 
 class LightRAGEngine(AbstractEngine):
@@ -18,16 +18,17 @@ class LightRAGEngine(AbstractEngine):
         self.rag_dir = rag_dir
         self.image = os.environ.get("LIGHTRAG_IMAGE", "lightrag-nexus")
         self.container = os.environ.get("LIGHTRAG_CONTAINER", "lightrag-nexus")
-        self.dockerfile = os.path.join(rag_dir, "Dockerfile.lightrag")
+        self.engine_dir = os.path.join(rag_dir, "lightrag")
+        self.dockerfile = os.path.join(self.engine_dir, "Dockerfile")
         self.port = int(os.environ.get("LIGHTRAG_PORT", "9621"))
         self.host = os.environ.get("LIGHTRAG_HOST", "0.0.0.0")
         self.data_dir = os.environ.get(
-            "LIGHTRAG_DATA", os.path.join(rag_dir, "lightrag-data")
+            "LIGHTRAG_DATA", os.path.join(self.engine_dir, "data")
         )
 
     @property
     def tunnel_config(self) -> str:
-        return os.path.join(self.rag_dir, "tunnel-config-lightrag.yml")
+        return os.path.join(self.engine_dir, "tunnel-config.yml")
 
     def check(self) -> bool:
         if not shutil.which("docker"):
@@ -52,7 +53,7 @@ class LightRAGEngine(AbstractEngine):
                     self.image,
                     "-f",
                     self.dockerfile,
-                    self.rag_dir,
+                    self.engine_dir,
                 ],
                 check=True,
             )

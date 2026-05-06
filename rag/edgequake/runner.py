@@ -7,8 +7,8 @@ import time
 from urllib import request
 from urllib.error import URLError
 
-from ..base import AbstractEngine, EngineInfo
-from ..checks import detect_embedding_dimension
+from runners.base import AbstractEngine, EngineInfo
+from runners.checks import detect_embedding_dimension
 
 
 class EdgeQuakeEngine(AbstractEngine):
@@ -17,12 +17,13 @@ class EdgeQuakeEngine(AbstractEngine):
 
     def __init__(self, rag_dir: str) -> None:
         self.rag_dir = rag_dir
+        self.engine_dir = os.path.join(rag_dir, "edgequake")
         self.compose_file = os.path.join(rag_dir, "docker-compose.yml")
         self.api_port = int(os.environ.get("EDGEQUAKE_PORT", "8080"))
 
     @property
     def tunnel_config(self) -> str:
-        return os.path.join(self.rag_dir, "tunnel-config-edgequake.yml")
+        return os.path.join(self.engine_dir, "tunnel-config.yml")
 
     def _compose(self, *args: str, **kwargs) -> subprocess.CompletedProcess:
         cmd = ["docker", "compose", "--profile", self.profile, "-f", self.compose_file]
@@ -58,9 +59,13 @@ class EdgeQuakeEngine(AbstractEngine):
             env_override=os.environ.get("EMBEDDING_DIMENSION"),
         )
 
+        # extract port for Docker host.docker.internal mapping
+        lmstudio_port = lmstudio_url.split(':')[-1] if ':' in lmstudio_url else '1234'
+
         env = os.environ.copy()
         env.update({
             "LMSTUDIO_URL": lmstudio_url,
+            "LMSTUDIO_PORT": lmstudio_port,
             "LLM_MODEL": llm_model,
             "EMBEDDING_MODEL": embedding_model,
             "EMBEDDING_DIM": str(dim),
@@ -99,6 +104,7 @@ class EdgeQuakeEngine(AbstractEngine):
             name="EdgeQuake",
             entries={
                 "API": f"http://127.0.0.1:{self.api_port}",
+                "Web UI": f"http://127.0.0.1:{os.environ.get('FRONTEND_PORT', '3000')}",
                 "Public": "https://rag-api.nexus.ssccs.org",
                 "Logs": os.path.join(self.rag_dir, "logs/"),
             },
