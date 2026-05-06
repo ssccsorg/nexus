@@ -51,23 +51,15 @@ jobs:
           provenance: false
           sbom: false
 
-      - name: Download poc-agent
-        uses: dawidd6/action-download-artifact@v6
-        with:
-          workflow: run-deploy-poc.yml
-          repo: ssccsorg/ssccs
-          name: poc-agent
-          path: .
-          github_token: ${{ secrets.SSCCS_ACTIONS_READ_PAT }}
-
-      - name: Download docs-agent
-        uses: dawidd6/action-download-artifact@v6
-        with:
-          workflow: deploy-docs-ghpage.yml
-          repo: ssccsorg/ssccs
-          name: docs-agent
-          path: .
-          github_token: ${{ secrets.SSCCS_ACTIONS_READ_PAT }}
+      - name: Download agents from R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.CFR2_USR_API_S3_ACCID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CFR2_USR_API_S3_SECKEY }}
+        run: |
+          aws s3 sync s3://ssccs-nexus-af/ssccs/ ./ \
+            --endpoint-url ${{ secrets.CFR2_USR_API_HOST }} \
+            --delete
+        shell: bash
 
       - name: Build knowledge graph inside container
         run: |
