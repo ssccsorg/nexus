@@ -1,0 +1,53 @@
+{
+  "name": "nexus-af-sync",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-01-14",
+  "observability": {
+    "enabled": true,
+  },
+
+  "r2_buckets": [
+    {
+      "binding": "ARTIFACT_BUCKET",
+      "bucket_name": "ssccs-nexus-af",
+      "preview_bucket_name": "ssccs-nexus-af-preview",
+    },
+  ],
+
+  "kv_namespaces": [
+    {
+      "binding": "SYNC_KV",
+      "id": "ca04c701c6814db79341e0044a0cb90f",
+      "preview_id": "2179b5c964f448faa2c53a3bde163a77",
+    },
+  ],
+
+  "queues": {
+    "producers": [
+      {
+        "binding": "SYNC_QUEUE",
+        "queue": "nexus-sync-queue",
+      },
+    ],
+    "consumers": [
+      {
+        "queue": "nexus-sync-queue",
+        "max_batch_size": 50,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "dead_letter_queue": "nexus-sync-dlq",
+      },
+    ],
+  },
+
+  "vars": {
+    // LightRAG (primary engine) – tunneled via rag-api.nexus.ssccs.org
+    "LIGHTRAG_API_HOST": "http://rag-api.nexus.ssccs.org",
+    "LIGHTRAG_API_KEY": "",
+    // EdgeQuake (deprecated)
+    "EDGEQUAKE_API_HOST": "http://rag-api.nexus.ssccs.org",
+    "EDGEQUAKE_TENANT_ID": "default",
+    "EDGEQUAKE_API_KEY": "",
+    "WORKSPACE_ID": "default",
+  },
+}

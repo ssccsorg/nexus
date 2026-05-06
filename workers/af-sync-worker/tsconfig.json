@@ -1,0 +1,66 @@
+{
+	"compilerOptions": {
+		/* Visit https://aka.ms/tsconfig.json to read more about this file */
+		/* Set the JavaScript language version for emitted JavaScript and include compatible library declarations. */
+		"target": "es2021",
+		/* Specify a set of bundled library declaration files that describe the target runtime environment. */
+		"lib": [
+			"es2021"
+		],
+		/* Specify what JSX code is generated. */
+		"jsx": "react-jsx",
+		/* Specify what module code is generated. */
+		"module": "es2022",
+		/* Specify how TypeScript looks up a file from a given module specifier. */
+		"moduleResolution": "bundler",
+		/* Enable importing .json files */
+		"resolveJsonModule": true,
+		/* Allow JavaScript files to be a part of your program. Use the `checkJS` option to get errors from these files. */
+		"allowJs": true,
+		/* Enable error reporting in type-checked JavaScript files. */
+		"checkJs": false,
+		/* Disable emitting files from a compilation. */
+		"noEmit": true,
+		/* Ensure that each file can be safely transpiled without relying on other imports. */
+		"isolatedModules": true,
+		/* Allow 'import x from y' when a module doesn't have a default export. */
+		"allowSyntheticDefaultImports": true,
+		/* Ensure that casing is correct in imports. */
+		"forceConsistentCasingInFileNames": true,
+		/* Enable all strict type-checking options. */
+		"strict": true,
+		/* 타입 안전성 강화를 위한 추가 설정 */
+		"strictNullChecks": true,
+		"strictFunctionTypes": true,
+		"strictBindCallApply": true,
+		"strictPropertyInitialization": true,
+		"noImplicitAny": true,
+		"noImplicitThis": true,
+		"useUnknownInCatchVariables": true,
+		"alwaysStrict": true,
+		"noUncheckedIndexedAccess": true,
+		"exactOptionalPropertyTypes": true,
+		"noImplicitOverride": true,
+		"noPropertyAccessFromIndexSignature": true,
+		"noImplicitReturns": true,
+		"noFallthroughCasesInSwitch": true,
+		"noUncheckedSideEffectImports": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		/* 코드 품질 향상 설정 */
+		"noEmitOnError": true,
+		"skipDefaultLibCheck": true,
+		/* 타입 검사 강화 */
+		"skipLibCheck": true,
+		"types": [
+			"./worker-configuration.d.ts"
+		]
+	},
+	"include": [
+		"src"
+	],
+	"exclude": [
+		"node_modules",
+		"dist"
+	]
+}
