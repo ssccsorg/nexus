@@ -12,7 +12,11 @@ WORKDIR /app
 COPY edgequake_webui/package.json edgequake_webui/pnpm-lock.yaml ./
 
 # Install dependencies with pnpm
-RUN npm install -g pnpm && pnpm install --frozen-lockfile
+# Use npmmirror for reliability (high-latency regions)
+RUN npm config set registry https://registry.npmmirror.com \
+    && npm install -g pnpm \
+    && pnpm config set registry https://registry.npmmirror.com \
+    && pnpm install --frozen-lockfile
 
 # ============================================
 # Stage 2: Build
@@ -28,7 +32,9 @@ WORKDIR /app
 COPY edgequake_webui/package.json edgequake_webui/pnpm-lock.yaml ./
 
 # Install pnpm
-RUN npm install -g pnpm
+RUN npm config set registry https://registry.npmmirror.com \
+    && npm install -g pnpm \
+    && pnpm config set registry https://registry.npmmirror.com
 
 # Copy dependencies from deps stage
 COPY --from=deps /app/node_modules ./node_modules
@@ -71,7 +77,10 @@ RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
 COPY edgequake_webui/package.json edgequake_webui/pnpm-lock.yaml ./
 
 # Install pnpm and production dependencies only
-RUN npm install -g pnpm && pnpm install --prod --frozen-lockfile
+RUN npm config set registry https://registry.npmmirror.com \
+    && npm install -g pnpm \
+    && pnpm config set registry https://registry.npmmirror.com \
+    && pnpm install --prod --frozen-lockfile
 
 # Copy built application from builder
 COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
