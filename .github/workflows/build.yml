@@ -70,21 +70,20 @@ jobs:
             sh -c '
               echo "Knowledge graph build placeholder"
             '
-            
-      - name: Upload Pages artifact
-        if: ${{ github.actor != 'nektos/act' }}
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: ./_site
+  #     - name: Upload Pages artifact
+  #       if: ${{ github.actor != 'nektos/act' }}
+  #       uses: actions/upload-pages-artifact@v5
+  #       with:
+  #         path: ./_site
 
-  deploy:
-    needs: build
-    if: ${{ github.ref == 'refs/heads/main' && github.actor != 'nektos/act' }}
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v5
+  # deploy:
+  #   needs: build
+  #   if: ${{ github.ref == 'refs/heads/main' && github.actor != 'nektos/act' }}
+  #   environment:
+  #     name: github-pages
+  #     url: ${{ steps.deployment.outputs.page_url }}
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Deploy to GitHub Pages
+  #       id: deployment
+  #       uses: actions/deploy-pages@v5
