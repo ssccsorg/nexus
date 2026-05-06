@@ -17,14 +17,4 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
     --default-toolchain stable --profile minimal
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-# Install Python packages used by SwarmVault (embeddings, vector DB, crawling)
-# RUN uv pip install --system --break-system-packages \
-#     sentence-transformers \
-#     chromadb \
-#     numpy \
-#     networkx \
-#     requests \
-#     markdownify \
-#     beautifulsoup4
-
 WORKDIR /work

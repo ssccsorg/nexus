@@ -26,9 +26,10 @@ EMBEDDING_PROVIDER="${EMBEDDING_PROVIDER:-lmstudio}"
 EMBEDDING_MODEL="${EMBEDDING_MODEL:-text-embedding-nomic-embed-text-v1.5}"
 EMBEDDING_DIMENSION="${EMBEDDING_DIMENSION:-}"
 
-# ---- LightRAG ---------------------------------------------------------------
-LIGHTRAG_VENV="${LIGHTRAG_VENV:-${RAG_DIR}/lightrag-env}"
-LIGHTRAG_PYTHON="${LIGHTRAG_VENV}/bin/python3.11"
+# ---- LightRAG (Docker) -----------------------------------------------------
+LIGHTRAG_IMAGE="${LIGHTRAG_IMAGE:-lightrag-nexus}"
+LIGHTRAG_CONTAINER="${LIGHTRAG_CONTAINER:-lightrag-nexus}"
+LIGHTRAG_DOCKERFILE="${RAG_DIR}/Dockerfile.lightrag"
 LIGHTRAG_PORT="${LIGHTRAG_PORT:-9621}"
 LIGHTRAG_HOST="${LIGHTRAG_HOST:-0.0.0.0}"
 LIGHTRAG_DATA="${LIGHTRAG_DATA:-${RAG_DIR}/lightrag-data}"
@@ -194,17 +195,20 @@ except Exception:
 # =============================================================================
 
 check_lightrag() {
-  echo -n "  Python venv (${LIGHTRAG_VENV}) ... "
-  if [ -f "${LIGHTRAG_PYTHON}" ]; then
-    echo "OK"
-    return 0
-  else
-    echo "${RED}NOT FOUND"
-    echo "    Create the venv:"
-    echo "      python3.11 -m venv ${LIGHTRAG_VENV}"
-    echo "      ${LIGHTRAG_VENV}/bin/pip install \"lightrag-hku[api]\""
+  if ! command -v docker &>/dev/null; then
+    log_error "Docker is required for LightRAG."
     return 1
   fi
+  if [ ! -f "$LIGHTRAG_DOCKERFILE" ]; then
+    log_error "LightRAG Dockerfile not found: ${LIGHTRAG_DOCKERFILE}"
+    return 1
+  fi
+  # Build image if missing
+  if ! docker image inspect "${LIGHTRAG_IMAGE}" > /dev/null 2>&1; then
+    log_info "Building LightRAG Docker image..."
+    docker build -t "${LIGHTRAG_IMAGE}" -f "${LIGHTRAG_DOCKERFILE}" "${RAG_DIR}"
+  fi
+  return 0
 }
 
 start_lightrag() {
@@ -213,30 +217,31 @@ start_lightrag() {
 
   mkdir -p "${LIGHTRAG_DATA}" "${RAG_DIR}/logs"
 
-  export LLM_BINDING=openai
-  export LLM_BINDING_HOST="${LMSTUDIO_URL}/v1"
-  export LLM_BINDING_API_KEY=lm-studio
-  export CHAT_MODEL="${LLM_MODEL}"
-
-  export EMBEDDING_BINDING=openai
-  export EMBEDDING_BINDING_HOST="${LMSTUDIO_URL}/v1"
-  export EMBEDDING_BINDING_API_KEY=lm-studio
-  export EMBEDDING_MODEL="${EMBEDDING_MODEL}"
-  export EMBEDDING_DIM="${detected_dim}"
-
-  export WORKING_DIR="${LIGHTRAG_DATA}"
-  export HOST="${LIGHTRAG_HOST}"
-  export PORT="${LIGHTRAG_PORT}"
-
-  log_info "Starting LightRAG on ${LIGHTRAG_HOST}:${LIGHTRAG_PORT}"
-  log_info "  LLM    : ${CHAT_MODEL}"
+  log_info "Starting LightRAG container from image ${LIGHTRAG_IMAGE}"
+  log_info "  LLM    : ${LLM_MODEL}"
   log_info "  Embed  : ${EMBEDDING_MODEL} (${detected_dim}d)"
   log_info "  Data   : ${LIGHTRAG_DATA}"
 
-  exec "${LIGHTRAG_PYTHON}" -m lightrag.api.lightrag_server \
+  # Remove any existing container with the same name
+  docker rm -f "${LIGHTRAG_CONTAINER}" 2>/dev/null || true
+
+  docker run -d \
+    --name "${LIGHTRAG_CONTAINER}" \
+    --restart unless-stopped \
+    -p "${LIGHTRAG_PORT}:9621" \
+    -v "${LIGHTRAG_DATA}:/app/data" \
+    -e HOST="${LIGHTRAG_HOST}" \
+    -e PORT=9621 \
+    -e LLM_BINDING_HOST="${LMSTUDIO_URL}/v1" \
+    -e CHAT_MODEL="${LLM_MODEL}" \
+    -e EMBEDDING_BINDING_HOST="${LMSTUDIO_URL}/v1" \
+    -e EMBEDDING_MODEL="${EMBEDDING_MODEL}" \
+    -e EMBEDDING_DIM="${detected_dim}" \
+    -e WORKING_DIR="/app/data" \
+    "${LIGHTRAG_IMAGE}" \
     --host "${LIGHTRAG_HOST}" \
-    --port "${LIGHTRAG_PORT}" \
-    --working-dir "${LIGHTRAG_DATA}" \
+    --port 9621 \
+    --working-dir "/app/data" \
     --workspace default \
     --llm-binding openai \
     --embedding-binding openai \
@@ -368,12 +373,10 @@ kill_previous() {
   # Gracefully stop existing cloudflared tunnels first (so connectors deregister)
   graceful_stop_cloudflared
 
-  # Kill existing LightRAG server gracefully, then force
-  if lsof -ti ":${LIGHTRAG_PORT}" > /dev/null 2>&1; then
-    log_info "  Stopping LightRAG on port ${LIGHTRAG_PORT}..."
-    lsof -ti ":${LIGHTRAG_PORT}" | xargs kill -TERM 2>/dev/null || true
-    sleep 2
-    lsof -ti ":${LIGHTRAG_PORT}" | xargs kill -9 2>/dev/null || true
+  # Stop LightRAG container if running
+  if docker ps -q -f name="${LIGHTRAG_CONTAINER}" 2>/dev/null | grep -q .; then
+    log_info "  Stopping LightRAG container ${LIGHTRAG_CONTAINER}..."
+    docker rm -f "${LIGHTRAG_CONTAINER}" 2>/dev/null || true
   fi
 
   # Kill existing EdgeQuake containers
@@ -391,11 +394,9 @@ kill_previous() {
 stop_all_services() {
   log_info "Stopping all services..."
   graceful_stop_cloudflared
-  if lsof -ti ":${LIGHTRAG_PORT}" > /dev/null 2>&1; then
-    log_info "  Stopping LightRAG on port ${LIGHTRAG_PORT}..."
-    lsof -ti ":${LIGHTRAG_PORT}" | xargs kill -TERM 2>/dev/null || true
-    sleep 2
-    lsof -ti ":${LIGHTRAG_PORT}" | xargs kill -9 2>/dev/null || true
+  if docker ps -q -f name="${LIGHTRAG_CONTAINER}" 2>/dev/null | grep -q .; then
+    log_info "  Stopping LightRAG container ${LIGHTRAG_CONTAINER}..."
+    docker rm -f "${LIGHTRAG_CONTAINER}" 2>/dev/null || true
   fi
 }
 
@@ -441,8 +442,7 @@ main() {
       fi
 
       mkdir -p "${RAG_DIR}/logs"
-      start_lightrag > "${RAG_DIR}/logs/lightrag-server.log" 2>&1 &
-      LIGHTRAG_PID=$!
+      start_lightrag
 
       log_info "Waiting for LightRAG health check..."
       local start_time
@@ -463,27 +463,27 @@ main() {
       start_tunnel "$LIGHTRAG_TUNNEL" 2>&1 &
       TUNNEL_PID=$!
 
-          # Wait for tunnel to register
-          log_info "Waiting for tunnel connection..."
-          local tunnel_ready=0
-          local tunnel_wait=0
-          while (( tunnel_wait < 30 )); do
-            if curl -s "http://127.0.0.1:${LIGHTRAG_PORT}/health" | grep -q '"healthy"'; then
-              tunnel_ready=1
-              break
-            fi
-            sleep 1
-            ((tunnel_wait++))
-          done
-          if (( tunnel_ready == 0 )); then
-            log_warn "Tunnel may still be connecting; check logs at ${RAG_DIR}/logs/"
-          fi
+      log_info "Waiting for tunnel connection..."
+      local tunnel_ready=0
+      local tunnel_wait=0
+      while (( tunnel_wait < 30 )); do
+        if curl -s "http://127.0.0.1:${LIGHTRAG_PORT}/health" | grep -q '"healthy"'; then
+          tunnel_ready=1
+          break
+        fi
+        sleep 1
+        ((tunnel_wait++))
+      done
+      if (( tunnel_ready == 0 )); then
+        log_warn "Tunnel may still be connecting; check logs at ${RAG_DIR}/logs/"
+      fi
 
       echo ""
       echo "============================================================"
       echo "  Server is ready to accept connections"
       echo "============================================================"
       echo ""
+      echo "  Container: ${LIGHTRAG_CONTAINER}"
       echo "  Local:    http://127.0.0.1:${LIGHTRAG_PORT}"
       echo "  Web UI:   http://127.0.0.1:${LIGHTRAG_PORT}/webui"
       echo "  API docs: http://127.0.0.1:${LIGHTRAG_PORT}/docs"
