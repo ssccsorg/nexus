@@ -36,7 +36,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Build and cache SwarmVault Docker image
+      - name: Build and cache Nexus Docker image
         uses: docker/build-push-action@v7
         env:
           DOCKER_BUILD_RECORD_UPLOAD: false
@@ -68,12 +68,9 @@ jobs:
             -w /work \
             dockerimg-nexus \
             sh -c '
-              swarmvault init &&
-              swarmvault source add ./poc &&
-              swarmvault source add ./docs/_llms &&
-              swarmvault graph export --html ./_site/index.html
+              echo "Knowledge graph build placeholder"
             '
-
+            
       - name: Upload Pages artifact
         if: ${{ github.actor != 'nektos/act' }}
         uses: actions/upload-pages-artifact@v5
