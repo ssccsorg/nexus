@@ -57,6 +57,7 @@ impl AppState {
             vector_registry,
             graph_storage,
             llm_provider,
+            vision_llm_provider: None,
             embedding_provider,
             query_engine,
             sota_engine,
@@ -204,6 +205,7 @@ impl AppState {
             graph_storage: Arc::clone(&graph_storage)
                 as Arc<dyn edgequake_storage::traits::GraphStorage>,
             llm_provider: Arc::clone(&llm_provider),
+            vision_llm_provider: None,
             embedding_provider: Arc::clone(&embedding_provider),
             query_engine,
             sota_engine,
@@ -301,6 +303,7 @@ impl AppState {
             graph_storage: Arc::clone(&graph_storage)
                 as Arc<dyn edgequake_storage::traits::GraphStorage>,
             llm_provider: Arc::clone(&mock_provider) as Arc<dyn edgequake_llm::traits::LLMProvider>,
+            vision_llm_provider: None,
             embedding_provider: Arc::clone(&mock_provider)
                 as Arc<dyn edgequake_llm::traits::EmbeddingProvider>,
             query_engine,

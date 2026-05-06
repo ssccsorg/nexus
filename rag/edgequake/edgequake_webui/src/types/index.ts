@@ -544,10 +544,16 @@ export interface LoginResponse {
   token_type: string;
   expires_in: number;
   user: {
-    id: string;
+    id?: string;
+    user_id?: string;
     username: string;
     email?: string;
-    roles: string[];
+    role: string;
+    roles?: string[];
+    is_active?: boolean;
+    created_at?: string;
+    updated_at?: string;
+    last_login_at?: string | null;
   };
 }
 

@@ -385,6 +385,13 @@ impl VectorStorage for MemoryVectorStorage {
                         }
                     }
                 }
+                // Vector type filter (e.g. "chunk", "entity", "relationship")
+                if let Some(vtype) = &mf.vector_type {
+                    let meta_type = meta.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                    if meta_type != vtype {
+                        return false;
+                    }
+                }
                 true
             })
             .map(|(id, vec)| {
@@ -1045,6 +1052,7 @@ mod tests {
             document_ids: Some(vec!["doc1".to_string()]),
             tenant_id: Some("t1".to_string()),
             workspace_id: Some("ws1".to_string()),
+            vector_type: None,
         };
         let results = storage
             .query_filtered(&[1.0, 0.0, 0.0], 10, None, Some(&mf))
@@ -1278,5 +1286,236 @@ mod tests {
             .await
             .unwrap();
         assert!(results.is_empty());
+    }
+
+    // ── Fix #208: vector_type filter — naive mode zero-result regression ─────
+
+    /// WHY: Core regression test for issue #208.
+    /// At scale, entity vectors dominate the top-k results. Without SQL-level
+    /// type filtering, filter_by_type in memory would receive 0 chunks and
+    /// return an empty result to the user.
+    #[tokio::test]
+    async fn test_query_filtered_by_vector_type_chunk_only() {
+        let storage = MemoryVectorStorage::new("test", 3);
+        let data = vec![
+            (
+                "e1".to_string(),
+                vec![1.0, 0.0, 0.0],
+                serde_json::json!({"type": "entity", "tenant_id": "t1"}),
+            ),
+            (
+                "e2".to_string(),
+                vec![0.95, 0.1, 0.0],
+                serde_json::json!({"type": "entity", "tenant_id": "t1"}),
+            ),
+            (
+                "c1".to_string(),
+                vec![0.9, 0.2, 0.0],
+                serde_json::json!({"type": "chunk", "tenant_id": "t1"}),
+            ),
+            (
+                "c2".to_string(),
+                vec![0.8, 0.3, 0.0],
+                serde_json::json!({"type": "chunk", "tenant_id": "t1"}),
+            ),
+        ];
+        storage.upsert(&data).await.unwrap();
+
+        // Without type filter — both entities and chunks returned
+        let all = storage
+            .query_filtered(&[1.0, 0.0, 0.0], 4, None, None)
+            .await
+            .unwrap();
+        assert_eq!(all.len(), 4);
+
+        // With vector_type = "chunk" — only chunks returned
+        let mf = MetadataFilter::from_tenant_workspace_type(
+            Some("t1".into()),
+            None,
+            "chunk",
+        )
+        .unwrap();
+        let chunks = storage
+            .query_filtered(&[1.0, 0.0, 0.0], 10, None, Some(&mf))
+            .await
+            .unwrap();
+        assert_eq!(chunks.len(), 2, "must return only chunk vectors");
+        assert!(chunks.iter().all(|r| r.id.starts_with('c')));
+
+        // With vector_type = "entity" — only entities returned
+        let mf_ent = MetadataFilter::from_tenant_workspace_type(
+            Some("t1".into()),
+            None,
+            "entity",
+        )
+        .unwrap();
+        let entities = storage
+            .query_filtered(&[1.0, 0.0, 0.0], 10, None, Some(&mf_ent))
+            .await
+            .unwrap();
+        assert_eq!(entities.len(), 2, "must return only entity vectors");
+        assert!(entities.iter().all(|r| r.id.starts_with('e')));
+    }
+
+    /// WHY: Edge case — when ALL top-k results are entities (simulating a large
+    /// graph where entity count >> chunk count), naive mode must still return
+    /// the correct chunks via SQL-level filtering rather than 0 results.
+    #[tokio::test]
+    async fn test_query_filtered_entities_dominate_top_k_still_returns_chunks() {
+        let storage = MemoryVectorStorage::new("test", 2);
+
+        // 8 entities with very high similarity scores
+        for i in 0..8 {
+            storage
+                .upsert(&[(
+                    format!("entity_{i}"),
+                    vec![1.0 - (i as f32 * 0.01), i as f32 * 0.01],
+                    serde_json::json!({"type": "entity"}),
+                )])
+                .await
+                .unwrap();
+        }
+        // 2 chunks with lower scores (would be excluded by top-k without type filter)
+        storage
+            .upsert(&[
+                (
+                    "chunk_a".to_string(),
+                    vec![0.85, 0.15],
+                    serde_json::json!({"type": "chunk"}),
+                ),
+                (
+                    "chunk_b".to_string(),
+                    vec![0.80, 0.20],
+                    serde_json::json!({"type": "chunk"}),
+                ),
+            ])
+            .await
+            .unwrap();
+
+        // Without type filter, top-5 would be all entities → chunks never returned
+        let top5 = storage
+            .query_filtered(&[1.0, 0.0], 5, None, None)
+            .await
+            .unwrap();
+        let chunk_count_without_filter = top5.iter().filter(|r| r.id.starts_with("chunk")).count();
+        assert_eq!(chunk_count_without_filter, 0, "top-5 dominated by entities");
+
+        // With vector_type = "chunk", chunks ARE returned regardless of score rank
+        let mf = MetadataFilter::from_tenant_workspace_type(None, None, "chunk").unwrap();
+        let chunk_results = storage
+            .query_filtered(&[1.0, 0.0], 5, None, Some(&mf))
+            .await
+            .unwrap();
+        assert_eq!(chunk_results.len(), 2, "type filter restores chunk results");
+        assert!(chunk_results.iter().all(|r| r.id.starts_with("chunk")));
+    }
+
+    /// WHY: Records without a "type" field in metadata must be EXCLUDED when
+    /// a vector_type filter is active. This prevents old/legacy vectors
+    /// (ingested before the type tag was added) from polluting filtered results.
+    #[tokio::test]
+    async fn test_query_filtered_vector_type_excludes_untyped_records() {
+        let storage = MemoryVectorStorage::new("test", 2);
+        storage
+            .upsert(&[
+                (
+                    "typed_chunk".to_string(),
+                    vec![1.0, 0.0],
+                    serde_json::json!({"type": "chunk"}),
+                ),
+                (
+                    "no_type".to_string(),
+                    vec![0.99, 0.01],
+                    serde_json::json!({"description": "no type field"}),
+                ),
+            ])
+            .await
+            .unwrap();
+
+        let mf = MetadataFilter::from_tenant_workspace_type(None, None, "chunk").unwrap();
+        let results = storage
+            .query_filtered(&[1.0, 0.0], 10, None, Some(&mf))
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "typed_chunk");
+    }
+
+    /// WHY: vector_type filter must combine correctly with tenant + workspace
+    /// filters. An entity vector with correct type but wrong tenant must be excluded.
+    #[tokio::test]
+    async fn test_query_filtered_vector_type_combines_with_tenant_workspace() {
+        let storage = MemoryVectorStorage::new("test", 2);
+        storage
+            .upsert(&[
+                (
+                    "chunk_t1_ws1".to_string(),
+                    vec![1.0, 0.0],
+                    serde_json::json!({"type": "chunk", "tenant_id": "t1", "workspace_id": "ws1"}),
+                ),
+                (
+                    "chunk_t2_ws1".to_string(),
+                    vec![0.99, 0.01],
+                    serde_json::json!({"type": "chunk", "tenant_id": "t2", "workspace_id": "ws1"}),
+                ),
+                (
+                    "entity_t1_ws1".to_string(),
+                    vec![0.98, 0.02],
+                    serde_json::json!({"type": "entity", "tenant_id": "t1", "workspace_id": "ws1"}),
+                ),
+            ])
+            .await
+            .unwrap();
+
+        let mf = MetadataFilter::from_tenant_workspace_type(
+            Some("t1".into()),
+            Some("ws1".into()),
+            "chunk",
+        )
+        .unwrap();
+        let results = storage
+            .query_filtered(&[1.0, 0.0], 10, None, Some(&mf))
+            .await
+            .unwrap();
+        // Only chunk_t1_ws1 satisfies all three predicates
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "chunk_t1_ws1");
+    }
+
+    /// WHY: top_k must apply AFTER the type filter, not to the full unfiltered
+    /// collection. If top_k=1 and type="chunk", we must get 1 chunk — not the
+    /// highest-scoring item across all types then filtered.
+    #[tokio::test]
+    async fn test_query_filtered_top_k_applied_after_type_filter() {
+        let storage = MemoryVectorStorage::new("test", 2);
+        storage
+            .upsert(&[
+                (
+                    "entity_hi".to_string(),
+                    vec![1.0, 0.0],
+                    serde_json::json!({"type": "entity"}),
+                ),
+                (
+                    "chunk_1".to_string(),
+                    vec![0.9, 0.1],
+                    serde_json::json!({"type": "chunk"}),
+                ),
+                (
+                    "chunk_2".to_string(),
+                    vec![0.8, 0.2],
+                    serde_json::json!({"type": "chunk"}),
+                ),
+            ])
+            .await
+            .unwrap();
+
+        let mf = MetadataFilter::from_tenant_workspace_type(None, None, "chunk").unwrap();
+        let results = storage
+            .query_filtered(&[1.0, 0.0], 1, None, Some(&mf))
+            .await
+            .unwrap();
+        // top_k=1 among chunks → should be chunk_1 (highest chunk score)
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "chunk_1");
     }
 }

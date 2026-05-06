@@ -75,6 +75,14 @@ export interface ChatCompletionRequest {
    * @implements SPEC-005: Document filters for queries
    */
   document_filter?: DocumentFilter;
+  /**
+   * Optional image attachments for vision-capable models.
+   * Each image is base64-encoded with its MIME type.
+   * Max 4 images, each ≤ 20 MiB. Accepted: image/jpeg, image/png, image/gif, image/webp.
+   *
+   * @implements Issue #203: Image upload support
+   */
+  images?: Array<{ data: string; mime_type: string }>;
 }
 
 /**

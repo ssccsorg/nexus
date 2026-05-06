@@ -10,13 +10,15 @@ use crate::error::{ApiError, ApiResult};
 use crate::middleware::TenantContext;
 use crate::services::ContentHasher;
 use crate::state::AppState;
+use edgequake_pipeline::normalize_entity_name;
 
-use crate::file_validation::validate_file;
+use crate::file_validation::{image_mime_type, is_image_extension, validate_file};
 #[allow(unused_imports)]
 use crate::handlers::documents::storage_helpers::get_workspace_vector_storage_with_fallback;
 use crate::handlers::documents::storage_helpers::{
     delete_document_for_reingestion, get_workspace_vector_storage_strict,
 };
+use crate::handlers::documents::upload::image_extract::extract_text_from_image;
 use crate::handlers::documents_types::*;
 use axum_extra::extract::Multipart;
 
@@ -97,9 +99,46 @@ pub async fn upload_file(
         return Err(ApiError::BadRequest("No file provided".to_string()));
     }
 
-    // Validate file (size, extension, UTF-8, non-empty)
-    let (_extension, text_content, mime_type) =
-        validate_file(&filename, &content, state.config.max_document_size)?;
+    // Determine if this is an image or a text-based document.
+    let raw_ext = filename.rsplit('.').next().unwrap_or("").to_lowercase();
+    let (text_content, mime_type) = if is_image_extension(&raw_ext) {
+        // ── Image path: extract text via the workspace vision LLM ────────────
+        // WHY: Images are binary; the standard UTF-8 validation path would
+        // reject them.  Instead we call the vision LLM once to extract all
+        // readable text/structure, then treat the result as the document body.
+        let mime = image_mime_type(&raw_ext).unwrap_or("image/png");
+        // WHY: If the configured LLM doesn't support vision (e.g. Mistral text-only),
+        // we still ingest the image as a document with a descriptive placeholder rather
+        // than returning a hard error to the user.
+        let extracted = match extract_text_from_image(
+            &content,
+            mime,
+            &filename,
+            state.llm_provider.as_ref(),
+        )
+        .await
+        {
+            Ok(text) => text,
+            Err(e) => {
+                tracing::warn!(
+                    filename = %filename,
+                    error = %e,
+                    "Vision extraction failed; storing image with placeholder text"
+                );
+                format!(
+                    "# Image Document: {filename}\n\n\
+                     *Automatic text extraction failed: {e}*\n\n\
+                     Configure a vision-capable LLM (e.g., gpt-4o, gemma3:12b, llava) \
+                     to enable OCR/text extraction from image uploads."
+                )
+            }
+        };
+        (extracted, mime)
+    } else {
+        // ── Text path: validate size, extension, and UTF-8 ───────────────────
+        let (_, text, mt) = validate_file(&filename, &content, state.config.max_document_size)?;
+        (text, mt)
+    };
 
     // WHY-OODA83: Use ContentHasher service for consistent hash computation (DRY)
     let content_hash = ContentHasher::hash_bytes(&content);
@@ -351,9 +390,13 @@ pub async fn upload_file(
                 serde_json::json!(&workspace_id_for_storage),
             );
 
+            // WHY: Normalize entity names to UPPERCASE_UNDERSCORE before storage.
+            // Without this, variants like "Systems Thinking" and "systems thinking"
+            // are stored as separate nodes, bypassing deduplication in the merger.
+            let entity_key = normalize_entity_name(&entity.name);
             match state
                 .graph_storage
-                .upsert_node(&entity.name, properties)
+                .upsert_node(&entity_key, properties)
                 .await
             {
                 Ok(_) => {
@@ -386,8 +429,8 @@ pub async fn upload_file(
                 }
                 metadata["workspace_id"] = serde_json::json!(&workspace_id_for_storage);
 
-                // Use entity name as vector ID for dedup
-                let entity_id = format!("entity:{}", entity.name);
+                // Use normalized entity key as vector ID for dedup (matches graph node ID)
+                let entity_id = format!("entity:{}", entity_key);
                 if let Err(e) = workspace_vector_storage
                     .upsert(&[(entity_id.clone(), embedding.clone(), metadata)])
                     .await
