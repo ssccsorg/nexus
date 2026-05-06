@@ -140,6 +140,13 @@ pub struct QueryRequest {
     /// @implements SPEC-005: Document date and pattern filters
     #[serde(default)]
     pub allowed_document_ids: Option<Vec<String>>,
+
+    /// Optional images to include with the query (multimodal vision queries).
+    /// Each entry is a base64-encoded image with its MIME type.
+    /// When set, the SOTA engine forwards images to the vision-capable LLM.
+    /// @implements FEAT0203: Image attachment in chat
+    #[serde(default)]
+    pub images: Option<Vec<edgequake_llm::traits::ImageData>>,
 }
 
 /// A single message in conversation history.
@@ -169,6 +176,7 @@ impl QueryRequest {
             llm_model: None,
             system_prompt: None,
             allowed_document_ids: None,
+            images: None,
         }
     }
 
@@ -282,6 +290,13 @@ impl QueryRequest {
     /// @implements SPEC-005: Document date and pattern filters
     pub fn with_allowed_document_ids(mut self, ids: Vec<String>) -> Self {
         self.allowed_document_ids = Some(ids);
+        self
+    }
+
+    /// Attach images for a multimodal (vision) query.
+    /// @implements FEAT0203: Image attachment in chat
+    pub fn with_images(mut self, images: Vec<edgequake_llm::traits::ImageData>) -> Self {
+        self.images = Some(images);
         self
     }
 }

@@ -174,15 +174,42 @@ pub(super) async fn get_user_by_id(
     state: &AppState,
     user_id: &str,
 ) -> Result<Option<User>, ApiError> {
+    Ok(get_record_by_id(state, user_id).await?.map(|r| r.to_user()))
+}
+
+/// Get the raw [`UserRecord`] by user ID (preserves all stored fields).
+///
+/// Prefer this over [`get_user_by_id`] when the full record is needed
+/// (e.g., to build a [`crate::handlers::auth_types::UserInfo`] with
+/// `is_active`, `created_at`, `updated_at`, `last_login_at`).
+pub(super) async fn get_record_by_id(
+    state: &AppState,
+    user_id: &str,
+) -> Result<Option<UserRecord>, ApiError> {
     let key = format!("{}{}", USER_KEY_PREFIX, user_id);
     match state.kv_storage.get_by_id(&key).await {
         Ok(Some(value)) => {
             let record: UserRecord = serde_json::from_value(value)
                 .map_err(|e| ApiError::Internal(format!("Deserialization error: {}", e)))?;
-            Ok(Some(record.to_user()))
+            Ok(Some(record))
         }
         Ok(None) => Ok(None),
         Err(e) => Err(ApiError::Internal(format!("Storage error: {}", e))),
+    }
+}
+
+impl From<&UserRecord> for crate::handlers::auth_types::UserInfo {
+    fn from(record: &UserRecord) -> Self {
+        Self {
+            user_id: record.user_id.clone(),
+            username: record.username.clone(),
+            email: record.email.clone(),
+            role: record.role.clone(),
+            is_active: record.is_active,
+            created_at: record.created_at.to_rfc3339(),
+            updated_at: record.updated_at.to_rfc3339(),
+            last_login_at: record.last_login_at.map(|t| t.to_rfc3339()),
+        }
     }
 }
 
@@ -315,6 +342,10 @@ mod tests {
                 username: "test".to_string(),
                 email: "test@example.com".to_string(),
                 role: "user".to_string(),
+                is_active: true,
+                created_at: "2024-01-01T00:00:00Z".to_string(),
+                updated_at: "2024-01-01T00:00:00Z".to_string(),
+                last_login_at: None,
             },
         };
 
@@ -406,6 +437,10 @@ mod tests {
                 username: "user1".to_string(),
                 email: "u1@test.com".to_string(),
                 role: "user".to_string(),
+                is_active: true,
+                created_at: "2024-01-01T00:00:00Z".to_string(),
+                updated_at: "2024-01-01T00:00:00Z".to_string(),
+                last_login_at: None,
             }],
             total: 1,
             page: 1,

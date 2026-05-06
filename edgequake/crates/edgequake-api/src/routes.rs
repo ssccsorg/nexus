@@ -144,6 +144,7 @@ fn api_v1_routes() -> Router<AppState> {
         .route("/users", get(handlers::list_users))
         .route("/users/{user_id}", get(handlers::get_user))
         .route("/users/{user_id}", delete(handlers::delete_user))
+        .route("/users/{user_id}", patch(handlers::update_user))
         // API Keys (Phase 3)
         .route("/api-keys", post(handlers::create_api_key))
         .route("/api-keys", get(handlers::list_api_keys))

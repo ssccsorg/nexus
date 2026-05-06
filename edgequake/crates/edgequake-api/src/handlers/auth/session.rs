@@ -290,11 +290,6 @@ pub async fn get_me(
     }
 
     Ok(Json(GetMeResponse {
-        user: UserInfo {
-            user_id: user_record.user_id,
-            username: user_record.username,
-            email: user_record.email,
-            role: user_record.role,
-        },
+        user: UserInfo::from(&user_record),
     }))
 }

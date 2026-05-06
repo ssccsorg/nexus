@@ -1,5 +1,7 @@
 //! Streaming chat completion handler (SSE).
 
+use std::sync::Arc;
+
 use axum::extract::State;
 use axum::response::sse::{Event, Sse};
 use axum::Json;
@@ -55,6 +57,11 @@ pub async fn chat_completion_stream(
         return Err(ApiError::ValidationError(
             "Message cannot be empty".to_string(),
         ));
+    }
+
+    // Validate image attachments (Issue #203) — delegated to shared helper (DRY).
+    if let Some(ref images) = request.images {
+        super::validation::validate_image_attachments(images)?;
     }
 
     let tenant_id = tenant_ctx
@@ -261,6 +268,17 @@ pub async fn chat_completion_stream(
             }
         }
 
+        // FEAT0203: Forward image attachments to the query engine for vision queries.
+        if let Some(ref images) = request.images {
+            let image_data: Vec<edgequake_llm::traits::ImageData> = images
+                .iter()
+                .map(|i| edgequake_llm::traits::ImageData::new(&i.data, &i.mime_type))
+                .collect();
+            if !image_data.is_empty() {
+                engine_request = engine_request.with_images(image_data);
+            }
+        }
+
         // SPEC-032 + OODA-227: Unified provider resolution with safety limits (streaming)
         // Priority order:
         //   1. Request-specified provider/model (explicit user selection)
@@ -326,6 +344,31 @@ pub async fn chat_completion_stream(
                 return; // Exit task early with error sent
             }
         };
+
+        // FEAT0203: When images are attached, prefer the vision-capable LLM provider.
+        // WHY: Some models (e.g. mistral-small-latest) silently drop image content.
+        // A request-level provider override takes precedence over the server-default vision provider.
+        let (llm_override, used_provider, used_model) =
+            if llm_override.is_none()
+                && engine_request
+                    .images
+                    .as_ref()
+                    .is_some_and(|imgs| !imgs.is_empty())
+            {
+                if let Some(ref vision_provider) = state_clone.vision_llm_provider {
+                    debug!("Using vision LLM provider for image query (FEAT0203 streaming)");
+                    (
+                        Some(Arc::clone(vision_provider)
+                            as Arc<dyn edgequake_llm::traits::LLMProvider>),
+                        Some("vision".to_string()),
+                        Some("vision-model".to_string()),
+                    )
+                } else {
+                    (llm_override, used_provider, used_model)
+                }
+            } else {
+                (llm_override, used_provider, used_model)
+            };
 
         // Execute streaming query with context using SOTA engine (LightRAG-style)
         // OODA-228: Get workspace embedding provider and vector storage for proper isolation

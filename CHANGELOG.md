@@ -2,9 +2,86 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased] — 0.11.2
+## [Unreleased]
+
+---
+
+## [0.12.1] — 2026-05-06
 
 ### Fixed
+
+- **Issue #214 — Graph visualisation fails with "operator does not exist: ag_catalog.graphid = ag_catalog.graphid"**
+  - Root cause (regression from v0.12.0): `get_nodes_with_degrees_batch` used
+    direct `graphid = graphid` comparisons in four JOIN / GROUP BY clauses
+    (`deg_out`, `deg_in`, and two `LEFT JOIN` clauses).  Apache AGE does **not**
+    register an equality operator for the `graphid` type in the PostgreSQL type
+    system, so these comparisons produced the above error.
+  - Secondary fix: `get_popular_nodes_with_degree` was updated from the
+    `::text::bigint` two-step cast (introduced in v0.12.0) to the simpler and
+    universally supported `::text` cast, matching the established pattern used by
+    `node_degree()` and `node_degrees_batch()`.  The `::bigint` step is
+    unnecessary and unreliable across AGE versions.
+  - Six new regression tests added to `graph_optimized_tests.rs` covering empty
+    input, non-existent nodes, mixed IDs, isolated nodes, and degree-consistency.
+
+---
+
+## [0.12.0] — 2026-05-06
+
+### Fixed
+
+- **Issue #203 — Image attachment support for vision-capable models**
+  - Added `images` field to `ChatCompletionRequest` (backend and frontend).
+  - Backend validates attachments: max 4 images, ≤ 20 MiB each, accepted MIME types `image/jpeg`, `image/png`, `image/gif`, `image/webp`.
+  - Frontend query interface now has an image attachment button (📎), drag-and-drop on textarea, Ctrl+V clipboard paste, per-image preview strip with remove button.
+
+- **Issue #204 — Auth token expiry / model visibility**
+  - **(#204a)** `AuthGuard` now checks JWT expiry on mount and listens for `auth:logout-required` events dispatched by the API client on failed token refresh. Users are redirected to `/login` instead of silently hanging.
+  - **(#204b)** `GET /api/models` and `GET /api/models/llm` now filter providers by the active runtime LLM/embedding providers. Set `EDGEQUAKE_ALLOWED_PROVIDERS=*` to expose all, or a comma-separated list to restrict further.
+
+- **Bugfix — Knowledge Graph `graphid` cast error**
+  - Fixed `cannot cast type graphid to bigint` on the Knowledge Graph page and Hybrid/Local query mode.
+  - Root cause: Apache AGE's `graphid` type has no direct cast to `bigint` — must use `::text::bigint`.
+
+- **Issue #205 — User management API and admin UI**
+  - `GET /v1/users` now performs a real KV prefix scan to list all users (was a `TODO` returning an empty array).
+  - New `PATCH /v1/users/{user_id}` endpoint to update `role`, `is_active`, `display_name`, and `email`. Guards demotion of the last admin.
+  - New `UserManagementCard` admin UI in the Settings page (visible to admins only): table with role selector, active toggle, delete confirmation, create-user dialog, and pagination.
+
+---
+
+## [0.11.3] — 2026-05-06
+
+### Added
+
+- **Embedding progress reporting via `EmbedProgressCallback`** ([#197](https://github.com/raphaelmansuy/edgequake/issues/197)):
+  Large document ingestion previously froze the UI at 99% for 30–120 seconds while
+  batch embeddings were generated silently. The root cause: `generate_all_embeddings()`
+  ran three sequential embedding passes (chunks, entities, relationships) with no
+  progress signals reaching the pipeline status API.
+  Fix:
+  - New `EmbedProgressUpdate` struct and `EmbedProgressCallback = Arc<dyn Fn(EmbedProgressUpdate) + Send + Sync>` type in `edgequake-pipeline`.
+  - `generate_all_embeddings()` accepts `progress: Option<&EmbedProgressCallback>` and fires stage events for "chunks", "entities", and "relationships" at start, every 10 items, and on completion.
+  - `process_text_insert()` in `edgequake-api` creates a callback that writes `current_stage: "embedding"` and `stage_message: "Embedding entities: X/Y (Z%)"` to KV metadata. Progress value: `0.99 + (0.01 * pct/100)`.
+  - The UI now shows real-time embedding progress instead of freezing at 99%.
+
+- **Issue #132 — B2B header propagation via `with_extra_headers()`** ([#132](https://github.com/raphaelmansuy/edgequake/issues/132)):
+  Multi-tenant deployments that need to propagate `x-request-id`, `x-tenant-id`,
+  `x-correlation-id`, `traceparent`, or HMAC tokens into outgoing LLM API calls can
+  now use the `with_extra_headers()` builder available on all five major providers:
+  `OpenAICompatibleProvider`, `MistralProvider`, `AnthropicProvider`, `GeminiProvider`,
+  and `NvidiaProvider`. Reserved headers (`authorization`, `x-api-key`, `content-type`,
+  `content-length`, `host`, `user-agent`) are silently dropped to prevent accidental
+  credential overrides. Shipped in `edgequake-llm` v0.6.17.
+
+### Fixed
+
+- **Mistral embedding batch size limit** — `edgequake-llm` v0.6.20 corrects
+  `MISTRAL_EMBED_MAX_BATCH_SIZE` from 512 to **256** (the true Mistral API hard limit).
+  Sending more than 256 inputs per embedding request triggered HTTP 400 code 3210
+  "Too many inputs in request", causing large-document ingestion to fail permanently
+  with no retry possible. The fix is transparent: `embed_batched()` automatically
+  splits into chunks of ≤256.
 
 - **Issue #194 — Configurable pipeline timeouts / concurrency** ([#194](https://github.com/raphaelmansuy/edgequake/issues/194)):
   Hardcoded 180-second per-chunk timeout and 600-second HTTP safety cap prevented
@@ -22,6 +99,11 @@ All notable changes to this project will be documented in this file.
   - Startup tracing log emits effective timeout/concurrency configuration
   - 14 E2E tests prove all env-var overrides work correctly, including boundary clamping
     and non-numeric fallback
+
+### Dependencies
+
+- **`edgequake-llm` bumped `0.6.18` → `0.6.20`** — picks up the Mistral batch size fix and B2B header propagation feature.
+- **`edgequake-pdf2md` bumped `0.9.0` → `0.9.2`** — tracks the `edgequake-llm` 0.6.20 update; v0.9.2 also fixes a SIGBUS crash at process exit on Linux (pdfium singleton pattern).
 
 ## [0.11.1] - 2026-04-28
 

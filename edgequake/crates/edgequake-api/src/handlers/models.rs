@@ -71,6 +71,56 @@ fn model_card_to_response(card: &edgequake_llm::ModelCard) -> ModelResponse {
     }
 }
 
+/// Determine which provider names are visible in the current deployment.
+///
+/// # WHY: Issue #204b — Incorrect Model Visibility
+///
+/// By default every provider defined in `models.toml` was returned, even when
+/// only a single provider was deployed. This led to users seeing Anthropic and
+/// OpenAI model dropdowns when they had only configured `openai-compatible`.
+///
+/// Priority order:
+/// 1. `EDGEQUAKE_ALLOWED_PROVIDERS=*`  → return all enabled providers
+/// 2. `EDGEQUAKE_ALLOWED_PROVIDERS=a,b,c` → return only listed providers
+/// 3. Not set → return only the active LLM and embedding provider names
+fn active_provider_names(
+    active_llm: &str,
+    active_embedding: &str,
+) -> Option<std::collections::HashSet<String>> {
+    let env_val = std::env::var("EDGEQUAKE_ALLOWED_PROVIDERS").unwrap_or_default();
+    match env_val.trim() {
+        "" => {
+            // Not set → restrict to active providers only
+            let mut names = std::collections::HashSet::new();
+            names.insert(active_llm.to_string());
+            names.insert(active_embedding.to_string());
+            Some(names)
+        }
+        "*" => None, // None = show all enabled providers
+        list => {
+            let names: std::collections::HashSet<String> =
+                list.split(',').map(|s| s.trim().to_lowercase()).collect();
+            Some(names)
+        }
+    }
+}
+
+/// Filter a provider list to only those in the allowed set.
+///
+/// If `allowed` is `None`, all providers are returned.
+fn filter_providers<'a>(
+    providers: &'a [edgequake_llm::ProviderConfig],
+    allowed: &Option<std::collections::HashSet<String>>,
+) -> Vec<&'a edgequake_llm::ProviderConfig> {
+    match allowed {
+        None => providers.iter().filter(|p| p.enabled).collect(),
+        Some(names) => providers
+            .iter()
+            .filter(|p| p.enabled && names.contains(&p.name.to_lowercase()))
+            .collect(),
+    }
+}
+
 /// Convert a ProviderConfig to a ProviderResponse DTO.
 fn provider_to_response(provider: &edgequake_llm::ProviderConfig) -> ProviderResponse {
     ProviderResponse {
@@ -113,8 +163,17 @@ fn provider_to_response(provider: &edgequake_llm::ProviderConfig) -> ProviderRes
 pub async fn list_models(State(state): State<AppState>) -> ApiResult<Json<ModelsListResponse>> {
     let config = &*state.models_config;
 
-    let providers: Vec<ProviderResponse> =
-        config.providers.iter().map(provider_to_response).collect();
+    // WHY Issue #204b: Only return providers that are active in this deployment.
+    // `active_provider_names` respects EDGEQUAKE_ALLOWED_PROVIDERS; without it
+    // only the runtime-wired LLM and embedding providers are exposed.
+    let allowed = active_provider_names(
+        &state.llm_provider.name().to_lowercase(),
+        &config.defaults.embedding_provider.to_lowercase(),
+    );
+    let providers: Vec<ProviderResponse> = filter_providers(&config.providers, &allowed)
+        .into_iter()
+        .map(provider_to_response)
+        .collect();
 
     // WHY: Return the runtime-active provider/model, not static models.toml defaults.
     // The runtime provider is wired via ProviderFactory::from_env(); using config
@@ -148,9 +207,19 @@ pub async fn list_models(State(state): State<AppState>) -> ApiResult<Json<Models
 pub async fn list_llm_models(State(state): State<AppState>) -> ApiResult<Json<LlmModelsResponse>> {
     let config = &*state.models_config;
 
+    // WHY Issue #204b: Filter to active LLM provider(s) only.
+    let allowed = active_provider_names(
+        &state.llm_provider.name().to_lowercase(),
+        &config.defaults.embedding_provider.to_lowercase(),
+    );
+
     let models: Vec<LlmModelItem> = config
         .all_llm_models()
         .into_iter()
+        .filter(|(provider, _)| match &allowed {
+            None => provider.enabled,
+            Some(names) => provider.enabled && names.contains(&provider.name.to_lowercase()),
+        })
         .map(|(provider, model)| LlmModelItem {
             provider: provider.name.clone(),
             provider_display_name: provider.display_name.clone(),
@@ -484,5 +553,83 @@ mod tests {
         assert_eq!(response.capabilities.context_length, 4096);
         assert!(response.capabilities.supports_function_calling);
         assert!(!response.capabilities.supports_vision);
+    }
+
+    // ---- Issue #204b: Model visibility / provider filtering tests ----
+
+    #[test]
+    #[serial_test::serial]
+    fn test_active_provider_names_no_env_returns_active_only() {
+        // Unset or empty → only the active LLM + embedding provider
+        std::env::remove_var("EDGEQUAKE_ALLOWED_PROVIDERS");
+        let result = active_provider_names("openai", "ollama");
+        let names = result.expect("should be Some when env is empty");
+        assert!(names.contains("openai"));
+        assert!(names.contains("ollama"));
+        assert!(!names.contains("lmstudio"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_active_provider_names_star_returns_none() {
+        std::env::set_var("EDGEQUAKE_ALLOWED_PROVIDERS", "*");
+        let result = active_provider_names("openai", "ollama");
+        assert!(result.is_none(), "* should return None (all providers)");
+        std::env::remove_var("EDGEQUAKE_ALLOWED_PROVIDERS");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_active_provider_names_explicit_list() {
+        std::env::set_var("EDGEQUAKE_ALLOWED_PROVIDERS", "openai,lmstudio");
+        let result = active_provider_names("ollama", "ollama");
+        let names = result.expect("should be Some for explicit list");
+        assert!(names.contains("openai"));
+        assert!(names.contains("lmstudio"));
+        assert!(!names.contains("ollama"));
+        std::env::remove_var("EDGEQUAKE_ALLOWED_PROVIDERS");
+    }
+
+    #[test]
+    fn test_filter_providers_with_allowed_set() {
+        use edgequake_llm::ProviderConfig;
+        let make_provider = |name: &str| ProviderConfig {
+            name: name.to_string(),
+            display_name: name.to_string(),
+            enabled: true,
+            ..ProviderConfig::default()
+        };
+        let providers = vec![
+            make_provider("openai"),
+            make_provider("ollama"),
+            make_provider("mock"),
+        ];
+        let mut allowed = std::collections::HashSet::new();
+        allowed.insert("openai".to_string());
+        let filtered = filter_providers(&providers, &Some(allowed));
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, "openai");
+    }
+
+    #[test]
+    fn test_filter_providers_with_none_returns_all_enabled() {
+        use edgequake_llm::ProviderConfig;
+        let providers = vec![
+            ProviderConfig {
+                name: "openai".to_string(),
+                display_name: "OpenAI".to_string(),
+                enabled: true,
+                ..ProviderConfig::default()
+            },
+            ProviderConfig {
+                name: "disabled".to_string(),
+                display_name: "Disabled".to_string(),
+                enabled: false,
+                ..ProviderConfig::default()
+            },
+        ];
+        let filtered = filter_providers(&providers, &None);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, "openai");
     }
 }

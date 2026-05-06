@@ -52,12 +52,22 @@ pub struct MetadataFilter {
     pub tenant_id: Option<String>,
     /// Filter by workspace ID.
     pub workspace_id: Option<String>,
+    /// Filter by vector type (e.g. "chunk", "entity", "relationship").
+    ///
+    /// WHY: At scale (60k+ entities, 10k+ chunks), the top-k results from a workspace
+    /// vector table are dominated by entity vectors if no type filter is applied.
+    /// Pushing type filtering to the SQL layer ensures the LIMIT clause operates on
+    /// the correct vector type, preventing naive mode from returning 0 chunks.
+    pub vector_type: Option<String>,
 }
 
 impl MetadataFilter {
     /// Returns true when no filter fields are set.
     pub fn is_empty(&self) -> bool {
-        self.document_ids.is_none() && self.tenant_id.is_none() && self.workspace_id.is_none()
+        self.document_ids.is_none()
+            && self.tenant_id.is_none()
+            && self.workspace_id.is_none()
+            && self.vector_type.is_none()
     }
 
     /// Build a filter from optional tenant and workspace IDs.
@@ -72,6 +82,24 @@ impl MetadataFilter {
             document_ids: None,
             tenant_id,
             workspace_id,
+            vector_type: None,
+        })
+    }
+
+    /// Build a filter with tenant, workspace, and vector type.
+    ///
+    /// WHY: Naive mode must filter by type=chunk at the SQL level to avoid returning
+    /// entity/relationship vectors when the top-k results are entity-dominated.
+    pub fn from_tenant_workspace_type(
+        tenant_id: Option<String>,
+        workspace_id: Option<String>,
+        vector_type: impl Into<String>,
+    ) -> Option<Self> {
+        Some(Self {
+            document_ids: None,
+            tenant_id,
+            workspace_id,
+            vector_type: Some(vector_type.into()),
         })
     }
 }
@@ -243,11 +271,75 @@ mod tests {
             document_ids: Some(vec!["doc1".into(), "doc2".into()]),
             tenant_id: Some("t1".into()),
             workspace_id: Some("ws1".into()),
+            vector_type: None,
         };
         let json = serde_json::to_string(&mf).unwrap();
         let mf2: MetadataFilter = serde_json::from_str(&json).unwrap();
         assert_eq!(mf2.tenant_id, mf.tenant_id);
         assert_eq!(mf2.workspace_id, mf.workspace_id);
         assert_eq!(mf2.document_ids, mf.document_ids);
+    }
+
+    // ── Fix #208: vector_type filter ─────────────────────────────────────────
+
+    #[test]
+    fn test_from_tenant_workspace_type_always_some() {
+        // WHY: Unlike from_tenant_workspace which returns None when both IDs are None,
+        // from_tenant_workspace_type ALWAYS returns Some because the type filter alone
+        // is meaningful (e.g. filter to "chunk" globally across all tenants).
+        let mf =
+            MetadataFilter::from_tenant_workspace_type(None, None, "chunk").unwrap();
+        assert_eq!(mf.vector_type.as_deref(), Some("chunk"));
+        assert!(mf.tenant_id.is_none());
+        assert!(mf.workspace_id.is_none());
+        // is_empty must be false — the type filter is set
+        assert!(!mf.is_empty());
+    }
+
+    #[test]
+    fn test_from_tenant_workspace_type_all_fields() {
+        let mf = MetadataFilter::from_tenant_workspace_type(
+            Some("tenant1".into()),
+            Some("ws1".into()),
+            "chunk",
+        )
+        .unwrap();
+        assert_eq!(mf.tenant_id.as_deref(), Some("tenant1"));
+        assert_eq!(mf.workspace_id.as_deref(), Some("ws1"));
+        assert_eq!(mf.vector_type.as_deref(), Some("chunk"));
+        assert!(!mf.is_empty());
+    }
+
+    #[test]
+    fn test_vector_type_variants() {
+        // All three vector types used by the system must be distinguishable
+        for vtype in &["chunk", "entity", "relationship"] {
+            let mf = MetadataFilter::from_tenant_workspace_type(None, None, *vtype).unwrap();
+            assert_eq!(mf.vector_type.as_deref(), Some(*vtype));
+        }
+    }
+
+    #[test]
+    fn test_metadata_filter_is_empty_with_vector_type() {
+        let mf = MetadataFilter {
+            vector_type: Some("chunk".into()),
+            ..Default::default()
+        };
+        // A filter with only vector_type set must NOT be considered empty
+        assert!(!mf.is_empty());
+    }
+
+    #[test]
+    fn test_metadata_filter_serialization_with_vector_type() {
+        // Ensure vector_type survives JSON roundtrip (used in API layer)
+        let mf = MetadataFilter {
+            tenant_id: Some("t1".into()),
+            vector_type: Some("chunk".into()),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&mf).unwrap();
+        let restored: MetadataFilter = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.vector_type.as_deref(), Some("chunk"));
+        assert_eq!(restored.tenant_id.as_deref(), Some("t1"));
     }
 }
