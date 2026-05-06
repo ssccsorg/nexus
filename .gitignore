@@ -9,7 +9,7 @@ __pycache__/
 .venv/
 venv/
 rag/lightrag-env/
-rag/lightrag-data/
+rag/lightrag/data/
 
 # Wrangler build output
 .wrangler/
@@ -43,6 +43,3 @@ inputs/
 rag/inputs/
 .pytest_cache/
 .python-version
-
-# EdgeQuake / Docker
-docker-compose.*.yml
