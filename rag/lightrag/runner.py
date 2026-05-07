@@ -61,12 +61,10 @@ class LightRAGEngine(AbstractEngine):
         return True
 
     def start(self, refresh: bool = False) -> None:
-        lmstudio_url = os.environ.get(
-            "LMSTUDIO_URL", "http://host.docker.internal:1234"
-        )
-        llm_model = os.environ.get("LLM_MODEL", "liquid/lfm2.5-1.2b")
-        embedding_model = os.environ.get(
-            "EMBEDDING_MODEL", "text-embedding-nomic-embed-text-v1.5"
+        from runners.defaults import (
+            LMSTUDIO_URL as lmstudio_url,
+            LLM_MODEL as llm_model,
+            EMBEDDING_MODEL as embedding_model,
         )
 
         dim = detect_embedding_dimension(
