@@ -21,6 +21,7 @@
 import type { Env } from "../index";
 
 export class LightRagHandler {
+  readonly strategy = "sync" as const;
   private base(env: Env): string {
     return env.LIGHTRAG_API_HOST;
   }
