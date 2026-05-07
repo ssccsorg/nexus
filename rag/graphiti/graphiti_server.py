@@ -44,7 +44,9 @@ async def init_graphiti():
     global graphiti_instance
     from graphiti_core import Graphiti
     from graphiti_core.llm_client import OpenAIClient
+    from graphiti_core.llm_client.config import LLMConfig
     from graphiti_core.embedder import OpenAIEmbedder
+    from graphiti_core.embedder.openai import OpenAIEmbedderConfig
 
     logger.info(f"Connecting to Neo4j: {NEO4J_URI}")
     logger.info(f"LLM base URL: {OPENAI_BASE_URL}")
@@ -52,14 +54,19 @@ async def init_graphiti():
     logger.info(f"Embedding model: {EMBEDDING_MODEL} ({EMBEDDING_DIM}d)")
 
     llm_client = OpenAIClient(
-        base_url=OPENAI_BASE_URL,
-        api_key=OPENAI_API_KEY,
-        model=LLM_MODEL,
+        config=LLMConfig(
+            api_key=OPENAI_API_KEY,
+            base_url=OPENAI_BASE_URL,
+            model=LLM_MODEL,
+        ),
     )
     embedder = OpenAIEmbedder(
-        base_url=OPENAI_BASE_URL,
-        api_key=OPENAI_API_KEY,
-        embedding_model=EMBEDDING_MODEL,
+        config=OpenAIEmbedderConfig(
+            api_key=OPENAI_API_KEY,
+            base_url=OPENAI_BASE_URL,
+            embedding_model=EMBEDDING_MODEL,
+            embedding_dim=EMBEDDING_DIM,
+        ),
     )
 
     graphiti_instance = Graphiti(
