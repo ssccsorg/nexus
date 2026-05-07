@@ -27,8 +27,8 @@ NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD", "graphiti")
 
 OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "http://host.docker.internal:1234/v1")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "lm-studio")
-LLM_MODEL = os.environ.get("LLM_MODEL", "liquid/lfm2.5-1.2b")
-EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-nomic-embed-text-v1.5")
+LLM_MODEL = os.environ["LLM_MODEL"]
+EMBEDDING_MODEL = os.environ["EMBEDDING_MODEL"]
 EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "768"))
 
 SERVER_HOST = os.environ.get("HOST", "0.0.0.0")
