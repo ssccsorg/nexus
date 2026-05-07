@@ -8,7 +8,7 @@ Override any value by setting the corresponding environment variable before star
 import os
 
 # ---- LLM ----
-LLM_MODEL = os.environ.get("LLM_MODEL", "deepseek/deepseek-r1-0528-qwen3-8b")
+LLM_MODEL = os.environ.get("LLM_MODEL", "qwen2.5-coder-7b-instruct-mlx")
 
 # ---- Embedding ----
 EMBEDDING_MODEL = os.environ.get(
