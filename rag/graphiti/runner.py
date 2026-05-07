@@ -107,7 +107,7 @@ class GraphitiEngine(AbstractEngine):
                     "-p", "7474:7474",
                     "-p", "7687:7687",
                     "-v", "graphiti-neo4j-data:/data",
-                    "-e", "NEO4J_AUTH=neo4j/graphiti",
+                    "-e", "NEO4J_AUTH=none",
                     "neo4j:5",
                 ],
                 check=True,
