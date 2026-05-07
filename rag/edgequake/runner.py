@@ -50,7 +50,9 @@ class EdgeQuakeEngine(AbstractEngine):
         return True
 
     def start(self, refresh: bool = False) -> None:
-        lmstudio_url = os.environ.get("LMSTUDIO_URL", "http://localhost:1234")
+        lmstudio_url = os.environ.get(
+            "LMSTUDIO_URL", "http://host.docker.internal:1234"
+        )
         llm_model = os.environ.get("LLM_MODEL", "liquid/lfm2.5-1.2b")
         embedding_model = os.environ.get(
             "EMBEDDING_MODEL", "text-embedding-nomic-embed-text-v1.5"
@@ -62,19 +64,23 @@ class EdgeQuakeEngine(AbstractEngine):
         )
 
         # extract port for Docker host.docker.internal mapping
-        lmstudio_port = lmstudio_url.split(':')[-1] if ':' in lmstudio_url else '1234'
+        lmstudio_port = lmstudio_url.split(":")[-1] if ":" in lmstudio_url else "1234"
 
         env = os.environ.copy()
-        env.update({
-            "LMSTUDIO_URL": lmstudio_url,
-            "LMSTUDIO_PORT": lmstudio_port,
-            "LLM_MODEL": llm_model,
-            "EMBEDDING_MODEL": embedding_model,
-            "EMBEDDING_DIM": str(dim),
-        })
+        env.update(
+            {
+                "LMSTUDIO_URL": lmstudio_url,
+                "LMSTUDIO_PORT": lmstudio_port,
+                "LLM_MODEL": llm_model,
+                "EMBEDDING_MODEL": embedding_model,
+                "EMBEDDING_DIM": str(dim),
+            }
+        )
 
         action = "down -v" if refresh else "down"
-        self._compose(action, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self._compose(
+            action, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
 
         print("[INFO] Starting EdgeQuake (prebuilt)...")
         self._compose("up", "-d", "--wait", env=env, check=True)

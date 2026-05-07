@@ -61,7 +61,9 @@ class LightRAGEngine(AbstractEngine):
         return True
 
     def start(self, refresh: bool = False) -> None:
-        lmstudio_url = os.environ.get("LMSTUDIO_URL", "http://localhost:1234")
+        lmstudio_url = os.environ.get(
+            "LMSTUDIO_URL", "http://host.docker.internal:1234"
+        )
         llm_model = os.environ.get("LLM_MODEL", "liquid/lfm2.5-1.2b")
         embedding_model = os.environ.get(
             "EMBEDDING_MODEL", "text-embedding-nomic-embed-text-v1.5"
@@ -95,6 +97,8 @@ class LightRAGEngine(AbstractEngine):
             self.container,
             "--restart",
             "unless-stopped",
+            "--add-host",
+            "host.docker.internal:host-gateway",
             "-p",
             f"{self.port}:9621",
             "-v",
