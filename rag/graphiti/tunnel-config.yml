@@ -1,10 +1,10 @@
 tunnel: 59c44ec1-6577-41ec-bb18-e53d95394147
 
 ingress:
-  - hostname: rag-api-dev.nexus.ssccs.org
+  - hostname: rag-api.nexus.ssccs.org
     service: http://127.0.0.1:8000
     originRequest:
-      httpHostHeader: "rag-api-dev.nexus.ssccs.org"
+      httpHostHeader: "rag-api.nexus.ssccs.org"
       noTLSVerify: true
       connectTimeout: 30s
       tcpKeepAlive: 30s
