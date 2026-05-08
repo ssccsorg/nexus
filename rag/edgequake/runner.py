@@ -111,7 +111,7 @@ class EdgeQuakeEngine(AbstractEngine):
             entries={
                 "API": f"http://127.0.0.1:{self.api_port}",
                 "Web UI": f"http://127.0.0.1:{os.environ.get('FRONTEND_PORT', '3000')}",
-                "Public": "https://rag-api.nexus.ssccs.org",
+                "Public": "https://rag-api-dev.nexus.ssccs.org",
                 "Logs": os.path.join(self.rag_dir, "logs/"),
             },
         )

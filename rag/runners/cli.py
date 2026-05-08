@@ -87,8 +87,9 @@ def main() -> None:
     # ------------------------------------------------------------------
     # Shared checks
     # ------------------------------------------------------------------
-    lmstudio_url = os.environ.get("LMSTUDIO_URL", "http://localhost:1234")
-    if not check_lm_studio(lmstudio_url):
+    from .defaults import API_BASE_URL, DEPLOYMENT_ENV
+    api_base_url = API_BASE_URL
+    if not check_lm_studio(api_base_url):
         sys.exit(1)
     if not check_cloudflared():
         sys.exit(1)
