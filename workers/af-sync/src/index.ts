@@ -8,6 +8,7 @@
 
 import { EdgeQuakeHandler } from "./engines/edgequake";
 import { LightRagHandler } from "./engines/lightrag";
+import { GraphitiHandler } from "./engines/graphiti";
 
 // ---------------------------------------------------------------------------
 // Shared environment type (used by all engine handlers)
@@ -25,12 +26,19 @@ export interface Env {
   // LightRAG (primary engine)
   LIGHTRAG_API_HOST: string;
   LIGHTRAG_API_KEY: string;
+  // Graphiti (temporal knowledge graph)
+  GRAPHITI_API_HOST: string;
+  GRAPHITI_API_KEY: string;
 }
 
 // ---------------------------------------------------------------------------
 // Engine Handler Interface (extend for new engines)
 // ---------------------------------------------------------------------------
 export interface EngineHandler {
+  /** Sync strategy:
+   *  "sync" — overwrite: diff R2 vs KV → delete old + upload new + reprocess failed
+   *  "put"  — cumulative: scan R2 → upload new/changed only (no delete, no reprocess) */
+  readonly strategy: "sync" | "put";
   /** List all indexed documents in the engine */
   listDocuments(env: Env): Promise<Array<{ id: string; title: string }>>;
   /** Delete a document by engine-native ID */
@@ -43,7 +51,7 @@ export interface EngineHandler {
     files: Array<{ key: string; buffer: ArrayBuffer }>,
     env: Env,
   ): Promise<Array<{ key: string; document_id: string }>>;
-  /** Reprocess failed/pending documents in the engine (optional).
+  /** Reprocess failed/pending documents in the engine (optional, "sync" only).
    *  Called after sync completes to retry stuck documents. */
   reprocessFailedDocuments?(env: Env): Promise<void>;
 }
@@ -54,6 +62,7 @@ export interface EngineHandler {
 const engines: Record<string, EngineHandler> = {
   lr: new LightRagHandler(), // LightRAG (primary)
   eq: new EdgeQuakeHandler(), // EdgeQuake (deprecated – stability issues)
+  gt: new GraphitiHandler(), // Graphiti (temporal knowledge graph)
   // auto: new AutoRAGHandler(),       // Cloudflare AI Search (future)
   // local: new LocalHandler(),        // Local / custom engine (future)
 };
@@ -250,6 +259,31 @@ export default {
 async function runSync(engineName: string, env: Env): Promise<void> {
   const CHUNK_SIZE = 50; // ≤50 tasks per message to stay under subrequest limit
 
+  const handler = engines[engineName];
+  if (!handler) {
+    console.error(`[${engineName}] unknown engine, aborting sync`);
+    return;
+  }
+
+  const strategy = handler.strategy;
+
+  if (strategy === "sync") {
+    await runSyncStrategy(engineName, env, handler, CHUNK_SIZE);
+  } else if (strategy === "put") {
+    await runPutStrategy(engineName, env, handler, CHUNK_SIZE);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// "sync" strategy — overwrite: diff → delete old + upload new + reprocess
+// Used by: LightRAG, EdgeQuake
+// ---------------------------------------------------------------------------
+async function runSyncStrategy(
+  engineName: string,
+  env: Env,
+  handler: EngineHandler,
+  CHUNK_SIZE: number,
+): Promise<void> {
   // 1. R2 inventory – recursively list ALL objects in the bucket (paginated)
   const r2Map = new Map<string, string>();
   let cursor: string | undefined;
@@ -278,11 +312,6 @@ async function runSync(engineName: string, env: Env): Promise<void> {
 
   // 3. Engine inventory — list actual documents to detect drift
   //    (e.g., engine data wiped while KV mapping still looks healthy)
-  const handler = engines[engineName];
-  if (!handler) {
-    console.error(`[${engineName}] unknown engine, aborting sync`);
-    return;
-  }
   let engineListOk = false;
   const engineDocIds = new Set<string>();
   try {
@@ -355,6 +384,61 @@ async function runSync(engineName: string, env: Env): Promise<void> {
         e,
       );
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// "put" strategy — cumulative: upload new/changed only, never delete
+// Used by: Graphiti (temporal knowledge graph)
+// ---------------------------------------------------------------------------
+async function runPutStrategy(
+  engineName: string,
+  env: Env,
+  _handler: EngineHandler, // reserved for future use
+  CHUNK_SIZE: number,
+): Promise<void> {
+  // 1. R2 inventory
+  const r2Map = new Map<string, string>();
+  let cursor: string | undefined;
+  do {
+    const opts: R2ListOptions = { limit: 1000 };
+    if (cursor) {
+      opts.cursor = cursor;
+    }
+    const result = await env.ARTIFACT_BUCKET.list(opts);
+    for (const obj of result.objects) {
+      r2Map.set(obj.key, obj.etag);
+    }
+    cursor = result.truncated ? result.cursor : undefined;
+  } while (cursor);
+  console.log(
+    `[${engineName}] found ${r2Map.size} objects in R2 bucket`,
+  );
+
+  // 2. Previous mapping (KV) — only used to skip already-ingested files
+  const MAPPING_KEY = `mapping:${engineName}`;
+  const prev: Record<string, { doc_id: string; etag: string }> =
+    (await env.SYNC_KV.get(MAPPING_KEY, "json")) || {};
+  console.log(
+    `[${engineName}] previous mapping has ${Object.keys(prev).length} entries`,
+  );
+
+  // 3. Plan — upload new or changed files only (no deletes, no drift check)
+  const tasks: Array<{ type: "upload"; key: string }> = [];
+  for (const [key, etag] of r2Map) {
+    const p = prev[key];
+    if (!p || p.etag !== etag) {
+      tasks.push({ type: "upload", key });
+    }
+  }
+  console.log(
+    `[${engineName}] put plan: ${tasks.length} uploads`,
+  );
+
+  // 4. Enqueue chunks
+  for (let i = 0; i < tasks.length; i += CHUNK_SIZE) {
+    const chunk = tasks.slice(i, i + CHUNK_SIZE);
+    await env.SYNC_QUEUE.send({ chunk, engine: engineName });
   }
 }
 

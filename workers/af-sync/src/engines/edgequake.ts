@@ -10,6 +10,7 @@
 import type { Env } from "../index";
 
 export class EdgeQuakeHandler {
+  readonly strategy = "sync" as const;
   private base(env: Env): string {
     return env.EDGEQUAKE_API_HOST;
   }
