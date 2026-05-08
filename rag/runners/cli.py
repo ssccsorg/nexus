@@ -87,8 +87,8 @@ def main() -> None:
     # ------------------------------------------------------------------
     # Shared checks
     # ------------------------------------------------------------------
-    from .defaults import API_BASE_URL, DEPLOYMENT_ENV
-    api_base_url = API_BASE_URL
+    # Host-side check uses localhost — Docker containers use host.docker.internal
+    api_base_url = os.environ.get("LMSTUDIO_URL", os.environ.get("API_BASE_URL", "http://localhost:1234"))
     if not check_lm_studio(api_base_url):
         sys.exit(1)
     if not check_cloudflared():
