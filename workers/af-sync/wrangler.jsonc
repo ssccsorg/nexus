@@ -45,5 +45,7 @@
     "WORKSPACE_ID": "nexus-af-sync",
     "LIGHTRAG_API_HOST": "http://rag-api.nexus.ssccs.org",
     "LIGHTRAG_API_KEY": "",
+    "GRAPHITI_API_HOST": "http://rag-api.nexus.ssccs.org",
+    "GRAPHITI_API_KEY": "",
   },
 }
