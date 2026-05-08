@@ -6,6 +6,10 @@
     "enabled": true,
   },
 
+  "ai": {
+    "binding": "AI",
+  },
+
   "r2_buckets": [
     {
       "binding": "ARTIFACT_BUCKET",
@@ -39,13 +43,16 @@
   },
 
   "vars": {
-    "EDGEQUAKE_API_HOST": "http://rag-api.nexus.ssccs.org",
+    "DEPLOYMENT_ENV": "dev",
+    "EDGEQUAKE_API_HOST": "http://rag-api-dev.nexus.ssccs.org",
     "EDGEQUAKE_TENANT_ID": "default",
     "EDGEQUAKE_API_KEY": "",
     "WORKSPACE_ID": "nexus-af-sync",
-    "LIGHTRAG_API_HOST": "http://rag-api.nexus.ssccs.org",
+    "LIGHTRAG_API_HOST": "http://rag-api-dev.nexus.ssccs.org",
     "LIGHTRAG_API_KEY": "",
-    "GRAPHITI_API_HOST": "http://rag-api.nexus.ssccs.org",
+    "GRAPHITI_API_HOST": "http://rag-api-dev.nexus.ssccs.org",
     "GRAPHITI_API_KEY": "",
+    "DEEPSEEK_API_KEY": "",
+    "DEEPSEEK_BASE_URL": "https://api.deepseek.com",
   },
 }
