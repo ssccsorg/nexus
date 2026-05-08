@@ -62,13 +62,13 @@ class LightRAGEngine(AbstractEngine):
 
     def start(self, refresh: bool = False) -> None:
         from runners.defaults import (
-            LMSTUDIO_URL as lmstudio_url,
+            API_BASE_URL as api_base_url,
             LLM_MODEL as llm_model,
             EMBEDDING_MODEL as embedding_model,
         )
 
         dim = detect_embedding_dimension(
-            lmstudio_url,
+            api_base_url,
             embedding_model,
             env_override=os.environ.get("EMBEDDING_DIMENSION"),
         )
@@ -106,11 +106,11 @@ class LightRAGEngine(AbstractEngine):
             "-e",
             "PORT=9621",
             "-e",
-            f"LLM_BINDING_HOST={lmstudio_url}/v1",
+            f"LLM_BINDING_HOST={api_base_url}/v1",
             "-e",
             f"CHAT_MODEL={llm_model}",
             "-e",
-            f"EMBEDDING_BINDING_HOST={lmstudio_url}/v1",
+            f"EMBEDDING_BINDING_HOST={api_base_url}/v1",
             "-e",
             f"EMBEDDING_MODEL={embedding_model}",
             "-e",
@@ -167,7 +167,7 @@ class LightRAGEngine(AbstractEngine):
                 "API": f"http://127.0.0.1:{self.port}",
                 "Web UI": f"http://127.0.0.1:{self.port}/webui",
                 "API docs": f"http://127.0.0.1:{self.port}/docs",
-                "Public": "https://rag-api.nexus.ssccs.org",
+                "Public": "https://rag-api-dev.nexus.ssccs.org",
                 "Logs": os.path.join(self.rag_dir, "logs/"),
             },
         )

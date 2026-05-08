@@ -9,6 +9,7 @@
 import { EdgeQuakeHandler } from "./engines/edgequake";
 import { LightRagHandler } from "./engines/lightrag";
 import { GraphitiHandler } from "./engines/graphiti";
+import { AutoRagHandler } from "./engines/auto";
 
 // ---------------------------------------------------------------------------
 // Shared environment type (used by all engine handlers)
@@ -29,6 +30,13 @@ export interface Env {
   // Graphiti (temporal knowledge graph)
   GRAPHITI_API_HOST: string;
   GRAPHITI_API_KEY: string;
+  // Cloudflare Workers AI (for AutoRAG engine)
+  AI: any;
+  // DeepSeek (fallback for AutoRAG)
+  DEEPSEEK_API_KEY: string;
+  DEEPSEEK_BASE_URL: string;
+  // Deployment environment
+  DEPLOYMENT_ENV: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -63,8 +71,7 @@ const engines: Record<string, EngineHandler> = {
   lr: new LightRagHandler(), // LightRAG (primary)
   eq: new EdgeQuakeHandler(), // EdgeQuake (deprecated – stability issues)
   gt: new GraphitiHandler(), // Graphiti (temporal knowledge graph)
-  // auto: new AutoRAGHandler(),       // Cloudflare AI Search (future)
-  // local: new LocalHandler(),        // Local / custom engine (future)
+  auto: new AutoRagHandler(), // Cloudflare Workers AI + DeepSeek fallback
 };
 
 // ---------------------------------------------------------------------------
