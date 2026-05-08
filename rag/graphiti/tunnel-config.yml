@@ -1,4 +1,4 @@
-tunnel: 59c44ec1-6577-41ec-bb18-e53d95394147
+tunnel: fe6dbde1-4bf1-4096-8f15-f8cc8fb16b87
 
 ingress:
   - hostname: rag-api-dev.nexus.ssccs.org

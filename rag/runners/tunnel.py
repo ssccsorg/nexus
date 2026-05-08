@@ -6,7 +6,7 @@ import subprocess
 import sys
 import time
 
-TUNNEL_UUID = "59c44ec1-6577-41ec-bb18-e53d95394147"
+TUNNEL_UUID = "fe6dbde1-4bf1-4096-8f15-f8cc8fb16b87"
 
 
 class TunnelManager:
