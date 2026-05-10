@@ -110,21 +110,21 @@ export class GapDetectorModule implements ReasoningModule {
         const text = await r2Obj.text();
         const chunks = chunkText(text, 256);
 
-        // Embed each chunk using CF Workers AI
-        const embeddings: number[][] = [];
-        for (const chunk of chunks) {
+        // Embed each chunk using CF Workers AI (parallel)
+        const embeddingPromises = chunks.map(async (chunk) => {
           try {
             const response = await ctx.ai.run(
               "@cf/baai/bge-small-en-v1.5",
               { text: [chunk] },
             ) as { data: number[][] };
-            if (response.data?.[0]) {
-              embeddings.push(response.data[0]);
-            }
+            return response.data?.[0] ?? null;
           } catch (e) {
             console.warn(`[gap-detector] embedding failed for ${obj.key}:`, e);
+            return null;
           }
-        }
+        });
+        const results = await Promise.all(embeddingPromises);
+        const embeddings: number[][] = results.filter((e): e is number[] => e !== null);
 
         if (embeddings.length > 0) {
           documents.push({ key: obj.key, chunks, embeddings });

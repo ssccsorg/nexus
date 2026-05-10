@@ -25,8 +25,8 @@
   ],
 
   "vars": {
-    "DEPLOYMENT_ENV": "dev",
-    "MEMGRAPH_API_HOST": "",
-    "MEMGRAPH_API_KEY": "",
-  },
+      "DEPLOYMENT_ENV": "dev",
+      "MEMGRAPH_API_HOST": "",
+      "MEMGRAPH_API_KEY": "",
+    },
 }
