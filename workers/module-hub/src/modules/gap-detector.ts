@@ -32,16 +32,28 @@ function chunkText(text: string, maxWords: number = 256): string[] {
   return chunks.length > 0 ? chunks : [text];
 }
 
-/** Compute cosine similarity between two vectors. */
+/** Compute cosine similarity between two equal-length vectors. */
 function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length || a.length === 0) return 0;
   let dot = 0, normA = 0, normB = 0;
   for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
+    const ai = a[i]!;
+    const bi = b[i]!;
+    dot += ai * bi;
+    normA += ai * ai;
+    normB += bi * bi;
   }
   const denom = Math.sqrt(normA) * Math.sqrt(normB);
   return denom === 0 ? 0 : dot / denom;
+}
+
+// ---------------------------------------------------------------------------
+// Document chunk result
+// ---------------------------------------------------------------------------
+interface DocumentChunks {
+  key: string;
+  chunks: string[];
+  embeddings: number[][];
 }
 
 // ---------------------------------------------------------------------------
@@ -66,7 +78,7 @@ export class GapDetectorModule implements ReasoningModule {
   };
 
   async init(_ctx: ModuleContext): Promise<void> {
-    // No initialization needed — all resources are acquired at runtime
+    // No initialization needed
   }
 
   async run(ctx: ModuleContext): Promise<Finding[]> {
@@ -76,13 +88,16 @@ export class GapDetectorModule implements ReasoningModule {
     // ---------------------------------------------------------------
     // Phase 1: Scan R2, chunk, embed
     // ---------------------------------------------------------------
-    const documents: Array<{ key: string; chunks: string[]; embeddings: number[][] }> = [];
-
-    let cursor: string | undefined;
+    const documents: DocumentChunks[] = [];
     let scanned = 0;
+    let cursor: string | undefined;
 
     do {
-      const result = await ctx.bucket.list({ limit: 100, cursor });
+      const opts: R2ListOptions = { limit: 100 };
+      if (cursor) {
+        opts.cursor = cursor;
+      }
+      const result = await ctx.bucket.list(opts);
       for (const obj of result.objects) {
         // Skip non-text files
         if (!obj.key.endsWith(".md") && !obj.key.endsWith(".txt") && !obj.key.endsWith(".qmd")) {
@@ -116,7 +131,7 @@ export class GapDetectorModule implements ReasoningModule {
         }
 
         scanned++;
-        if (scanned >= 50) break; // safety limit per run
+        if (scanned >= 50) break;
       }
       cursor = result.truncated ? result.cursor : undefined;
     } while (cursor && scanned < 50);
@@ -127,15 +142,18 @@ export class GapDetectorModule implements ReasoningModule {
     // Phase 2: Cross-document similarity analysis
     // ---------------------------------------------------------------
 
-    // 2a. Find near-duplicate chunks across different documents
     for (let i = 0; i < documents.length; i++) {
+      const docA = documents[i]!;
+
       for (let j = i + 1; j < documents.length; j++) {
-        const docA = documents[i];
-        const docB = documents[j];
+        const docB = documents[j]!;
 
         for (let ci = 0; ci < docA.embeddings.length; ci++) {
+          const embA = docA.embeddings[ci]!;
+
           for (let cj = 0; cj < docB.embeddings.length; cj++) {
-            const sim = cosineSimilarity(docA.embeddings[ci], docB.embeddings[cj]);
+            const embB = docB.embeddings[cj]!;
+            const sim = cosineSimilarity(embA, embB);
 
             // Near-duplicate: similarity above 0.95
             if (sim > 0.95) {
@@ -159,8 +177,7 @@ export class GapDetectorModule implements ReasoningModule {
               });
             }
 
-            // Severely divergent: similarity below 0.1 for documents on the same topic
-            // (approximated by similar first-chunk embedding)
+            // Severely divergent first chunks
             if (ci === 0 && cj === 0 && sim < 0.1) {
               findings.push({
                 id: `gap-divergent-${docA.key}-${docB.key}`,
@@ -186,8 +203,7 @@ export class GapDetectorModule implements ReasoningModule {
       }
     }
 
-    // 2b. Orphaned documents — documents that don't share significant similarity
-    //     with any other document in the corpus
+    // 2b. Orphaned documents
     if (documents.length >= 3) {
       for (const doc of documents) {
         let maxSim = 0;
