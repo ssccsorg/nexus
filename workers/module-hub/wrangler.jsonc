@@ -19,8 +19,8 @@
 
   "kv_namespaces": [
     {
-      "binding": "MODULE_HUB_KV",
-      "id": "",
+      "binding": "FINDINGS_KV",
+      "id": "5a2e2537057c4e488170683efb30e4fc",
     },
   ],
 

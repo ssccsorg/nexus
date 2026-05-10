@@ -9,7 +9,7 @@
 // Each module is a self-contained cognitive function. Modules communicate
 // through the shared knowledge space, not by calling each other directly.
 
-import { runModules, listModules, runModule } from "./modules/registry";
+import { runModules, listModules } from "./modules/registry";
 import "./modules/gap-detector";
 import type { ModuleContext } from "./modules/types";
 
@@ -17,7 +17,7 @@ import type { ModuleContext } from "./modules/types";
 // Environment
 // ---------------------------------------------------------------------------
 export interface Env {
-  MODULE_HUB_KV: KVNamespace;
+  FINDINGS_KV: KVNamespace;
   ARTIFACT_BUCKET: R2Bucket;
   AI: any;
   MODULE_HUB_API_KEY: string;
@@ -31,7 +31,7 @@ export interface Env {
 // ---------------------------------------------------------------------------
 function buildContext(env: Env): ModuleContext {
   return {
-    kv: env.MODULE_HUB_KV,
+    kv: env.FINDINGS_KV,
     bucket: env.ARTIFACT_BUCKET,
     ai: env.AI,
     env: {
@@ -109,13 +109,13 @@ export default {
       }
 
       // List all findings keys for this module from KV
-      const listResult = await env.MODULE_HUB_KV.list({
+      const listResult = await env.FINDINGS_KV.list({
         prefix: `findings:${moduleName}:`,
       });
 
       const findings: any[] = [];
       for (const key of listResult.keys) {
-        const raw = await env.MODULE_HUB_KV.get(key.name);
+        const raw = await env.FINDINGS_KV.get(key.name);
         if (raw) {
           findings.push(JSON.parse(raw));
         }
