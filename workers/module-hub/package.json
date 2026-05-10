@@ -1,0 +1,17 @@
+{
+	"name": "nexus-module-hub",
+	"version": "0.1",
+	"private": true,
+	"scripts": {
+		"deploy": "wrangler deploy",
+		"build": "wrangler build",
+		"dev": "wrangler dev",
+		"start": "wrangler dev",
+		"cf-typegen": "wrangler types",
+		"typecheck": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"typescript": "^5.9.3",
+		"wrangler": "^4.29.1"
+	}
+}

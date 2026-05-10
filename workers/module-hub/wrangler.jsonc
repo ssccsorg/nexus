@@ -1,0 +1,32 @@
+{
+  "name": "nexus-module-hub",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-01-14",
+  "observability": {
+    "enabled": true,
+  },
+
+  "ai": {
+    "binding": "AI",
+  },
+
+  "r2_buckets": [
+    {
+      "binding": "ARTIFACT_BUCKET",
+      "bucket_name": "ssccs-nexus-af",
+    },
+  ],
+
+  "kv_namespaces": [
+    {
+      "binding": "MODULE_HUB_KV",
+      "id": "",
+    },
+  ],
+
+  "vars": {
+    "DEPLOYMENT_ENV": "dev",
+    "MEMGRAPH_API_HOST": "",
+    "MEMGRAPH_API_KEY": "",
+  },
+}
