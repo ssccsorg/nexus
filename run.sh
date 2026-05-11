@@ -23,9 +23,10 @@ cleanup() {
     # Stop tunnel
     pkill -f "cloudflared tunnel.*$TUNNEL_ID" 2>/dev/null || true
     echo -e "${CYAN}All services stopped.${NC}"
+    exit 0
 }
 
-trap cleanup EXIT INT TERM
+trap cleanup INT TERM
 
 echo -e "${CYAN}============================================================${NC}"
 echo -e "${CYAN}  Nexus — Unified Launcher${NC}"
