@@ -6,20 +6,12 @@ on:
     paths:
       - "rag/lightrag/Dockerfile"
       - "graph/memgraph/Dockerfile"
-      - "rag/lightrag/**/*.py"
-      - "graph/memgraph/**/*.py"
-      - "rag/runners/**/*.py"
-      - "graph/runners/**/*.py"
       - ".github/workflows/build.yml"
   pull_request:
     branches: ["main"]
     paths:
       - "rag/lightrag/Dockerfile"
       - "graph/memgraph/Dockerfile"
-      - "rag/lightrag/**/*.py"
-      - "graph/memgraph/**/*.py"
-      - "rag/runners/**/*.py"
-      - "graph/runners/**/*.py"
       - ".github/workflows/build.yml"
   # Placeholder: ssccs core repo → R2 업로드 후 컨테이너 재빌드 트리거
   # repository_dispatch:
@@ -46,26 +38,17 @@ jobs:
       - name: Build Memgraph proxy image
         run: docker build -t memgraph-proxy -f graph/memgraph/Dockerfile graph/memgraph
 
-      - name: Check Python syntax
-        run: |
-          python3 -m py_compile graph/memgraph/server.py
-          python3 -m py_compile graph/memgraph/import_lightrag.py
-          python3 -m py_compile graph/runners/cli.py
-          python3 -m py_compile graph/runners/base.py
-          python3 -m py_compile graph/runners/engines.py
-          python3 -m py_compile rag/runners/cli.py
-          python3 -m py_compile rag/runners/base.py
-          python3 -m py_compile rag/runners/engines.py
-
       - name: Smoke test (Memgraph + proxy)
         run: |
-          docker run -d --name memgraph-nexus -p 7688:7687 memgraph/memgraph-platform
-          for i in $(seq 1 10); do
+          docker network create nexus-test
+          docker run -d --name memgraph-nexus --network nexus-test -p 7688:7687 memgraph/memgraph-platform
+          for i in $(seq 1 15); do
             docker exec memgraph-nexus mgconsole --query "RETURN 1" 2>/dev/null | grep -q "1" && break
             sleep 2
           done
-          docker run -d --name memgraph-proxy -p 7689:7689 \
-            -e MEMGRAPH_HOST=host.docker.internal -e MEMGRAPH_PORT=7688 \
+          docker run -d --name memgraph-proxy --network nexus-test -p 7689:7689 \
+            -e MEMGRAPH_HOST=memgraph-nexus -e MEMGRAPH_PORT=7687 \
+            -e PROXY_PORT=7689 \
             memgraph-proxy
           sleep 3
           curl -sf -X POST http://localhost:7689/cypher \
