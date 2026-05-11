@@ -17,22 +17,26 @@ const CYPHER_QUERIES = {
   // Orphaned concepts — nodes with zero relationships
   orphanedConcepts: `
     MATCH (c:Concept)
-    WHERE NOT EXISTS { (c)--() }
-    RETURN c.name AS name, c.id AS id, labels(c) AS labels
+    OPTIONAL MATCH (c)-[r]-()
+    WITH c, count(r) AS rc
+    WHERE rc = 0
+    RETURN c.name AS name, c.entity_type AS entity_type
     ORDER BY c.name
   `,
 
-  // Missing relationships — co-occurring but unconnected
+  // Missing relationships — co-occurring file_path but unconnected
   missingRelationships: `
-    MATCH (a:Concept)-[:APPEARS_IN]->(d:Document)<-[:APPEARS_IN]-(b:Concept)
-    WHERE a <> b AND NOT EXISTS { (a)-[:RELATES_TO|DEPENDS_ON|DEFINES|CITES]-(b) }
-    WITH a.name AS source, b.name AS target, collect(DISTINCT d.title) AS shared_docs
-    WHERE size(shared_docs) >= 2
-    RETURN source, target, shared_docs, size(shared_docs) AS cooccurrence_count
+    MATCH (a:Concept)
+    MATCH (b:Concept)
+    WHERE a <> b AND a.file_path = b.file_path
+      AND NOT EXISTS ((a)-[]-(b))
+    WITH a.name AS source, b.name AS target, collect(DISTINCT a.file_path) AS shared_files
+    WHERE size(shared_files) >= 1
+    RETURN source, target, shared_files, size(shared_files) AS cooccurrence_count
     ORDER BY cooccurrence_count DESC LIMIT 100
   `,
 
-  // Contradictory edges
+  // Contradictory edges — multiple different relationship types between same nodes
   contradictoryEdges: `
     MATCH (a:Concept)-[r1]->(b:Concept)
     MATCH (a)-[r2]->(b)
@@ -147,15 +151,15 @@ export class GapDetectorModule implements ReasoningModule {
       const orphans = await graph.query(CYPHER_QUERIES.orphanedConcepts);
       for (const row of orphans) {
         findings.push({
-          id: `gap-orphan-concept-${row.id || row.name}`,
+          id: `gap-orphan-concept-${row.name}`,
           moduleName: "gap-detector",
           severity: "warning",
           status: "open",
           title: `Orphaned concept: ${row.name}`,
           description:
-            `Concept "${row.name}" has no relationships to any other node. ` +
-            `It may be disconnected from the knowledge graph.`,
-          evidence: [`concept: ${row.name}`, `labels: ${(row.labels ?? []).join(", ")}`],
+            `Concept "${row.name}" (${row.entity_type ?? "unknown"}) has no relationships ` +
+            `to any other node. It may be disconnected from the knowledge graph.`,
+          evidence: [`concept: ${row.name}`, `type: ${row.entity_type ?? "unknown"}`],
           createdAt: now,
           updatedAt: now,
         });
