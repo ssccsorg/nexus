@@ -1,4 +1,4 @@
-tunnel: fe6dbde1-4bf1-4096-8f15-f8cc8fb16b87
+tunnel: 0d95c7af-bdeb-4cec-b801-b5ea3e43c33b
 
 ingress:
   - hostname: graph-api-dev.nexus.ssccs.org

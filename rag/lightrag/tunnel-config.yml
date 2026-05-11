@@ -11,13 +11,4 @@ ingress:
       readTimeout: 300s
       writeTimeout: 300s
 
-  - hostname: graph-api-dev.nexus.ssccs.org
-    service: http://127.0.0.1:7689
-    originRequest:
-      noTLSVerify: true
-      connectTimeout: 10s
-      tcpKeepAlive: 30s
-      readTimeout: 120s
-      writeTimeout: 120s
-
   - service: http_status:404

@@ -6,8 +6,12 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RAG_DIR="$SCRIPT_DIR/rag"
 GRAPH_DIR="$SCRIPT_DIR/graph"
-TUNNEL_ID="fe6dbde1-4bf1-4096-8f15-f8cc8fb16b87"
-TUNNEL_CONFIG="$RAG_DIR/lightrag/tunnel-config.yml"
+
+# Two separate tunnels
+RAG_TUNNEL_ID="fe6dbde1-4bf1-4096-8f15-f8cc8fb16b87"
+GRAPH_TUNNEL_ID="0d95c7af-bdeb-4cec-b801-b5ea3e43c33b"
+RAG_TUNNEL_CONFIG="$RAG_DIR/lightrag/tunnel-config.yml"
+GRAPH_TUNNEL_CONFIG="$GRAPH_DIR/memgraph/tunnel-config.yml"
 
 # Parse --verbose
 VERBOSE=false
@@ -15,10 +19,8 @@ for arg in "$@"; do
   [ "$arg" = "--verbose" ] || [ "$arg" = "-v" ] && VERBOSE=true
 done
 
-# Discard or passthrough depending on verbose
 DEVNULL="$([ "$VERBOSE" = true ] && echo "/dev/stdout" || echo "/dev/null")"
 
-# Colors
 CYAN='\033[0;36m'
 NC='\033[0m'
 
@@ -28,7 +30,8 @@ cleanup() {
     docker rm -f memgraph-proxy 2>/dev/null || true
     docker rm -f memgraph-nexus 2>/dev/null || true
     docker rm -f lightrag-nexus 2>/dev/null || true
-    pkill -f "cloudflared tunnel.*$TUNNEL_ID" 2>/dev/null || true
+    pkill -f "cloudflared tunnel.*$RAG_TUNNEL_ID" 2>/dev/null || true
+    pkill -f "cloudflared tunnel.*$GRAPH_TUNNEL_ID" 2>/dev/null || true
     echo -e "${CYAN}All services stopped.${NC}"
     exit 0
 }
@@ -41,9 +44,6 @@ echo -e "${CYAN}  Nexus — Unified Launcher${NC}"
 echo -e "${CYAN}============================================================${NC}"
 echo ""
 
-# ---------------------------------------------------------------------------
-# Pre-flight
-# ---------------------------------------------------------------------------
 echo "[1/7] Checking prerequisites..."
 if ! command -v docker &>/dev/null; then echo "[ERROR] docker required"; exit 1; fi
 if ! command -v cloudflared &>/dev/null; then echo "[ERROR] cloudflared required"; exit 1; fi
@@ -56,18 +56,12 @@ else
 fi
 echo ""
 
-# ---------------------------------------------------------------------------
-# Stop any existing services
-# ---------------------------------------------------------------------------
 echo "[2/7] Cleaning up existing services..."
 docker rm -f memgraph-proxy memgraph-nexus lightrag-nexus 2>/dev/null || true
-pkill -f "cloudflared tunnel.*$TUNNEL_ID" 2>/dev/null || true
+pkill -f "cloudflared tunnel" 2>/dev/null || true
 echo "  done"
 echo ""
 
-# ---------------------------------------------------------------------------
-# Start Memgraph
-# ---------------------------------------------------------------------------
 echo "[3/7] Starting Memgraph..."
 docker run -d --name memgraph-nexus --restart unless-stopped \
   -p 7688:7687 -p 3001:3000 -p 7444:7444 \
@@ -80,9 +74,6 @@ done
 echo "  → ready"
 echo ""
 
-# ---------------------------------------------------------------------------
-# Start Memgraph HTTP proxy
-# ---------------------------------------------------------------------------
 echo "[4/7] Starting Memgraph HTTP proxy..."
 docker build -q -t memgraph-proxy:latest -f "$GRAPH_DIR/memgraph/Dockerfile" "$GRAPH_DIR/memgraph" >"$DEVNULL"
 docker run -d --name memgraph-proxy --restart unless-stopped \
@@ -97,9 +88,6 @@ sleep 2
 echo "  → ready"
 echo ""
 
-# ---------------------------------------------------------------------------
-# Start LightRAG
-# ---------------------------------------------------------------------------
 echo "[5/7] Starting LightRAG..."
 export LMSTUDIO_URL="${LMSTUDIO_URL:-http://host.docker.internal:1234}"
 
@@ -109,10 +97,7 @@ EMBEDDING_DIM="${EMBEDDING_DIM:-768}"
 echo "  LLM: ${LLM_MODEL:-auto-detect}"
 echo "  Embed: ${EMBEDDING_MODEL:-auto-detect} (${EMBEDDING_DIM}d)"
 
-docker build -q -t lightrag-nexus:local -f "$RAG_DIR/lightrag/Dockerfile" "$RAG_DIR/lightrag" >"$DEVNULL" 2>&1 || {
-  echo "  [WARN] build failed, trying cached image"
-}
-
+docker build -q -t lightrag-nexus:local -f "$RAG_DIR/lightrag/Dockerfile" "$RAG_DIR/lightrag" >"$DEVNULL" 2>&1 || true
 docker rm -f lightrag-nexus 2>/dev/null || true
 docker run -d --name lightrag-nexus --restart unless-stopped \
   --add-host host.docker.internal:host-gateway \
@@ -141,37 +126,34 @@ for i in $(seq 1 30); do
     break
   fi
   if [ "$i" -eq 30 ]; then
-    echo "  [WARN] LightRAG health check timed out — check docker logs"
+    echo "  [WARN] LightRAG health check timed out"
     docker logs lightrag-nexus 2>/dev/null | tail -10
   fi
   sleep 2
 done
 echo ""
 
-# ---------------------------------------------------------------------------
-# Import LightRAG data → Memgraph
-# ---------------------------------------------------------------------------
 echo "[6/7] Importing LightRAG data into Memgraph..."
 if [ -f "$GRAPH_DIR/memgraph/import_lightrag.py" ]; then
   python3 "$GRAPH_DIR/memgraph/import_lightrag.py" 2>&1
 fi
 echo ""
 
-# ---------------------------------------------------------------------------
-# Start unified tunnel
-# ---------------------------------------------------------------------------
-echo "[7/7] Starting Cloudflare Tunnel..."
-cloudflared tunnel --config "$TUNNEL_CONFIG" run \
-  --credentials-file "$HOME/.cloudflared/$TUNNEL_ID.json" \
-  "$TUNNEL_ID" >"$DEVNULL" 2>&1 &
-TUNNEL_PID=$!
-sleep 4
-echo "  tunnel (pid:$TUNNEL_PID)"
+echo "[7/7] Starting Cloudflare Tunnels..."
+# RAG tunnel
+cloudflared tunnel --config "$RAG_TUNNEL_CONFIG" run \
+  --credentials-file "$HOME/.cloudflared/$RAG_TUNNEL_ID.json" \
+  "$RAG_TUNNEL_ID" >"$DEVNULL" 2>&1 &
+echo "  rag tunnel (nexus-rag)"
+# Graph tunnel
+cloudflared tunnel --config "$GRAPH_TUNNEL_CONFIG" run \
+  --credentials-file "$HOME/.cloudflared/$GRAPH_TUNNEL_ID.json" \
+  "$GRAPH_TUNNEL_ID" >"$DEVNULL" 2>&1 &
+echo "  graph tunnel (nexus-graph)"
+sleep 5
+echo "  → tunnels running"
 echo ""
 
-# ---------------------------------------------------------------------------
-# Ready
-# ---------------------------------------------------------------------------
 echo -e "${CYAN}============================================================${NC}"
 echo -e "${CYAN}  All services ready${NC}"
 echo -e "${CYAN}============================================================${NC}"
@@ -179,7 +161,8 @@ echo ""
 echo "  LightRAG API:    http://localhost:9621"
 echo "  Memgraph Proxy:  http://localhost:7689"
 echo "  Memgraph Lab:    http://localhost:3001"
-echo "  Tunnel config:   $TUNNEL_CONFIG"
+echo "  rag-api-dev → nexus-rag tunnel"
+echo "  graph-api-dev → nexus-graph tunnel"
 echo ""
 echo "  Press Ctrl+C to stop all services."
 echo ""
