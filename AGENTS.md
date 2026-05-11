@@ -22,9 +22,9 @@ Avoid negated‑affirmation pairs (“not…, but…”): Express logic directly
 
 ## Git
 
-Do not push without permission.
+Do not push.
 
-DO NOT MERGE PR or any branch without permission.
+DO NOT MERGE PR or any branch.
 
 Always use English
 
@@ -46,6 +46,6 @@ Do not merge PR without permission.
 
 Focus on the accurancy of the goal.
 
-Do not generate too much unnecessary code unless it was essential for the goal.
+Do not generate unnecessary code unless it was essential for the goal.
 
 Code as pessimistically and critically as possible.
