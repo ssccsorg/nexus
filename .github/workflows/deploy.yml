@@ -12,6 +12,11 @@ on:
       - "workers/**"
       - ".github/workflows/deploy.yml"
   workflow_dispatch:
+  # Placeholder: ssccs core repo → R2 업로드 후 트리거 (VPS 준비되면 활성화)
+  # repository_dispatch:
+  #   types:
+  #     - ssccs-poc-agent-af
+  #     - ssccs-docs-agent-af
 
 permissions:
   contents: read
