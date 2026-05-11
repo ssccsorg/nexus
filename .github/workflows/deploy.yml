@@ -56,45 +56,25 @@ jobs:
           cache-dependency-path: workers/af-sync/package-lock.json
       - run: npm ci
 
-  # Push deploy: only on main merge
-  deploy-module-hub:
-    if: ${{ github.event_name == 'push' && (contains(github.event.head_commit.modified, 'workers/module-hub/') || contains(github.event.head_commit.added, 'workers/module-hub/')) }}
+  deploy:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        worker: [module-hub, af-sync]
     defaults:
       run:
-        working-directory: workers/module-hub
+        working-directory: workers/${{ matrix.worker }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: "npm"
-          cache-dependency-path: workers/module-hub/package-lock.json
+          cache-dependency-path: workers/${{ matrix.worker }}/package-lock.json
       - run: npm ci
-      - name: Deploy module-hub
+      - name: Deploy ${{ matrix.worker }}
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
-          workingDirectory: workers/module-hub
-          command: deploy
-
-  deploy-af-sync:
-    if: ${{ github.event_name == 'push' && (contains(github.event.head_commit.modified, 'workers/af-sync/') || contains(github.event.head_commit.added, 'workers/af-sync/')) }}
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: workers/af-sync
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: "npm"
-          cache-dependency-path: workers/af-sync/package-lock.json
-      - run: npm ci
-      - name: Deploy af-sync
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CF_API_TOKEN }}
-          workingDirectory: workers/af-sync
+          workingDirectory: workers/${{ matrix.worker }}
           command: deploy
