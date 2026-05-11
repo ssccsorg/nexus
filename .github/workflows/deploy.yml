@@ -1,0 +1,53 @@
+name: Deploy Workers
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "workers/**"
+
+jobs:
+  typecheck:
+    uses: ./.github/workflows/ci.yml
+
+  deploy-module-hub:
+    needs: [typecheck]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workers/module-hub
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+          cache-dependency-path: workers/module-hub/package-lock.json
+      - run: npm ci
+      - name: Deploy to Cloudflare
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          workingDirectory: workers/module-hub
+          command: deploy
+
+  deploy-af-sync:
+    needs: [typecheck]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workers/af-sync
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+          cache-dependency-path: workers/af-sync/package-lock.json
+      - run: npm ci
+      - name: Deploy to Cloudflare
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          workingDirectory: workers/af-sync
+          command: deploy

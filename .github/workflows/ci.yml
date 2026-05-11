@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "workers/**"
+  workflow_call:
+    # Allows deploy.yml to reuse these checks
+
+jobs:
+  typecheck-module-hub:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workers/module-hub
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+          cache-dependency-path: workers/module-hub/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+
+  typecheck-af-sync:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workers/af-sync
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+          cache-dependency-path: workers/af-sync/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
