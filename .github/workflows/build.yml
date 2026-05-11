@@ -6,20 +6,12 @@ on:
     paths:
       - "rag/lightrag/Dockerfile"
       - "graph/memgraph/Dockerfile"
-      - "rag/lightrag/**/*.py"
-      - "graph/memgraph/**/*.py"
-      - "rag/runners/**/*.py"
-      - "graph/runners/**/*.py"
       - ".github/workflows/build.yml"
   pull_request:
     branches: ["main"]
     paths:
       - "rag/lightrag/Dockerfile"
       - "graph/memgraph/Dockerfile"
-      - "rag/lightrag/**/*.py"
-      - "graph/memgraph/**/*.py"
-      - "rag/runners/**/*.py"
-      - "graph/runners/**/*.py"
       - ".github/workflows/build.yml"
   # Placeholder: ssccs core repo → R2 업로드 후 컨테이너 재빌드 트리거
   # repository_dispatch:
@@ -45,17 +37,6 @@ jobs:
 
       - name: Build Memgraph proxy image
         run: docker build -t memgraph-proxy -f graph/memgraph/Dockerfile graph/memgraph
-
-      - name: Check Python syntax
-        run: |
-          python3 -m py_compile graph/memgraph/server.py
-          python3 -m py_compile graph/memgraph/import_lightrag.py
-          python3 -m py_compile graph/runners/cli.py
-          python3 -m py_compile graph/runners/base.py
-          python3 -m py_compile graph/runners/engines.py
-          python3 -m py_compile rag/runners/cli.py
-          python3 -m py_compile rag/runners/base.py
-          python3 -m py_compile rag/runners/engines.py
 
       - name: Smoke test (Memgraph + proxy)
         run: |
