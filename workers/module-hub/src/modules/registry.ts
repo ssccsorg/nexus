@@ -5,7 +5,7 @@
 // is the DJ mixing desk: it knows which modules are active, what
 // contract rules they must satisfy, and which KG backends they access.
 
-import type { ReasoningModule, ModuleContext, Finding } from "./types";
+import type { ReasoningModule, ModuleContext, Finding, ModuleManifest } from "./types";
 
 // ---------------------------------------------------------------------------
 // Module loader — auto-discover modules in the registry
@@ -26,7 +26,7 @@ export function register(key: string, ctor: ModuleConstructor): void {
 /**
  * List all registered module keys with their manifests.
  */
-export function listModules(): Array<{ key: string; manifest: ReturnType<ReasoningModule["manifest"]> }> {
+export function listModules(): Array<{ key: string; manifest: ModuleManifest }> {
   return Object.entries(REGISTERED).map(([key, ctor]) => ({
     key,
     manifest: new ctor().manifest,
