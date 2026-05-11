@@ -2,7 +2,7 @@
 
 Boundaryless Autonomous Research Infrastructure. Contract-Governed, Hypothesis-Driven, and Cross-Reality by Design
 
-### Executive Summary
+## Executive Summary
 
 Modern fundamental computing research — redefining the von Neumann paradigm through structural observation — cannot remain confined to textual and code artifacts. The infrastructure that supports such research must evolve from a document‑code knowledge graph into a **cross‑reality research manifold**: a unified representation where whitepaper insights, compiler traces, physics simulations, robotic validations, sensor streams, and hardware‑in‑the‑loop measurements all coexist in a single, queryable, verifiable structure.
 
