@@ -66,6 +66,8 @@ export interface ModuleContext {
   bucket: R2Bucket;
   /** Cloudflare Workers AI binding (optional) */
   ai: any;
+  /** Graph database client (Memgraph via HTTP proxy) */
+  graph: KgClient | undefined;
   /** Environment bindings */
   env: Record<string, string>;
 }

@@ -12,6 +12,7 @@
 import { runModules, listModules } from "./modules/registry";
 import "./modules/gap-detector";
 import type { ModuleContext } from "./modules/types";
+import { MemgraphClient } from "./modules/memgraph";
 
 // ---------------------------------------------------------------------------
 // Environment
@@ -30,13 +31,22 @@ export interface Env {
 // Build runtime context from Env
 // ---------------------------------------------------------------------------
 function buildContext(env: Env): ModuleContext {
+  const mgHost = env.MEMGRAPH_API_HOST || "";
+  const mgKey = env.MEMGRAPH_API_KEY || "";
+
+  let graph: MemgraphClient | undefined;
+  if (mgHost) {
+    graph = new MemgraphClient(mgHost, mgKey);
+  }
+
   return {
     kv: env.FINDINGS_KV,
     bucket: env.ARTIFACT_BUCKET,
     ai: env.AI,
+    graph,
     env: {
-      MEMGRAPH_API_HOST: env.MEMGRAPH_API_HOST || "",
-      MEMGRAPH_API_KEY: env.MEMGRAPH_API_KEY || "",
+      MEMGRAPH_API_HOST: mgHost,
+      MEMGRAPH_API_KEY: mgKey,
     },
   };
 }
