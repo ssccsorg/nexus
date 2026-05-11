@@ -5,11 +5,7 @@ on:
     branches: ["main"]
 
 jobs:
-  ci:
-    uses: ./.github/workflows/ci.yml
-
   deploy-module-hub:
-    needs: [ci]
     if: ${{ contains(github.event.head_commit.modified, 'workers/module-hub/') || contains(github.event.head_commit.added, 'workers/module-hub/') }}
     runs-on: ubuntu-latest
     defaults:
@@ -23,7 +19,7 @@ jobs:
           cache: "npm"
           cache-dependency-path: workers/module-hub/package-lock.json
       - run: npm ci
-      - name: Deploy to Cloudflare
+      - name: Deploy module-hub
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
@@ -31,7 +27,6 @@ jobs:
           command: deploy
 
   deploy-af-sync:
-    needs: [ci]
     if: ${{ contains(github.event.head_commit.modified, 'workers/af-sync/') || contains(github.event.head_commit.added, 'workers/af-sync/') }}
     runs-on: ubuntu-latest
     defaults:
@@ -45,7 +40,7 @@ jobs:
           cache: "npm"
           cache-dependency-path: workers/af-sync/package-lock.json
       - run: npm ci
-      - name: Deploy to Cloudflare
+      - name: Deploy af-sync
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
