@@ -19,14 +19,14 @@
 
   "kv_namespaces": [
     {
-      "binding": "MODULE_HUB_KV",
-      "id": "",
+      "binding": "FINDINGS_KV",
+      "id": "5a2e2537057c4e488170683efb30e4fc",
     },
   ],
 
   "vars": {
-    "DEPLOYMENT_ENV": "dev",
-    "MEMGRAPH_API_HOST": "",
-    "MEMGRAPH_API_KEY": "",
-  },
+      "DEPLOYMENT_ENV": "dev",
+      "MEMGRAPH_API_HOST": "http://localhost:7689",
+      "MEMGRAPH_API_KEY": "dev",
+    },
 }

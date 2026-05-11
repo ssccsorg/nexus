@@ -1,19 +1,54 @@
 // src/modules/gap-detector.ts
 // Gap Detector — structural analysis of the document corpus.
 //
-// CURRENT MODE: Embedding-based similarity analysis using CF Workers AI.
-//   Detects potential conceptual gaps by comparing document embeddings.
+// PRIMARY MODE (Memgraph available): Cypher-based KG structural analysis.
+//   Orphaned nodes, disconnected subgraphs, contradictory edges.
 //
-// FUTURE MODE (when Memgraph is deployed):
-//   Cypher-based KG structural analysis — orphaned nodes, disconnected subgraphs,
-//   contradictory edges, etc. (Cypher queries are preserved at the bottom
-//   of this file, commented out, for when Memgraph comes online.)
+// FALLBACK MODE (no Memgraph): Embedding-based similarity analysis using CF Workers AI.
+//   Detects potential conceptual gaps by comparing document embeddings.
 
 import type { ReasoningModule, ModuleContext, Finding } from "./types";
 import { register } from "./registry";
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Cypher queries for Memgraph mode
+// ---------------------------------------------------------------------------
+const CYPHER_QUERIES = {
+  // Orphaned concepts — nodes with zero relationships
+  orphanedConcepts: `
+    MATCH (c:Concept)
+    OPTIONAL MATCH (c)-[r]-()
+    WITH c, count(r) AS rc
+    WHERE rc = 0
+    RETURN c.name AS name, c.entity_type AS entity_type
+    ORDER BY c.name
+  `,
+
+  // Missing relationships — co-occurring file_path but unconnected
+  missingRelationships: `
+    MATCH (a:Concept)
+    MATCH (b:Concept)
+    WHERE a <> b AND a.file_path = b.file_path
+      AND NOT EXISTS ((a)-[]-(b))
+    WITH a.name AS source, b.name AS target, collect(DISTINCT a.file_path) AS shared_files
+    WHERE size(shared_files) >= 1
+    RETURN source, target, shared_files, size(shared_files) AS cooccurrence_count
+    ORDER BY cooccurrence_count DESC LIMIT 100
+  `,
+
+  // Contradictory edges — multiple different relationship types between same nodes
+  contradictoryEdges: `
+    MATCH (a:Concept)-[r1]->(b:Concept)
+    MATCH (a)-[r2]->(b)
+    WHERE r1 <> r2 AND type(r1) <> type(r2)
+    RETURN a.name AS source, b.name AS target,
+           collect(DISTINCT type(r1)) AS relationship_types
+    ORDER BY size(collect(DISTINCT type(r1))) DESC LIMIT 20
+  `,
+};
+
+// ---------------------------------------------------------------------------
+// Helpers (embedding fallback)
 // ---------------------------------------------------------------------------
 
 /** Split text into chunks of roughly `maxWords` words. */
@@ -32,16 +67,28 @@ function chunkText(text: string, maxWords: number = 256): string[] {
   return chunks.length > 0 ? chunks : [text];
 }
 
-/** Compute cosine similarity between two vectors. */
+/** Compute cosine similarity between two equal-length vectors. */
 function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length || a.length === 0) return 0;
   let dot = 0, normA = 0, normB = 0;
   for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
+    const ai = a[i]!;
+    const bi = b[i]!;
+    dot += ai * bi;
+    normA += ai * ai;
+    normB += bi * bi;
   }
   const denom = Math.sqrt(normA) * Math.sqrt(normB);
   return denom === 0 ? 0 : dot / denom;
+}
+
+// ---------------------------------------------------------------------------
+// Document chunk result (embedding fallback)
+// ---------------------------------------------------------------------------
+interface DocumentChunks {
+  key: string;
+  chunks: string[];
+  embeddings: number[][];
 }
 
 // ---------------------------------------------------------------------------
@@ -51,13 +98,13 @@ export class GapDetectorModule implements ReasoningModule {
   manifest = {
     name: "gap-detector",
     description:
-      "Structural analysis of the document corpus using embedding similarity. " +
-      "Detects potential conceptual gaps, orphaned documents, and near-duplicate " +
-      "content. When Memgraph is available, switches to Cypher-based KG analysis.",
-    version: "0.2.0",
+      "Structural analysis of the document corpus using Cypher-based KG analysis " +
+      "(Memgraph) or embedding similarity (fallback). Detects potential conceptual gaps, " +
+      "orphaned documents, near-duplicate content, and contradictory edges.",
+    version: "0.3.0",
     runMode: "periodic" as const,
     schedule: "0 */6 * * *",
-    requiresKgs: [],
+    requiresKgs: ["memgraph"],
     contract: {
       level: "normal" as const,
       minEvidence: 1,
@@ -66,25 +113,148 @@ export class GapDetectorModule implements ReasoningModule {
   };
 
   async init(_ctx: ModuleContext): Promise<void> {
-    // No initialization needed — all resources are acquired at runtime
+    // No initialization needed
   }
 
   async run(ctx: ModuleContext): Promise<Finding[]> {
     const findings: Finding[] = [];
     const now = new Date().toISOString();
 
-    // ---------------------------------------------------------------
-    // Phase 1: Scan R2, chunk, embed
-    // ---------------------------------------------------------------
-    const documents: Array<{ key: string; chunks: string[]; embeddings: number[][] }> = [];
+    // Try Memgraph mode first
+    if (ctx.graph) {
+      const available = await ctx.graph.ping();
+      if (available) {
+        console.log("[gap-detector] running in Memgraph mode");
+        return this.runMemgraph(ctx, findings, now);
+      }
+      console.warn("[gap-detector] Memgraph unreachable, falling back to embedding mode");
+    } else {
+      console.log("[gap-detector] no graph client configured, using embedding mode");
+    }
 
-    let cursor: string | undefined;
+    // Fallback: embedding-based analysis
+    return this.runEmbedding(ctx, findings, now);
+  }
+
+  // -----------------------------------------------------------------------
+  // Memgraph mode — Cypher-based graph analysis
+  // -----------------------------------------------------------------------
+  private async runMemgraph(
+    ctx: ModuleContext,
+    findings: Finding[],
+    now: string,
+  ): Promise<Finding[]> {
+    const graph = ctx.graph!;
+
+    // 1. Orphaned concepts
+    try {
+      const orphans = await graph.query(CYPHER_QUERIES.orphanedConcepts);
+      for (const row of orphans) {
+        findings.push({
+          id: `gap-orphan-concept-${row.name}`,
+          moduleName: "gap-detector",
+          severity: "warning",
+          status: "open",
+          title: `Orphaned concept: ${row.name}`,
+          description:
+            `Concept "${row.name}" (${row.entity_type ?? "unknown"}) has no relationships ` +
+            `to any other node. It may be disconnected from the knowledge graph.`,
+          evidence: [`concept: ${row.name}`, `type: ${row.entity_type ?? "unknown"}`],
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    } catch (e) {
+      console.warn("[gap-detector] orphanedConcepts query failed:", e);
+    }
+
+    // 2. Missing relationships
+    try {
+      const missing = await graph.query(CYPHER_QUERIES.missingRelationships);
+      for (const row of missing) {
+        findings.push({
+          id: `gap-missing-rel-${row.source}-${row.target}`,
+          moduleName: "gap-detector",
+          severity: "info",
+          status: "open",
+          title: `Missing relationship: ${row.source} ↔ ${row.target}`,
+          description:
+            `"${row.source}" and "${row.target}" co-occur in ${row.cooccurrence_count} ` +
+            `documents but have no direct relationship. A relationship may be missing.`,
+          evidence: [
+            `source: ${row.source}`,
+            `target: ${row.target}`,
+            `co-occurrences: ${row.cooccurrence_count}`,
+          ],
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    } catch (e) {
+      console.warn("[gap-detector] missingRelationships query failed:", e);
+    }
+
+    // 3. Contradictory edges
+    try {
+      const contradictions = await graph.query(CYPHER_QUERIES.contradictoryEdges);
+      for (const row of contradictions) {
+        findings.push({
+          id: `gap-contradiction-${row.source}-${row.target}`,
+          moduleName: "gap-detector",
+          severity: "critical",
+          status: "open",
+          title: `Contradictory edges: ${row.source} → ${row.target}`,
+          description:
+            `Multiple conflicting relationship types exist between "${row.source}" ` +
+            `and "${row.target}": ${(row.relationship_types ?? []).join(", ")}.`,
+          evidence: [
+            `source: ${row.source}`,
+            `target: ${row.target}`,
+            `types: ${(row.relationship_types ?? []).join(", ")}`,
+          ],
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    } catch (e) {
+      console.warn("[gap-detector] contradictoryEdges query failed:", e);
+    }
+
+    // Persist to KV
+    await ctx.kv.put(
+      `findings:gap-detector:${now}`,
+      JSON.stringify({
+        generatedAt: now,
+        mode: "memgraph",
+        count: findings.length,
+        findings,
+      }),
+    );
+
+    console.log(`[gap-detector] memgraph findings: ${findings.length}`);
+    return findings;
+  }
+
+  // -----------------------------------------------------------------------
+  // Embedding fallback mode
+  // -----------------------------------------------------------------------
+  private async runEmbedding(
+    ctx: ModuleContext,
+    findings: Finding[],
+    now: string,
+  ): Promise<Finding[]> {
+    // Phase 1: Scan R2, chunk, embed
+    const documents: DocumentChunks[] = [];
     let scanned = 0;
+    let cursor: string | undefined;
 
     do {
-      const result = await ctx.bucket.list({ limit: 100, cursor });
+      const opts: R2ListOptions = { limit: 100 };
+      if (cursor) {
+        opts.cursor = cursor;
+      }
+      const result = await ctx.bucket.list(opts);
       for (const obj of result.objects) {
-        // Skip non-text files
         if (!obj.key.endsWith(".md") && !obj.key.endsWith(".txt") && !obj.key.endsWith(".qmd")) {
           continue;
         }
@@ -95,49 +265,48 @@ export class GapDetectorModule implements ReasoningModule {
         const text = await r2Obj.text();
         const chunks = chunkText(text, 256);
 
-        // Embed each chunk using CF Workers AI
-        const embeddings: number[][] = [];
-        for (const chunk of chunks) {
+        // Parallel embedding calls
+        const embeddingPromises = chunks.map(async (chunk) => {
           try {
             const response = await ctx.ai.run(
               "@cf/baai/bge-small-en-v1.5",
               { text: [chunk] },
             ) as { data: number[][] };
-            if (response.data?.[0]) {
-              embeddings.push(response.data[0]);
-            }
+            return response.data?.[0] ?? null;
           } catch (e) {
             console.warn(`[gap-detector] embedding failed for ${obj.key}:`, e);
+            return null;
           }
-        }
+        });
+        const results = await Promise.all(embeddingPromises);
+        const embeddings: number[][] = results.filter((e): e is number[] => e !== null);
 
         if (embeddings.length > 0) {
           documents.push({ key: obj.key, chunks, embeddings });
         }
 
         scanned++;
-        if (scanned >= 50) break; // safety limit per run
+        if (scanned >= 50) break;
       }
       cursor = result.truncated ? result.cursor : undefined;
     } while (cursor && scanned < 50);
 
     console.log(`[gap-detector] scanned ${scanned} files, embedded ${documents.length}`);
 
-    // ---------------------------------------------------------------
     // Phase 2: Cross-document similarity analysis
-    // ---------------------------------------------------------------
-
-    // 2a. Find near-duplicate chunks across different documents
     for (let i = 0; i < documents.length; i++) {
+      const docA = documents[i]!;
+
       for (let j = i + 1; j < documents.length; j++) {
-        const docA = documents[i];
-        const docB = documents[j];
+        const docB = documents[j]!;
 
         for (let ci = 0; ci < docA.embeddings.length; ci++) {
-          for (let cj = 0; cj < docB.embeddings.length; cj++) {
-            const sim = cosineSimilarity(docA.embeddings[ci], docB.embeddings[cj]);
+          const embA = docA.embeddings[ci]!;
 
-            // Near-duplicate: similarity above 0.95
+          for (let cj = 0; cj < docB.embeddings.length; cj++) {
+            const embB = docB.embeddings[cj]!;
+            const sim = cosineSimilarity(embA, embB);
+
             if (sim > 0.95) {
               findings.push({
                 id: `gap-duplicate-${docA.key}-${docB.key}-c${ci}-c${cj}`,
@@ -159,8 +328,6 @@ export class GapDetectorModule implements ReasoningModule {
               });
             }
 
-            // Severely divergent: similarity below 0.1 for documents on the same topic
-            // (approximated by similar first-chunk embedding)
             if (ci === 0 && cj === 0 && sim < 0.1) {
               findings.push({
                 id: `gap-divergent-${docA.key}-${docB.key}`,
@@ -186,8 +353,7 @@ export class GapDetectorModule implements ReasoningModule {
       }
     }
 
-    // 2b. Orphaned documents — documents that don't share significant similarity
-    //     with any other document in the corpus
+    // Orphaned documents
     if (documents.length >= 3) {
       for (const doc of documents) {
         let maxSim = 0;
@@ -219,21 +385,20 @@ export class GapDetectorModule implements ReasoningModule {
       }
     }
 
-    // ---------------------------------------------------------------
-    // Persist findings to KV
-    // ---------------------------------------------------------------
+    // Persist to KV
     await ctx.kv.put(
       `findings:gap-detector:${now}`,
       JSON.stringify({
         generatedAt: now,
+        mode: "embedding",
         count: findings.length,
         documentsScanned: scanned,
         documentsEmbedded: documents.length,
         findings,
       }),
     );
-    console.log(`[gap-detector] total findings: ${findings.length}`);
 
+    console.log(`[gap-detector] embedding findings: ${findings.length}`);
     return findings;
   }
 
@@ -246,37 +411,3 @@ export class GapDetectorModule implements ReasoningModule {
 // Register the module
 // ---------------------------------------------------------------------------
 register("gap-detector", GapDetectorModule);
-
-// ===========================================================================
-// FUTURE: Memgraph Cypher queries (uncomment when Memgraph is deployed)
-// ===========================================================================
-//
-// const CYPHER_QUERIES = {
-//   // Orphaned concepts — nodes with zero relationships
-//   orphanedConcepts: `
-//     MATCH (c:Concept)
-//     WHERE NOT EXISTS { (c)--() }
-//     RETURN c.name, c.id, labels(c) AS labels
-//     ORDER BY c.name
-//   `,
-//
-//   // Missing relationships — co-occurring but unconnected
-//   missingRelationships: `
-//     MATCH (a:Concept)-[:APPEARS_IN]->(d:Document)<-[:APPEARS_IN]-(b:Concept)
-//     WHERE a <> b AND NOT EXISTS { (a)-[:RELATES_TO|DEPENDS_ON|DEFINES|CITES]-(b) }
-//     WITH a.name AS source, b.name AS target, collect(DISTINCT d.title) AS shared_docs
-//     WHERE size(shared_docs) >= 2
-//     RETURN source, target, shared_docs, size(shared_docs) AS cooccurrence_count
-//     ORDER BY cooccurrence_count DESC LIMIT 100
-//   `,
-//
-//   // Contradictory edges
-//   contradictoryEdges: `
-//     MATCH (a:Concept)-[r1]->(b:Concept)
-//     MATCH (a)-[r2]->(b)
-//     WHERE r1 <> r2 AND type(r1) <> type(r2)
-//     RETURN a.name AS source, b.name AS target,
-//            collect(DISTINCT type(r1)) AS relationship_types
-//     ORDER BY size(collect(DISTINCT type(r1))) DESC LIMIT 20
-//   `,
-// };
