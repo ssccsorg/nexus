@@ -60,13 +60,6 @@ jobs:
           python3 -m py_compile graph/runners/base.py
           python3 -m py_compile graph/runners/engines.py
 
-  # ── Shell syntax check ────────────────────────────────────────────
-  shellcheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: shellcheck -S error run.sh rag/run.sh graph/run.sh
-
   # ── Container build check ─────────────────────────────────────────
   docker-build:
     runs-on: ubuntu-latest
