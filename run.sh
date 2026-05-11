@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # nexus-run — Unified launcher for all Nexus services
 # Orchestrates: LightRAG, Memgraph + proxy, tunnel, data import
-set -euo pipefail
+set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RAG_DIR="$SCRIPT_DIR/rag"
@@ -40,6 +40,11 @@ if ! command -v docker &>/dev/null; then echo "[ERROR] docker required"; exit 1;
 if ! command -v cloudflared &>/dev/null; then echo "[ERROR] cloudflared required"; exit 1; fi
 echo "  docker: ok"
 echo "  cloudflared: ok"
+if curl -sf http://localhost:1234/v1/models >/dev/null 2>&1; then
+  echo "  LM Studio: ok"
+else
+  echo "  [WARN] LM Studio not reachable on :1234 — LightRAG may fail"
+fi
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -89,14 +94,21 @@ echo ""
 # Start LightRAG
 # ---------------------------------------------------------------------------
 echo "[5/7] Starting LightRAG..."
-docker build -q -t lightrag-nexus:local -f "$RAG_DIR/lightrag/Dockerfile" "$RAG_DIR/lightrag" 2>/dev/null || true
-# Use pre-built image if local build fails
-LIGHTRAG_IMAGE="${LIGHTRAG_IMAGE:-lightrag-nexus:local}"
 export LMSTUDIO_URL="${LMSTUDIO_URL:-http://host.docker.internal:1234}"
-export LLM_MODEL="${LLM_MODEL:-}"
-export EMBEDDING_MODEL="${EMBEDDING_MODEL:-}"
-export EMBEDDING_DIM="${EMBEDDING_DIM:-768}"
 
+# Detect embedding model from LM Studio
+EMBEDDING_MODEL="$(curl -sf "${LMSTUDIO_URL}/v1/models" 2>/dev/null | python3 -c "import json,sys; models=json.load(sys.stdin).get('data',[]); em=[m['id'] for m in models if 'embed' in m['id'].lower()]; print(em[0] if em else '')" 2>/dev/null || echo "")"
+LLM_MODEL="$(curl -sf "${LMSTUDIO_URL}/v1/models" 2>/dev/null | python3 -c "import json,sys; models=json.load(sys.stdin).get('data',[]); lm=[m['id'] for m in models if 'embed' not in m['id'].lower()]; print(lm[0] if lm else '')" 2>/dev/null || echo "")"
+EMBEDDING_DIM="${EMBEDDING_DIM:-768}"
+echo "  LLM: ${LLM_MODEL:-auto-detect}"
+echo "  Embed: ${EMBEDDING_MODEL:-auto-detect} (${EMBEDDING_DIM}d)"
+
+# Build image (quiet)
+docker build -q -t lightrag-nexus:local -f "$RAG_DIR/lightrag/Dockerfile" "$RAG_DIR/lightrag" >/dev/null 2>&1 || {
+  echo "  [WARN] build failed, trying cached image"
+}
+
+docker rm -f lightrag-nexus 2>/dev/null || true
 docker run -d --name lightrag-nexus --restart unless-stopped \
   --add-host host.docker.internal:host-gateway \
   -p 9621:9621 \
@@ -111,13 +123,21 @@ docker run -d --name lightrag-nexus --restart unless-stopped \
   lightrag-nexus:local \
   --host 0.0.0.0 --port 9621 --working-dir /work/data \
   --workspace default --llm-binding openai --embedding-binding openai \
-  --log-level INFO >/dev/null 2>&1 &
+  --log-level INFO >/dev/null 2>&1 || {
+  echo "[ERROR] LightRAG failed to start"
+  docker logs lightrag-nexus 2>/dev/null | tail -5
+  exit 1
+}
 echo "  lightrag-nexus (api:9621)"
 # Wait for LightRAG
 for i in $(seq 1 30); do
   if curl -sf http://localhost:9621/health 2>/dev/null | grep -q "healthy"; then
     echo "  → ready"
     break
+  fi
+  if [ "$i" -eq 30 ]; then
+    echo "  [WARN] LightRAG health check timed out — check docker logs"
+    docker logs lightrag-nexus 2>/dev/null | tail -10
   fi
   sleep 2
 done
