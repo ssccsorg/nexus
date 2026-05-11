@@ -40,13 +40,15 @@ jobs:
 
       - name: Smoke test (Memgraph + proxy)
         run: |
-          docker run -d --name memgraph-nexus -p 7688:7687 memgraph/memgraph-platform
-          for i in $(seq 1 10); do
+          docker network create nexus-test
+          docker run -d --name memgraph-nexus --network nexus-test -p 7688:7687 memgraph/memgraph-platform
+          for i in $(seq 1 15); do
             docker exec memgraph-nexus mgconsole --query "RETURN 1" 2>/dev/null | grep -q "1" && break
             sleep 2
           done
-          docker run -d --name memgraph-proxy -p 7689:7689 \
-            -e MEMGRAPH_HOST=host.docker.internal -e MEMGRAPH_PORT=7688 \
+          docker run -d --name memgraph-proxy --network nexus-test -p 7689:7689 \
+            -e MEMGRAPH_HOST=memgraph-nexus -e MEMGRAPH_PORT=7687 \
+            -e PROXY_PORT=7689 \
             memgraph-proxy
           sleep 3
           curl -sf -X POST http://localhost:7689/cypher \
