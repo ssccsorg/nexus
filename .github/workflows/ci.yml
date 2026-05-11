@@ -5,10 +5,15 @@ on:
     branches: ["main"]
     paths:
       - "workers/**"
+      - "graph/**"
+      - "rag/**"
+      - "run.sh"
+      - "*.yml"
+      - "Dockerfile"
   workflow_call:
-    # Allows deploy.yml to reuse these checks
 
 jobs:
+  # ── TypeScript Workers ────────────────────────────────────────────
   typecheck-module-hub:
     runs-on: ubuntu-latest
     defaults:
@@ -38,3 +43,44 @@ jobs:
           cache-dependency-path: workers/af-sync/package-lock.json
       - run: npm ci
       - run: npx tsc --noEmit
+
+  # ── Python syntax check ───────────────────────────────────────────
+  python-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: |
+          python3 -m py_compile graph/memgraph/server.py
+          python3 -m py_compile graph/memgraph/runner.py
+          python3 -m py_compile graph/memgraph/import_lightrag.py
+          python3 -m py_compile graph/runners/cli.py
+          python3 -m py_compile graph/runners/base.py
+          python3 -m py_compile graph/runners/engines.py
+
+  # ── Shell syntax check ────────────────────────────────────────────
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck run.sh
+      - run: shellcheck rag/run.sh
+      - run: shellcheck graph/run.sh
+
+  # ── Container build check ─────────────────────────────────────────
+  docker-build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        dockerfile:
+          - path: graph/memgraph/Dockerfile
+            tag: memgraph-proxy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v4
+      - run: |
+          docker build -t ${{ matrix.dockerfile.tag }} \
+            -f ${{ matrix.dockerfile.path }} \
+            $(dirname ${{ matrix.dockerfile.path }})
