@@ -170,7 +170,7 @@ def main() -> None:
     # Test queries that gap-detector will use
     print("Testing gap-detector queries...")
     for name, query in [
-        ("Orphaned concepts", "MATCH (c:Concept) WHERE NOT EXISTS { (c)--() } RETURN count(c) AS n"),
+        ("Orphaned concepts", "MATCH (c:Concept) OPTIONAL MATCH (c)-[r]-() WITH c, count(r) AS rc WHERE rc = 0 RETURN count(c) AS n"),
         ("Relationships", "MATCH (a:Concept)-[r]->(b:Concept) RETURN count(r) AS n"),
     ]:
         r = cypher(query)
