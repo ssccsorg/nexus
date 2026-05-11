@@ -3,16 +3,63 @@ name: Deploy Workers
 on:
   push:
     branches: ["main"]
+    paths:
+      - "workers/**"
+      - ".github/workflows/deploy.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "workers/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  deploy-module-hub:
-    if: ${{ contains(github.event.head_commit.modified, 'workers/module-hub/') || contains(github.event.head_commit.added, 'workers/module-hub/') }}
+  # PR check: verify npm install works (no deploy on PR)
+  check-module-hub:
+    if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: workers/module-hub
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+          cache-dependency-path: workers/module-hub/package-lock.json
+      - run: npm ci
+
+  check-af-sync:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workers/af-sync
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+          cache-dependency-path: workers/af-sync/package-lock.json
+      - run: npm ci
+
+  # Push deploy: only on main merge
+  deploy-module-hub:
+    if: ${{ github.event_name == 'push' && (contains(github.event.head_commit.modified, 'workers/module-hub/') || contains(github.event.head_commit.added, 'workers/module-hub/')) }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workers/module-hub
+    steps:
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -27,13 +74,13 @@ jobs:
           command: deploy
 
   deploy-af-sync:
-    if: ${{ contains(github.event.head_commit.modified, 'workers/af-sync/') || contains(github.event.head_commit.added, 'workers/af-sync/') }}
+    if: ${{ github.event_name == 'push' && (contains(github.event.head_commit.modified, 'workers/af-sync/') || contains(github.event.head_commit.added, 'workers/af-sync/')) }}
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: workers/af-sync
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: 22
