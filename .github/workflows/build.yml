@@ -1,89 +1,56 @@
-name: Build Nexus
+name: Build Containers
 
 on:
   push:
     branches: ["main"]
     paths:
+      - "rag/lightrag/Dockerfile"
+      - "graph/memgraph/Dockerfile"
       - ".github/workflows/build.yml"
-      - "Dockerfile"
   pull_request:
     branches: ["main"]
     paths:
+      - "rag/lightrag/Dockerfile"
+      - "graph/memgraph/Dockerfile"
       - ".github/workflows/build.yml"
-      - "Dockerfile"
-  repository_dispatch:
-    types:
-      - ssccs-poc-agent-af
-      - ssccs-docs-agent-af
+  # Placeholder: ssccs core repo → R2 업로드 후 컨테이너 재빌드 트리거
+  # repository_dispatch:
+  #   types:
+  #     - ssccs-poc-agent-af
+  #     - ssccs-docs-agent-af
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
 
 jobs:
-  build:
+  build-and-test:
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Build and cache Nexus Docker image
-        uses: docker/build-push-action@v7
-        env:
-          DOCKER_BUILD_RECORD_UPLOAD: false
-          DOCKER_BUILD_SUMMARY: false
-        with:
-          context: .
-          file: Dockerfile
-          tags: dockerimg-nexus
-          load: true
-          cache-from: type=gha,scope=dockerimg-nexus
-          cache-to: type=gha,mode=min,scope=dockerimg-nexus
-          provenance: false
-          sbom: false
+      - name: Build LightRAG image
+        run: docker build -t lightrag-nexus -f rag/lightrag/Dockerfile rag/lightrag
 
-      - name: Download agents from R2
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.CFR2_USR_API_S3_ACCID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.CFR2_USR_API_S3_SECKEY }}
+      - name: Build Memgraph proxy image
+        run: docker build -t memgraph-proxy -f graph/memgraph/Dockerfile graph/memgraph
+
+      - name: Smoke test (Memgraph + proxy)
         run: |
-          aws s3 sync s3://ssccs-nexus-af/ssccs/ ./ \
-            --endpoint-url ${{ secrets.CFR2_USR_API_HOST }} \
-            --delete
-        shell: bash
-
-      - name: Build knowledge graph inside container
-        run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/work \
-            -w /work \
-            dockerimg-nexus \
-            sh -c '
-              echo "Knowledge graph build placeholder"
-            '
-  #     - name: Upload Pages artifact
-  #       if: ${{ github.actor != 'nektos/act' }}
-  #       uses: actions/upload-pages-artifact@v5
-  #       with:
-  #         path: ./_site
-
-  # deploy:
-  #   needs: build
-  #   if: ${{ github.ref == 'refs/heads/main' && github.actor != 'nektos/act' }}
-  #   environment:
-  #     name: github-pages
-  #     url: ${{ steps.deployment.outputs.page_url }}
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Deploy to GitHub Pages
-  #       id: deployment
-  #       uses: actions/deploy-pages@v5
+          docker network create nexus-test
+          docker run -d --name memgraph-nexus --network nexus-test -p 7688:7687 memgraph/memgraph-platform
+          for i in $(seq 1 15); do
+            docker exec memgraph-nexus mgconsole --query "RETURN 1" 2>/dev/null | grep -q "1" && break
+            sleep 2
+          done
+          docker run -d --name memgraph-proxy --network nexus-test -p 7689:7689 \
+            -e MEMGRAPH_HOST=memgraph-nexus -e MEMGRAPH_PORT=7687 \
+            -e PROXY_PORT=7689 \
+            memgraph-proxy
+          sleep 3
+          curl -sf -X POST http://localhost:7689/cypher \
+            -H "Content-Type: application/json" \
+            -d '{"query":"RETURN 1 AS n"}' | grep -q '"n":1'
