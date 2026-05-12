@@ -1,5 +1,6 @@
 /// Minimal Plan IR covering the Cypher subset gap-detector needs.
-/// Designed to accept cyrs::{Statement, Clause, Expression} when available.
+/// Parsed from cyrs HIR; designed to be swappable if the cyrs dependency
+/// is replaced.
 
 use serde::{Deserialize, Serialize};
 
@@ -49,8 +50,7 @@ pub enum Direction {
     Both,      // -[]-
 }
 
-/// WHERE with a equality condition on a numeric field
-/// (generalized from gap-detector's `WHERE a.field = b.field`)
+/// WHERE clause with comparisons.
 #[derive(Debug, Clone)]
 pub struct WhereClause {
     /// field = field (for joining on shared properties)
@@ -63,8 +63,8 @@ pub struct WhereClause {
 
 #[derive(Debug, Clone)]
 pub struct NotExistsPattern {
-    pub source: String, // variable name e.g. "a"
-    pub target: String, // variable name e.g. "b"
+    pub source: String,
+    pub target: String,
 }
 
 #[derive(Debug, Clone)]

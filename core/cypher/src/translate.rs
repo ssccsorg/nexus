@@ -1,5 +1,11 @@
-use petgraph::visit::{IntoEdgeReferences, IntoNodeReferences, NodeRef};
+/// Petgraph executor for the local [`PlanIR`].
+///
+/// Evaluates PlanIR clauses against a petgraph graph, producing records.
+/// The input [`PlanIR`] is produced by the cyrs-backed parser; this module
+/// is independent of the cyrs crate.
+
 use petgraph::graph::NodeIndex;
+use petgraph::visit::{IntoEdgeReferences, IntoNodeReferences, NodeRef};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -57,7 +63,7 @@ pub fn execute<G: GraphLike>(
                 if let (Some(nodes), Some(var)) = (&current_nodes, &current_var) {
                     for item in &with_clause.items {
                         if let WithItem::Aggregate(AggregateFn::Count(_var_name), alias) = item {
-                            let counts = count_relationships(graph, nodes, var);
+                            let counts = count_relationships(graph, nodes);
                             records = nodes.iter()
                                 .zip(counts.iter())
                                 .map(|(_, &(_, count))| {
@@ -189,7 +195,6 @@ fn apply_where<G: GraphLike>(
 fn count_relationships<G: GraphLike>(
     graph: &G,
     nodes: &[NodeIndex],
-    _source_var: &str,
 ) -> Vec<(NodeIndex, usize)> {
     nodes.iter()
         .map(|&idx| {
@@ -202,7 +207,6 @@ fn count_relationships<G: GraphLike>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plan::*;
 
     #[test]
     fn test_find_matching_nodes_empty_graph() {
