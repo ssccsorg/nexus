@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = [
+    "core/graph",
+    "core/index",
+    "cypher",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+petgraph = "0.6"
+rusqlite = { version = "0.31", features = ["bundled"] }
+ndarray = "0.15"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+
+[profile.dev]
+opt-level = 1
