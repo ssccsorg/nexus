@@ -1,9 +1,73 @@
-/// Minimal Plan IR covering the Cypher subset gap-detector needs.
-/// Designed to accept cyrs::{Statement, Clause, Expression} when available.
+/// Plan IR — unified plan representation.
+///
+/// Two variants: external (cyrs_plan, production-grade) and internal
+/// (our lightweight PlanIR, fallback). The executor handles both
+/// through the same [`execute`] entry point.
+///
+/// Default is [`Plan::External`] when cyrs_plan lowering succeeds.
+pub use cyrs_hir;
+
+use cyrs_plan::{self, ReadOp, VarId, WriteOp};
+
+/// Unified plan: one type for both execution paths.
+#[derive(Debug, Clone)]
+pub enum Plan {
+    /// Production path: cyrs_plan logical operators.
+    External(ExternalPlan),
+    /// Fallback: our lightweight PlanIR.
+    Internal(PlanIR),
+}
+
+/// cyrs_plan operator arena.
+#[derive(Debug, Clone)]
+pub struct ExternalPlan {
+    pub ops: Vec<ReadOp>,
+    pub write_ops: Vec<WriteOp>,
+    pub var_map: Vec<(VarId, String)>,
+}
+
+impl Plan {
+    /// Preferred factory: cyrs_plan via cyrs_hir pipeline.
+    pub fn from_cyrs(input: &str) -> Result<Self, String> {
+        let trimmed = input.trim();
+        if trimmed.is_empty() {
+            return Err("empty query".to_string());
+        }
+
+        let result = cyrs_hir::parse_to_hir(trimmed);
+        if !result.syntax_errors.is_empty() {
+            return Err(format!("parse error: {}", result.syntax_errors[0]));
+        }
+
+        let mut hir = result.hir;
+        crate::parser::resolve_names(&mut hir);
+
+        let plan =
+            cyrs_plan::lower::lower_statement(&hir).map_err(|e| format!("plan error: {e}"))?;
+
+        let var_map: Vec<(VarId, String)> = plan
+            .var_map
+            .iter()
+            .map(|(pid, hid)| (*pid, hid.0.to_string()))
+            .collect();
+
+        Ok(Plan::External(ExternalPlan {
+            ops: plan.ops,
+            write_ops: plan.write_ops,
+            var_map,
+        }))
+    }
+
+    /// Fallback: our lightweight PlanIR.
+    pub fn from_internal(input: &str) -> Result<Self, String> {
+        crate::parser::parse_query(input).map(Plan::Internal)
+    }
+}
+
+// ── Lightweight PlanIR types (fallback) ────────────────────────────────────
 
 use serde::{Deserialize, Serialize};
 
-/// A parsed Cypher query represented as a Plan IR.
 #[derive(Debug, Clone)]
 pub struct PlanIR {
     pub clauses: Vec<Clause>,
@@ -14,18 +78,15 @@ pub enum Clause {
     Match(MatchClause),
     OptionalMatch(MatchClause),
     Where(WhereClause),
-    /// WITH c, aggregate AS alias
     With(WithClause),
     Return(ReturnClause),
     Create(CreateClause),
 }
 
-/// MATCH / OPTIONAL MATCH
 #[derive(Debug, Clone)]
 pub struct MatchClause {
     pub node: NodePattern,
     pub relationship: Option<RelPattern>,
-    /// Target node of the relationship (if any)
     pub target: Option<NodePattern>,
 }
 
@@ -42,29 +103,24 @@ pub struct RelPattern {
     pub direction: Direction,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Direction {
-    Outgoing,  // -[]->
-    Incoming,  // <-[]-
-    Both,      // -[]-
+    Outgoing,
+    Incoming,
+    Both,
 }
 
-/// WHERE with a equality condition on a numeric field
-/// (generalized from gap-detector's `WHERE a.field = b.field`)
 #[derive(Debug, Clone)]
 pub struct WhereClause {
-    /// field = field (for joining on shared properties)
     pub field_eq: Vec<(FieldRef, FieldRef)>,
-    /// NOT EXISTS pattern  
     pub not_exists: Option<NotExistsPattern>,
-    /// Simple label filter (WHERE n.field > value) etc.
     pub comparisons: Vec<Comparison>,
 }
 
 #[derive(Debug, Clone)]
 pub struct NotExistsPattern {
-    pub source: String, // variable name e.g. "a"
-    pub target: String, // variable name e.g. "b"
+    pub source: String,
+    pub target: String,
 }
 
 #[derive(Debug, Clone)]
@@ -74,9 +130,14 @@ pub struct Comparison {
     pub value: CompareValue,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CompareOp {
-    Eq, Ne, Gt, Lt, Gte, Lte,
+    Eq,
+    Ne,
+    Gt,
+    Lt,
+    Gte,
+    Lte,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -84,7 +145,6 @@ pub enum CompareValue {
     Int(i64),
     Float(f64),
     Str(String),
-    /// Reference to another field: `r1 != r2` → CompareValue::Field("r2")
     Field(FieldRef),
 }
 
@@ -94,7 +154,6 @@ pub struct FieldRef {
     pub property: Option<String>,
 }
 
-/// WITH clause (used for aggregation like count)
 #[derive(Debug, Clone)]
 pub struct WithClause {
     pub items: Vec<WithItem>,
@@ -103,9 +162,7 @@ pub struct WithClause {
 
 #[derive(Debug, Clone)]
 pub enum WithItem {
-    /// c as alias
     Var(String),
-    /// count(r) AS rc
     Aggregate(AggregateFn, String),
 }
 
@@ -114,7 +171,6 @@ pub enum AggregateFn {
     Count(String),
 }
 
-/// RETURN clause
 #[derive(Debug, Clone)]
 pub struct ReturnClause {
     pub items: Vec<ReturnItem>,
@@ -126,7 +182,6 @@ pub struct ReturnItem {
     pub alias: Option<String>,
 }
 
-/// CREATE clause
 #[derive(Debug, Clone)]
 pub struct CreateClause {
     pub nodes: Vec<(NodePattern, Vec<(String, PropertyValue)>)>,

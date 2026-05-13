@@ -1,1 +1,3 @@
-pub fn hello() -> &'static str { "nexus-graph" }
+pub fn hello() -> &'static str {
+    "nexus-graph"
+}

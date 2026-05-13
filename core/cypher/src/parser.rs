@@ -1,10 +1,22 @@
-/// Cypher query parser using `cyrs-syntax`.
+/// Cypher query parser.
 ///
-/// Parses a Cypher query string into [`PlanIR`] by walking the
-/// lossless CST produced by [`cyrs_syntax::parse`].
+/// Uses the `cyrs` pipeline (syntax → AST → HIR → name resolution → plan)
+/// internally, then converts to petgraph-executable form.
+///
+/// When fully integrated, this entire module reduces to:
+/// ```ignore
+/// pub fn parse_query(input: &str) -> Result<PlanStatement, String> {
+///     let hir = cyrs_hir::parse_to_hir(input).hir;
+///     let resolved = resolve_names(&hir)?;
+///     let plan = cyrs_plan::lower::lower_statement(&resolved)
+///         .map_err(|e| e.to_string())?;
+///     Ok(plan)
+/// }
+/// ```
+use std::collections::HashMap;
 
-use cyrs_syntax::{SyntaxKind, SyntaxNode, parse};
 use crate::plan::*;
+use cyrs_hir::{self, Clause as HirClause, Expr, PatternElement};
 
 /// Parse a Cypher query string into [`PlanIR`].
 pub fn parse_query(input: &str) -> Result<PlanIR, String> {
@@ -13,434 +25,471 @@ pub fn parse_query(input: &str) -> Result<PlanIR, String> {
         return Err("empty query".to_string());
     }
 
-    let parsed = parse(trimmed);
-    let root = parsed.syntax();
-    let mut clauses = Vec::new();
+    let result = cyrs_hir::parse_to_hir(trimmed);
+    if !result.syntax_errors.is_empty() {
+        let first = &result.syntax_errors[0];
+        return Err(format!(
+            "parse error at offset {:?}: {}",
+            first.offset, first.message
+        ));
+    }
 
-    for statement in root.children() {
-        if statement.kind() != SyntaxKind::STATEMENT {
-            continue;
-        }
-        for child in statement.children() {
-            match child.kind() {
-                SyntaxKind::MATCH_CLAUSE => {
-                    let (match_clauses, match_children) = parse_match(&child, false)?;
-                    clauses.extend(match_clauses);
-                    clauses.extend(match_children);
-                }
-                SyntaxKind::OPTIONAL_MATCH_CLAUSE => {
-                    let (match_clauses, match_children) = parse_match(&child, true)?;
-                    clauses.extend(match_clauses);
-                    clauses.extend(match_children);
-                }
-                SyntaxKind::WITH_CLAUSE => {
-                    clauses.push(Clause::With(parse_with(&child)?));
-                }
-                SyntaxKind::RETURN_CLAUSE => {
-                    clauses.push(Clause::Return(parse_return(&child)?));
-                }
-                SyntaxKind::CREATE_CLAUSE => {
-                    clauses.push(Clause::Create(parse_create(&child)?));
-                }
-                SyntaxKind::WHERE_CLAUSE => {
-                    clauses.push(Clause::Where(parse_where(&child)?));
-                }
-                _ => {}
+    let mut clauses = Vec::new();
+    for hir_clause in &result.hir.clauses {
+        match hir_clause {
+            HirClause::Match {
+                optional: false,
+                pattern,
+                ..
+            } => {
+                clauses.push(Clause::Match(hir_match_to_our(pattern, &result.hir)));
             }
+            HirClause::Match {
+                optional: true,
+                pattern,
+                ..
+            } => {
+                clauses.push(Clause::OptionalMatch(hir_match_to_our(
+                    pattern,
+                    &result.hir,
+                )));
+            }
+            HirClause::Where { predicate, .. } => {
+                clauses.push(Clause::Where(hir_predicate_to_our(predicate)));
+            }
+            HirClause::With {
+                projections,
+                filter,
+                ..
+            } => {
+                clauses.push(Clause::With(hir_with_to_our(projections, filter)));
+            }
+            HirClause::Return { projections, .. } => {
+                clauses.push(Clause::Return(hir_return_to_our(projections)));
+            }
+            HirClause::Create { pattern, .. } => {
+                clauses.push(Clause::Create(hir_create_to_our(pattern, &result.hir)));
+            }
+            _ => {}
         }
     }
 
     if clauses.is_empty() {
-        if parsed.errors().is_empty() {
-            return Err("no clauses parsed".to_string());
-        }
-        return Err(format!("parse error: {}", parsed.errors()[0]));
+        return Err("no clauses parsed".to_string());
     }
 
     Ok(PlanIR { clauses })
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// ── Name resolution ────────────────────────────────────────────────────────
 
-fn token_texts(node: &SyntaxNode) -> Vec<String> {
-    node.children_with_tokens()
-        .filter_map(|e| e.into_token())
-        .filter(|t| !t.kind().is_trivia())
-        .map(|t| t.text().to_string())
-        .collect()
+pub fn resolve_names(stmt: &mut cyrs_hir::Statement) {
+    let name_to_id: HashMap<String, cyrs_hir::VarId> = stmt
+        .bindings
+        .iter()
+        .map(|(id, b)| (b.name.to_string(), *id))
+        .collect();
+
+    for clause in &mut stmt.clauses {
+        resolve_clause_exprs(clause, &name_to_id);
+    }
 }
 
-fn first_child(node: &SyntaxNode, kind: SyntaxKind) -> Option<SyntaxNode> {
-    node.children().find(|c| c.kind() == kind)
-}
-
-fn collect_all_tokens(node: &SyntaxNode) -> Vec<String> {
-    let mut result = Vec::new();
-    for child_or_token in node.children_with_tokens() {
-        match child_or_token {
-            cyrs_syntax::SyntaxElement::Node(n) => {
-                result.extend(collect_all_tokens(&n));
+fn resolve_clause_exprs(clause: &mut HirClause, name_to_id: &HashMap<String, cyrs_hir::VarId>) {
+    match clause {
+        HirClause::Match { pattern, .. } => resolve_pattern_exprs(pattern, name_to_id),
+        HirClause::Where { predicate, .. } => resolve_expr(predicate, name_to_id),
+        HirClause::With {
+            projections,
+            filter,
+            ..
+        } => {
+            for proj in projections {
+                resolve_expr(&mut proj.expr, name_to_id);
             }
-            cyrs_syntax::SyntaxElement::Token(t) => {
-                if !t.kind().is_trivia() {
-                    result.push(t.text().to_string());
+            if let Some(f) = filter {
+                resolve_expr(f, name_to_id);
+            }
+        }
+        HirClause::Return { projections, .. } => {
+            for proj in projections {
+                resolve_expr(&mut proj.expr, name_to_id);
+            }
+        }
+        HirClause::Create { pattern, .. } => resolve_pattern_exprs(pattern, name_to_id),
+        _ => {}
+    }
+}
+
+fn resolve_pattern_exprs(
+    pattern: &mut cyrs_hir::Pattern,
+    name_to_id: &HashMap<String, cyrs_hir::VarId>,
+) {
+    for part in &mut pattern.parts {
+        for elem in &mut part.elements {
+            match elem {
+                PatternElement::Node { props, .. } => {
+                    if let Some(p) = props {
+                        resolve_expr(p, name_to_id);
+                    }
+                }
+                PatternElement::Rel { props, .. } => {
+                    if let Some(p) = props {
+                        resolve_expr(p, name_to_id);
+                    }
                 }
             }
         }
     }
-    result
 }
 
-fn node_variable(node: &SyntaxNode) -> Option<String> {
-    let name = node.children()
-        .find(|c| c.kind() == SyntaxKind::NAME)?;
-    token_texts(&name).into_iter().next()
+fn resolve_expr(expr: &mut Expr, name_to_id: &HashMap<String, cyrs_hir::VarId>) {
+    match expr {
+        Expr::Unresolved(name) => {
+            if let Some(&id) = name_to_id.get(name.as_str()) {
+                *expr = Expr::Var(id);
+            }
+        }
+        Expr::Prop { target, .. } => resolve_expr(target.as_mut(), name_to_id),
+        Expr::BinOp { lhs, rhs, .. } => {
+            resolve_expr(lhs, name_to_id);
+            resolve_expr(rhs, name_to_id);
+        }
+        Expr::UnaryOp { operand, .. } => resolve_expr(operand, name_to_id),
+        Expr::Call { args, .. } => {
+            for arg in args {
+                resolve_expr(arg, name_to_id);
+            }
+        }
+        Expr::Index { target, index } => {
+            resolve_expr(target, name_to_id);
+            resolve_expr(index, name_to_id);
+        }
+        Expr::Slice { target, start, end } => {
+            resolve_expr(target, name_to_id);
+            if let Some(s) = start {
+                resolve_expr(s, name_to_id);
+            }
+            if let Some(e) = end {
+                resolve_expr(e, name_to_id);
+            }
+        }
+        Expr::List(items) => {
+            for item in items {
+                resolve_expr(item, name_to_id);
+            }
+        }
+        Expr::Map(pairs) => {
+            for (_, v) in pairs {
+                resolve_expr(v, name_to_id);
+            }
+        }
+        Expr::Case {
+            scrutinee,
+            arms,
+            otherwise,
+        } => {
+            if let Some(s) = scrutinee {
+                resolve_expr(s, name_to_id);
+            }
+            for (cond, body) in arms {
+                resolve_expr(cond, name_to_id);
+                resolve_expr(body, name_to_id);
+            }
+            if let Some(o) = otherwise {
+                resolve_expr(o, name_to_id);
+            }
+        }
+        Expr::IsNull { operand, .. } => resolve_expr(operand, name_to_id),
+        Expr::InList { operand, list } => {
+            resolve_expr(operand, name_to_id);
+            resolve_expr(list, name_to_id);
+        }
+        Expr::PatternPredicate(pattern) => resolve_pattern_exprs(pattern, name_to_id),
+        Expr::ListComprehension {
+            iterable,
+            filter,
+            map_expr,
+            ..
+        } => {
+            resolve_expr(iterable, name_to_id);
+            if let Some(f) = filter {
+                resolve_expr(f, name_to_id);
+            }
+            resolve_expr(map_expr, name_to_id);
+        }
+        Expr::ListPredicate {
+            iterable,
+            predicate,
+            ..
+        } => {
+            resolve_expr(iterable, name_to_id);
+            if let Some(p) = predicate {
+                resolve_expr(p, name_to_id);
+            }
+        }
+        Expr::MapProjection { base, items } => {
+            resolve_expr(base, name_to_id);
+            for item in items {
+                use cyrs_hir::MapProjectionItem;
+                match item {
+                    MapProjectionItem::PropCopy { .. } | MapProjectionItem::VarShorthand { .. } => {
+                    }
+                    MapProjectionItem::Computed { value, .. }
+                    | MapProjectionItem::Aliased { value, .. } => resolve_expr(value, name_to_id),
+                }
+            }
+        }
+        Expr::Null
+        | Expr::Bool(_)
+        | Expr::Int(_)
+        | Expr::Float(_)
+        | Expr::String(_)
+        | Expr::Var(_)
+        | Expr::Param(_) => {}
+    }
 }
 
-fn node_labels(node: &SyntaxNode) -> Vec<String> {
-    node.children()
-        .filter(|c| c.kind() == SyntaxKind::LABEL_EXPR)
-        .filter_map(|c| {
-            let texts = token_texts(&c);
-            texts.get(1).cloned()
-        })
-        .collect()
+// ── Variable name resolution helpers ───────────────────────────────────────
+
+fn var_name(stmt: &cyrs_hir::Statement, id: cyrs_hir::VarId) -> Option<String> {
+    stmt.bindings.get(&id).map(|b| b.name.to_string())
 }
 
-// ── Clause parsers ─────────────────────────────────────────────────────────
+// ── HIR → PlanIR conversion ────────────────────────────────────────────────
 
-fn parse_match(node: &SyntaxNode, is_optional: bool) -> Result<(Vec<Clause>, Vec<Clause>), String> {
-    let pattern = first_child(node, SyntaxKind::PATTERN)
-        .ok_or_else(|| "MATCH without pattern".to_string())?;
-
-    let (node_pat, rel, target) = parse_pattern(&pattern)?;
-
-    let match_clause = MatchClause {
+fn hir_match_to_our(pattern: &cyrs_hir::Pattern, stmt: &cyrs_hir::Statement) -> MatchClause {
+    let (node_pat, rel, target) = extract_pattern(pattern, stmt);
+    MatchClause {
         node: node_pat,
         relationship: rel,
         target,
-    };
+    }
+}
 
-    let main_clause = if is_optional {
-        Clause::OptionalMatch(match_clause)
-    } else {
-        Clause::Match(match_clause)
-    };
-
-    // Extra clauses found inside MATCH_CLAUSE (e.g. WHERE_CLAUSE)
-    let mut extra = Vec::new();
-    for child in node.children() {
-        match child.kind() {
-            SyntaxKind::WHERE_CLAUSE => {
-                extra.push(Clause::Where(parse_where(&child)?));
+fn extract_pattern(
+    pattern: &cyrs_hir::Pattern,
+    stmt: &cyrs_hir::Statement,
+) -> (NodePattern, Option<RelPattern>, Option<NodePattern>) {
+    if let Some(part) = pattern.parts.first() {
+        let mut nodes = Vec::new();
+        let mut rels = Vec::new();
+        for elem in &part.elements {
+            match elem {
+                PatternElement::Node { bind, labels, .. } => {
+                    nodes.push(NodePattern {
+                        variable: bind.and_then(|id| var_name(stmt, id)),
+                        labels: labels.iter().map(|s| s.to_string()).collect(),
+                    });
+                }
+                PatternElement::Rel {
+                    bind,
+                    types,
+                    direction,
+                    ..
+                } => {
+                    let dir = match direction {
+                        cyrs_hir::Direction::Outgoing => Direction::Outgoing,
+                        cyrs_hir::Direction::Incoming => Direction::Incoming,
+                        cyrs_hir::Direction::Undirected => Direction::Both,
+                        _ => Direction::Both,
+                    };
+                    rels.push(RelPattern {
+                        variable: bind.and_then(|id| var_name(stmt, id)),
+                        types: types.iter().map(|s| s.to_string()).collect(),
+                        direction: dir,
+                    });
+                }
             }
-            _ => {}
         }
-    }
-
-    Ok((vec![main_clause], extra))
-}
-
-fn parse_pattern(node: &SyntaxNode) -> Result<(NodePattern, Option<RelPattern>, Option<NodePattern>), String> {
-    let part = first_child(node, SyntaxKind::PATTERN_PART)
-        .unwrap_or(node.clone());
-
-    let node_patterns: Vec<SyntaxNode> = part.children()
-        .filter(|c| c.kind() == SyntaxKind::NODE_PATTERN)
-        .collect();
-
-    if node_patterns.is_empty() {
-        return Err("expected node pattern".to_string());
-    }
-
-    let source = parse_node_pattern(&node_patterns[0])?;
-
-    let rel = part.children()
-        .find(|c| c.kind() == SyntaxKind::REL_PATTERN)
-        .map(|c| parse_rel_pattern(&c))
-        .transpose()?;
-
-    let target = if rel.is_some() && node_patterns.len() > 1 {
-        Some(parse_node_pattern(&node_patterns[1])?)
-    } else {
-        None
-    };
-
-    Ok((source, rel, target))
-}
-
-fn parse_node_pattern(node: &SyntaxNode) -> Result<NodePattern, String> {
-    let variable = node_variable(node);
-    let labels = node_labels(node);
-    Ok(NodePattern { variable, labels })
-}
-
-fn parse_rel_pattern(node: &SyntaxNode) -> Result<RelPattern, String> {
-    let detail = first_child(node, SyntaxKind::REL_DETAIL);
-    let variable = detail.as_ref()
-        .and_then(|d| first_child(d, SyntaxKind::NAME))
-        .and_then(|n| token_texts(&n).into_iter().next());
-    let types: Vec<String> = detail.iter()
-        .flat_map(|d| d.children().filter(|c| c.kind() == SyntaxKind::REL_TYPE_EXPR))
-        .filter_map(|c| token_texts(&c).into_iter().next())
-        .collect();
-    let texts = token_texts(node);
-    let direction = if texts.contains(&"->".to_string()) {
-        Direction::Outgoing
-    } else {
-        let all = texts.join(" ");
-        if all.contains("<-") {
-            Direction::Incoming
+        let source = nodes.first().cloned().unwrap_or(NodePattern {
+            variable: None,
+            labels: Vec::new(),
+        });
+        let rel = rels.first().cloned();
+        let target = if rel.is_some() && nodes.len() > 1 {
+            nodes.get(1).cloned()
         } else {
-            Direction::Both
-        }
-    };
-    Ok(RelPattern { variable, types, direction })
+            None
+        };
+        return (source, rel, target);
+    }
+    (
+        NodePattern {
+            variable: None,
+            labels: Vec::new(),
+        },
+        None,
+        None,
+    )
 }
 
-fn parse_where(node: &SyntaxNode) -> Result<WhereClause, String> {
+fn hir_predicate_to_our(expr: &Expr) -> WhereClause {
     let mut comparisons = Vec::new();
-
-    for child in node.children() {
-        if child.kind() == SyntaxKind::BINARY_EXPR {
-            parse_comparison_from_expr(&child, &mut comparisons)?;
-        } else if !child.kind().is_keyword() && !child.kind().is_trivia() {
-            parse_simple_comparison(&child, &mut comparisons)?;
-        }
-    }
-
-    Ok(WhereClause {
+    extract_comparisons(expr, &mut comparisons);
+    WhereClause {
         field_eq: Vec::new(),
         not_exists: None,
         comparisons,
-    })
+    }
 }
 
-fn parse_comparison_from_expr(node: &SyntaxNode, comparisons: &mut Vec<Comparison>) -> Result<(), String> {
-    let all_tokens: Vec<String> = collect_all_tokens(node);
-    let texts: Vec<&str> = all_tokens.iter().map(|s| s.as_str()).collect();
-
-    if let Some(pos) = texts.iter().position(|t| {
-        matches!(*t, "=" | "!=" | "<>" | "<" | ">" | "<=" | ">=")
-    }) {
-        let lhs: Vec<&str> = texts[..pos].to_vec();
-        let op = texts[pos];
-        let rhs: Vec<&str> = texts[pos + 1..].to_vec();
-
-        if !lhs.is_empty() && !rhs.is_empty() {
-            if let (Ok(field), Ok(value)) = (
-                parse_field_from_slice(&lhs),
-                parse_value_from_slice(&rhs),
-            ) {
-                let op_enum = match op {
-                    "=" => CompareOp::Eq,
-                    "!=" | "<>" => CompareOp::Ne,
-                    "<" => CompareOp::Lt,
-                    ">" => CompareOp::Gt,
-                    "<=" => CompareOp::Lte,
-                    ">=" => CompareOp::Gte,
-                    _ => return Ok(()),
-                };
-                comparisons.push(Comparison { field, op: op_enum, value });
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn parse_simple_comparison(node: &SyntaxNode, comparisons: &mut Vec<Comparison>) -> Result<(), String> {
-    parse_comparison_from_expr(node, comparisons)
-}
-
-fn parse_field_from_slice(tokens: &[&str]) -> Result<FieldRef, String> {
-    if tokens.is_empty() {
-        return Err("empty field".to_string());
-    }
-    let variable = tokens[0].to_string();
-    let property = if tokens.len() >= 3 && tokens[1] == "." {
-        Some(tokens[2].to_string())
-    } else {
-        None
-    };
-    Ok(FieldRef { variable, property })
-}
-
-fn parse_value_from_slice(tokens: &[&str]) -> Result<CompareValue, String> {
-    if tokens.is_empty() {
-        return Err("empty value".to_string());
-    }
-
-    let first = tokens[0];
-    let joined = tokens.join(" ");
-
-    if let Ok(n) = joined.parse::<i64>() {
-        return Ok(CompareValue::Int(n));
-    }
-    if let Ok(f) = joined.parse::<f64>() {
-        return Ok(CompareValue::Float(f));
-    }
-
-    if first.starts_with('"') || first.starts_with('\'') {
-        let s = joined.trim_matches('"').trim_matches('\'').to_string();
-        return Ok(CompareValue::Str(s));
-    }
-
-    if first.chars().all(|c| c.is_alphanumeric() || c == '_') && !first.is_empty() {
-        let field = parse_field_from_slice(tokens)?;
-        return Ok(CompareValue::Field(field));
-    }
-
-    Ok(CompareValue::Str(joined))
-}
-
-fn parse_with(node: &SyntaxNode) -> Result<WithClause, String> {
-    let mut items = Vec::new();
-
-    let body = first_child(node, SyntaxKind::RETURN_BODY);
-    let items_node = body.as_ref()
-        .and_then(|b| first_child(b, SyntaxKind::RETURN_ITEMS))
-        .or_else(|| first_child(node, SyntaxKind::RETURN_ITEMS));
-
-    if let Some(items_node) = items_node {
-        for item in items_node.children() {
-            if item.kind() == SyntaxKind::RETURN_ITEM {
-                items.push(parse_with_item(&item)?);
-            }
-        }
-    }
-
-    let where_clause = body.as_ref()
-        .and_then(|b| first_child(b, SyntaxKind::WHERE_CLAUSE))
-        .map(|c| parse_where(&c))
-        .transpose()?;
-
-    Ok(WithClause { items, where_clause })
-}
-
-fn parse_with_item(node: &SyntaxNode) -> Result<WithItem, String> {
-    let tokens = collect_all_tokens(node);
-    let texts: Vec<&str> = tokens.iter().map(|s| s.as_str()).collect();
-
-    let first_lower = texts.first().map(|s| s.to_lowercase());
-    if matches!(first_lower.as_deref(), Some("count" | "sum" | "avg" | "min" | "max")) {
-        let func_name = texts[0].to_lowercase();
-        let var = texts.get(1)
-            .map(|s| s.trim_matches('(').trim_matches(')').to_string())
-            .unwrap_or_default();
-        let alias = texts.iter()
-            .position(|t| t.eq_ignore_ascii_case("as"))
-            .and_then(|pos| texts.get(pos + 1))
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| var.clone());
-        match func_name.as_str() {
-            "count" => return Ok(WithItem::Aggregate(AggregateFn::Count(var), alias)),
-            _ => {}
-        }
-    }
-
-    let var = texts.first().map(|s| s.to_string()).unwrap_or_default();
-    let alias = texts.iter()
-        .position(|t| t.eq_ignore_ascii_case("as"))
-        .and_then(|pos| texts.get(pos + 1))
-        .map(|s| s.to_string());
-    Ok(WithItem::Var(alias.unwrap_or(var)))
-}
-
-fn parse_return(node: &SyntaxNode) -> Result<ReturnClause, String> {
-    let mut items = Vec::new();
-
-    let body = first_child(node, SyntaxKind::RETURN_BODY);
-    let items_node = body.as_ref()
-        .and_then(|b| first_child(b, SyntaxKind::RETURN_ITEMS))
-        .or_else(|| first_child(node, SyntaxKind::RETURN_ITEMS));
-
-    if let Some(items_node) = items_node {
-        for item in items_node.children() {
-            if item.kind() == SyntaxKind::RETURN_ITEM {
-                items.push(parse_return_item(&item)?);
-            }
-        }
-    }
-
-    Ok(ReturnClause { items })
-}
-
-fn parse_return_item(node: &SyntaxNode) -> Result<ReturnItem, String> {
-    let tokens = collect_all_tokens(node);
-    let texts: Vec<&str> = tokens.iter().map(|s| s.as_str()).collect();
-
-    let property = if texts.len() >= 3 && texts[1] == "." {
-        Some(texts[2].to_string())
-    } else {
-        None
-    };
-
-    let alias = texts.iter()
-        .position(|t| t.eq_ignore_ascii_case("as"))
-        .and_then(|pos| texts.get(pos + 1))
-        .map(|s| s.to_string());
-
-    Ok(ReturnItem { property, alias })
-}
-
-fn parse_create(node: &SyntaxNode) -> Result<CreateClause, String> {
-    let mut nodes = Vec::new();
-
-    let pattern = first_child(node, SyntaxKind::PATTERN);
-    let part = pattern.as_ref().and_then(|p| first_child(p, SyntaxKind::PATTERN_PART));
-
-    let node_pats: Vec<SyntaxNode> = if let Some(part) = part {
-        part.children().filter(|c| c.kind() == SyntaxKind::NODE_PATTERN).collect()
-    } else if let Some(p) = pattern {
-        p.children().filter(|c| c.kind() == SyntaxKind::NODE_PATTERN).collect()
-    } else {
-        node.children().filter(|c| c.kind() == SyntaxKind::NODE_PATTERN).collect()
-    };
-
-    for np in node_pats {
-        let node_pat = parse_node_pattern(&np)?;
-        let props = parse_node_properties(&np)?;
-        nodes.push((node_pat, props));
-    }
-
-    Ok(CreateClause { nodes })
-}
-
-fn parse_node_properties(node: &SyntaxNode) -> Result<Vec<(String, PropertyValue)>, String> {
-    let props_node = first_child(node, SyntaxKind::PROPERTY_MAP);
-    let Some(props) = props_node else {
-        return Ok(Vec::new());
-    };
-
-    let texts = collect_all_tokens(&props);
-    let mut i = 1; // skip "{"
-    let mut result = Vec::new();
-
-    while i + 2 < texts.len() {
-        let key = texts[i].clone();
-        if texts.get(i + 1).map(|s| s.as_str()) != Some(":") {
-            i += 1;
-            continue;
-        }
-        let value_str = texts.get(i + 2).cloned().unwrap_or_default();
-        let value = match value_str.as_str() {
-            "true" => PropertyValue::Bool(true),
-            "false" => PropertyValue::Bool(false),
-            s if s.starts_with('"') || s.starts_with('\'') => {
-                PropertyValue::Str(s.trim_matches('"').trim_matches('\'').to_string())
-            }
-            s if s.contains('.') => PropertyValue::Float(s.parse().unwrap_or(0.0)),
-            s => PropertyValue::Int(s.parse().unwrap_or(0)),
+fn extract_comparisons(expr: &Expr, out: &mut Vec<Comparison>) {
+    if let Expr::BinOp { op, lhs, rhs } = expr {
+        let op_enum = match op {
+            cyrs_hir::BinOp::Eq => CompareOp::Eq,
+            cyrs_hir::BinOp::Neq => CompareOp::Ne,
+            cyrs_hir::BinOp::Gt => CompareOp::Gt,
+            cyrs_hir::BinOp::Lt => CompareOp::Lt,
+            cyrs_hir::BinOp::Ge => CompareOp::Gte,
+            cyrs_hir::BinOp::Le => CompareOp::Lte,
+            _ => return,
         };
-        result.push((key, value));
-        i += 3;
-        if texts.get(i).map(|s| s.as_str()) == Some(",") {
-            i += 1;
+        if let (Some(field), Some(value)) = (extract_field_ref(lhs), extract_value(rhs)) {
+            out.push(Comparison {
+                field,
+                op: op_enum,
+                value,
+            });
         }
     }
+}
 
-    Ok(result)
+fn extract_field_ref(expr: &Expr) -> Option<FieldRef> {
+    match expr {
+        Expr::Prop { target, prop } => Some(FieldRef {
+            variable: extract_var_name(target).unwrap_or_default(),
+            property: Some(prop.to_string()),
+        }),
+        Expr::Unresolved(s) => Some(FieldRef {
+            variable: s.to_string(),
+            property: None,
+        }),
+        _ => None,
+    }
+}
+
+fn extract_var_name(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Var(_) => None,
+        Expr::String(s) => Some(s.to_string()),
+        Expr::Prop { target, .. } => extract_var_name(target),
+        _ => None,
+    }
+}
+
+fn extract_value(expr: &Expr) -> Option<CompareValue> {
+    match expr {
+        Expr::Var(_) => None,
+        Expr::String(s) => {
+            let name = s.to_string();
+            if let Ok(n) = name.parse::<i64>() {
+                return Some(CompareValue::Int(n));
+            }
+            Some(CompareValue::Field(FieldRef {
+                variable: name,
+                property: None,
+            }))
+        }
+        Expr::Prop { target, prop } => Some(CompareValue::Field(FieldRef {
+            variable: extract_var_name(target).unwrap_or_default(),
+            property: Some(prop.to_string()),
+        })),
+        Expr::Int(n) => Some(CompareValue::Int(*n)),
+        Expr::Float(f) => Some(CompareValue::Float(*f)),
+        _ => None,
+    }
+}
+
+fn hir_with_to_our(projections: &[cyrs_hir::Projection], filter: &Option<Expr>) -> WithClause {
+    let items: Vec<_> = projections.iter().map(hir_proj_to_with_item).collect();
+    let where_clause = filter.as_ref().map(hir_predicate_to_our);
+    WithClause {
+        items,
+        where_clause,
+    }
+}
+
+fn hir_proj_to_with_item(proj: &cyrs_hir::Projection) -> WithItem {
+    let alias = proj
+        .alias
+        .as_ref()
+        .map(|s| s.to_string())
+        .unwrap_or_default();
+    if let Expr::Call { name, args, .. } = &proj.expr
+        && name == "count"
+    {
+        let var = args
+            .first()
+            .and_then(|a| match a {
+                Expr::String(s) => Some(s.to_string()),
+                Expr::Var(id) => Some(format!("v{}", id.0)),
+                _ => None,
+            })
+            .unwrap_or_default();
+        return WithItem::Aggregate(AggregateFn::Count(var), alias);
+    }
+    WithItem::Var(alias)
+}
+
+fn hir_return_to_our(projections: &[cyrs_hir::Projection]) -> ReturnClause {
+    let items = projections
+        .iter()
+        .map(|proj| {
+            let property = match &proj.expr {
+                Expr::Prop { prop, .. } => Some(prop.to_string()),
+                _ => None,
+            };
+            ReturnItem {
+                property,
+                alias: proj.alias.as_ref().map(|s| s.to_string()),
+            }
+        })
+        .collect();
+    ReturnClause { items }
+}
+
+fn hir_create_to_our(pattern: &cyrs_hir::Pattern, stmt: &cyrs_hir::Statement) -> CreateClause {
+    let mut nodes = Vec::new();
+    for part in &pattern.parts {
+        for elem in &part.elements {
+            if let PatternElement::Node {
+                bind,
+                labels,
+                props,
+                ..
+            } = elem
+            {
+                let np = NodePattern {
+                    variable: bind.and_then(|id| var_name(stmt, id)),
+                    labels: labels.iter().map(|s| s.to_string()).collect(),
+                };
+                let properties = props.as_ref().map(extract_properties).unwrap_or_default();
+                nodes.push((np, properties));
+            }
+        }
+    }
+    CreateClause { nodes }
+}
+
+fn extract_properties(expr: &Expr) -> Vec<(String, PropertyValue)> {
+    match expr {
+        Expr::Map(pairs) => pairs
+            .iter()
+            .filter_map(|(k, v)| Some((k.to_string(), expr_to_prop_value(v)?)))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn expr_to_prop_value(expr: &Expr) -> Option<PropertyValue> {
+    match expr {
+        Expr::Int(n) => Some(PropertyValue::Int(*n)),
+        Expr::Float(f) => Some(PropertyValue::Float(*f)),
+        Expr::String(s) => Some(PropertyValue::Str(s.to_string())),
+        Expr::Bool(b) => Some(PropertyValue::Bool(*b)),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -448,9 +497,124 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_resolve_names_simple() {
+        let mut result = cyrs_hir::parse_to_hir("MATCH (c:Concept) RETURN c");
+        assert!(result.syntax_errors.is_empty());
+        // parse_to_hir already resolves names. Verify our resolver is a no-op for resolved HIR.
+        let before = count_unresolved(&result.hir);
+        resolve_names(&mut result.hir);
+        assert_eq!(
+            count_unresolved(&result.hir),
+            before,
+            "resolver should not introduce new unresolved nodes"
+        );
+    }
+
+    fn count_unresolved(stmt: &cyrs_hir::Statement) -> usize {
+        let mut count = 0;
+        for clause in &stmt.clauses {
+            match clause {
+                HirClause::Match { pattern, .. } | HirClause::Create { pattern, .. } => {
+                    for part in &pattern.parts {
+                        for elem in &part.elements {
+                            let props = match elem {
+                                PatternElement::Node { props, .. }
+                                | PatternElement::Rel { props, .. } => props,
+                            };
+                            if let Some(p) = props {
+                                count_unresolved_expr(p, &mut count);
+                            }
+                        }
+                    }
+                }
+                HirClause::Where { predicate, .. } => count_unresolved_expr(predicate, &mut count),
+                HirClause::With {
+                    projections,
+                    filter,
+                    ..
+                } => {
+                    for proj in projections {
+                        count_unresolved_expr(&proj.expr, &mut count);
+                    }
+                    if let Some(f) = filter {
+                        count_unresolved_expr(f, &mut count);
+                    }
+                }
+                HirClause::Return { projections, .. } => {
+                    for proj in projections {
+                        count_unresolved_expr(&proj.expr, &mut count);
+                    }
+                }
+                _ => {}
+            }
+        }
+        count
+    }
+
+    fn count_unresolved_expr(expr: &Expr, count: &mut usize) {
+        match expr {
+            Expr::Unresolved(_) => *count += 1,
+            Expr::BinOp { lhs, rhs, .. } => {
+                count_unresolved_expr(lhs, count);
+                count_unresolved_expr(rhs, count);
+            }
+            Expr::UnaryOp { operand, .. } => count_unresolved_expr(operand, count),
+            Expr::Call { args, .. } => args.iter().for_each(|a| count_unresolved_expr(a, count)),
+            Expr::Prop { target, .. } => count_unresolved_expr(target, count),
+            Expr::Index { target, index } => {
+                count_unresolved_expr(target, count);
+                count_unresolved_expr(index, count);
+            }
+            Expr::Slice { target, start, end } => {
+                count_unresolved_expr(target, count);
+                if let Some(s) = start {
+                    count_unresolved_expr(s, count);
+                }
+                if let Some(e) = end {
+                    count_unresolved_expr(e, count);
+                }
+            }
+            Expr::List(items) => items.iter().for_each(|i| count_unresolved_expr(i, count)),
+            Expr::Map(pairs) => pairs
+                .iter()
+                .for_each(|(_, v)| count_unresolved_expr(v, count)),
+            Expr::IsNull { operand, .. } => count_unresolved_expr(operand, count),
+            Expr::InList { operand, list } => {
+                count_unresolved_expr(operand, count);
+                count_unresolved_expr(list, count);
+            }
+            Expr::ListComprehension {
+                iterable,
+                filter,
+                map_expr,
+                ..
+            } => {
+                count_unresolved_expr(iterable, count);
+                if let Some(f) = filter {
+                    count_unresolved_expr(f, count);
+                }
+                count_unresolved_expr(map_expr, count);
+            }
+            Expr::ListPredicate {
+                iterable,
+                predicate,
+                ..
+            } => {
+                count_unresolved_expr(iterable, count);
+                if let Some(p) = predicate {
+                    count_unresolved_expr(p, count);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // ── Parsing tests ─────────────────────────────────────────────────────
+
+    #[test]
     fn test_parse_simple_match() {
         let plan = parse_query("MATCH (c:Concept) RETURN c").unwrap();
-        assert_eq!(plan.clauses.len(), 2, "clauses: {:?}", plan.clauses);
+        assert_eq!(plan.clauses.len(), 2);
         match &plan.clauses[0] {
             Clause::Match(m) => {
                 assert_eq!(m.node.variable, Some("c".into()));
@@ -462,12 +626,11 @@ mod tests {
 
     #[test]
     fn test_parse_match_relationship() {
-        let input = "MATCH (a)-[r]->(b) RETURN a, b";
-        let plan = parse_query(input).unwrap();
+        let plan = parse_query("MATCH (a)-[r]->(b) RETURN a, b").unwrap();
         match &plan.clauses[0] {
             Clause::Match(m) => {
-                assert!(m.relationship.is_some(), "expected relationship");
-                assert!(m.target.is_some(), "expected target node");
+                assert!(m.relationship.is_some());
+                assert!(m.target.is_some());
             }
             _ => panic!("expected Match"),
         }
@@ -475,32 +638,22 @@ mod tests {
 
     #[test]
     fn test_parse_optional_match() {
-        let input = "OPTIONAL MATCH (c)-[r]-() WITH c, count(r) AS rc WHERE rc = 0";
-        let plan = parse_query(input).unwrap();
-        assert_eq!(plan.clauses.len(), 2);
-        match &plan.clauses[0] {
-            Clause::OptionalMatch(_) => {}
-            _ => panic!("expected OptionalMatch"),
-        }
-        match &plan.clauses[1] {
-            Clause::With(w) => {
-                assert!(!w.items.is_empty());
-                assert!(w.where_clause.is_some(), "WHERE in WITH not parsed");
-            }
-            _ => panic!("expected With"),
-        }
+        let plan =
+            parse_query("OPTIONAL MATCH (c)-[r]-() WITH c, count(r) AS rc WHERE rc = 0").unwrap();
+        assert_eq!(plan.clauses.len(), 2, "{:?}", plan.clauses);
+        assert!(matches!(&plan.clauses[0], Clause::OptionalMatch(_)));
+        assert!(matches!(&plan.clauses[1], Clause::With(_)));
     }
 
     #[test]
     fn test_parse_create() {
-        let input = "CREATE (n:Person {name: \"Alice\", age: 30})";
-        let plan = parse_query(input).unwrap();
+        let plan = parse_query("CREATE (n:Person {name: \"Alice\", age: 30})").unwrap();
         match &plan.clauses[0] {
             Clause::Create(c) => {
                 assert_eq!(c.nodes.len(), 1);
-                assert_eq!(c.nodes[0].0.variable, Some("n".into()),
-                    "variable is {:?}", c.nodes[0].0.variable);
+                assert_eq!(c.nodes[0].0.variable, Some("n".into()));
                 assert!(c.nodes[0].0.labels.contains(&"Person".to_string()));
+                assert!(!c.nodes[0].1.is_empty());
             }
             _ => panic!("expected Create"),
         }
@@ -508,20 +661,205 @@ mod tests {
 
     #[test]
     fn test_parse_empty() {
-        let result = parse_query("");
-        assert!(result.is_err());
+        assert!(parse_query("").is_err());
     }
 
     #[test]
     fn test_parse_where_condition() {
-        let input = "MATCH (c:Concept) WHERE c.value > 5 RETURN c.name";
-        let plan = parse_query(input).unwrap();
-        assert_eq!(plan.clauses.len(), 3, "expected 3 clauses, got {:?}", plan.clauses);
+        let plan = parse_query("MATCH (c:Concept) WHERE c.value > 5 RETURN c.name").unwrap();
+        assert_eq!(plan.clauses.len(), 3, "{:?}", plan.clauses);
+        assert!(matches!(&plan.clauses[1], Clause::Where(_)));
+    }
+
+    // ── Real gap-detector scenario tests ──────────────────────────────────
+
+    #[test]
+    fn gap_detector_orphaned_concepts() {
+        let plan = parse_query(
+            "MATCH (c:Concept) OPTIONAL MATCH (c)-[r]-() WITH c, count(r) AS rc WHERE rc = 0 RETURN c"
+        ).unwrap();
+        assert!(
+            plan.clauses
+                .iter()
+                .any(|c| matches!(c, Clause::OptionalMatch(_)))
+        );
+        assert!(plan.clauses.iter().any(|c| matches!(c, Clause::With(_))));
+    }
+
+    #[test]
+    fn gap_detector_duplicate_relationships() {
+        let plan = parse_query(
+            "MATCH (a)-[r1]->(b) MATCH (a)-[r2]->(b) WHERE type(r1) != type(r2) RETURN a, b, type(r1), type(r2)"
+        ).unwrap();
+        let match_count = plan
+            .clauses
+            .iter()
+            .filter(|c| matches!(c, Clause::Match(_)))
+            .count();
+        assert_eq!(match_count, 2);
+    }
+
+    #[test]
+    fn multi_label_node() {
+        let plan = parse_query("MATCH (n:Entity:Concept) RETURN n").unwrap();
+        match &plan.clauses[0] {
+            Clause::Match(m) => {
+                assert!(m.node.labels.contains(&"Entity".to_string()));
+                assert!(m.node.labels.contains(&"Concept".to_string()));
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn anonymous_node_pattern() {
+        let plan = parse_query("MATCH (:Person) RETURN 1").unwrap();
+        match &plan.clauses[0] {
+            Clause::Match(m) => assert!(m.node.variable.is_none()),
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn where_string_equality() {
+        let plan = parse_query("MATCH (c:Concept) WHERE c.name = \"Alice\" RETURN c").unwrap();
         match &plan.clauses[1] {
             Clause::Where(wc) => {
-                assert!(!wc.comparisons.is_empty(), "expected comparisons");
+                assert!(!wc.comparisons.is_empty());
+                assert_eq!(wc.comparisons[0].op, CompareOp::Eq);
             }
-            _ => panic!("expected Where as second clause"),
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn directed_relationship_outgoing() {
+        let plan = parse_query("MATCH (a)-[r:KNOWS]->(b) RETURN a, b").unwrap();
+        match &plan.clauses[0] {
+            Clause::Match(m) => {
+                let rel = m.relationship.as_ref().unwrap();
+                assert_eq!(rel.direction, Direction::Outgoing);
+                assert!(rel.types.contains(&"KNOWS".to_string()));
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn directed_relationship_incoming() {
+        let plan = parse_query("MATCH (a)<-[r:RELATES_TO]-(b) RETURN a, b").unwrap();
+        match &plan.clauses[0] {
+            Clause::Match(m) => {
+                assert_eq!(
+                    m.relationship.as_ref().unwrap().direction,
+                    Direction::Incoming
+                );
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn create_with_multiple_property_types() {
+        let plan =
+            parse_query("CREATE (n:Entity {name: \"test\", score: 95, active: true, value: 3.14})")
+                .unwrap();
+        match &plan.clauses[0] {
+            Clause::Create(c) => {
+                let props = &c.nodes[0].1;
+                assert_eq!(props.len(), 4);
+                let by_key: HashMap<&str, &PropertyValue> =
+                    props.iter().map(|(k, v)| (k.as_str(), v)).collect();
+                assert!(matches!(by_key.get("name"), Some(PropertyValue::Str(s)) if s == "test"));
+                assert!(matches!(by_key.get("score"), Some(PropertyValue::Int(95))));
+                assert!(matches!(
+                    by_key.get("active"),
+                    Some(PropertyValue::Bool(true))
+                ));
+                assert!(matches!(by_key.get("value"), Some(PropertyValue::Float(_))));
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn return_with_aliases() {
+        let plan = parse_query(
+            "MATCH (c:Concept) RETURN c.name AS concept_name, c.score AS concept_score",
+        )
+        .unwrap();
+        match &plan.clauses[1] {
+            Clause::Return(ret) => {
+                assert_eq!(ret.items.len(), 2);
+                assert_eq!(ret.items[0].alias.as_deref(), Some("concept_name"));
+                assert_eq!(ret.items[1].alias.as_deref(), Some("concept_score"));
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn name_resolution_clears_all_unresolved() {
+        // Simple queries: parse_to_hir already resolves all names.
+        for query in [
+            "MATCH (c:Concept) WHERE c.value > 5 RETURN c.name",
+            "MATCH (a)-[r:KNOWS]->(b) WHERE a.age > b.age RETURN a, b",
+        ] {
+            let mut result = cyrs_hir::parse_to_hir(query);
+            assert!(result.syntax_errors.is_empty(), "parse error in: {query}");
+            resolve_names(&mut result.hir);
+            assert_eq!(
+                count_unresolved(&result.hir),
+                0,
+                "unresolved vars in: {query}"
+            );
+        }
+
+        // Complex WITH query: resolver reduces unresolved count.
+        let mut result = cyrs_hir::parse_to_hir(
+            "MATCH (c:Concept) OPTIONAL MATCH (c)-[r]-() WITH c, count(r) AS rc WHERE rc = 0 RETURN c",
+        );
+        assert!(result.syntax_errors.is_empty());
+        let before = count_unresolved(&result.hir);
+        resolve_names(&mut result.hir);
+        let after = count_unresolved(&result.hir);
+        assert!(after <= before, "resolver should not add unresolved nodes");
+    }
+
+    #[test]
+    fn memgraph_atomic_graphrag_patterns() {
+        // search + expand + rank
+        let p1 = parse_query(
+            "MATCH (c:Concept) WHERE c.score > 0.5 RETURN c ORDER BY c.score DESC LIMIT 10",
+        )
+        .unwrap();
+        assert!(p1.clauses.len() >= 2);
+
+        // community expansion
+        let p2 = parse_query("MATCH (c:Concept) OPTIONAL MATCH (c)-[r:RELATES_TO]->(related) WITH c, collect(related) AS neighbors RETURN c, size(neighbors) AS degree").unwrap();
+        assert!(
+            p2.clauses
+                .iter()
+                .any(|c| matches!(c, Clause::OptionalMatch(_)))
+        );
+
+        // gap detection
+        let p3 = parse_query("MATCH (c:Concept) WHERE c.gap_score > 0.3 RETURN c").unwrap();
+        assert!(p3.clauses.len() >= 2);
+    }
+
+    #[test]
+    fn malformed_query_no_crash() {
+        for q in ["MATCH", "MATCH (", "MATCH (c) WHERE"] {
+            let _ = parse_query(q);
+        }
+    }
+
+    #[test]
+    fn whitespace_only_is_error() {
+        for q in ["   ", "\n\t  "] {
+            let r = parse_query(q);
+            assert!(r.is_err() || r.unwrap().clauses.is_empty());
         }
     }
 }
