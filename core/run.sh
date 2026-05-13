@@ -10,7 +10,6 @@
 #   ./run.sh --check      # Check only
 #   ./run.sh --clippy     # Clippy only
 #   ./run.sh --test       # Test only
-#   ./run.sh --act        # Run via act (Docker, same as CI)
 #
 
 set -e
@@ -23,7 +22,6 @@ while [[ "$#" -gt 0 ]]; do
         --check) MODE="check" ;;
         --clippy) MODE="clippy" ;;
         --test) MODE="test" ;;
-        --act) MODE="act"; shift; continue ;;
         *) echo "Unknown: $1"; exit 1 ;;
     esac
     shift
@@ -44,10 +42,6 @@ case $MODE in
     check)  run_check ;;
     clippy) run_clippy ;;
     test)   run_test ;;
-    act)
-        echo "Running CI via act..."
-        act -j check -W ../.github/workflows/core.yml --pull=false
-        ;;
     all)
         echo "nexus-core CI (local)"
         run_all
