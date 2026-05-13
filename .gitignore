@@ -44,4 +44,7 @@ inputs/
 rag/inputs/
 .pytest_cache/
 .python-version
-nexus-core/target/
+
+# Rust build (workspace)
+core/target/
+result/
