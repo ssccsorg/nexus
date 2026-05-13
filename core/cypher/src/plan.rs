@@ -43,7 +43,7 @@ pub struct RelPattern {
     pub direction: Direction,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Direction {
     Outgoing,  // -[]->
     Incoming,  // <-[]-
@@ -74,7 +74,7 @@ pub struct Comparison {
     pub value: CompareValue,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CompareOp {
     Eq, Ne, Gt, Lt, Gte, Lte,
 }
