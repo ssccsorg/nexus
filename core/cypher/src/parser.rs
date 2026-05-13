@@ -13,11 +13,10 @@
 ///     Ok(plan)
 /// }
 /// ```
-
 use std::collections::HashMap;
 
-use cyrs_hir::{self, Clause as HirClause, Expr, PatternElement};
 use crate::plan::*;
+use cyrs_hir::{self, Clause as HirClause, Expr, PatternElement};
 
 /// Parse a Cypher query string into [`PlanIR`].
 pub fn parse_query(input: &str) -> Result<PlanIR, String> {
@@ -29,22 +28,40 @@ pub fn parse_query(input: &str) -> Result<PlanIR, String> {
     let result = cyrs_hir::parse_to_hir(trimmed);
     if !result.syntax_errors.is_empty() {
         let first = &result.syntax_errors[0];
-        return Err(format!("parse error at offset {:?}: {}", first.offset, first.message));
+        return Err(format!(
+            "parse error at offset {:?}: {}",
+            first.offset, first.message
+        ));
     }
 
     let mut clauses = Vec::new();
     for hir_clause in &result.hir.clauses {
         match hir_clause {
-            HirClause::Match { optional: false, pattern, .. } => {
+            HirClause::Match {
+                optional: false,
+                pattern,
+                ..
+            } => {
                 clauses.push(Clause::Match(hir_match_to_our(pattern, &result.hir)));
             }
-            HirClause::Match { optional: true, pattern, .. } => {
-                clauses.push(Clause::OptionalMatch(hir_match_to_our(pattern, &result.hir)));
+            HirClause::Match {
+                optional: true,
+                pattern,
+                ..
+            } => {
+                clauses.push(Clause::OptionalMatch(hir_match_to_our(
+                    pattern,
+                    &result.hir,
+                )));
             }
             HirClause::Where { predicate, .. } => {
                 clauses.push(Clause::Where(hir_predicate_to_our(predicate)));
             }
-            HirClause::With { projections, filter, .. } => {
+            HirClause::With {
+                projections,
+                filter,
+                ..
+            } => {
                 clauses.push(Clause::With(hir_with_to_our(projections, filter)));
             }
             HirClause::Return { projections, .. } => {
@@ -67,7 +84,9 @@ pub fn parse_query(input: &str) -> Result<PlanIR, String> {
 // ── Name resolution ────────────────────────────────────────────────────────
 
 pub fn resolve_names(stmt: &mut cyrs_hir::Statement) {
-    let name_to_id: HashMap<String, cyrs_hir::VarId> = stmt.bindings.iter()
+    let name_to_id: HashMap<String, cyrs_hir::VarId> = stmt
+        .bindings
+        .iter()
         .map(|(id, b)| (b.name.to_string(), *id))
         .collect();
 
@@ -80,24 +99,45 @@ fn resolve_clause_exprs(clause: &mut HirClause, name_to_id: &HashMap<String, cyr
     match clause {
         HirClause::Match { pattern, .. } => resolve_pattern_exprs(pattern, name_to_id),
         HirClause::Where { predicate, .. } => resolve_expr(predicate, name_to_id),
-        HirClause::With { projections, filter, .. } => {
-            for proj in projections { resolve_expr(&mut proj.expr, name_to_id); }
-            if let Some(f) = filter { resolve_expr(f, name_to_id); }
+        HirClause::With {
+            projections,
+            filter,
+            ..
+        } => {
+            for proj in projections {
+                resolve_expr(&mut proj.expr, name_to_id);
+            }
+            if let Some(f) = filter {
+                resolve_expr(f, name_to_id);
+            }
         }
         HirClause::Return { projections, .. } => {
-            for proj in projections { resolve_expr(&mut proj.expr, name_to_id); }
+            for proj in projections {
+                resolve_expr(&mut proj.expr, name_to_id);
+            }
         }
         HirClause::Create { pattern, .. } => resolve_pattern_exprs(pattern, name_to_id),
         _ => {}
     }
 }
 
-fn resolve_pattern_exprs(pattern: &mut cyrs_hir::Pattern, name_to_id: &HashMap<String, cyrs_hir::VarId>) {
+fn resolve_pattern_exprs(
+    pattern: &mut cyrs_hir::Pattern,
+    name_to_id: &HashMap<String, cyrs_hir::VarId>,
+) {
     for part in &mut pattern.parts {
         for elem in &mut part.elements {
             match elem {
-                PatternElement::Node { props, .. } => if let Some(p) = props { resolve_expr(p, name_to_id); }
-                PatternElement::Rel { props, .. } => if let Some(p) = props { resolve_expr(p, name_to_id); }
+                PatternElement::Node { props, .. } => {
+                    if let Some(p) = props {
+                        resolve_expr(p, name_to_id);
+                    }
+                }
+                PatternElement::Rel { props, .. } => {
+                    if let Some(p) = props {
+                        resolve_expr(p, name_to_id);
+                    }
+                }
             }
         }
     }
@@ -106,48 +146,107 @@ fn resolve_pattern_exprs(pattern: &mut cyrs_hir::Pattern, name_to_id: &HashMap<S
 fn resolve_expr(expr: &mut Expr, name_to_id: &HashMap<String, cyrs_hir::VarId>) {
     match expr {
         Expr::Unresolved(name) => {
-            if let Some(&id) = name_to_id.get(name.as_str()) { *expr = Expr::Var(id); }
+            if let Some(&id) = name_to_id.get(name.as_str()) {
+                *expr = Expr::Var(id);
+            }
         }
         Expr::Prop { target, .. } => resolve_expr(target.as_mut(), name_to_id),
-        Expr::BinOp { lhs, rhs, .. } => { resolve_expr(lhs, name_to_id); resolve_expr(rhs, name_to_id); }
+        Expr::BinOp { lhs, rhs, .. } => {
+            resolve_expr(lhs, name_to_id);
+            resolve_expr(rhs, name_to_id);
+        }
         Expr::UnaryOp { operand, .. } => resolve_expr(operand, name_to_id),
-        Expr::Call { args, .. } => for arg in args { resolve_expr(arg, name_to_id); }
-        Expr::Index { target, index } => { resolve_expr(target, name_to_id); resolve_expr(index, name_to_id); }
+        Expr::Call { args, .. } => {
+            for arg in args {
+                resolve_expr(arg, name_to_id);
+            }
+        }
+        Expr::Index { target, index } => {
+            resolve_expr(target, name_to_id);
+            resolve_expr(index, name_to_id);
+        }
         Expr::Slice { target, start, end } => {
             resolve_expr(target, name_to_id);
-            if let Some(s) = start { resolve_expr(s, name_to_id); }
-            if let Some(e) = end { resolve_expr(e, name_to_id); }
+            if let Some(s) = start {
+                resolve_expr(s, name_to_id);
+            }
+            if let Some(e) = end {
+                resolve_expr(e, name_to_id);
+            }
         }
-        Expr::List(items) => for item in items { resolve_expr(item, name_to_id); }
-        Expr::Map(pairs) => for (_, v) in pairs { resolve_expr(v, name_to_id); }
-        Expr::Case { scrutinee, arms, otherwise } => {
-            if let Some(s) = scrutinee { resolve_expr(s, name_to_id); }
-            for (cond, body) in arms { resolve_expr(cond, name_to_id); resolve_expr(body, name_to_id); }
-            if let Some(o) = otherwise { resolve_expr(o, name_to_id); }
+        Expr::List(items) => {
+            for item in items {
+                resolve_expr(item, name_to_id);
+            }
+        }
+        Expr::Map(pairs) => {
+            for (_, v) in pairs {
+                resolve_expr(v, name_to_id);
+            }
+        }
+        Expr::Case {
+            scrutinee,
+            arms,
+            otherwise,
+        } => {
+            if let Some(s) = scrutinee {
+                resolve_expr(s, name_to_id);
+            }
+            for (cond, body) in arms {
+                resolve_expr(cond, name_to_id);
+                resolve_expr(body, name_to_id);
+            }
+            if let Some(o) = otherwise {
+                resolve_expr(o, name_to_id);
+            }
         }
         Expr::IsNull { operand, .. } => resolve_expr(operand, name_to_id),
-        Expr::InList { operand, list } => { resolve_expr(operand, name_to_id); resolve_expr(list, name_to_id); }
+        Expr::InList { operand, list } => {
+            resolve_expr(operand, name_to_id);
+            resolve_expr(list, name_to_id);
+        }
         Expr::PatternPredicate(pattern) => resolve_pattern_exprs(pattern, name_to_id),
-        Expr::ListComprehension { iterable, filter, map_expr, .. } => {
+        Expr::ListComprehension {
+            iterable,
+            filter,
+            map_expr,
+            ..
+        } => {
             resolve_expr(iterable, name_to_id);
-            if let Some(f) = filter { resolve_expr(f, name_to_id); }
+            if let Some(f) = filter {
+                resolve_expr(f, name_to_id);
+            }
             resolve_expr(map_expr, name_to_id);
         }
-        Expr::ListPredicate { iterable, predicate, .. } => {
+        Expr::ListPredicate {
+            iterable,
+            predicate,
+            ..
+        } => {
             resolve_expr(iterable, name_to_id);
-            if let Some(p) = predicate { resolve_expr(p, name_to_id); }
+            if let Some(p) = predicate {
+                resolve_expr(p, name_to_id);
+            }
         }
         Expr::MapProjection { base, items } => {
             resolve_expr(base, name_to_id);
             for item in items {
                 use cyrs_hir::MapProjectionItem;
                 match item {
-                    MapProjectionItem::PropCopy { .. } | MapProjectionItem::VarShorthand { .. } => {}
-                    MapProjectionItem::Computed { value, .. } | MapProjectionItem::Aliased { value, .. } => resolve_expr(value, name_to_id),
+                    MapProjectionItem::PropCopy { .. } | MapProjectionItem::VarShorthand { .. } => {
+                    }
+                    MapProjectionItem::Computed { value, .. }
+                    | MapProjectionItem::Aliased { value, .. } => resolve_expr(value, name_to_id),
                 }
             }
         }
-        Expr::Null | Expr::Bool(_) | Expr::Int(_) | Expr::Float(_) | Expr::String(_) | Expr::Var(_) | Expr::Param(_) => {}
+        Expr::Null
+        | Expr::Bool(_)
+        | Expr::Int(_)
+        | Expr::Float(_)
+        | Expr::String(_)
+        | Expr::Var(_)
+        | Expr::Param(_) => {}
     }
 }
 
@@ -161,14 +260,18 @@ fn var_name(stmt: &cyrs_hir::Statement, id: cyrs_hir::VarId) -> Option<String> {
 
 fn hir_match_to_our(pattern: &cyrs_hir::Pattern, stmt: &cyrs_hir::Statement) -> MatchClause {
     let (node_pat, rel, target) = extract_pattern(pattern, stmt);
-    MatchClause { node: node_pat, relationship: rel, target }
+    MatchClause {
+        node: node_pat,
+        relationship: rel,
+        target,
+    }
 }
 
 fn extract_pattern(
     pattern: &cyrs_hir::Pattern,
     stmt: &cyrs_hir::Statement,
 ) -> (NodePattern, Option<RelPattern>, Option<NodePattern>) {
-    for part in &pattern.parts {
+    if let Some(part) = pattern.parts.first() {
         let mut nodes = Vec::new();
         let mut rels = Vec::new();
         for elem in &part.elements {
@@ -179,7 +282,12 @@ fn extract_pattern(
                         labels: labels.iter().map(|s| s.to_string()).collect(),
                     });
                 }
-                PatternElement::Rel { bind, types, direction, .. } => {
+                PatternElement::Rel {
+                    bind,
+                    types,
+                    direction,
+                    ..
+                } => {
                     let dir = match direction {
                         cyrs_hir::Direction::Outgoing => Direction::Outgoing,
                         cyrs_hir::Direction::Incoming => Direction::Incoming,
@@ -194,18 +302,36 @@ fn extract_pattern(
                 }
             }
         }
-        let source = nodes.first().cloned().unwrap_or(NodePattern { variable: None, labels: Vec::new() });
+        let source = nodes.first().cloned().unwrap_or(NodePattern {
+            variable: None,
+            labels: Vec::new(),
+        });
         let rel = rels.first().cloned();
-        let target = if rel.is_some() && nodes.len() > 1 { nodes.get(1).cloned() } else { None };
+        let target = if rel.is_some() && nodes.len() > 1 {
+            nodes.get(1).cloned()
+        } else {
+            None
+        };
         return (source, rel, target);
     }
-    (NodePattern { variable: None, labels: Vec::new() }, None, None)
+    (
+        NodePattern {
+            variable: None,
+            labels: Vec::new(),
+        },
+        None,
+        None,
+    )
 }
 
 fn hir_predicate_to_our(expr: &Expr) -> WhereClause {
     let mut comparisons = Vec::new();
     extract_comparisons(expr, &mut comparisons);
-    WhereClause { field_eq: Vec::new(), not_exists: None, comparisons }
+    WhereClause {
+        field_eq: Vec::new(),
+        not_exists: None,
+        comparisons,
+    }
 }
 
 fn extract_comparisons(expr: &Expr, out: &mut Vec<Comparison>) {
@@ -220,17 +346,25 @@ fn extract_comparisons(expr: &Expr, out: &mut Vec<Comparison>) {
             _ => return,
         };
         if let (Some(field), Some(value)) = (extract_field_ref(lhs), extract_value(rhs)) {
-            out.push(Comparison { field, op: op_enum, value });
+            out.push(Comparison {
+                field,
+                op: op_enum,
+                value,
+            });
         }
     }
 }
 
 fn extract_field_ref(expr: &Expr) -> Option<FieldRef> {
     match expr {
-        Expr::Prop { target, prop } => {
-            Some(FieldRef { variable: extract_var_name(target).unwrap_or_default(), property: Some(prop.to_string()) })
-        }
-        Expr::Unresolved(s) => Some(FieldRef { variable: s.to_string(), property: None }),
+        Expr::Prop { target, prop } => Some(FieldRef {
+            variable: extract_var_name(target).unwrap_or_default(),
+            property: Some(prop.to_string()),
+        }),
+        Expr::Unresolved(s) => Some(FieldRef {
+            variable: s.to_string(),
+            property: None,
+        }),
         _ => None,
     }
 }
@@ -249,15 +383,18 @@ fn extract_value(expr: &Expr) -> Option<CompareValue> {
         Expr::Var(_) => None,
         Expr::String(s) => {
             let name = s.to_string();
-            if let Ok(n) = name.parse::<i64>() { return Some(CompareValue::Int(n)); }
-            Some(CompareValue::Field(FieldRef { variable: name, property: None }))
-        }
-        Expr::Prop { target, prop } => {
+            if let Ok(n) = name.parse::<i64>() {
+                return Some(CompareValue::Int(n));
+            }
             Some(CompareValue::Field(FieldRef {
-                variable: extract_var_name(target).unwrap_or_default(),
-                property: Some(prop.to_string()),
+                variable: name,
+                property: None,
             }))
         }
+        Expr::Prop { target, prop } => Some(CompareValue::Field(FieldRef {
+            variable: extract_var_name(target).unwrap_or_default(),
+            property: Some(prop.to_string()),
+        })),
         Expr::Int(n) => Some(CompareValue::Int(*n)),
         Expr::Float(f) => Some(CompareValue::Float(*f)),
         _ => None,
@@ -267,32 +404,48 @@ fn extract_value(expr: &Expr) -> Option<CompareValue> {
 fn hir_with_to_our(projections: &[cyrs_hir::Projection], filter: &Option<Expr>) -> WithClause {
     let items: Vec<_> = projections.iter().map(hir_proj_to_with_item).collect();
     let where_clause = filter.as_ref().map(hir_predicate_to_our);
-    WithClause { items, where_clause }
+    WithClause {
+        items,
+        where_clause,
+    }
 }
 
 fn hir_proj_to_with_item(proj: &cyrs_hir::Projection) -> WithItem {
-    let alias = proj.alias.as_ref().map(|s| s.to_string()).unwrap_or_default();
-    if let Expr::Call { name, args, .. } = &proj.expr {
-        if name == "count" {
-            let var = args.first().and_then(|a| match a {
+    let alias = proj
+        .alias
+        .as_ref()
+        .map(|s| s.to_string())
+        .unwrap_or_default();
+    if let Expr::Call { name, args, .. } = &proj.expr
+        && name == "count"
+    {
+        let var = args
+            .first()
+            .and_then(|a| match a {
                 Expr::String(s) => Some(s.to_string()),
                 Expr::Var(id) => Some(format!("v{}", id.0)),
                 _ => None,
-            }).unwrap_or_default();
-            return WithItem::Aggregate(AggregateFn::Count(var), alias);
-        }
+            })
+            .unwrap_or_default();
+        return WithItem::Aggregate(AggregateFn::Count(var), alias);
     }
     WithItem::Var(alias)
 }
 
 fn hir_return_to_our(projections: &[cyrs_hir::Projection]) -> ReturnClause {
-    let items = projections.iter().map(|proj| {
-        let property = match &proj.expr {
-            Expr::Prop { prop, .. } => Some(prop.to_string()),
-            _ => None,
-        };
-        ReturnItem { property, alias: proj.alias.as_ref().map(|s| s.to_string()) }
-    }).collect();
+    let items = projections
+        .iter()
+        .map(|proj| {
+            let property = match &proj.expr {
+                Expr::Prop { prop, .. } => Some(prop.to_string()),
+                _ => None,
+            };
+            ReturnItem {
+                property,
+                alias: proj.alias.as_ref().map(|s| s.to_string()),
+            }
+        })
+        .collect();
     ReturnClause { items }
 }
 
@@ -300,7 +453,13 @@ fn hir_create_to_our(pattern: &cyrs_hir::Pattern, stmt: &cyrs_hir::Statement) ->
     let mut nodes = Vec::new();
     for part in &pattern.parts {
         for elem in &part.elements {
-            if let PatternElement::Node { bind, labels, props, .. } = elem {
+            if let PatternElement::Node {
+                bind,
+                labels,
+                props,
+                ..
+            } = elem
+            {
                 let np = NodePattern {
                     variable: bind.and_then(|id| var_name(stmt, id)),
                     labels: labels.iter().map(|s| s.to_string()).collect(),
@@ -315,7 +474,8 @@ fn hir_create_to_our(pattern: &cyrs_hir::Pattern, stmt: &cyrs_hir::Statement) ->
 
 fn extract_properties(expr: &Expr) -> Vec<(String, PropertyValue)> {
     match expr {
-        Expr::Map(pairs) => pairs.iter()
+        Expr::Map(pairs) => pairs
+            .iter()
             .filter_map(|(k, v)| Some((k.to_string(), expr_to_prop_value(v)?)))
             .collect(),
         _ => Vec::new(),
@@ -343,8 +503,11 @@ mod tests {
         // parse_to_hir already resolves names. Verify our resolver is a no-op for resolved HIR.
         let before = count_unresolved(&result.hir);
         resolve_names(&mut result.hir);
-        assert_eq!(count_unresolved(&result.hir), before,
-            "resolver should not introduce new unresolved nodes");
+        assert_eq!(
+            count_unresolved(&result.hir),
+            before,
+            "resolver should not introduce new unresolved nodes"
+        );
     }
 
     fn count_unresolved(stmt: &cyrs_hir::Statement) -> usize {
@@ -355,19 +518,32 @@ mod tests {
                     for part in &pattern.parts {
                         for elem in &part.elements {
                             let props = match elem {
-                                PatternElement::Node { props, .. } | PatternElement::Rel { props, .. } => props,
+                                PatternElement::Node { props, .. }
+                                | PatternElement::Rel { props, .. } => props,
                             };
-                            if let Some(p) = props { count_unresolved_expr(p, &mut count); }
+                            if let Some(p) = props {
+                                count_unresolved_expr(p, &mut count);
+                            }
                         }
                     }
                 }
                 HirClause::Where { predicate, .. } => count_unresolved_expr(predicate, &mut count),
-                HirClause::With { projections, filter, .. } => {
-                    for proj in projections { count_unresolved_expr(&proj.expr, &mut count); }
-                    if let Some(f) = filter { count_unresolved_expr(f, &mut count); }
+                HirClause::With {
+                    projections,
+                    filter,
+                    ..
+                } => {
+                    for proj in projections {
+                        count_unresolved_expr(&proj.expr, &mut count);
+                    }
+                    if let Some(f) = filter {
+                        count_unresolved_expr(f, &mut count);
+                    }
                 }
                 HirClause::Return { projections, .. } => {
-                    for proj in projections { count_unresolved_expr(&proj.expr, &mut count); }
+                    for proj in projections {
+                        count_unresolved_expr(&proj.expr, &mut count);
+                    }
                 }
                 _ => {}
             }
@@ -378,28 +554,56 @@ mod tests {
     fn count_unresolved_expr(expr: &Expr, count: &mut usize) {
         match expr {
             Expr::Unresolved(_) => *count += 1,
-            Expr::BinOp { lhs, rhs, .. } => { count_unresolved_expr(lhs, count); count_unresolved_expr(rhs, count); }
+            Expr::BinOp { lhs, rhs, .. } => {
+                count_unresolved_expr(lhs, count);
+                count_unresolved_expr(rhs, count);
+            }
             Expr::UnaryOp { operand, .. } => count_unresolved_expr(operand, count),
             Expr::Call { args, .. } => args.iter().for_each(|a| count_unresolved_expr(a, count)),
             Expr::Prop { target, .. } => count_unresolved_expr(target, count),
-            Expr::Index { target, index } => { count_unresolved_expr(target, count); count_unresolved_expr(index, count); }
+            Expr::Index { target, index } => {
+                count_unresolved_expr(target, count);
+                count_unresolved_expr(index, count);
+            }
             Expr::Slice { target, start, end } => {
                 count_unresolved_expr(target, count);
-                if let Some(s) = start { count_unresolved_expr(s, count); }
-                if let Some(e) = end { count_unresolved_expr(e, count); }
+                if let Some(s) = start {
+                    count_unresolved_expr(s, count);
+                }
+                if let Some(e) = end {
+                    count_unresolved_expr(e, count);
+                }
             }
             Expr::List(items) => items.iter().for_each(|i| count_unresolved_expr(i, count)),
-            Expr::Map(pairs) => pairs.iter().for_each(|(_, v)| count_unresolved_expr(v, count)),
+            Expr::Map(pairs) => pairs
+                .iter()
+                .for_each(|(_, v)| count_unresolved_expr(v, count)),
             Expr::IsNull { operand, .. } => count_unresolved_expr(operand, count),
-            Expr::InList { operand, list } => { count_unresolved_expr(operand, count); count_unresolved_expr(list, count); }
-            Expr::ListComprehension { iterable, filter, map_expr, .. } => {
+            Expr::InList { operand, list } => {
+                count_unresolved_expr(operand, count);
+                count_unresolved_expr(list, count);
+            }
+            Expr::ListComprehension {
+                iterable,
+                filter,
+                map_expr,
+                ..
+            } => {
                 count_unresolved_expr(iterable, count);
-                if let Some(f) = filter { count_unresolved_expr(f, count); }
+                if let Some(f) = filter {
+                    count_unresolved_expr(f, count);
+                }
                 count_unresolved_expr(map_expr, count);
             }
-            Expr::ListPredicate { iterable, predicate, .. } => {
+            Expr::ListPredicate {
+                iterable,
+                predicate,
+                ..
+            } => {
                 count_unresolved_expr(iterable, count);
-                if let Some(p) = predicate { count_unresolved_expr(p, count); }
+                if let Some(p) = predicate {
+                    count_unresolved_expr(p, count);
+                }
             }
             _ => {}
         }
@@ -434,9 +638,8 @@ mod tests {
 
     #[test]
     fn test_parse_optional_match() {
-        let plan = parse_query(
-            "OPTIONAL MATCH (c)-[r]-() WITH c, count(r) AS rc WHERE rc = 0"
-        ).unwrap();
+        let plan =
+            parse_query("OPTIONAL MATCH (c)-[r]-() WITH c, count(r) AS rc WHERE rc = 0").unwrap();
         assert_eq!(plan.clauses.len(), 2, "{:?}", plan.clauses);
         assert!(matches!(&plan.clauses[0], Clause::OptionalMatch(_)));
         assert!(matches!(&plan.clauses[1], Clause::With(_)));
@@ -444,9 +647,7 @@ mod tests {
 
     #[test]
     fn test_parse_create() {
-        let plan = parse_query(
-            "CREATE (n:Person {name: \"Alice\", age: 30})"
-        ).unwrap();
+        let plan = parse_query("CREATE (n:Person {name: \"Alice\", age: 30})").unwrap();
         match &plan.clauses[0] {
             Clause::Create(c) => {
                 assert_eq!(c.nodes.len(), 1);
@@ -477,7 +678,11 @@ mod tests {
         let plan = parse_query(
             "MATCH (c:Concept) OPTIONAL MATCH (c)-[r]-() WITH c, count(r) AS rc WHERE rc = 0 RETURN c"
         ).unwrap();
-        assert!(plan.clauses.iter().any(|c| matches!(c, Clause::OptionalMatch(_))));
+        assert!(
+            plan.clauses
+                .iter()
+                .any(|c| matches!(c, Clause::OptionalMatch(_)))
+        );
         assert!(plan.clauses.iter().any(|c| matches!(c, Clause::With(_))));
     }
 
@@ -486,7 +691,11 @@ mod tests {
         let plan = parse_query(
             "MATCH (a)-[r1]->(b) MATCH (a)-[r2]->(b) WHERE type(r1) != type(r2) RETURN a, b, type(r1), type(r2)"
         ).unwrap();
-        let match_count = plan.clauses.iter().filter(|c| matches!(c, Clause::Match(_))).count();
+        let match_count = plan
+            .clauses
+            .iter()
+            .filter(|c| matches!(c, Clause::Match(_)))
+            .count();
         assert_eq!(match_count, 2);
     }
 
@@ -541,7 +750,10 @@ mod tests {
         let plan = parse_query("MATCH (a)<-[r:RELATES_TO]-(b) RETURN a, b").unwrap();
         match &plan.clauses[0] {
             Clause::Match(m) => {
-                assert_eq!(m.relationship.as_ref().unwrap().direction, Direction::Incoming);
+                assert_eq!(
+                    m.relationship.as_ref().unwrap().direction,
+                    Direction::Incoming
+                );
             }
             _ => panic!(),
         }
@@ -549,18 +761,21 @@ mod tests {
 
     #[test]
     fn create_with_multiple_property_types() {
-        let plan = parse_query(
-            "CREATE (n:Entity {name: \"test\", score: 95, active: true, value: 3.14})"
-        ).unwrap();
+        let plan =
+            parse_query("CREATE (n:Entity {name: \"test\", score: 95, active: true, value: 3.14})")
+                .unwrap();
         match &plan.clauses[0] {
             Clause::Create(c) => {
                 let props = &c.nodes[0].1;
                 assert_eq!(props.len(), 4);
-                let by_key: HashMap<&str, &PropertyValue> = props.iter()
-                    .map(|(k, v)| (k.as_str(), v)).collect();
+                let by_key: HashMap<&str, &PropertyValue> =
+                    props.iter().map(|(k, v)| (k.as_str(), v)).collect();
                 assert!(matches!(by_key.get("name"), Some(PropertyValue::Str(s)) if s == "test"));
                 assert!(matches!(by_key.get("score"), Some(PropertyValue::Int(95))));
-                assert!(matches!(by_key.get("active"), Some(PropertyValue::Bool(true))));
+                assert!(matches!(
+                    by_key.get("active"),
+                    Some(PropertyValue::Bool(true))
+                ));
                 assert!(matches!(by_key.get("value"), Some(PropertyValue::Float(_))));
             }
             _ => panic!(),
@@ -570,8 +785,9 @@ mod tests {
     #[test]
     fn return_with_aliases() {
         let plan = parse_query(
-            "MATCH (c:Concept) RETURN c.name AS concept_name, c.score AS concept_score"
-        ).unwrap();
+            "MATCH (c:Concept) RETURN c.name AS concept_name, c.score AS concept_score",
+        )
+        .unwrap();
         match &plan.clauses[1] {
             Clause::Return(ret) => {
                 assert_eq!(ret.items.len(), 2);
@@ -592,12 +808,16 @@ mod tests {
             let mut result = cyrs_hir::parse_to_hir(query);
             assert!(result.syntax_errors.is_empty(), "parse error in: {query}");
             resolve_names(&mut result.hir);
-            assert_eq!(count_unresolved(&result.hir), 0, "unresolved vars in: {query}");
+            assert_eq!(
+                count_unresolved(&result.hir),
+                0,
+                "unresolved vars in: {query}"
+            );
         }
 
         // Complex WITH query: resolver reduces unresolved count.
         let mut result = cyrs_hir::parse_to_hir(
-            "MATCH (c:Concept) OPTIONAL MATCH (c)-[r]-() WITH c, count(r) AS rc WHERE rc = 0 RETURN c"
+            "MATCH (c:Concept) OPTIONAL MATCH (c)-[r]-() WITH c, count(r) AS rc WHERE rc = 0 RETURN c",
         );
         assert!(result.syntax_errors.is_empty());
         let before = count_unresolved(&result.hir);
@@ -609,12 +829,19 @@ mod tests {
     #[test]
     fn memgraph_atomic_graphrag_patterns() {
         // search + expand + rank
-        let p1 = parse_query("MATCH (c:Concept) WHERE c.score > 0.5 RETURN c ORDER BY c.score DESC LIMIT 10").unwrap();
+        let p1 = parse_query(
+            "MATCH (c:Concept) WHERE c.score > 0.5 RETURN c ORDER BY c.score DESC LIMIT 10",
+        )
+        .unwrap();
         assert!(p1.clauses.len() >= 2);
 
         // community expansion
         let p2 = parse_query("MATCH (c:Concept) OPTIONAL MATCH (c)-[r:RELATES_TO]->(related) WITH c, collect(related) AS neighbors RETURN c, size(neighbors) AS degree").unwrap();
-        assert!(p2.clauses.iter().any(|c| matches!(c, Clause::OptionalMatch(_))));
+        assert!(
+            p2.clauses
+                .iter()
+                .any(|c| matches!(c, Clause::OptionalMatch(_)))
+        );
 
         // gap detection
         let p3 = parse_query("MATCH (c:Concept) WHERE c.gap_score > 0.3 RETURN c").unwrap();
