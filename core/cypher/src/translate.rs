@@ -237,9 +237,37 @@ fn exec_readop<G: GraphLike>(
         ReadOp::OptionalJoin { input, pattern } => {
             let input_rows = get_input(prior, *input)?;
             let mut result = Vec::new();
-            // For now, just pass through input rows unchanged (LEFT OUTER JOIN stub)
-            for row in input_rows {
-                result.push(row);
+
+            // Recursively execute the inner pattern for each input row
+            let sub_arena: &[ReadOp] = std::slice::from_ref(pattern);
+            let mut sub_row_sets: Vec<RowSet> = Vec::new();
+
+            for mut row in input_rows {
+                sub_row_sets.clear();
+
+                // Execute inner pattern starting from this row
+                let mut success = true;
+                for sub_op in sub_arena {
+                    let sub_rows = exec_readop(graph, sub_op, &sub_row_sets, _var_map)?;
+                    if sub_rows.is_empty() {
+                        success = false;
+                        break;
+                    }
+                    sub_row_sets.push(sub_rows);
+                }
+
+                if success {
+                    if let Some(inner_rows) = sub_row_sets.last().cloned() {
+                        for inner in inner_rows {
+                            let mut merged = row.clone();
+                            merged.extend(inner);
+                            result.push(merged);
+                        }
+                    }
+                } else {
+                    // No match: emit input row with nulls for bound vars
+                    result.push(row);
+                }
             }
             Ok(result)
         }
