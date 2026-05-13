@@ -1,13 +1,16 @@
-// nexus-cypher — Plan IR to petgraph translator
+// nexus-cypher — Cypher → petgraph translation
 //
-// Provides a minimal Plan IR covering the Cypher subset needed by
-// gap-detector. Designed to accept cyrs Plan IR as input when available;
-// currently defines its own IR for the target patterns.
+// Dual-path architecture:
+//   Plan::External → cyrs_plan::ReadOp (production, default)
+//   Plan::Internal → PlanIR (fallback, lightweight)
+//
+// Parser delegates to cyrs-syntax + cyrs-hir pipeline.
+// Executor handles both plan variants through a unified interface.
 
 mod plan;
 mod parser;
 mod translate;
 
 pub use plan::*;
-pub use parser::*;
+pub use parser::parse_query;
 pub use translate::*;
