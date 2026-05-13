@@ -5,10 +5,9 @@
 /// through the same [`execute`] entry point.
 ///
 /// Default is [`Plan::External`] when cyrs_plan lowering succeeds.
-
 pub use cyrs_hir;
 
-use cyrs_plan::{self, ReadOp, WriteOp, VarId};
+use cyrs_plan::{self, ReadOp, VarId, WriteOp};
 
 /// Unified plan: one type for both execution paths.
 #[derive(Debug, Clone)]
@@ -43,10 +42,12 @@ impl Plan {
         let mut hir = result.hir;
         crate::parser::resolve_names(&mut hir);
 
-        let plan = cyrs_plan::lower::lower_statement(&hir)
-            .map_err(|e| format!("plan error: {e}"))?;
+        let plan =
+            cyrs_plan::lower::lower_statement(&hir).map_err(|e| format!("plan error: {e}"))?;
 
-        let var_map: Vec<(VarId, String)> = plan.var_map.iter()
+        let var_map: Vec<(VarId, String)> = plan
+            .var_map
+            .iter()
             .map(|(pid, hid)| (*pid, hid.0.to_string()))
             .collect();
 
@@ -131,7 +132,12 @@ pub struct Comparison {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CompareOp {
-    Eq, Ne, Gt, Lt, Gte, Lte,
+    Eq,
+    Ne,
+    Gt,
+    Lt,
+    Gte,
+    Lte,
 }
 
 #[derive(Debug, Clone, PartialEq)]

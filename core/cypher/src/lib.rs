@@ -7,10 +7,10 @@
 // Parser delegates to cyrs-syntax + cyrs-hir pipeline.
 // Executor handles both plan variants through a unified interface.
 
-mod plan;
 mod parser;
+mod plan;
 mod translate;
 
-pub use plan::*;
 pub use parser::parse_query;
+pub use plan::*;
 pub use translate::*;
