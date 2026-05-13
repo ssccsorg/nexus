@@ -149,25 +149,99 @@ fn exec_readop<G: GraphLike>(
             Ok(filtered)
         }
 
-        ReadOp::Expand { input, from: _, rel: _, to: _, bind_rel, bind_to } => {
+        ReadOp::Expand { input, from: _, rel, to: _, bind_rel, bind_to } => {
             let input_rows = get_input(prior, *input)?;
+            let rel_types: Vec<&str> = rel.types.iter().map(|s| s.as_str()).collect();
+            let dir = &rel.direction;
+
             let mut expanded = Vec::new();
             for row in input_rows {
-                // Find sourced node from row
                 let from_idx = find_bound_node(graph, &row);
                 if let Some(idx) = from_idx {
-                    let neighbors = graph.neighbors_undirected(idx);
+                    // Use directed edge traversal based on direction
+                    let neighbors = match dir {
+                        cyrs_plan::Direction::Outgoing => {
+                            graph.edges_directed(idx, true).into_iter().map(|(_, dst, _)| dst).collect()
+                        }
+                        cyrs_plan::Direction::Incoming => {
+                            graph.edges_directed(idx, false).into_iter().map(|(_, dst, _)| dst).collect()
+                        }
+                        cyrs_plan::Direction::Undirected => graph.neighbors_undirected(idx),
+                        _ => graph.neighbors_undirected(idx),
+                    };
+
+                    // Filter edges by type if specified
                     for neighbor in neighbors {
+                        // Check edge type match
+                        let edge_idx = find_edge_filtered(graph, idx, neighbor, &rel_types, dir);
+                        if !rel_types.is_empty() && edge_idx.is_none() {
+                            continue;
+                        }
+
                         let mut new_row = row.clone();
                         new_row.insert(bind_to.0.to_string(), serde_json::Value::Number((neighbor.index() as i64).into()));
-                        if let Some(edge) = find_edge(graph, idx, neighbor) {
-                            new_row.insert(bind_rel.0.to_string(), serde_json::Value::Number((edge.index() as i64).into()));
+                        if let Some(ei) = edge_idx.or_else(|| find_edge(graph, idx, neighbor)) {
+                            new_row.insert(bind_rel.0.to_string(), serde_json::Value::Number((ei.index() as i64).into()));
                         }
                         expanded.push(new_row);
                     }
                 }
             }
             Ok(expanded)
+        }
+
+        ReadOp::OrderBy { input, keys } => {
+            let mut rows = get_input(prior, *input)?;
+            rows.sort_by(|a, b| {
+                for key in keys {
+                    let va = evaluate_expr(graph, a, &key.expr);
+                    let vb = evaluate_expr(graph, b, &key.expr);
+                    let cmp = cmp_values(&va, &vb);
+                    if cmp != std::cmp::Ordering::Equal {
+                        return match key.dir {
+                            cyrs_plan::SortDir::Asc => cmp,
+                            cyrs_plan::SortDir::Desc => cmp.reverse(),
+                            _ => cmp,
+                        };
+                    }
+                }
+                std::cmp::Ordering::Equal
+            });
+            Ok(rows)
+        }
+
+        ReadOp::Limit { input, count } => {
+            let rows = get_input(prior, *input)?;
+            let limit = eval_expr_as_usize(count);
+            Ok(rows.into_iter().take(limit).collect())
+        }
+
+        ReadOp::Skip { input, count } => {
+            let rows = get_input(prior, *input)?;
+            let skip = eval_expr_as_usize(count);
+            Ok(rows.into_iter().skip(skip).collect())
+        }
+
+        ReadOp::Distinct { input } => {
+            let mut rows = get_input(prior, *input)?;
+            // Simple dedup by row content (key order independent)
+            let mut seen: Vec<HashMap<String, serde_json::Value>> = Vec::new();
+            rows.retain(|row| {
+                let is_new = !seen.iter().any(|s| rows_equal(s, row));
+                if is_new { seen.push(row.clone()); }
+                is_new
+            });
+            Ok(rows)
+        }
+
+        ReadOp::OptionalJoin { input, pattern } => {
+            let input_rows = get_input(prior, *input)?;
+            let mut result = Vec::new();
+            // For now, just pass through input rows unchanged (LEFT OUTER JOIN stub)
+            for row in input_rows {
+                result.push(row);
+            }
+            Ok(result)
         }
 
         _ => Err(TranslateError::Ambiguous(format!(
@@ -275,6 +349,67 @@ fn find_edge<G: GraphLike>(
         if dst == to { return Some(ei); }
     }
     None
+}
+
+fn find_edge_filtered<G: GraphLike>(
+    graph: &G,
+    from: NodeIndex,
+    to: NodeIndex,
+    types: &[&str],
+    _dir: &cyrs_plan::Direction,
+) -> Option<petgraph::graph::EdgeIndex> {
+    for (_src, dst, ei) in graph.edges_directed(from, true) {
+        if dst == to {
+            if let Some(ew) = graph.edge_weight(ei) {
+                if types.is_empty() || types.contains(&ew.rel_type.as_str()) {
+                    return Some(ei);
+                }
+            } else if types.is_empty() {
+                return Some(ei);
+            }
+        }
+    }
+    for (_src, dst, ei) in graph.edges_directed(from, false) {
+        if dst == to {
+            if let Some(ew) = graph.edge_weight(ei) {
+                if types.is_empty() || types.contains(&ew.rel_type.as_str()) {
+                    return Some(ei);
+                }
+            } else if types.is_empty() {
+                return Some(ei);
+            }
+        }
+    }
+    None
+}
+
+fn eval_expr_as_usize(expr: &Expr) -> usize {
+    match expr {
+        Expr::Int(n) => *n as usize,
+        _ => 0,
+    }
+}
+
+fn cmp_values(a: &serde_json::Value, b: &serde_json::Value) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    match (a, b) {
+        (serde_json::Value::Number(na), serde_json::Value::Number(nb)) => {
+            let fa = na.as_f64().unwrap_or(0.0);
+            let fb = nb.as_f64().unwrap_or(0.0);
+            fa.partial_cmp(&fb).unwrap_or(Ordering::Equal)
+        }
+        (serde_json::Value::String(sa), serde_json::Value::String(sb)) => sa.cmp(sb),
+        (serde_json::Value::Bool(ba), serde_json::Value::Bool(bb)) => ba.cmp(bb),
+        (serde_json::Value::Null, serde_json::Value::Null) => Ordering::Equal,
+        (serde_json::Value::Null, _) => Ordering::Less,
+        (_, serde_json::Value::Null) => Ordering::Greater,
+        _ => Ordering::Equal,
+    }
+}
+
+fn rows_equal(a: &HashMap<String, serde_json::Value>, b: &HashMap<String, serde_json::Value>) -> bool {
+    if a.len() != b.len() { return false; }
+    a.iter().all(|(k, v)| b.get(k) == Some(v))
 }
 
 fn find_nodes_by_label_str<G: GraphLike>(graph: &G, label: Option<&str>) -> Vec<NodeIndex> {
