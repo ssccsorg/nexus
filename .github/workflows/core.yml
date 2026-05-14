@@ -30,12 +30,15 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt
 
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "core"
           cache-targets: true
+
+      - name: Format
+        run: cargo fmt --check
 
       - name: Check (cypher crate)
         run: cargo check -p nexus-cypher
