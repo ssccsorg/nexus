@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use crate::plan::*;
 
-pub use nexus_graph::{GraphLike, NodeWeight, EdgeWeight, Record};
+pub use nexus_graph::{EdgeWeight, GraphLike, NodeWeight, Record};
 
 // ── Unified execute ────────────────────────────────────────────────────────
 

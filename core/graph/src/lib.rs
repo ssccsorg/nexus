@@ -44,16 +44,9 @@ pub trait GraphLike: Default {
     fn edge_indices(&self) -> Vec<petgraph::graph::EdgeIndex>;
     fn node_weight(&self, idx: NodeIndex) -> Option<&NodeWeight>;
     fn edge_weight(&self, idx: petgraph::graph::EdgeIndex) -> Option<&EdgeWeight>;
-    fn edge_endpoints(
-        &self,
-        idx: petgraph::graph::EdgeIndex,
-    ) -> Option<(NodeIndex, NodeIndex)>;
+    fn edge_endpoints(&self, idx: petgraph::graph::EdgeIndex) -> Option<(NodeIndex, NodeIndex)>;
     fn neighbors_undirected(&self, idx: NodeIndex) -> Vec<NodeIndex>;
-    fn edges_directed(
-        &self,
-        idx: NodeIndex,
-        outgoing: bool,
-    ) -> Vec<petgraph::graph::EdgeIndex>;
+    fn edges_directed(&self, idx: NodeIndex, outgoing: bool) -> Vec<petgraph::graph::EdgeIndex>;
     fn add_node(&mut self, weight: NodeWeight) -> NodeIndex;
     fn add_edge(
         &mut self,
@@ -82,10 +75,7 @@ impl GraphLike for petgraph::Graph<NodeWeight, EdgeWeight> {
         petgraph::Graph::edge_weight(self, idx)
     }
 
-    fn edge_endpoints(
-        &self,
-        idx: petgraph::graph::EdgeIndex,
-    ) -> Option<(NodeIndex, NodeIndex)> {
+    fn edge_endpoints(&self, idx: petgraph::graph::EdgeIndex) -> Option<(NodeIndex, NodeIndex)> {
         self.edge_endpoints(idx)
     }
 
@@ -93,19 +83,13 @@ impl GraphLike for petgraph::Graph<NodeWeight, EdgeWeight> {
         self.neighbors_undirected(idx).collect()
     }
 
-    fn edges_directed(
-        &self,
-        idx: NodeIndex,
-        outgoing: bool,
-    ) -> Vec<petgraph::graph::EdgeIndex> {
+    fn edges_directed(&self, idx: NodeIndex, outgoing: bool) -> Vec<petgraph::graph::EdgeIndex> {
         let dir = if outgoing {
             petgraph::Direction::Outgoing
         } else {
             petgraph::Direction::Incoming
         };
-        self.edges_directed(idx, dir)
-            .map(|e| e.id())
-            .collect()
+        self.edges_directed(idx, dir).map(|e| e.id()).collect()
     }
 
     fn add_node(&mut self, weight: NodeWeight) -> NodeIndex {
