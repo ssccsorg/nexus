@@ -4,42 +4,12 @@
 /// [`Plan::Internal`] (legacy PlanIR, fallback). Default path is
 /// always cyrs_plan; internal path exists for robustness.
 use petgraph::graph::NodeIndex;
-use petgraph::visit::{IntoEdgeReferences, IntoNodeReferences, NodeRef};
-use serde::{Deserialize, Serialize};
+
 use std::collections::HashMap;
 
 use crate::plan::*;
 
-/// Trait for graphs that support node/edge iteration with petgraph NodeIndex.
-pub trait GraphLike: IntoNodeReferences<NodeId = NodeIndex> + IntoEdgeReferences + Default {
-    fn node_weight(&self, idx: NodeIndex) -> Option<&NodeWeight>;
-    fn edge_weight(&self, idx: petgraph::graph::EdgeIndex) -> Option<&EdgeWeight>;
-    fn neighbors_undirected(&self, idx: NodeIndex) -> Vec<NodeIndex>;
-    fn edges_directed(
-        &self,
-        idx: NodeIndex,
-        outgoing: bool,
-    ) -> Vec<(NodeIndex, NodeIndex, petgraph::graph::EdgeIndex)>;
-    fn add_node(&mut self, weight: NodeWeight) -> NodeIndex;
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NodeWeight {
-    pub name: String,
-    pub label: String,
-    pub properties: HashMap<String, serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EdgeWeight {
-    pub rel_type: String,
-    pub properties: HashMap<String, serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Record {
-    pub fields: HashMap<String, serde_json::Value>,
-}
+pub use nexus_graph::{GraphLike, NodeWeight, EdgeWeight, Record};
 
 // ── Unified execute ────────────────────────────────────────────────────────
 
@@ -197,12 +167,12 @@ fn exec_readop<G: GraphLike>(
                         cyrs_plan::Direction::Outgoing => graph
                             .edges_directed(idx, true)
                             .into_iter()
-                            .map(|(_, dst, _)| dst)
+                            .filter_map(|ei| graph.edge_endpoints(ei).map(|(_, dst)| dst))
                             .collect(),
                         cyrs_plan::Direction::Incoming => graph
                             .edges_directed(idx, false)
                             .into_iter()
-                            .map(|(_, dst, _)| dst)
+                            .filter_map(|ei| graph.edge_endpoints(ei).map(|(_, dst)| dst))
                             .collect(),
                         cyrs_plan::Direction::Undirected => graph.neighbors_undirected(idx),
                         _ => graph.neighbors_undirected(idx),
@@ -431,13 +401,17 @@ fn find_edge<G: GraphLike>(
     from: NodeIndex,
     to: NodeIndex,
 ) -> Option<petgraph::graph::EdgeIndex> {
-    for (_src, dst, ei) in graph.edges_directed(from, true) {
-        if dst == to {
+    for &ei in &graph.edges_directed(from, true) {
+        if let Some((_, dst)) = graph.edge_endpoints(ei)
+            && dst == to
+        {
             return Some(ei);
         }
     }
-    for (_src, dst, ei) in graph.edges_directed(from, false) {
-        if dst == to {
+    for &ei in &graph.edges_directed(from, false) {
+        if let Some((_, dst)) = graph.edge_endpoints(ei)
+            && dst == to
+        {
             return Some(ei);
         }
     }
@@ -451,8 +425,10 @@ fn find_edge_filtered<G: GraphLike>(
     types: &[&str],
     _dir: &cyrs_plan::Direction,
 ) -> Option<petgraph::graph::EdgeIndex> {
-    for (_src, dst, ei) in graph.edges_directed(from, true) {
-        if dst == to {
+    for &ei in &graph.edges_directed(from, true) {
+        if let Some((_, dst)) = graph.edge_endpoints(ei)
+            && dst == to
+        {
             if let Some(ew) = graph.edge_weight(ei) {
                 if types.is_empty() || types.contains(&ew.rel_type.as_str()) {
                     return Some(ei);
@@ -462,8 +438,10 @@ fn find_edge_filtered<G: GraphLike>(
             }
         }
     }
-    for (_src, dst, ei) in graph.edges_directed(from, false) {
-        if dst == to {
+    for &ei in &graph.edges_directed(from, false) {
+        if let Some((_, dst)) = graph.edge_endpoints(ei)
+            && dst == to
+        {
             if let Some(ew) = graph.edge_weight(ei) {
                 if types.is_empty() || types.contains(&ew.rel_type.as_str()) {
                     return Some(ei);
@@ -512,8 +490,7 @@ fn rows_equal(
 
 fn find_nodes_by_label_str<G: GraphLike>(graph: &G, label: Option<&str>) -> Vec<NodeIndex> {
     let mut results = Vec::new();
-    for node_ref in graph.node_references() {
-        let idx = node_ref.id();
+    for &idx in &graph.node_indices() {
         if let Some(weight) = graph.node_weight(idx)
             && label.is_none_or(|l| weight.label == l)
         {
@@ -623,8 +600,7 @@ impl std::error::Error for TranslateError {}
 
 fn find_matching_nodes<G: GraphLike>(graph: &G, pattern: &NodePattern) -> Vec<NodeIndex> {
     let mut results = Vec::new();
-    for node_ref in graph.node_references() {
-        let idx = node_ref.id();
+    for &idx in &graph.node_indices() {
         if let Some(weight) = graph.node_weight(idx)
             && (pattern.labels.is_empty() || pattern.labels.contains(&weight.label))
         {
