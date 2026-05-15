@@ -1,0 +1,35 @@
+name: Sync Docs
+
+on:
+  schedule:
+    - cron: "0 6 * * *"   # daily 06:00 UTC
+  workflow_dispatch:        # manual trigger
+
+permissions:
+  contents: write
+
+jobs:
+  sync-readme:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch and convert index.llms.md
+        run: python scripts/fetch_ssccs.py
+
+      - name: Commit if changed
+        run: |
+          if ! git diff --quiet HEAD -- README.md; then
+            git config user.name "ssccs-bot"
+            git config user.email "bot@ssccs.org"
+            git add README.md
+            git commit -m "sync: update README.md from ssccs docs"
+            git push
+          else
+            echo "README.md unchanged — nothing to commit"
+          fi
