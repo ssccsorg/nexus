@@ -22,16 +22,17 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Download index.llms.md from R2
+      - name: Sync all artifacts from R2
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CFR2_USR_API_S3_ACCID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.CFR2_USR_API_S3_SECKEY }}
         run: |
-          aws s3 cp s3://ssccs-nexus-af/ssccs/docs/projects/nexus/index.llms.md /tmp/index.llms.md \
-            --endpoint-url ${{ secrets.CFR2_USR_API_HOST }}
+          aws s3 sync s3://ssccs-nexus-af/ssccs /tmp/ssccs \
+            --endpoint-url ${{ secrets.CFR2_USR_API_HOST }} \
+            --delete
 
       - name: Transform and write README.md
-        run: python scripts/fetch_ssccs.py --input /tmp/index.llms.md
+        run: python scripts/fetch_ssccs.py --sync-root /tmp/ssccs
 
       - name: Commit if changed
         run: |
