@@ -18,7 +18,6 @@ use std::collections::HashMap;
 
 // ── Core Types ───────────────────────────────────────────────────────────
 
-use std::hash::{DefaultHasher, Hash, Hasher};
 
 /// Error type mirroring Cairn HTTP semantics.
 /// Backend can extend or map to its own error system.
@@ -43,9 +42,11 @@ impl std::fmt::Display for BlackboardError {
 
 impl std::error::Error for BlackboardError {}
 
+use sha2::{Digest, Sha256};
+
 /// A content-addressable identifier carried by every FIH primitive.
-/// Combining `Fact.hash + Intent.hash + Result.hash` produces the chain hash.
-/// Backends can override the hashing strategy by replacing `id` before submission.
+/// Each FihHash is a SHA-256 digest. Combining leaf hashes produces a Merkle parent.
+/// Backends can override by replacing `id` before submission.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FihHash(pub String);
 
@@ -56,24 +57,23 @@ impl std::fmt::Display for FihHash {
 }
 
 impl FihHash {
-    /// Default hashing: all fields of the primitive + a type tag.
-    /// Backend can replace with SHA-256, Blake3, or anything else.
+    /// SHA-256 over all fields + type tag. Backend can replace.
     pub fn new(fields: &[&str], type_tag: &str) -> Self {
-        let mut s = DefaultHasher::new();
+        let mut h = Sha256::new();
         for f in fields {
-            f.hash(&mut s);
+            h.update(f.as_bytes());
         }
-        type_tag.hash(&mut s);
-        Self(format!("{:x}", s.finish()))
+        h.update(type_tag.as_bytes());
+        Self(format!("{:x}", h.finalize()))
     }
 
-    /// Chain two hashes: `(origin, intent, result) → H(H1 + H2 + H3)`.
+    /// Merkle parent: SHA-256(H(a) || H(b) || H(c)).
     pub fn chain(a: &FihHash, b: &FihHash, c: &FihHash) -> FihHash {
-        let mut s = DefaultHasher::new();
-        a.0.hash(&mut s);
-        b.0.hash(&mut s);
-        c.0.hash(&mut s);
-        Self(format!("{:x}", s.finish()))
+        let mut h = Sha256::new();
+        h.update(a.0.as_bytes());
+        h.update(b.0.as_bytes());
+        h.update(c.0.as_bytes());
+        Self(format!("{:x}", h.finalize()))
     }
 }
 
