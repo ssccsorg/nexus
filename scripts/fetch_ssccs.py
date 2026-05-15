@@ -45,7 +45,8 @@ class HttpTransport(Transport):
 
 class FileTransport(Transport):
     def fetch(self, uri: str) -> bytes:
-        with open(uri, "rb") as f:
+        path = uri.removeprefix("file://")
+        with open(path, "rb") as f:
             return f.read()
 
 # Future: R2Transport, IpfsTransport, GhApiTransport...
@@ -74,16 +75,18 @@ class Transform(ABC):
     def apply(self, data: bytes, ctx: dict) -> bytes: ...
 
 class ImagePathRewrite(Transform):
-    """Rewrite relative image paths to absolute URLs."""
+    """Rewrite relative image paths to absolute URLs.
+    
+    Base URL is derived from the source document's own directory:
+    if source is .../projects/nexus/index.llms.md, base becomes
+    https://docs.ssccs.org/projects/nexus/.
+    """
 
     name = "image-path-rewrite"
     IMAGE_EXTS = (".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp")
 
-    def __init__(self, base_url: str = "https://docs.ssccs.org/projects/nexus/"):
-        self.base_url = base_url
-
     def apply(self, data: bytes, ctx: dict) -> bytes:
-        base = ctx.get("base_url", self.base_url)
+        base = ctx["source_dir"]
         text = data.decode("utf-8")
 
         def replace(m):
@@ -192,7 +195,11 @@ def run_route(name: str) -> None:
     data = transport.fetch(resolved)
     print(f"  fetch: {len(data)} bytes")
 
+    # source_dir = parent directory of the source URI (for relative path resolution)
+    source_dir = route.source_uri.rsplit("/", 1)[0] + "/" if "/" in route.source_uri else "./"
     ctx = dict(route.ctx)
+    ctx["source_dir"] = source_dir
+
     for t in route.transforms:
         data = t.apply(data, ctx)
         print(f"  transform: {t.name} ({len(data)} bytes)")
