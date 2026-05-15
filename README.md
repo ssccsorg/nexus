@@ -30,9 +30,11 @@ Other Formats
 
 ## Executive Summary
 
-Nexus is a boundaryless research infrastructure built on the Blackboard paradigm. All modules coordinate indirectly through a shared graph of three primitives. There is no fixed pipeline, no orchestrator, and no direct module-to-module communication. Modules leave traces; other modules perceive those traces and act.
+There is no fixed pipeline or central orchestrator at the core level. Gateways and helpers exist at the boundary, route requests and coordinate deployment, but they are not part of the core architecture. The core is purely a shared graph of three primitives. Modules leave traces; other modules perceive those traces and act.
 
 The primary document source that feeds this infrastructure is the [SDBS (SSCCS Document Build System)](../../projects/sdbs/index.llms.md). SDBS is a parallel build pipeline that validates, renders, and publishes all technical documentation. Nexus reads from the resulting structured corpus, using the document graph as a partial knowledge base from which hypotheses, constraints, and provenance traces are derived.
+
+Nexus began as a platform to research the SSCCS computational model but it’s being as SSCCS’s proof of concept. The Blackboard, the FIH lifecycle, the append-only log, and the separation of storage from semantics are not merely infrastructure decisions, the Segment-Scheme-Field ontology made concrete. The platform and the theory describe each other.
 
 ### Universal Primitives: Fact, Intent, Hint
 
@@ -45,6 +47,8 @@ Figure 1: Fact → Intent → Fact: a recursive, self‑similar chain. Hint con
 - **Fact** — a validated observation. Once committed, it is immutable. Every Fact is the output of a concluded Intent, and can become the origin of a new Intent.  
 - **Intent** — a proposed exploration. It carries an action, parameters, and a confidence score. It is submitted against a Fact, and when concluded it produces a new Fact.  
 - **Hint** — an injected constraint. Governance rules (`contract.nex`), human feedback, compiler warnings, and safety limits all take the form of Hints. Hints constrain which Intents are admissible and which Facts are valid.
+
+Reading the Blackboard state — the accumulated set of committed Facts, pending Intents, and active Hints at any moment — is the computational equivalent of observation. The read captures a cross-section of everything the system knows, intends, and is constrained by at that instant. Subsequent operations derive from this observed cross-section, not from any hidden internal state, ensuring that all decisions are grounded in the shared Blackboard content.
 
 The cycle is recursive and self-similar. It operates identically inside a single agent, across a project Blackboard, and across the entire research ecosystem. This is the foundation on which every other architectural element rests.
 
@@ -93,6 +97,8 @@ Direct uploads from CI/CD, simulators, or robotic platforms to the knowledge gra
 
 The design ensures that every change — whether a commit, a simulation completion, or a robotic demonstration — is reflected in the knowledge graph within seconds.
 
+The storage backend itself is abstracted behind a minimal interface: operations to log a Fact, Intent, or Hint, and operations to load the event history for a given scope. The same core logic operates across SQLite files, blockchain ledgers, in-memory stores, or cloud databases. External implementors can inject custom storage without modifying any core logic, and the pipeline treats every backend identically as long as the interface contract is satisfied.
+
 ## Layer 3: Agentic Research Loop
 
 The Blackboard coordinates agent activity through Stigmergy: agents leave traces in a shared space, other agents perceive those traces and adapt. No module calls another module directly. The same FIH (Fact / Intent / Hint) interface that works at every scale — ecosystem, project, experiment, agent, primitive — governs all interaction.
@@ -104,7 +110,7 @@ The Blackboard coordinates agent activity through Stigmergy: agents leave traces
 - Verifier: grounds hypotheses against the knowledge graph, checks contract.nex compliance, computes support and novelty scores.
 - Generator: produces hypothesis chain diagrams, evidence tables, gap analyses, and structured reports.
 
-All actions are recorded in an append‑only Evolving Memory, which serves as the raw material for reinforcement learning.
+All actions are recorded in an append‑only Evolving Memory, which serves as the raw material for reinforcement learning. Because every operation is appended and never overwritten, any prior state can be exactly reconstructed by replaying events in sequence, and multiple agents can read and write concurrently without conflict — the only serialisation point is the append itself.
 
 ## Layer 4: Learning Loop
 
