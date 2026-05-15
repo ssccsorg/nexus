@@ -98,7 +98,7 @@ class Route:
 
     Attributes:
         name:       unique route identifier
-        input_rel:  path relative to sync root (e.g. docs/_llm/projects/nexus/index.llms.md)
+        input_rel:  path relative to sync root (e.g. docs/_llms/projects/nexus/index.llms.md)
         transforms: ordered list of Transform instances
         sink:       local output file path
         source_dir: URL prefix for relative image path rewriting (optional per route)
@@ -113,7 +113,7 @@ class Route:
 ROUTES: dict[str, Route] = {
     "nexus-readme": Route(
         name="nexus-readme",
-        input_rel="docs/_llm/projects/nexus/index.llms.md",
+        input_rel="docs/_llms/projects/nexus/index.llms.md",
         transforms=[
             StripFrontmatter(),
             PrependHeader("<!-- synced from SSCCS docs -- do not edit directly -->"),
