@@ -3,6 +3,8 @@
 // Depends on nexus-api for the Blackboard trait and FIH primitives.
 // GraphAccess trait is petgraph-specific and lives here.
 
+pub mod cypher;
+
 use nexus_api::{Blackboard, BlackboardError, BoardState, Fact, FihHash, Hint, Intent};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;

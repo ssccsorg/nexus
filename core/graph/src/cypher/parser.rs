@@ -15,7 +15,7 @@
 /// ```
 use std::collections::HashMap;
 
-use crate::plan::*;
+use super::plan::*;
 use cyrs_hir::{self, Clause as HirClause, Expr, PatternElement};
 
 /// Parse a Cypher query string into [`PlanIR`].

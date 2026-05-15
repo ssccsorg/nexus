@@ -7,9 +7,9 @@ use petgraph::graph::NodeIndex;
 
 use std::collections::HashMap;
 
-use crate::plan::*;
+use super::plan::*;
 
-pub use nexus_graph::{EdgeWeight, GraphAccess, NodeWeight, Record, GraphBlackboard};
+use crate::{GraphAccess, Record};
 
 // ── Unified execute ────────────────────────────────────────────────────────
 

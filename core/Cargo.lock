@@ -337,28 +337,27 @@ dependencies = [
 ]
 
 [[package]]
-name = "nexus-cypher"
+name = "nexus-api"
 version = "0.1.0"
 dependencies = [
- "cyrs-ast",
- "cyrs-hir",
- "cyrs-plan",
- "cyrs-syntax",
- "nexus-graph",
- "petgraph",
  "serde",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]
 name = "nexus-graph"
 version = "0.1.0"
 dependencies = [
+ "cyrs-ast",
+ "cyrs-hir",
+ "cyrs-plan",
+ "cyrs-syntax",
+ "nexus-api",
  "petgraph",
  "rusqlite",
  "serde",
  "serde_json",
- "sha2",
 ]
 
 [[package]]
@@ -366,6 +365,16 @@ name = "nexus-index"
 version = "0.1.0"
 dependencies = [
  "ndarray",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "nexus-sql"
+version = "0.1.0"
+dependencies = [
+ "nexus-api",
+ "rusqlite",
  "serde",
  "serde_json",
 ]
