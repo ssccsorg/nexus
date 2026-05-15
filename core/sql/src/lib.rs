@@ -2,7 +2,7 @@
 //
 // Implements the Storage trait from nexus-graph for persistent FIH event logs.
 
-use nexus_graph::{Blackboard, Fact, FihHash, GraphBlackboard, Intent, Storage, StoredEvent};
+use nexus_graph::{GraphBlackboard, Storage, StoredEvent};
 use rusqlite::Connection;
 use std::path::Path;
 use std::sync::Mutex;
@@ -21,9 +21,11 @@ impl SqliteStorage {
                 event_type TEXT NOT NULL,
                 payload TEXT NOT NULL,
                 created_at TEXT DEFAULT (datetime('now'))
-            );"
+            );",
         )?;
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     pub fn memory() -> Result<Self, rusqlite::Error> {
@@ -33,9 +35,11 @@ impl SqliteStorage {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 event_type TEXT NOT NULL,
                 payload TEXT NOT NULL
-            );"
+            );",
         )?;
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 }
 
@@ -53,12 +57,14 @@ impl Storage for SqliteStorage {
         let mut stmt = conn
             .prepare("SELECT event_type, payload FROM fih_events ORDER BY id")
             .unwrap();
-        let rows = stmt.query_map([], |row| {
-            Ok(StoredEvent {
-                event_type: row.get(0)?,
-                payload: row.get(1)?,
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(StoredEvent {
+                    event_type: row.get(0)?,
+                    payload: row.get(1)?,
+                })
             })
-        }).unwrap();
+            .unwrap();
         rows.filter_map(|r| r.ok()).collect()
     }
 }
@@ -72,6 +78,7 @@ pub fn blackboard_with_sqlite(path: &str) -> Result<GraphBlackboard, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nexus_graph::{Blackboard, Fact, FihHash, Intent};
 
     #[test]
     fn test_sqlite_persistence() {
@@ -96,7 +103,8 @@ mod tests {
                 creator: "agent-x".into(),
                 worker: None,
                 concluded_at: None,
-            }).unwrap();
+            })
+            .unwrap();
             assert_eq!(bb.read_state().intents.len(), 1, "1 intent");
 
             bb.claim_intent("i_sql_1", "agent-x").unwrap();
@@ -110,7 +118,11 @@ mod tests {
 
             let state = bb.read_state();
             assert_eq!(state.facts.len(), 2, "1 submitted + 1 concluded = 2 facts");
-            assert_eq!(state.intents.len(), 2, "1 original + 1 follow-up = 2 intents");
+            assert_eq!(
+                state.intents.len(),
+                2,
+                "1 original + 1 follow-up = 2 intents"
+            );
         }
 
         // Session 2: reload and verify
@@ -119,13 +131,22 @@ mod tests {
             let state = bb.read_state();
             assert_eq!(state.facts.len(), 2, "facts restored");
             assert_eq!(state.intents.len(), 2, "intents restored");
-            assert!(state.facts.iter().any(|f| f.id.0 == "f_sql_1"), "f_sql_1 restored");
-            assert!(state.intents.iter().any(|i| i.id.0 == "i_sql_1"), "i_sql_1 restored");
+            assert!(
+                state.facts.iter().any(|f| f.id.0 == "f_sql_1"),
+                "f_sql_1 restored"
+            );
+            assert!(
+                state.intents.iter().any(|i| i.id.0 == "i_sql_1"),
+                "i_sql_1 restored"
+            );
 
             // Concluded intent should have no worker
             let concluded = state.intents.iter().find(|i| i.id.0 == "i_sql_1").unwrap();
             assert!(concluded.worker.is_none(), "concluded intent has no worker");
-            assert!(concluded.concluded_at.is_some(), "concluded intent has timestamp");
+            assert!(
+                concluded.concluded_at.is_some(),
+                "concluded intent has timestamp"
+            );
 
             // Continue working after reload
             bb.submit_fact(&Fact {
@@ -134,7 +155,11 @@ mod tests {
                 content: "After reload".into(),
                 creator: "agent-x".into(),
             });
-            assert_eq!(bb.read_state().facts.len(), 3, "3 facts after adding one more");
+            assert_eq!(
+                bb.read_state().facts.len(),
+                3,
+                "3 facts after adding one more"
+            );
         }
 
         let _ = std::fs::remove_file(path);
