@@ -4,6 +4,10 @@ on:
   schedule:
     - cron: "0 6 * * *"   # daily 06:00 UTC
   workflow_dispatch:        # manual trigger
+  repository_dispatch:       # ssccs core repo → R2 업로드 후 트리거
+    types:
+      - ssccs-docs-agent-af
+
 
 permissions:
   contents: write
