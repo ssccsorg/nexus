@@ -3,8 +3,8 @@
 // Pure interface, no storage backend. Both GraphBlackboard and SqlBlackboard
 // implement this trait. Modules depend only on this crate.
 
-use sha2::{Digest, Sha256};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 // ── Error type ───────────────────────────────────────────────────────────
 
@@ -102,6 +102,10 @@ pub trait Blackboard {
     fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
     fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
     fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
-    fn conclude_intent(&mut self, intent_id: &str, result: &str) -> Result<(Fact, Vec<Intent>), BlackboardError>;
+    fn conclude_intent(
+        &mut self,
+        intent_id: &str,
+        result: &str,
+    ) -> Result<(Fact, Vec<Intent>), BlackboardError>;
     fn read_state(&self) -> BoardState;
 }

@@ -151,7 +151,10 @@ impl TestRng {
     }
 
     fn gen_range(&mut self, lo: usize) -> usize {
-        self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         (self.0 >> 33) as usize % lo
     }
 }
@@ -163,16 +166,56 @@ fn test_stress_many_ants() {
 
     // Phase 1: seed with initial facts (research corpus)
     let seed_facts = [
-        ("f_corpus_001", "corpus", "Quantum computing reduces error rates below fault-tolerant threshold"),
-        ("f_corpus_002", "corpus", "Transformer models achieve state-of-the-art on 12 NLP benchmarks"),
-        ("f_corpus_003", "corpus", "Graph neural networks outperform CNNs on molecular property prediction"),
-        ("f_corpus_004", "corpus", "Reinforcement learning agents learn 3x faster with curriculum training"),
-        ("f_corpus_005", "corpus", "Diffusion models generate higher-quality images than GANs"),
-        ("f_corpus_006", "corpus", "Federated learning maintains privacy within 2% of centralized accuracy"),
-        ("f_corpus_007", "corpus", "Spiking neural networks consume 100x less energy than ANNs"),
-        ("f_corpus_008", "corpus", "Large language models exhibit emergent reasoning at 70B+ parameters"),
-        ("f_corpus_009", "corpus", "Neural architecture search discovers 5x more efficient ConvNet designs"),
-        ("f_corpus_010", "corpus", "Contrastive learning achieves 90% accuracy with 1% labeled data"),
+        (
+            "f_corpus_001",
+            "corpus",
+            "Quantum computing reduces error rates below fault-tolerant threshold",
+        ),
+        (
+            "f_corpus_002",
+            "corpus",
+            "Transformer models achieve state-of-the-art on 12 NLP benchmarks",
+        ),
+        (
+            "f_corpus_003",
+            "corpus",
+            "Graph neural networks outperform CNNs on molecular property prediction",
+        ),
+        (
+            "f_corpus_004",
+            "corpus",
+            "Reinforcement learning agents learn 3x faster with curriculum training",
+        ),
+        (
+            "f_corpus_005",
+            "corpus",
+            "Diffusion models generate higher-quality images than GANs",
+        ),
+        (
+            "f_corpus_006",
+            "corpus",
+            "Federated learning maintains privacy within 2% of centralized accuracy",
+        ),
+        (
+            "f_corpus_007",
+            "corpus",
+            "Spiking neural networks consume 100x less energy than ANNs",
+        ),
+        (
+            "f_corpus_008",
+            "corpus",
+            "Large language models exhibit emergent reasoning at 70B+ parameters",
+        ),
+        (
+            "f_corpus_009",
+            "corpus",
+            "Neural architecture search discovers 5x more efficient ConvNet designs",
+        ),
+        (
+            "f_corpus_010",
+            "corpus",
+            "Contrastive learning achieves 90% accuracy with 1% labeled data",
+        ),
     ];
     for (id, origin, content) in &seed_facts {
         let fact = Fact {
@@ -215,7 +258,9 @@ fn test_stress_many_ants() {
             assert!(
                 intent.worker.is_none(),
                 "concluded intent {} still has worker='{:?}' (from_facts={:?})",
-                intent.id.0, intent.worker, intent.from_facts
+                intent.id.0,
+                intent.worker,
+                intent.from_facts
             );
         }
     }
@@ -242,17 +287,29 @@ fn test_stress_many_ants() {
         let plan = cypher::Plan::from_internal("MATCH (f:Fact) RETURN f").unwrap();
         cypher::execute(&bb, &plan).unwrap().len()
     };
-    assert_eq!(fact_count, state.facts.len(), "Cypher count != read_state count");
+    assert_eq!(
+        fact_count,
+        state.facts.len(),
+        "Cypher count != read_state count"
+    );
 
     let intent_count = {
         let plan = cypher::Plan::from_internal("MATCH (i:Intent) RETURN i").unwrap();
         cypher::execute(&bb, &plan).unwrap().len()
     };
-    assert_eq!(intent_count, state.intents.len(), "Cypher count != read_state count");
+    assert_eq!(
+        intent_count,
+        state.intents.len(),
+        "Cypher count != read_state count"
+    );
 
     println!();
     println!("  ✓ Stress test passed: {NUM_ANTS} ants × {STEPS} steps");
-    println!("  ✓ Final state: {} facts, {} intents", state.facts.len(), state.intents.len());
+    println!(
+        "  ✓ Final state: {} facts, {} intents",
+        state.facts.len(),
+        state.intents.len()
+    );
     println!("  ✓ Cypher MATCH counts match read_state");
     println!("  ✓ No conflicting claims (all-or-nothing FIH)");
     println!("  ✓ All intents properly grounded");
