@@ -1,0 +1,14 @@
+tunnel: fe6dbde1-4bf1-4096-8f15-f8cc8fb16b87
+
+ingress:
+  - hostname: rag-api-dev.nexus.ssccs.org
+    service: http://127.0.0.1:8000
+    originRequest:
+      httpHostHeader: "rag-api-dev.nexus.ssccs.org"
+      noTLSVerify: true
+      connectTimeout: 30s
+      tcpKeepAlive: 30s
+      readTimeout: 300s
+      writeTimeout: 300s
+
+  - service: http_status:404
