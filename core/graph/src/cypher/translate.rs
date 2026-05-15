@@ -562,6 +562,24 @@ fn execute_internal<G: GraphAccess>(graph: &G, plan: &PlanIR) -> Result<Vec<Reco
                 }
             }
             Clause::Return(ret) => {
+                if records.is_empty() {
+                    // MATCH ... RETURN: create records from current_nodes
+                    if let (Some(nodes), Some(var)) = (&current_nodes, &current_var) {
+                        records = nodes
+                            .iter()
+                            .map(|&idx| {
+                                let mut fields = HashMap::new();
+                                fields.insert(var.clone(), serde_json::Value::String(var.clone()));
+                                if let Some(w) = graph.node_weight(idx) {
+                                    for (k, v) in &w.properties {
+                                        fields.insert(k.clone(), v.clone());
+                                    }
+                                }
+                                Record { fields }
+                            })
+                            .collect();
+                    }
+                }
                 for item in &ret.items {
                     if let Some(ref prop) = item.property {
                         for rec in &mut records {
