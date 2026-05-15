@@ -77,6 +77,7 @@ digraph DOTGraph {
 
 ## Code
 
+- Implement → Review → Apply feedback & fix → Build/Test (clean) → Commit → Propose next direction → Await user signal → Repeat
 - Focus on the accuracy of the goal.
 - Code as pessimistically and critically as possible.
 - Do not generate unnecessary code. Produce only what is **essential** for the goal.
