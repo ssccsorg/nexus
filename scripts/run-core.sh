@@ -31,7 +31,7 @@ done
 run_check()  { cargo check -p nexus-graph && cargo check; }
 run_fmt()    { cargo fmt --check; }
 run_clippy() { cargo clippy -- -D warnings; }
-run_test()   { cargo test -p nexus-graph 2>&1; }
+run_test()   { cargo test -p nexus-graph -- --nocapture 2>&1; }
 run_all() {
     echo "=== fmt ===" && run_fmt
     echo "=== check ===" && run_check
