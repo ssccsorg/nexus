@@ -1,3 +1,240 @@
 <!-- synced from SSCCS docs -- do not edit directly -->
 
-![test](https://docs.ssccs.org/projects/nexus/index_files/diagram.svg)
+# NeXus
+
+FIH Blackboard Infrastructure. Contract-Governed. Cross-Reality.
+
+Author
+
+Affiliation
+
+SSCCS Foundation [](mailto:contact@ssccs.org)
+
+[SSCCS Foundation](https://ssccs.org)
+
+Published
+
+May 15, 2026
+
+Abstract
+
+Modern fundamental computing research including SSCCS redefining the von Neumann paradigm through structural observation, cannot remain confined to textual and code artifacts. The infrastructure that supports such research must evolve from a document‑code knowledge graph into a cross‑reality research manifold: a unified representation where whitepaper insights, compiler traces, physics simulations, robotic validations, sensor streams, and hardware‑in‑the‑loop measurements all coexist in a single, queryable, verifiable structure.
+
+Development Roadmap
+
+[Link](impl_init.llms.md)
+
+Other Formats
+
+[LLMs](https://docs.ssccs.org/projects/nexus/index.llms.md)
+
+## Executive Summary
+
+Nexus is a boundaryless research infrastructure built on the Blackboard paradigm. All modules coordinate indirectly through a shared graph of three primitives. There is no fixed pipeline, no orchestrator, and no direct module-to-module communication. Modules leave traces; other modules perceive those traces and act.
+
+The primary document source that feeds this infrastructure is the [SDBS (SSCCS Document Build System)](../../projects/sdbs/index.llms.md). SDBS is a parallel build pipeline that validates, renders, and publishes all technical documentation. Nexus reads from the resulting structured corpus, using the document graph as a partial knowledge base from which hypotheses, constraints, and provenance traces are derived.
+
+### Universal Primitives: Fact, Intent, Hint
+
+Every interaction inside Nexus — whether a document chunk, a hypothesis, a governance rule, or a simulation output — is expressed through exactly three primitives: **Fact (F)**, **Intent (I)**, and **Hint (H)**. These primitives are the only interface between any two agents, any two Blackboards, or any agent and the knowledge graph.
+
+![](https://docs.ssccs.org/projects/nexus/index_files/figure-html/fig-fih-primitives-output-1.svg)
+
+Figure 1: Fact → Intent → Fact: a recursive, self‑similar chain. Hint constrains both. Every interaction at every scale obeys this same input/output contract.
+
+- **Fact** — a validated observation. Once committed, it is immutable. Every Fact is the output of a concluded Intent, and can become the origin of a new Intent.  
+- **Intent** — a proposed exploration. It carries an action, parameters, and a confidence score. It is submitted against a Fact, and when concluded it produces a new Fact.  
+- **Hint** — an injected constraint. Governance rules (`contract.nex`), human feedback, compiler warnings, and safety limits all take the form of Hints. Hints constrain which Intents are admissible and which Facts are valid.
+
+The cycle is recursive and self-similar. It operates identically inside a single agent, across a project Blackboard, and across the entire research ecosystem. This is the foundation on which every other architectural element rests.
+
+> **Supplementary: module examples built on this foundation.** Three research references demonstrate how how different concerns — learning, reasoning, formatting — attach to the same FIH Blackboard:
+>
+> | Module Pattern | Research Reference | Blackboard Role |
+> |----|----|----|
+> | Planner (Flow‐GRPO) | AgentFlow [arXiv:2510.05592](https://arxiv.org/pdf/2510.05592) | Reads successful Intent histories; writes updated Planner weights as Facts |
+> | Hypothesis Validator | HypoChainer [arXiv:2507.17209](https://arxiv.org/pdf/2507.17209) | Reads Fact graph for evidence; writes validated/rejected Intents |
+> | Contract‐Governed Generator | Story2Proposal [arXiv:2601.20833](https://arxiv.org/pdf/2601.20833) | Evaluates contract.nex before every Intent write; produces structured reports |
+
+## Architecture Overview
+
+![](https://docs.ssccs.org/projects/nexus/index_files/figure-html/fig-recursive-blackboard-output-1.svg)
+
+Figure 2: Recursive Blackboard: every node can contain sub-Blackboards. FIH at every scale.
+
+The system is organized into five integrated layers, extended by cross‑reality capabilities that transcend the original digital scope.
+
+| Layer | Logical Component | Core Responsibility |
+|----|----|----|
+| 1 | Knowledge Graph Engine | Persist documents, entities, relationships, embeddings, simulation outputs, and sensory traces; provide hybrid retrieval across vector, graph, and temporal spaces. |
+| 2 | Artifact Ingestion Pipeline | Decouple CI/CD, robotic workflows, and sensor pipelines from the knowledge graph; guarantee strong consistency and incremental updates via engine‑agnostic sync workers and message queues. |
+| 3 | Agentic Research Loop | Decompose research questions, invoke tools (including simulators and physical instruments), ground hypotheses in multi‑modal evidence, and produce contract‑compliant reports. |
+| 4 | Learning Loop | Refine the Planner on‑policy using outcome‑based rewards, novelty scores, physical reproducibility metrics, and human feedback. |
+| 5 | Contract Governance | Define structural, evidential, and physical‑constraint rules for all generated artifacts; enable evolvable, machine‑readable governance across domains. |
+
+These layers implement the SSCCS Organic Growth model: contract‑governed ingestion feeds a unified knowledge graph, which drives hypothesis generation and validation, with the system continuously learning from its own discoveries — whether those discoveries occur in a document, a simulation, or a physical laboratory.
+
+## Layer 1: Knowledge Graph Engine
+
+The knowledge graph engine is a graph‑native retrieval‑augmented generation system. It decomposes incoming artifacts into entities, typed relationships, and community clusters. All data resides in a single transactional database with two extensions:
+
+- Vector index: for similarity search over document chunks, entity descriptions, and embedded sensor data.
+- Graph store: for entities, relationships, temporal sequences, and community structures supporting multi‑hop reasoning.
+
+During ingestion, documents, code artifacts, simulation outputs, or sensor streams pass through chunking, LLM‑based entity/relationship extraction, gleaning, normalisation, embedding, and community detection. The engine exposes multiple retrieval strategies (naive, local, global, hybrid, mix, bypass) that the Planner selects based on question type.
+
+## Layer 2: Artifact Ingestion Pipeline
+
+Direct uploads from CI/CD, simulators, or robotic platforms to the knowledge graph create coupling, lack change detection, and complicate multi‑source merging. Nexus decouples the pipeline:
+
+1.  Object Store: holds the authoritative copy of all artifacts — documentation, code symbols, simulation results, telemetry logs, video streams, hardware‑in‑the‑loop recordings. It provides strong consistency and a standard API.
+2.  Sync Worker: exposes an engine‑agnostic endpoint (`/sync/:engine`). It compares the current state of the object store with a persistent mapping of previously ingested items, computes a diff, and pushes small task chunks into a message queue.
+3.  Queue Consumers: execute the actual API calls on the target engine (delete, upload) and update the mapping. This avoids platform rate limits and allows auto‑scaling.
+
+The design ensures that every change — whether a commit, a simulation completion, or a robotic demonstration — is reflected in the knowledge graph within seconds.
+
+## Layer 3: Agentic Research Loop
+
+The Blackboard coordinates agent activity through Stigmergy: agents leave traces in a shared space, other agents perceive those traces and adapt. No module calls another module directly. The same FIH (Fact / Intent / Hint) interface that works at every scale — ecosystem, project, experiment, agent, primitive — governs all interaction.
+
+- Blackboard (shared graph): stores Facts (validated results), Intents (exploration directions), and Hints (governance rules). The only interface between modules.
+- Stigmergy coordination: agents read from and write to the Blackboard. A Gap Detector deposits Intent traces; an exploration loop perceives and acts. No pipeline dependency chain.
+- FIH lifecycle: submit → claim → heartbeat → conclude. Identical lifecycle from document ingestion to hardware validation. Validated on 54 of 54 autonomous penetration testing challenges with zero LLMs.
+- Planner (trainable): decomposes research questions, selects tools, determines evidence sufficiency. Optimized via Flow‑GRPO from accumulated (origin, intent, result) trajectories.
+- Verifier: grounds hypotheses against the knowledge graph, checks contract.nex compliance, computes support and novelty scores.
+- Generator: produces hypothesis chain diagrams, evidence tables, gap analyses, and structured reports.
+
+All actions are recorded in an append‑only Evolving Memory, which serves as the raw material for reinforcement learning.
+
+## Layer 4: Learning Loop
+
+Collected research trajectories feed an on‑policy reinforcement learning pipeline (Flow‑GRPO):
+
+1.  Rollout collection: each session is stored as a structured log.
+2.  Reward computation: blends knowledge‑graph support, novelty, contract compliance, physical reproducibility, and optional human feedback.
+3.  Group sampling: trajectories are batched for group‑normalised advantages.
+4.  Policy update: the Planner is updated using a clipped objective with KL penalty toward a reference model; the final reward is broadcast to all steps, converting multi‑turn credit assignment into single‑turn updates.
+
+Over time, the Planner internalises which strategies produce well‑grounded, innovative, and physically reproducible results.
+
+## Layer 5: Contract Governance & Autonomous Research Economy
+
+The governance contract defines required hypothesis steps, evidence thresholds, and novelty minimums. When deployed on-chain, it becomes a self-executing protocol — a transparent, unstoppable standard that anyone can submit to, verify against, and build upon.
+
+### The Research Economy
+
+Five contribution types are recognised, validated, and rewarded:
+
+| Contribution | Economic Role |
+|----|----|
+| **Gap Discovery** | Detects missing links between concepts; triggers hypothesis generation |
+| **Hypothesis Submission** | Core unit of research; requires staking as commitment |
+| **Experimental Validation** | Closes the theory-practice loop; rewarded on reproduction |
+| **Concept Drift Detection** | Maintains semantic integrity of the knowledge graph |
+| **Knowledge Ingestion** | Expands the graph; rewarded proportionally to downstream usage |
+
+Every contribution flows through the Verifier. Success mints rewards; failure slashes the submitter’s stake. The same rules that ensure scientific rigour also ensure economic fairness — the contract is the review board.
+
+#### Staking, Provenance, and Decentralisation
+
+Hypothesis submission requires staking tokens as a bond — providing spam resistance, quality signalling, and dispute collateral. Validated hypotheses return the stake plus a reward; falsified ones are slashed.
+
+Every verification result is recorded on-chain, forming an unbroken chain of custody from document to C2PA manifest to knowledge graph to experiment to report. Any participant can independently verify the full history of any claim.
+
+Governance transitions over three phases: Foundation (core team) → Delegation (elected reviewers) → Full Decentralisation (token-weighted community voting). The protocol that governs research is itself governed by researchers.
+
+#### Toward Autonomous Research
+
+The contract, the knowledge graph, and the blockchain form a self-sustaining research economy. Contributions are accepted from any human or AI agent, anywhere. Rigour is rewarded; sloppiness is penalised. The constitution of this economy is the contract itself — its memory the graph, its auditor the chain, its citizens the participants.
+
+## Extension: Boundaryless Research Infrastructure
+
+### The Need for Physical‑Digital Unification
+
+Fundamental computing research on the scale of redefining the von Neumann paradigm cannot remain confined to text and code. Structural observation, as a new computational primitive, must be validated not only through compiler experiments and emulations but also through robotic validation, physics simulation, digital twins, and embodied experimentation. The same Segment, Scheme, Field, and Observation primitives that describe compiler behavior must also describe robot motion trajectories, circuit simulation states, or computational fluid dynamics outputs.
+
+The infrastructure must, therefore, evolve from a document‑code knowledge graph into a cross‑reality research manifold — a unified latent space where theoretical insights, simulation outputs, and physical measurements inhabit the same queryable, verifiable structure.
+
+### Mathematical Foundation: Universal Latent Homeomorphic Manifold (ULHM)
+
+Recent work establishes *homeomorphism* — a continuous bijection preserving topological structure — as the criterion for determining when fundamentally different representation pathways share compatible latent structure. Two modalities that capture the same underlying reality, however differently encoded, can be rigorously unified when their latent manifolds are homeomorphic.
+
+This provides the theoretical backbone for Nexus’s boundaryless extension. The same SSCCS primitives that describe compiler behavior can, through a verified homeomorphic mapping, describe robotic motion or hardware telemetry. The mathematics guarantees that reasoning across these domains is structurally valid, not merely heuristic.
+
+The ULHM framework introduces three canonical loss terms applicable to any homeomorphic mapping task:
+
+- Continuity loss: ensures that small changes in one modality correspond to small changes in the other.
+- Trust loss: preserves neighborhood relationships across modalities.
+- Wasserstein loss: aligns the global distributions of the latent representations.
+
+These losses can be incorporated into Nexus’s Verifier as contract rules, automatically validating that a physical measurement and a semantic claim share compatible structure before a hypothesis is accepted.
+
+### Existing Cross‑Reality Systems Validate the Approach
+
+Multiple systems have already demonstrated that unified representation across digital and physical domains is deployable:
+
+- FermiLink: operates across approximately fifty scientific software packages spanning nine research domains, using a single agent framework. Its separation of package‑specific knowledge from simulation workflows allows the same reasoning engine to orchestrate full‑paper‑level research across computational domains.
+- SCP (Science Context Protocol): bridges computational and physical laboratories through a universal specification for describing and invoking scientific resources — including software tools, models, datasets, and physical instruments. It manages the complete experiment lifecycle.
+- MomaGraph: unifies spatial, functional, and task‑oriented relationships into a single scene graph for embodied agents, supporting zero‑shot task planning.
+- EmbodiedLGR: demonstrates that hybrid graph‑based memory — combining low‑level spatial‑semantic graphs with high‑level retrieval‑augmented descriptions — can run locally on physical robots.
+- PhyGeo‑KG: introduces physics‑regularized knowledge graph construction, where physical laws act as constraints on graph edge formation.
+
+### Extended Architecture
+
+Nexus’s existing layered architecture was designed for exactly this extensibility. The extension to physical‑digital domains is not a redesign but a natural expansion:
+
+| Layer | Current Scope | Extended Scope |
+|----|----|----|
+| Knowledge Graph Engine | Documents, code symbols, external references | Simulation outputs, robot trajectories, sensor streams, digital twin state, experimental measurements |
+| Artifact Ingestion Pipeline | Text files (`.md`, `.qmd`, `.html`, `.rs`) | Binary simulation results, point clouds, telemetry logs, video streams, hardware‑in‑the‑loop data |
+| Agentic Research Loop | Hypothesis chains from document‑code gaps | Hypothesis chains spanning simulation predictions, physical measurements, and theoretical claims |
+| Learning Loop | Planner optimized on research session outcomes | Planner optimized on experimental validation rates, simulation fidelity, and physical reproducibility |
+| Contract Governance | Structural and citation rules | Physical constraints, measurement precision bounds, reproducibility requirements, safety invariants |
+
+The key enabler is the existing `/sync/:engine` pattern, the `EngineHandler` interface, and the queue‑based incremental sync. Nothing in the pipeline assumes that artifacts are text. An `EngineHandler` for a physics simulation backend follows the same interface as one for a document store. The “document” may be a simulation configuration, a robotic demonstration log, or a sensor calibration record — the protocol is identical.
+
+### The Episodic Knowledge Graph: Memory Across Realities
+
+The Episodic Knowledge Graph (eKG) acts as a long‑term symbolic memory for embodied agents. An event bus collects multimodal signals (vision, language, sensor readings, action outcomes) and posts interpretations as temporal sequences. The eKG aggregates and connects these interpretations, establishing coherence across interactions that span different modalities, agents, and timescales.
+
+For Nexus, this means the Evolving Memory that currently records Planner‑Executor‑Verifier trajectories evolves into an episodic graph that also records physical experimental outcomes. When a hypothesis about compiler behavior is validated through RISC‑V emulation, and that same hypothesis is later tested on a physical robot, both validations reside in the same eKG, connected by the shared conceptual structure they verify.
+
+### Unified Latent Representation: The Homeomorphic Bridge
+
+When our Observation primitive is described semantically in a whitepaper and simultaneously encoded in a sensor trace from a hardware validation, these two representations induce latent manifolds. If those manifolds are homeomorphic — if they share the same underlying topological structure — then:
+
+1.  Semantic‑guided recovery is possible: a partial physical observation can be completed using knowledge from the whitepaper’s formal description.
+2.  Cross‑domain transfer is verified: a hypothesis validated in simulation can be rigorously transferred to physical hardware.
+3.  Zero‑shot compositional reasoning becomes possible: new experimental designs can be synthesized by composing semantic descriptions in ways guaranteed to have valid physical realizations.
+
+These capabilities have been empirically validated on cross‑domain classifier transfer and zero‑shot classification tasks. The same principles apply to transferring knowledge between compiler optimization traces and hardware performance measurements, or between formal specification proofs and physical circuit behavior.
+
+### Toward Continuous Research Manifolds
+
+The vision is of Nexus as a continuous research manifold: a unified latent space where a theoretical insight about Field transition dynamics, a compiler pass that optimizes for that dynamics, a simulation of the compiler running on RISC‑V emulation, a robot experiment validating the energy efficiency claims, a sensor stream from a hardware implementation, and a maintenance log from a deployed system all inhabit the same queryable structure. A researcher can ask: *“Show me all physical validations of hypotheses derived from Whitepaper §3.4, grouped by simulation fidelity and hardware platform.”* The system traverses from document entities to simulation outputs to robot logs to sensor traces — because they are all connected in the same graph, grounded by the same primitives, verified by the same contract.
+
+### What Must Be Built
+
+Three concrete additions to the existing Nexus architecture realize this boundaryless extension:
+
+1.  Multi‑Modal Ingestion Handlers. New `EngineHandler` implementations for physics simulation frameworks, robotic platforms, and sensor pipelines. Each presents the same interface but maps to domain‑specific storage and retrieval protocols.
+2.  Homeomorphic Verification Layer. An extension to the Verifier that applies continuity, trust, and distributional distance metrics to determine when a physical observation and a semantic claim share compatible latent structure. This becomes part of the Contract: a hypothesis step is only “verified” when the homeomorphism criterion is satisfied.
+3.  Episodic Knowledge Graph Integration. The Evolving Memory evolves from append‑only JSONL trajectories to a true eKG that preserves temporal ordering, agent provenance, and cross‑modal coherence. This enables the Planner to reason about *when*, *by whom*, and *under what conditions* a discovery was made — essential for reproducibility in physical experiments.
+
+## Component Interaction Matrix
+
+| Component | KG Engine | Object Store | Sync Worker | Planner | Verifier | Generator | Simulation / Hardware |
+|----|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| KG Engine | – | – | ← synced by | ← queried by | ← grounds | – | ← ingests traces |
+| Object Store | – | – | ← read during diff | – | – | – | ← uploaded by sim/robot |
+| Sync Worker | → delete/upload | → list/read | – | – | – | – | – |
+| Planner | → queries | – | – | – | → delegates | – | → invokes sim/robot |
+| Verifier | → hybrid queries + homeomorphic checks | – | – | ← receives | – | → signals | ← validates physical results |
+| Generator | – | – | – | – | ← triggered | – | – |
+
+## Strategic Alignment
+
+- Engine‑agnosticism: the synchronization endpoint and engine handler interface isolate the rest of the system from any particular backend, enabling future knowledge‑graph, simulation, or robotic algorithms to be adopted without disruption.
+- No lock‑in: every component is replaceable with an open equivalent — the object store, the message queue, the key‑value mapping, the knowledge graph database, the simulation engine, and the robotic platform.
+- Research‑first design: the entire pipeline is optimized for the academic exploration cycle (hypothesise → validate → publish) across both digital and physical domains.
+- Boundaryless by architecture, not by patch: the extension from document‑code to physical‑digital is a natural consequence of the engine‑agnostic patterns already built into the core design. No fundamental rewrite is required.
