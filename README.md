@@ -30,7 +30,7 @@ Other Formats
 
 ## Executive Summary
 
-There is no fixed pipeline or central orchestrator at the core level. Gateways and helpers exist at the boundary, route requests and coordinate deployment, but they are not part of the core architecture. The core is purely a shared graph of three primitives. Modules leave traces; other modules perceive those traces and act.
+Nexus is a boundaryless research infrastructure built on the Blackboard paradigm. All modules coordinate indirectly through a shared graph of three primitives. There is no fixed pipeline, no orchestrator, and no direct module-to-module communication. Modules leave traces; other modules perceive those traces and act.
 
 The primary document source that feeds this infrastructure is the [SDBS (SSCCS Document Build System)](../../projects/sdbs/index.llms.md). SDBS is a parallel build pipeline that validates, renders, and publishes all technical documentation. Nexus reads from the resulting structured corpus, using the document graph as a partial knowledge base from which hypotheses, constraints, and provenance traces are derived.
 
