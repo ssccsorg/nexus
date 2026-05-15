@@ -1,85 +1,44 @@
 #!/usr/bin/env python3
 """
-fetch_ssccs.py — Universal sync router between SSCCS repositories.
+fetch_ssccs.py — Universal sync router for SSCCS artifacts.
 
-Designed as an extensible transport+transform pipeline.
-Each sync operation is a route: source → transform(s) → sink.
-
-Current routes:
-  nexus.llms → README.md  (docs.ssccs.org → local file, image path rewrite)
-
-Future routes:
-  R2 artifacts → gateway deployment
-  IPFS CIDs → local cache
-  GitHub issues → nexus Facts
-  CI results → ssccs docs
+Downloads happen in GitHub Actions via wrangler/curl. This script only
+transforms and writes. The workflow passes a local file path.
 
 Usage:
-  ./fetch_ssccs.py                          # run default route
-  ./fetch_ssccs.py --route nexus-readme     # explicit route
-  ./fetch_ssccs.py --list-routes            # show available routes
+  python fetch_ssccs.py                          # route defaults → README.md
+  python fetch_ssccs.py --route custom
+  python fetch_ssccs.py --input /tmp/doc.md --output README.md
+  python fetch_ssccs.py --list-routes
+
+Design:
+  Route = source path → [transforms] → sink path
+  Each transform is a pure function (bytes → bytes).
+  New transforms register via Transform subclasses.
+  New routes register via ROUTES dict.
 """
 
 import argparse
-import json
-import os
 import re
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional
-from urllib.request import Request, urlopen
 
-# ── Transport layer ──────────────────────────────────────────────────────
-
-class Transport(ABC):
-    """Fetch raw bytes from a source."""
-    @abstractmethod
-    def fetch(self, uri: str) -> bytes: ...
-
-class HttpTransport(Transport):
-    def fetch(self, uri: str) -> bytes:
-        req = Request(uri, headers={"User-Agent": "ssccs-sync/0.1"})
-        with urlopen(req, timeout=30) as resp:
-            return resp.read()
-
-class FileTransport(Transport):
-    def fetch(self, uri: str) -> bytes:
-        path = uri.removeprefix("file://")
-        with open(path, "rb") as f:
-            return f.read()
-
-# Future: R2Transport, IpfsTransport, GhApiTransport...
-
-TRANSPORTS: dict[str, Transport] = {
-    "http": HttpTransport(),
-    "https": HttpTransport(),
-    "file": FileTransport(),
-}
-
-def resolve_transport(uri: str) -> tuple[Transport, str]:
-    """Pick transport by URI scheme."""
-    scheme = uri.split("://", 1)[0] if "://" in uri else "file"
-    transport = TRANSPORTS.get(scheme)
-    if not transport:
-        raise ValueError(f"No transport for scheme: {scheme}")
-    return transport, uri
-
-# ── Transform layer ──────────────────────────────────────────────────────
+# ── Transforms ────────────────────────────────────────────────────────────
 
 class Transform(ABC):
-    """Transform raw bytes into output bytes."""
+    """Pure function: bytes → bytes."""
     name: str = "unnamed"
-
     @abstractmethod
     def apply(self, data: bytes, ctx: dict) -> bytes: ...
 
+
 class ImagePathRewrite(Transform):
     """Rewrite relative image paths to absolute URLs.
-    
+
     Base URL is derived from the source document's own directory:
-    if source is .../projects/nexus/index.llms.md, base becomes
-    https://docs.ssccs.org/projects/nexus/.
+    if source is /tmp/projects/nexus/index.llms.md, base becomes
+    https://docs.ssccs.org/projects/nexus/
     """
 
     name = "image-path-rewrite"
@@ -100,16 +59,6 @@ class ImagePathRewrite(Transform):
 
         return re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', replace, text).encode("utf-8")
 
-class PrependHeader(Transform):
-    """Prepend a YAML-style header comment."""
-    name = "prepend-header"
-
-    def __init__(self, header: str = ""):
-        self.header = header
-
-    def apply(self, data: bytes, ctx: dict) -> bytes:
-        hdr = ctx.get("header", self.header)
-        return (hdr + "\n\n").encode("utf-8") + data if hdr else data
 
 class StripFrontmatter(Transform):
     """Remove YAML frontmatter (--- ... ---)."""
@@ -120,119 +69,108 @@ class StripFrontmatter(Transform):
         stripped = re.sub(r'^---\n.*?\n---\n', '', text, count=1, flags=re.DOTALL)
         return stripped.encode("utf-8")
 
-# ── Sink layer ───────────────────────────────────────────────────────────
 
-class Sink(ABC):
-    """Write (or send) the final bytes somewhere."""
-    @abstractmethod
-    def write(self, data: bytes, ctx: dict) -> None: ...
+class PrependHeader(Transform):
+    """Prepend a comment header."""
+    name = "prepend-header"
 
-class FileSink(Sink):
-    def __init__(self, path: str = "README.md"):
-        self.path = path
+    def __init__(self, header: str = ""):
+        self.header = header
 
-    def write(self, data: bytes, ctx: dict) -> None:
-        path = ctx.get("output_path", self.path)
-        with open(path, "wb") as f:
-            f.write(data)
-        print(f"[sink] Written {path} ({len(data)} bytes)")
+    def apply(self, data: bytes, ctx: dict) -> bytes:
+        hdr = ctx.get("header", self.header)
+        return (hdr + "\n\n").encode("utf-8") + data if hdr else data
 
-class StdoutSink(Sink):
-    def write(self, data: bytes, ctx: dict) -> None:
-        sys.stdout.buffer.write(data)
 
-# Future: PrSink, IssueSink, R2Sink...
-
-# ── Route definitions ────────────────────────────────────────────────────
+# ── Routes ────────────────────────────────────────────────────────────────
 
 @dataclass
 class Route:
     """A sync route: source → [transforms] → sink."""
     name: str
-    source_uri: str
     transforms: list[Transform] = field(default_factory=list)
-    sink: Sink = field(default_factory=lambda: FileSink())
+    sink: str = "README.md"
     ctx: dict = field(default_factory=dict)
 
 ROUTES: dict[str, Route] = {
     "nexus-readme": Route(
         name="nexus-readme",
-        source_uri="https://docs.ssccs.org/projects/nexus/index.llms.md",
         transforms=[
             StripFrontmatter(),
             PrependHeader("<!-- synced from SSCCS docs -- do not edit directly -->"),
             ImagePathRewrite(),
         ],
-        sink=FileSink("README.md"),
-        ctx={"base_url": "https://docs.ssccs.org/projects/nexus/"},
+        sink="README.md",
     ),
 }
+
 
 def register_route(name: str, route: Route) -> None:
     ROUTES[name] = route
 
-# ── CLI ──────────────────────────────────────────────────────────────────
 
 def list_routes() -> None:
-    print("Available sync routes:")
+    print("Available routes:")
     for name, route in ROUTES.items():
-        src = route.source_uri
         transforms = ", ".join(t.name for t in route.transforms) or "none"
-        print(f"  {name:<20} {src}")
-        print(f"  {'':20} transforms: {transforms}")
+        print(f"  {name:<20} transforms: {transforms}")
+        print(f"  {'':20} sink: {route.sink}")
         print()
 
-def run_route(name: str) -> None:
-    route = ROUTES.get(name)
-    if not route:
-        print(f"[error] Unknown route: {name}", file=sys.stderr)
-        sys.exit(1)
 
-    print(f"[route] {route.name}")
-    print(f"  source: {route.source_uri}")
+def run_route(route: Route, input_path: str) -> None:
+    with open(input_path, "rb") as f:
+        data = f.read()
+    print(f"[read] {input_path} ({len(data)} bytes)")
 
-    transport, resolved = resolve_transport(route.source_uri)
-    data = transport.fetch(resolved)
-    print(f"  fetch: {len(data)} bytes")
-
-    # source_dir = parent directory of the source URI (for relative path resolution)
-    source_dir = route.source_uri.rsplit("/", 1)[0] + "/" if "/" in route.source_uri else "./"
+    # source_dir = URL prefix for relative image paths
     ctx = dict(route.ctx)
-    ctx["source_dir"] = source_dir
+    if "source_dir" not in ctx:
+        ctx["source_dir"] = "https://docs.ssccs.org/projects/nexus/"
 
     for t in route.transforms:
         data = t.apply(data, ctx)
-        print(f"  transform: {t.name} ({len(data)} bytes)")
+        print(f"  [{t.name}] {len(data)} bytes")
 
-    route.sink.write(data, ctx)
+    with open(route.sink, "wb") as f:
+        f.write(data)
+    print(f"[write] {route.sink} ({len(data)} bytes)")
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="SSCCS universal sync router")
+    parser = argparse.ArgumentParser(description="SSCCS artifact sync router")
     parser.add_argument("--route", default="nexus-readme",
                         help="Route name (default: nexus-readme)")
+    parser.add_argument("--input", default=None,
+                        help="Input file path (overrides route default)")
+    parser.add_argument("--output", default=None,
+                        help="Output file path (overrides route sink)")
     parser.add_argument("--list-routes", action="store_true",
-                        help="List available routes and exit")
-    parser.add_argument("--source", help="Override source URI for the route")
-    parser.add_argument("--output", help="Override output path for the route")
+                        help="List available routes")
+    parser.add_argument("--source-dir", default=None,
+                        help="Base URL for image path rewriting")
     args = parser.parse_args()
 
     if args.list_routes:
         list_routes()
         return
 
-    if args.source or args.output:
-        # Create an ad-hoc route with overrides
-        route = ROUTES.get(args.route)
-        if not route:
-            print(f"[error] Unknown route: {args.route}", file=sys.stderr)
-            sys.exit(1)
-        # We can't easily deep-copy transforms, so we modify the route's ctx
-        if args.source:
-            route.source_uri = args.source
-        if args.output:
-            route.sink = FileSink(args.output)
+    route = ROUTES.get(args.route)
+    if not route:
+        print(f"[error] Unknown route: {args.route}", file=sys.stderr)
+        sys.exit(1)
 
-    run_route(args.route)
+    if args.source_dir:
+        route.ctx["source_dir"] = args.source_dir
+
+    if args.output:
+        route.sink = args.output
+
+    input_path = args.input or "/tmp/index.llms.md"
+    run_route(route, input_path)
+
 
 if __name__ == "__main__":
     main()
