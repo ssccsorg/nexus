@@ -9,11 +9,11 @@ use std::collections::HashMap;
 
 use crate::plan::*;
 
-pub use nexus_graph::{EdgeWeight, Blackboard, NodeWeight, Record};
+pub use nexus_graph::{EdgeWeight, GraphAccess, NodeWeight, Record};
 
 // ── Unified execute ────────────────────────────────────────────────────────
 
-pub fn execute<G: Blackboard>(graph: &G, plan: &Plan) -> Result<Vec<Record>, TranslateError> {
+pub fn execute<G: GraphAccess>(graph: &G, plan: &Plan) -> Result<Vec<Record>, TranslateError> {
     match plan {
         Plan::External(ext) => execute_external(graph, ext),
         Plan::Internal(ir) => execute_internal(graph, ir),
@@ -24,7 +24,7 @@ pub fn execute<G: Blackboard>(graph: &G, plan: &Plan) -> Result<Vec<Record>, Tra
 
 use cyrs_plan::{self, Expr, ReadOp};
 
-fn execute_external<G: Blackboard>(
+fn execute_external<G: GraphAccess>(
     graph: &G,
     plan: &ExternalPlan,
 ) -> Result<Vec<Record>, TranslateError> {
@@ -44,7 +44,7 @@ fn execute_external<G: Blackboard>(
 
 type RowSet = Vec<HashMap<String, serde_json::Value>>;
 
-fn exec_readop<G: Blackboard>(
+fn exec_readop<G: GraphAccess>(
     graph: &G,
     op: &ReadOp,
     prior: &[RowSet],
@@ -302,7 +302,7 @@ fn get_input(prior: &[RowSet], op_id: cyrs_plan::OpId) -> Result<RowSet, Transla
         .ok_or_else(|| TranslateError::NotFound(format!("OpId {}", op_id.0)))
 }
 
-fn evaluate_expr<G: Blackboard>(
+fn evaluate_expr<G: GraphAccess>(
     graph: &G,
     row: &HashMap<String, serde_json::Value>,
     expr: &Expr,
@@ -381,7 +381,7 @@ fn value_as_f64(v: &serde_json::Value) -> Option<f64> {
     }
 }
 
-fn find_bound_node<G: Blackboard>(
+fn find_bound_node<G: GraphAccess>(
     graph: &G,
     row: &HashMap<String, serde_json::Value>,
 ) -> Option<NodeIndex> {
@@ -396,7 +396,7 @@ fn find_bound_node<G: Blackboard>(
     None
 }
 
-fn find_edge<G: Blackboard>(
+fn find_edge<G: GraphAccess>(
     graph: &G,
     from: NodeIndex,
     to: NodeIndex,
@@ -418,7 +418,7 @@ fn find_edge<G: Blackboard>(
     None
 }
 
-fn find_edge_filtered<G: Blackboard>(
+fn find_edge_filtered<G: GraphAccess>(
     graph: &G,
     from: NodeIndex,
     to: NodeIndex,
@@ -488,7 +488,7 @@ fn rows_equal(
     a.iter().all(|(k, v)| b.get(k) == Some(v))
 }
 
-fn find_nodes_by_label_str<G: Blackboard>(graph: &G, label: Option<&str>) -> Vec<NodeIndex> {
+fn find_nodes_by_label_str<G: GraphAccess>(graph: &G, label: Option<&str>) -> Vec<NodeIndex> {
     let mut results = Vec::new();
     for &idx in &graph.node_indices() {
         if let Some(weight) = graph.node_weight(idx)
@@ -502,7 +502,7 @@ fn find_nodes_by_label_str<G: Blackboard>(graph: &G, label: Option<&str>) -> Vec
 
 // ── Internal executor (legacy PlanIR, fallback) ────────────────────────────
 
-fn execute_internal<G: Blackboard>(graph: &G, plan: &PlanIR) -> Result<Vec<Record>, TranslateError> {
+fn execute_internal<G: GraphAccess>(graph: &G, plan: &PlanIR) -> Result<Vec<Record>, TranslateError> {
     let mut records: Vec<Record> = Vec::new();
     let mut current_nodes: Option<Vec<NodeIndex>> = None;
     let mut current_var: Option<String> = None;
@@ -598,7 +598,7 @@ impl std::error::Error for TranslateError {}
 
 // ── Internal executor helpers ──────────────────────────────────────────────
 
-fn find_matching_nodes<G: Blackboard>(graph: &G, pattern: &NodePattern) -> Vec<NodeIndex> {
+fn find_matching_nodes<G: GraphAccess>(graph: &G, pattern: &NodePattern) -> Vec<NodeIndex> {
     let mut results = Vec::new();
     for &idx in &graph.node_indices() {
         if let Some(weight) = graph.node_weight(idx)
@@ -610,7 +610,7 @@ fn find_matching_nodes<G: Blackboard>(graph: &G, pattern: &NodePattern) -> Vec<N
     results
 }
 
-fn apply_where<G: Blackboard>(graph: &G, nodes: &[NodeIndex], wc: &WhereClause) -> Vec<NodeIndex> {
+fn apply_where<G: GraphAccess>(graph: &G, nodes: &[NodeIndex], wc: &WhereClause) -> Vec<NodeIndex> {
     nodes
         .iter()
         .copied()
@@ -646,7 +646,7 @@ fn apply_where<G: Blackboard>(graph: &G, nodes: &[NodeIndex], wc: &WhereClause) 
         .collect()
 }
 
-fn count_relationships<G: Blackboard>(graph: &G, nodes: &[NodeIndex]) -> Vec<(NodeIndex, usize)> {
+fn count_relationships<G: GraphAccess>(graph: &G, nodes: &[NodeIndex]) -> Vec<(NodeIndex, usize)> {
     nodes
         .iter()
         .map(|&idx| (idx, graph.neighbors_undirected(idx).len()))
