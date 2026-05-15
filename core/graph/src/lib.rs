@@ -379,48 +379,47 @@ impl Blackboard for BlackboardStore {
         });
     }
 
-    fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, String> {
+    fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError> {
         if intent.from_facts.is_empty() {
-            return Err("Intent must be grounded in at least one Fact".into());
+            return Err(BlackboardError::Forbidden("Intent must be grounded in at least one Fact".into()));
         }
         self.add_intent(intent);
         Ok(intent.id.clone())
     }
 
-    fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), String> {
+    fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let idx = self
             .resolve_intent_name(intent_id)
-            .ok_or_else(|| format!("Intent not found: {intent_id}"))?;
+            .ok_or_else(|| BlackboardError::NotFound(format!("Intent: {intent_id}")))?;
         let w = self.graph.node_weight(idx).unwrap();
         if let Some(existing) = w.properties.get("worker").and_then(|v| v.as_str()) {
             if existing != agent {
-                return Err(format!("Intent claimed by {}", existing));
+                return Err(BlackboardError::Conflict(format!("Claimed by {existing}")));
             }
         }
         let mut w = w.clone();
-        w.properties
-            .insert("worker".into(), serde_json::Value::String(agent.into()));
+        w.properties.insert("worker".into(), serde_json::Value::String(agent.into()));
         *self.graph.node_weight_mut(idx).unwrap() = w;
         Ok(())
     }
 
-    fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), String> {
+    fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let idx = self
             .resolve_intent_name(intent_id)
-            .ok_or_else(|| format!("Intent not found: {intent_id}"))?;
+            .ok_or_else(|| BlackboardError::NotFound(format!("Intent: {intent_id}")))?;
         let w = self.graph.node_weight(idx).unwrap();
         match w.properties.get("worker").and_then(|v| v.as_str()) {
-            Some(w) if w != agent => return Err(format!("Intent claimed by {w}")),
-            None => return Err("Intent not claimed".into()),
+            Some(w) if w != agent => return Err(BlackboardError::Conflict(format!("Claimed by {w}"))),
+            None => return Err(BlackboardError::Forbidden("Not claimed".into())),
             _ => {}
         }
         Ok(())
     }
 
-    fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), String> {
+    fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let idx = self
             .resolve_intent_name(intent_id)
-            .ok_or_else(|| format!("Intent not found: {intent_id}"))?;
+            .ok_or_else(|| BlackboardError::NotFound(format!("Intent: {intent_id}")))?;
         let w = self.graph.node_weight(idx).unwrap();
         if let Some(worker_name) = w.properties.get("worker").and_then(|v| v.as_str()) {
             if worker_name == agent {
@@ -436,10 +435,10 @@ impl Blackboard for BlackboardStore {
         &mut self,
         intent_id: &str,
         result: &str,
-    ) -> Result<(Fact, Vec<Intent>), String> {
+    ) -> Result<(Fact, Vec<Intent>), BlackboardError> {
         let idx = self
             .resolve_intent_name(intent_id)
-            .ok_or_else(|| format!("Intent not found: {intent_id}"))?;
+            .ok_or_else(|| BlackboardError::NotFound(format!("Intent: {intent_id}")))?;
         let intent = self.read_intent(idx).unwrap();
 
         let mut w = self.graph.node_weight(idx).unwrap().clone();
