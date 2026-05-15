@@ -2,7 +2,7 @@
 ///
 /// Every FIH mutation is logged through this interface.
 /// Different backends can be plugged in without changing core logic.
-
+///
 /// A single persisted FIH event.
 #[derive(Debug, Clone)]
 pub struct StoredEvent {
@@ -27,5 +27,7 @@ pub struct NullStorage;
 
 impl Storage for NullStorage {
     fn log_fih(&self, _event_type: &str, _payload: &str) {}
-    fn load_events(&self) -> Vec<StoredEvent> { Vec::new() }
+    fn load_events(&self) -> Vec<StoredEvent> {
+        Vec::new()
+    }
 }

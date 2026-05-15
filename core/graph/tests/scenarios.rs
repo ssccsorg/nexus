@@ -346,11 +346,13 @@ fn scenario_bug_fix_pipeline() {
     bb.submit_intent(&Intent {
         id: FihHash("i_triage".into()),
         from_facts: vec!["f_bug_1337".into()],
-        description: "TRIAGE: Payment API overflow on large amounts — check decimal handling".into(),
+        description: "TRIAGE: Payment API overflow on large amounts — check decimal handling"
+            .into(),
         creator: "triager".into(),
         worker: None,
         concluded_at: None,
-    }).unwrap();
+    })
+    .unwrap();
 
     // Developer claims triage, concludes with analysis
     bb.claim_intent("i_triage", "dev-alice").unwrap();
@@ -363,11 +365,13 @@ fn scenario_bug_fix_pipeline() {
     bb.submit_intent(&Intent {
         id: FihHash("i_fix_1337".into()),
         from_facts: vec!["f_bug_1337".into(), analysis.id.0],
-        description: "FIX: Change payment amount from uint32 to uint64 in api/src/payment.rs".into(),
+        description: "FIX: Change payment amount from uint32 to uint64 in api/src/payment.rs"
+            .into(),
         creator: "dev-alice".into(),
         worker: None,
         concluded_at: None,
-    }).unwrap();
+    })
+    .unwrap();
 
     // Developer claims and implements the fix
     bb.claim_intent("i_fix_1337", "dev-alice").unwrap();
@@ -391,9 +395,16 @@ fn scenario_bug_fix_pipeline() {
     assert!(verdict.content.contains("PASSED"));
 
     let state = bb.read_state();
-    assert_eq!(state.facts.len(), 4, "1 bug report + 3 conclusion facts = 4");
+    assert_eq!(
+        state.facts.len(),
+        4,
+        "1 bug report + 3 conclusion facts = 4"
+    );
     assert_eq!(state.hints.len(), 1, "severity hint from triager");
-    assert!(state.intents.iter().any(|i| i.id.0 == "i_fix_1337"), "fix intent present");
+    assert!(
+        state.intents.iter().any(|i| i.id.0 == "i_fix_1337"),
+        "fix intent present"
+    );
 
     println!("  ✓ Bug Pipeline: reporter→triager→dev→reviewer = 4 agents, 7 FIH ops");
     println!("  ✓ P0 bug: submitted → triaged → fixed → reviewed → passed");
@@ -465,7 +476,9 @@ fn scenario_ci_failure_investigation() {
     assert!(diagnosis.content.contains("proto-rs v2.4.0"));
 
     // Submit the fix follow-up
-    for fu in &follow_ups { bb.submit_intent(fu).unwrap(); }
+    for fu in &follow_ups {
+        bb.submit_intent(fu).unwrap();
+    }
 
     let state = bb.read_state();
     assert_eq!(state.facts.len(), 5, "4 reports + 1 diagnosis");
@@ -503,7 +516,8 @@ fn scenario_supply_chain_incident() {
         creator: "sec-lead".into(),
         worker: None,
         concluded_at: None,
-    }).unwrap();
+    })
+    .unwrap();
     bb.claim_intent("i_assess", "sec-lead").unwrap();
     let (impact, _) = bb.conclude_intent("i_assess",
         "Impact: 12 microservices use openssl-sys. 8 are edge-facing (critical). 4 are internal (medium). All need patching."
@@ -518,7 +532,8 @@ fn scenario_supply_chain_incident() {
         creator: "sre-lead".into(),
         worker: None,
         concluded_at: None,
-    }).unwrap();
+    })
+    .unwrap();
     bb.claim_intent("i_mitigate", "sre-lead").unwrap();
     let (patch, _) = bb.conclude_intent("i_mitigate",
         "Patch: openssl-sys bumped to 0.9.101 in all 12 services. 8 edge services patched via rolling update (zero downtime). 4 internal services updated. No regressions."
@@ -533,7 +548,8 @@ fn scenario_supply_chain_incident() {
         creator: "comms-lead".into(),
         worker: None,
         concluded_at: None,
-    }).unwrap();
+    })
+    .unwrap();
     bb.claim_intent("i_comms", "comms-lead").unwrap();
     let (advisory, _) = bb.conclude_intent("i_comms",
         "Advisory published: CVE-2026-4413 patched within 4h of disclosure. No customer impact. Post-mortem scheduled."
@@ -556,4 +572,170 @@ fn scenario_supply_chain_incident() {
     println!("  ✓ Supply Chain Incident: security→SRE→comms→post-mortem = 4 tracks, parallel");
     println!("  ✓ CVE-2026-4413: disclosed → assessed → patched → communicated in 4h");
     println!("  ✓ Each track reads previous conclusions via read_state() — no direct calls");
+}
+
+// ── Scenario 8: SSCCS Computational Primitive Discovery (연구 실무) ──────
+//
+// Multiple research agents analyze the llvm-project to discover and formalize
+// the "Segment" computational primitive — a self-contained unit of computation
+// with typed boundaries. Each agent examines a different dimension:
+//   - Agent-A: memory access patterns (spatial locality)
+//   - Agent-B: data flow graphs (temporal locality)
+//   - Agent-C: control flow structure (boundary identification)
+//   - Agent-D: formalizes the discovered primitive into Segment/Scheme/Field
+//
+// This mirrors the actual SSCCS research methodology: structural observation
+// across multiple compiler IRs to extract universal computation primitives.
+
+#[test]
+fn scenario_ssccs_primitive_discovery() {
+    let mut bb = GraphBlackboard::new();
+
+    // ── Phase 1: Agents observe different IRs ─────────────────────────
+
+    // Agent-A analyzes memory access patterns in LLVM IR
+    bb.submit_fact(&Fact {
+        id: FihHash("f_memory_pattern".into()),
+        origin: "llvm-ir".into(),
+        content: "OBSERVATION: 73% of loads/stores in hot loops access consecutive addresses (stride=1). 18% show strided access (stride=4/8). 9% are gather/scatter. Spatial locality is the dominant pattern, not random access.".into(),
+        creator: "agent-a".into(),
+    });
+
+    // Agent-B analyzes data flow graphs in MLIR
+    bb.submit_fact(&Fact {
+        id: FihHash("f_dataflow_pattern".into()),
+        origin: "mlir".into(),
+        content: "OBSERVATION: Data flow subgraphs show strong temporal locality — 89% of SSA values are used within 12 instructions of definition. Def-use chains form natural clusters: compute kernels, memory fences, control boundaries.".into(),
+        creator: "agent-b".into(),
+    });
+
+    // Agent-C analyzes control flow structure (CFG)
+    bb.submit_fact(&Fact {
+        id: FihHash("f_cfg_pattern".into()),
+        origin: "cfg-analysis".into(),
+        content: "OBSERVATION: CFG natural loops have clear entry/exit points. 94% of basic blocks belong to exactly one loop nest. Loop boundaries are stable across optimization passes — they are structural invariants of the computation, not artifacts.".into(),
+        creator: "agent-c".into(),
+    });
+
+    let state = bb.read_state();
+    assert_eq!(state.facts.len(), 3, "3 observations from different IRs");
+    println!("  Phase 1: 3 agents observed distinct structural patterns across LLVM/MLIR/CFG");
+
+    // ── Phase 2: Agents cross-reference and detect convergence ────────
+
+    // Agent-A notes: memory stride patterns match loop boundaries from Agent-C
+    bb.submit_hint(&Hint {
+        id: FihHash("h_convergence_1".into()),
+        content: "CROSS-REF: Memory stride=1 patterns align with innermost loops (Agent-C's observation). The memory access unit IS the loop body — a natural computational boundary.".into(),
+        creator: "agent-a".into(),
+    });
+
+    // Agent-B notes: SSA def-use clusters match memory regions from Agent-A
+    bb.submit_hint(&Hint {
+        id: FihHash("h_convergence_2".into()),
+        content: "CROSS-REF: SSA value clusters (12-instruction window) correspond to memory stride-1 regions (Agent-A). The data flow cluster and memory access region share the same boundary — this is NOT coincidence.".into(),
+        creator: "agent-b".into(),
+    });
+
+    // Agent-C notes: all three dimensions converge on the same structural unit
+    bb.submit_fact(&Fact {
+        id: FihHash("f_convergence".into()),
+        origin: "cross-reference".into(),
+        content: "CONVERGENCE: Memory (spatial), data flow (temporal), and control flow (structural) all identify the same atomic unit: a self-contained loop nest with bounded memory access and localized def-use chains. This unit is universal across the three IRs.".into(),
+        creator: "agent-c".into(),
+    });
+
+    println!("  Phase 2: 3 cross-references confirm convergence — a universal atomic unit");
+
+    // ── Phase 3: Agent-D formalizes the discovered primitive ──────────
+
+    // Agent-D reads all observations and convergence hints, then submits a formalization Intent
+    bb.submit_intent(&Intent {
+        id: FihHash("i_formalize_segment".into()),
+        from_facts: vec![
+            "f_memory_pattern".into(),
+            "f_dataflow_pattern".into(),
+            "f_cfg_pattern".into(),
+            "f_convergence".into(),
+        ],
+        description: "FORMALIZE: Define 'Segment' as the universal atomic computation unit with typed boundaries (spatial: memory stride, temporal: def-use window, structural: loop entry/exit).".into(),
+        creator: "agent-d".into(),
+        worker: None,
+        concluded_at: None,
+    }).unwrap();
+
+    // Agent-D claims and concludes with the formal definition
+    bb.claim_intent("i_formalize_segment", "agent-d").unwrap();
+    let (segment_def, follow_ups) = bb.conclude_intent("i_formalize_segment",
+        "SEGMENT FORMALIZED: A Segment is a triple (M, D, B) where:
+  M: memory access region (contiguous address range, stride pattern)
+  D: def-use chain cluster (SSA value window, data flow subgraph)
+  B: structural boundary (loop entry/exit, CFG natural loop)
+
+Properties:
+  - Self-contained: all inputs enter at B_entry, all outputs exit at B_exit
+  - Compositional: Segments nest hierarchically (loop nest → function → module)
+  - Observable: M, D, B are independently measurable across any IR
+  - Universal: present in LLVM IR, MLIR, CFG, and downstream to machine code
+
+Implication: The Segment is a computational primitive — an atom of computation
+that the von Neumann architecture can be redesigned around."
+    ).unwrap();
+    assert!(segment_def.content.contains("SEGMENT FORMALIZED"));
+    assert!(segment_def.content.contains("Universal"));
+
+    // Submit follow-up intents (Scheme derivation, Field definition, etc.)
+    for fu in &follow_ups { bb.submit_intent(fu).unwrap(); }
+
+    println!("  Phase 3: Agent-D formalized the 'Segment' primitive from 4 converging observations");
+
+    // ── Phase 4: Peer validation ──────────────────────────────────────
+
+    // Agent-A validates the Segment definition against known memory patterns
+    bb.submit_intent(&Intent {
+        id: FihHash("i_validate_segment".into()),
+        from_facts: vec!["f_memory_pattern".into(), segment_def.id.0.clone()],
+        description: "VALIDATE: Does the Segment definition predict the 73/18/9 memory access distribution? If M is a contiguous stride-1 region, it should also explain strided and gather/scatter cases.".into(),
+        creator: "agent-a".into(),
+        worker: None,
+        concluded_at: None,
+    }).unwrap();
+    bb.claim_intent("i_validate_segment", "agent-a").unwrap();
+    let (validation, _) = bb.conclude_intent("i_validate_segment",
+        "VALIDATION PASSED: Segment model predicts stride-1 (73% = innermost loops), stride-4/8 (18% = struct field access across Segment boundaries), gather/scatter (9% = cross-Segment irregular access). The 73/18/9 distribution is a natural consequence of hierarchical Segment composition."
+    ).unwrap();
+    assert!(validation.content.contains("PASSED"));
+
+    // Agent-E (new observer) reads the full thread and proposes a Scheme
+    bb.submit_intent(&Intent {
+        id: FihHash("i_scheme_definition".into()),
+        from_facts: vec![segment_def.id.0],
+        description: "SCHEME: Define 'Scheme' as a typed transformation between Segments. Scheme(S1, S2, T) where T is the transformation type (map, reduce, shuffle, broadcast). This enables algebraic reasoning about Segment compositions.".into(),
+        creator: "agent-e".into(),
+        worker: None,
+        concluded_at: None,
+    }).unwrap();
+    bb.claim_intent("i_scheme_definition", "agent-e").unwrap();
+    let (scheme_def, _) = bb.conclude_intent("i_scheme_definition",
+        "SCHEME FORMALIZED: Scheme(S₁, S₂, T) where:
+  - S₁, S₂ are Segments
+  - T ∈ {map, reduce, shuffle, broadcast, fuse, split}
+  - A Scheme preserves the Segment properties (self-contained, compositional)
+
+This completes the first two layers of the SSCCS ontology: Segment + Scheme."
+    ).unwrap();
+    assert!(scheme_def.content.contains("SCHEME FORMALIZED"));
+
+    let state = bb.read_state();
+    // 3 observations + 1 convergence + 1 formalization + 1 validation + 1 scheme = 7
+    assert_eq!(state.facts.len(), 7, "3 observations + convergence + formalization + validation + scheme");
+    assert_eq!(state.hints.len(), 2, "2 cross-reference hints");
+    // 4 intents + follow-ups
+    assert!(state.intents.len() >= 4, "formalize + validate + scheme + follow-ups");
+
+    println!();
+    println!("  ✓ SSCCS Primitive Discovery: 5 agents, 2 FIH layers (Segment + Scheme)");
+    println!("  ✓ 3 independent IR observations → convergence → formalization → validation");
+    println!("  ✓ Full SSCCS ontology derivation through collaborative FIH inference");
+    println!("  ✓ Key insight: memory access + data flow + control flow = the same universal unit");
 }

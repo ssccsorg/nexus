@@ -7,11 +7,11 @@ pub mod cypher;
 pub mod storage;
 
 pub use nexus_api::{Blackboard, BlackboardError, BoardState, Fact, FihHash, Hint, Intent};
-pub use storage::{Storage, NullStorage, StoredEvent};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+pub use storage::{NullStorage, Storage, StoredEvent};
 
 // ── Internal storage types ────────────────────────────────────────────────
 
@@ -100,15 +100,21 @@ pub struct Signal {
     pub decay_rate: f64,
 }
 
-impl GraphBlackboard {
-    /// In-memory only (no persistence).
-    pub fn new() -> Self {
+impl Default for GraphBlackboard {
+    fn default() -> Self {
         Self {
             graph: petgraph::Graph::new(),
             signals: Vec::new(),
             storage: Box::new(NullStorage),
             loading: false,
         }
+    }
+}
+
+impl GraphBlackboard {
+    /// In-memory only (no persistence).
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Attach a custom storage backend. Loads past events if any.
@@ -294,7 +300,10 @@ impl GraphBlackboard {
 impl Blackboard for GraphBlackboard {
     fn submit_fact(&mut self, fact: &Fact) -> FihHash {
         self.add_fact(fact);
-        self.log_fih("submit_fact", &serde_json::to_string(fact).unwrap_or_default());
+        self.log_fih(
+            "submit_fact",
+            &serde_json::to_string(fact).unwrap_or_default(),
+        );
         fact.id.clone()
     }
 
@@ -313,7 +322,10 @@ impl Blackboard for GraphBlackboard {
             label: "Hint".into(),
             properties: props,
         });
-        self.log_fih("submit_hint", &serde_json::to_string(hint).unwrap_or_default());
+        self.log_fih(
+            "submit_hint",
+            &serde_json::to_string(hint).unwrap_or_default(),
+        );
     }
 
     fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError> {
@@ -323,7 +335,10 @@ impl Blackboard for GraphBlackboard {
             ));
         }
         self.add_intent(intent);
-        self.log_fih("submit_intent", &serde_json::to_string(intent).unwrap_or_default());
+        self.log_fih(
+            "submit_intent",
+            &serde_json::to_string(intent).unwrap_or_default(),
+        );
         Ok(intent.id.clone())
     }
 
@@ -346,8 +361,7 @@ impl Blackboard for GraphBlackboard {
         *self.graph.node_weight_mut(idx).unwrap() = w;
         self.log_fih(
             "claim_intent",
-            &serde_json::to_string(&(intent_id.to_string(), agent.to_string()))
-                .unwrap_or_default(),
+            &serde_json::to_string(&(intent_id.to_string(), agent.to_string())).unwrap_or_default(),
         );
         Ok(())
     }
@@ -381,8 +395,7 @@ impl Blackboard for GraphBlackboard {
         }
         self.log_fih(
             "release_intent",
-            &serde_json::to_string(&(intent_id.to_string(), agent.to_string()))
-                .unwrap_or_default(),
+            &serde_json::to_string(&(intent_id.to_string(), agent.to_string())).unwrap_or_default(),
         );
         Ok(())
     }
