@@ -209,11 +209,7 @@ impl GraphBlackboard {
                 .get("worker")
                 .and_then(|v| v.as_str())
                 .map(|s| s.into()),
-            concluded_at: w
-                .properties
-                .get("concluded_at")
-                .and_then(|v| v.as_str())
-                .map(|s| s.into()),
+            concluded_at: w.properties.get("concluded_at").and_then(|v| v.as_str()).map(|s| s.into()),
         })
     }
 
@@ -268,6 +264,9 @@ impl Blackboard for GraphBlackboard {
             .resolve_intent_name(intent_id)
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent: {intent_id}")))?;
         let w = self.graph.node_weight(idx).unwrap();
+        if w.properties.contains_key("concluded_at") {
+            return Err(BlackboardError::Forbidden("Already concluded".into()));
+        }
         if let Some(existing) = w.properties.get("worker").and_then(|v| v.as_str()) {
             if existing != agent {
                 return Err(BlackboardError::Conflict(format!("Claimed by {existing}")));
@@ -322,6 +321,7 @@ impl Blackboard for GraphBlackboard {
             "concluded_at".into(),
             serde_json::Value::String("now".into()),
         );
+        w.properties.remove("worker");
         *self.graph.node_weight_mut(idx).unwrap() = w;
 
         let fact = Fact {
