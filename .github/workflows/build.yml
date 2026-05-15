@@ -4,14 +4,14 @@ on:
   push:
     branches: ["main"]
     paths:
-      - "rag/lightrag/Dockerfile"
-      - "graph/memgraph/Dockerfile"
+      - "engines/rag/lightrag/Dockerfile"
+      - "engines/memgraph/memgraph/Dockerfile"
       - ".github/workflows/build.yml"
   pull_request:
     branches: ["main"]
     paths:
-      - "rag/lightrag/Dockerfile"
-      - "graph/memgraph/Dockerfile"
+      - "engines/rag/lightrag/Dockerfile"
+      - "engines/memgraph/memgraph/Dockerfile"
       - ".github/workflows/build.yml"
   # Placeholder: ssccs core repo → R2 업로드 후 컨테이너 재빌드 트리거
   # repository_dispatch:
@@ -33,7 +33,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Build LightRAG image
-        run: docker build -t lightrag-nexus -f rag/lightrag/Dockerfile rag/lightrag
+        run: docker build -t lightrag-nexus -f engines/rag/lightrag/Dockerfile engines/rag/lightrag
 
       - name: Build Memgraph proxy image
-        run: docker build -t memgraph-proxy -f graph/memgraph/Dockerfile graph/memgraph
+        run: docker build -t memgraph-proxy -f engines/memgraph/memgraph/Dockerfile engines/memgraph/memgraph
