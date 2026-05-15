@@ -40,7 +40,7 @@ impl Plan {
         }
 
         let mut hir = result.hir;
-        crate::parser::resolve_names(&mut hir);
+        super::parser::resolve_names(&mut hir);
 
         let plan =
             cyrs_plan::lower::lower_statement(&hir).map_err(|e| format!("plan error: {e}"))?;
@@ -60,7 +60,7 @@ impl Plan {
 
     /// Fallback: our lightweight PlanIR.
     pub fn from_internal(input: &str) -> Result<Self, String> {
-        crate::parser::parse_query(input).map(Plan::Internal)
+        super::parser::parse_query(input).map(Plan::Internal)
     }
 }
 
