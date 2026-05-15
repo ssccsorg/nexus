@@ -4,7 +4,7 @@
 // research problem. No agent talks directly to another — all via Blackboard.
 
 use nexus_graph::cypher;
-use nexus_graph::{Blackboard, Fact, FihHash, GraphBlackboard, Intent, Hint};
+use nexus_graph::{Blackboard, Fact, FihHash, GraphBlackboard, Hint, Intent};
 
 // ── Scenario 1: Contradiction Detection ───────────────────────────────────
 //
@@ -40,7 +40,8 @@ fn scenario_contradiction_detection() {
         creator: "agent-c".into(),
         worker: None,
         concluded_at: None,
-    }).unwrap();
+    })
+    .unwrap();
 
     // Agent-C claims, works, concludes
     bb.claim_intent("i_reconcile", "agent-c").unwrap();
@@ -103,7 +104,10 @@ fn scenario_peer_review() {
 
     let state = bb.read_state();
     assert_eq!(state.hints.len(), 2, "2 review hints submitted");
-    assert!(state.hints.iter().any(|h| h.creator == "agent-b"), "hint from agent-b");
+    assert!(
+        state.hints.iter().any(|h| h.creator == "agent-b"),
+        "hint from agent-b"
+    );
 
     // Editor concludes incorporating feedback
     let (result, _) = bb.conclude_intent(
@@ -134,12 +138,21 @@ fn scenario_knowledge_synthesis() {
 
     // Three agents each submit partial observations
     let pieces = [
-        ("f_piece_1", "agent-alpha",
-         "Battery cell temperature rises 15°C under 2C discharge rate"),
-        ("f_piece_2", "agent-beta",
-         "Electrolyte viscosity doubles below -10°C ambient temperature"),
-        ("f_piece_3", "agent-gamma",
-         "Anode lithium plating occurs at charge rates above 1C below 0°C"),
+        (
+            "f_piece_1",
+            "agent-alpha",
+            "Battery cell temperature rises 15°C under 2C discharge rate",
+        ),
+        (
+            "f_piece_2",
+            "agent-beta",
+            "Electrolyte viscosity doubles below -10°C ambient temperature",
+        ),
+        (
+            "f_piece_3",
+            "agent-gamma",
+            "Anode lithium plating occurs at charge rates above 1C below 0°C",
+        ),
     ];
     for (id, creator, content) in &pieces {
         bb.submit_fact(&Fact {
@@ -166,18 +179,27 @@ fn scenario_knowledge_synthesis() {
     let state = bb.read_state();
     assert_eq!(state.facts.len(), 4, "3 pieces + 1 synthesis");
     let synthesis = &state.facts[3];
-    assert!(synthesis.content.contains("SYNTHESIS"), "synthesis marker present");
-    assert!(synthesis.content.contains("preheat"), "actionable solution proposed");
+    assert!(
+        synthesis.content.contains("SYNTHESIS"),
+        "synthesis marker present"
+    );
+    assert!(
+        synthesis.content.contains("preheat"),
+        "actionable solution proposed"
+    );
 
     // Agent-D's synthesis should be propositional — others can build on it
     bb.submit_intent(&Intent {
         id: FihHash("i_validate_synthesis".into()),
         from_facts: vec!["f_synthesis".into()],
-        description: "Experimental validation: test preheat to 10°C before 2C charging at -10°C ambient".into(),
+        description:
+            "Experimental validation: test preheat to 10°C before 2C charging at -10°C ambient"
+                .into(),
         creator: "agent-epsilon".into(),
         worker: None,
         concluded_at: None,
-    }).unwrap();
+    })
+    .unwrap();
 
     let state = bb.read_state();
     assert_eq!(state.intents.len(), 1, "validation intent submitted");
@@ -206,9 +228,21 @@ fn scenario_emergency_response() {
 
     // Sensor agents detect anomalies
     let alerts = [
-        ("f_alarm_smoke", "sensor-alpha", "Smoke detected in sector 7, visibility 2m"),
-        ("f_alarm_temp", "sensor-beta", "Temperature spike 85°C in sector 7, rising 2°/min"),
-        ("f_alarm_power", "sensor-gamma", "Power line to sector 7 shows 40% voltage drop"),
+        (
+            "f_alarm_smoke",
+            "sensor-alpha",
+            "Smoke detected in sector 7, visibility 2m",
+        ),
+        (
+            "f_alarm_temp",
+            "sensor-beta",
+            "Temperature spike 85°C in sector 7, rising 2°/min",
+        ),
+        (
+            "f_alarm_power",
+            "sensor-gamma",
+            "Power line to sector 7 shows 40% voltage drop",
+        ),
     ];
     for (id, creator, content) in &alerts {
         bb.submit_fact(&Fact {
@@ -227,11 +261,13 @@ fn scenario_emergency_response() {
             "f_alarm_temp".into(),
             "f_alarm_power".into(),
         ],
-        description: "FIRE_RESPONSE: Evacuate sector 7, activate fire suppression, isolate power".into(),
+        description: "FIRE_RESPONSE: Evacuate sector 7, activate fire suppression, isolate power"
+            .into(),
         creator: "coordinator".into(),
         worker: None,
         concluded_at: None,
-    }).unwrap();
+    })
+    .unwrap();
 
     // Response agents compete to claim the response intent
     let responders = ["responder-alpha", "responder-beta", "responder-gamma"];
@@ -262,14 +298,21 @@ fn scenario_emergency_response() {
 
     // Champion concludes
     let (outcome, _) = bb
-        .conclude_intent("i_respond_fire", "Sector 7 evacuated, fire suppressed in 3min, power isolated. No casualties.")
+        .conclude_intent(
+            "i_respond_fire",
+            "Sector 7 evacuated, fire suppressed in 3min, power isolated. No casualties.",
+        )
         .unwrap();
     assert!(outcome.content.contains("evacuated"));
 
     // Final state
     let state = bb.read_state();
     assert_eq!(state.facts.len(), 4, "3 alerts + 1 outcome");
-    assert_eq!(state.intents.len(), 1, "response intent (not yet followed up)");
+    assert_eq!(
+        state.intents.len(),
+        1,
+        "response intent (not yet followed up)"
+    );
 
     println!("  ✓ Emergency Response: 3 sensors + coordinator + 3 responders = 7 agents");
     println!("  ✓ Competitive claim: only one responder wins, others rejected");

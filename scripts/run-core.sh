@@ -3,7 +3,8 @@
 # nexus-core — Local CI runner
 #
 # Mirrors .github/workflows/core.yml locally:
-#   cargo check | clippy | test
+#   cargo fmt | check | clippy | test
+#   Runs all 32 tests (unit + integration + parallel stress)
 #
 # Usage:
 #   ./run.sh              # Full check: fmt + clippy + test
@@ -27,10 +28,10 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
-run_check()  { cargo check -p nexus-cypher && cargo check; }
+run_check()  { cargo check -p nexus-graph && cargo check; }
 run_fmt()    { cargo fmt --check; }
 run_clippy() { cargo clippy -- -D warnings; }
-run_test()   { cargo test -p nexus-cypher && cargo test; }
+run_test()   { cargo test -p nexus-graph 2>&1; }
 run_all() {
     echo "=== fmt ===" && run_fmt
     echo "=== check ===" && run_check

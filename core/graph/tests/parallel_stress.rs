@@ -7,14 +7,19 @@
 //   - heartbeat while another thread releases
 
 use nexus_graph::{Blackboard, Fact, FihHash, GraphBlackboard, Intent};
-use std::sync::{Arc, Mutex, atomic::{AtomicU64, Ordering}};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicU64, Ordering},
+};
 use std::thread;
 
 /// Thread-safe PRNG (xorshift64).
 struct ThreadRng(AtomicU64);
 
 impl ThreadRng {
-    fn new(seed: u64) -> Self { Self(AtomicU64::new(seed)) }
+    fn new(seed: u64) -> Self {
+        Self(AtomicU64::new(seed))
+    }
     fn next(&self) -> u64 {
         loop {
             let x = self.0.load(Ordering::Relaxed);
@@ -22,12 +27,22 @@ impl ThreadRng {
             y ^= y << 13;
             y ^= y >> 7;
             y ^= y << 17;
-            if self.0.compare_exchange_weak(x, y, Ordering::Relaxed, Ordering::Relaxed).is_ok() {
+            if self
+                .0
+                .compare_exchange_weak(x, y, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+            {
                 return y;
             }
         }
     }
-    fn range(&self, lo: usize) -> usize { if lo == 0 { 0 } else { (self.next() as usize) % lo } }
+    fn range(&self, lo: usize) -> usize {
+        if lo == 0 {
+            0
+        } else {
+            (self.next() as usize) % lo
+        }
+    }
 }
 
 /// Thread-local agent state.
@@ -95,7 +110,9 @@ impl ParallelAnt {
                     return format!("{:<16} already claimed", self.name);
                 }
                 let state = bb.read_state();
-                let unclaimed: Vec<&Intent> = state.intents.iter()
+                let unclaimed: Vec<&Intent> = state
+                    .intents
+                    .iter()
                     .filter(|i| i.worker.is_none() && i.concluded_at.is_none())
                     .collect();
                 if unclaimed.is_empty() {
@@ -116,8 +133,11 @@ impl ParallelAnt {
                 match self.claimed.clone() {
                     Some(id) => match bb.heartbeat(&id, &self.name) {
                         Ok(()) => format!("{:<16} heartbeat {id}", self.name),
-                        Err(_) => { self.claimed = None; format!("{:<16} lost {id}", self.name) }
-                    }
+                        Err(_) => {
+                            self.claimed = None;
+                            format!("{:<16} lost {id}", self.name)
+                        }
+                    },
                     None => format!("{:<16} nothing to beat", self.name),
                 }
             }
@@ -128,10 +148,16 @@ impl ParallelAnt {
                         let result = format!("result of {id} by {}", self.name);
                         match bb.conclude_intent(&id, &result) {
                             Ok((_fact, follow_ups)) => {
-                                for fu in &follow_ups { let _ = bb.submit_intent(fu); }
-                                format!("{:<16} conclude {id} + {} follow-ups", self.name, follow_ups.len())
+                                for fu in &follow_ups {
+                                    let _ = bb.submit_intent(fu);
+                                }
+                                format!(
+                                    "{:<16} conclude {id} + {} follow-ups",
+                                    self.name,
+                                    follow_ups.len()
+                                )
                             }
-                            Err(e) => format!("{:<16} conclude {id}: {e}", self.name)
+                            Err(e) => format!("{:<16} conclude {id}: {e}", self.name),
                         }
                     }
                     None => format!("{:<16} nothing to conclude", self.name),
@@ -140,8 +166,13 @@ impl ParallelAnt {
             _ => {
                 // read_state
                 let state = bb.read_state();
-                format!("{:<16} read: {}F {}I {}H", self.name,
-                    state.facts.len(), state.intents.len(), state.hints.len())
+                format!(
+                    "{:<16} read: {}F {}I {}H",
+                    self.name,
+                    state.facts.len(),
+                    state.intents.len(),
+                    state.hints.len()
+                )
             }
         }
     }
@@ -155,11 +186,26 @@ fn test_parallel_many_ants() {
     {
         let mut guard = bb.lock().unwrap();
         let seeds = [
-            ("p_corpus_a", "Quantum error correction reduces logical error by 10x"),
-            ("p_corpus_b", "Transformer models achieve 92% BLEU on WMT translation"),
-            ("p_corpus_c", "Graph attention networks outperform GCN on ogbn-arxiv"),
-            ("p_corpus_d", "Federated learning converges within 5% of centralized"),
-            ("p_corpus_e", "Contrastive learning needs only 5% labeled data"),
+            (
+                "p_corpus_a",
+                "Quantum error correction reduces logical error by 10x",
+            ),
+            (
+                "p_corpus_b",
+                "Transformer models achieve 92% BLEU on WMT translation",
+            ),
+            (
+                "p_corpus_c",
+                "Graph attention networks outperform GCN on ogbn-arxiv",
+            ),
+            (
+                "p_corpus_d",
+                "Federated learning converges within 5% of centralized",
+            ),
+            (
+                "p_corpus_e",
+                "Contrastive learning needs only 5% labeled data",
+            ),
         ];
         for (id, content) in &seeds {
             guard.submit_fact(&Fact {
@@ -177,48 +223,67 @@ fn test_parallel_many_ants() {
     let fact_counters = Arc::new(AtomicU64::new(0));
     let intent_counters = Arc::new(AtomicU64::new(0));
 
-    let handles: Vec<_> = (0..NUM_THREADS).map(|tid| {
-        let bb = Arc::clone(&bb);
-        let fc = Arc::clone(&fact_counters);
-        let ic = Arc::clone(&intent_counters);
-        thread::spawn(move || {
-            let mut ant = ParallelAnt::new(tid);
-            let mut local_facts = 0u64;
-            let mut local_intents = 0u64;
-            for step in 0..OPS_PER_THREAD {
-                let log = {
-                    let mut guard = bb.lock().unwrap();
-                    ant.act(&mut guard, step)
-                };
-                if log.contains("submit Fact") { local_facts += 1; }
-                if log.contains("submit Intent") { local_intents += 1; }
-                if step < 5 || step % 20 == 0 || step == OPS_PER_THREAD - 1 {
-                    println!("  [{tid:>2}:{step:>3}] {log}");
+    let handles: Vec<_> = (0..NUM_THREADS)
+        .map(|tid| {
+            let bb = Arc::clone(&bb);
+            let fc = Arc::clone(&fact_counters);
+            let ic = Arc::clone(&intent_counters);
+            thread::spawn(move || {
+                let mut ant = ParallelAnt::new(tid);
+                let mut local_facts = 0u64;
+                let mut local_intents = 0u64;
+                for step in 0..OPS_PER_THREAD {
+                    let log = {
+                        let mut guard = bb.lock().unwrap();
+                        ant.act(&mut guard, step)
+                    };
+                    if log.contains("submit Fact") {
+                        local_facts += 1;
+                    }
+                    if log.contains("submit Intent") {
+                        local_intents += 1;
+                    }
+                    if step < 5 || step % 20 == 0 || step == OPS_PER_THREAD - 1 {
+                        println!("  [{tid:>2}:{step:>3}] {log}");
+                    }
                 }
-            }
-            fc.fetch_add(local_facts, Ordering::Relaxed);
-            ic.fetch_add(local_intents, Ordering::Relaxed);
+                fc.fetch_add(local_facts, Ordering::Relaxed);
+                ic.fetch_add(local_intents, Ordering::Relaxed);
+            })
         })
-    }).collect();
+        .collect();
 
-    for h in handles { h.join().unwrap(); }
+    for h in handles {
+        h.join().unwrap();
+    }
 
     // Verify invariants under mutex (single-threaded read now)
     let guard = bb.lock().unwrap();
     let state = guard.read_state();
 
     println!();
-    println!("  Thread stats: {} fact ops, {} intent ops across {NUM_THREADS} threads",
-        fact_counters.load(Ordering::Relaxed), intent_counters.load(Ordering::Relaxed));
-    println!("  Final state: {} facts, {} intents, {} hints",
-        state.facts.len(), state.intents.len(), state.hints.len());
+    println!(
+        "  Thread stats: {} fact ops, {} intent ops across {NUM_THREADS} threads",
+        fact_counters.load(Ordering::Relaxed),
+        intent_counters.load(Ordering::Relaxed)
+    );
+    println!(
+        "  Final state: {} facts, {} intents, {} hints",
+        state.facts.len(),
+        state.intents.len(),
+        state.hints.len()
+    );
     println!("  Lock contentions: Mutex handled all interleaving safely");
 
     // Invariant 1: no concluded intent has a worker or can be re-claimed
     for intent in &state.intents {
         if intent.concluded_at.is_some() {
-            assert!(intent.worker.is_none(),
-                "concluded intent {} still has worker {:?}", intent.id.0, intent.worker);
+            assert!(
+                intent.worker.is_none(),
+                "concluded intent {} still has worker {:?}",
+                intent.id.0,
+                intent.worker
+            );
         }
     }
 
@@ -229,11 +294,18 @@ fn test_parallel_many_ants() {
     let fact_names: std::collections::HashSet<&str> =
         state.facts.iter().map(|f| f.id.0.as_str()).collect();
     for intent in &state.intents {
-        assert!(!intent.from_facts.is_empty(), "intent {} has no grounding", intent.id.0);
+        assert!(
+            !intent.from_facts.is_empty(),
+            "intent {} has no grounding",
+            intent.id.0
+        );
         for fid in &intent.from_facts {
             assert!(
-                fact_names.contains(fid.as_str()) || fid.starts_with("fact_") || fid.starts_with("p_"),
-                "intent {} references missing fact {fid}", intent.id.0
+                fact_names.contains(fid.as_str())
+                    || fid.starts_with("fact_")
+                    || fid.starts_with("p_"),
+                "intent {} references missing fact {fid}",
+                intent.id.0
             );
         }
     }
@@ -247,8 +319,10 @@ fn test_parallel_many_ants() {
     }
 
     println!();
-    println!("  ✓ Parallel stress test: {NUM_THREADS} threads × {OPS_PER_THREAD} ops = {} total ops",
-        NUM_THREADS * OPS_PER_THREAD as usize);
+    println!(
+        "  ✓ Parallel stress test: {NUM_THREADS} threads × {OPS_PER_THREAD} ops = {} total ops",
+        NUM_THREADS * OPS_PER_THREAD as usize
+    );
     println!("  ✓ All FIH invariants hold under concurrent access");
     println!("  ✓ Mutex guarantees safe shared state — no data races");
 }

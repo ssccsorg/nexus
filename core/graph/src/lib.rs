@@ -111,11 +111,9 @@ impl GraphBlackboard {
     }
 
     fn find_node_by_name(&self, name: &str) -> Option<NodeIndex> {
-        self.graph.node_indices().find(|&idx| {
-            self.graph
-                .node_weight(idx)
-                .is_some_and(|w| w.name == name)
-        })
+        self.graph
+            .node_indices()
+            .find(|&idx| self.graph.node_weight(idx).is_some_and(|w| w.name == name))
     }
 
     fn add_fact(&mut self, fact: &Fact) -> NodeIndex {
@@ -209,7 +207,11 @@ impl GraphBlackboard {
                 .get("worker")
                 .and_then(|v| v.as_str())
                 .map(|s| s.into()),
-            concluded_at: w.properties.get("concluded_at").and_then(|v| v.as_str()).map(|s| s.into()),
+            concluded_at: w
+                .properties
+                .get("concluded_at")
+                .and_then(|v| v.as_str())
+                .map(|s| s.into()),
         })
     }
 
@@ -242,8 +244,14 @@ impl Blackboard for GraphBlackboard {
 
     fn submit_hint(&mut self, hint: &Hint) {
         let mut props = HashMap::new();
-        props.insert("content".into(), serde_json::Value::String(hint.content.clone()));
-        props.insert("creator".into(), serde_json::Value::String(hint.creator.clone()));
+        props.insert(
+            "content".into(),
+            serde_json::Value::String(hint.content.clone()),
+        );
+        props.insert(
+            "creator".into(),
+            serde_json::Value::String(hint.creator.clone()),
+        );
         self.graph.add_node(NodeWeight {
             name: hint.id.0.clone(),
             label: "Hint".into(),
@@ -253,7 +261,9 @@ impl Blackboard for GraphBlackboard {
 
     fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError> {
         if intent.from_facts.is_empty() {
-            return Err(BlackboardError::Forbidden("Intent must be grounded in at least one Fact".into()));
+            return Err(BlackboardError::Forbidden(
+                "Intent must be grounded in at least one Fact".into(),
+            ));
         }
         self.add_intent(intent);
         Ok(intent.id.clone())
@@ -267,13 +277,14 @@ impl Blackboard for GraphBlackboard {
         if w.properties.contains_key("concluded_at") {
             return Err(BlackboardError::Forbidden("Already concluded".into()));
         }
-        if let Some(existing) = w.properties.get("worker").and_then(|v| v.as_str()) {
-            if existing != agent {
-                return Err(BlackboardError::Conflict(format!("Claimed by {existing}")));
-            }
+        if let Some(existing) = w.properties.get("worker").and_then(|v| v.as_str())
+            && existing != agent
+        {
+            return Err(BlackboardError::Conflict(format!("Claimed by {existing}")));
         }
         let mut w = w.clone();
-        w.properties.insert("worker".into(), serde_json::Value::String(agent.into()));
+        w.properties
+            .insert("worker".into(), serde_json::Value::String(agent.into()));
         *self.graph.node_weight_mut(idx).unwrap() = w;
         Ok(())
     }
@@ -284,7 +295,9 @@ impl Blackboard for GraphBlackboard {
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent: {intent_id}")))?;
         let w = self.graph.node_weight(idx).unwrap();
         match w.properties.get("worker").and_then(|v| v.as_str()) {
-            Some(w) if w != agent => return Err(BlackboardError::Conflict(format!("Claimed by {w}"))),
+            Some(w) if w != agent => {
+                return Err(BlackboardError::Conflict(format!("Claimed by {w}")));
+            }
             None => return Err(BlackboardError::Forbidden("Not claimed".into())),
             _ => {}
         }
@@ -296,12 +309,12 @@ impl Blackboard for GraphBlackboard {
             .resolve_intent_name(intent_id)
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent: {intent_id}")))?;
         let w = self.graph.node_weight(idx).unwrap();
-        if let Some(worker_name) = w.properties.get("worker").and_then(|v| v.as_str()) {
-            if worker_name == agent {
-                let mut w = w.clone();
-                w.properties.remove("worker");
-                *self.graph.node_weight_mut(idx).unwrap() = w;
-            }
+        if let Some(worker_name) = w.properties.get("worker").and_then(|v| v.as_str())
+            && worker_name == agent
+        {
+            let mut w = w.clone();
+            w.properties.remove("worker");
+            *self.graph.node_weight_mut(idx).unwrap() = w;
         }
         Ok(())
     }
@@ -408,7 +421,10 @@ impl GraphAccess for GraphBlackboard {
         } else {
             petgraph::Direction::Incoming
         };
-        self.graph.edges_directed(idx, dir).map(|e| e.id()).collect()
+        self.graph
+            .edges_directed(idx, dir)
+            .map(|e| e.id())
+            .collect()
     }
     fn add_node(&mut self, weight: NodeWeight) -> NodeIndex {
         self.graph.add_node(weight)

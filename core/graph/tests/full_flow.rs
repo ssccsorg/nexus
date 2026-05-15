@@ -7,9 +7,7 @@
 //   4. Read_state + unit assertions verify correctness (Cypher is for portability)
 
 use nexus_graph::cypher;
-use nexus_graph::{
-    Blackboard, BlackboardError, Fact, FihHash, GraphBlackboard, Intent,
-};
+use nexus_graph::{Blackboard, BlackboardError, Fact, FihHash, GraphBlackboard, Intent};
 
 /// Helper: submit a fact with minimal boilerplate.
 fn submit_fact(bb: &mut GraphBlackboard, id: &str, origin: &str, content: &str, creator: &str) {
@@ -25,9 +23,7 @@ fn submit_fact(bb: &mut GraphBlackboard, id: &str, origin: &str, content: &str, 
 /// Helper: run a Cypher query and count results.
 fn cypher_count(bb: &GraphBlackboard, query: &str) -> usize {
     let plan = cypher::Plan::from_internal(query).expect("parse failed");
-    cypher::execute(bb, &plan)
-        .expect("execute failed")
-        .len()
+    cypher::execute(bb, &plan).expect("execute failed").len()
 }
 
 #[test]
@@ -71,18 +67,14 @@ fn test_full_agent_collaboration_flow() {
     // ── Phase 2: Agent-B reads the blackboard and forms a hypothesis ──
 
     let state = bb.read_state();
-    println!(
-        "  Agent-B reads: \"{}\"",
-        state.facts[0].content
-    );
+    println!("  Agent-B reads: \"{}\"", state.facts[0].content);
 
     // Agent-B submits an Intent grounded in facts
     let intent = Intent {
         id: FihHash("i001".into()),
         from_facts: vec!["f001".into(), "f002".into()],
-        description:
-            "Test shallow GNN (3 layers) vs deep GNN (10 layers) on molecular benchmark"
-                .into(),
+        description: "Test shallow GNN (3 layers) vs deep GNN (10 layers) on molecular benchmark"
+            .into(),
         creator: "agent-b".into(),
         worker: None,
         concluded_at: None,
@@ -145,13 +137,20 @@ fn test_full_agent_collaboration_flow() {
         bb.submit_intent(next_intent)
             .expect("follow-up intent should be valid");
     }
-    println!("  Phase 4: Agent-B submitted {} follow-up Intent(s)", follow_ups.len());
+    println!(
+        "  Phase 4: Agent-B submitted {} follow-up Intent(s)",
+        follow_ups.len()
+    );
 
     // ── Phase 5: Verify final state ───────────────────────────────────
 
     let state = bb.read_state();
     assert_eq!(state.facts.len(), 4, "3 original + 1 concluded = 4 facts");
-    assert_eq!(state.intents.len(), 2, "1 original + 1 follow-up = 2 intents");
+    assert_eq!(
+        state.intents.len(),
+        2,
+        "1 original + 1 follow-up = 2 intents"
+    );
 
     // Cypher: final node counts
     let fact_count = cypher_count(&bb, "MATCH (f:Fact) RETURN f");
