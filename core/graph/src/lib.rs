@@ -4,8 +4,10 @@
 // GraphAccess trait is petgraph-specific and lives here.
 
 pub mod cypher;
+pub mod storage;
 
 pub use nexus_api::{Blackboard, BlackboardError, BoardState, Fact, FihHash, Hint, Intent};
+pub use storage::{Storage, NullStorage, StoredEvent};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
@@ -85,6 +87,8 @@ impl GraphAccess for petgraph::Graph<NodeWeight, EdgeWeight> {
 pub struct GraphBlackboard {
     graph: petgraph::Graph<NodeWeight, EdgeWeight>,
     signals: Vec<Signal>,
+    storage: Box<dyn Storage>,
+    loading: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,18 +100,69 @@ pub struct Signal {
     pub decay_rate: f64,
 }
 
-impl Default for GraphBlackboard {
-    fn default() -> Self {
+impl GraphBlackboard {
+    /// In-memory only (no persistence).
+    pub fn new() -> Self {
         Self {
             graph: petgraph::Graph::new(),
             signals: Vec::new(),
+            storage: Box::new(NullStorage),
+            loading: false,
         }
     }
-}
 
-impl GraphBlackboard {
-    pub fn new() -> Self {
-        Self::default()
+    /// Attach a custom storage backend. Loads past events if any.
+    pub fn with_storage(mut self, storage: Box<dyn Storage>) -> Self {
+        self.storage = storage;
+        self.loading = true;
+        let events = self.storage.load_events();
+        for event in &events {
+            self.replay_one(&event.event_type, &event.payload);
+        }
+        self.loading = false;
+        self
+    }
+
+    fn log_fih(&self, event_type: &str, payload: &str) {
+        if !self.loading {
+            self.storage.log_fih(event_type, payload);
+        }
+    }
+
+    fn replay_one(&mut self, event_type: &str, payload: &str) {
+        match event_type {
+            "submit_fact" => {
+                if let Ok(fact) = serde_json::from_str::<Fact>(payload) {
+                    Blackboard::submit_fact(self, &fact);
+                }
+            }
+            "submit_hint" => {
+                if let Ok(hint) = serde_json::from_str::<Hint>(payload) {
+                    self.submit_hint(&hint);
+                }
+            }
+            "submit_intent" => {
+                if let Ok(intent) = serde_json::from_str::<Intent>(payload) {
+                    let _ = self.submit_intent(&intent);
+                }
+            }
+            "claim_intent" => {
+                if let Ok(c) = serde_json::from_str::<(String, String)>(payload) {
+                    let _ = Blackboard::claim_intent(self, &c.0, &c.1);
+                }
+            }
+            "release_intent" => {
+                if let Ok(c) = serde_json::from_str::<(String, String)>(payload) {
+                    let _ = self.release_intent(&c.0, &c.1);
+                }
+            }
+            "conclude_intent" => {
+                if let Ok(c) = serde_json::from_str::<(String, String)>(payload) {
+                    let _ = self.conclude_intent(&c.0, &c.1);
+                }
+            }
+            _ => {}
+        }
     }
 
     fn find_node_by_name(&self, name: &str) -> Option<NodeIndex> {
@@ -239,6 +294,7 @@ impl GraphBlackboard {
 impl Blackboard for GraphBlackboard {
     fn submit_fact(&mut self, fact: &Fact) -> FihHash {
         self.add_fact(fact);
+        self.log_fih("submit_fact", &serde_json::to_string(fact).unwrap_or_default());
         fact.id.clone()
     }
 
@@ -257,6 +313,7 @@ impl Blackboard for GraphBlackboard {
             label: "Hint".into(),
             properties: props,
         });
+        self.log_fih("submit_hint", &serde_json::to_string(hint).unwrap_or_default());
     }
 
     fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError> {
@@ -266,6 +323,7 @@ impl Blackboard for GraphBlackboard {
             ));
         }
         self.add_intent(intent);
+        self.log_fih("submit_intent", &serde_json::to_string(intent).unwrap_or_default());
         Ok(intent.id.clone())
     }
 
@@ -286,6 +344,11 @@ impl Blackboard for GraphBlackboard {
         w.properties
             .insert("worker".into(), serde_json::Value::String(agent.into()));
         *self.graph.node_weight_mut(idx).unwrap() = w;
+        self.log_fih(
+            "claim_intent",
+            &serde_json::to_string(&(intent_id.to_string(), agent.to_string()))
+                .unwrap_or_default(),
+        );
         Ok(())
     }
 
@@ -316,6 +379,11 @@ impl Blackboard for GraphBlackboard {
             w.properties.remove("worker");
             *self.graph.node_weight_mut(idx).unwrap() = w;
         }
+        self.log_fih(
+            "release_intent",
+            &serde_json::to_string(&(intent_id.to_string(), agent.to_string()))
+                .unwrap_or_default(),
+        );
         Ok(())
     }
 
@@ -344,6 +412,11 @@ impl Blackboard for GraphBlackboard {
             creator: intent.creator.clone(),
         };
         self.add_fact(&fact);
+        self.log_fih(
+            "conclude_intent",
+            &serde_json::to_string(&(intent_id.to_string(), result.to_string()))
+                .unwrap_or_default(),
+        );
 
         let follow_ups = if !result.contains("done") {
             vec![Intent {

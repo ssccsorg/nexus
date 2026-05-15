@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-nexus-api = { path = "../api" }
+nexus-graph = { path = "../graph" }
 rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true

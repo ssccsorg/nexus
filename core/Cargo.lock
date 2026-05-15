@@ -326,7 +326,6 @@ dependencies = [
  "cyrs-syntax",
  "nexus-api",
  "petgraph",
- "rusqlite",
  "serde",
  "serde_json",
 ]
@@ -335,7 +334,7 @@ dependencies = [
 name = "nexus-sql"
 version = "0.1.0"
 dependencies = [
- "nexus-api",
+ "nexus-graph",
  "rusqlite",
  "serde",
  "serde_json",
