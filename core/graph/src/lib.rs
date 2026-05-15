@@ -1,119 +1,13 @@
-#![allow(dead_code)]
-// nexus-graph — canonical graph store types and the FIH Blackboard.
+// nexus-graph — GraphBlackboard: petgraph-backed FIH implementation.
 //
-// FIH (Fact / Intent / Hint) is the universal IO interface.
-// Every module reads and writes only these three types.
-// The storage layer beneath is each backend's own concern.
-//
-// Layer structure:
-//   Blackboard trait     — FIH lifecycle (public, stable)
-//   GraphAccess trait    — raw graph operations (internal, cypher executor)
-//   GraphBlackboard      — petgraph impl of both
-//   petgraph::Graph      — bare storage (implements GraphAccess only)
+// Depends on nexus-api for the Blackboard trait and FIH primitives.
+// GraphAccess trait is petgraph-specific and lives here.
 
+use nexus_api::{Blackboard, BlackboardError, BoardState, Fact, FihHash, Hint, Intent};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-
-// ── Core Types ───────────────────────────────────────────────────────────
-
-
-/// Error type mirroring Cairn HTTP semantics.
-/// Backend can extend or map to its own error system.
-#[derive(Debug, Clone)]
-pub enum BlackboardError {
-    NotFound(String),       // 404: Intent or Fact not found
-    Conflict(String),       // 409: Already claimed, already concluded
-    Forbidden(String),      // 403: Inactive state, contract violation
-    Internal(String),       // 500: Backend-specific failure
-}
-
-impl std::fmt::Display for BlackboardError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::NotFound(m) => write!(f, "not found: {m}"),
-            Self::Conflict(m) => write!(f, "conflict: {m}"),
-            Self::Forbidden(m) => write!(f, "forbidden: {m}"),
-            Self::Internal(m) => write!(f, "internal: {m}"),
-        }
-    }
-}
-
-impl std::error::Error for BlackboardError {}
-
-use sha2::{Digest, Sha256};
-
-/// A content-addressable identifier carried by every FIH primitive.
-/// Each FihHash is a SHA-256 digest. Combining leaf hashes produces a Merkle parent.
-/// Backends can override by replacing `id` before submission.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FihHash(pub String);
-
-impl std::fmt::Display for FihHash {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl FihHash {
-    /// SHA-256 over all fields + type tag. Backend can replace.
-    pub fn new(fields: &[&str], type_tag: &str) -> Self {
-        let mut h = Sha256::new();
-        for f in fields {
-            h.update(f.as_bytes());
-        }
-        h.update(type_tag.as_bytes());
-        Self(format!("{:x}", h.finalize()))
-    }
-
-    /// Merkle parent: SHA-256(H(a) || H(b) || H(c)).
-    pub fn chain(a: &FihHash, b: &FihHash, c: &FihHash) -> FihHash {
-        let mut h = Sha256::new();
-        h.update(a.0.as_bytes());
-        h.update(b.0.as_bytes());
-        h.update(c.0.as_bytes());
-        Self(format!("{:x}", h.finalize()))
-    }
-}
-
-// ── FIH Primitives ───────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Fact {
-    /// Content-addressable ID. Default: `FihHash::new(&[origin, content, creator], "Fact")`.
-    pub id: FihHash,
-    pub origin: String,
-    pub content: String,
-    pub creator: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Intent {
-    /// Content-addressable ID.
-    pub id: FihHash,
-    pub from_facts: Vec<String>,
-    pub description: String,
-    pub creator: String,
-    pub worker: Option<String>,
-    pub concluded_at: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Hint {
-    /// Content-addressable ID.
-    pub id: FihHash,
-    pub content: String,
-    pub creator: String,
-}
-
-/// Snapshot of the Blackboard at a point in time.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BoardState {
-    pub facts: Vec<Fact>,
-    pub intents: Vec<Intent>,
-    pub hints: Vec<Hint>,
-}
 
 // ── Internal storage types ────────────────────────────────────────────────
 
@@ -133,26 +27,6 @@ pub struct EdgeWeight {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Record {
     pub fields: HashMap<String, serde_json::Value>,
-}
-
-// ── FIH Blackboard trait (public, stable interface) ──────────────────────
-
-/// Every module reads and writes through this interface.
-/// The Cairn-verified lifecycle: create → claim → heartbeat → conclude.
-///
-/// FIH is intentionally minimal: every field must be presentable by any backend.
-/// Hashing strategy, timestamps, and storage details are backend concerns.
-pub trait Blackboard {
-    /// Submit a Fact. Returns the assigned ID (backend-dependent hashing).
-    fn submit_fact(&mut self, fact: &Fact) -> FihHash;
-    fn submit_hint(&mut self, hint: &Hint);
-
-    fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError>;
-    fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
-    fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
-    fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
-    fn conclude_intent(&mut self, intent_id: &str, result: &str) -> Result<(Fact, Vec<Intent>), BlackboardError>;
-    fn read_state(&self) -> BoardState;
 }
 
 // ── GraphAccess trait (internal — cypher executor) ───────────────────────
