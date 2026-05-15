@@ -666,8 +666,10 @@ fn scenario_ssccs_primitive_discovery() {
 
     // Agent-D claims and concludes with the formal definition
     bb.claim_intent("i_formalize_segment", "agent-d").unwrap();
-    let (segment_def, follow_ups) = bb.conclude_intent("i_formalize_segment",
-        "SEGMENT FORMALIZED: A Segment is a triple (M, D, B) where:
+    let (segment_def, follow_ups) = bb
+        .conclude_intent(
+            "i_formalize_segment",
+            "SEGMENT FORMALIZED: A Segment is a triple (M, D, B) where:
   M: memory access region (contiguous address range, stride pattern)
   D: def-use chain cluster (SSA value window, data flow subgraph)
   B: structural boundary (loop entry/exit, CFG natural loop)
@@ -679,15 +681,20 @@ Properties:
   - Universal: present in LLVM IR, MLIR, CFG, and downstream to machine code
 
 Implication: The Segment is a computational primitive — an atom of computation
-that the von Neumann architecture can be redesigned around."
-    ).unwrap();
+that the von Neumann architecture can be redesigned around.",
+        )
+        .unwrap();
     assert!(segment_def.content.contains("SEGMENT FORMALIZED"));
     assert!(segment_def.content.contains("Universal"));
 
     // Submit follow-up intents (Scheme derivation, Field definition, etc.)
-    for fu in &follow_ups { bb.submit_intent(fu).unwrap(); }
+    for fu in &follow_ups {
+        bb.submit_intent(fu).unwrap();
+    }
 
-    println!("  Phase 3: Agent-D formalized the 'Segment' primitive from 4 converging observations");
+    println!(
+        "  Phase 3: Agent-D formalized the 'Segment' primitive from 4 converging observations"
+    );
 
     // ── Phase 4: Peer validation ──────────────────────────────────────
 
@@ -716,22 +723,32 @@ that the von Neumann architecture can be redesigned around."
         concluded_at: None,
     }).unwrap();
     bb.claim_intent("i_scheme_definition", "agent-e").unwrap();
-    let (scheme_def, _) = bb.conclude_intent("i_scheme_definition",
-        "SCHEME FORMALIZED: Scheme(S₁, S₂, T) where:
+    let (scheme_def, _) = bb
+        .conclude_intent(
+            "i_scheme_definition",
+            "SCHEME FORMALIZED: Scheme(S₁, S₂, T) where:
   - S₁, S₂ are Segments
   - T ∈ {map, reduce, shuffle, broadcast, fuse, split}
   - A Scheme preserves the Segment properties (self-contained, compositional)
 
-This completes the first two layers of the SSCCS ontology: Segment + Scheme."
-    ).unwrap();
+This completes the first two layers of the SSCCS ontology: Segment + Scheme.",
+        )
+        .unwrap();
     assert!(scheme_def.content.contains("SCHEME FORMALIZED"));
 
     let state = bb.read_state();
     // 3 observations + 1 convergence + 1 formalization + 1 validation + 1 scheme = 7
-    assert_eq!(state.facts.len(), 7, "3 observations + convergence + formalization + validation + scheme");
+    assert_eq!(
+        state.facts.len(),
+        7,
+        "3 observations + convergence + formalization + validation + scheme"
+    );
     assert_eq!(state.hints.len(), 2, "2 cross-reference hints");
     // 4 intents + follow-ups
-    assert!(state.intents.len() >= 4, "formalize + validate + scheme + follow-ups");
+    assert!(
+        state.intents.len() >= 4,
+        "formalize + validate + scheme + follow-ups"
+    );
 
     println!();
     println!("  ✓ SSCCS Primitive Discovery: 5 agents, 2 FIH layers (Segment + Scheme)");
