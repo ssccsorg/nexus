@@ -16,11 +16,44 @@ use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// ── Hashing ──────────────────────────────────────────────────────────────
+
+use std::hash::{DefaultHasher, Hash, Hasher};
+
+/// Default content-addressable hashing for FIH primitives.
+/// Backends can override by replacing `id` before submission.
+pub fn fih_hash(fields: &[&str]) -> String {
+    let mut s = DefaultHasher::new();
+    for f in fields {
+        f.hash(&mut s);
+    }
+    format!("{:x}", s.finish())
+}
+
+/// Compute content-addressable ID from all fields of a Fact.
+pub fn fact_id(origin: &str, content: &str, creator: &str) -> String {
+    fih_hash(&[origin, content, creator, "Fact"])
+}
+
+/// Compute content-addressable ID from all fields of an Intent.
+pub fn intent_id(from_facts: &[String], description: &str, creator: &str) -> String {
+    let mut all: Vec<String> = from_facts.to_vec();
+    all.push(description.to_string());
+    all.push(creator.to_string());
+    all.push("Intent".into());
+    fih_hash(&all.iter().map(|s| s.as_str()).collect::<Vec<_>>())
+}
+
+/// Compute content-addressable ID from all fields of a Hint.
+pub fn hint_id(content: &str, creator: &str) -> String {
+    fih_hash(&[content, creator, "Hint"])
+}
+
 // ── FIH Primitives ───────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Fact {
-    /// Content-addressable ID. Backend determines the hashing strategy.
+    /// Content-addressable ID. Default: `fact_id(origin, content, creator)`.
     pub id: String,
     /// Origin Blackboard or context. Enables recursive multi-dimension linking.
     pub origin: String,
@@ -30,6 +63,7 @@ pub struct Fact {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Intent {
+    /// Content-addressable ID. Default: `intent_id(from_facts, description, creator)`.
     pub id: String,
     /// Grounded in Fact IDs. Intents without evidence cannot exist.
     pub from_facts: Vec<String>,
@@ -41,6 +75,7 @@ pub struct Intent {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Hint {
+    /// Content-addressable ID. Default: `hint_id(content, creator)`.
     pub id: String,
     pub content: String,
     pub creator: String,
