@@ -2,7 +2,7 @@
 
 # NeXus
 
-FIH Blackboard Infrastructure. Contract-Governed. Cross-Reality.
+Boundaryless autonomous research infrastructure for SSCCS
 
 Author
 
@@ -30,15 +30,15 @@ Other Formats
 
 ## Executive Summary
 
-Nexus is a boundaryless research infrastructure built on the Blackboard paradigm. All modules coordinate indirectly through a shared graph of three primitives. There is no fixed pipeline, no orchestrator, and no direct module-to-module communication. Modules leave traces; other modules perceive those traces and act.
+Nexus is a self‑evolving, modular and contract‑governed agentic research infrastructure that actively generates, validates, and learns from hypotheses or facts that span the SSCCS’s software‑hardware boundary. All coordinate indirectly through a shared graph of some simple recursive primitives.
 
 The primary document source that feeds this infrastructure is the [SDBS (SSCCS Document Build System)](../../projects/sdbs/index.llms.md). SDBS is a parallel build pipeline that validates, renders, and publishes all technical documentation. Nexus reads from the resulting structured corpus, using the document graph as a partial knowledge base from which hypotheses, constraints, and provenance traces are derived.
 
-Nexus began as a platform to research the SSCCS computational model but it’s being as SSCCS’s proof of concept. The Blackboard, the FIH lifecycle, the append-only log, and the separation of storage from semantics are not merely infrastructure decisions, the Segment-Scheme-Field ontology made concrete. The platform and the theory describe each other.
+Nexus began as a platform to research the SSCCS computational model but it’s being as SSCCS’s proof of concept. The platform and the theory describe each other by design.
 
 ### Universal Primitives: Fact, Intent, Hint
 
-Every interaction inside Nexus — whether a document chunk, a hypothesis, a governance rule, or a simulation output — is expressed through exactly three primitives: **Fact (F)**, **Intent (I)**, and **Hint (H)**. These primitives are the only interface between any two agents, any two Blackboards, or any agent and the knowledge graph.
+There is no fixed pipeline, orchestrator as a core actor, and direct agent-to-agent communication. Every interaction inside Nexus — whether a document chunk, a hypothesis, a governance rule, or a simulation output — is expressed through exactly three primitives: **Fact (F)**, **Intent (I)**, and **Hint (H)**. These primitives are the only interface between any two agents, any two Blackboards, or any agent and the knowledge graph.
 
 ![](https://docs.ssccs.org/projects/nexus/index_files/figure-html/fig-fih-primitives-output-1.svg)
 
