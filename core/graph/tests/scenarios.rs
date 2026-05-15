@@ -318,3 +318,242 @@ fn scenario_emergency_response() {
     println!("  ✓ Competitive claim: only one responder wins, others rejected");
     println!("  ✓ Full lifecycle: alert → plan → claim → heartbeat → conclude");
 }
+
+// ── Scenario 5: Bug Triage & Fix Pipeline (실무 산업) ────────────────────
+//
+// Reporter files a critical bug → Triager classifies → Developer claims and fixes
+// → Reviewer validates → Fix concluded and deployed.
+// 5 agents, 3 intents (triage → fix → review), full lifecycle.
+
+#[test]
+fn scenario_bug_fix_pipeline() {
+    let mut bb = GraphBlackboard::new();
+
+    // Reporter submits the bug as a Fact
+    bb.submit_fact(&Fact {
+        id: FihHash("f_bug_1337".into()),
+        origin: "production".into(),
+        content: "CRITICAL: Payment API returns 500 for amounts > $10,000 since deploy v2.3.1 at 2026-06-15T14:32Z. Affects 12% of enterprise transactions.".into(),
+        creator: "reporter".into(),
+    });
+
+    // Triager reads the bug, adds metadata as Hint, files a triage Intent
+    bb.submit_hint(&Hint {
+        id: FihHash("h_severity".into()),
+        content: "severity=P0, component=payment-api, regression=true".into(),
+        creator: "triager".into(),
+    });
+    bb.submit_intent(&Intent {
+        id: FihHash("i_triage".into()),
+        from_facts: vec!["f_bug_1337".into()],
+        description: "TRIAGE: Payment API overflow on large amounts — check decimal handling".into(),
+        creator: "triager".into(),
+        worker: None,
+        concluded_at: None,
+    }).unwrap();
+
+    // Developer claims triage, concludes with analysis
+    bb.claim_intent("i_triage", "dev-alice").unwrap();
+    let (analysis, _) = bb.conclude_intent("i_triage",
+        "Root cause: amount field uses uint32 (max $42,949.67). Amounts > $10K approach limit with tax/shipping. Fix: migrate to uint64. Estimated effort: 2h."
+    ).unwrap();
+    assert!(analysis.content.contains("uint32"));
+
+    // Developer submits a fix Intent
+    bb.submit_intent(&Intent {
+        id: FihHash("i_fix_1337".into()),
+        from_facts: vec!["f_bug_1337".into(), analysis.id.0],
+        description: "FIX: Change payment amount from uint32 to uint64 in api/src/payment.rs".into(),
+        creator: "dev-alice".into(),
+        worker: None,
+        concluded_at: None,
+    }).unwrap();
+
+    // Developer claims and implements the fix
+    bb.claim_intent("i_fix_1337", "dev-alice").unwrap();
+    bb.conclude_intent("i_fix_1337",
+        "Fix deployed: uint32→uint64 migration complete. Tested with $99,999.99 transaction (PASS). PR #2137 merged."
+    ).unwrap();
+
+    // Reviewer submits a review Intent to validate
+    bb.submit_intent(&Intent {
+        id: FihHash("i_review_1337".into()),
+        from_facts: vec!["f_bug_1337".into()],
+        description: "REVIEW: Verify fix covers edge cases — negative amounts, fractional cents, max uint64 boundary".into(),
+        creator: "reviewer-bob".into(),
+        worker: None,
+        concluded_at: None,
+    }).unwrap();
+    bb.claim_intent("i_review_1337", "reviewer-bob").unwrap();
+    let (verdict, _) = bb.conclude_intent("i_review_1337",
+        "REVIEW PASSED: edge cases handled. uint64 max ($184M) sufficient. Negative inputs rejected by schema validation."
+    ).unwrap();
+    assert!(verdict.content.contains("PASSED"));
+
+    let state = bb.read_state();
+    assert_eq!(state.facts.len(), 4, "1 bug report + 3 conclusion facts = 4");
+    assert_eq!(state.hints.len(), 1, "severity hint from triager");
+    assert!(state.intents.iter().any(|i| i.id.0 == "i_fix_1337"), "fix intent present");
+
+    println!("  ✓ Bug Pipeline: reporter→triager→dev→reviewer = 4 agents, 7 FIH ops");
+    println!("  ✓ P0 bug: submitted → triaged → fixed → reviewed → passed");
+    println!("  ✓ Hints carry severity metadata across agent boundaries");
+}
+
+// ── Scenario 6: CI/CD Failure Investigation (실무 DevOps) ────────────────
+//
+// A build breaks. 3 specialists each investigate a different dimension:
+//   - Agent-A: compile errors
+//   - Agent-B: test failures
+//   - Agent-C: dependency versions
+// They collaborate to find root cause, then D proposes a fix.
+
+#[test]
+fn scenario_ci_failure_investigation() {
+    let mut bb = GraphBlackboard::new();
+
+    // CI system reports build failure
+    bb.submit_fact(&Fact {
+        id: FihHash("f_build_404".into()),
+        origin: "ci".into(),
+        content: "BUILD FAILED: main branch, commit a1b2c3d, pipeline #8421. 23 test failures, 5 compile errors, 3 dependency warnings.".into(),
+        creator: "ci-bot".into(),
+    });
+
+    // Agent-A investigates compile errors
+    bb.submit_fact(&Fact {
+        id: FihHash("f_compile".into()),
+        origin: "investigation".into(),
+        content: "Compile errors: all 5 are in protocol/buffer.rs — 'PacketHeader' struct size mismatch after adding new field. Missing #[repr(C)] attribute.".into(),
+        creator: "agent-a".into(),
+    });
+
+    // Agent-B investigates test failures (independently, same time)
+    bb.submit_fact(&Fact {
+        id: FihHash("f_tests".into()),
+        origin: "investigation".into(),
+        content: "Test failures: 23/23 are serialization round-trip tests. All fail with 'buffer size mismatch'. Consistent with struct layout change.".into(),
+        creator: "agent-b".into(),
+    });
+
+    // Agent-C checks dependencies
+    bb.submit_fact(&Fact {
+        id: FihHash("f_deps".into()),
+        origin: "investigation".into(),
+        content: "Dependencies: proto-rs v2.4.0 released yesterday — includes automated PacketHeader generator that changed alignment. No API change, but layout differs.".into(),
+        creator: "agent-c".into(),
+    });
+
+    // Agent-D reads ALL investigations, identifies root cause
+    let state = bb.read_state();
+    assert_eq!(state.facts.len(), 4, "build report + 3 investigations");
+
+    // Agent-D triangulates: compile error (repr(C)) + test failure (size) + dep update (alignment)
+    // = root cause: proto-rs v2.4.0 changed struct alignment
+    bb.submit_intent(&Intent {
+        id: FihHash("i_root_cause".into()),
+        from_facts: vec!["f_compile".into(), "f_tests".into(), "f_deps".into()],
+        description: "ROOT CAUSE: proto-rs v2.4.0 automated PacketHeader generator produces different alignment than manual #[repr(C)] struct. 3 independent signals converge.".into(),
+        creator: "agent-d".into(),
+        worker: None,
+        concluded_at: None,
+    }).unwrap();
+    bb.claim_intent("i_root_cause", "agent-d").unwrap();
+    let (diagnosis, follow_ups) = bb.conclude_intent("i_root_cause",
+        "Root cause confirmed: proto-rs v2.4.0 alignment change. Fix: pin proto-rs to v2.3.9 in Cargo.toml, or add #[repr(C)] to generated code. Pinning is 5min fix."
+    ).unwrap();
+    assert!(diagnosis.content.contains("proto-rs v2.4.0"));
+
+    // Submit the fix follow-up
+    for fu in &follow_ups { bb.submit_intent(fu).unwrap(); }
+
+    let state = bb.read_state();
+    assert_eq!(state.facts.len(), 5, "4 reports + 1 diagnosis");
+    // Root cause intent + follow-up fix intent
+    assert!(state.intents.len() >= 2, "diagnosis + follow-up fix intent");
+
+    println!("  ✓ CI Failure: 4 agents investigate independently, converge on root cause");
+    println!("  ✓ Each agent saw different symptoms → same root cause via Blackboard");
+    println!("  ✓ Evidence triangulation without direct agent communication");
+}
+
+// ── Scenario 7: Supply Chain Incident Response (실무 운영) ───────────────
+//
+// A security vulnerability is disclosed in a critical dependency.
+// Multiple teams coordinate response: security assessment, mitigation,
+// communication, and post-mortem.
+
+#[test]
+fn scenario_supply_chain_incident() {
+    let mut bb = GraphBlackboard::new();
+
+    // Security advisory published (external trigger)
+    bb.submit_fact(&Fact {
+        id: FihHash("f_advisory_GHSA".into()),
+        origin: "github-advisory".into(),
+        content: "CRITICAL: CVE-2026-4413 in openssl-sys v0.9.100 — remote buffer overflow in TLS handshake. CVSS 9.8. Affects all services using TLS.".into(),
+        creator: "security-bot".into(),
+    });
+
+    // Security team assesses blast radius
+    bb.submit_intent(&Intent {
+        id: FihHash("i_assess".into()),
+        from_facts: vec!["f_advisory_GHSA".into()],
+        description: "ASSESS: Inventory all services using openssl-sys < 0.9.101".into(),
+        creator: "sec-lead".into(),
+        worker: None,
+        concluded_at: None,
+    }).unwrap();
+    bb.claim_intent("i_assess", "sec-lead").unwrap();
+    let (impact, _) = bb.conclude_intent("i_assess",
+        "Impact: 12 microservices use openssl-sys. 8 are edge-facing (critical). 4 are internal (medium). All need patching."
+    ).unwrap();
+    assert!(impact.content.contains("12 microservices"));
+
+    // SRE team plans mitigation (parallel track, reads sec-lead's conclusion)
+    bb.submit_intent(&Intent {
+        id: FihHash("i_mitigate".into()),
+        from_facts: vec!["f_advisory_GHSA".into(), impact.id.0.clone()],
+        description: "MITIGATE: Update openssl-sys to 0.9.101 across all services".into(),
+        creator: "sre-lead".into(),
+        worker: None,
+        concluded_at: None,
+    }).unwrap();
+    bb.claim_intent("i_mitigate", "sre-lead").unwrap();
+    let (patch, _) = bb.conclude_intent("i_mitigate",
+        "Patch: openssl-sys bumped to 0.9.101 in all 12 services. 8 edge services patched via rolling update (zero downtime). 4 internal services updated. No regressions."
+    ).unwrap();
+    assert!(patch.content.contains("rolling update"));
+
+    // Communications team drafts announcement
+    bb.submit_intent(&Intent {
+        id: FihHash("i_comms".into()),
+        from_facts: vec!["f_advisory_GHSA".into(), impact.id.0.clone(), patch.id.0],
+        description: "COMMS: Draft security advisory for customers".into(),
+        creator: "comms-lead".into(),
+        worker: None,
+        concluded_at: None,
+    }).unwrap();
+    bb.claim_intent("i_comms", "comms-lead").unwrap();
+    let (advisory, _) = bb.conclude_intent("i_comms",
+        "Advisory published: CVE-2026-4413 patched within 4h of disclosure. No customer impact. Post-mortem scheduled."
+    ).unwrap();
+    assert!(advisory.content.contains("4h"));
+
+    // Post-mortem lead submits findings
+    bb.submit_hint(&Hint {
+        id: FihHash("h_postmortem".into()),
+        content: "Post-mortem action: add openssl-sys to automated dependency vulnerability scanner. ETA: 1 week.".into(),
+        creator: "pm-lead".into(),
+    });
+
+    let state = bb.read_state();
+    assert_eq!(state.facts.len(), 4, "1 advisory + 3 conclusion facts = 4");
+    assert_eq!(state.hints.len(), 1, "post-mortem action item");
+    // 3 intents (assess, mitigate, comms) + follow-ups = 3+ each conclude may produce 1
+    assert!(state.intents.len() >= 3, "all tracks completed");
+
+    println!("  ✓ Supply Chain Incident: security→SRE→comms→post-mortem = 4 tracks, parallel");
+    println!("  ✓ CVE-2026-4413: disclosed → assessed → patched → communicated in 4h");
+    println!("  ✓ Each track reads previous conclusions via read_state() — no direct calls");
+}
