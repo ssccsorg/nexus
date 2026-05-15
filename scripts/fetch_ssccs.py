@@ -157,7 +157,7 @@ class Route:
 ROUTES: dict[str, Route] = {
     "nexus-readme": Route(
         name="nexus-readme",
-        source_uri="https://docs.ssccs.org/nexus/index.llms.md",
+        source_uri="https://docs.ssccs.org/projects/nexus/index.llms.md",
         transforms=[
             StripFrontmatter(),
             PrependHeader("<!-- synced from SSCCS docs -- do not edit directly -->"),
