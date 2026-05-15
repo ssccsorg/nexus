@@ -217,8 +217,8 @@ fn test_parallel_many_ants() {
         }
     }
 
-    const NUM_THREADS: usize = 20;
-    const OPS_PER_THREAD: u64 = 100;
+    const NUM_THREADS: usize = 50;
+    const OPS_PER_THREAD: u64 = 200;
 
     let fact_counters = Arc::new(AtomicU64::new(0));
     let intent_counters = Arc::new(AtomicU64::new(0));
@@ -261,9 +261,13 @@ fn test_parallel_many_ants() {
     let guard = bb.lock().unwrap();
     let state = guard.read_state();
 
+    let total_ops = NUM_THREADS as u64 * OPS_PER_THREAD;
     println!();
+    println!("  ────────────────────────────────────────");
+    println!("  {} EVENTS — {} threads × {} ops", total_ops, NUM_THREADS, OPS_PER_THREAD);
+    println!("  ────────────────────────────────────────");
     println!(
-        "  Thread stats: {} fact ops, {} intent ops across {NUM_THREADS} threads",
+        "  Thread stats: {} fact ops, {} intent ops",
         fact_counters.load(Ordering::Relaxed),
         intent_counters.load(Ordering::Relaxed)
     );
@@ -319,10 +323,8 @@ fn test_parallel_many_ants() {
     }
 
     println!();
-    println!(
-        "  ✓ Parallel stress test: {NUM_THREADS} threads × {OPS_PER_THREAD} ops = {} total ops",
-        NUM_THREADS * OPS_PER_THREAD as usize
-    );
+    println!("  ✓ Parallel stress test: {total_ops} events across {NUM_THREADS} threads");
     println!("  ✓ All FIH invariants hold under concurrent access");
     println!("  ✓ Mutex guarantees safe shared state — no data races");
+    println!("  ────────────────────────────────────────");
 }
