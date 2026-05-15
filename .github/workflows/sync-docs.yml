@@ -8,7 +8,6 @@ on:
     types:
       - ssccs-docs-agent-af
 
-
 permissions:
   contents: write
 
@@ -23,8 +22,14 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Fetch and convert index.llms.md
-        run: python scripts/fetch_ssccs.py
+      - name: Download index.llms.md from R2
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          command: r2 object get ssccs-nexus-af/projects/nexus/index.llms.md --file /tmp/index.llms.md
+
+      - name: Transform and write README.md
+        run: python scripts/fetch_ssccs.py --input /tmp/index.llms.md
 
       - name: Commit if changed
         run: |
