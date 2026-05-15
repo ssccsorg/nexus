@@ -1,7 +1,7 @@
 // nexus-graph — canonical graph store types and traits.
 //
 // Defines the core data model (NodeWeight, EdgeWeight, Record) and the
-// GraphLike trait that every graph backend must implement. The cypher
+// Blackboard trait that every graph backend must implement. The cypher
 // executor depends on these types, not the other way around.
 
 use petgraph::graph::NodeIndex;
@@ -33,13 +33,13 @@ pub struct Record {
     pub fields: HashMap<String, serde_json::Value>,
 }
 
-// ── GraphLike trait ───────────────────────────────────────────────────────
+// ── Blackboard trait ───────────────────────────────────────────────────────
 
 /// Trait for graphs that support node/edge iteration with petgraph NodeIndex.
 ///
 /// Every graph backend (petgraph::Graph, Memgraph proxy, WASM stub) must
-/// implement this trait. The cypher executor is generic over `G: GraphLike`.
-pub trait GraphLike: Default {
+/// implement this trait. The cypher executor is generic over `G: Blackboard`.
+pub trait Blackboard: Default {
     fn node_indices(&self) -> Vec<NodeIndex>;
     fn edge_indices(&self) -> Vec<petgraph::graph::EdgeIndex>;
     fn node_weight(&self, idx: NodeIndex) -> Option<&NodeWeight>;
@@ -58,7 +58,7 @@ pub trait GraphLike: Default {
 
 // ── petgraph::Graph impl ──────────────────────────────────────────────────
 
-impl GraphLike for petgraph::Graph<NodeWeight, EdgeWeight> {
+impl Blackboard for petgraph::Graph<NodeWeight, EdgeWeight> {
     fn node_indices(&self) -> Vec<NodeIndex> {
         self.node_indices().collect()
     }
