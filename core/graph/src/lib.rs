@@ -8,7 +8,7 @@
 // Layer structure:
 //   Blackboard trait     — FIH lifecycle (public, stable)
 //   GraphAccess trait    — raw graph operations (internal, cypher executor)
-//   BlackboardStore      — petgraph impl of both
+//   GraphBlackboard      — petgraph impl of both
 //   petgraph::Graph      — bare storage (implements GraphAccess only)
 
 use petgraph::graph::{EdgeIndex, NodeIndex};
@@ -204,9 +204,9 @@ impl GraphAccess for petgraph::Graph<NodeWeight, EdgeWeight> {
     }
 }
 
-// ── BlackboardStore (petgraph-backed, implements both traits) ────────────
+// ── GraphBlackboard (petgraph-backed, implements both traits) ────────────
 
-pub struct BlackboardStore {
+pub struct GraphBlackboard {
     graph: petgraph::Graph<NodeWeight, EdgeWeight>,
     signals: Vec<Signal>,
 }
@@ -220,7 +220,7 @@ pub struct Signal {
     pub decay_rate: f64,
 }
 
-impl Default for BlackboardStore {
+impl Default for GraphBlackboard {
     fn default() -> Self {
         Self {
             graph: petgraph::Graph::new(),
@@ -229,7 +229,7 @@ impl Default for BlackboardStore {
     }
 }
 
-impl BlackboardStore {
+impl GraphBlackboard {
     pub fn new() -> Self {
         Self::default()
     }
@@ -362,7 +362,7 @@ impl BlackboardStore {
     }
 }
 
-impl Blackboard for BlackboardStore {
+impl Blackboard for GraphBlackboard {
     fn submit_fact(&mut self, fact: &Fact) -> FihHash {
         self.add_fact(fact);
         fact.id.clone()
@@ -507,7 +507,7 @@ impl Blackboard for BlackboardStore {
     }
 }
 
-impl GraphAccess for BlackboardStore {
+impl GraphAccess for GraphBlackboard {
     fn node_indices(&self) -> Vec<NodeIndex> {
         self.graph.node_indices().collect()
     }
@@ -550,7 +550,7 @@ mod tests {
 
     #[test]
     fn test_submit_and_read_fact() {
-        let mut bb = BlackboardStore::new();
+        let mut bb = GraphBlackboard::new();
         let fact = Fact {
             id: FihHash("f001".into()),
             origin: "Layer1".into(),
@@ -566,7 +566,7 @@ mod tests {
 
     #[test]
     fn test_intent_lifecycle() {
-        let mut bb = BlackboardStore::new();
+        let mut bb = GraphBlackboard::new();
         let fact = Fact {
             id: FihHash("f001".into()),
             origin: "L1".into(),
@@ -595,7 +595,7 @@ mod tests {
 
     #[test]
     fn test_submit_intent_without_facts_fails() {
-        let mut bb = BlackboardStore::new();
+        let mut bb = GraphBlackboard::new();
         let intent = Intent {
             id: FihHash("orphan".into()),
             from_facts: vec![],
@@ -609,7 +609,7 @@ mod tests {
 
     #[test]
     fn test_read_state_empty() {
-        let bb = BlackboardStore::new();
+        let bb = GraphBlackboard::new();
         let state = bb.read_state();
         assert!(state.facts.is_empty());
         assert!(state.intents.is_empty());
