@@ -19,6 +19,7 @@ Design:
 """
 
 import argparse
+import os
 import re
 import sys
 from abc import ABC, abstractmethod
@@ -123,6 +124,10 @@ def list_routes() -> None:
 
 def run_route(route: Route, sync_root: str) -> None:
     input_path = sync_root.rstrip("/") + "/" + route.input_rel.lstrip("/")
+    if not os.path.isfile(input_path):
+        print(f"[error] Route '{route.name}': file not found at {input_path}", file=sys.stderr)
+        print(f"  Run: aws s3 sync s3://ssccs-nexus-af/ssccs {sync_root} --endpoint-url <host>", file=sys.stderr)
+        sys.exit(1)
     with open(input_path, "rb") as f:
         data = f.read()
     print(f"[read] {input_path} ({len(data)} bytes)")
