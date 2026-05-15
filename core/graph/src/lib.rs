@@ -16,46 +16,73 @@ use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-// ── Hashing ──────────────────────────────────────────────────────────────
+// ── Core Types ───────────────────────────────────────────────────────────
 
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-/// Default content-addressable hashing for FIH primitives.
-/// Backends can override by replacing `id` before submission.
-pub fn fih_hash(fields: &[&str]) -> String {
-    let mut s = DefaultHasher::new();
-    for f in fields {
-        f.hash(&mut s);
+/// Error type mirroring Cairn HTTP semantics.
+/// Backend can extend or map to its own error system.
+#[derive(Debug, Clone)]
+pub enum BlackboardError {
+    NotFound(String),       // 404: Intent or Fact not found
+    Conflict(String),       // 409: Already claimed, already concluded
+    Forbidden(String),      // 403: Inactive state, contract violation
+    Internal(String),       // 500: Backend-specific failure
+}
+
+impl std::fmt::Display for BlackboardError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound(m) => write!(f, "not found: {m}"),
+            Self::Conflict(m) => write!(f, "conflict: {m}"),
+            Self::Forbidden(m) => write!(f, "forbidden: {m}"),
+            Self::Internal(m) => write!(f, "internal: {m}"),
+        }
     }
-    format!("{:x}", s.finish())
 }
 
-/// Compute content-addressable ID from all fields of a Fact.
-pub fn fact_id(origin: &str, content: &str, creator: &str) -> String {
-    fih_hash(&[origin, content, creator, "Fact"])
+impl std::error::Error for BlackboardError {}
+
+/// A content-addressable identifier carried by every FIH primitive.
+/// Combining `Fact.hash + Intent.hash + Result.hash` produces the chain hash.
+/// Backends can override the hashing strategy by replacing `id` before submission.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FihHash(pub String);
+
+impl std::fmt::Display for FihHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
-/// Compute content-addressable ID from all fields of an Intent.
-pub fn intent_id(from_facts: &[String], description: &str, creator: &str) -> String {
-    let mut all: Vec<String> = from_facts.to_vec();
-    all.push(description.to_string());
-    all.push(creator.to_string());
-    all.push("Intent".into());
-    fih_hash(&all.iter().map(|s| s.as_str()).collect::<Vec<_>>())
-}
+impl FihHash {
+    /// Default hashing: all fields of the primitive + a type tag.
+    /// Backend can replace with SHA-256, Blake3, or anything else.
+    pub fn new(fields: &[&str], type_tag: &str) -> Self {
+        let mut s = DefaultHasher::new();
+        for f in fields {
+            f.hash(&mut s);
+        }
+        type_tag.hash(&mut s);
+        Self(format!("{:x}", s.finish()))
+    }
 
-/// Compute content-addressable ID from all fields of a Hint.
-pub fn hint_id(content: &str, creator: &str) -> String {
-    fih_hash(&[content, creator, "Hint"])
+    /// Chain two hashes: `(origin, intent, result) → H(H1 + H2 + H3)`.
+    pub fn chain(a: &FihHash, b: &FihHash, c: &FihHash) -> FihHash {
+        let mut s = DefaultHasher::new();
+        a.0.hash(&mut s);
+        b.0.hash(&mut s);
+        c.0.hash(&mut s);
+        Self(format!("{:x}", s.finish()))
+    }
 }
 
 // ── FIH Primitives ───────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Fact {
-    /// Content-addressable ID. Default: `fact_id(origin, content, creator)`.
-    pub id: String,
-    /// Origin Blackboard or context. Enables recursive multi-dimension linking.
+    /// Content-addressable ID. Default: `FihHash::new(&[origin, content, creator], "Fact")`.
+    pub id: FihHash,
     pub origin: String,
     pub content: String,
     pub creator: String,
@@ -63,9 +90,8 @@ pub struct Fact {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Intent {
-    /// Content-addressable ID. Default: `intent_id(from_facts, description, creator)`.
-    pub id: String,
-    /// Grounded in Fact IDs. Intents without evidence cannot exist.
+    /// Content-addressable ID.
+    pub id: FihHash,
     pub from_facts: Vec<String>,
     pub description: String,
     pub creator: String,
@@ -75,8 +101,8 @@ pub struct Intent {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Hint {
-    /// Content-addressable ID. Default: `hint_id(content, creator)`.
-    pub id: String,
+    /// Content-addressable ID.
+    pub id: FihHash,
     pub content: String,
     pub creator: String,
 }
@@ -116,28 +142,22 @@ pub struct Record {
 ///
 /// FIH is intentionally minimal: every field must be presentable by any backend.
 /// Hashing strategy, timestamps, and storage details are backend concerns.
-pub trait Blackboard: Default {
+pub trait Blackboard {
     /// Submit a Fact. Returns the assigned ID (backend-dependent hashing).
-    fn submit_fact(&mut self, fact: &Fact) -> String;
+    fn submit_fact(&mut self, fact: &Fact) -> FihHash;
     fn submit_hint(&mut self, hint: &Hint);
 
-    fn submit_intent(&mut self, intent: &Intent) -> Result<String, String>;
-    fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), String>;
-    fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), String>;
-    fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), String>;
-    /// Resolve an Intent: produce new Facts and optionally spawn new Intents.
-    fn conclude_intent(
-        &mut self,
-        intent_id: &str,
-        result: &str,
-    ) -> Result<(Fact, Vec<Intent>), String>;
-
+    fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError>;
+    fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
+    fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
+    fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
+    fn conclude_intent(&mut self, intent_id: &str, result: &str) -> Result<(Fact, Vec<Intent>), BlackboardError>;
     fn read_state(&self) -> BoardState;
 }
 
 // ── GraphAccess trait (internal — cypher executor) ───────────────────────
 
-pub trait GraphAccess: Default {
+pub trait GraphAccess {
     fn node_indices(&self) -> Vec<NodeIndex>;
     fn edge_indices(&self) -> Vec<EdgeIndex>;
     fn node_weight(&self, idx: NodeIndex) -> Option<&NodeWeight>;
@@ -237,7 +257,7 @@ impl BlackboardStore {
             serde_json::Value::String(fact.creator.clone()),
         );
         self.graph.add_node(NodeWeight {
-            name: fact.id.clone(),
+            name: fact.id.0.clone(),
             label: "Fact".into(),
             properties: props,
         })
@@ -261,7 +281,7 @@ impl BlackboardStore {
             props.insert("worker".into(), serde_json::Value::String(w.clone()));
         }
         let ni = self.graph.add_node(NodeWeight {
-            name: intent.id.clone(),
+            name: intent.id.0.clone(),
             label: "Intent".into(),
             properties: props,
         });
@@ -286,7 +306,7 @@ impl BlackboardStore {
             return None;
         }
         Some(Fact {
-            id: w.name.clone(),
+            id: FihHash(w.name.clone()),
             origin: w.properties.get("origin")?.as_str()?.into(),
             content: w.properties.get("content")?.as_str()?.into(),
             creator: w.properties.get("creator")?.as_str()?.into(),
@@ -299,7 +319,7 @@ impl BlackboardStore {
             return None;
         }
         Some(Intent {
-            id: w.name.clone(),
+            id: FihHash(w.name.clone()),
             from_facts: w
                 .properties
                 .get("from_facts")
@@ -343,29 +363,23 @@ impl BlackboardStore {
 }
 
 impl Blackboard for BlackboardStore {
-    fn submit_fact(&mut self, fact: &Fact) -> String {
+    fn submit_fact(&mut self, fact: &Fact) -> FihHash {
         self.add_fact(fact);
         fact.id.clone()
     }
 
     fn submit_hint(&mut self, hint: &Hint) {
         let mut props = HashMap::new();
-        props.insert(
-            "content".into(),
-            serde_json::Value::String(hint.content.clone()),
-        );
-        props.insert(
-            "creator".into(),
-            serde_json::Value::String(hint.creator.clone()),
-        );
+        props.insert("content".into(), serde_json::Value::String(hint.content.clone()));
+        props.insert("creator".into(), serde_json::Value::String(hint.creator.clone()));
         self.graph.add_node(NodeWeight {
-            name: hint.id.clone(),
+            name: hint.id.0.clone(),
             label: "Hint".into(),
             properties: props,
         });
     }
 
-    fn submit_intent(&mut self, intent: &Intent) -> Result<String, String> {
+    fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, String> {
         if intent.from_facts.is_empty() {
             return Err("Intent must be grounded in at least one Fact".into());
         }
@@ -380,7 +394,7 @@ impl Blackboard for BlackboardStore {
         let w = self.graph.node_weight(idx).unwrap();
         if let Some(existing) = w.properties.get("worker").and_then(|v| v.as_str()) {
             if existing != agent {
-                return Err(format!("Intent claimed by {existing}"));
+                return Err(format!("Intent claimed by {}", existing));
             }
         }
         let mut w = w.clone();
@@ -436,7 +450,7 @@ impl Blackboard for BlackboardStore {
         *self.graph.node_weight_mut(idx).unwrap() = w;
 
         let fact = Fact {
-            id: format!("fact_{}", intent.id),
+            id: FihHash(format!("fact_{}", intent.id.0)),
             origin: "Layer1".into(),
             content: result.into(),
             creator: intent.creator.clone(),
@@ -445,8 +459,8 @@ impl Blackboard for BlackboardStore {
 
         let follow_ups = if !result.contains("done") {
             vec![Intent {
-                id: format!("intent_{}_next", intent.id),
-                from_facts: vec![fact.id.clone()],
+                id: FihHash(format!("intent_{}_next", intent.id.0)),
+                from_facts: vec![fact.id.0.clone()],
                 description: format!("Follow-up: {result}"),
                 creator: intent.creator.clone(),
                 worker: None,
@@ -479,7 +493,7 @@ impl Blackboard for BlackboardStore {
                     return None;
                 }
                 Some(Hint {
-                    id: w.name.clone(),
+                    id: FihHash(w.name.clone()),
                     content: w.properties.get("content")?.as_str()?.into(),
                     creator: w.properties.get("creator")?.as_str()?.into(),
                 })
@@ -539,13 +553,13 @@ mod tests {
     fn test_submit_and_read_fact() {
         let mut bb = BlackboardStore::new();
         let fact = Fact {
-            id: "f001".into(),
+            id: FihHash("f001".into()),
             origin: "Layer1".into(),
             content: "Observation validated".into(),
             creator: "agent-a".into(),
         };
         let id = Blackboard::submit_fact(&mut bb, &fact);
-        assert_eq!(id, "f001");
+        assert_eq!(id.0, "f001");
         let state = bb.read_state();
         assert_eq!(state.facts.len(), 1);
         assert_eq!(state.facts[0].content, "Observation validated");
@@ -555,7 +569,7 @@ mod tests {
     fn test_intent_lifecycle() {
         let mut bb = BlackboardStore::new();
         let fact = Fact {
-            id: "f001".into(),
+            id: FihHash("f001".into()),
             origin: "L1".into(),
             content: "baseline".into(),
             creator: "a".into(),
@@ -563,7 +577,7 @@ mod tests {
         bb.submit_fact(&fact);
 
         let intent = Intent {
-            id: "i001".into(),
+            id: FihHash("i001".into()),
             from_facts: vec!["f001".into()],
             description: "test hypothesis".into(),
             creator: "agent-a".into(),
@@ -584,7 +598,7 @@ mod tests {
     fn test_submit_intent_without_facts_fails() {
         let mut bb = BlackboardStore::new();
         let intent = Intent {
-            id: "orphan".into(),
+            id: FihHash("orphan".into()),
             from_facts: vec![],
             description: "no evidence".into(),
             creator: "a".into(),
