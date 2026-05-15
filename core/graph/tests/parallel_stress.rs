@@ -264,7 +264,10 @@ fn test_parallel_many_ants() {
     let total_ops = NUM_THREADS as u64 * OPS_PER_THREAD;
     println!();
     println!("  ────────────────────────────────────────");
-    println!("  {} EVENTS — {} threads × {} ops", total_ops, NUM_THREADS, OPS_PER_THREAD);
+    println!(
+        "  {} EVENTS — {} threads × {} ops",
+        total_ops, NUM_THREADS, OPS_PER_THREAD
+    );
     println!("  ────────────────────────────────────────");
     println!(
         "  Thread stats: {} fact ops, {} intent ops",
