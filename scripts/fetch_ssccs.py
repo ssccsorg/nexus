@@ -86,15 +86,17 @@ class PrependHeader(Transform):
 
 @dataclass
 class Route:
-    """A sync route: source → [transforms] → sink."""
+    """A sync route: local relative path → [transforms] → local output path."""
     name: str
+    input_rel: str                               # relative path under sync root
     transforms: list[Transform] = field(default_factory=list)
     sink: str = "README.md"
-    ctx: dict = field(default_factory=dict)
+    source_dir: str = "https://docs.ssccs.org/projects/nexus/"  # URL prefix for images
 
 ROUTES: dict[str, Route] = {
     "nexus-readme": Route(
         name="nexus-readme",
+        input_rel="docs/_llm/projects/nexus/index.llms.md",
         transforms=[
             StripFrontmatter(),
             PrependHeader("<!-- synced from SSCCS docs -- do not edit directly -->"),
@@ -113,21 +115,19 @@ def list_routes() -> None:
     print("Available routes:")
     for name, route in ROUTES.items():
         transforms = ", ".join(t.name for t in route.transforms) or "none"
-        print(f"  {name:<20} transforms: {transforms}")
+        print(f"  {name:<20} input: {route.input_rel}")
+        print(f"  {'':20} transforms: {transforms}")
         print(f"  {'':20} sink: {route.sink}")
         print()
 
 
-def run_route(route: Route, input_path: str) -> None:
+def run_route(route: Route, sync_root: str) -> None:
+    input_path = sync_root.rstrip("/") + "/" + route.input_rel.lstrip("/")
     with open(input_path, "rb") as f:
         data = f.read()
     print(f"[read] {input_path} ({len(data)} bytes)")
 
-    # source_dir = URL prefix for relative image paths
-    ctx = dict(route.ctx)
-    if "source_dir" not in ctx:
-        ctx["source_dir"] = "https://docs.ssccs.org/projects/nexus/"
-
+    ctx = {"source_dir": route.source_dir}
     for t in route.transforms:
         data = t.apply(data, ctx)
         print(f"  [{t.name}] {len(data)} bytes")
@@ -143,14 +143,12 @@ def main():
     parser = argparse.ArgumentParser(description="SSCCS artifact sync router")
     parser.add_argument("--route", default="nexus-readme",
                         help="Route name (default: nexus-readme)")
-    parser.add_argument("--input", default=None,
-                        help="Input file path (overrides route default)")
+    parser.add_argument("--sync-root", default="/tmp",
+                        help="Local directory where aws s3 sync downloaded ssccs/ (default: /tmp)")
     parser.add_argument("--output", default=None,
                         help="Output file path (overrides route sink)")
     parser.add_argument("--list-routes", action="store_true",
                         help="List available routes")
-    parser.add_argument("--source-dir", default=None,
-                        help="Base URL for image path rewriting")
     args = parser.parse_args()
 
     if args.list_routes:
@@ -162,14 +160,10 @@ def main():
         print(f"[error] Unknown route: {args.route}", file=sys.stderr)
         sys.exit(1)
 
-    if args.source_dir:
-        route.ctx["source_dir"] = args.source_dir
-
     if args.output:
         route.sink = args.output
 
-    input_path = args.input or "/tmp/index.llms.md"
-    run_route(route, input_path)
+    run_route(route, args.sync_root)
 
 
 if __name__ == "__main__":
