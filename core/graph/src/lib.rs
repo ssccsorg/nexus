@@ -1,43 +1,37 @@
-// nexus-graph — canonical graph store types and the Blackboard.
+#![allow(dead_code)]
+// nexus-graph — canonical graph store types and the FIH Blackboard.
 //
-// The Blackboard is a collaboration space, not a passive data container.
-// Agents interact exclusively through Fact, Intent, and Hint primitives.
-// Direct graph manipulation is forbidden by the type system.
+// FIH (Fact / Intent / Hint) is the universal IO interface.
+// Every module reads and writes only these three types.
+// The storage layer beneath is each backend's own concern.
+//
+// Layer structure:
+//   Blackboard trait     — FIH lifecycle (public, stable)
+//   GraphAccess trait    — raw graph operations (internal, cypher executor)
+//   BlackboardStore      — petgraph impl of both
+//   petgraph::Graph      — bare storage (implements GraphAccess only)
 
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[cfg(test)]
-fn now_iso() -> String {
-    "0".into()
-}
-use std::time::{SystemTime, UNIX_EPOCH};
+// ── FIH Primitives ───────────────────────────────────────────────────────
 
-// ── Timestamp helper ──────────────────────────────────────────────────────
-
-
-// ── Primitives: Fact / Intent / Hint ─────────────────────────────────────
-
-/// A verified statement: experiment result, discovered entity, validated relation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Fact {
-    /// Content-addressable ID: H(origin + content + timestamp).
+    /// Content-addressable: H(origin + content + timestamp).
     pub id: String,
-    /// The Blackboard or context that produced this Fact.
-    /// Layer 0 = raw petgraph, Layer 1 = domain Blackboard, Layer N = meta.
     pub origin: String,
     pub content: String,
     pub creator: String,
     pub created_at: String,
 }
 
-/// An exploration direction: gap, hypothesis, proposed action.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Intent {
     pub id: String,
-    /// Grounded in these Fact IDs. Cannot exist without evidential basis.
+    /// Grounded in Fact IDs. Intents without evidence cannot exist.
     pub from_facts: Vec<String>,
     pub description: String,
     pub creator: String,
@@ -46,7 +40,6 @@ pub struct Intent {
     pub concluded_at: Option<String>,
 }
 
-/// A governance rule or human guidance. contract.nex rules, user feedback.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Hint {
     pub id: String,
@@ -55,27 +48,16 @@ pub struct Hint {
     pub created_at: String,
 }
 
-// ── Signal (Stigmergy trace) ─────────────────────────────────────────────
-
-/// A Stigmergy signal deposited on the Blackboard.
-/// Agents perceive signals left by other agents; no direct communication.
+/// Snapshot of the Blackboard at a point in time.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Signal {
-    /// The ID of the agent that deposited this signal.
-    pub agent_id: String,
-    /// Spatial or logical zone (e.g., "concept:Observation", "gap:orphan").
-    pub zone: String,
-    /// Arbitrary payload. Interpreted by perceiving agents.
-    pub payload: String,
-    /// Seconds since epoch when deposited.
-    pub timestamp: u64,
-    /// Multiplier applied per decay cycle. 1.0 = permanent, 0.5 = halves each cycle.
-    pub decay_rate: f64,
+pub struct BoardState {
+    pub facts: Vec<Fact>,
+    pub intents: Vec<Intent>,
+    pub hints: Vec<Hint>,
 }
 
-// ── Node weights ──────────────────────────────────────────────────────────
+// ── Internal storage types ────────────────────────────────────────────────
 
-/// Every node in the Blackboard carries a type tag and typed payload.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeWeight {
     pub name: String,
@@ -94,9 +76,36 @@ pub struct Record {
     pub fields: HashMap<String, serde_json::Value>,
 }
 
-// ── Blackboard trait: the single interface ────────────────────────────────
+// ── FIH Blackboard trait (public, stable interface) ──────────────────────
 
+/// Every module reads and writes through this interface.
+/// The Cairn-verified lifecycle: create → claim → heartbeat → conclude.
 pub trait Blackboard: Default {
+    fn submit_fact(&mut self, fact: &Fact) -> String;      // Returns id
+    fn submit_hint(&mut self, hint: &Hint);
+
+    fn submit_intent(&mut self, intent: &Intent) -> Result<String, String>;
+    fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), String>;
+    fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), String>;
+    fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), String>;
+    /// Resolve an Intent: produce a new Fact and optionally spawn a new Intent.
+    fn conclude_intent(
+        &mut self,
+        intent_id: &str,
+        result: &str,
+    ) -> Result<(Fact, Option<Intent>), String>;
+
+    fn read_state(&self) -> BoardState;
+}
+
+// ── GraphAccess trait (internal — cypher executor) ───────────────────────
+
+#[cfg(test)]
+fn now_iso() -> String {
+    "0".into()
+}
+
+pub trait GraphAccess: Default {
     fn node_indices(&self) -> Vec<NodeIndex>;
     fn edge_indices(&self) -> Vec<EdgeIndex>;
     fn node_weight(&self, idx: NodeIndex) -> Option<&NodeWeight>;
@@ -106,267 +115,9 @@ pub trait Blackboard: Default {
     fn edges_directed(&self, idx: NodeIndex, outgoing: bool) -> Vec<EdgeIndex>;
     fn add_node(&mut self, weight: NodeWeight) -> NodeIndex;
     fn add_edge(&mut self, from: NodeIndex, to: NodeIndex, weight: EdgeWeight) -> EdgeIndex;
-
-    // ── Stigmergy ─────────────────────────────────────────────────────────
-    fn deposit_signal(&mut self, signal: Signal);
-    fn read_signals(&self, zone: &str) -> Vec<&Signal>;
-    fn decay_signals(&mut self, multiplier: f64) -> usize;
-    fn signal_count(&self) -> usize;
 }
 
-// ── Blackboard struct: wraps petgraph, enforces primitives ────────────────
-
-pub struct BlackboardStore {
-    graph: petgraph::Graph<NodeWeight, EdgeWeight>,
-    signals: Vec<Signal>,
-}
-
-impl BlackboardStore {
-    pub fn new() -> Self {
-        Self {
-            graph: petgraph::Graph::new(),
-            signals: Vec::new(),
-        }
-    }
-
-    // ── Fact operations ───────────────────────────────────────────────────
-
-    pub fn add_fact(&mut self, fact: &Fact) -> NodeIndex {
-        let mut props = HashMap::new();
-        props.insert("origin".into(), serde_json::Value::String(fact.origin.clone()));
-        props.insert("content".into(), serde_json::Value::String(fact.content.clone()));
-        props.insert("creator".into(), serde_json::Value::String(fact.creator.clone()));
-        let weight = NodeWeight {
-            name: fact.id.clone(),
-            label: "Fact".into(),
-            properties: props,
-        };
-        self.graph.add_node(weight)
-    }
-
-    pub fn get_fact(&self, idx: NodeIndex) -> Option<Fact> {
-        let w = self.graph.node_weight(idx)?;
-        if w.label != "Fact" {
-            return None;
-        }
-        Some(Fact {
-            id: w.name.clone(),
-            origin: w.properties.get("origin")?.as_str()?.into(),
-            content: w.properties.get("content")?.as_str()?.into(),
-            creator: w.properties.get("creator")?.as_str()?.into(),
-            created_at: String::new(),
-        })
-    }
-
-    pub fn find_facts_by_label(&self, label: &str) -> Vec<(NodeIndex, Fact)> {
-        self.graph
-            .node_indices()
-            .filter_map(|idx| {
-                let w = self.graph.node_weight(idx)?;
-                if w.label != "Fact" {
-                    return None;
-                }
-                let fact = Fact {
-                    id: w.name.clone(),
-                    origin: w.properties.get("origin")?.as_str()?.into(),
-                    content: w.properties.get("content")?.as_str()?.into(),
-                    creator: w.properties.get("creator")?.as_str()?.into(),
-                    created_at: String::new(),
-                };
-                Some((idx, fact))
-            })
-            .filter(|(_, f)| f.origin == label || f.content.contains(label))
-            .collect()
-    }
-
-    // ── Intent operations ─────────────────────────────────────────────────
-
-    pub fn add_intent(&mut self, intent: &Intent) -> NodeIndex {
-        let mut props = HashMap::new();
-        props.insert(
-            "from_facts".into(),
-            serde_json::Value::String(intent.from_facts.join(",")),
-        );
-        props.insert(
-            "description".into(),
-            serde_json::Value::String(intent.description.clone()),
-        );
-        props.insert(
-            "creator".into(),
-            serde_json::Value::String(intent.creator.clone()),
-        );
-        if let Some(ref w) = intent.worker {
-            props.insert("worker".into(), serde_json::Value::String(w.clone()));
-        }
-        let weight = NodeWeight {
-            name: intent.id.clone(),
-            label: "Intent".into(),
-            properties: props,
-        };
-        let ni = self.graph.add_node(weight);
-
-        // Connect to source Facts
-        for fact_id in &intent.from_facts {
-            if let Some(fact_idx) = self.find_node_by_name(fact_id) {
-                let ew = EdgeWeight {
-                    rel_type: "GROUNDED_IN".into(),
-                    properties: HashMap::new(),
-                };
-                self.graph.add_edge(ni, fact_idx, ew);
-            }
-        }
-        ni
-    }
-
-    pub fn get_intent(&self, idx: NodeIndex) -> Option<Intent> {
-        let w = self.graph.node_weight(idx)?;
-        if w.label != "Intent" {
-            return None;
-        }
-        Some(Intent {
-            id: w.name.clone(),
-            from_facts: w
-                .properties
-                .get("from_facts")
-                .and_then(|v| v.as_str())
-                .map(|s| s.split(',').map(|s| s.trim().into()).collect())
-                .unwrap_or_default(),
-            description: w.properties.get("description")?.as_str()?.into(),
-            creator: w.properties.get("creator")?.as_str()?.into(),
-            worker: w
-                .properties
-                .get("worker")
-                .and_then(|v| v.as_str())
-                .map(|s| s.into()),
-            created_at: String::new(),
-            concluded_at: None,
-        })
-    }
-
-    // ── Hint operations ───────────────────────────────────────────────────
-
-    pub fn add_hint(&mut self, hint: &Hint) -> NodeIndex {
-        let mut props = HashMap::new();
-        props.insert("content".into(), serde_json::Value::String(hint.content.clone()));
-        props.insert("creator".into(), serde_json::Value::String(hint.creator.clone()));
-        let weight = NodeWeight {
-            name: hint.id.clone(),
-            label: "Hint".into(),
-            properties: props,
-        };
-        self.graph.add_node(weight)
-    }
-
-    // ── Stigmergy operations ──────────────────────────────────────────────
-
-    pub fn deposit_signal_store(&mut self, signal: Signal) {
-        self.signals.push(signal);
-    }
-
-    pub fn read_signals_in_zone(&self, zone: &str) -> Vec<&Signal> {
-        self.signals
-            .iter()
-            .filter(|s| s.zone == zone)
-            .collect()
-    }
-
-    pub fn decay_signals_store(&mut self, _multiplier: f64) -> usize {
-        let before = self.signals.len();
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        self.signals.retain(|s| {
-            let age = (now.saturating_sub(s.timestamp)) as f64;
-            let strength = s.decay_rate.powf(age / 60.0);
-            strength > 0.01
-        });
-        before - self.signals.len()
-    }
-
-    pub fn signal_count_store(&self) -> usize {
-        self.signals.len()
-    }
-
-    // ── Utility ───────────────────────────────────────────────────────────
-
-    fn find_node_by_name(&self, name: &str) -> Option<NodeIndex> {
-        self.graph
-            .node_indices()
-            .find(|&idx| {
-                self.graph
-                    .node_weight(idx)
-                    .is_some_and(|w| w.name == name)
-            })
-    }
-
-    pub fn node_count(&self) -> usize {
-        self.graph.node_count()
-    }
-}
-
-impl Default for BlackboardStore {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-// ── Blackboard trait impl for BlackboardStore ─────────────────────────────
-
-impl Blackboard for BlackboardStore {
-    fn node_indices(&self) -> Vec<NodeIndex> {
-        self.graph.node_indices().collect()
-    }
-    fn edge_indices(&self) -> Vec<EdgeIndex> {
-        self.graph.edge_indices().collect()
-    }
-    fn node_weight(&self, idx: NodeIndex) -> Option<&NodeWeight> {
-        self.graph.node_weight(idx)
-    }
-    fn edge_weight(&self, idx: EdgeIndex) -> Option<&EdgeWeight> {
-        self.graph.edge_weight(idx)
-    }
-    fn edge_endpoints(&self, idx: EdgeIndex) -> Option<(NodeIndex, NodeIndex)> {
-        self.graph.edge_endpoints(idx)
-    }
-    fn neighbors_undirected(&self, idx: NodeIndex) -> Vec<NodeIndex> {
-        self.graph.neighbors_undirected(idx).collect()
-    }
-    fn edges_directed(&self, idx: NodeIndex, outgoing: bool) -> Vec<EdgeIndex> {
-        let dir = if outgoing {
-            petgraph::Direction::Outgoing
-        } else {
-            petgraph::Direction::Incoming
-        };
-        self.graph
-            .edges_directed(idx, dir)
-            .map(|e| e.id())
-            .collect()
-    }
-    fn add_node(&mut self, weight: NodeWeight) -> NodeIndex {
-        self.graph.add_node(weight)
-    }
-    fn add_edge(&mut self, from: NodeIndex, to: NodeIndex, weight: EdgeWeight) -> EdgeIndex {
-        self.graph.add_edge(from, to, weight)
-    }
-
-    fn deposit_signal(&mut self, signal: Signal) {
-        self.deposit_signal_store(signal);
-    }
-    fn read_signals(&self, zone: &str) -> Vec<&Signal> {
-        self.read_signals_in_zone(zone)
-    }
-    fn decay_signals(&mut self, multiplier: f64) -> usize {
-        self.decay_signals_store(multiplier)
-    }
-    fn signal_count(&self) -> usize {
-        self.signal_count_store()
-    }
-}
-
-// ── petgraph::Graph impl (bare graph, direct access for Cypher executor) ──
-
-impl Blackboard for petgraph::Graph<NodeWeight, EdgeWeight> {
+impl GraphAccess for petgraph::Graph<NodeWeight, EdgeWeight> {
     fn node_indices(&self) -> Vec<NodeIndex> {
         self.node_indices().collect()
     }
@@ -399,77 +150,349 @@ impl Blackboard for petgraph::Graph<NodeWeight, EdgeWeight> {
     fn add_edge(&mut self, from: NodeIndex, to: NodeIndex, weight: EdgeWeight) -> EdgeIndex {
         self.add_edge(from, to, weight)
     }
-    fn deposit_signal(&mut self, _signal: Signal) {}
-    fn read_signals(&self, _zone: &str) -> Vec<&Signal> {
-        Vec::new()
-    }
-    fn decay_signals(&mut self, _multiplier: f64) -> usize {
-        0
-    }
-    fn signal_count(&self) -> usize {
-        0
+}
+
+// ── BlackboardStore (petgraph-backed, implements both traits) ────────────
+
+#[allow(dead_code)] pub
+struct BlackboardStore {
+    graph: petgraph::Graph<NodeWeight, EdgeWeight>,
+    signals: Vec<Signal>,
+}
+
+/// Signal for Stigmergy coordination (internal to store, not on Blackboard trait).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Signal {
+    pub agent_id: String,
+    pub zone: String,
+    pub payload: String,
+    pub timestamp: u64,
+    pub decay_rate: f64,
+}
+
+impl Default for BlackboardStore {
+    fn default() -> Self {
+        Self {
+            graph: petgraph::Graph::new(),
+            signals: Vec::new(),
+        }
     }
 }
+
+// ── BlackboardStore: child-layer methods ─────────────────────────────────
+
+impl BlackboardStore {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn find_node_by_name(&self, name: &str) -> Option<NodeIndex> {
+        self.graph
+            .node_indices()
+            .find(|&idx| self.graph.node_weight(idx).is_some_and(|w| w.name == name))
+    }
+
+    fn add_fact(&mut self, fact: &Fact) -> NodeIndex {
+        let mut props = HashMap::new();
+        props.insert("origin".into(), serde_json::Value::String(fact.origin.clone()));
+        props.insert("content".into(), serde_json::Value::String(fact.content.clone()));
+        props.insert("creator".into(), serde_json::Value::String(fact.creator.clone()));
+        self.graph.add_node(NodeWeight {
+            name: fact.id.clone(),
+            label: "Fact".into(),
+            properties: props,
+        })
+    }
+
+    fn add_intent(&mut self, intent: &Intent) -> NodeIndex {
+        let mut props = HashMap::new();
+        props.insert("from_facts".into(), serde_json::Value::String(intent.from_facts.join(",")));
+        props.insert("description".into(), serde_json::Value::String(intent.description.clone()));
+        props.insert("creator".into(), serde_json::Value::String(intent.creator.clone()));
+        if let Some(ref w) = intent.worker {
+            props.insert("worker".into(), serde_json::Value::String(w.clone()));
+        }
+        let ni = self.graph.add_node(NodeWeight {
+            name: intent.id.clone(),
+            label: "Intent".into(),
+            properties: props,
+        });
+        for fact_id in &intent.from_facts {
+            if let Some(fact_idx) = self.find_node_by_name(fact_id) {
+                self.graph.add_edge(ni, fact_idx, EdgeWeight {
+                    rel_type: "GROUNDED_IN".into(),
+                    properties: HashMap::new(),
+                });
+            }
+        }
+        ni
+    }
+
+    fn read_fact(&self, idx: NodeIndex) -> Option<Fact> {
+        let w = self.graph.node_weight(idx)?;
+        if w.label != "Fact" { return None; }
+        Some(Fact {
+            id: w.name.clone(),
+            origin: w.properties.get("origin")?.as_str()?.into(),
+            content: w.properties.get("content")?.as_str()?.into(),
+            creator: w.properties.get("creator")?.as_str()?.into(),
+            created_at: String::new(),
+        })
+    }
+
+    fn read_intent(&self, idx: NodeIndex) -> Option<Intent> {
+        let w = self.graph.node_weight(idx)?;
+        if w.label != "Intent" { return None; }
+        Some(Intent {
+            id: w.name.clone(),
+            from_facts: w.properties.get("from_facts")
+                .and_then(|v| v.as_str())
+                .map(|s| s.split(',').map(|s| s.trim().into()).collect())
+                .unwrap_or_default(),
+            description: w.properties.get("description")?.as_str()?.into(),
+            creator: w.properties.get("creator")?.as_str()?.into(),
+            worker: w.properties.get("worker").and_then(|v| v.as_str()).map(|s| s.into()),
+            created_at: String::new(),
+            concluded_at: w.properties.get("concluded_at").and_then(|v| v.as_str()).map(|s| s.into()),
+        })
+    }
+
+    fn resolve_intent_name(&self, name_or_id: &str) -> Option<NodeIndex> {
+        self.graph.node_indices().find(|&idx| {
+            if let Some(w) = self.graph.node_weight(idx) {
+                w.label == "Intent" && (w.name == name_or_id || w.name.ends_with(name_or_id))
+            } else { false }
+        })
+    }
+
+    // ── Stigmergy (internal) ──────────────────────────────────────────────
+
+    #[allow(dead_code)]
+    fn deposit_signal_internal(&mut self, signal: Signal) {
+        self.signals.push(signal);
+    }
+
+    fn read_signals_in_zone(&self, zone: &str) -> Vec<&Signal> {
+        self.signals.iter().filter(|s| s.zone == zone).collect()
+    }
+}
+
+// ── Blackboard impl (FIH interface) ──────────────────────────────────────
+
+impl Blackboard for BlackboardStore {
+    fn submit_fact(&mut self, fact: &Fact) -> String {
+        self.add_fact(fact);
+        fact.id.clone()
+    }
+
+    fn submit_hint(&mut self, hint: &Hint) {
+        let mut props = HashMap::new();
+        props.insert("content".into(), serde_json::Value::String(hint.content.clone()));
+        props.insert("creator".into(), serde_json::Value::String(hint.creator.clone()));
+        self.graph.add_node(NodeWeight {
+            name: hint.id.clone(),
+            label: "Hint".into(),
+            properties: props,
+        });
+    }
+
+    fn submit_intent(&mut self, intent: &Intent) -> Result<String, String> {
+        if intent.from_facts.is_empty() {
+            return Err("Intent must be grounded in at least one Fact".into());
+        }
+        self.add_intent(intent);
+        Ok(intent.id.clone())
+    }
+
+    fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), String> {
+        let idx = self.resolve_intent_name(intent_id)
+            .ok_or_else(|| format!("Intent not found: {intent_id}"))?;
+        let w = self.graph.node_weight(idx).unwrap();
+        if let Some(existing) = w.properties.get("worker").and_then(|v| v.as_str()) {
+            if existing != agent {
+                return Err(format!("Intent claimed by {existing}"));
+            }
+        }
+        let mut w = w.clone();
+        w.properties.insert("worker".into(), serde_json::Value::String(agent.into()));
+        *self.graph.node_weight_mut(idx).unwrap() = w;
+        Ok(())
+    }
+
+    fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), String> {
+        let idx = self.resolve_intent_name(intent_id)
+            .ok_or_else(|| format!("Intent not found: {intent_id}"))?;
+        let w = self.graph.node_weight(idx).unwrap();
+        match w.properties.get("worker").and_then(|v| v.as_str()) {
+            Some(w) if w != agent => return Err(format!("Intent claimed by {w}")),
+            None => return Err("Intent not claimed".into()),
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), String> {
+        let idx = self.resolve_intent_name(intent_id)
+            .ok_or_else(|| format!("Intent not found: {intent_id}"))?;
+        let w = self.graph.node_weight(idx).unwrap();
+        if let Some(worker_name) = w.properties.get("worker").and_then(|v| v.as_str()) {
+            if worker_name == agent {
+                let mut w = w.clone();
+                w.properties.remove("worker");
+                *self.graph.node_weight_mut(idx).unwrap() = w;
+            }
+        }
+        Ok(())
+    }
+
+    fn conclude_intent(
+        &mut self,
+        intent_id: &str,
+        result: &str,
+    ) -> Result<(Fact, Option<Intent>), String> {
+        let idx = self.resolve_intent_name(intent_id)
+            .ok_or_else(|| format!("Intent not found: {intent_id}"))?;
+        let intent = self.read_intent(idx).unwrap();
+
+        // Mark concluded
+        let mut w = self.graph.node_weight(idx).unwrap().clone();
+        w.properties.insert("concluded_at".into(), serde_json::Value::String("now".into()));
+        *self.graph.node_weight_mut(idx).unwrap() = w;
+
+        // Produce new Fact
+        let fact = Fact {
+            id: format!("fact_{}", intent.id),
+            origin: "Layer1".into(),
+            content: result.into(),
+            creator: intent.creator.clone(),
+            created_at: String::new(),
+        };
+        self.add_fact(&fact);
+
+        // Optionally spawn a follow-up Intent
+        let next = if !result.contains("done") {
+            Some(Intent {
+                id: format!("intent_{}_next", intent.id),
+                from_facts: vec![fact.id.clone()],
+                description: format!("Follow-up: {result}"),
+                creator: intent.creator.clone(),
+                worker: None,
+                created_at: String::new(),
+                concluded_at: None,
+            })
+        } else {
+            None
+        };
+
+        Ok((fact, next))
+    }
+
+    fn read_state(&self) -> BoardState {
+        let facts: Vec<Fact> = self.graph.node_indices()
+            .filter_map(|idx| self.read_fact(idx))
+            .collect();
+        let intents: Vec<Intent> = self.graph.node_indices()
+            .filter_map(|idx| self.read_intent(idx))
+            .collect();
+        let hints: Vec<Hint> = self.graph.node_indices()
+            .filter_map(|idx| {
+                let w = self.graph.node_weight(idx)?;
+                if w.label != "Hint" { return None; }
+                Some(Hint {
+                    id: w.name.clone(),
+                    content: w.properties.get("content")?.as_str()?.into(),
+                    creator: w.properties.get("creator")?.as_str()?.into(),
+                    created_at: String::new(),
+                })
+            })
+            .collect();
+
+        BoardState { facts, intents, hints }
+    }
+}
+
+// ── BlackboardStore: GraphAccess impl (for cypher executor) ───────────────
+
+impl GraphAccess for BlackboardStore {
+    fn node_indices(&self) -> Vec<NodeIndex> { self.graph.node_indices().collect() }
+    fn edge_indices(&self) -> Vec<EdgeIndex> { self.graph.edge_indices().collect() }
+    fn node_weight(&self, idx: NodeIndex) -> Option<&NodeWeight> { self.graph.node_weight(idx) }
+    fn edge_weight(&self, idx: EdgeIndex) -> Option<&EdgeWeight> { self.graph.edge_weight(idx) }
+    fn edge_endpoints(&self, idx: EdgeIndex) -> Option<(NodeIndex, NodeIndex)> { self.graph.edge_endpoints(idx) }
+    fn neighbors_undirected(&self, idx: NodeIndex) -> Vec<NodeIndex> {
+        self.graph.neighbors_undirected(idx).collect()
+    }
+    fn edges_directed(&self, idx: NodeIndex, outgoing: bool) -> Vec<EdgeIndex> {
+        let dir = if outgoing { petgraph::Direction::Outgoing } else { petgraph::Direction::Incoming };
+        self.graph.edges_directed(idx, dir).map(|e| e.id()).collect()
+    }
+    fn add_node(&mut self, weight: NodeWeight) -> NodeIndex { self.graph.add_node(weight) }
+    fn add_edge(&mut self, from: NodeIndex, to: NodeIndex, weight: EdgeWeight) -> EdgeIndex {
+        self.graph.add_edge(from, to, weight)
+    }
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_add_and_get_fact() {
+    fn test_submit_and_read_fact() {
         let mut bb = BlackboardStore::new();
         let fact = Fact {
-            id: "fact-001".into(),
-            origin: "Layer1".into(),
-            content: "Observation primitive validated on M1".into(),
-            creator: "agent-gap".into(),
-            created_at: now_iso(),
+            id: "f001".into(), origin: "Layer1".into(),
+            content: "Observation validated".into(), creator: "agent-a".into(), created_at: now_iso(),
         };
-        let idx = bb.add_fact(&fact);
-        let retrieved = bb.get_fact(idx).unwrap();
-        assert_eq!(retrieved.content, fact.content);
-        assert_eq!(retrieved.origin, "Layer1");
+        let id = Blackboard::submit_fact(&mut bb, &fact);
+        assert_eq!(id, "f001");
+        let state = bb.read_state();
+        assert_eq!(state.facts.len(), 1);
+        assert_eq!(state.facts[0].content, "Observation validated");
     }
 
     #[test]
-    fn test_add_intent_grounded_in_fact() {
+    fn test_intent_lifecycle() {
         let mut bb = BlackboardStore::new();
         let fact = Fact {
-            id: "fact-001".into(),
-            origin: "Layer1".into(),
-            content: "Normalized weight verified".into(),
-            creator: "agent-test".into(),
-            created_at: now_iso(),
+            id: "f001".into(), origin: "L1".into(),
+            content: "baseline".into(), creator: "a".into(), created_at: now_iso(),
         };
-        bb.add_fact(&fact);
+        bb.submit_fact(&fact);
 
         let intent = Intent {
-            id: "intent-001".into(),
-            from_facts: vec!["fact-001".into()],
-            description: "Test normalized weight under Field perturbation".into(),
-            creator: "agent-gap".into(),
-            worker: None,
-            created_at: now_iso(),
-            concluded_at: None,
+            id: "i001".into(), from_facts: vec!["f001".into()],
+            description: "test hypothesis".into(), creator: "agent-a".into(),
+            worker: None, created_at: now_iso(), concluded_at: None,
         };
-        let idx = bb.add_intent(&intent);
-        let retrieved = bb.get_intent(idx).unwrap();
-        assert_eq!(retrieved.from_facts, vec!["fact-001"]);
-        assert_eq!(retrieved.description, intent.description);
+        bb.submit_intent(&intent).unwrap();
+        assert!(bb.claim_intent("i001", "worker-1").is_ok());
+        assert!(bb.heartbeat("i001", "worker-1").is_ok());
+        assert!(bb.claim_intent("i001", "worker-2").is_err()); // already claimed
+
+        let (new_fact, next_intent) = bb.conclude_intent("i001", "hypothesis validated").unwrap();
+        assert_eq!(new_fact.content, "hypothesis validated");
+        assert!(next_intent.is_some()); // follow-up spawned
     }
 
     #[test]
-    fn test_signal_deposit_and_decay() {
+    fn test_submit_intent_without_facts_fails() {
         let mut bb = BlackboardStore::new();
-        bb.deposit_signal(Signal {
-            agent_id: "agent-a".into(),
-            zone: "concept:Observation".into(),
-            payload: "validated".into(),
-            timestamp: 0,
-            decay_rate: 0.5,
-        });
-        assert_eq!(bb.signal_count(), 1);
-        let decayed = bb.decay_signals(0.5);
-        assert!(decayed >= 0);
+        let intent = Intent {
+            id: "orphan".into(), from_facts: vec![],
+            description: "no evidence".into(), creator: "a".into(),
+            worker: None, created_at: now_iso(), concluded_at: None,
+        };
+        assert!(Blackboard::submit_intent(&mut bb, &intent).is_err());
+    }
+
+    #[test]
+    fn test_read_state_empty() {
+        let bb = BlackboardStore::new();
+        let state = bb.read_state();
+        assert!(state.facts.is_empty());
+        assert!(state.intents.is_empty());
+        assert!(state.hints.is_empty());
     }
 }
