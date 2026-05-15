@@ -23,10 +23,12 @@ jobs:
           python-version: "3.12"
 
       - name: Download index.llms.md from R2
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CF_API_TOKEN }}
-          command: r2 object get ssccs-nexus-af/projects/nexus/index.llms.md --file /tmp/index.llms.md
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.CFR2_USR_API_S3_ACCID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CFR2_USR_API_S3_SECKEY }}
+        run: |
+          aws s3 cp s3://ssccs-nexus-af/ssccs/docs/projects/nexus/index.llms.md /tmp/index.llms.md \
+            --endpoint-url ${{ secrets.CFR2_USR_API_HOST }}
 
       - name: Transform and write README.md
         run: python scripts/fetch_ssccs.py --input /tmp/index.llms.md
