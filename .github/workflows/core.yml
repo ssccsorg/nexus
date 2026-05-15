@@ -40,8 +40,8 @@ jobs:
       - name: Format
         run: cargo fmt --check
 
-      - name: Check (cypher crate)
-        run: cargo check -p nexus-cypher
+      - name: Check (graph crate)
+        run: cargo check -p nexus-graph
 
       - name: Check (full workspace)
         run: cargo check
@@ -50,7 +50,7 @@ jobs:
         run: cargo clippy -- -D warnings
 
       - name: Test
-        run: cargo test -p nexus-cypher
+        run: cargo test -p nexus-graph
 
       - name: Test (full workspace)
         run: cargo test
