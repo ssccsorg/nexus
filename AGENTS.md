@@ -37,10 +37,12 @@ abstract: |
   text
 ---
 
+{{< include [relative_path_to]/_include/_title_meta_items.qmd >}}
+
 \`\`\`{python}
 #| include: false
 #| context: local
-%run ../../../_include/_graphviz.py
+%run [relative_path_to]/_include/_graphviz.py
 \`\`\`
 
 ... contents
