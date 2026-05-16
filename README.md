@@ -1,6 +1,6 @@
 <!-- synced from SSCCS docs -- do not edit directly -->
 
-# NeXus
+# neXus
 
 Boundaryless autonomous research infrastructure for SSCCS
 
