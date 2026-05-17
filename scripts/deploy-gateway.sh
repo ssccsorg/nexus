@@ -25,8 +25,13 @@ while [ $# -gt 0 ]; do
             shift
             ;;
         --token)
-            TOKEN="$2"
-            shift 2
+            if [ $# -ge 2 ] && ! [[ "$2" =~ ^-- ]]; then
+                TOKEN="$2"
+                shift 2
+            else
+                TOKEN=""
+                shift
+            fi
             ;;
         *)
             echo "ERROR: Unknown option: $1"
@@ -43,9 +48,8 @@ deploy_worker() {
     if [ "$MODE" = "deploy" ]; then
         local token="${TOKEN:-${CLOUDFLARE_API_TOKEN:-}}"
         if [ -z "$token" ]; then
-            echo "WARNING: Cloudflare API token not provided. Skipping deploy."
-            echo "Pass --token <token> or set CLOUDFLARE_API_TOKEN."
-            return 0
+            echo "ERROR: Cloudflare API token not provided. Set CF_API_TOKEN secret or pass --token."
+            exit 1
         fi
         export CLOUDFLARE_API_TOKEN="$token"
         (cd "$dir" && npx wrangler deploy)
