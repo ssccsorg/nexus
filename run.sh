@@ -3,44 +3,47 @@ set -euo pipefail
 #
 # nexus — Unified CI runner
 #
-# Comprehensive entry point for all local operations.
+# By default runs everything (core checks + consumer playbooks).
+# Sub-commands for focused tasks.
+#
 # Usage:
-#   ./run.sh              # Core checks (default)
-#   ./run.sh --core       # Core checks (fmt + check + clippy + test)
-#   ./run.sh --gateway    # Start gateway server
-#   ./run.sh --playbooks  # Run all consumer playbooks (starts/stops server)
-#   ./run.sh --all        # Everything
+#   ./run.sh              # Everything (default)
+#   ./run.sh --core       # Core checks only
+#   ./run.sh --playbooks  # Consumer playbooks only
+#   ./run.sh --gateway    # Start gateway server only
 #
 
 cd "$(dirname "$0")"
 
-case "${1:---core}" in
-    --core|--check|--test)
+case "${1:-}" in
+    --core)
+        shift
         exec ./scripts/run-core.sh "$@"
-        ;;
-    --gateway)
-        exec ./scripts/run-gateway.sh
         ;;
     --playbooks)
         exec ./playbooks/run.sh
         ;;
-    --all)
+    --gateway)
+        exec ./scripts/run-gateway.sh
+        ;;
+    --help|-h)
+        echo "Usage: $0 [OPTION]"
+        echo "  (no arg)     Core checks + playbooks [default]"
+        echo "  --core       Core checks only"
+        echo "  --playbooks  Consumer playbooks only"
+        echo "  --gateway    Start gateway API server"
+        ;;
+    "")
+        # Default: run everything
         echo "=== Core ==="
         ./scripts/run-core.sh
         echo ""
         echo "=== Playbooks ==="
         ./playbooks/run.sh
         ;;
-    --help|-h)
-        echo "Usage: $0 [OPTION]"
-        echo "  --core       Core checks (fmt + check + clippy + test) [default]"
-        echo "  --gateway    Start gateway API server"
-        echo "  --playbooks  Run consumer playbooks (Python, Node.js, Rust)"
-        echo "  --all        Run everything"
-        ;;
     *)
         echo "Unknown: $1"
-        echo "Usage: $0 [--core|--gateway|--playbooks|--all]"
+        echo "Usage: $0 [--core|--playbooks|--gateway]"
         exit 1
         ;;
 esac
