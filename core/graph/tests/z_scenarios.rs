@@ -49,7 +49,7 @@ fn scenario_contradiction_detection() {
 
     let state = bb.read_state();
     assert_eq!(state.facts.len(), 3, "2 original + 1 concluded");
-    assert!(state.facts[2].content.contains("Contradiction resolved"));
+    assert!(state.facts[2].content.as_str().unwrap_or("").contains("Contradiction resolved"));
 
     // Cypher verification
     let plan = cypher::Plan::from_internal("MATCH (f:Fact) RETURN f").unwrap();
@@ -114,7 +114,7 @@ fn scenario_peer_review() {
         "i_hypothesis",
         "Hypothesis accepted with revisions: surface code QEC at distance-3 achieves 0.1% threshold (confirmed). Distance-5 requires 0.05%.",
     ).unwrap();
-    assert!(result.content.contains("accepted with revisions"));
+    assert!(result.content.as_str().unwrap_or("").contains("accepted with revisions"));
 
     // Verify via Cypher
     let hint_count = {
@@ -158,7 +158,7 @@ fn scenario_knowledge_synthesis() {
         bb.submit_fact(&Fact {
             id: FihHash(id.to_string()),
             origin: "experiment".into(),
-            content: content.to_string(),
+            content: (*content).into(),
             creator: creator.to_string(),
         });
     }
@@ -180,11 +180,11 @@ fn scenario_knowledge_synthesis() {
     assert_eq!(state.facts.len(), 4, "3 pieces + 1 synthesis");
     let synthesis = &state.facts[3];
     assert!(
-        synthesis.content.contains("SYNTHESIS"),
+        synthesis.content.as_str().unwrap_or("").contains("SYNTHESIS"),
         "synthesis marker present"
     );
     assert!(
-        synthesis.content.contains("preheat"),
+        synthesis.content.as_str().unwrap_or("").contains("preheat"),
         "actionable solution proposed"
     );
 
@@ -248,7 +248,7 @@ fn scenario_emergency_response() {
         bb.submit_fact(&Fact {
             id: FihHash(id.to_string()),
             origin: "sensor".into(),
-            content: content.to_string(),
+            content: (*content).into(),
             creator: creator.to_string(),
         });
     }
@@ -303,7 +303,7 @@ fn scenario_emergency_response() {
             "Sector 7 evacuated, fire suppressed in 3min, power isolated. No casualties.",
         )
         .unwrap();
-    assert!(outcome.content.contains("evacuated"));
+    assert!(outcome.content.as_str().unwrap_or("").contains("evacuated"));
 
     // Final state
     let state = bb.read_state();
@@ -359,7 +359,7 @@ fn scenario_bug_fix_pipeline() {
     let (analysis, _) = bb.conclude_intent("i_triage",
         "Root cause: amount field uses uint32 (max $42,949.67). Amounts > $10K approach limit with tax/shipping. Fix: migrate to uint64. Estimated effort: 2h."
     ).unwrap();
-    assert!(analysis.content.contains("uint32"));
+    assert!(analysis.content.as_str().unwrap_or("").contains("uint32"));
 
     // Developer submits a fix Intent
     bb.submit_intent(&Intent {
@@ -392,7 +392,7 @@ fn scenario_bug_fix_pipeline() {
     let (verdict, _) = bb.conclude_intent("i_review_1337",
         "REVIEW PASSED: edge cases handled. uint64 max ($184M) sufficient. Negative inputs rejected by schema validation."
     ).unwrap();
-    assert!(verdict.content.contains("PASSED"));
+    assert!(verdict.content.as_str().unwrap_or("").contains("PASSED"));
 
     let state = bb.read_state();
     assert_eq!(
@@ -473,7 +473,7 @@ fn scenario_ci_failure_investigation() {
     let (diagnosis, follow_ups) = bb.conclude_intent("i_root_cause",
         "Root cause confirmed: proto-rs v2.4.0 alignment change. Fix: pin proto-rs to v2.3.9 in Cargo.toml, or add #[repr(C)] to generated code. Pinning is 5min fix."
     ).unwrap();
-    assert!(diagnosis.content.contains("proto-rs v2.4.0"));
+    assert!(diagnosis.content.as_str().unwrap_or("").contains("proto-rs v2.4.0"));
 
     // Submit the fix follow-up
     for fu in &follow_ups {
@@ -522,7 +522,7 @@ fn scenario_supply_chain_incident() {
     let (impact, _) = bb.conclude_intent("i_assess",
         "Impact: 12 microservices use openssl-sys. 8 are edge-facing (critical). 4 are internal (medium). All need patching."
     ).unwrap();
-    assert!(impact.content.contains("12 microservices"));
+    assert!(impact.content.as_str().unwrap_or("").contains("12 microservices"));
 
     // SRE team plans mitigation (parallel track, reads sec-lead's conclusion)
     bb.submit_intent(&Intent {
@@ -538,7 +538,7 @@ fn scenario_supply_chain_incident() {
     let (patch, _) = bb.conclude_intent("i_mitigate",
         "Patch: openssl-sys bumped to 0.9.101 in all 12 services. 8 edge services patched via rolling update (zero downtime). 4 internal services updated. No regressions."
     ).unwrap();
-    assert!(patch.content.contains("rolling update"));
+    assert!(patch.content.as_str().unwrap_or("").contains("rolling update"));
 
     // Communications team drafts announcement
     bb.submit_intent(&Intent {
@@ -554,7 +554,7 @@ fn scenario_supply_chain_incident() {
     let (advisory, _) = bb.conclude_intent("i_comms",
         "Advisory published: CVE-2026-4413 patched within 4h of disclosure. No customer impact. Post-mortem scheduled."
     ).unwrap();
-    assert!(advisory.content.contains("4h"));
+    assert!(advisory.content.as_str().unwrap_or("").contains("4h"));
 
     // Post-mortem lead submits findings
     bb.submit_hint(&Hint {
@@ -684,8 +684,8 @@ Implication: The Segment is a computational primitive — an atom of computation
 that the von Neumann architecture can be redesigned around.",
         )
         .unwrap();
-    assert!(segment_def.content.contains("SEGMENT FORMALIZED"));
-    assert!(segment_def.content.contains("Universal"));
+    assert!(segment_def.content.as_str().unwrap_or("").contains("SEGMENT FORMALIZED"));
+    assert!(segment_def.content.as_str().unwrap_or("").contains("Universal"));
 
     // Submit follow-up intents (Scheme derivation, Field definition, etc.)
     for fu in &follow_ups {
@@ -711,7 +711,7 @@ that the von Neumann architecture can be redesigned around.",
     let (validation, _) = bb.conclude_intent("i_validate_segment",
         "VALIDATION PASSED: Segment model predicts stride-1 (73% = innermost loops), stride-4/8 (18% = struct field access across Segment boundaries), gather/scatter (9% = cross-Segment irregular access). The 73/18/9 distribution is a natural consequence of hierarchical Segment composition."
     ).unwrap();
-    assert!(validation.content.contains("PASSED"));
+    assert!(validation.content.as_str().unwrap_or("").contains("PASSED"));
 
     // Agent-E (new observer) reads the full thread and proposes a Scheme
     bb.submit_intent(&Intent {
@@ -734,7 +734,7 @@ that the von Neumann architecture can be redesigned around.",
 This completes the first two layers of the SSCCS ontology: Segment + Scheme.",
         )
         .unwrap();
-    assert!(scheme_def.content.contains("SCHEME FORMALIZED"));
+    assert!(scheme_def.content.as_str().unwrap_or("").contains("SCHEME FORMALIZED"));
 
     let state = bb.read_state();
     // 3 observations + 1 convergence + 1 formalization + 1 validation + 1 scheme = 7

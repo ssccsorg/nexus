@@ -74,7 +74,7 @@ impl ParallelAnt {
                 bb.submit_fact(&Fact {
                     id: FihHash(id.clone()),
                     origin: self.name.clone(),
-                    content: format!("parallel observation at step {step}"),
+                    content: format!("parallel observation at step {step}").into(),
                     creator: self.name.clone(),
                 });
                 format!("{:<16} submit Fact {id}", self.name)
@@ -211,7 +211,7 @@ fn test_parallel_many_ants() {
             guard.submit_fact(&Fact {
                 id: FihHash(id.to_string()),
                 origin: "corpus".into(),
-                content: content.to_string(),
+                content: (*content).into(),
                 creator: "system".into(),
             });
         }
