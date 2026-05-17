@@ -1,6 +1,7 @@
 # AI Agent Instructions
 
-All code, text content, output, and comments must be written in English.
+- All code, text content, output, and comments must be written in English.
+- Always use a sub-agent for multiple tasks that do not interfere.
 
 ## Reasoning Constraints
 
