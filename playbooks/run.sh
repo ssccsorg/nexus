@@ -47,23 +47,18 @@ MODE="${1:-all}"
 # ── Start gateway server ────────────────────────────────────────────
 
 if [ "$MODE" = "all" ] || [ "$MODE" = "--consumers" ]; then
-    echo "=== Building and starting gateway server ==="
-    cd "$SCRIPT_DIR/../gateway/api"
-    cargo build --quiet 2>&1
-    cargo run &
+    echo "=== Starting gateway server ==="
+    "$SCRIPT_DIR/../scripts/run-gateway.sh" &
     SERVER_PID=$!
     sleep 2
     echo "Server PID: $SERVER_PID"
 
-    # Verify server is responding
     if curl -sf http://localhost:3000/api/v1/fih/state > /dev/null 2>&1; then
         echo "  Server ready at http://localhost:3000"
     else
         echo "  ERROR: Server failed to start"
         exit 1
     fi
-
-    cd "$SCRIPT_DIR"
 fi
 
 # ── Run consumers ───────────────────────────────────────────────────
