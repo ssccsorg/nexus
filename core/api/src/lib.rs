@@ -109,3 +109,36 @@ pub trait Blackboard {
     ) -> Result<(Fact, Vec<Intent>), BlackboardError>;
     fn read_state(&self) -> BoardState;
 }
+
+// Blanket impl: &mut T delegates to T for any Blackboard implementor.
+// Enables shared access through references (e.g., MockGateway with &mut GraphBlackboard).
+impl<T: Blackboard> Blackboard for &mut T {
+    fn submit_fact(&mut self, fact: &Fact) -> FihHash {
+        (**self).submit_fact(fact)
+    }
+    fn submit_hint(&mut self, hint: &Hint) {
+        (**self).submit_hint(hint)
+    }
+    fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+        (**self).submit_intent(intent)
+    }
+    fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        (**self).claim_intent(intent_id, agent)
+    }
+    fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        (**self).heartbeat(intent_id, agent)
+    }
+    fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        (**self).release_intent(intent_id, agent)
+    }
+    fn conclude_intent(
+        &mut self,
+        intent_id: &str,
+        result: &str,
+    ) -> Result<(Fact, Vec<Intent>), BlackboardError> {
+        (**self).conclude_intent(intent_id, result)
+    }
+    fn read_state(&self) -> BoardState {
+        (**self).read_state()
+    }
+}
