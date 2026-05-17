@@ -4,9 +4,10 @@
 // GraphAccess trait is petgraph-specific and lives here.
 
 pub mod cypher;
+pub mod mock_gateway;
 pub mod storage;
 
-pub use nexus_api::{Blackboard, BlackboardError, BoardState, Fact, FihHash, Hint, Intent};
+pub use nexus_model::{Blackboard, BlackboardError, BoardState, Fact, FihHash, Hint, Intent};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
@@ -163,7 +164,7 @@ impl GraphBlackboard {
                 }
             }
             "conclude_intent" => {
-                if let Ok(c) = serde_json::from_str::<(String, String)>(payload) {
+                if let Ok(c) = serde_json::from_str::<(String, serde_json::Value)>(payload) {
                     let _ = self.conclude_intent(&c.0, &c.1);
                 }
             }
@@ -400,8 +401,8 @@ impl Blackboard for GraphBlackboard {
     fn conclude_intent(
         &mut self,
         intent_id: &str,
-        result: &str,
-    ) -> Result<(Fact, Vec<Intent>), BlackboardError> {
+        result: &serde_json::Value,
+    ) -> Result<Fact, BlackboardError> {
         let idx = self
             .resolve_intent_name(intent_id)
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent: {intent_id}")))?;
@@ -418,30 +419,16 @@ impl Blackboard for GraphBlackboard {
         let fact = Fact {
             id: FihHash(format!("fact_{}", intent.id.0)),
             origin: "Layer1".into(),
-            content: serde_json::Value::String(result.into()),
+            content: result.clone(),
             creator: intent.creator.clone(),
         };
         self.add_fact(&fact);
         self.log_fih(
             "conclude_intent",
-            &serde_json::to_string(&(intent_id.to_string(), result.to_string()))
-                .unwrap_or_default(),
+            &serde_json::to_string(&(intent_id.to_string(), result)).unwrap_or_default(),
         );
 
-        let follow_ups = if !result.contains("done") {
-            vec![Intent {
-                id: FihHash(format!("intent_{}_next", intent.id.0)),
-                from_facts: vec![fact.id.0.clone()],
-                description: format!("Follow-up: {result}"),
-                creator: intent.creator.clone(),
-                worker: None,
-                concluded_at: None,
-            }]
-        } else {
-            Vec::new()
-        };
-
-        Ok((fact, follow_ups))
+        Ok(fact)
     }
 
     fn read_state(&self) -> BoardState {
@@ -563,9 +550,10 @@ mod tests {
         assert!(bb.heartbeat("i001", "worker-1").is_ok());
         assert!(bb.claim_intent("i001", "worker-2").is_err());
 
-        let (new_fact, follow_ups) = bb.conclude_intent("i001", "hypothesis validated").unwrap();
+        let new_fact = bb
+            .conclude_intent("i001", &"hypothesis validated".into())
+            .unwrap();
         assert_eq!(new_fact.content, "hypothesis validated");
-        assert_eq!(follow_ups.len(), 1);
     }
 
     #[test]

@@ -121,42 +121,24 @@ fn test_full_agent_collaboration_flow() {
     // ── Phase 4: Agent-B concludes the Intent ─────────────────────────
 
     let result = "Shallow GNN (3 layers) achieves 94% accuracy vs 89% for deep (10 layers)";
-    let (new_fact, follow_ups) = bb
-        .conclude_intent("i001", result)
+    let new_fact = bb
+        .conclude_intent("i001", &result.into())
         .expect("conclude should succeed");
 
     assert_eq!(new_fact.content, result);
-    assert!(!follow_ups.is_empty(), "should generate follow-up");
-    println!(
-        "  Phase 4: Concluded → new Fact + {} follow-up Intent(s)",
-        follow_ups.len()
-    );
-
-    // Agent-B reviews and submits the follow-up Intent
-    for next_intent in &follow_ups {
-        bb.submit_intent(next_intent)
-            .expect("follow-up intent should be valid");
-    }
-    println!(
-        "  Phase 4: Agent-B submitted {} follow-up Intent(s)",
-        follow_ups.len()
-    );
+    println!("  Phase 4: Concluded → new Fact");
 
     // ── Phase 5: Verify final state ───────────────────────────────────
 
     let state = bb.read_state();
     assert_eq!(state.facts.len(), 4, "3 original + 1 concluded = 4 facts");
-    assert_eq!(
-        state.intents.len(),
-        2,
-        "1 original + 1 follow-up = 2 intents"
-    );
+    assert_eq!(state.intents.len(), 1, "1 original intent");
 
     // Cypher: final node counts
     let fact_count = cypher_count(&bb, "MATCH (f:Fact) RETURN f");
     let intent_count = cypher_count(&bb, "MATCH (i:Intent) RETURN i");
     assert_eq!(fact_count, 4);
-    assert_eq!(intent_count, 2);
+    assert_eq!(intent_count, 1);
 
     println!(
         "  Phase 5: Final state — Cypher: {} facts, {} intents",
