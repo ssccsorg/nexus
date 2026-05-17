@@ -7,7 +7,7 @@ pub mod cypher;
 pub mod mock_gateway;
 pub mod storage;
 
-pub use nexus_api::{Blackboard, BlackboardError, BoardState, Fact, FihHash, Hint, Intent};
+pub use nexus_model::{Blackboard, BlackboardError, BoardState, Fact, FihHash, Hint, Intent};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
