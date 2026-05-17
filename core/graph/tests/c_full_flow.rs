@@ -122,7 +122,7 @@ fn test_full_agent_collaboration_flow() {
 
     let result = "Shallow GNN (3 layers) achieves 94% accuracy vs 89% for deep (10 layers)";
     let (new_fact, follow_ups) = bb
-        .conclude_intent("i001", result)
+        .conclude_intent("i001", &result.into())
         .expect("conclude should succeed");
 
     assert_eq!(new_fact.content, result);

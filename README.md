@@ -46,7 +46,7 @@ Figure 1: Fact → Intent → Fact: a recursive, self‑similar chain. Hint con
 
 - **Fact** — a validated observation. Once committed, it is immutable. Every Fact is the output of a concluded Intent, and can become the origin of a new Intent.  
 - **Intent** — a proposed exploration. It carries an action, parameters, and a confidence score. It is submitted against a Fact, and when concluded it produces a new Fact.  
-- **Hint** — an injected constraint. Governance rules (`contract.nex`), human feedback, compiler warnings, and safety limits all take the form of Hints. Hints constrain which Intents are admissible and which Facts are valid.
+- **Hint** — an injected constraint. Governance rules (`contract.nex`), human feedback, compiler warnings, and safety limits all take the form of Hints. Agents read Hints from the Blackboard to determine which Intents are admissible and which Facts satisfy stated constraints. The Blackboard itself does not enforce Hint semantics.
 
 Reading the Blackboard state — the accumulated set of committed Facts, pending Intents, and active Hints at any moment — is the computational equivalent of observation. The read captures a cross-section of everything the system knows, intends, and is constrained by at that instant. Subsequent operations derive from this observed cross-section, not from any hidden internal state, ensuring that all decisions are grounded in the shared Blackboard content.
 
@@ -101,7 +101,7 @@ The storage backend itself is abstracted behind a minimal interface: operations 
 
 ## Layer 3: Agentic Research Loop
 
-The Blackboard coordinates agent activity through Stigmergy: agents leave traces in a shared space, other agents perceive those traces and adapt. No module calls another module directly. The same FIH (Fact / Intent / Hint) interface that works at every scale — ecosystem, project, experiment, agent, primitive — governs all interaction.
+Agents coordinate through the Blackboard via Stigmergy: agents leave traces in a shared space, other agents perceive those traces and adapt. No module calls another module directly. The same FIH (Fact / Intent / Hint) interface that works at every scale — ecosystem, project, experiment, agent, primitive — governs all interaction.
 
 - Blackboard (shared graph): stores Facts (validated results), Intents (exploration directions), and Hints (governance rules). The only interface between modules.
 - Stigmergy coordination: agents read from and write to the Blackboard. A Gap Detector deposits Intent traces; an exploration loop perceives and acts. No pipeline dependency chain.

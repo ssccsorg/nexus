@@ -165,7 +165,7 @@ impl GraphBlackboard {
             }
             "conclude_intent" => {
                 if let Ok(c) = serde_json::from_str::<(String, String)>(payload) {
-                    let _ = self.conclude_intent(&c.0, &c.1);
+                    let _ = self.conclude_intent(&c.0, &serde_json::Value::String(c.1));
                 }
             }
             _ => {}
@@ -401,7 +401,7 @@ impl Blackboard for GraphBlackboard {
     fn conclude_intent(
         &mut self,
         intent_id: &str,
-        result: &str,
+        result: &serde_json::Value,
     ) -> Result<(Fact, Vec<Intent>), BlackboardError> {
         let idx = self
             .resolve_intent_name(intent_id)
@@ -419,7 +419,7 @@ impl Blackboard for GraphBlackboard {
         let fact = Fact {
             id: FihHash(format!("fact_{}", intent.id.0)),
             origin: "Layer1".into(),
-            content: serde_json::Value::String(result.into()),
+            content: result.clone(),
             creator: intent.creator.clone(),
         };
         self.add_fact(&fact);
@@ -429,7 +429,7 @@ impl Blackboard for GraphBlackboard {
                 .unwrap_or_default(),
         );
 
-        let follow_ups = if !result.contains("done") {
+        let follow_ups = if !result.as_str().map_or(true, |s| s.contains("done")) {
             vec![Intent {
                 id: FihHash(format!("intent_{}_next", intent.id.0)),
                 from_facts: vec![fact.id.0.clone()],
@@ -564,7 +564,7 @@ mod tests {
         assert!(bb.heartbeat("i001", "worker-1").is_ok());
         assert!(bb.claim_intent("i001", "worker-2").is_err());
 
-        let (new_fact, follow_ups) = bb.conclude_intent("i001", "hypothesis validated").unwrap();
+        let (new_fact, follow_ups) = bb.conclude_intent("i001", &"hypothesis validated".into()).unwrap();
         assert_eq!(new_fact.content, "hypothesis validated");
         assert_eq!(follow_ups.len(), 1);
     }

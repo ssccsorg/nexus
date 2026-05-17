@@ -146,7 +146,7 @@ impl ParallelAnt {
                 match self.claimed.take() {
                     Some(id) => {
                         let result = format!("result of {id} by {}", self.name);
-                        match bb.conclude_intent(&id, &result) {
+                        match bb.conclude_intent(&id, &result.into()) {
                             Ok((_fact, follow_ups)) => {
                                 for fu in &follow_ups {
                                     let _ = bb.submit_intent(fu);

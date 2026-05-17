@@ -60,11 +60,11 @@ impl<B: Blackboard> MockGateway<B> {
     pub fn conclude_intent(
         &mut self,
         intent_id: &str,
-        result: &str,
+        result: &serde_json::Value,
     ) -> Result<(Fact, Vec<Intent>), BlackboardError> {
         let id: String =
             serde_json::from_slice(&serde_json::to_vec(intent_id).unwrap()).unwrap();
-        let r: String =
+        let r: serde_json::Value =
             serde_json::from_slice(&serde_json::to_vec(result).unwrap()).unwrap();
         self.inner.conclude_intent(&id, &r)
     }
