@@ -1,14 +1,14 @@
-//! Rust privileged agent: direct Blackboard trait + GraphAccess consumer.
-//!
-//! Demonstrates how an internal (privileged) agent imports the nexus-graph
-//! crate directly to access the Blackboard trait and execute Cypher queries
-//! through GraphAccess. This is the pattern for agents that run in-process
-//! (dispatcher, gap-detector, verifier).
-//!
-//! External agents use the HTTP gateway instead (see gateway/api/examples/).
-//!
-//! Usage:
-//!   cargo run --example rust_agent -p nexus-graph
+// Rust privileged agent: direct Blackboard trait + GraphAccess consumer.
+//
+// Demonstrates how an internal (privileged) agent imports the nexus-graph
+// crate directly to access the Blackboard trait and execute Cypher queries
+// through GraphAccess. This is the pattern for agents that run in-process
+// (dispatcher, gap-detector, verifier).
+//
+// External agents use the HTTP gateway instead (see tests/consumers/).
+//
+// Usage:
+//   cd tests/agents && cargo run
 
 use nexus_graph::cypher;
 use nexus_graph::{Blackboard, Fact, FihHash, GraphBlackboard, Intent};
@@ -16,7 +16,6 @@ use nexus_graph::{Blackboard, Fact, FihHash, GraphBlackboard, Intent};
 fn main() {
     println!("=== Rust Privileged Agent: Direct Blackboard Access ===\n");
 
-    // The agent owns or borrows the Blackboard directly (no HTTP needed).
     let mut bb = GraphBlackboard::new();
 
     // ── Phase 1: Submit facts ────────────────────────────────────────
@@ -84,7 +83,7 @@ fn main() {
     println!("   New fact: {} = {}", new_fact.id, new_fact.content);
     println!("   Follow-up intents: {}", follow_ups.len());
 
-    // ── Phase 4: Privileged Cypher query (external agents cannot do this) ──
+    // ── Phase 4: Privileged Cypher query ─────────────────────────────
 
     println!("\n6. Privileged: Cypher MATCH query...");
     let plan = cypher::Plan::from_internal("MATCH (f:Fact) RETURN f").unwrap();
@@ -102,14 +101,8 @@ fn main() {
     println!("   Facts:   {}", state.facts.len());
     println!("   Intents: {}", state.intents.len());
     println!("   Hints:   {}", state.hints.len());
-
-    // External agents only see this:
     println!("\n   (External HTTP agent would see the same BoardState via GET /state)");
-
-    // Privileged agents also have GraphAccess:
-    println!(
-        "   (Privileged agent has GraphAccess + Cypher executor, external agents do not)"
-    );
+    println!("   (Privileged agent has GraphAccess + Cypher executor, external agents do not)");
 
     println!("\nRust privileged agent: direct trait + Cypher access complete");
 }
