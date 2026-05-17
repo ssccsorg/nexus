@@ -108,23 +108,14 @@ mod tests {
             assert_eq!(bb.read_state().intents.len(), 1, "1 intent");
 
             bb.claim_intent("i_sql_1", "agent-x").unwrap();
-            let (new_fact, follow_ups) = bb
+            let new_fact = bb
                 .conclude_intent("i_sql_1", &"SQLite works".into())
                 .unwrap();
             assert_eq!(new_fact.content, "SQLite works");
 
-            // Submit follow-up intent so it's persisted too
-            for fu in &follow_ups {
-                bb.submit_intent(fu).unwrap();
-            }
-
             let state = bb.read_state();
             assert_eq!(state.facts.len(), 2, "1 submitted + 1 concluded = 2 facts");
-            assert_eq!(
-                state.intents.len(),
-                2,
-                "1 original + 1 follow-up = 2 intents"
-            );
+            assert_eq!(state.intents.len(), 1, "1 original intent");
         }
 
         // Session 2: reload and verify
@@ -132,7 +123,7 @@ mod tests {
             let mut bb = blackboard_with_sqlite(path).unwrap();
             let state = bb.read_state();
             assert_eq!(state.facts.len(), 2, "facts restored");
-            assert_eq!(state.intents.len(), 2, "intents restored");
+            assert_eq!(state.intents.len(), 1, "intents restored");
             assert!(
                 state.facts.iter().any(|f| f.id.0 == "f_sql_1"),
                 "f_sql_1 restored"

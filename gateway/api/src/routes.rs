@@ -90,7 +90,6 @@ pub struct ConcludeRequest {
 #[derive(Serialize)]
 pub struct ConcludeResponse {
     pub fact: Fact,
-    pub follow_up_intents: Vec<Intent>,
 }
 
 #[derive(Deserialize)]
@@ -194,12 +193,11 @@ pub async fn conclude_intent(
     Json(req): Json<ConcludeRequest>,
 ) -> Result<Json<ConcludeResponse>, (StatusCode, Json<ApiError>)> {
     let mut bb = state.blackboard.lock().unwrap();
-    let (fact, follow_ups) = bb
+    let fact = bb
         .conclude_intent(&intent_id, &req.result)
         .map_err(err_response)?;
     Ok(Json(ConcludeResponse {
         fact,
-        follow_up_intents: follow_ups,
     }))
 }
 

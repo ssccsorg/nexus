@@ -86,9 +86,7 @@ def main():
         "result": {"finding": "Temperature spike due to cooling failure in sector 7", "severity": "high"}
     })
     new_fact_id = result["fact"]["id"]
-    follow_ups = result.get("follow_up_intents", [])
     print(f"   New fact: {new_fact_id}")
-    print(f"   Follow-up intents: {len(follow_ups)}")
 
     # Step 7: Read hints
     print("\n6. Submitting hint...")

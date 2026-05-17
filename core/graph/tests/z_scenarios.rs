@@ -116,7 +116,7 @@ fn scenario_peer_review() {
     );
 
     // Editor concludes incorporating feedback
-    let (result, _) = bb.conclude_intent(
+    let result = bb.conclude_intent(
         "i_hypothesis",
         &"Hypothesis accepted with revisions: surface code QEC at distance-3 achieves 0.1% threshold (confirmed). Distance-5 requires 0.05%.".into(),
     ).unwrap();
@@ -313,7 +313,7 @@ fn scenario_emergency_response() {
     bb.heartbeat("i_respond_fire", champion).unwrap();
 
     // Champion concludes
-    let (outcome, _) = bb
+    let outcome = bb
         .conclude_intent(
             "i_respond_fire",
             &"Sector 7 evacuated, fire suppressed in 3min, power isolated. No casualties.".into(),
@@ -324,11 +324,7 @@ fn scenario_emergency_response() {
     // Final state
     let state = bb.read_state();
     assert_eq!(state.facts.len(), 4, "3 alerts + 1 outcome");
-    assert_eq!(
-        state.intents.len(),
-        1,
-        "response intent (not yet followed up)"
-    );
+    assert_eq!(state.intents.len(), 1, "response intent");
 
     println!("  ✓ Emergency Response: 3 sensors + coordinator + 3 responders = 7 agents");
     println!("  ✓ Competitive claim: only one responder wins, others rejected");
@@ -372,7 +368,7 @@ fn scenario_bug_fix_pipeline() {
 
     // Developer claims triage, concludes with analysis
     bb.claim_intent("i_triage", "dev-alice").unwrap();
-    let (analysis, _) = bb.conclude_intent("i_triage",
+    let analysis = bb.conclude_intent("i_triage",
         &"Root cause: amount field uses uint32 (max $42,949.67). Amounts > $10K approach limit with tax/shipping. Fix: migrate to uint64. Estimated effort: 2h.".into()
     ).unwrap();
     assert!(analysis.content.as_str().unwrap_or("").contains("uint32"));
@@ -405,7 +401,7 @@ fn scenario_bug_fix_pipeline() {
         concluded_at: None,
     }).unwrap();
     bb.claim_intent("i_review_1337", "reviewer-bob").unwrap();
-    let (verdict, _) = bb.conclude_intent("i_review_1337",
+    let verdict = bb.conclude_intent("i_review_1337",
         &"REVIEW PASSED: edge cases handled. uint64 max ($184M) sufficient. Negative inputs rejected by schema validation.".into()
     ).unwrap();
     assert!(verdict.content.as_str().unwrap_or("").contains("PASSED"));
@@ -486,7 +482,7 @@ fn scenario_ci_failure_investigation() {
         concluded_at: None,
     }).unwrap();
     bb.claim_intent("i_root_cause", "agent-d").unwrap();
-    let (diagnosis, follow_ups) = bb.conclude_intent("i_root_cause",
+    let diagnosis = bb.conclude_intent("i_root_cause",
         &"Root cause confirmed: proto-rs v2.4.0 alignment change. Fix: pin proto-rs to v2.3.9 in Cargo.toml, or add #[repr(C)] to generated code. Pinning is 5min fix.".into()
     ).unwrap();
     assert!(
@@ -497,15 +493,9 @@ fn scenario_ci_failure_investigation() {
             .contains("proto-rs v2.4.0")
     );
 
-    // Submit the fix follow-up
-    for fu in &follow_ups {
-        bb.submit_intent(fu).unwrap();
-    }
-
     let state = bb.read_state();
     assert_eq!(state.facts.len(), 5, "4 reports + 1 diagnosis");
-    // Root cause intent + follow-up fix intent
-    assert!(state.intents.len() >= 2, "diagnosis + follow-up fix intent");
+    assert!(state.intents.len() >= 1, "diagnosis intent");
 
     println!("  ✓ CI Failure: 4 agents investigate independently, converge on root cause");
     println!("  ✓ Each agent saw different symptoms → same root cause via Blackboard");
@@ -541,7 +531,7 @@ fn scenario_supply_chain_incident() {
     })
     .unwrap();
     bb.claim_intent("i_assess", "sec-lead").unwrap();
-    let (impact, _) = bb.conclude_intent("i_assess",
+    let impact = bb.conclude_intent("i_assess",
         &"Impact: 12 microservices use openssl-sys. 8 are edge-facing (critical). 4 are internal (medium). All need patching.".into()
     ).unwrap();
     assert!(
@@ -563,7 +553,7 @@ fn scenario_supply_chain_incident() {
     })
     .unwrap();
     bb.claim_intent("i_mitigate", "sre-lead").unwrap();
-    let (patch, _) = bb.conclude_intent("i_mitigate",
+    let patch = bb.conclude_intent("i_mitigate",
         &"Patch: openssl-sys bumped to 0.9.101 in all 12 services. 8 edge services patched via rolling update (zero downtime). 4 internal services updated. No regressions.".into()
     ).unwrap();
     assert!(
@@ -585,7 +575,7 @@ fn scenario_supply_chain_incident() {
     })
     .unwrap();
     bb.claim_intent("i_comms", "comms-lead").unwrap();
-    let (advisory, _) = bb.conclude_intent("i_comms",
+    let advisory = bb.conclude_intent("i_comms",
         &"Advisory published: CVE-2026-4413 patched within 4h of disclosure. No customer impact. Post-mortem scheduled.".into()
     ).unwrap();
     assert!(advisory.content.as_str().unwrap_or("").contains("4h"));
@@ -600,8 +590,11 @@ fn scenario_supply_chain_incident() {
     let state = bb.read_state();
     assert_eq!(state.facts.len(), 4, "1 advisory + 3 conclusion facts = 4");
     assert_eq!(state.hints.len(), 1, "post-mortem action item");
-    // 3 intents (assess, mitigate, comms) + follow-ups = 3+ each conclude may produce 1
-    assert!(state.intents.len() >= 3, "all tracks completed");
+    assert_eq!(
+        state.intents.len(),
+        3,
+        "assess + mitigate + comms = 3 intents"
+    );
 
     println!("  ✓ Supply Chain Incident: security→SRE→comms→post-mortem = 4 tracks, parallel");
     println!("  ✓ CVE-2026-4413: disclosed → assessed → patched → communicated in 4h");
@@ -700,7 +693,7 @@ fn scenario_ssccs_primitive_discovery() {
 
     // Agent-D claims and concludes with the formal definition
     bb.claim_intent("i_formalize_segment", "agent-d").unwrap();
-    let (segment_def, follow_ups) = bb
+    let segment_def = bb
         .conclude_intent(
             "i_formalize_segment",
             &"SEGMENT FORMALIZED: A Segment is a triple (M, D, B) where:
@@ -734,11 +727,6 @@ that the von Neumann architecture can be redesigned around."
             .contains("Universal")
     );
 
-    // Submit follow-up intents (Scheme derivation, Field definition, etc.)
-    for fu in &follow_ups {
-        bb.submit_intent(fu).unwrap();
-    }
-
     println!(
         "  Phase 3: Agent-D formalized the 'Segment' primitive from 4 converging observations"
     );
@@ -755,7 +743,7 @@ that the von Neumann architecture can be redesigned around."
         concluded_at: None,
     }).unwrap();
     bb.claim_intent("i_validate_segment", "agent-a").unwrap();
-    let (validation, _) = bb.conclude_intent("i_validate_segment",
+    let validation = bb.conclude_intent("i_validate_segment",
         &"VALIDATION PASSED: Segment model predicts stride-1 (73% = innermost loops), stride-4/8 (18% = struct field access across Segment boundaries), gather/scatter (9% = cross-Segment irregular access). The 73/18/9 distribution is a natural consequence of hierarchical Segment composition.".into()
     ).unwrap();
     assert!(validation.content.as_str().unwrap_or("").contains("PASSED"));
@@ -770,7 +758,7 @@ that the von Neumann architecture can be redesigned around."
         concluded_at: None,
     }).unwrap();
     bb.claim_intent("i_scheme_definition", "agent-e").unwrap();
-    let (scheme_def, _) = bb
+    let scheme_def = bb
         .conclude_intent(
             "i_scheme_definition",
             &"SCHEME FORMALIZED: Scheme(S₁, S₂, T) where:
@@ -798,10 +786,10 @@ This completes the first two layers of the SSCCS ontology: Segment + Scheme."
         "3 observations + convergence + formalization + validation + scheme"
     );
     assert_eq!(state.hints.len(), 2, "2 cross-reference hints");
-    // 4 intents + follow-ups
-    assert!(
-        state.intents.len() >= 4,
-        "formalize + validate + scheme + follow-ups"
+    assert_eq!(
+        state.intents.len(),
+        3,
+        "formalize + validate + scheme = 3 intents"
     );
 
     println!();

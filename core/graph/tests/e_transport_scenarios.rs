@@ -113,20 +113,15 @@ fn scenario_satellite_burst_agent() {
     gw.claim_intent("i_sat_analysis", "sat-1").unwrap();
     gw.heartbeat("i_sat_analysis", "sat-1").unwrap();
 
-    let (_, follow_ups) = gw
-        .conclude_intent(
-            "i_sat_analysis",
-            &"Band-x SNR dropped 0.3dB between samples: atmospheric interference hypothesis."
-                .into(),
-        )
-        .unwrap();
-    for fu in &follow_ups {
-        gw.submit_intent(fu).unwrap();
-    }
+    gw.conclude_intent(
+        "i_sat_analysis",
+        &"Band-x SNR dropped 0.3dB between samples: atmospheric interference hypothesis.".into(),
+    )
+    .unwrap();
 
     let state = gw.read_state();
     assert_eq!(state.facts.len(), 4, "3 original + 1 concluded");
-    assert_eq!(state.intents.len(), 2, "1 original + 1 follow-up");
+    assert_eq!(state.intents.len(), 1, "1 original intent");
 
     println!("  ✓ Satellite burst: 3 facts in one pass, full intent lifecycle via JSON");
 }
@@ -246,15 +241,12 @@ fn scenario_multi_language_agents() {
     {
         let mut gw = MockGateway::new(&mut bb);
         gw.claim_intent("i_cross_lang", "rs-agent").unwrap();
-        let (_, follow_ups) = gw
+        gw
             .conclude_intent(
                 "i_cross_lang",
                 &"Pipeline throughput (15K records) correlates with p99 latency (187ms). Bottleneck: data serialization in Python stage.".into(),
             )
             .unwrap();
-        for fu in &follow_ups {
-            gw.submit_intent(fu).unwrap();
-        }
     }
 
     // Python agent sees the result
@@ -262,7 +254,7 @@ fn scenario_multi_language_agents() {
         let mut gw = MockGateway::new(&mut bb);
         let state = gw.read_state();
         assert_eq!(state.facts.len(), 3, "py agent sees concluded fact");
-        assert_eq!(state.intents.len(), 2, "py agent sees follow-up intent");
+        assert_eq!(state.intents.len(), 1, "py agent sees original intent only");
     }
 
     println!(

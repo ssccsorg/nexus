@@ -87,7 +87,6 @@ async function main() {
     },
   });
   console.log(`   New fact: ${concludeResult.fact.id}`);
-  console.log(`   Follow-up intents: ${concludeResult.follow_up_intents.length}`);
 
   // Step 5: Read final state
   console.log("\n6. Final board state...");
