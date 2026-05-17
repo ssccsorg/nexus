@@ -21,7 +21,7 @@ permissions:
   contents: read
 
 jobs:
-  build-and-test:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -29,11 +29,5 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Build LightRAG image
-        run: docker build -t lightrag-nexus -f ext/lightrag/Dockerfile ext/lightrag
-
-      - name: Build Graphiti image
-        run: docker build -t graphiti-nexus -f ext/graphiti/Dockerfile ext/graphiti
-
-      - name: Build Memgraph proxy image
-        run: docker build -t memgraph-proxy -f ext/memgraph/Dockerfile ext/memgraph
+      - name: Build containers
+        run: ./scripts/run-build-containers.sh

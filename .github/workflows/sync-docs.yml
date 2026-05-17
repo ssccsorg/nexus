@@ -24,26 +24,9 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Sync all artifacts from R2
+      - name: Sync and transform
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CFR2_USR_API_S3_ACCID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.CFR2_USR_API_S3_SECKEY }}
-        run: |
-          aws s3 sync s3://ssccs-nexus-af/ssccs ${{ env.SYNC_ROOT }} \
-            --endpoint-url ${{ secrets.CFR2_USR_API_HOST }} \
-            --delete
-
-      - name: Run all sync routes
-        run: python scripts/fetch_ssccs.py --sync-root ${{ env.SYNC_ROOT }} --all
-
-      - name: Commit changes
-        run: |
-          if ! git diff --quiet HEAD; then
-            git config user.name "ssccs-bot"
-            git config user.email "git-bot@ssccs.org"
-            git add -A
-            git commit -m "sync: update from ssccs ($(date -u +%Y-%m-%d))"
-            git push
-          else
-            echo "Nothing to commit."
-          fi
+          CFR2_USR_API_HOST: ${{ secrets.CFR2_USR_API_HOST }}
+        run: ./scripts/sync-docs.sh ${{ env.SYNC_ROOT }}

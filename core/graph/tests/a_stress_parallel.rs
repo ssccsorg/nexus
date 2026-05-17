@@ -146,16 +146,9 @@ impl ParallelAnt {
                 match self.claimed.take() {
                     Some(id) => {
                         let result = format!("result of {id} by {}", self.name);
-                        match bb.conclude_intent(&id, &result) {
-                            Ok((_fact, follow_ups)) => {
-                                for fu in &follow_ups {
-                                    let _ = bb.submit_intent(fu);
-                                }
-                                format!(
-                                    "{:<16} conclude {id} + {} follow-ups",
-                                    self.name,
-                                    follow_ups.len()
-                                )
+                        match bb.conclude_intent(&id, &result.into()) {
+                            Ok(_fact) => {
+                                format!("{:<16} conclude {id}", self.name,)
                             }
                             Err(e) => format!("{:<16} conclude {id}: {e}", self.name),
                         }

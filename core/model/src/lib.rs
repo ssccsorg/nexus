@@ -1,4 +1,4 @@
-// nexus-api — Blackboard trait and FIH primitives.
+// nexus-model — Blackboard trait and FIH primitives.
 //
 // Pure interface, no storage backend. Both GraphBlackboard and SqlBlackboard
 // implement this trait. Modules depend only on this crate.
@@ -32,6 +32,7 @@ impl std::error::Error for BlackboardError {}
 // ── Content-addressable identifier ───────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct FihHash(pub String);
 
 impl std::fmt::Display for FihHash {
@@ -105,7 +106,40 @@ pub trait Blackboard {
     fn conclude_intent(
         &mut self,
         intent_id: &str,
-        result: &str,
-    ) -> Result<(Fact, Vec<Intent>), BlackboardError>;
+        result: &serde_json::Value,
+    ) -> Result<Fact, BlackboardError>;
     fn read_state(&self) -> BoardState;
+}
+
+// Blanket impl: &mut T delegates to T for any Blackboard implementor.
+// Enables shared access through references (e.g., MockGateway with &mut GraphBlackboard).
+impl<T: Blackboard> Blackboard for &mut T {
+    fn submit_fact(&mut self, fact: &Fact) -> FihHash {
+        (**self).submit_fact(fact)
+    }
+    fn submit_hint(&mut self, hint: &Hint) {
+        (**self).submit_hint(hint)
+    }
+    fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+        (**self).submit_intent(intent)
+    }
+    fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        (**self).claim_intent(intent_id, agent)
+    }
+    fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        (**self).heartbeat(intent_id, agent)
+    }
+    fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        (**self).release_intent(intent_id, agent)
+    }
+    fn conclude_intent(
+        &mut self,
+        intent_id: &str,
+        result: &serde_json::Value,
+    ) -> Result<Fact, BlackboardError> {
+        (**self).conclude_intent(intent_id, result)
+    }
+    fn read_state(&self) -> BoardState {
+        (**self).read_state()
+    }
 }
