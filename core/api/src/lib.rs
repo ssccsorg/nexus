@@ -32,6 +32,7 @@ impl std::error::Error for BlackboardError {}
 // ── Content-addressable identifier ───────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct FihHash(pub String);
 
 impl std::fmt::Display for FihHash {
