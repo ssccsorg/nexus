@@ -49,7 +49,13 @@ fn scenario_contradiction_detection() {
 
     let state = bb.read_state();
     assert_eq!(state.facts.len(), 3, "2 original + 1 concluded");
-    assert!(state.facts[2].content.as_str().unwrap_or("").contains("Contradiction resolved"));
+    assert!(
+        state.facts[2]
+            .content
+            .as_str()
+            .unwrap_or("")
+            .contains("Contradiction resolved")
+    );
 
     // Cypher verification
     let plan = cypher::Plan::from_internal("MATCH (f:Fact) RETURN f").unwrap();
@@ -114,7 +120,13 @@ fn scenario_peer_review() {
         "i_hypothesis",
         "Hypothesis accepted with revisions: surface code QEC at distance-3 achieves 0.1% threshold (confirmed). Distance-5 requires 0.05%.",
     ).unwrap();
-    assert!(result.content.as_str().unwrap_or("").contains("accepted with revisions"));
+    assert!(
+        result
+            .content
+            .as_str()
+            .unwrap_or("")
+            .contains("accepted with revisions")
+    );
 
     // Verify via Cypher
     let hint_count = {
@@ -180,7 +192,11 @@ fn scenario_knowledge_synthesis() {
     assert_eq!(state.facts.len(), 4, "3 pieces + 1 synthesis");
     let synthesis = &state.facts[3];
     assert!(
-        synthesis.content.as_str().unwrap_or("").contains("SYNTHESIS"),
+        synthesis
+            .content
+            .as_str()
+            .unwrap_or("")
+            .contains("SYNTHESIS"),
         "synthesis marker present"
     );
     assert!(
@@ -473,7 +489,13 @@ fn scenario_ci_failure_investigation() {
     let (diagnosis, follow_ups) = bb.conclude_intent("i_root_cause",
         "Root cause confirmed: proto-rs v2.4.0 alignment change. Fix: pin proto-rs to v2.3.9 in Cargo.toml, or add #[repr(C)] to generated code. Pinning is 5min fix."
     ).unwrap();
-    assert!(diagnosis.content.as_str().unwrap_or("").contains("proto-rs v2.4.0"));
+    assert!(
+        diagnosis
+            .content
+            .as_str()
+            .unwrap_or("")
+            .contains("proto-rs v2.4.0")
+    );
 
     // Submit the fix follow-up
     for fu in &follow_ups {
@@ -522,7 +544,13 @@ fn scenario_supply_chain_incident() {
     let (impact, _) = bb.conclude_intent("i_assess",
         "Impact: 12 microservices use openssl-sys. 8 are edge-facing (critical). 4 are internal (medium). All need patching."
     ).unwrap();
-    assert!(impact.content.as_str().unwrap_or("").contains("12 microservices"));
+    assert!(
+        impact
+            .content
+            .as_str()
+            .unwrap_or("")
+            .contains("12 microservices")
+    );
 
     // SRE team plans mitigation (parallel track, reads sec-lead's conclusion)
     bb.submit_intent(&Intent {
@@ -538,7 +566,13 @@ fn scenario_supply_chain_incident() {
     let (patch, _) = bb.conclude_intent("i_mitigate",
         "Patch: openssl-sys bumped to 0.9.101 in all 12 services. 8 edge services patched via rolling update (zero downtime). 4 internal services updated. No regressions."
     ).unwrap();
-    assert!(patch.content.as_str().unwrap_or("").contains("rolling update"));
+    assert!(
+        patch
+            .content
+            .as_str()
+            .unwrap_or("")
+            .contains("rolling update")
+    );
 
     // Communications team drafts announcement
     bb.submit_intent(&Intent {
@@ -684,8 +718,20 @@ Implication: The Segment is a computational primitive — an atom of computation
 that the von Neumann architecture can be redesigned around.",
         )
         .unwrap();
-    assert!(segment_def.content.as_str().unwrap_or("").contains("SEGMENT FORMALIZED"));
-    assert!(segment_def.content.as_str().unwrap_or("").contains("Universal"));
+    assert!(
+        segment_def
+            .content
+            .as_str()
+            .unwrap_or("")
+            .contains("SEGMENT FORMALIZED")
+    );
+    assert!(
+        segment_def
+            .content
+            .as_str()
+            .unwrap_or("")
+            .contains("Universal")
+    );
 
     // Submit follow-up intents (Scheme derivation, Field definition, etc.)
     for fu in &follow_ups {
@@ -734,7 +780,13 @@ that the von Neumann architecture can be redesigned around.",
 This completes the first two layers of the SSCCS ontology: Segment + Scheme.",
         )
         .unwrap();
-    assert!(scheme_def.content.as_str().unwrap_or("").contains("SCHEME FORMALIZED"));
+    assert!(
+        scheme_def
+            .content
+            .as_str()
+            .unwrap_or("")
+            .contains("SCHEME FORMALIZED")
+    );
 
     let state = bb.read_state();
     // 3 observations + 1 convergence + 1 formalization + 1 validation + 1 scheme = 7

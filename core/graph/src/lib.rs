@@ -183,10 +183,7 @@ impl GraphBlackboard {
             "origin".into(),
             serde_json::Value::String(fact.origin.clone()),
         );
-        props.insert(
-            "content".into(),
-            fact.content.clone(),
-        );
+        props.insert("content".into(), fact.content.clone());
         props.insert(
             "creator".into(),
             serde_json::Value::String(fact.creator.clone()),
