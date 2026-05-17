@@ -164,8 +164,8 @@ impl GraphBlackboard {
                 }
             }
             "conclude_intent" => {
-                if let Ok(c) = serde_json::from_str::<(String, String)>(payload) {
-                    let _ = self.conclude_intent(&c.0, &serde_json::Value::String(c.1));
+                if let Ok(c) = serde_json::from_str::<(String, serde_json::Value)>(payload) {
+                    let _ = self.conclude_intent(&c.0, &c.1);
                 }
             }
             _ => {}
@@ -425,8 +425,7 @@ impl Blackboard for GraphBlackboard {
         self.add_fact(&fact);
         self.log_fih(
             "conclude_intent",
-            &serde_json::to_string(&(intent_id.to_string(), result.to_string()))
-                .unwrap_or_default(),
+            &serde_json::to_string(&(intent_id.to_string(), result)).unwrap_or_default(),
         );
 
         let follow_ups = if !result.as_str().is_none_or(|s| s.contains("done")) {
