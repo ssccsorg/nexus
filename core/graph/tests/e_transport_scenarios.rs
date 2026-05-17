@@ -72,9 +72,21 @@ fn scenario_satellite_burst_agent() {
     let mut gw = MockGateway::new(GraphBlackboard::new());
 
     let readings = [
-        ("f_sat_001", "band-x", serde_json::json!({"freq": 12.4, "snr": 8.2})),
-        ("f_sat_002", "band-x", serde_json::json!({"freq": 12.5, "snr": 7.9})),
-        ("f_sat_003", "band-ku", serde_json::json!({"freq": 14.1, "snr": 6.5})),
+        (
+            "f_sat_001",
+            "band-x",
+            serde_json::json!({"freq": 12.4, "snr": 8.2}),
+        ),
+        (
+            "f_sat_002",
+            "band-x",
+            serde_json::json!({"freq": 12.5, "snr": 7.9}),
+        ),
+        (
+            "f_sat_003",
+            "band-ku",
+            serde_json::json!({"freq": 14.1, "snr": 6.5}),
+        ),
     ];
     for (id, origin, content) in &readings {
         gw.submit_fact(&Fact {
@@ -104,7 +116,8 @@ fn scenario_satellite_burst_agent() {
     let (_, follow_ups) = gw
         .conclude_intent(
             "i_sat_analysis",
-            &"Band-x SNR dropped 0.3dB between samples: atmospheric interference hypothesis.".into(),
+            &"Band-x SNR dropped 0.3dB between samples: atmospheric interference hypothesis."
+                .into(),
         )
         .unwrap();
     for fu in &follow_ups {
@@ -212,7 +225,11 @@ fn scenario_multi_language_agents() {
         let mut gw = MockGateway::new(&mut bb);
 
         let state = gw.read_state();
-        assert_eq!(state.facts.len(), 2, "all agents' facts visible to TS agent");
+        assert_eq!(
+            state.facts.len(),
+            2,
+            "all agents' facts visible to TS agent"
+        );
 
         gw.submit_intent(&Intent {
             id: FihHash("i_cross_lang".into()),
@@ -299,7 +316,8 @@ fn scenario_conflicting_claims() {
     assert!(hb_result.is_err(), "non-owner heartbeat must fail");
 
     // Agent-1 concludes successfully
-    gw.conclude_intent("i_conflict", &"Agent-1 resolved the conflict".into()).unwrap();
+    gw.conclude_intent("i_conflict", &"Agent-1 resolved the conflict".into())
+        .unwrap();
 
     println!("  ✓ Conflicting claims: 2 agents race, exactly 1 wins, conflict detection via JSON");
 }
