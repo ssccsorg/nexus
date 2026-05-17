@@ -8,6 +8,7 @@ on:
       - "ext/graphiti/Dockerfile"
       - "ext/memgraph/Dockerfile"
       - ".github/workflows/build.yml"
+      - "run.sh"
   pull_request:
     branches: ["main"]
     paths:
@@ -15,11 +16,7 @@ on:
       - "ext/graphiti/Dockerfile"
       - "ext/memgraph/Dockerfile"
       - ".github/workflows/build.yml"
-  # Placeholder: ssccs core repo → R2 업로드 후 컨테이너 재빌드 트리거
-  # repository_dispatch:
-  #   types:
-  #     - ssccs-poc-agent-af
-  #     - ssccs-docs-agent-af
+      - "run.sh"
   workflow_dispatch:
 
 permissions:
@@ -34,11 +31,5 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Build LightRAG image
-        run: docker build -t lightrag-nexus -f ext/lightrag/Dockerfile ext/lightrag
-
-      - name: Build Graphiti image
-        run: docker build -t graphiti-nexus -f ext/graphiti/Dockerfile ext/graphiti
-
-      - name: Build Memgraph proxy image
-        run: docker build -t memgraph-proxy -f ext/memgraph/Dockerfile ext/memgraph
+      - name: Build through run.sh
+        run: ./run.sh --docker

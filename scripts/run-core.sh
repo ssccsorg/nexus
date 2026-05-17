@@ -1,52 +1,26 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 #
-# nexus-core — Local CI runner
+# nexus-core — Local CI runner (legacy wrapper)
 #
-# Mirrors .github/workflows/core.yml locally:
-#   cargo fmt | check | clippy | test
-#   Runs all 32 tests (unit + integration + parallel stress)
+# Delegates to root run.sh --core.
+# Kept for backward compatibility; new usage should use the root run.sh.
 #
 # Usage:
-#   ./run.sh              # Full check: fmt + clippy + test
-#   ./run.sh --check      # Check only
-#   ./run.sh --clippy     # Clippy only
-#   ./run.sh --test       # Test only
+#   scripts/run-core.sh         # Same as ./run.sh --core
+#   scripts/run-core.sh --test  # Same as ./run.sh --core (flags ignored)
 #
 
-set -e
-cd "$(dirname "$0")/../core"
+cd "$(dirname "$0")/.."
 
-MODE="all"
-
-while [[ "$#" -gt 0 ]]; do
-    case $1 in
-        --check) MODE="check" ;;
-        --clippy) MODE="clippy" ;;
-        --test) MODE="test" ;;
-        *) echo "Unknown: $1"; exit 1 ;;
-    esac
-    shift
-done
-
-run_check()  { cargo check -p nexus-graph && cargo check; }
-run_fmt()    { cargo fmt; }
-run_clippy() { cargo clippy -- -D warnings; }
-run_test()   { cargo test -p nexus-graph -- --nocapture 2>&1; }
-run_all() {
-    echo "=== fmt ===" && run_fmt
-    echo "=== check ===" && run_check
-    echo "=== clippy ===" && run_clippy
-    echo "=== test ===" && run_test
-}
+MODE="${1:-all}"
 
 case $MODE in
-    check)  run_check ;;
-    clippy) run_clippy ;;
-    test)   run_test ;;
-    all)
-        echo "nexus-core CI (local)"
-        run_all
-        echo ""
-        echo "All checks passed."
+    --check|--clippy|--test|all)
+        exec ./run.sh --core
+        ;;
+    *)
+        echo "Usage: $0 [--check|--clippy|--test]"
+        exit 1
         ;;
 esac
