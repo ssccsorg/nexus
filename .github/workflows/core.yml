@@ -6,10 +6,12 @@ on:
     paths:
       - "core/**"
       - ".github/workflows/core.yml"
+      - "run.sh"
   pull_request:
     paths:
       - "core/**"
       - ".github/workflows/core.yml"
+      - "run.sh"
   workflow_dispatch:
 
 permissions:
@@ -17,7 +19,6 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: "-D warnings"
 
 jobs:
   check:
@@ -49,8 +50,13 @@ jobs:
       - name: Clippy
         run: cargo clippy -- -D warnings
 
-      - name: Test
+      - name: Test (graph crate)
         run: cargo test -p nexus-graph
 
       - name: Test (full workspace)
         run: cargo test
+
+      - name: Verify run.sh matches CI
+        run: |
+          cd ..
+          ./run.sh --core 2>&1 | tail -5

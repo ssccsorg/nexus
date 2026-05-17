@@ -6,17 +6,14 @@ on:
     paths:
       - "gateway/**"
       - ".github/workflows/deploy.yml"
+      - "run.sh"
   pull_request:
     branches: ["main"]
     paths:
       - "gateway/**"
       - ".github/workflows/deploy.yml"
+      - "run.sh"
   workflow_dispatch:
-  # Placeholder: ssccs core repo → R2 업로드 후 트리거 (VPS 준비되면 활성화)
-  # repository_dispatch:
-  #   types:
-  #     - ssccs-poc-agent-af
-  #     - ssccs-docs-agent-af
 
 permissions:
   contents: read
@@ -26,35 +23,16 @@ env:
 
 jobs:
   # PR check: verify npm install works (no deploy on PR)
-  check-module-hub:
+  check-gateway:
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: gateway/module-hub
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: "npm"
-          cache-dependency-path: gateway/module-hub/package-lock.json
-      - run: npm ci
-
-  check-af-sync:
-    if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: gateway/af-sync
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: "npm"
-          cache-dependency-path: gateway/af-sync/package-lock.json
-      - run: npm ci
+      - name: npm ci via run.sh
+        run: ./run.sh --gateway
 
   # Push deploy: only on main merge
   deploy-module-hub:
