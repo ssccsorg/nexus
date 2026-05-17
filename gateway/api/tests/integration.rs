@@ -5,7 +5,6 @@
 
 use nexus_gateway_api::state::AppState;
 use nexus_gateway_api::build_router;
-use std::net::SocketAddr;
 
 fn test_state() -> AppState {
     AppState::in_memory()

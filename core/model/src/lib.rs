@@ -1,4 +1,4 @@
-// nexus-api — Blackboard trait and FIH primitives.
+// nexus-model — Blackboard trait and FIH primitives.
 //
 // Pure interface, no storage backend. Both GraphBlackboard and SqlBlackboard
 // implement this trait. Modules depend only on this crate.

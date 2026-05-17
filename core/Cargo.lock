@@ -308,15 +308,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
-name = "nexus-api"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "sha2",
-]
-
-[[package]]
 name = "nexus-graph"
 version = "0.1.0"
 dependencies = [
@@ -324,10 +315,19 @@ dependencies = [
  "cyrs-hir",
  "cyrs-plan",
  "cyrs-syntax",
- "nexus-api",
+ "nexus-model",
  "petgraph",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "nexus-model"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]
