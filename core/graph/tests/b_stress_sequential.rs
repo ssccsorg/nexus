@@ -108,7 +108,7 @@ impl Ant {
             6 if self.claimed.is_some() => {
                 let id = self.claimed.take().unwrap();
                 let result = format!("result of {id} by {}", self.name);
-                match bb.conclude_intent(&id, &result) {
+                match bb.conclude_intent(&id, &result.into()) {
                     Ok((_fact, follow_ups)) => {
                         // Agent reviews and may submit follow-ups
                         for fu in &follow_ups {

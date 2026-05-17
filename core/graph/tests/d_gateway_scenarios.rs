@@ -56,7 +56,7 @@ fn scenario_contradiction_detection_via_gateway() {
     gw.claim_intent("i_reconcile", "agent-c").unwrap();
     gw.conclude_intent(
         "i_reconcile",
-        "Skip connections delay oversmoothing to 50+ layers; normalization alone is insufficient. Contradiction resolved.",
+        &"Skip connections delay oversmoothing to 50+ layers; normalization alone is insufficient. Contradiction resolved.".into(),
     ).unwrap();
 
     let state = gw.read_state();

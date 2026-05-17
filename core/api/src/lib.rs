@@ -105,7 +105,7 @@ pub trait Blackboard {
     fn conclude_intent(
         &mut self,
         intent_id: &str,
-        result: &str,
+        result: &serde_json::Value,
     ) -> Result<(Fact, Vec<Intent>), BlackboardError>;
     fn read_state(&self) -> BoardState;
 }
@@ -134,7 +134,7 @@ impl<T: Blackboard> Blackboard for &mut T {
     fn conclude_intent(
         &mut self,
         intent_id: &str,
-        result: &str,
+        result: &serde_json::Value,
     ) -> Result<(Fact, Vec<Intent>), BlackboardError> {
         (**self).conclude_intent(intent_id, result)
     }

@@ -108,7 +108,7 @@ mod tests {
             assert_eq!(bb.read_state().intents.len(), 1, "1 intent");
 
             bb.claim_intent("i_sql_1", "agent-x").unwrap();
-            let (new_fact, follow_ups) = bb.conclude_intent("i_sql_1", "SQLite works").unwrap();
+            let (new_fact, follow_ups) = bb.conclude_intent("i_sql_1", &"SQLite works".into()).unwrap();
             assert_eq!(new_fact.content, "SQLite works");
 
             // Submit follow-up intent so it's persisted too
