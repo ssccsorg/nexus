@@ -7,14 +7,14 @@ on:
       - "core/**"
       - "gateway/**"
       - "playbooks/**"
-      - "scripts/run-core.sh"
+      - "scripts/**"
       - ".github/workflows/test.yml"
   pull_request:
     paths:
       - "core/**"
       - "gateway/**"
       - "playbooks/**"
-      - "scripts/run-core.sh"
+      - "scripts/**"
       - ".github/workflows/test.yml"
   workflow_dispatch:
 
@@ -25,6 +25,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Layer 1: Core library (nexus-api + nexus-graph + nexus-sql)
+  # Entry point: scripts/run-core.sh
   core:
     runs-on: ubuntu-latest
     steps:
@@ -36,14 +38,27 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            core
-            gateway/api
-            playbooks/agents
+          workspaces: "core"
           cache-targets: true
 
       - name: Core checks
         run: ./scripts/run-core.sh
+
+  # Layer 2: Gateway server + consumer playbooks
+  # Entry point: playbooks/run.sh (self-contained, starts/stops server)
+  gateway:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            gateway/api
+            playbooks/agents
+          cache-targets: true
 
       - uses: actions/setup-node@v4
         with:
@@ -53,5 +68,5 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Playbook verification
+      - name: Gateway + playbook verification
         run: ./playbooks/run.sh
