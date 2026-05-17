@@ -1,16 +1,18 @@
 #!/bin/bash
 #
-# nexus-core — Local CI runner
+# nexus-core -- Local CI runner
+#
+# Standalone core-only check script. Does NOT delegate to run.sh.
+# Use run.sh at the project root for comprehensive CI (core + docker + gateway).
 #
 # Mirrors .github/workflows/core.yml locally:
 #   cargo fmt | check | clippy | test
-#   Runs all 32 tests (unit + integration + parallel stress)
 #
 # Usage:
-#   ./run.sh              # Full check: fmt + clippy + test
-#   ./run.sh --check      # Check only
-#   ./run.sh --clippy     # Clippy only
-#   ./run.sh --test       # Test only
+#   scripts/run-core.sh               # Full check: fmt + clippy + test
+#   scripts/run-core.sh --check       # Check only
+#   scripts/run-core.sh --clippy      # Clippy only
+#   scripts/run-core.sh --test        # Test only
 #
 
 set -e

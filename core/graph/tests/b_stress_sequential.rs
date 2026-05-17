@@ -33,7 +33,7 @@ impl Ant {
                 let fact = Fact {
                     id: FihHash(id.clone()),
                     origin: self.name.clone(),
-                    content: format!("observation at step {step} by {}", self.name),
+                    content: format!("observation at step {step} by {}", self.name).into(),
                     creator: self.name.clone(),
                 };
                 bb.submit_fact(&fact);
@@ -221,7 +221,7 @@ fn test_stress_many_ants() {
         let fact = Fact {
             id: FihHash(id.to_string()),
             origin: origin.to_string(),
-            content: content.to_string(),
+            content: (*content).into(),
             creator: "corpus".into(),
         };
         bb.submit_fact(&fact);

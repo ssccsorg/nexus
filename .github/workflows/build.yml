@@ -15,11 +15,6 @@ on:
       - "ext/graphiti/Dockerfile"
       - "ext/memgraph/Dockerfile"
       - ".github/workflows/build.yml"
-  # Placeholder: ssccs core repo → R2 업로드 후 컨테이너 재빌드 트리거
-  # repository_dispatch:
-  #   types:
-  #     - ssccs-poc-agent-af
-  #     - ssccs-docs-agent-af
   workflow_dispatch:
 
 permissions:

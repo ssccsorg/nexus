@@ -183,10 +183,7 @@ impl GraphBlackboard {
             "origin".into(),
             serde_json::Value::String(fact.origin.clone()),
         );
-        props.insert(
-            "content".into(),
-            serde_json::Value::String(fact.content.clone()),
-        );
+        props.insert("content".into(), fact.content.clone());
         props.insert(
             "creator".into(),
             serde_json::Value::String(fact.creator.clone()),
@@ -243,7 +240,7 @@ impl GraphBlackboard {
         Some(Fact {
             id: FihHash(w.name.clone()),
             origin: w.properties.get("origin")?.as_str()?.into(),
-            content: w.properties.get("content")?.as_str()?.into(),
+            content: w.properties.get("content")?.clone(),
             creator: w.properties.get("creator")?.as_str()?.into(),
         })
     }
@@ -259,7 +256,7 @@ impl GraphBlackboard {
                 .properties
                 .get("from_facts")
                 .and_then(|v| v.as_str())
-                .map(|s| s.split(',').map(|s| s.trim().into()).collect())
+                .map(|s| s.split(',').map(|s| s.trim().to_string()).collect())
                 .unwrap_or_default(),
             description: w.properties.get("description")?.as_str()?.into(),
             creator: w.properties.get("creator")?.as_str()?.into(),
@@ -421,7 +418,7 @@ impl Blackboard for GraphBlackboard {
         let fact = Fact {
             id: FihHash(format!("fact_{}", intent.id.0)),
             origin: "Layer1".into(),
-            content: result.into(),
+            content: serde_json::Value::String(result.into()),
             creator: intent.creator.clone(),
         };
         self.add_fact(&fact);
@@ -532,7 +529,7 @@ mod tests {
         let fact = Fact {
             id: FihHash("f001".into()),
             origin: "Layer1".into(),
-            content: "Observation validated".into(),
+            content: serde_json::Value::String("Observation validated".into()),
             creator: "agent-a".into(),
         };
         let id = Blackboard::submit_fact(&mut bb, &fact);
@@ -548,7 +545,7 @@ mod tests {
         let fact = Fact {
             id: FihHash("f001".into()),
             origin: "L1".into(),
-            content: "baseline".into(),
+            content: serde_json::Value::String("baseline".into()),
             creator: "a".into(),
         };
         bb.submit_fact(&fact);
