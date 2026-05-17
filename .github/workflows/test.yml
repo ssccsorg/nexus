@@ -5,11 +5,15 @@ on:
     branches: ["main"]
     paths:
       - "core/**"
+      - "gateway/**"
+      - "playbooks/**"
       - "scripts/run-core.sh"
       - ".github/workflows/test.yml"
   pull_request:
     paths:
       - "core/**"
+      - "gateway/**"
+      - "playbooks/**"
       - "scripts/run-core.sh"
       - ".github/workflows/test.yml"
   workflow_dispatch:
@@ -32,8 +36,22 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "core"
+          workspaces: |
+            core
+            gateway/api
+            playbooks/agents
           cache-targets: true
 
-      - name: Full check via run-core.sh
+      - name: Core checks
         run: ./scripts/run-core.sh
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Playbook verification
+        run: ./playbooks/run.sh
