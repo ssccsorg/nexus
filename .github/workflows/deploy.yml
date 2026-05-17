@@ -50,4 +50,4 @@ jobs:
             gateway/module-hub/package-lock.json
             gateway/af-sync/package-lock.json
       - name: Deploy workers
-        run: ./scripts/deploy-gateway.sh --token ${{ secrets.CF_API_TOKEN }}
+        run: ./scripts/deploy-gateway.sh --token ${{ secrets.CFWORKER_EDIT }}
