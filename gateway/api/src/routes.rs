@@ -84,7 +84,7 @@ pub struct ReleaseRequest {
 
 #[derive(Deserialize)]
 pub struct ConcludeRequest {
-    pub result: String,
+    pub result: serde_json::Value,
 }
 
 #[derive(Serialize)]
