@@ -20,7 +20,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  # PR check: only verify npm install
+  # PR check: verify npm install works (no deploy on PR)
   check:
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
@@ -29,10 +29,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: "npm"
+          cache-dependency-path: |
+            gateway/module-hub/package-lock.json
+            gateway/af-sync/package-lock.json
       - name: npm ci check
         run: ./scripts/deploy-gateway.sh --check
 
-  # Push deploy: main merge
+  # Push deploy: only on main merge
   deploy:
     if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
@@ -41,6 +45,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: "npm"
+          cache-dependency-path: |
+            gateway/module-hub/package-lock.json
+            gateway/af-sync/package-lock.json
       - name: Deploy workers
         run: ./scripts/deploy-gateway.sh
         env:
