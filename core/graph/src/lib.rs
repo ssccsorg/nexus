@@ -4,6 +4,7 @@
 // GraphAccess trait is petgraph-specific and lives here.
 
 pub mod cypher;
+pub mod mock_gateway;
 pub mod storage;
 
 pub use nexus_api::{Blackboard, BlackboardError, BoardState, Fact, FihHash, Hint, Intent};
