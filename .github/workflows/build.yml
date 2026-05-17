@@ -8,7 +8,6 @@ on:
       - "ext/graphiti/Dockerfile"
       - "ext/memgraph/Dockerfile"
       - ".github/workflows/build.yml"
-      - "run.sh"
   pull_request:
     branches: ["main"]
     paths:
@@ -16,7 +15,6 @@ on:
       - "ext/graphiti/Dockerfile"
       - "ext/memgraph/Dockerfile"
       - ".github/workflows/build.yml"
-      - "run.sh"
   workflow_dispatch:
 
 permissions:
@@ -31,5 +29,11 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Build through run.sh
-        run: ./run.sh --docker
+      - name: Build LightRAG image
+        run: docker build -t lightrag-nexus -f ext/lightrag/Dockerfile ext/lightrag
+
+      - name: Build Graphiti image
+        run: docker build -t graphiti-nexus -f ext/graphiti/Dockerfile ext/graphiti
+
+      - name: Build Memgraph proxy image
+        run: docker build -t memgraph-proxy -f ext/memgraph/Dockerfile ext/memgraph
