@@ -1,0 +1,39 @@
+name: Test Suite
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "core/**"
+      - "scripts/run-core.sh"
+      - ".github/workflows/test.yml"
+  pull_request:
+    paths:
+      - "core/**"
+      - "scripts/run-core.sh"
+      - ".github/workflows/test.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "core"
+          cache-targets: true
+
+      - name: Full check via run-core.sh
+        run: ./scripts/run-core.sh
