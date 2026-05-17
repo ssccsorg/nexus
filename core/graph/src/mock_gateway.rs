@@ -25,34 +25,29 @@ impl<B: Blackboard> MockGateway<B> {
     }
 
     pub fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError> {
-        let decoded: Intent =
-            serde_json::from_slice(&serde_json::to_vec(intent).unwrap()).unwrap();
+        let decoded: Intent = serde_json::from_slice(&serde_json::to_vec(intent).unwrap()).unwrap();
         self.inner.submit_intent(&decoded)
     }
 
     pub fn submit_hint(&mut self, hint: &Hint) {
-        let decoded: Hint =
-            serde_json::from_slice(&serde_json::to_vec(hint).unwrap()).unwrap();
+        let decoded: Hint = serde_json::from_slice(&serde_json::to_vec(hint).unwrap()).unwrap();
         self.inner.submit_hint(&decoded)
     }
 
     pub fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let id: String =
-            serde_json::from_slice(&serde_json::to_vec(intent_id).unwrap()).unwrap();
+        let id: String = serde_json::from_slice(&serde_json::to_vec(intent_id).unwrap()).unwrap();
         let a: String = serde_json::from_slice(&serde_json::to_vec(agent).unwrap()).unwrap();
         self.inner.claim_intent(&id, &a)
     }
 
     pub fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let id: String =
-            serde_json::from_slice(&serde_json::to_vec(intent_id).unwrap()).unwrap();
+        let id: String = serde_json::from_slice(&serde_json::to_vec(intent_id).unwrap()).unwrap();
         let a: String = serde_json::from_slice(&serde_json::to_vec(agent).unwrap()).unwrap();
         self.inner.heartbeat(&id, &a)
     }
 
     pub fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let id: String =
-            serde_json::from_slice(&serde_json::to_vec(intent_id).unwrap()).unwrap();
+        let id: String = serde_json::from_slice(&serde_json::to_vec(intent_id).unwrap()).unwrap();
         let a: String = serde_json::from_slice(&serde_json::to_vec(agent).unwrap()).unwrap();
         self.inner.release_intent(&id, &a)
     }
@@ -62,8 +57,7 @@ impl<B: Blackboard> MockGateway<B> {
         intent_id: &str,
         result: &serde_json::Value,
     ) -> Result<(Fact, Vec<Intent>), BlackboardError> {
-        let id: String =
-            serde_json::from_slice(&serde_json::to_vec(intent_id).unwrap()).unwrap();
+        let id: String = serde_json::from_slice(&serde_json::to_vec(intent_id).unwrap()).unwrap();
         let r: serde_json::Value =
             serde_json::from_slice(&serde_json::to_vec(result).unwrap()).unwrap();
         self.inner.conclude_intent(&id, &r)

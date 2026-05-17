@@ -429,7 +429,7 @@ impl Blackboard for GraphBlackboard {
                 .unwrap_or_default(),
         );
 
-        let follow_ups = if !result.as_str().map_or(true, |s| s.contains("done")) {
+        let follow_ups = if !result.as_str().is_none_or(|s| s.contains("done")) {
             vec![Intent {
                 id: FihHash(format!("intent_{}_next", intent.id.0)),
                 from_facts: vec![fact.id.0.clone()],
@@ -564,7 +564,9 @@ mod tests {
         assert!(bb.heartbeat("i001", "worker-1").is_ok());
         assert!(bb.claim_intent("i001", "worker-2").is_err());
 
-        let (new_fact, follow_ups) = bb.conclude_intent("i001", &"hypothesis validated".into()).unwrap();
+        let (new_fact, follow_ups) = bb
+            .conclude_intent("i001", &"hypothesis validated".into())
+            .unwrap();
         assert_eq!(new_fact.content, "hypothesis validated");
         assert_eq!(follow_ups.len(), 1);
     }

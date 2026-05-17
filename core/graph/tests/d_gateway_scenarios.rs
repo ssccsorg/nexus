@@ -69,7 +69,5 @@ fn scenario_contradiction_detection_via_gateway() {
             .contains("Contradiction resolved")
     );
 
-    println!(
-        "  ✓ MockGateway: Contradiction Detection — 3 agents, JSON round-trip verified"
-    );
+    println!("  ✓ MockGateway: Contradiction Detection — 3 agents, JSON round-trip verified");
 }

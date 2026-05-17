@@ -715,7 +715,8 @@ Properties:
   - Universal: present in LLVM IR, MLIR, CFG, and downstream to machine code
 
 Implication: The Segment is a computational primitive — an atom of computation
-that the von Neumann architecture can be redesigned around.".into(),
+that the von Neumann architecture can be redesigned around."
+                .into(),
         )
         .unwrap();
     assert!(
@@ -777,7 +778,8 @@ that the von Neumann architecture can be redesigned around.".into(),
   - T ∈ {map, reduce, shuffle, broadcast, fuse, split}
   - A Scheme preserves the Segment properties (self-contained, compositional)
 
-This completes the first two layers of the SSCCS ontology: Segment + Scheme.".into(),
+This completes the first two layers of the SSCCS ontology: Segment + Scheme."
+                .into(),
         )
         .unwrap();
     assert!(
