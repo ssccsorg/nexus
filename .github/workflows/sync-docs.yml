@@ -11,6 +11,9 @@ on:
 permissions:
   contents: write
 
+env:
+  SYNC_ROOT: /tmp/ssccs
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -26,4 +29,4 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.CFR2_USR_API_S3_ACCID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.CFR2_USR_API_S3_SECKEY }}
           CFR2_USR_API_HOST: ${{ secrets.CFR2_USR_API_HOST }}
-        run: ./scripts/sync-docs.sh
+        run: ./scripts/sync-docs.sh ${{ env.SYNC_ROOT }}
