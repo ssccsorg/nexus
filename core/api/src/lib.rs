@@ -65,7 +65,7 @@ impl FihHash {
 pub struct Fact {
     pub id: FihHash,
     pub origin: String,
-    pub content: String,
+    pub content: serde_json::Value,
     pub creator: String,
 }
 
