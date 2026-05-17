@@ -109,16 +109,8 @@ impl Ant {
                 let id = self.claimed.take().unwrap();
                 let result = format!("result of {id} by {}", self.name);
                 match bb.conclude_intent(&id, &result.into()) {
-                    Ok((_fact, follow_ups)) => {
-                        // Agent reviews and may submit follow-ups
-                        for fu in &follow_ups {
-                            let _ = bb.submit_intent(fu);
-                        }
-                        format!(
-                            "{:<12} conclude {id} → fact + {} follow-ups",
-                            self.name,
-                            follow_ups.len()
-                        )
+                    Ok(_fact) => {
+                        format!("{:<12} conclude {id} → fact", self.name,)
                     }
                     Err(e) => {
                         self.claimed = None;

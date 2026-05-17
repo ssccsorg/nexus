@@ -129,29 +129,6 @@ async fn test_intent_lifecycle_over_http() {
     assert!(conclude["fact"]["content"]
         .to_string()
         .contains("Lifecycle verified"));
-    let follow_ups = conclude["follow_up_intents"]
-        .as_array()
-        .unwrap()
-        .clone();
-    assert!(
-        follow_ups.len() > 0,
-        "should generate follow-up intents"
-    );
-
-    // Agent reviews and submits the follow-up intent
-    for fu in &follow_ups {
-        client
-            .post(format!("{base}/intents"))
-            .json(&serde_json::json!({
-                "id": fu["id"]["0"],
-                "from_facts": fu["from_facts"],
-                "description": fu["description"],
-                "creator": fu["creator"]
-            }))
-            .send()
-            .await
-            .unwrap();
-    }
 
     let resp = client
         .get(format!("{base}/state"))
@@ -166,8 +143,8 @@ async fn test_intent_lifecycle_over_http() {
     );
     assert_eq!(
         state["intents"].as_array().unwrap().len(),
-        2,
-        "1 original + 1 follow-up"
+        1,
+        "1 original intent"
     );
 }
 

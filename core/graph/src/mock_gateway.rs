@@ -56,7 +56,7 @@ impl<B: Blackboard> MockGateway<B> {
         &mut self,
         intent_id: &str,
         result: &serde_json::Value,
-    ) -> Result<(Fact, Vec<Intent>), BlackboardError> {
+    ) -> Result<Fact, BlackboardError> {
         let id: String = serde_json::from_slice(&serde_json::to_vec(intent_id).unwrap()).unwrap();
         let r: serde_json::Value =
             serde_json::from_slice(&serde_json::to_vec(result).unwrap()).unwrap();

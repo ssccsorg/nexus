@@ -70,7 +70,7 @@ fn main() {
     println!("   OK");
 
     println!("\n5. Concluding...");
-    let (new_fact, follow_ups) = bb
+    let new_fact = bb
         .conclude_intent(
             &intent_id.0,
             &serde_json::json!({
@@ -81,7 +81,6 @@ fn main() {
         )
         .unwrap();
     println!("   New fact: {} = {}", new_fact.id, new_fact.content);
-    println!("   Follow-up intents: {}", follow_ups.len());
 
     // ── Phase 4: Privileged Cypher query ─────────────────────────────
 

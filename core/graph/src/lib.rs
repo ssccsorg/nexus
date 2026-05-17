@@ -402,7 +402,7 @@ impl Blackboard for GraphBlackboard {
         &mut self,
         intent_id: &str,
         result: &serde_json::Value,
-    ) -> Result<(Fact, Vec<Intent>), BlackboardError> {
+    ) -> Result<Fact, BlackboardError> {
         let idx = self
             .resolve_intent_name(intent_id)
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent: {intent_id}")))?;
@@ -428,20 +428,7 @@ impl Blackboard for GraphBlackboard {
             &serde_json::to_string(&(intent_id.to_string(), result)).unwrap_or_default(),
         );
 
-        let follow_ups = if !result.as_str().is_none_or(|s| s.contains("done")) {
-            vec![Intent {
-                id: FihHash(format!("intent_{}_next", intent.id.0)),
-                from_facts: vec![fact.id.0.clone()],
-                description: format!("Follow-up: {result}"),
-                creator: intent.creator.clone(),
-                worker: None,
-                concluded_at: None,
-            }]
-        } else {
-            Vec::new()
-        };
-
-        Ok((fact, follow_ups))
+        Ok(fact)
     }
 
     fn read_state(&self) -> BoardState {
@@ -563,11 +550,10 @@ mod tests {
         assert!(bb.heartbeat("i001", "worker-1").is_ok());
         assert!(bb.claim_intent("i001", "worker-2").is_err());
 
-        let (new_fact, follow_ups) = bb
+        let new_fact = bb
             .conclude_intent("i001", &"hypothesis validated".into())
             .unwrap();
         assert_eq!(new_fact.content, "hypothesis validated");
-        assert_eq!(follow_ups.len(), 1);
     }
 
     #[test]
