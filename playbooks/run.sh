@@ -48,10 +48,11 @@ MODE="${1:-all}"
 
 if [ "$MODE" = "all" ] || [ "$MODE" = "--consumers" ]; then
     echo "=== Starting gateway server ==="
-    "$SCRIPT_DIR/../scripts/run-gateway.sh" &
+    cd "$SCRIPT_DIR/../gateway/api"
+    cargo run &
     SERVER_PID=$!
+    cd "$SCRIPT_DIR"
     sleep 2
-    echo "Server PID: $SERVER_PID"
 
     if curl -sf http://localhost:3000/api/v1/fih/state > /dev/null 2>&1; then
         echo "  Server ready at http://localhost:3000"
