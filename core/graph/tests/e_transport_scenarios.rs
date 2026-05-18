@@ -260,7 +260,7 @@ fn scenario_multi_language_agents() {
 
     // Python agent sees the result
     {
-        let mut gw = MockGateway::new(&mut bb);
+        let gw = MockGateway::new(&mut bb);
         let state = gw.read_state();
         assert_eq!(state.facts.len(), 3, "py agent sees concluded fact");
         assert_eq!(state.intents.len(), 1, "py agent sees original intent only");

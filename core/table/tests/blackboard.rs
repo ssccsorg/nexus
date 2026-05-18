@@ -1,8 +1,7 @@
 // nexus-table — Integration tests for SqlBlackboard + SqliteStorage.
 
 use nexus_table::{
-    Blackboard, BlackboardError, Fact, FihHash, Hint, Intent, SqlBlackboard, SqliteStorage,
-    Storage,
+    Blackboard, BlackboardError, Fact, FihHash, Hint, Intent, SqlBlackboard, SqliteStorage, Storage,
 };
 
 fn make_fact(id: &str, content: &str) -> Fact {
@@ -204,13 +203,15 @@ fn test_multi_agent_handoff() {
     bb.conclude_intent("i001", &"resolved by agent-b".into())
         .unwrap();
     let state = bb.read_state();
-    assert!(state
-        .intents
-        .iter()
-        .find(|i| i.id.0 == "i001")
-        .unwrap()
-        .concluded_at
-        .is_some());
+    assert!(
+        state
+            .intents
+            .iter()
+            .find(|i| i.id.0 == "i001")
+            .unwrap()
+            .concluded_at
+            .is_some()
+    );
 }
 
 #[test]
@@ -262,8 +263,7 @@ fn test_full_persistence_across_sessions() {
 #[test]
 fn test_structured_json_content() {
     let mut bb = SqlBlackboard::memory().unwrap();
-    let complex_content =
-        serde_json::json!({"nested": {"array": [1,2,3], "object": {"key":"value"}, "null": null, "bool": true, "number": 42.5}});
+    let complex_content = serde_json::json!({"nested": {"array": [1,2,3], "object": {"key":"value"}, "null": null, "bool": true, "number": 42.5}});
     bb.submit_fact(&Fact {
         id: FihHash("f_complex".into()),
         origin: "json-test".into(),
@@ -316,13 +316,15 @@ fn test_research_cross_document_entity_linking() {
     )
     .unwrap();
     let state = bb.read_state();
-    assert!(state
-        .intents
-        .iter()
-        .find(|i| i.id.0 == "i_research_001")
-        .unwrap()
-        .concluded_at
-        .is_some());
+    assert!(
+        state
+            .intents
+            .iter()
+            .find(|i| i.id.0 == "i_research_001")
+            .unwrap()
+            .concluded_at
+            .is_some()
+    );
 }
 
 #[test]
@@ -475,20 +477,24 @@ fn test_research_memory_across_sessions() {
             .unwrap();
         let state = bb.read_state();
         assert_eq!(state.facts.len(), 5);
-        assert!(state
-            .intents
-            .iter()
-            .find(|i| i.id.0 == "i_link_001")
-            .unwrap()
-            .concluded_at
-            .is_some());
-        assert!(state
-            .intents
-            .iter()
-            .find(|i| i.id.0 == "i_link_002")
-            .unwrap()
-            .concluded_at
-            .is_none());
+        assert!(
+            state
+                .intents
+                .iter()
+                .find(|i| i.id.0 == "i_link_001")
+                .unwrap()
+                .concluded_at
+                .is_some()
+        );
+        assert!(
+            state
+                .intents
+                .iter()
+                .find(|i| i.id.0 == "i_link_002")
+                .unwrap()
+                .concluded_at
+                .is_none()
+        );
     }
     let _ = std::fs::remove_file(path);
 }
