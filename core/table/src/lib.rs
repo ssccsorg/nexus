@@ -1,8 +1,8 @@
-// nexus-table — SqlBlackboard: SQLite-backed FIH storage implementation.
+// nexus-table — SqliteStorage: SQLite-backed FIH storage implementation.
 //
-// Implements the Storage trait from nexus-graph for persistent FIH event logs.
+// Implements the Storage trait from nexus-model for persistent FIH event logs.
 
-use nexus_graph::{GraphBlackboard, Storage, StoredEvent};
+use nexus_model::{Storage, StoredEvent};
 use rusqlite::Connection;
 use std::path::Path;
 use std::sync::Mutex;
@@ -69,16 +69,12 @@ impl Storage for SqliteStorage {
     }
 }
 
-/// Convenience: create a persistent GraphBlackboard backed by SQLite.
-pub fn blackboard_with_sqlite(path: &str) -> Result<GraphBlackboard, String> {
-    let store = SqliteStorage::open(path).map_err(|e| e.to_string())?;
-    Ok(GraphBlackboard::new().with_storage(Box::new(store)))
-}
+
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nexus_graph::{Blackboard, Fact, FihHash, Intent};
+    use nexus_graph::{GraphBlackboard, Blackboard, Fact, FihHash, Intent};
 
     #[test]
     fn test_sqlite_persistence() {
