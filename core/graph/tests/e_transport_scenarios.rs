@@ -106,6 +106,9 @@ fn scenario_satellite_burst_agent() {
         description: "Analyze band-x SNR degradation trend".into(),
         creator: "ground-station".into(),
         worker: None,
+        to_fact_id: None,
+        last_heartbeat_at: None,
+        created_at: None,
         concluded_at: None,
     })
     .unwrap();
@@ -151,6 +154,9 @@ fn scenario_browser_agent() {
         description: "Find root cause of sustained high server load".into(),
         creator: "human-operator".into(),
         worker: None,
+        to_fact_id: None,
+        last_heartbeat_at: None,
+        created_at: None,
         concluded_at: None,
     })
     .unwrap();
@@ -232,6 +238,9 @@ fn scenario_multi_language_agents() {
             description: "Correlate pipeline throughput with inference latency".into(),
             creator: "ts-agent".into(),
             worker: None,
+            to_fact_id: None,
+            last_heartbeat_at: None,
+            created_at: None,
             concluded_at: None,
         })
         .unwrap();
@@ -285,6 +294,9 @@ fn scenario_conflicting_claims() {
         description: "Intent that two agents will race to claim".into(),
         creator: "system".into(),
         worker: None,
+        to_fact_id: None,
+        last_heartbeat_at: None,
+        created_at: None,
         concluded_at: None,
     })
     .unwrap();
