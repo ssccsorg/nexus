@@ -54,10 +54,9 @@ impl SqlBlackboard {
 
     fn ensure_project(&self) -> Result<(), rusqlite::Error> {
         let conn = self.conn.lock().unwrap();
-        let now = utc_now();
         conn.execute(
-            "INSERT OR IGNORE INTO projects (id, title, status, created_at) VALUES (?1, ?2, 'active', ?3)",
-            params![self.project_id, self.project_id, now],
+            "INSERT OR IGNORE INTO projects (id, title, status) VALUES (?1, ?2, 'active')",
+            params![self.project_id, self.project_id],
         )?;
         Ok(())
     }
@@ -129,15 +128,14 @@ impl Blackboard for SqlBlackboard {
     fn submit_hint(&mut self, hint: &Hint) {
         let conn = self.conn.lock().unwrap();
         let pid = &self.project_id;
-        let now = utc_now();
         let _ = conn.execute(
-            "INSERT OR IGNORE INTO hints (id, project_id, content, creator, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![hint.id.0, pid, hint.content, hint.creator, now],
+            "INSERT OR IGNORE INTO hints (id, project_id, content, creator) VALUES (?1, ?2, ?3, ?4)",
+            params![hint.id.0, pid, hint.content, hint.creator],
         );
     }
 
     fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError> {
-        let conn = self.conn.lock().unwrap();
+        let mut conn = self.conn.lock().unwrap();
         let pid = &self.project_id;
 
         // Validate source facts exist
@@ -154,22 +152,30 @@ impl Blackboard for SqlBlackboard {
             }
         }
 
+        // Atomic: insert intent + source links in one transaction
+        let tx = conn
+            .transaction()
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+
         let now = utc_now();
         let worker = intent.worker.as_deref();
         let heartbeat = if worker.is_some() { Some(&now) } else { None };
-        conn.execute(
-            "INSERT INTO intents (id, project_id, to_fact_id, description, creator, worker, last_heartbeat_at, created_at, concluded_at)
-             VALUES (?1, ?2, NULL, ?3, ?4, ?5, ?6, ?7, NULL)",
-            params![intent.id.0, pid, intent.description, intent.creator, worker, heartbeat, now],
+        tx.execute(
+            "INSERT INTO intents (id, project_id, to_fact_id, description, creator, worker, last_heartbeat_at, concluded_at)
+             VALUES (?1, ?2, NULL, ?3, ?4, ?5, ?6, NULL)",
+            params![intent.id.0, pid, intent.description, intent.creator, worker, heartbeat],
         ).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         for fid in &intent.from_facts {
-            conn.execute(
+            tx.execute(
                 "INSERT INTO intent_sources (intent_id, project_id, fact_id) VALUES (?1, ?2, ?3)",
                 params![intent.id.0, pid, fid],
             )
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         }
+
+        tx.commit()
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         Ok(intent.id.clone())
     }
@@ -183,7 +189,7 @@ impl Blackboard for SqlBlackboard {
     }
 
     fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let conn = self.conn.lock().unwrap();
+        let mut conn = self.conn.lock().unwrap();
         let pid = &self.project_id;
 
         let row: Option<(Option<String>,)> = conn
@@ -206,10 +212,17 @@ impl Blackboard for SqlBlackboard {
             _ => {}
         }
 
-        let _ = conn.execute(
+        let tx = conn
+            .transaction()
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        tx.execute(
             "UPDATE intents SET worker = NULL WHERE id = ?1 AND project_id = ?2",
             params![intent_id, pid],
-        );
+        )
+        .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        tx.commit()
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+
         Ok(())
     }
 
