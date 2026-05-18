@@ -180,19 +180,25 @@ impl GraphBlackboard {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 struct ClaimPayload {
     id: String,
     agent: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 struct ConcludePayload {
     id: String,
     result: String,
 }
 
 // ── Blackboard impl ──────────────────────────────────────────────────────
+
+/// Convenience: create a persistent GraphBlackboard backed by SQLite via nexus-table.
+pub fn blackboard_with_sqlite(path: &str) -> Result<GraphBlackboard, String> {
+    let store = nexus_table::SqliteStorage::open(path).map_err(|e| e.to_string())?;
+    Ok(GraphBlackboard::new().with_storage(Box::new(store)))
+}
 
 impl Blackboard for GraphBlackboard {
     fn submit_fact(&mut self, fact: &Fact) -> FihHash {
