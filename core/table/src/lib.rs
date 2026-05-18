@@ -103,6 +103,8 @@ fn apply_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
              id TEXT NOT NULL,
              project_id TEXT NOT NULL DEFAULT 'default',
              description TEXT NOT NULL,
+             creator TEXT,
+             origin TEXT,
              PRIMARY KEY (id, project_id)
          );
 
@@ -201,8 +203,8 @@ impl Blackboard for SqlBlackboard {
         let conn = self.conn.lock().unwrap();
         let pid = project_id();
         let _ = conn.execute(
-            "INSERT OR IGNORE INTO facts (id, project_id, description) VALUES (?1, ?2, ?3)",
-            params![fact.id.0, pid, serde_json::to_string(&fact.content).unwrap_or_default()],
+            "INSERT OR IGNORE INTO facts (id, project_id, description, creator, origin) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![fact.id.0, pid, serde_json::to_string(&fact.content).unwrap_or_default(), fact.creator, fact.origin],
         );
         fact.id.clone()
     }
@@ -342,8 +344,8 @@ impl Blackboard for SqlBlackboard {
         };
 
         let _ = conn.execute(
-            "INSERT OR IGNORE INTO facts (id, project_id, description) VALUES (?1, ?2, ?3)",
-            params![new_fact_id, pid, result_str],
+            "INSERT OR IGNORE INTO facts (id, project_id, description, creator, origin) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![new_fact_id, pid, result_str, worker, new_fact.origin],
         );
 
         let _ = conn.execute(
@@ -360,22 +362,41 @@ impl Blackboard for SqlBlackboard {
         let pid = project_id();
 
         let facts: Vec<Fact> = {
-            let mut stmt = conn.prepare("SELECT id, description FROM facts WHERE project_id = ?1 ORDER BY id").unwrap();
+            let mut stmt = conn.prepare("SELECT id, description, creator, origin FROM facts WHERE project_id = ?1 ORDER BY id").unwrap();
             stmt.query_map(params![pid], |row| {
                 let id: String = row.get(0)?;
                 let desc: String = row.get(1)?;
+                let creator: String = row.get(2).unwrap_or_default();
+                let origin: String = row.get(3).unwrap_or_default();
                 Ok(Fact {
                     id: FihHash(id),
-                    origin: String::new(),
+                    origin,
                     content: serde_json::from_str(&desc).unwrap_or(serde_json::Value::String(desc)),
-                    creator: String::new(),
+                    creator,
                 })
             }).unwrap().filter_map(|r| r.ok()).collect()
         };
 
+        // Load all intent_source mappings for the project in one pass
+        let source_map: std::collections::HashMap<String, Vec<String>> = {
+            let mut stmt = conn.prepare(
+                "SELECT intent_id, fact_id FROM intent_sources WHERE project_id = ?1 ORDER BY rowid"
+            ).unwrap();
+            let mut map: std::collections::HashMap<String, Vec<String>> =
+                std::collections::HashMap::new();
+            for row in stmt.query_map(params![pid], |row| {
+                let iid: String = row.get(0)?;
+                let fid: String = row.get(1)?;
+                Ok((iid, fid))
+            }).unwrap().filter_map(|r| r.ok()) {
+                map.entry(row.0).or_default().push(row.1);
+            }
+            map
+        };
+
         let intents: Vec<Intent> = {
             let mut stmt = conn.prepare(
-                "SELECT i.id, i.description, i.creator, i.worker, i.created_at, i.concluded_at
+                "SELECT i.id, i.description, i.creator, i.worker, i.concluded_at
                  FROM intents i WHERE i.project_id = ?1 ORDER BY i.created_at"
             ).unwrap();
             stmt.query_map(params![pid], |row| {
@@ -383,12 +404,12 @@ impl Blackboard for SqlBlackboard {
                 let desc: String = row.get(1)?;
                 let creator: String = row.get(2)?;
                 let worker: Option<String> = row.get(3)?;
-                let concluded_at: Option<String> = row.get(5)?;
+                let concluded_at: Option<String> = row.get(4)?;
                 Ok((id, desc, creator, worker, concluded_at))
             }).unwrap().filter_map(|r| r.ok()).map(|(id, desc, creator, worker, concluded)| {
                 Intent {
-                    id: FihHash(id),
-                    from_facts: Vec::new(),
+                    id: FihHash(id.clone()),
+                    from_facts: source_map.get(&id).cloned().unwrap_or_default(),
                     description: desc,
                     creator,
                     worker,
@@ -541,6 +562,209 @@ mod tests {
         let state = bb.read_state();
         assert_eq!(state.hints.len(), 1);
         assert_eq!(state.hints[0].content, "check the web service first");
+    }
+
+    // ── from_facts populated via intent_sources join ──────────────────────
+    #[test]
+    fn test_intent_sources_join_on_read() {
+        let mut bb = SqlBlackboard::memory().unwrap();
+        bb.submit_fact(&make_fact("f001", "observation"));
+        bb.submit_fact(&make_fact("f002", "inference"));
+        bb.submit_fact(&make_fact("f003", "conclusion"));
+
+        // Hyperedge: one intent grounded in multiple facts
+        let intent = Intent {
+            id: FihHash("i_hyper_001".into()),
+            from_facts: vec!["f001".into(), "f002".into(), "f003".into()],
+            description: "multi-source analysis".into(),
+            creator: "researcher".into(),
+            worker: Some("researcher".into()),
+            concluded_at: None,
+        };
+        bb.submit_intent(&intent).unwrap();
+
+        let state = bb.read_state();
+        let i = state.intents.iter().find(|i| i.id.0 == "i_hyper_001").unwrap();
+        assert_eq!(i.from_facts.len(), 3, "all 3 source facts restored");
+        assert!(i.from_facts.contains(&"f001".to_string()));
+        assert!(i.from_facts.contains(&"f002".to_string()));
+        assert!(i.from_facts.contains(&"f003".to_string()));
+    }
+
+    // ── Playbook scenario: full SRE agent lifecycle ────────────────────────
+    #[test]
+    fn test_playbook_sre_lifecycle() {
+        let mut bb = SqlBlackboard::memory().unwrap();
+
+        // CI bot submits deploy fact with structured JSON
+        bb.submit_fact(&Fact {
+            id: FihHash("f_deploy_001".into()),
+            origin: "ci-bot".into(),
+            content: serde_json::json!({
+                "event": "deploy_complete",
+                "service": "api-gateway",
+                "version": "v2.4.1",
+                "duration_ms": 3420,
+                "status": "success"
+            }),
+            creator: "ci-bot".into(),
+        });
+
+        // SRE agent creates intent
+        bb.submit_intent(&Intent {
+            id: FihHash("i_sre_001".into()),
+            from_facts: vec!["f_deploy_001".into()],
+            description: "Investigate deploy duration regression (3.4s vs 1.2s baseline)".into(),
+            creator: "sre-agent".into(),
+            worker: None,
+            concluded_at: None,
+        }).unwrap();
+
+        bb.heartbeat("i_sre_001", "sre-agent").unwrap();
+
+        let finding = serde_json::json!({
+            "finding": "healthcheck timeout regression",
+            "fix": "Reduce timeout to 5s",
+            "effort_hours": 0.5
+        });
+        let concluded = bb.conclude_intent("i_sre_001", &finding).unwrap();
+        assert_eq!(concluded.content["finding"], "healthcheck timeout regression");
+
+        let state = bb.read_state();
+        assert!(state.facts.iter().any(|f| f.creator == "sre-agent"));
+    }
+
+    // ── Multi-blackboard: isolated research contexts ───────────────────────
+    #[test]
+    fn test_multi_blackboard_isolation() {
+        let mut bb_sensor = SqlBlackboard::memory().unwrap();
+        let mut bb_knowledge = SqlBlackboard::memory().unwrap();
+
+        bb_sensor.submit_fact(&make_fact("f_s1", "sensor reading"));
+        bb_knowledge.submit_fact(&make_fact("f_k1", "knowledge graph node"));
+
+        bb_sensor.submit_intent(&make_intent("i_s1", vec!["f_s1"], "analyze sensor")).unwrap();
+        bb_knowledge.submit_intent(&make_intent("i_k1", vec!["f_k1"], "query knowledge")).unwrap();
+
+        assert_eq!(bb_sensor.read_state().facts.len(), 1, "sensor bb has 1 fact");
+        assert_eq!(bb_knowledge.read_state().facts.len(), 1, "knowledge bb has 1 fact");
+        assert_eq!(bb_sensor.read_state().facts[0].id.0, "f_s1");
+        assert_eq!(bb_knowledge.read_state().facts[0].id.0, "f_k1");
+    }
+
+    // ── Multi-agent handoff: two agents, one intent ────────────────────────
+    #[test]
+    fn test_multi_agent_handoff() {
+        let mut bb = SqlBlackboard::memory().unwrap();
+        bb.submit_fact(&make_fact("f001", "discovery"));
+        bb.submit_intent(&make_intent("i001", vec!["f001"], "explore anomaly")).unwrap();
+
+        // Agent A claims, works, then releases
+        bb.heartbeat("i001", "agent-a").unwrap();
+        bb.release_intent("i001", "agent-a").unwrap();
+
+        // Agent B sees unclaimed intent, claims and concludes
+        bb.heartbeat("i001", "agent-b").unwrap();
+        bb.conclude_intent("i001", &"resolved by agent-b".into()).unwrap();
+
+        let state = bb.read_state();
+        let i = state.intents.iter().find(|i| i.id.0 == "i001").unwrap();
+        assert!(i.concluded_at.is_some(), "intent concluded after handoff");
+    }
+
+    // ── Protocol enforcement: error cases ──────────────────────────────────
+    #[test]
+    fn test_protocol_enforcement() {
+        let mut bb = SqlBlackboard::memory().unwrap();
+        bb.submit_fact(&make_fact("f001", "data"));
+        bb.submit_intent(&make_intent("i001", vec!["f001"], "critical task")).unwrap();
+        bb.heartbeat("i001", "agent-a").unwrap();
+
+        // Wrong agent cannot release
+        let err = bb.release_intent("i001", "intruder").unwrap_err();
+        assert!(matches!(err, BlackboardError::Forbidden(_)), "wrong agent rejected");
+
+        // Correct agent releases, then wrong agent cannot conclude
+        bb.release_intent("i001", "agent-a").unwrap();
+        bb.heartbeat("i001", "agent-b").unwrap();
+        let concluded = bb.conclude_intent("i001", &"done".into()).unwrap();
+
+        // Cannot double-conclude
+        let err2 = bb.conclude_intent("i001", &"again".into()).unwrap_err();
+        assert!(matches!(err2, BlackboardError::NotFound(_)), "double conclude rejected");
+
+        // Cannot claim nonexistent intent
+        let err3 = bb.claim_intent("i_nonexistent", "agent-c").unwrap_err();
+        assert!(matches!(err3, BlackboardError::NotFound(_)));
+    }
+
+    // ── Full persist: all tables survive session restart ───────────────────
+    #[test]
+    fn test_full_persistence_across_sessions() {
+        let path = "test_full_persist.db";
+        let _ = std::fs::remove_file(path);
+
+        {
+            let mut bb = SqlBlackboard::open(path).unwrap();
+            bb.submit_fact(&make_fact("f001", "alpha"));
+            bb.submit_fact(&make_fact("f002", "beta"));
+            bb.submit_intent(&make_intent("i001", vec!["f001"], "first")).unwrap();
+            bb.submit_intent(&make_intent("i002", vec!["f002"], "second")).unwrap();
+            bb.heartbeat("i001", "worker-x").unwrap();
+            bb.conclude_intent("i001", &"result-a".into()).unwrap();
+            bb.submit_hint(&Hint {
+                id: FihHash("h001".into()),
+                content: "strategic hint".into(),
+                creator: "planner".into(),
+            });
+        }
+
+        {
+            let bb = SqlBlackboard::open(path).unwrap();
+            let state = bb.read_state();
+            assert_eq!(state.facts.len(), 3, "2 submitted + 1 concluded");
+            assert_eq!(state.intents.len(), 2, "both intents restored");
+            assert_eq!(state.hints.len(), 1, "hint restored");
+
+            let i1 = state.intents.iter().find(|i| i.id.0 == "i001").unwrap();
+            assert!(i1.concluded_at.is_some(), "concluded intent marked");
+
+            let i2 = state.intents.iter().find(|i| i.id.0 == "i002").unwrap();
+            assert!(i2.concluded_at.is_none(), "open intent stays open");
+            assert_eq!(i2.from_facts.len(), 1, "intent_sources preserved");
+        }
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    // ── Structured JSON content round-trip ────────────────────────────────
+    #[test]
+    fn test_structured_json_content() {
+        let mut bb = SqlBlackboard::memory().unwrap();
+        let complex_content = serde_json::json!({
+            "nested": {
+                "array": [1, 2, 3],
+                "object": {"key": "value"},
+                "null": null,
+                "bool": true,
+                "number": 42.5
+            }
+        });
+
+        bb.submit_fact(&Fact {
+            id: FihHash("f_complex".into()),
+            origin: "json-test".into(),
+            content: complex_content.clone(),
+            creator: "tester".into(),
+        });
+
+        let state = bb.read_state();
+        let fact = state.facts.iter().find(|f| f.id.0 == "f_complex").unwrap();
+        assert_eq!(fact.content["nested"]["array"], serde_json::json!([1, 2, 3]));
+        assert_eq!(fact.content["nested"]["object"]["key"], "value");
+        assert!(fact.content["nested"]["null"].is_null());
+        assert_eq!(fact.content["nested"]["bool"], true);
+        assert_eq!(fact.content["nested"]["number"], 42.5);
     }
 
     #[test]
