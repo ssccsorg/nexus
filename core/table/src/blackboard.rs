@@ -115,6 +115,10 @@ impl SqlBlackboard {
 }
 
 impl Blackboard for SqlBlackboard {
+    fn project_id(&self) -> &str {
+        &self.project_id
+    }
+
     fn submit_fact(&mut self, fact: &Fact) -> FihHash {
         let conn = self.conn.lock().unwrap();
         let pid = &self.project_id;

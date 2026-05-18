@@ -100,6 +100,12 @@ pub struct BoardState {
 // ── Blackboard trait — FIH lifecycle (public, stable) ─────────────────────
 
 pub trait Blackboard {
+    /// Returns the project scope this blackboard is operating on.
+    /// Implementations that don't support multi-project return "default".
+    fn project_id(&self) -> &str {
+        "default"
+    }
+
     fn submit_fact(&mut self, fact: &Fact) -> FihHash;
     fn submit_hint(&mut self, hint: &Hint);
     fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError>;
@@ -116,6 +122,9 @@ pub trait Blackboard {
 
 // Blanket impl: &mut T delegates to T for any Blackboard implementor.
 impl<T: Blackboard> Blackboard for &mut T {
+    fn project_id(&self) -> &str {
+        (**self).project_id()
+    }
     fn submit_fact(&mut self, fact: &Fact) -> FihHash {
         (**self).submit_fact(fact)
     }
