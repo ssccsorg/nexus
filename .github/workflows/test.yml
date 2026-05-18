@@ -25,7 +25,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Layer 1: Core library (nexus-api + nexus-graph + nexus-sql)
+  # Layer 1: Core library (nexus-api + nexus-graph + nexus-table)
   # Entry point: scripts/run-core.sh
   core:
     runs-on: ubuntu-latest

@@ -919,7 +919,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "nexus-graph",
- "nexus-sql",
+ "nexus-table",
  "reqwest",
  "serde",
  "serde_json",
@@ -953,7 +953,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "nexus-sql"
+name = "nexus-table"
 version = "0.1.0"
 dependencies = [
  "nexus-graph",
