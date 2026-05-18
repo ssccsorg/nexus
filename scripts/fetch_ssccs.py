@@ -47,6 +47,35 @@ class StripFrontmatter(Transform):
         return stripped.encode("utf-8")
 
 
+class StripIntroContent(Transform):
+    """Remove content between the first h1 and the first h2.
+
+    Keeps both heading markers but discards any introductory paragraphs
+    or prose that sit between the top-level title and the first section
+    heading.  If either heading is missing the transform is a no-op.
+    """
+    name = "strip-intro-content"
+
+    def apply(self, data: bytes, ctx: dict) -> bytes:
+        text = data.decode("utf-8")
+        # Locate the first h1.
+        m_h1 = re.search(r'^#\s+.*', text, re.MULTILINE)
+        if not m_h1:
+            return data
+        h1_end = m_h1.end()
+        # Locate the first h2 after the h1.
+        m_h2 = re.search(r'^##\s', text[h1_end:], re.MULTILINE)
+        if not m_h2:
+            return data
+        h2_start = h1_end + m_h2.start()
+        # Assemble: h1 line + newline + h2 and everything after.
+        result = text[:h1_end] + '\n' + text[h2_start:]
+        size = len(text) - len(result)
+        if size:
+            print(f"  [{self.name}] stripped {size} byte(s) of intro content")
+        return result.encode("utf-8")
+
+
 class PrependHeader(Transform):
     """Prepend a comment marker."""
     name = "prepend-header"
@@ -116,6 +145,7 @@ ROUTES: dict[str, Route] = {
         input_rel="docs/_llms/projects/nexus/index.llms.md",
         transforms=[
             StripFrontmatter(),
+            StripIntroContent(),
             PrependHeader("<!-- synced from SSCCS docs -- do not edit directly -->"),
             ImagePathRewrite(),
         ],
