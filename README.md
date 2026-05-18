@@ -1,37 +1,6 @@
 <!-- synced from SSCCS docs -- do not edit directly -->
 
 # neXus
-
-Boundaryless autonomous research infrastructure for SSCCS
-
-Author
-
-Affiliation
-
-SSCCS Foundation [](mailto:contact@ssccs.org)
-
-[SSCCS Foundation](https://ssccs.org)
-
-Published
-
-May 18, 2026
-
-Abstract
-
-Modern fundamental computing research including SSCCS redefining the von Neumann paradigm through structural observation, cannot remain confined to textual and code artifacts. The infrastructure that supports such research must evolve from a document‑code knowledge graph into a cross‑reality research manifold: a unified representation where whitepaper insights, compiler traces, physics simulations, robotic validations, sensor streams, and hardware‑in‑the‑loop measurements all coexist in a single, queryable, verifiable structure.
-
-Reference
-
-[Development Roadmap](impl_init.llms.md)
-
-Repository
-
-[Github](https://github.com/ssccsorg/ssccs-nexus)
-
-Other Formats
-
-[LLMs](https://docs.ssccs.org/projects/nexus/index.llms.md)
-
 ## Executive Summary
 
 neXus is a self‑evolving, modular and contract‑governed agentic research infrastructure that actively generates, validates, and learns from hypotheses or facts that span the SSCCS’s software‑hardware boundary. All coordinate indirectly through a shared graph of some simple recursive primitives.
