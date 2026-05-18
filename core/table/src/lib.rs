@@ -767,6 +767,282 @@ mod tests {
         assert_eq!(fact.content["nested"]["number"], 42.5);
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    //  Autonomous Research Scenarios
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_research_cross_document_entity_linking() {
+        let mut bb = SqlBlackboard::memory().unwrap();
+
+        // Document A: whitepaper mentions "homeomorphic verification"
+        bb.submit_fact(&Fact {
+            id: FihHash("f_doc_a_001".into()),
+            origin: "whitepaper.llms.md".into(),
+            content: serde_json::json!({
+                "concept": "homeomorphic verification",
+                "context": "A continuous bijection preserving topological structure",
+                "source": "whitepaper §3.4",
+                "tags": ["ulhm", "homeomorphism", "verification"]
+            }),
+            creator: "doc-ingest-agent".into(),
+        });
+
+        // Document B: nexus README mentions "boundaryless extension"
+        bb.submit_fact(&Fact {
+            id: FihHash("f_doc_b_001".into()),
+            origin: "nexus-readme.llms.md".into(),
+            content: serde_json::json!({
+                "concept": "boundaryless extension",
+                "context": "Extension from document-code to physical-digital",
+                "source": "README.md §Strategic Alignment",
+                "tags": ["boundaryless", "extension", "physical-digital"]
+            }),
+            creator: "doc-ingest-agent".into(),
+        });
+
+        bb.submit_intent(&Intent {
+            id: FihHash("i_research_001".into()),
+            from_facts: vec!["f_doc_a_001".into(), "f_doc_b_001".into()],
+            description: "Determine if 'homeomorphic verification' and 'boundaryless extension' describe the same mechanism".into(),
+            creator: "cross-ref-agent".into(),
+            worker: None,
+            concluded_at: None,
+        }).unwrap();
+
+        bb.heartbeat("i_research_001", "review-agent").unwrap();
+        let conclusion = bb.conclude_intent("i_research_001", &serde_json::json!({
+            "finding": "homeomorphic verification IS the mathematical foundation of boundaryless extension",
+            "confidence": 0.92,
+            "evidence": [
+                "Both reference ULHM framework",
+                "Same three loss terms (continuity, trust, Wasserstein)",
+                "whitepaper §3.4 explicitly adopted into neXus architecture"
+            ]
+        })).unwrap();
+
+        let state = bb.read_state();
+        let bridge_intent = state.intents.iter().find(|i| i.id.0 == "i_research_001").unwrap();
+        assert!(bridge_intent.concluded_at.is_some());
+        assert!(bridge_intent.from_facts.contains(&"f_doc_a_001".to_string()));
+        assert!(bridge_intent.from_facts.contains(&"f_doc_b_001".to_string()));
+
+        let bridge_fact = state.facts.iter().find(|f| f.creator == "review-agent").unwrap();
+        assert_eq!(bridge_fact.content["confidence"], 0.92);
+        assert_eq!(bridge_fact.content["evidence"].as_array().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn test_research_contradiction_detection() {
+        let mut bb = SqlBlackboard::memory().unwrap();
+
+        bb.submit_fact(&Fact {
+            id: FihHash("f_claim_a".into()),
+            origin: "whitepaper.llms.md".into(),
+            content: serde_json::json!({
+                "claim": "Observation-centric hardware eliminates von Neumann bottleneck",
+                "confidence": "high",
+                "section": "§2.1"
+            }),
+            creator: "doc-ingest".into(),
+        });
+
+        bb.submit_fact(&Fact {
+            id: FihHash("f_claim_b".into()),
+            origin: "riscv-space.llms.md".into(),
+            content: serde_json::json!({
+                "claim": "Memory wall persists in current Observation-centric prototypes",
+                "confidence": "empirical",
+                "section": "§4.2"
+            }),
+            creator: "doc-ingest".into(),
+        });
+
+        bb.submit_intent(&Intent {
+            id: FihHash("i_contradiction_001".into()),
+            from_facts: vec!["f_claim_a".into(), "f_claim_b".into()],
+            description: "CONTRADICTION: Whitepaper claims von Neumann bottleneck eliminated, but RISC-V survey shows persistence".into(),
+            creator: "gap-detector".into(),
+            worker: Some("gap-detector".into()),
+            concluded_at: None,
+        }).unwrap();
+
+        let state = bb.read_state();
+        let gap = state.intents.iter().find(|i| i.id.0 == "i_contradiction_001").unwrap();
+        assert!(gap.concluded_at.is_none(), "contradiction remains open");
+        assert!(gap.worker.is_some(), "claimed by gap-detector");
+        assert!(gap.from_facts.iter().any(|f| f == "f_claim_a"));
+        assert!(gap.from_facts.iter().any(|f| f == "f_claim_b"));
+        assert_eq!(state.facts.len(), 2, "no conclusion fact yet");
+    }
+
+    #[test]
+    fn test_research_concept_drift_across_sources() {
+        let mut bb = SqlBlackboard::memory().unwrap();
+
+        bb.submit_fact(&Fact {
+            id: FihHash("f_v1_evolving_memory".into()),
+            origin: "impl_init.llms.md".into(),
+            content: serde_json::json!({
+                "concept": "Evolving Memory",
+                "type": "append-only JSONL trajectories",
+                "scope": "Planner-Executor-Verifier only"
+            }),
+            creator: "doc-ingest".into(),
+        });
+
+        bb.submit_fact(&Fact {
+            id: FihHash("f_v2_ekg".into()),
+            origin: "nexus-readme.llms.md".into(),
+            content: serde_json::json!({
+                "concept": "Episodic Knowledge Graph (eKG)",
+                "type": "temporal symbolic memory",
+                "scope": "multimodal, cross-reality, multi-agent"
+            }),
+            creator: "doc-ingest".into(),
+        });
+
+        bb.submit_intent(&Intent {
+            id: FihHash("i_drift_001".into()),
+            from_facts: vec!["f_v1_evolving_memory".into(), "f_v2_ekg".into()],
+            description: "Track: Evolving Memory → eKG — concept evolution".into(),
+            creator: "concept-tracker".into(),
+            worker: Some("concept-tracker".into()),
+            concluded_at: None,
+        }).unwrap();
+
+        bb.submit_hint(&Hint {
+            id: FihHash("h_drift_001".into()),
+            content: "eKG is the successor of Evolving Memory — check if backward compat is maintained".into(),
+            creator: "human-reviewer".into(),
+        });
+
+        let state = bb.read_state();
+        assert_eq!(state.facts.len(), 2);
+        assert_eq!(state.hints.len(), 1);
+        assert_eq!(state.intents.len(), 1);
+        assert_eq!(state.hints[0].content, "eKG is the successor of Evolving Memory — check if backward compat is maintained");
+    }
+
+    #[test]
+    fn test_research_gap_unexplored_territory() {
+        let mut bb = SqlBlackboard::memory().unwrap();
+
+        bb.submit_fact(&Fact {
+            id: FihHash("f_gap_a".into()),
+            origin: "whitepaper.llms.md".into(),
+            content: serde_json::json!({
+                "topics": ["homeomorphic", "latent manifold", "verification"]
+            }),
+            creator: "topic-extractor".into(),
+        });
+
+        bb.submit_fact(&Fact {
+            id: FihHash("f_gap_b".into()),
+            origin: "riscv-space.llms.md".into(),
+            content: serde_json::json!({
+                "topics": ["experimental validation", "RISC-V", "emulation"]
+            }),
+            creator: "topic-extractor".into(),
+        });
+
+        bb.submit_fact(&Fact {
+            id: FihHash("f_gap_c".into()),
+            origin: "nexus-index.llms.md".into(),
+            content: serde_json::json!({
+                "topics": ["latent space", "cross-domain", "representation"]
+            }),
+            creator: "topic-extractor".into(),
+        });
+
+        bb.submit_intent(&Intent {
+            id: FihHash("i_gap_001".into()),
+            from_facts: vec!["f_gap_a".into(), "f_gap_b".into(), "f_gap_c".into()],
+            description: "GAP: homeomorphic verification never applied to experimental validation — potential research direction".into(),
+            creator: "gap-detector".into(),
+            worker: None,
+            concluded_at: None,
+        }).unwrap();
+
+        let state = bb.read_state();
+        let gap = state.intents.iter().find(|i| i.id.0 == "i_gap_001").unwrap();
+        assert_eq!(gap.from_facts.len(), 3, "all three source facts linked");
+        assert!(gap.concluded_at.is_none(), "gap remains open for researcher");
+    }
+
+    #[test]
+    fn test_research_memory_across_sessions() {
+        let path = "test_research_memory.db";
+        let _ = std::fs::remove_file(path);
+
+        // Session 1: ingest phase — docs arrive from R2 sync
+        {
+            let mut bb = SqlBlackboard::open(path).unwrap();
+            let docs = vec![
+                ("whitepaper.llms.md", "whitepaper", "Observation-centric hardware"),
+                ("riscv.llms.md", "research-riscv", "RISC-V emulation pipeline"),
+                ("nexus-index.llms.md", "projects/nexus", "neXus architecture"),
+                ("manifesto.llms.md", "manifesto", "Field transition manifesto"),
+            ];
+            for (i, (origin, source, desc)) in docs.iter().enumerate() {
+                bb.submit_fact(&Fact {
+                    id: FihHash(format!("f_doc_{:03}", i)),
+                    origin: origin.to_string(),
+                    content: serde_json::json!({
+                        "source": source,
+                        "description": desc,
+                        "synced_at": "2026-05-18"
+                    }),
+                    creator: "sync-agent".into(),
+                });
+            }
+            assert_eq!(bb.read_state().facts.len(), 4);
+        }
+
+        // Session 2: research phase — agents link and resolve
+        {
+            let mut bb = SqlBlackboard::open(path).unwrap();
+            bb.submit_intent(&Intent {
+                id: FihHash("i_link_001".into()),
+                from_facts: vec!["f_doc_000".into(), "f_doc_001".into()],
+                description: "Link: whitepaper hardware model validated via RISC-V emulation".into(),
+                creator: "linker-agent".into(),
+                worker: Some("linker-agent".into()),
+                concluded_at: None,
+            }).unwrap();
+            bb.submit_intent(&Intent {
+                id: FihHash("i_link_002".into()),
+                from_facts: vec!["f_doc_002".into(), "f_doc_003".into()],
+                description: "Link: neXus implements Field transition vision".into(),
+                creator: "linker-agent".into(),
+                worker: None,
+                concluded_at: None,
+            }).unwrap();
+            assert_eq!(bb.read_state().facts.len(), 4, "facts preserved");
+            assert_eq!(bb.read_state().intents.len(), 2, "intents added");
+        }
+
+        // Session 3: conclusion phase — one intent resolved
+        {
+            let mut bb = SqlBlackboard::open(path).unwrap();
+            bb.heartbeat("i_link_001", "reviewer").unwrap();
+            let c = bb.conclude_intent("i_link_001", &serde_json::json!({
+                "finding": "Confirmed: whitepaper's Observation-centric model directly maps to RISC-V emulation pipeline",
+                "evidence": ["Both use Field primitives", "RISC-V emulation validates hardware claims"]
+            })).unwrap();
+            assert_eq!(c.content["evidence"].as_array().unwrap().len(), 2);
+
+            let state = bb.read_state();
+            assert_eq!(state.facts.len(), 5, "4 original + 1 conclusion fact");
+            let resolved = state.intents.iter().find(|i| i.id.0 == "i_link_001").unwrap();
+            assert!(resolved.concluded_at.is_some(), "intent resolved");
+            let pending = state.intents.iter().find(|i| i.id.0 == "i_link_002").unwrap();
+            assert!(pending.concluded_at.is_none(), "intent still open");
+        }
+
+        let _ = std::fs::remove_file(path);
+    }
+
     #[test]
     fn test_sqlite_storage_backward_compat() {
         let store = SqliteStorage::memory().unwrap();
