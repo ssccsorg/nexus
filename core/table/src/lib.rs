@@ -11,6 +11,19 @@ use rusqlite::{Connection, params};
 use std::path::Path;
 use std::sync::Mutex;
 
+/// Lightweight project metadata matching Cairn's Project schema.
+#[derive(Debug, Clone)]
+pub struct ProjectMeta {
+    pub id: String,
+    pub title: String,
+    pub status: String,
+    pub created_at: String,
+    pub reason_worker: Option<String>,
+    pub reason_trigger: Option<String>,
+    pub reason_started_at: Option<String>,
+    pub reason_last_heartbeat_at: Option<String>,
+}
+
 // ── Legacy event-log storage ─────────────────────────────────────────────
 
 /// SQLite-backed FIH event store (legacy). Thread-safe via Mutex.
@@ -84,23 +97,51 @@ impl Storage for SqliteStorage {
 /// Write-through on every mutation.
 pub struct SqlBlackboard {
     conn: Mutex<Connection>,
+    project_id: String,
 }
 
 impl SqlBlackboard {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, rusqlite::Error> {
+        Self::open_with_project(path, "default")
+    }
+
+    pub fn open_with_project<P: AsRef<Path>>(
+        path: P,
+        project_id: &str,
+    ) -> Result<Self, rusqlite::Error> {
         let conn = Connection::open(path)?;
         apply_schema(&conn)?;
-        Ok(Self {
+        let bb = Self {
             conn: Mutex::new(conn),
-        })
+            project_id: project_id.to_string(),
+        };
+        bb.ensure_project()?;
+        Ok(bb)
     }
 
     pub fn memory() -> Result<Self, rusqlite::Error> {
+        Self::memory_with_project("default")
+    }
+
+    pub fn memory_with_project(project_id: &str) -> Result<Self, rusqlite::Error> {
         let conn = Connection::open_in_memory()?;
         apply_schema(&conn)?;
-        Ok(Self {
+        let bb = Self {
             conn: Mutex::new(conn),
-        })
+            project_id: project_id.to_string(),
+        };
+        bb.ensure_project()?;
+        Ok(bb)
+    }
+
+    fn ensure_project(&self) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        let now = utc_now();
+        conn.execute(
+            "INSERT OR IGNORE INTO projects (id, title, status, created_at) VALUES (?1, ?2, 'active', ?3)",
+            params![self.project_id, self.project_id, now],
+        )?;
+        Ok(())
     }
 }
 
@@ -109,18 +150,30 @@ fn apply_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
         "PRAGMA journal_mode=WAL;
          PRAGMA foreign_keys=ON;
 
+         CREATE TABLE IF NOT EXISTS projects (
+             id TEXT PRIMARY KEY,
+             title TEXT NOT NULL,
+             status TEXT NOT NULL DEFAULT 'active',
+             created_at TEXT NOT NULL,
+             reason_worker TEXT,
+             reason_trigger TEXT,
+             reason_started_at TEXT,
+             reason_last_heartbeat_at TEXT
+         );
+
          CREATE TABLE IF NOT EXISTS facts (
              id TEXT NOT NULL,
-             project_id TEXT NOT NULL DEFAULT 'default',
+             project_id TEXT NOT NULL,
              description TEXT NOT NULL,
              creator TEXT,
              origin TEXT,
-             PRIMARY KEY (id, project_id)
+             PRIMARY KEY (id, project_id),
+             FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
          );
 
          CREATE TABLE IF NOT EXISTS intents (
              id TEXT NOT NULL,
-             project_id TEXT NOT NULL DEFAULT 'default',
+             project_id TEXT NOT NULL,
              to_fact_id TEXT,
              description TEXT NOT NULL,
              creator TEXT NOT NULL,
@@ -128,7 +181,8 @@ fn apply_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
              last_heartbeat_at TEXT,
              created_at TEXT NOT NULL,
              concluded_at TEXT,
-             PRIMARY KEY (id, project_id)
+             PRIMARY KEY (id, project_id),
+             FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
          );
 
          CREATE TABLE IF NOT EXISTS intent_sources (
@@ -141,11 +195,12 @@ fn apply_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
 
          CREATE TABLE IF NOT EXISTS hints (
              id TEXT NOT NULL,
-             project_id TEXT NOT NULL DEFAULT 'default',
+             project_id TEXT NOT NULL,
              content TEXT NOT NULL,
              creator TEXT NOT NULL,
              created_at TEXT NOT NULL,
-             PRIMARY KEY (id, project_id)
+             PRIMARY KEY (id, project_id),
+             FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
          );
 
          CREATE TABLE IF NOT EXISTS schema_version (
@@ -205,15 +260,11 @@ fn utc_now() -> String {
     format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, mo, day, h, m, s)
 }
 
-fn project_id() -> &'static str {
-    "default"
-}
-
 impl SqlBlackboard {
     /// Claim or heartbeat an open intent. Shared by `claim_intent` and `heartbeat`.
     fn set_worker(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let conn = self.conn.lock().unwrap();
-        let pid = project_id();
+        let pid = &self.project_id;
         let now = utc_now();
 
         let updated = conn
@@ -231,12 +282,42 @@ impl SqlBlackboard {
         }
         Ok(())
     }
+
+    pub fn set_project_status(&self, status: &str) -> Result<(), rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE projects SET status = ?1 WHERE id = ?2",
+            params![status, self.project_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_project(&self) -> Result<ProjectMeta, rusqlite::Error> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT id, title, status, created_at, reason_worker, reason_trigger, reason_started_at, reason_last_heartbeat_at
+             FROM projects WHERE id = ?1",
+            params![self.project_id],
+            |row| {
+                Ok(ProjectMeta {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    status: row.get(2)?,
+                    created_at: row.get(3)?,
+                    reason_worker: row.get(4)?,
+                    reason_trigger: row.get(5)?,
+                    reason_started_at: row.get(6)?,
+                    reason_last_heartbeat_at: row.get(7)?,
+                })
+            },
+        )
+    }
 }
 
 impl Blackboard for SqlBlackboard {
     fn submit_fact(&mut self, fact: &Fact) -> FihHash {
         let conn = self.conn.lock().unwrap();
-        let pid = project_id();
+        let pid = &self.project_id;
         let _ = conn.execute(
             "INSERT OR IGNORE INTO facts (id, project_id, description, creator, origin) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![fact.id.0, pid, serde_json::to_string(&fact.content).unwrap_or_default(), fact.creator, fact.origin],
@@ -246,7 +327,7 @@ impl Blackboard for SqlBlackboard {
 
     fn submit_hint(&mut self, hint: &Hint) {
         let conn = self.conn.lock().unwrap();
-        let pid = project_id();
+        let pid = &self.project_id;
         let now = utc_now();
         let _ = conn.execute(
             "INSERT OR IGNORE INTO hints (id, project_id, content, creator, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -256,7 +337,7 @@ impl Blackboard for SqlBlackboard {
 
     fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError> {
         let conn = self.conn.lock().unwrap();
-        let pid = project_id();
+        let pid = &self.project_id;
 
         // Validate source facts exist
         for fid in &intent.from_facts {
@@ -302,7 +383,7 @@ impl Blackboard for SqlBlackboard {
 
     fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let conn = self.conn.lock().unwrap();
-        let pid = project_id();
+        let pid = &self.project_id;
 
         let row: Option<(Option<String>,)> = conn
             .query_row(
@@ -337,7 +418,7 @@ impl Blackboard for SqlBlackboard {
         result: &serde_json::Value,
     ) -> Result<Fact, BlackboardError> {
         let mut conn = self.conn.lock().unwrap();
-        let pid = project_id();
+        let pid = &self.project_id;
 
         let worker: String = conn
             .query_row(
@@ -386,7 +467,7 @@ impl Blackboard for SqlBlackboard {
 
     fn read_state(&self) -> BoardState {
         let conn = self.conn.lock().unwrap();
-        let pid = project_id();
+        let pid = &self.project_id;
 
         let facts: Vec<Fact> = {
             let mut stmt = conn.prepare("SELECT id, description, creator, origin FROM facts WHERE project_id = ?1 ORDER BY id").unwrap();
@@ -1251,5 +1332,62 @@ mod tests {
         let events = store.load_events();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].event_type, "test_event");
+    }
+
+    #[test]
+    fn test_multi_project_isolation() {
+        let mut bb_a = SqlBlackboard::memory_with_project("proj_a").unwrap();
+        let mut bb_b = SqlBlackboard::memory_with_project("proj_b").unwrap();
+
+        // Each project has its own facts
+        bb_a.submit_fact(&make_fact("f001", "project A data"));
+        bb_b.submit_fact(&make_fact("f001", "project B data"));
+
+        let state_a = bb_a.read_state();
+        let state_b = bb_b.read_state();
+        assert_eq!(state_a.facts.len(), 1);
+        assert_eq!(state_b.facts.len(), 1);
+        assert_eq!(state_a.facts[0].content, "project A data");
+        assert_eq!(state_b.facts[0].content, "project B data");
+
+        // Intent in project A is invisible to project B
+        bb_a.submit_intent(&make_intent("i001", vec!["f001"], "A's intent"))
+            .unwrap();
+        assert_eq!(bb_a.read_state().intents.len(), 1);
+        assert_eq!(bb_b.read_state().intents.len(), 0);
+
+        // Hint isolation
+        bb_b.submit_hint(&Hint {
+            id: FihHash("h001".into()),
+            content: "B's hint".into(),
+            creator: "agent".into(),
+        });
+        assert_eq!(bb_a.read_state().hints.len(), 0);
+        assert_eq!(bb_b.read_state().hints.len(), 1);
+    }
+
+    #[test]
+    fn test_project_lifecycle() {
+        let bb = SqlBlackboard::memory_with_project("lifecycle_test").unwrap();
+
+        let proj = bb.get_project().unwrap();
+        assert_eq!(proj.status, "active");
+
+        bb.set_project_status("stopped").unwrap();
+        let proj = bb.get_project().unwrap();
+        assert_eq!(proj.status, "stopped");
+
+        bb.set_project_status("completed").unwrap();
+        let proj = bb.get_project().unwrap();
+        assert_eq!(proj.status, "completed");
+    }
+
+    #[test]
+    fn test_project_with_custom_title() {
+        let bb = SqlBlackboard::memory_with_project("research_001").unwrap();
+        let proj = bb.get_project().unwrap();
+        assert_eq!(proj.id, "research_001");
+        assert_eq!(proj.status, "active");
+        assert!(proj.created_at.len() > 10, "created_at timestamp present");
     }
 }
