@@ -20,9 +20,13 @@ Abstract
 
 Modern fundamental computing research including SSCCS redefining the von Neumann paradigm through structural observation, cannot remain confined to textual and code artifacts. The infrastructure that supports such research must evolve from a document‑code knowledge graph into a cross‑reality research manifold: a unified representation where whitepaper insights, compiler traces, physics simulations, robotic validations, sensor streams, and hardware‑in‑the‑loop measurements all coexist in a single, queryable, verifiable structure.
 
-Development Roadmap
+Reference
 
-[Link](impl_init.llms.md)
+[Development Roadmap](impl_init.llms.md)
+
+Repository
+
+[Github](https://github.com/ssccsorg/ssccs-nexus)
 
 Other Formats
 
