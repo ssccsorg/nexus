@@ -1,4 +1,4 @@
-// nexus-sql — SqlBlackboard: SQLite-backed FIH storage implementation.
+// nexus-table — SqlBlackboard: SQLite-backed FIH storage implementation.
 //
 // Implements the Storage trait from nexus-graph for persistent FIH event logs.
 
