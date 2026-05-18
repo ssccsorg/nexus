@@ -48,6 +48,9 @@ fn scenario_contradiction_detection_via_gateway() {
         description: "Test whether normalization technique determines oversmoothing depth".into(),
         creator: "agent-c".into(),
         worker: None,
+        to_fact_id: None,
+        last_heartbeat_at: None,
+        created_at: None,
         concluded_at: None,
     })
     .unwrap();

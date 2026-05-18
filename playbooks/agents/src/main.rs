@@ -54,6 +54,9 @@ fn main() {
             description: "Test shallow (3-layer) vs deep GNN on molecular benchmark".into(),
             creator: "agent-c".into(),
             worker: None,
+            to_fact_id: None,
+            last_heartbeat_at: None,
+            created_at: None,
             concluded_at: None,
         })
         .expect("intent grounded");

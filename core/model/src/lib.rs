@@ -74,9 +74,12 @@ pub struct Fact {
 pub struct Intent {
     pub id: FihHash,
     pub from_facts: Vec<String>,
+    pub to_fact_id: Option<String>,
     pub description: String,
     pub creator: String,
     pub worker: Option<String>,
+    pub last_heartbeat_at: Option<String>,
+    pub created_at: Option<String>,
     pub concluded_at: Option<String>,
 }
 

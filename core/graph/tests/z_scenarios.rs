@@ -39,6 +39,9 @@ fn scenario_contradiction_detection() {
         description: "Test whether normalization technique determines oversmoothing depth".into(),
         creator: "agent-c".into(),
         worker: None,
+        to_fact_id: None,
+        last_heartbeat_at: None,
+        created_at: None,
         concluded_at: None,
     })
     .unwrap();
@@ -82,6 +85,9 @@ fn scenario_peer_review() {
         description: "Quantum error correction with surface codes achieves fault tolerance at 0.1% error rate".into(),
         creator: "agent-a".into(),
         worker: None,
+        to_fact_id: None,
+        last_heartbeat_at: None,
+        created_at: None,
         concluded_at: None,
     };
     // Need a grounding fact first
@@ -213,6 +219,9 @@ fn scenario_knowledge_synthesis() {
                 .into(),
         creator: "agent-epsilon".into(),
         worker: None,
+        to_fact_id: None,
+        last_heartbeat_at: None,
+        created_at: None,
         concluded_at: None,
     })
     .unwrap();
@@ -281,6 +290,9 @@ fn scenario_emergency_response() {
             .into(),
         creator: "coordinator".into(),
         worker: None,
+        to_fact_id: None,
+        last_heartbeat_at: None,
+        created_at: None,
         concluded_at: None,
     })
     .unwrap();
@@ -362,6 +374,9 @@ fn scenario_bug_fix_pipeline() {
             .into(),
         creator: "triager".into(),
         worker: None,
+        to_fact_id: None,
+        last_heartbeat_at: None,
+        created_at: None,
         concluded_at: None,
     })
     .unwrap();
@@ -381,6 +396,9 @@ fn scenario_bug_fix_pipeline() {
             .into(),
         creator: "dev-alice".into(),
         worker: None,
+        to_fact_id: None,
+        last_heartbeat_at: None,
+        created_at: None,
         concluded_at: None,
     })
     .unwrap();
@@ -398,6 +416,9 @@ fn scenario_bug_fix_pipeline() {
         description: "REVIEW: Verify fix covers edge cases — negative amounts, fractional cents, max uint64 boundary".into(),
         creator: "reviewer-bob".into(),
         worker: None,
+        to_fact_id: None,
+        last_heartbeat_at: None,
+        created_at: None,
         concluded_at: None,
     }).unwrap();
     bb.claim_intent("i_review_1337", "reviewer-bob").unwrap();
@@ -479,6 +500,9 @@ fn scenario_ci_failure_investigation() {
         description: "ROOT CAUSE: proto-rs v2.4.0 automated PacketHeader generator produces different alignment than manual #[repr(C)] struct. 3 independent signals converge.".into(),
         creator: "agent-d".into(),
         worker: None,
+        to_fact_id: None,
+        last_heartbeat_at: None,
+        created_at: None,
         concluded_at: None,
     }).unwrap();
     bb.claim_intent("i_root_cause", "agent-d").unwrap();
@@ -527,6 +551,9 @@ fn scenario_supply_chain_incident() {
         description: "ASSESS: Inventory all services using openssl-sys < 0.9.101".into(),
         creator: "sec-lead".into(),
         worker: None,
+        to_fact_id: None,
+        last_heartbeat_at: None,
+        created_at: None,
         concluded_at: None,
     })
     .unwrap();
@@ -549,6 +576,9 @@ fn scenario_supply_chain_incident() {
         description: "MITIGATE: Update openssl-sys to 0.9.101 across all services".into(),
         creator: "sre-lead".into(),
         worker: None,
+        to_fact_id: None,
+        last_heartbeat_at: None,
+        created_at: None,
         concluded_at: None,
     })
     .unwrap();
@@ -571,6 +601,9 @@ fn scenario_supply_chain_incident() {
         description: "COMMS: Draft security advisory for customers".into(),
         creator: "comms-lead".into(),
         worker: None,
+        to_fact_id: None,
+        last_heartbeat_at: None,
+        created_at: None,
         concluded_at: None,
     })
     .unwrap();
@@ -688,6 +721,9 @@ fn scenario_ssccs_primitive_discovery() {
         description: "FORMALIZE: Define 'Segment' as the universal atomic computation unit with typed boundaries (spatial: memory stride, temporal: def-use window, structural: loop entry/exit).".into(),
         creator: "agent-d".into(),
         worker: None,
+        to_fact_id: None,
+        last_heartbeat_at: None,
+        created_at: None,
         concluded_at: None,
     }).unwrap();
 
@@ -740,6 +776,9 @@ that the von Neumann architecture can be redesigned around."
         description: "VALIDATE: Does the Segment definition predict the 73/18/9 memory access distribution? If M is a contiguous stride-1 region, it should also explain strided and gather/scatter cases.".into(),
         creator: "agent-a".into(),
         worker: None,
+        to_fact_id: None,
+        last_heartbeat_at: None,
+        created_at: None,
         concluded_at: None,
     }).unwrap();
     bb.claim_intent("i_validate_segment", "agent-a").unwrap();
@@ -755,6 +794,9 @@ that the von Neumann architecture can be redesigned around."
         description: "SCHEME: Define 'Scheme' as a typed transformation between Segments. Scheme(S1, S2, T) where T is the transformation type (map, reduce, shuffle, broadcast). This enables algebraic reasoning about Segment compositions.".into(),
         creator: "agent-e".into(),
         worker: None,
+        to_fact_id: None,
+        last_heartbeat_at: None,
+        created_at: None,
         concluded_at: None,
     }).unwrap();
     bb.claim_intent("i_scheme_definition", "agent-e").unwrap();

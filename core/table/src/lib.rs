@@ -135,7 +135,8 @@ fn apply_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
              intent_id TEXT NOT NULL,
              project_id TEXT NOT NULL,
              fact_id TEXT NOT NULL,
-             PRIMARY KEY (intent_id, project_id, fact_id)
+             PRIMARY KEY (intent_id, project_id, fact_id),
+             FOREIGN KEY (intent_id, project_id) REFERENCES intents(id, project_id) ON DELETE CASCADE
          );
 
          CREATE TABLE IF NOT EXISTS hints (
@@ -157,62 +158,79 @@ fn apply_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
 }
 
 fn utc_now() -> String {
-    chrono_now().unwrap_or_else(|| "1970-01-01T00:00:00Z".into())
-}
-
-fn chrono_now() -> Option<String> {
-    // Manual UTC timestamp to avoid chrono dependency
     use std::time::{SystemTime, UNIX_EPOCH};
-    let d = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
+    let d = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
     let secs = d.as_secs();
-    // Simple UTC datetime formatting
-    let days = secs / 86400;
-    let time_secs = secs % 86400;
-    let h = time_secs / 3600;
-    let m = (time_secs % 3600) / 60;
-    let s = time_secs % 60;
 
-    // Days since epoch to date
+    // Seconds since epoch to broken-down time
+    let secs_per_day: i64 = 86400;
+    let mut days = (secs / secs_per_day as u64) as i64;
+    let day_secs = (secs % secs_per_day as u64) as i64;
+    let h = day_secs / 3600;
+    let m = (day_secs % 3600) / 60;
+    let s = day_secs % 60;
+
+    // Civil date from days since epoch
     let mut y = 1970i64;
-    let mut remaining = days as i64;
     loop {
-        let days_in_year = if is_leap(y) { 366 } else { 365 };
-        if remaining < days_in_year {
+        let days_in_year = if (y % 4 == 0 && y % 100 != 0) || y % 400 == 0 {
+            366
+        } else {
+            365
+        };
+        if days < days_in_year {
             break;
         }
-        remaining -= days_in_year;
+        days -= days_in_year;
         y += 1;
     }
-    let months_days = if is_leap(y) {
+    let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+    let month_days: [i64; 12] = if leap {
         [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
     } else {
         [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
     };
-    let mut mo = 0;
-    for (i, &md) in months_days.iter().enumerate() {
-        if remaining < md {
-            mo = i + 1;
+    let mut mo = 1u32;
+    for &md in &month_days {
+        if days < md {
             break;
         }
-        remaining -= md;
+        days -= md;
+        mo += 1;
     }
-    if mo == 0 {
-        mo = 12;
-    }
-    let day = remaining + 1;
+    let day = days + 1;
 
-    Some(format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-        y, mo, day, h, m, s
-    ))
-}
-
-fn is_leap(y: i64) -> bool {
-    (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, mo, day, h, m, s)
 }
 
 fn project_id() -> &'static str {
     "default"
+}
+
+impl SqlBlackboard {
+    /// Claim or heartbeat an open intent. Shared by `claim_intent` and `heartbeat`.
+    fn set_worker(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let conn = self.conn.lock().unwrap();
+        let pid = project_id();
+        let now = utc_now();
+
+        let updated = conn
+            .execute(
+                "UPDATE intents SET worker = ?1, last_heartbeat_at = ?2
+             WHERE id = ?3 AND project_id = ?4 AND to_fact_id IS NULL",
+                params![agent, now, intent_id, pid],
+            )
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+
+        if updated == 0 {
+            return Err(BlackboardError::NotFound(format!(
+                "Intent {intent_id} not found or already concluded"
+            )));
+        }
+        Ok(())
+    }
 }
 
 impl Blackboard for SqlBlackboard {
@@ -275,45 +293,11 @@ impl Blackboard for SqlBlackboard {
     }
 
     fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let conn = self.conn.lock().unwrap();
-        let pid = project_id();
-        let now = utc_now();
-
-        let updated = conn
-            .execute(
-                "UPDATE intents SET worker = ?1, last_heartbeat_at = ?2
-             WHERE id = ?3 AND project_id = ?4 AND to_fact_id IS NULL",
-                params![agent, now, intent_id, pid],
-            )
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-
-        if updated == 0 {
-            return Err(BlackboardError::NotFound(format!(
-                "Intent {intent_id} not found or already concluded"
-            )));
-        }
-        Ok(())
+        self.set_worker(intent_id, agent)
     }
 
     fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let conn = self.conn.lock().unwrap();
-        let pid = project_id();
-        let now = utc_now();
-
-        let updated = conn
-            .execute(
-                "UPDATE intents SET worker = ?1, last_heartbeat_at = ?2
-             WHERE id = ?3 AND project_id = ?4 AND to_fact_id IS NULL",
-                params![agent, now, intent_id, pid],
-            )
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-
-        if updated == 0 {
-            return Err(BlackboardError::NotFound(format!(
-                "Intent {intent_id} not found or already concluded"
-            )));
-        }
-        Ok(())
+        self.set_worker(intent_id, agent)
     }
 
     fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
@@ -352,7 +336,7 @@ impl Blackboard for SqlBlackboard {
         intent_id: &str,
         result: &serde_json::Value,
     ) -> Result<Fact, BlackboardError> {
-        let conn = self.conn.lock().unwrap();
+        let mut conn = self.conn.lock().unwrap();
         let pid = project_id();
 
         let worker: String = conn
@@ -378,16 +362,24 @@ impl Blackboard for SqlBlackboard {
             creator: worker.clone(),
         };
 
-        let _ = conn.execute(
-            "INSERT OR IGNORE INTO facts (id, project_id, description, creator, origin) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![new_fact_id, pid, result_str, worker, new_fact.origin],
-        );
+        // Atomic: insert conclusion fact + update intent in one transaction
+        let tx = conn
+            .transaction()
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
-        let _ = conn.execute(
+        tx.execute(
+            "INSERT OR IGNORE INTO facts (id, project_id, description, creator, origin) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![new_fact_id, pid, result_str, &worker, &new_fact.origin],
+        ).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+
+        tx.execute(
             "UPDATE intents SET to_fact_id = ?1, worker = ?2, last_heartbeat_at = ?3, concluded_at = ?4
              WHERE id = ?5 AND project_id = ?6",
-            params![new_fact_id, worker, now, now, intent_id, pid],
-        );
+            params![new_fact_id, &worker, &now, &now, intent_id, pid],
+        ).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+
+        tx.commit()
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         Ok(new_fact)
     }
@@ -439,7 +431,8 @@ impl Blackboard for SqlBlackboard {
         let intents: Vec<Intent> = {
             let mut stmt = conn
                 .prepare(
-                    "SELECT i.id, i.description, i.creator, i.worker, i.concluded_at
+                    "SELECT i.id, i.description, i.creator, i.worker,
+                            i.to_fact_id, i.last_heartbeat_at, i.created_at, i.concluded_at
                  FROM intents i WHERE i.project_id = ?1 ORDER BY i.created_at",
                 )
                 .unwrap();
@@ -448,19 +441,45 @@ impl Blackboard for SqlBlackboard {
                 let desc: String = row.get(1)?;
                 let creator: String = row.get(2)?;
                 let worker: Option<String> = row.get(3)?;
-                let concluded_at: Option<String> = row.get(4)?;
-                Ok((id, desc, creator, worker, concluded_at))
+                let to_fact_id: Option<String> = row.get(4)?;
+                let last_heartbeat_at: Option<String> = row.get(5)?;
+                let created_at: String = row.get(6)?;
+                let concluded_at: Option<String> = row.get(7)?;
+                Ok((
+                    id,
+                    desc,
+                    creator,
+                    worker,
+                    to_fact_id,
+                    last_heartbeat_at,
+                    created_at,
+                    concluded_at,
+                ))
             })
             .unwrap()
             .filter_map(|r| r.ok())
-            .map(|(id, desc, creator, worker, concluded)| Intent {
-                id: FihHash(id.clone()),
-                from_facts: source_map.get(&id).cloned().unwrap_or_default(),
-                description: desc,
-                creator,
-                worker,
-                concluded_at: concluded,
-            })
+            .map(
+                |(
+                    id,
+                    desc,
+                    creator,
+                    worker,
+                    to_fact_id,
+                    last_heartbeat_at,
+                    created_at,
+                    concluded,
+                )| Intent {
+                    id: FihHash(id.clone()),
+                    from_facts: source_map.get(&id).cloned().unwrap_or_default(),
+                    description: desc,
+                    creator,
+                    worker,
+                    to_fact_id,
+                    last_heartbeat_at,
+                    created_at: Some(created_at),
+                    concluded_at: concluded,
+                },
+            )
             .collect()
         };
 
@@ -513,6 +532,9 @@ mod tests {
             description: desc.into(),
             creator: "tester".into(),
             worker: None,
+            to_fact_id: None,
+            last_heartbeat_at: None,
+            created_at: None,
             concluded_at: None,
         }
     }
@@ -640,6 +662,9 @@ mod tests {
             description: "multi-source analysis".into(),
             creator: "researcher".into(),
             worker: Some("researcher".into()),
+            to_fact_id: None,
+            last_heartbeat_at: None,
+            created_at: None,
             concluded_at: None,
         };
         bb.submit_intent(&intent).unwrap();
@@ -682,6 +707,9 @@ mod tests {
             description: "Investigate deploy duration regression (3.4s vs 1.2s baseline)".into(),
             creator: "sre-agent".into(),
             worker: None,
+            to_fact_id: None,
+            last_heartbeat_at: None,
+            created_at: None,
             concluded_at: None,
         })
         .unwrap();
@@ -902,6 +930,9 @@ mod tests {
             description: "Determine if 'homeomorphic verification' and 'boundaryless extension' describe the same mechanism".into(),
             creator: "cross-ref-agent".into(),
             worker: None,
+            to_fact_id: None,
+            last_heartbeat_at: None,
+            created_at: None,
             concluded_at: None,
         }).unwrap();
 
@@ -975,6 +1006,9 @@ mod tests {
             description: "CONTRADICTION: Whitepaper claims von Neumann bottleneck eliminated, but RISC-V survey shows persistence".into(),
             creator: "gap-detector".into(),
             worker: Some("gap-detector".into()),
+            to_fact_id: None,
+            last_heartbeat_at: None,
+            created_at: None,
             concluded_at: None,
         }).unwrap();
 
@@ -1023,6 +1057,9 @@ mod tests {
             description: "Track: Evolving Memory → eKG — concept evolution".into(),
             creator: "concept-tracker".into(),
             worker: Some("concept-tracker".into()),
+            to_fact_id: None,
+            last_heartbeat_at: None,
+            created_at: None,
             concluded_at: None,
         })
         .unwrap();
@@ -1082,6 +1119,9 @@ mod tests {
             description: "GAP: homeomorphic verification never applied to experimental validation — potential research direction".into(),
             creator: "gap-detector".into(),
             worker: None,
+            to_fact_id: None,
+            last_heartbeat_at: None,
+            created_at: None,
             concluded_at: None,
         }).unwrap();
 
@@ -1153,6 +1193,9 @@ mod tests {
                     .into(),
                 creator: "linker-agent".into(),
                 worker: Some("linker-agent".into()),
+                to_fact_id: None,
+                last_heartbeat_at: None,
+                created_at: None,
                 concluded_at: None,
             })
             .unwrap();
@@ -1162,6 +1205,9 @@ mod tests {
                 description: "Link: neXus implements Field transition vision".into(),
                 creator: "linker-agent".into(),
                 worker: None,
+                to_fact_id: None,
+                last_heartbeat_at: None,
+                created_at: None,
                 concluded_at: None,
             })
             .unwrap();
