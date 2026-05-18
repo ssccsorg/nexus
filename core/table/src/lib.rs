@@ -4,7 +4,9 @@
 //   SqliteStorage — event-log only (legacy, backward compat)
 //   SqlBlackboard — normalized Cairn-pattern tables, implements Blackboard directly
 
-use nexus_model::{Blackboard, BlackboardError, BoardState, Fact, FihHash, Hint, Intent, Storage, StoredEvent};
+use nexus_model::{
+    Blackboard, BlackboardError, BoardState, Fact, FihHash, Hint, Intent, Storage, StoredEvent,
+};
 use rusqlite::{Connection, params};
 use std::path::Path;
 use std::sync::Mutex;
@@ -27,7 +29,9 @@ impl SqliteStorage {
                 created_at TEXT DEFAULT (datetime('now'))
             );",
         )?;
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     pub fn memory() -> Result<Self, rusqlite::Error> {
@@ -39,7 +43,9 @@ impl SqliteStorage {
                 payload TEXT NOT NULL
             );",
         )?;
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 }
 
@@ -84,13 +90,17 @@ impl SqlBlackboard {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, rusqlite::Error> {
         let conn = Connection::open(path)?;
         apply_schema(&conn)?;
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     pub fn memory() -> Result<Self, rusqlite::Error> {
         let conn = Connection::open_in_memory()?;
         apply_schema(&conn)?;
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 }
 
@@ -141,7 +151,7 @@ fn apply_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
              version INTEGER NOT NULL
          );
 
-         INSERT OR IGNORE INTO schema_version (version) VALUES (1);"
+         INSERT OR IGNORE INTO schema_version (version) VALUES (1);",
     )?;
     Ok(())
 }
@@ -167,7 +177,9 @@ fn chrono_now() -> Option<String> {
     let mut remaining = days as i64;
     loop {
         let days_in_year = if is_leap(y) { 366 } else { 365 };
-        if remaining < days_in_year { break; }
+        if remaining < days_in_year {
+            break;
+        }
         remaining -= days_in_year;
         y += 1;
     }
@@ -178,10 +190,15 @@ fn chrono_now() -> Option<String> {
     };
     let mut mo = 0;
     for (i, &md) in months_days.iter().enumerate() {
-        if remaining < md { mo = i + 1; break; }
+        if remaining < md {
+            mo = i + 1;
+            break;
+        }
         remaining -= md;
     }
-    if mo == 0 { mo = 12; }
+    if mo == 0 {
+        mo = 12;
+    }
     let day = remaining + 1;
 
     Some(format!(
@@ -250,7 +267,8 @@ impl Blackboard for SqlBlackboard {
             conn.execute(
                 "INSERT INTO intent_sources (intent_id, project_id, fact_id) VALUES (?1, ?2, ?3)",
                 params![intent.id.0, pid, fid],
-            ).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+            )
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         }
 
         Ok(intent.id.clone())
@@ -261,14 +279,18 @@ impl Blackboard for SqlBlackboard {
         let pid = project_id();
         let now = utc_now();
 
-        let updated = conn.execute(
-            "UPDATE intents SET worker = ?1, last_heartbeat_at = ?2
+        let updated = conn
+            .execute(
+                "UPDATE intents SET worker = ?1, last_heartbeat_at = ?2
              WHERE id = ?3 AND project_id = ?4 AND to_fact_id IS NULL",
-            params![agent, now, intent_id, pid],
-        ).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+                params![agent, now, intent_id, pid],
+            )
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         if updated == 0 {
-            return Err(BlackboardError::NotFound(format!("Intent {intent_id} not found or already concluded")));
+            return Err(BlackboardError::NotFound(format!(
+                "Intent {intent_id} not found or already concluded"
+            )));
         }
         Ok(())
     }
@@ -278,14 +300,18 @@ impl Blackboard for SqlBlackboard {
         let pid = project_id();
         let now = utc_now();
 
-        let updated = conn.execute(
-            "UPDATE intents SET worker = ?1, last_heartbeat_at = ?2
+        let updated = conn
+            .execute(
+                "UPDATE intents SET worker = ?1, last_heartbeat_at = ?2
              WHERE id = ?3 AND project_id = ?4 AND to_fact_id IS NULL",
-            params![agent, now, intent_id, pid],
-        ).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+                params![agent, now, intent_id, pid],
+            )
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         if updated == 0 {
-            return Err(BlackboardError::NotFound(format!("Intent {intent_id} not found or already concluded")));
+            return Err(BlackboardError::NotFound(format!(
+                "Intent {intent_id} not found or already concluded"
+            )));
         }
         Ok(())
     }
@@ -303,7 +329,11 @@ impl Blackboard for SqlBlackboard {
             .ok();
 
         match row {
-            None => return Err(BlackboardError::NotFound(format!("Intent {intent_id} not found or already concluded"))),
+            None => {
+                return Err(BlackboardError::NotFound(format!(
+                    "Intent {intent_id} not found or already concluded"
+                )));
+            }
             Some((Some(ref w),)) if w != agent => {
                 return Err(BlackboardError::Forbidden(format!("Intent claimed by {w}")));
             }
@@ -317,7 +347,11 @@ impl Blackboard for SqlBlackboard {
         Ok(())
     }
 
-    fn conclude_intent(&mut self, intent_id: &str, result: &serde_json::Value) -> Result<Fact, BlackboardError> {
+    fn conclude_intent(
+        &mut self,
+        intent_id: &str,
+        result: &serde_json::Value,
+    ) -> Result<Fact, BlackboardError> {
         let conn = self.conn.lock().unwrap();
         let pid = project_id();
 
@@ -332,7 +366,8 @@ impl Blackboard for SqlBlackboard {
             ))?;
 
         let now = utc_now();
-        let result_str = serde_json::to_string(&result).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let result_str =
+            serde_json::to_string(&result).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         // Create new fact from conclusion
         let new_fact_id = format!("f_concl_{}", intent_id);
@@ -374,7 +409,10 @@ impl Blackboard for SqlBlackboard {
                     content: serde_json::from_str(&desc).unwrap_or(serde_json::Value::String(desc)),
                     creator,
                 })
-            }).unwrap().filter_map(|r| r.ok()).collect()
+            })
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect()
         };
 
         // Load all intent_source mappings for the project in one pass
@@ -384,21 +422,27 @@ impl Blackboard for SqlBlackboard {
             ).unwrap();
             let mut map: std::collections::HashMap<String, Vec<String>> =
                 std::collections::HashMap::new();
-            for row in stmt.query_map(params![pid], |row| {
-                let iid: String = row.get(0)?;
-                let fid: String = row.get(1)?;
-                Ok((iid, fid))
-            }).unwrap().filter_map(|r| r.ok()) {
+            for row in stmt
+                .query_map(params![pid], |row| {
+                    let iid: String = row.get(0)?;
+                    let fid: String = row.get(1)?;
+                    Ok((iid, fid))
+                })
+                .unwrap()
+                .filter_map(|r| r.ok())
+            {
                 map.entry(row.0).or_default().push(row.1);
             }
             map
         };
 
         let intents: Vec<Intent> = {
-            let mut stmt = conn.prepare(
-                "SELECT i.id, i.description, i.creator, i.worker, i.concluded_at
-                 FROM intents i WHERE i.project_id = ?1 ORDER BY i.created_at"
-            ).unwrap();
+            let mut stmt = conn
+                .prepare(
+                    "SELECT i.id, i.description, i.creator, i.worker, i.concluded_at
+                 FROM intents i WHERE i.project_id = ?1 ORDER BY i.created_at",
+                )
+                .unwrap();
             stmt.query_map(params![pid], |row| {
                 let id: String = row.get(0)?;
                 let desc: String = row.get(1)?;
@@ -406,16 +450,18 @@ impl Blackboard for SqlBlackboard {
                 let worker: Option<String> = row.get(3)?;
                 let concluded_at: Option<String> = row.get(4)?;
                 Ok((id, desc, creator, worker, concluded_at))
-            }).unwrap().filter_map(|r| r.ok()).map(|(id, desc, creator, worker, concluded)| {
-                Intent {
-                    id: FihHash(id.clone()),
-                    from_facts: source_map.get(&id).cloned().unwrap_or_default(),
-                    description: desc,
-                    creator,
-                    worker,
-                    concluded_at: concluded,
-                }
-            }).collect()
+            })
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .map(|(id, desc, creator, worker, concluded)| Intent {
+                id: FihHash(id.clone()),
+                from_facts: source_map.get(&id).cloned().unwrap_or_default(),
+                description: desc,
+                creator,
+                worker,
+                concluded_at: concluded,
+            })
+            .collect()
         };
 
         let hints: Vec<Hint> = {
@@ -431,10 +477,17 @@ impl Blackboard for SqlBlackboard {
                     content,
                     creator,
                 })
-            }).unwrap().filter_map(|r| r.ok()).collect()
+            })
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect()
         };
 
-        BoardState { facts, intents, hints }
+        BoardState {
+            facts,
+            intents,
+            hints,
+        }
     }
 }
 
@@ -480,7 +533,9 @@ mod tests {
         let mut bb = SqlBlackboard::memory().unwrap();
         bb.submit_fact(&make_fact("f001", "source fact"));
 
-        let hash = bb.submit_intent(&make_intent("i001", vec!["f001"], "test intent")).unwrap();
+        let hash = bb
+            .submit_intent(&make_intent("i001", vec!["f001"], "test intent"))
+            .unwrap();
         assert_eq!(hash.0, "i001");
 
         let state = bb.read_state();
@@ -498,7 +553,8 @@ mod tests {
     fn test_sql_blackboard_heartbeat_and_conclude() {
         let mut bb = SqlBlackboard::memory().unwrap();
         bb.submit_fact(&make_fact("f001", "source"));
-        bb.submit_intent(&make_intent("i001", vec!["f001"], "explore")).unwrap();
+        bb.submit_intent(&make_intent("i001", vec!["f001"], "explore"))
+            .unwrap();
 
         bb.heartbeat("i001", "agent-a").unwrap();
 
@@ -507,14 +563,18 @@ mod tests {
         assert_eq!(fact.content, "discovery!");
 
         let state = bb.read_state();
-        assert!(state.facts.iter().any(|f| f.content == "discovery!"), "concluded fact exists");
+        assert!(
+            state.facts.iter().any(|f| f.content == "discovery!"),
+            "concluded fact exists"
+        );
     }
 
     #[test]
     fn test_sql_blackboard_release_intent() {
         let mut bb = SqlBlackboard::memory().unwrap();
         bb.submit_fact(&make_fact("f001", "source"));
-        bb.submit_intent(&make_intent("i001", vec!["f001"], "explore")).unwrap();
+        bb.submit_intent(&make_intent("i001", vec!["f001"], "explore"))
+            .unwrap();
         bb.heartbeat("i001", "agent-a").unwrap();
         bb.release_intent("i001", "agent-a").unwrap();
 
@@ -533,7 +593,8 @@ mod tests {
             let mut bb = SqlBlackboard::open(path).unwrap();
             bb.submit_fact(&make_fact("f001", "persistent fact"));
             bb.submit_fact(&make_fact("f002", "another fact"));
-            bb.submit_intent(&make_intent("i001", vec!["f001"], "persistent intent")).unwrap();
+            bb.submit_intent(&make_intent("i001", vec!["f001"], "persistent intent"))
+                .unwrap();
             assert_eq!(bb.read_state().facts.len(), 2);
         }
 
@@ -584,7 +645,11 @@ mod tests {
         bb.submit_intent(&intent).unwrap();
 
         let state = bb.read_state();
-        let i = state.intents.iter().find(|i| i.id.0 == "i_hyper_001").unwrap();
+        let i = state
+            .intents
+            .iter()
+            .find(|i| i.id.0 == "i_hyper_001")
+            .unwrap();
         assert_eq!(i.from_facts.len(), 3, "all 3 source facts restored");
         assert!(i.from_facts.contains(&"f001".to_string()));
         assert!(i.from_facts.contains(&"f002".to_string()));
@@ -618,7 +683,8 @@ mod tests {
             creator: "sre-agent".into(),
             worker: None,
             concluded_at: None,
-        }).unwrap();
+        })
+        .unwrap();
 
         bb.heartbeat("i_sre_001", "sre-agent").unwrap();
 
@@ -628,7 +694,10 @@ mod tests {
             "effort_hours": 0.5
         });
         let concluded = bb.conclude_intent("i_sre_001", &finding).unwrap();
-        assert_eq!(concluded.content["finding"], "healthcheck timeout regression");
+        assert_eq!(
+            concluded.content["finding"],
+            "healthcheck timeout regression"
+        );
 
         let state = bb.read_state();
         assert!(state.facts.iter().any(|f| f.creator == "sre-agent"));
@@ -643,11 +712,23 @@ mod tests {
         bb_sensor.submit_fact(&make_fact("f_s1", "sensor reading"));
         bb_knowledge.submit_fact(&make_fact("f_k1", "knowledge graph node"));
 
-        bb_sensor.submit_intent(&make_intent("i_s1", vec!["f_s1"], "analyze sensor")).unwrap();
-        bb_knowledge.submit_intent(&make_intent("i_k1", vec!["f_k1"], "query knowledge")).unwrap();
+        bb_sensor
+            .submit_intent(&make_intent("i_s1", vec!["f_s1"], "analyze sensor"))
+            .unwrap();
+        bb_knowledge
+            .submit_intent(&make_intent("i_k1", vec!["f_k1"], "query knowledge"))
+            .unwrap();
 
-        assert_eq!(bb_sensor.read_state().facts.len(), 1, "sensor bb has 1 fact");
-        assert_eq!(bb_knowledge.read_state().facts.len(), 1, "knowledge bb has 1 fact");
+        assert_eq!(
+            bb_sensor.read_state().facts.len(),
+            1,
+            "sensor bb has 1 fact"
+        );
+        assert_eq!(
+            bb_knowledge.read_state().facts.len(),
+            1,
+            "knowledge bb has 1 fact"
+        );
         assert_eq!(bb_sensor.read_state().facts[0].id.0, "f_s1");
         assert_eq!(bb_knowledge.read_state().facts[0].id.0, "f_k1");
     }
@@ -657,7 +738,8 @@ mod tests {
     fn test_multi_agent_handoff() {
         let mut bb = SqlBlackboard::memory().unwrap();
         bb.submit_fact(&make_fact("f001", "discovery"));
-        bb.submit_intent(&make_intent("i001", vec!["f001"], "explore anomaly")).unwrap();
+        bb.submit_intent(&make_intent("i001", vec!["f001"], "explore anomaly"))
+            .unwrap();
 
         // Agent A claims, works, then releases
         bb.heartbeat("i001", "agent-a").unwrap();
@@ -665,7 +747,8 @@ mod tests {
 
         // Agent B sees unclaimed intent, claims and concludes
         bb.heartbeat("i001", "agent-b").unwrap();
-        bb.conclude_intent("i001", &"resolved by agent-b".into()).unwrap();
+        bb.conclude_intent("i001", &"resolved by agent-b".into())
+            .unwrap();
 
         let state = bb.read_state();
         let i = state.intents.iter().find(|i| i.id.0 == "i001").unwrap();
@@ -677,21 +760,28 @@ mod tests {
     fn test_protocol_enforcement() {
         let mut bb = SqlBlackboard::memory().unwrap();
         bb.submit_fact(&make_fact("f001", "data"));
-        bb.submit_intent(&make_intent("i001", vec!["f001"], "critical task")).unwrap();
+        bb.submit_intent(&make_intent("i001", vec!["f001"], "critical task"))
+            .unwrap();
         bb.heartbeat("i001", "agent-a").unwrap();
 
         // Wrong agent cannot release
         let err = bb.release_intent("i001", "intruder").unwrap_err();
-        assert!(matches!(err, BlackboardError::Forbidden(_)), "wrong agent rejected");
+        assert!(
+            matches!(err, BlackboardError::Forbidden(_)),
+            "wrong agent rejected"
+        );
 
         // Correct agent releases, then wrong agent cannot conclude
         bb.release_intent("i001", "agent-a").unwrap();
         bb.heartbeat("i001", "agent-b").unwrap();
-        let concluded = bb.conclude_intent("i001", &"done".into()).unwrap();
+        let _concluded = bb.conclude_intent("i001", &"done".into()).unwrap();
 
         // Cannot double-conclude
         let err2 = bb.conclude_intent("i001", &"again".into()).unwrap_err();
-        assert!(matches!(err2, BlackboardError::NotFound(_)), "double conclude rejected");
+        assert!(
+            matches!(err2, BlackboardError::NotFound(_)),
+            "double conclude rejected"
+        );
 
         // Cannot claim nonexistent intent
         let err3 = bb.claim_intent("i_nonexistent", "agent-c").unwrap_err();
@@ -708,8 +798,10 @@ mod tests {
             let mut bb = SqlBlackboard::open(path).unwrap();
             bb.submit_fact(&make_fact("f001", "alpha"));
             bb.submit_fact(&make_fact("f002", "beta"));
-            bb.submit_intent(&make_intent("i001", vec!["f001"], "first")).unwrap();
-            bb.submit_intent(&make_intent("i002", vec!["f002"], "second")).unwrap();
+            bb.submit_intent(&make_intent("i001", vec!["f001"], "first"))
+                .unwrap();
+            bb.submit_intent(&make_intent("i002", vec!["f002"], "second"))
+                .unwrap();
             bb.heartbeat("i001", "worker-x").unwrap();
             bb.conclude_intent("i001", &"result-a".into()).unwrap();
             bb.submit_hint(&Hint {
@@ -760,7 +852,10 @@ mod tests {
 
         let state = bb.read_state();
         let fact = state.facts.iter().find(|f| f.id.0 == "f_complex").unwrap();
-        assert_eq!(fact.content["nested"]["array"], serde_json::json!([1, 2, 3]));
+        assert_eq!(
+            fact.content["nested"]["array"],
+            serde_json::json!([1, 2, 3])
+        );
         assert_eq!(fact.content["nested"]["object"]["key"], "value");
         assert!(fact.content["nested"]["null"].is_null());
         assert_eq!(fact.content["nested"]["bool"], true);
@@ -811,7 +906,7 @@ mod tests {
         }).unwrap();
 
         bb.heartbeat("i_research_001", "review-agent").unwrap();
-        let conclusion = bb.conclude_intent("i_research_001", &serde_json::json!({
+        let _conclusion = bb.conclude_intent("i_research_001", &serde_json::json!({
             "finding": "homeomorphic verification IS the mathematical foundation of boundaryless extension",
             "confidence": 0.92,
             "evidence": [
@@ -822,12 +917,28 @@ mod tests {
         })).unwrap();
 
         let state = bb.read_state();
-        let bridge_intent = state.intents.iter().find(|i| i.id.0 == "i_research_001").unwrap();
+        let bridge_intent = state
+            .intents
+            .iter()
+            .find(|i| i.id.0 == "i_research_001")
+            .unwrap();
         assert!(bridge_intent.concluded_at.is_some());
-        assert!(bridge_intent.from_facts.contains(&"f_doc_a_001".to_string()));
-        assert!(bridge_intent.from_facts.contains(&"f_doc_b_001".to_string()));
+        assert!(
+            bridge_intent
+                .from_facts
+                .contains(&"f_doc_a_001".to_string())
+        );
+        assert!(
+            bridge_intent
+                .from_facts
+                .contains(&"f_doc_b_001".to_string())
+        );
 
-        let bridge_fact = state.facts.iter().find(|f| f.creator == "review-agent").unwrap();
+        let bridge_fact = state
+            .facts
+            .iter()
+            .find(|f| f.creator == "review-agent")
+            .unwrap();
         assert_eq!(bridge_fact.content["confidence"], 0.92);
         assert_eq!(bridge_fact.content["evidence"].as_array().unwrap().len(), 3);
     }
@@ -868,7 +979,11 @@ mod tests {
         }).unwrap();
 
         let state = bb.read_state();
-        let gap = state.intents.iter().find(|i| i.id.0 == "i_contradiction_001").unwrap();
+        let gap = state
+            .intents
+            .iter()
+            .find(|i| i.id.0 == "i_contradiction_001")
+            .unwrap();
         assert!(gap.concluded_at.is_none(), "contradiction remains open");
         assert!(gap.worker.is_some(), "claimed by gap-detector");
         assert!(gap.from_facts.iter().any(|f| f == "f_claim_a"));
@@ -909,11 +1024,14 @@ mod tests {
             creator: "concept-tracker".into(),
             worker: Some("concept-tracker".into()),
             concluded_at: None,
-        }).unwrap();
+        })
+        .unwrap();
 
         bb.submit_hint(&Hint {
             id: FihHash("h_drift_001".into()),
-            content: "eKG is the successor of Evolving Memory — check if backward compat is maintained".into(),
+            content:
+                "eKG is the successor of Evolving Memory — check if backward compat is maintained"
+                    .into(),
             creator: "human-reviewer".into(),
         });
 
@@ -921,7 +1039,10 @@ mod tests {
         assert_eq!(state.facts.len(), 2);
         assert_eq!(state.hints.len(), 1);
         assert_eq!(state.intents.len(), 1);
-        assert_eq!(state.hints[0].content, "eKG is the successor of Evolving Memory — check if backward compat is maintained");
+        assert_eq!(
+            state.hints[0].content,
+            "eKG is the successor of Evolving Memory — check if backward compat is maintained"
+        );
     }
 
     #[test]
@@ -965,9 +1086,16 @@ mod tests {
         }).unwrap();
 
         let state = bb.read_state();
-        let gap = state.intents.iter().find(|i| i.id.0 == "i_gap_001").unwrap();
+        let gap = state
+            .intents
+            .iter()
+            .find(|i| i.id.0 == "i_gap_001")
+            .unwrap();
         assert_eq!(gap.from_facts.len(), 3, "all three source facts linked");
-        assert!(gap.concluded_at.is_none(), "gap remains open for researcher");
+        assert!(
+            gap.concluded_at.is_none(),
+            "gap remains open for researcher"
+        );
     }
 
     #[test]
@@ -979,10 +1107,26 @@ mod tests {
         {
             let mut bb = SqlBlackboard::open(path).unwrap();
             let docs = vec![
-                ("whitepaper.llms.md", "whitepaper", "Observation-centric hardware"),
-                ("riscv.llms.md", "research-riscv", "RISC-V emulation pipeline"),
-                ("nexus-index.llms.md", "projects/nexus", "neXus architecture"),
-                ("manifesto.llms.md", "manifesto", "Field transition manifesto"),
+                (
+                    "whitepaper.llms.md",
+                    "whitepaper",
+                    "Observation-centric hardware",
+                ),
+                (
+                    "riscv.llms.md",
+                    "research-riscv",
+                    "RISC-V emulation pipeline",
+                ),
+                (
+                    "nexus-index.llms.md",
+                    "projects/nexus",
+                    "neXus architecture",
+                ),
+                (
+                    "manifesto.llms.md",
+                    "manifesto",
+                    "Field transition manifesto",
+                ),
             ];
             for (i, (origin, source, desc)) in docs.iter().enumerate() {
                 bb.submit_fact(&Fact {
@@ -1005,11 +1149,13 @@ mod tests {
             bb.submit_intent(&Intent {
                 id: FihHash("i_link_001".into()),
                 from_facts: vec!["f_doc_000".into(), "f_doc_001".into()],
-                description: "Link: whitepaper hardware model validated via RISC-V emulation".into(),
+                description: "Link: whitepaper hardware model validated via RISC-V emulation"
+                    .into(),
                 creator: "linker-agent".into(),
                 worker: Some("linker-agent".into()),
                 concluded_at: None,
-            }).unwrap();
+            })
+            .unwrap();
             bb.submit_intent(&Intent {
                 id: FihHash("i_link_002".into()),
                 from_facts: vec!["f_doc_002".into(), "f_doc_003".into()],
@@ -1017,7 +1163,8 @@ mod tests {
                 creator: "linker-agent".into(),
                 worker: None,
                 concluded_at: None,
-            }).unwrap();
+            })
+            .unwrap();
             assert_eq!(bb.read_state().facts.len(), 4, "facts preserved");
             assert_eq!(bb.read_state().intents.len(), 2, "intents added");
         }
@@ -1034,9 +1181,17 @@ mod tests {
 
             let state = bb.read_state();
             assert_eq!(state.facts.len(), 5, "4 original + 1 conclusion fact");
-            let resolved = state.intents.iter().find(|i| i.id.0 == "i_link_001").unwrap();
+            let resolved = state
+                .intents
+                .iter()
+                .find(|i| i.id.0 == "i_link_001")
+                .unwrap();
             assert!(resolved.concluded_at.is_some(), "intent resolved");
-            let pending = state.intents.iter().find(|i| i.id.0 == "i_link_002").unwrap();
+            let pending = state
+                .intents
+                .iter()
+                .find(|i| i.id.0 == "i_link_002")
+                .unwrap();
             assert!(pending.concluded_at.is_none(), "intent still open");
         }
 
