@@ -35,9 +35,14 @@ run_clippy()  { cargo clippy -p nexus-model -p nexus-table -- -D warnings; }
 run_test()    {
     local ok=0 fail=0
     for suite in \
-        "nexus-table -- --nocapture" \
-        "nexus-graph --test a_stress_parallel --test b_stress_sequential --test d_gateway_scenarios -- --nocapture" \
-        "nexus-graph --test e_transport_scenarios --test z_scenarios"
+        "nexus-table" \
+        "nexus-graph --lib" \
+        "nexus-graph --test a_stress_parallel" \
+        "nexus-graph --test b_stress_sequential" \
+        "nexus-graph --test c_full_flow" \
+        "nexus-graph --test d_gateway_scenarios" \
+        "nexus-graph --test e_transport_scenarios" \
+        "nexus-graph --test z_scenarios"
     do
         echo "[test] cargo test -p $suite"
         cargo test -p $suite > /tmp/nexus_test_out.txt 2>&1; local rc=$?
