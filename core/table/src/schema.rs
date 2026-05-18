@@ -11,7 +11,7 @@ pub fn apply_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
              id TEXT PRIMARY KEY,
              title TEXT NOT NULL,
              status TEXT NOT NULL DEFAULT 'active',
-             created_at TEXT NOT NULL,
+             created_at TEXT NOT NULL DEFAULT (datetime('now')),
              reason_worker TEXT,
              reason_trigger TEXT,
              reason_started_at TEXT,
@@ -36,7 +36,7 @@ pub fn apply_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
              creator TEXT NOT NULL,
              worker TEXT,
              last_heartbeat_at TEXT,
-             created_at TEXT NOT NULL,
+             created_at TEXT NOT NULL DEFAULT (datetime('now')),
              concluded_at TEXT,
              PRIMARY KEY (id, project_id),
              FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
@@ -55,7 +55,7 @@ pub fn apply_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
              project_id TEXT NOT NULL,
              content TEXT NOT NULL,
              creator TEXT NOT NULL,
-             created_at TEXT NOT NULL,
+             created_at TEXT NOT NULL DEFAULT (datetime('now')),
              PRIMARY KEY (id, project_id),
              FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
          );
