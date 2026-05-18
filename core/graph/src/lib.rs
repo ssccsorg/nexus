@@ -238,9 +238,10 @@ impl Blackboard for GraphBlackboard {
     fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError> {
         // Validate from_facts exist in graph
         for fid in &intent.from_facts {
-            let found = self.graph.node_indices().any(|i| {
-                self.graph.node_weight(i).map_or(false, |w| w.name == *fid)
-            });
+            let found = self
+                .graph
+                .node_indices()
+                .any(|i| self.graph.node_weight(i).map_or(false, |w| w.name == *fid));
             if !found {
                 return Err(BlackboardError::NotFound(format!("Fact {fid} not found")));
             }
@@ -259,9 +260,11 @@ impl Blackboard for GraphBlackboard {
         });
         // Create edges from each source fact to this intent
         for fid in &intent.from_facts {
-            if let Some(src) = self.graph.node_indices().find(|i| {
-                self.graph.node_weight(*i).map_or(false, |w| w.name == *fid)
-            }) {
+            if let Some(src) = self
+                .graph
+                .node_indices()
+                .find(|i| self.graph.node_weight(*i).map_or(false, |w| w.name == *fid))
+            {
                 self.graph.add_edge(
                     src,
                     idx,
@@ -366,7 +369,9 @@ impl Blackboard for GraphBlackboard {
                             id: FihHash(w.name.clone()),
                             from_facts: {
                                 let mut src = Vec::new();
-                                for e in self.graph.edges_directed(idx, petgraph::Direction::Incoming)
+                                for e in self
+                                    .graph
+                                    .edges_directed(idx, petgraph::Direction::Incoming)
                                 {
                                     if let Some(sn) = self.graph.node_weight(e.source()) {
                                         src.push(sn.name.clone());
