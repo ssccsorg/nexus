@@ -31,7 +31,7 @@ done
 run_check()   { cargo check -p nexus-model -p nexus-table && cargo check; }
 run_fmt()     { cargo fmt --check; }
 run_clippy()  { cargo clippy -p nexus-model -p nexus-table -- -D warnings; }
-run_test()    { cargo test -p nexus-table -- --nocapture 2>&1; }
+run_test()    { cargo test -p nexus-table -- --nocapture 2>&1 && cargo test -p nexus-graph --test a_stress_parallel --test b_stress_sequential -- --nocapture 2>&1; }
 run_graph_test() { cargo test -p nexus-graph -- --nocapture 2>&1 || echo "[warn] some graph tests have pre-existing issues"; }
 run_all() {
     echo "=== fmt ===" && run_fmt
