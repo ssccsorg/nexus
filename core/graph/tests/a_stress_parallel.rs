@@ -98,6 +98,9 @@ impl ParallelAnt {
                     description: format!("hypothesis at step {step}"),
                     creator: self.name.clone(),
                     worker: None,
+                    to_fact_id: None,
+                    last_heartbeat_at: None,
+                    created_at: None,
                     concluded_at: None,
                 }) {
                     Ok(_) => format!("{:<16} submit Intent {id}", self.name),

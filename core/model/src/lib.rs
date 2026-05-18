@@ -1,7 +1,7 @@
-// nexus-model — Blackboard trait and FIH primitives.
+// nexus-model — Blackboard trait, Storage trait, and FIH primitives.
 //
-// Pure interface, no storage backend. Both GraphBlackboard and SqlBlackboard
-// implement this trait. Modules depend only on this crate.
+// Pure interfaces, no storage backend. Both nexus-graph and nexus-table
+// depend on this crate only.
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -74,9 +74,12 @@ pub struct Fact {
 pub struct Intent {
     pub id: FihHash,
     pub from_facts: Vec<String>,
+    pub to_fact_id: Option<String>,
     pub description: String,
     pub creator: String,
     pub worker: Option<String>,
+    pub last_heartbeat_at: Option<String>,
+    pub created_at: Option<String>,
     pub concluded_at: Option<String>,
 }
 
@@ -112,7 +115,6 @@ pub trait Blackboard {
 }
 
 // Blanket impl: &mut T delegates to T for any Blackboard implementor.
-// Enables shared access through references (e.g., MockGateway with &mut GraphBlackboard).
 impl<T: Blackboard> Blackboard for &mut T {
     fn submit_fact(&mut self, fact: &Fact) -> FihHash {
         (**self).submit_fact(fact)
@@ -141,5 +143,36 @@ impl<T: Blackboard> Blackboard for &mut T {
     }
     fn read_state(&self) -> BoardState {
         (**self).read_state()
+    }
+}
+
+// ── Storage trait — persistence abstraction ──────────────────────────────
+
+/// A single persisted FIH event log entry.
+#[derive(Debug, Clone)]
+pub struct StoredEvent {
+    pub event_type: String,
+    pub payload: String,
+}
+
+/// Storage abstraction for FIH event persistence.
+/// Implementations must be thread-safe (Send + Sync).
+pub trait Storage: Send + Sync {
+    /// Persist one FIH operation. Called on every FIH mutation.
+    fn log_fih(&self, event_type: &str, payload: &str);
+
+    /// Load all past FIH operations in order. Called once on startup.
+    fn load_events(&self) -> Vec<StoredEvent>;
+}
+
+// ── Null storage (no persistence) ─────────────────────────────────────────
+
+/// No-op storage. All FIH operations are discarded.
+pub struct NullStorage;
+
+impl Storage for NullStorage {
+    fn log_fih(&self, _event_type: &str, _payload: &str) {}
+    fn load_events(&self) -> Vec<StoredEvent> {
+        Vec::new()
     }
 }

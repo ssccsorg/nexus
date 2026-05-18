@@ -22,7 +22,7 @@ impl AppState {
 
     /// Create state backed by SQLite at the given path.
     pub fn with_sqlite(path: &str) -> Result<Self, String> {
-        let bb = nexus_table::blackboard_with_sqlite(path)?;
+        let bb = nexus_graph::blackboard_with_sqlite(path)?;
         Ok(Self {
             blackboard: Arc::new(Mutex::new(bb)),
         })
