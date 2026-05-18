@@ -87,8 +87,8 @@ impl GraphAccess for petgraph::Graph<NodeWeight, EdgeWeight> {
 // ── GraphBlackboard (petgraph-backed, implements both traits) ────────────
 
 pub struct GraphBlackboard {
-    graph: petgraph::Graph<NodeWeight, EdgeWeight>,
-    signals: Vec<Signal>,
+    pub graph: petgraph::Graph<NodeWeight, EdgeWeight>,
+    _signals: Vec<Signal>,
     storage: Box<dyn Storage>,
     loading: bool,
 }
@@ -106,7 +106,7 @@ impl Default for GraphBlackboard {
     fn default() -> Self {
         Self {
             graph: petgraph::Graph::new(),
-            signals: Vec::new(),
+            _signals: Vec::new(),
             storage: Box::new(NullStorage),
             loading: false,
         }
@@ -151,7 +151,7 @@ impl GraphBlackboard {
             }
             "submit_intent" => {
                 if let Ok(intent) = serde_json::from_str::<Intent>(payload) {
-                    self.submit_intent(&intent);
+                    let _ = self.submit_intent(&intent);
                 }
             }
             "claim_intent" => {
@@ -198,6 +198,36 @@ struct ConcludePayload {
 pub fn blackboard_with_sqlite(path: &str) -> Result<GraphBlackboard, String> {
     let store = nexus_table::SqliteStorage::open(path).map_err(|e| e.to_string())?;
     Ok(GraphBlackboard::new().with_storage(Box::new(store)))
+}
+
+impl GraphAccess for GraphBlackboard {
+    fn node_indices(&self) -> Vec<NodeIndex> {
+        GraphAccess::node_indices(&self.graph)
+    }
+    fn edge_indices(&self) -> Vec<EdgeIndex> {
+        GraphAccess::edge_indices(&self.graph)
+    }
+    fn node_weight(&self, idx: NodeIndex) -> Option<&NodeWeight> {
+        GraphAccess::node_weight(&self.graph, idx)
+    }
+    fn edge_weight(&self, idx: EdgeIndex) -> Option<&EdgeWeight> {
+        GraphAccess::edge_weight(&self.graph, idx)
+    }
+    fn edge_endpoints(&self, idx: EdgeIndex) -> Option<(NodeIndex, NodeIndex)> {
+        GraphAccess::edge_endpoints(&self.graph, idx)
+    }
+    fn neighbors_undirected(&self, idx: NodeIndex) -> Vec<NodeIndex> {
+        GraphAccess::neighbors_undirected(&self.graph, idx)
+    }
+    fn edges_directed(&self, idx: NodeIndex, outgoing: bool) -> Vec<EdgeIndex> {
+        GraphAccess::edges_directed(&self.graph, idx, outgoing)
+    }
+    fn add_node(&mut self, weight: NodeWeight) -> NodeIndex {
+        GraphAccess::add_node(&mut self.graph, weight)
+    }
+    fn add_edge(&mut self, from: NodeIndex, to: NodeIndex, weight: EdgeWeight) -> EdgeIndex {
+        GraphAccess::add_edge(&mut self.graph, from, to, weight)
+    }
 }
 
 impl Blackboard for GraphBlackboard {
