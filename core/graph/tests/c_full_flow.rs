@@ -77,6 +77,9 @@ fn test_full_agent_collaboration_flow() {
             .into(),
         creator: "agent-b".into(),
         worker: None,
+        to_fact_id: None,
+        last_heartbeat_at: None,
+        created_at: None,
         concluded_at: None,
     };
     bb.submit_intent(&intent).expect("intent should be valid");

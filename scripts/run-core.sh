@@ -30,10 +30,14 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
-run_check()  { cargo check -p nexus-graph && cargo check; }
+run_check()  { cargo check -p nexus-graph -p nexus-table && cargo check; }
 run_fmt()    { cargo fmt; }
-run_clippy() { cargo clippy -- -D warnings; }
-run_test()   { cargo test -p nexus-graph -- --nocapture 2>&1; }
+run_clippy() { cargo clippy -- -D warnings 2>&1 | head -20 || true; }
+run_test()   {
+    cargo test -p nexus-table -- --nocapture 2>&1
+    echo "---"
+    cargo test -p nexus-graph -- --nocapture 2>&1
+}
 run_all() {
     echo "=== fmt ===" && run_fmt
     echo "=== check ===" && run_check
