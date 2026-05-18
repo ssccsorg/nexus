@@ -89,6 +89,7 @@ impl GraphAccess for petgraph::Graph<NodeWeight, EdgeWeight> {
 pub struct GraphBlackboard {
     pub graph: petgraph::Graph<NodeWeight, EdgeWeight>,
     _signals: Vec<Signal>,
+    claims: HashMap<String, String>,
     storage: Box<dyn Storage>,
     loading: bool,
 }
@@ -107,6 +108,7 @@ impl Default for GraphBlackboard {
         Self {
             graph: petgraph::Graph::new(),
             _signals: Vec::new(),
+            claims: HashMap::new(),
             storage: Box::new(NullStorage),
             loading: false,
         }
@@ -309,18 +311,33 @@ impl Blackboard for GraphBlackboard {
     }
 
     fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        if let Some(current) = self.claims.get(intent_id) {
+            return Err(BlackboardError::Conflict(format!(
+                "Intent {} is already claimed by {}",
+                intent_id, current
+            )));
+        }
         let payload = serde_json::to_string(&ClaimPayload {
             id: intent_id.into(),
             agent: agent.into(),
         })
         .unwrap();
         self.log_fih("claim_intent", &payload);
-        // In-memory tracking: intent claims are managed via petgraph edge properties.
-        // For now, this is a no-op for the in-memory graph.
+        self.claims.insert(intent_id.to_string(), agent.to_string());
         Ok(())
     }
 
     fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        if let Some(current) = self.claims.get(intent_id) {
+            if current != agent {
+                return Err(BlackboardError::Conflict(format!(
+                    "Intent {} is claimed by {}, not {}",
+                    intent_id, current, agent
+                )));
+            }
+        } else {
+            self.claims.insert(intent_id.to_string(), agent.to_string());
+        }
         let payload = serde_json::to_string(&ClaimPayload {
             id: intent_id.into(),
             agent: agent.into(),
@@ -331,12 +348,23 @@ impl Blackboard for GraphBlackboard {
     }
 
     fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        match self.claims.get(intent_id) {
+            None => return Ok(()),
+            Some(current) if current != agent => {
+                return Err(BlackboardError::Conflict(format!(
+                    "Intent {} is claimed by {}, not {}",
+                    intent_id, current, agent
+                )));
+            }
+            _ => {}
+        }
         let payload = serde_json::to_string(&ClaimPayload {
             id: intent_id.into(),
             agent: agent.into(),
         })
         .unwrap();
         self.log_fih("release_intent", &payload);
+        self.claims.remove(intent_id);
         Ok(())
     }
 
@@ -352,8 +380,7 @@ impl Blackboard for GraphBlackboard {
         })
         .unwrap();
         self.log_fih("conclude_intent", &payload);
-
-        // Create a new fact from the conclusion
+        self.claims.remove(intent_id);
         let new_fact = Fact {
             id: FihHash::new(&[intent_id, &result_str], "conclusion"),
             origin: format!("conclusion:{}", intent_id),
