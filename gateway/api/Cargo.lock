@@ -938,6 +938,7 @@ dependencies = [
  "cyrs-plan",
  "cyrs-syntax",
  "nexus-model",
+ "nexus-table",
  "petgraph",
  "serde",
  "serde_json",
@@ -956,7 +957,7 @@ dependencies = [
 name = "nexus-table"
 version = "0.1.0"
 dependencies = [
- "nexus-graph",
+ "nexus-model",
  "rusqlite",
  "serde",
  "serde_json",
