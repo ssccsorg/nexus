@@ -273,7 +273,7 @@ impl Blackboard for GraphBlackboard {
             let found = self
                 .graph
                 .node_indices()
-                .any(|i| self.graph.node_weight(i).map_or(false, |w| w.name == *fid));
+                .any(|i| self.graph.node_weight(i).is_some_and(|w| w.name == *fid));
             if !found {
                 return Err(BlackboardError::NotFound(format!("Fact {fid} not found")));
             }
@@ -295,7 +295,7 @@ impl Blackboard for GraphBlackboard {
             if let Some(src) = self
                 .graph
                 .node_indices()
-                .find(|i| self.graph.node_weight(*i).map_or(false, |w| w.name == *fid))
+                .find(|i| self.graph.node_weight(*i).is_some_and(|w| w.name == *fid))
             {
                 self.graph.add_edge(
                     src,
