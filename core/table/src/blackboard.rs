@@ -122,20 +122,25 @@ impl Blackboard for SqlBlackboard {
     fn submit_fact(&mut self, fact: &Fact) -> FihHash {
         let conn = self.conn.lock().unwrap();
         let pid = &self.project_id;
-        let _ = conn.execute(
+        let desc = serde_json::to_string(&fact.content).unwrap_or_default();
+        if let Err(e) = conn.execute(
             "INSERT OR IGNORE INTO facts (id, project_id, description, creator, origin) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![fact.id.0, pid, serde_json::to_string(&fact.content).unwrap_or_default(), fact.creator, fact.origin],
-        );
+            params![fact.id.0, pid, &desc, &fact.creator, &fact.origin],
+        ) {
+            eprintln!("submit_fact: {e}");
+        }
         fact.id.clone()
     }
 
     fn submit_hint(&mut self, hint: &Hint) {
         let conn = self.conn.lock().unwrap();
         let pid = &self.project_id;
-        let _ = conn.execute(
+        if let Err(e) = conn.execute(
             "INSERT OR IGNORE INTO hints (id, project_id, content, creator) VALUES (?1, ?2, ?3, ?4)",
-            params![hint.id.0, pid, hint.content, hint.creator],
-        );
+            params![hint.id.0, pid, &hint.content, &hint.creator],
+        ) {
+            eprintln!("submit_hint: {e}");
+        }
     }
 
     fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError> {
@@ -282,121 +287,128 @@ impl Blackboard for SqlBlackboard {
     }
 
     fn read_state(&self) -> BoardState {
-        let conn = self.conn.lock().unwrap();
+        let conn = match self.conn.lock() {
+            Ok(c) => c,
+            Err(poisoned) => {
+                eprintln!("read_state: mutex poisoned, recovering");
+                poisoned.into_inner()
+            }
+        };
         let pid = &self.project_id;
 
-        let facts: Vec<Fact> = {
-            let mut stmt = conn.prepare("SELECT id, description, creator, origin FROM facts WHERE project_id = ?1 ORDER BY id").unwrap();
-            stmt.query_map(params![pid], |row| {
-                let id: String = row.get(0)?;
-                let desc: String = row.get(1)?;
-                let creator: String = row.get(2).unwrap_or_default();
-                let origin: String = row.get(3).unwrap_or_default();
-                Ok(Fact {
-                    id: FihHash(id),
-                    origin,
-                    content: serde_json::from_str(&desc).unwrap_or(serde_json::Value::String(desc)),
-                    creator,
+        let facts = conn
+            .prepare("SELECT id, description, creator, origin FROM facts WHERE project_id = ?1 ORDER BY id")
+            .map(|mut stmt| {
+                stmt.query_map(params![pid], |row| {
+                    let id: String = row.get(0)?;
+                    let desc: String = row.get(1)?;
+                    let creator: String = row.get(2).unwrap_or_default();
+                    let origin: String = row.get(3).unwrap_or_default();
+                    Ok(Fact {
+                        id: FihHash(id),
+                        origin,
+                        content: serde_json::from_str(&desc).unwrap_or(serde_json::Value::String(desc)),
+                        creator,
+                    })
                 })
+                .map(|rows| rows.filter_map(|r| r.ok()).collect())
+                .unwrap_or_default()
             })
-            .unwrap()
-            .filter_map(|r| r.ok())
-            .collect()
-        };
+            .unwrap_or_default();
 
-        let source_map: std::collections::HashMap<String, Vec<String>> = {
-            let mut stmt = conn.prepare(
-                "SELECT intent_id, fact_id FROM intent_sources WHERE project_id = ?1 ORDER BY rowid"
-            ).unwrap();
-            let mut map: std::collections::HashMap<String, Vec<String>> =
-                std::collections::HashMap::new();
-            for row in stmt
-                .query_map(params![pid], |row| {
+        let source_map: std::collections::HashMap<String, Vec<String>> = conn
+            .prepare("SELECT intent_id, fact_id FROM intent_sources WHERE project_id = ?1 ORDER BY rowid")
+            .map(|mut stmt| {
+                let mut map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+                if let Ok(rows) = stmt.query_map(params![pid], |row| {
                     let iid: String = row.get(0)?;
                     let fid: String = row.get(1)?;
                     Ok((iid, fid))
-                })
-                .unwrap()
-                .filter_map(|r| r.ok())
-            {
-                map.entry(row.0).or_default().push(row.1);
-            }
-            map
-        };
+                }) {
+                    for row in rows.flatten() {
+                        map.entry(row.0).or_default().push(row.1);
+                    }
+                }
+                map
+            })
+            .unwrap_or_default();
 
-        let intents: Vec<Intent> = {
-            let mut stmt = conn
-                .prepare(
-                    "SELECT i.id, i.description, i.creator, i.worker,
-                            i.to_fact_id, i.last_heartbeat_at, i.created_at, i.concluded_at
+        let intents = conn
+            .prepare(
+                "SELECT i.id, i.description, i.creator, i.worker,
+                        i.to_fact_id, i.last_heartbeat_at, i.created_at, i.concluded_at
                  FROM intents i WHERE i.project_id = ?1 ORDER BY i.created_at",
-                )
-                .unwrap();
-            stmt.query_map(params![pid], |row| {
-                let id: String = row.get(0)?;
-                let desc: String = row.get(1)?;
-                let creator: String = row.get(2)?;
-                let worker: Option<String> = row.get(3)?;
-                let to_fact_id: Option<String> = row.get(4)?;
-                let last_heartbeat_at: Option<String> = row.get(5)?;
-                let created_at: String = row.get(6)?;
-                let concluded_at: Option<String> = row.get(7)?;
-                Ok((
-                    id,
-                    desc,
-                    creator,
-                    worker,
-                    to_fact_id,
-                    last_heartbeat_at,
-                    created_at,
-                    concluded_at,
-                ))
-            })
-            .unwrap()
-            .filter_map(|r| r.ok())
-            .map(
-                |(
-                    id,
-                    desc,
-                    creator,
-                    worker,
-                    to_fact_id,
-                    last_heartbeat_at,
-                    created_at,
-                    concluded,
-                )| Intent {
-                    id: FihHash(id.clone()),
-                    from_facts: source_map.get(&id).cloned().unwrap_or_default(),
-                    description: desc,
-                    creator,
-                    worker,
-                    to_fact_id,
-                    last_heartbeat_at,
-                    created_at: Some(created_at),
-                    concluded_at: concluded,
-                },
             )
-            .collect()
-        };
-
-        let hints: Vec<Hint> = {
-            let mut stmt = conn.prepare(
-                "SELECT id, content, creator FROM hints WHERE project_id = ?1 ORDER BY created_at"
-            ).unwrap();
-            stmt.query_map(params![pid], |row| {
-                let id: String = row.get(0)?;
-                let content: String = row.get(1)?;
-                let creator: String = row.get(2)?;
-                Ok(Hint {
-                    id: FihHash(id),
-                    content,
-                    creator,
+            .map(|mut stmt| {
+                stmt.query_map(params![pid], |row| {
+                    let id: String = row.get(0)?;
+                    let desc: String = row.get(1)?;
+                    let creator: String = row.get(2)?;
+                    let worker: Option<String> = row.get(3)?;
+                    let to_fact_id: Option<String> = row.get(4)?;
+                    let last_heartbeat_at: Option<String> = row.get(5)?;
+                    let created_at: String = row.get(6)?;
+                    let concluded_at: Option<String> = row.get(7)?;
+                    Ok((
+                        id,
+                        desc,
+                        creator,
+                        worker,
+                        to_fact_id,
+                        last_heartbeat_at,
+                        created_at,
+                        concluded_at,
+                    ))
                 })
+                .map(|rows| {
+                    rows.filter_map(|r| r.ok())
+                        .map(
+                            |(
+                                id,
+                                desc,
+                                creator,
+                                worker,
+                                to_fact_id,
+                                last_heartbeat_at,
+                                created_at,
+                                concluded,
+                            )| Intent {
+                                id: FihHash(id.clone()),
+                                from_facts: source_map.get(&id).cloned().unwrap_or_default(),
+                                description: desc,
+                                creator,
+                                worker,
+                                to_fact_id,
+                                last_heartbeat_at,
+                                created_at: Some(created_at),
+                                concluded_at: concluded,
+                            },
+                        )
+                        .collect()
+                })
+                .unwrap_or_default()
             })
-            .unwrap()
-            .filter_map(|r| r.ok())
-            .collect()
-        };
+            .unwrap_or_default();
+
+        let hints = conn
+            .prepare(
+                "SELECT id, content, creator FROM hints WHERE project_id = ?1 ORDER BY created_at",
+            )
+            .map(|mut stmt| {
+                stmt.query_map(params![pid], |row| {
+                    let id: String = row.get(0)?;
+                    let content: String = row.get(1)?;
+                    let creator: String = row.get(2)?;
+                    Ok(Hint {
+                        id: FihHash(id),
+                        content,
+                        creator,
+                    })
+                })
+                .map(|rows| rows.filter_map(|r| r.ok()).collect())
+                .unwrap_or_default()
+            })
+            .unwrap_or_default();
 
         BoardState {
             facts,
