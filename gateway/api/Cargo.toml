@@ -6,7 +6,7 @@ license = "Apache-2.0"
 
 [dependencies]
 nexus-graph = { path = "../../core/graph" }
-nexus-sql = { path = "../../core/sql" }
+nexus-table = { path = "../../core/table" }
 axum = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

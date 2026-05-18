@@ -1,5 +1,5 @@
 [package]
-name = "nexus-sql"
+name = "nexus-table"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
