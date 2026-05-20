@@ -1,10 +1,12 @@
-// nexus-table — Concurrent stress tests for SqlBlackboard.
+// nexus-graph — Concurrent stress tests for SqlNormalizedStorage.
 //
-// These tests exercise the Blackboard under extreme parallelism to verify
-// that all operations are race-free and error handling is correct.
+// Adapted from the old nexus-table test suite. These tests exercise the
+// Storage under extreme parallelism to verify that all operations are
+// race-free and error handling is correct.
 
-use nexus_table::{Blackboard, BlackboardError, Fact, FihHash, Intent, SqlBlackboard};
-use std::sync::{Arc, Mutex};
+use nexus_graph::cold::SqlNormalizedStorage;
+use nexus_graph::{BlackboardError, Fact, FihHash, Intent, Storage};
+use std::sync::Arc;
 
 fn make_fact(id: &str, content: &str) -> Fact {
     Fact {
@@ -30,17 +32,12 @@ fn make_intent(id: &str, from: Vec<&str>, desc: &str) -> Intent {
 }
 
 // ── Scenario 1: N agents concurrent heartbeat ─────────────────────────
-//
-// 10 agents all heartbeat the same intent. In Cairn protocol, heartbeat
-// IS claim — any agent can heartbeat any unowned intent. All succeed,
-// final worker is determined by execution order.
 
 #[test]
 fn test_concurrent_heartbeat_all_succeed() {
-    let bb = Arc::new(Mutex::new(SqlBlackboard::memory().unwrap()));
+    let bb = Arc::new(SqlNormalizedStorage::memory().unwrap());
 
     {
-        let mut bb = bb.lock().unwrap();
         bb.submit_fact(&make_fact("f001", "shared resource"))
             .unwrap();
         bb.submit_intent(&make_intent("i001", vec!["f001"], "race target"))
@@ -54,7 +51,6 @@ fn test_concurrent_heartbeat_all_succeed() {
         let bb = bb.clone();
         let agent = format!("agent-{}", i);
         handles.push(std::thread::spawn(move || {
-            let mut bb = bb.lock().unwrap();
             bb.heartbeat("i001", &agent)
         }));
     }
@@ -62,11 +58,9 @@ fn test_concurrent_heartbeat_all_succeed() {
     let results: Vec<Result<(), BlackboardError>> =
         handles.into_iter().map(|h| h.join().unwrap()).collect();
 
-    let state = bb.lock().unwrap().read_state();
+    let state = bb.read_state();
     let intent = state.intents.iter().find(|i| i.id.0 == "i001").unwrap();
 
-    // Only one heartbeat succeeds (the first to claim the intent);
-    // the rest get Conflict because heartbeat now checks ownership.
     let successes = results.iter().filter(|r| r.is_ok()).count();
     assert_eq!(successes, 1, "only one agent can claim via heartbeat");
     let conflicts = results
@@ -74,21 +68,16 @@ fn test_concurrent_heartbeat_all_succeed() {
         .filter(|r| matches!(r, Err(BlackboardError::Conflict(_))))
         .count();
     assert_eq!(conflicts, num_agents - 1, "remaining agents get Conflict");
-    // Final worker is the one who claimed it
     assert!(intent.worker.is_some(), "intent must have a final worker");
 }
 
 // ── Scenario 2: Concurrent claim → release handoff ────────────────────
-//
-// Two agents race to claim and release. After both finish, the intent
-// must be unclaimed (worker = None) and never concluded.
 
 #[test]
 fn test_concurrent_release_claim_handoff() {
-    let bb = Arc::new(Mutex::new(SqlBlackboard::memory().unwrap()));
+    let bb = Arc::new(SqlNormalizedStorage::memory().unwrap());
 
     {
-        let mut bb = bb.lock().unwrap();
         bb.submit_fact(&make_fact("f001", "ground truth")).unwrap();
         bb.submit_intent(&make_intent("i001", vec!["f001"], "handoff target"))
             .unwrap();
@@ -96,26 +85,20 @@ fn test_concurrent_release_claim_handoff() {
 
     for round in 0..5 {
         let bb1 = bb.clone();
-        let h1 = std::thread::spawn(move || {
-            let mut bb = bb1.lock().unwrap();
-            match bb.heartbeat("i001", "agent-a") {
-                Ok(_) => bb.release_intent("i001", "agent-a"),
-                Err(e) => Err(e),
-            }
+        let h1 = std::thread::spawn(move || match bb1.heartbeat("i001", "agent-a") {
+            Ok(_) => bb1.release_intent("i001", "agent-a"),
+            Err(e) => Err(e),
         });
 
         let bb2 = bb.clone();
-        let h2 = std::thread::spawn(move || {
-            let mut bb = bb2.lock().unwrap();
-            match bb.heartbeat("i001", "agent-b") {
-                Ok(_) => bb.release_intent("i001", "agent-b"),
-                Err(e) => Err(e),
-            }
+        let h2 = std::thread::spawn(move || match bb2.heartbeat("i001", "agent-b") {
+            Ok(_) => bb2.release_intent("i001", "agent-b"),
+            Err(e) => Err(e),
         });
 
         let (r1, r2) = (h1.join().unwrap(), h2.join().unwrap());
 
-        let state = bb.lock().unwrap().read_state();
+        let state = bb.read_state();
         let intent = state.intents.iter().find(|i| i.id.0 == "i001").unwrap();
 
         assert!(
@@ -136,14 +119,13 @@ fn test_concurrent_release_claim_handoff() {
 
 #[test]
 fn test_concurrent_fact_submission() {
-    let bb = Arc::new(Mutex::new(SqlBlackboard::memory().unwrap()));
+    let bb = Arc::new(SqlNormalizedStorage::memory().unwrap());
     let num_facts = 100;
 
     let mut handles = Vec::new();
     for i in 0..num_facts {
         let bb = bb.clone();
         handles.push(std::thread::spawn(move || {
-            let mut bb = bb.lock().unwrap();
             bb.submit_fact(&make_fact(&format!("f_{:04}", i), &format!("fact {i}")))
                 .unwrap();
         }));
@@ -153,7 +135,7 @@ fn test_concurrent_fact_submission() {
         h.join().unwrap();
     }
 
-    let state = bb.lock().unwrap().read_state();
+    let state = bb.read_state();
     assert_eq!(state.facts.len(), num_facts);
 }
 
@@ -161,11 +143,10 @@ fn test_concurrent_fact_submission() {
 
 #[test]
 fn test_concurrent_full_lifecycle() {
-    let bb = Arc::new(Mutex::new(SqlBlackboard::memory().unwrap()));
+    let bb = Arc::new(SqlNormalizedStorage::memory().unwrap());
     let num_agents = 20;
 
     {
-        let mut bb = bb.lock().unwrap();
         for i in 0..num_agents {
             bb.submit_fact(&make_fact(
                 &format!("f_{:04}", i),
@@ -179,7 +160,6 @@ fn test_concurrent_full_lifecycle() {
     for i in 0..num_agents {
         let bb = bb.clone();
         handles.push(std::thread::spawn(move || {
-            let mut bb = bb.lock().unwrap();
             let fid = format!("f_{:04}", i);
             let iid = format!("i_{:04}", i);
 
@@ -203,7 +183,7 @@ fn test_concurrent_full_lifecycle() {
         failures
     );
 
-    let state = bb.lock().unwrap().read_state();
+    let state = bb.read_state();
     assert_eq!(state.facts.len(), num_agents * 2);
     assert_eq!(state.intents.len(), num_agents);
     assert!(state.intents.iter().all(|i| i.concluded_at.is_some()));
@@ -213,28 +193,28 @@ fn test_concurrent_full_lifecycle() {
 
 #[test]
 fn test_submit_fact_duplicate_id_returns_error() {
-    let bb = Arc::new(Mutex::new(SqlBlackboard::memory().unwrap()));
+    let bb = SqlNormalizedStorage::memory().unwrap();
 
-    let result1 = bb.lock().unwrap().submit_fact(&make_fact("f001", "first"));
+    let result1 = bb.submit_fact(&make_fact("f001", "first"));
     assert!(result1.is_ok(), "first submit should succeed");
 
-    let result2 = bb.lock().unwrap().submit_fact(&make_fact("f001", "second"));
+    let result2 = bb.submit_fact(&make_fact("f001", "second"));
     assert!(result2.is_err(), "duplicate ID must return error");
     match result2.unwrap_err() {
         BlackboardError::Internal(_) => {} // expected: UNIQUE constraint
         other => panic!("expected Internal error, got {other:?}"),
     }
 
-    let state = bb.lock().unwrap().read_state();
+    let state = bb.read_state();
     assert_eq!(state.facts.len(), 1, "only one fact stored");
     assert_eq!(state.facts[0].content, "first");
 }
 
-// ── Scenario 6: Submit fact to non-existent project ────────────────────
+// ── Scenario 6: Submit fact to non-existent project (silent) ───────────
 
 #[test]
 fn test_submit_fact_fk_violation_silent() {
-    let mut bb = SqlBlackboard::memory().unwrap();
+    let bb = SqlNormalizedStorage::memory().unwrap();
     assert_eq!(bb.project_id(), "default");
 
     bb.submit_fact(&make_fact("f001", "this works")).unwrap();

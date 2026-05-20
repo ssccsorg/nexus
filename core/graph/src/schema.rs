@@ -1,7 +1,11 @@
-// nexus-table — Database schema (Cairn-pattern normalized tables).
+/// Database schema (Cairn-pattern normalized tables).
+///
+/// Used by [`crate::cold::SqlNormalizedStorage`] to initialize the
+/// SQLite schema on first open.
 
 use rusqlite::Connection;
 
+/// Apply the schema to a connection. Idempotent (uses IF NOT EXISTS).
 pub fn apply_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
     conn.execute_batch(
         "PRAGMA journal_mode=WAL;
