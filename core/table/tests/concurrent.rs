@@ -69,7 +69,10 @@ fn test_concurrent_heartbeat_all_succeed() {
     // the rest get Conflict because heartbeat now checks ownership.
     let successes = results.iter().filter(|r| r.is_ok()).count();
     assert_eq!(successes, 1, "only one agent can claim via heartbeat");
-    let conflicts = results.iter().filter(|r| matches!(r, Err(BlackboardError::Conflict(_)))).count();
+    let conflicts = results
+        .iter()
+        .filter(|r| matches!(r, Err(BlackboardError::Conflict(_))))
+        .count();
     assert_eq!(conflicts, num_agents - 1, "remaining agents get Conflict");
     // Final worker is the one who claimed it
     assert!(intent.worker.is_some(), "intent must have a final worker");
