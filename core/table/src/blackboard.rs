@@ -203,40 +203,41 @@ impl Blackboard for SqlBlackboard {
     }
 
     fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let mut conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap();
         let pid = &self.project_id;
 
-        let row: Option<(Option<String>,)> = conn
-            .query_row(
-                "SELECT worker FROM intents WHERE id = ?1 AND project_id = ?2 AND to_fact_id IS NULL",
-                params![intent_id, pid],
-                |row| Ok((row.get(0)?,)),
+        // Atomic: UPDATE only if worker matches (or intent is unclaimed)
+        let updated = conn
+            .execute(
+                "UPDATE intents SET worker = NULL
+             WHERE id = ?1 AND project_id = ?2 AND to_fact_id IS NULL
+               AND (worker IS NULL OR worker = ?3)",
+                params![intent_id, pid, agent],
             )
-            .ok();
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
-        match row {
-            None => {
-                return Err(BlackboardError::NotFound(format!(
-                    "Intent {intent_id} not found or already concluded"
-                )));
-            }
-            Some((Some(ref w),)) if w != agent => {
-                return Err(BlackboardError::Forbidden(format!("Intent claimed by {w}")));
-            }
-            _ => {}
+        if updated == 0 {
+            // Determine the reason: not found, concluded, or claimed by someone else
+            let row: Result<(Option<String>, Option<String>), _> = conn.query_row(
+                "SELECT to_fact_id, worker FROM intents WHERE id = ?1 AND project_id = ?2",
+                params![intent_id, pid],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            );
+            return match row {
+                Err(_) => Err(BlackboardError::NotFound(format!(
+                    "Intent {intent_id} not found"
+                ))),
+                Ok((Some(_), _)) => Err(BlackboardError::NotFound(format!(
+                    "Intent {intent_id} already concluded"
+                ))),
+                Ok((None, Some(ref w))) if w != agent => {
+                    Err(BlackboardError::Forbidden(format!("Intent claimed by {w}")))
+                }
+                _ => Err(BlackboardError::NotFound(format!(
+                    "Intent {intent_id} cannot be released"
+                ))),
+            };
         }
-
-        let tx = conn
-            .transaction()
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        tx.execute(
-            "UPDATE intents SET worker = NULL WHERE id = ?1 AND project_id = ?2",
-            params![intent_id, pid],
-        )
-        .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        tx.commit()
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-
         Ok(())
     }
 
