@@ -1,11 +1,8 @@
-/// SqlNormalizedStorage — Normalized Cairn-pattern ColdStorage.
-///
-/// Implements [`Storage`] + [`ColdStorage`] directly against normalized
-/// SQLite tables (facts, intents, hints, intent_sources). Write-through
-/// on every mutation. Project-scoped via `project_id`.
-///
-/// Previously `SqlBlackboard` in nexus-table; renamed to clarify its
-/// role as a storage backend (not a Blackboard).
+// nexus-storage-sqlite — SqlNormalizedStorage: normalized Cairn-pattern FIH Storage.
+//
+// Implements `Storage` + `ColdStorage` traits directly against normalized
+// SQLite tables (facts, intents, hints, intent_sources). No event replay.
+// Write-through on every mutation. Project-scoped via project_id.
 
 use nexus_model::{BlackboardError, BoardState, ColdStorage, Fact, FihHash, Hint, Intent, Storage};
 use rusqlite::{Connection, params};

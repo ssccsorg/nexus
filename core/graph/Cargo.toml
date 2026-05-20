@@ -13,7 +13,6 @@ cyrs-plan   = { git = "https://github.com/phall1/cyrs", package = "cyrs-plan" }
 petgraph.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-rusqlite.workspace = true
 
 [dev-dependencies]
 tempfile = "3"

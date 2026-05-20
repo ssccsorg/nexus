@@ -1,12 +1,12 @@
-/// SqliteStorage — Legacy event-log ColdStorage.
-///
-/// Backward-compatible event-log persistence. Retained for migration
-/// scenarios. New code should use [`SqlNormalizedStorage`] instead.
-///
-/// Implements [`Storage`](nexus_model::Storage) + [`ColdStorage`](nexus_model::ColdStorage)
-/// by serializing FIH operations as JSON events in the `fih_events` table.
+// nexus-storage-sqlite — SqliteStorage: legacy event-log storage.
+//
+// Backward-compatible event-log persistence. Implements `Storage` + `ColdStorage`
+// by serializing FIH operations as JSON events in the `fih_events` table.
+// Retained for migration scenarios. New code should use `SqlNormalizedStorage`.
 
-use nexus_model::{BlackboardError, BoardState, ColdStorage, Fact, FihHash, Hint, Intent, Storage, StoredEvent};
+use nexus_model::{
+    BlackboardError, BoardState, ColdStorage, Fact, FihHash, Hint, Intent, Storage, StoredEvent,
+};
 use rusqlite::{Connection, params};
 use std::path::Path;
 use std::sync::Mutex;
@@ -81,22 +81,22 @@ impl Storage for SqliteStorage {
     }
 
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
-        let payload = serde_json::to_string(fact)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let payload =
+            serde_json::to_string(fact).map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.log_fih("submit_fact", &payload);
         Ok(fact.id.clone())
     }
 
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
-        let payload = serde_json::to_string(hint)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let payload =
+            serde_json::to_string(hint).map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.log_fih("submit_hint", &payload);
         Ok(())
     }
 
     fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
-        let payload = serde_json::to_string(intent)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let payload =
+            serde_json::to_string(intent).map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.log_fih("submit_intent", &payload);
         Ok(intent.id.clone())
     }

@@ -1,11 +1,11 @@
-// nexus-graph — Concurrent stress tests for SqlNormalizedStorage.
+// nexus-storage-sqlite — Concurrent stress tests for SqlNormalizedStorage.
 //
 // Adapted from the old nexus-table test suite. These tests exercise the
 // Storage under extreme parallelism to verify that all operations are
 // race-free and error handling is correct.
 
-use nexus_graph::cold::SqlNormalizedStorage;
-use nexus_graph::{BlackboardError, Fact, FihHash, Intent, Storage};
+use nexus_model::{BlackboardError, Fact, FihHash, Intent, Storage};
+use nexus_storage_sqlite::SqlNormalizedStorage;
 use std::sync::Arc;
 
 fn make_fact(id: &str, content: &str) -> Fact {
@@ -50,9 +50,7 @@ fn test_concurrent_heartbeat_all_succeed() {
     for i in 0..num_agents {
         let bb = bb.clone();
         let agent = format!("agent-{}", i);
-        handles.push(std::thread::spawn(move || {
-            bb.heartbeat("i001", &agent)
-        }));
+        handles.push(std::thread::spawn(move || bb.heartbeat("i001", &agent)));
     }
 
     let results: Vec<Result<(), BlackboardError>> =

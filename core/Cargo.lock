@@ -397,7 +397,6 @@ dependencies = [
  "cyrs-syntax",
  "nexus-model",
  "petgraph",
- "rusqlite",
  "serde",
  "serde_json",
  "tempfile",
@@ -410,6 +409,17 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "nexus-storage-sqlite"
+version = "0.1.0"
+dependencies = [
+ "nexus-model",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

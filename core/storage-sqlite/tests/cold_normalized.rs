@@ -1,10 +1,10 @@
-// nexus-graph — Integration tests for SqlNormalizedStorage.
+// nexus-storage-sqlite — Integration tests for SqlNormalizedStorage.
 //
 // Adapted from the old nexus-table test suite. All SqlBlackboard
-// references replaced with cold::SqlNormalizedStorage.
+// references replaced with SqlNormalizedStorage.
 
-use nexus_graph::cold::SqlNormalizedStorage;
-use nexus_graph::{BlackboardError, Fact, FihHash, Hint, Intent, Storage};
+use nexus_model::{BlackboardError, Fact, FihHash, Hint, Intent, Storage};
+use nexus_storage_sqlite::SqlNormalizedStorage;
 
 fn make_fact(id: &str, content: &str) -> Fact {
     Fact {
@@ -550,7 +550,7 @@ fn test_project_with_custom_title() {
 
 #[test]
 fn test_sqlite_storage_backward_compat() {
-    use nexus_graph::cold::SqliteStorage;
+    use nexus_storage_sqlite::SqliteStorage;
     let store = SqliteStorage::memory().unwrap();
     store.log_fih("test_event", "{\"key\": \"value\"}");
     let events = store.load_events();
