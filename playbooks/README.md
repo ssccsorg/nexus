@@ -13,7 +13,7 @@ the FIH protocol in action across different languages and privilege levels.
 
 ## Structure
 
-```
+```text
 playbooks/
 ├── consumers/     — External agents communicating via HTTP/JSON
 │   ├── python_agent.py   (pip install, then python3 ...)
@@ -27,22 +27,26 @@ playbooks/
 ## Usage
 
 ### 1. Start the gateway (in terminal 1)
+
 ```sh
 ./scripts/run-gateway.sh
 ```
 
 ### 2. Run a consumer (in terminal 2)
+
 ```sh
 python3 playbooks/consumers/python_agent.py
 node    playbooks/consumers/node_agent.mjs
 ```
 
 ### 3. Run privileged agent (self-contained, no server needed)
+
 ```sh
 cd playbooks/agents && cargo run
 ```
 
 ### 4. Run all (CI mode, starts/stops server automatically)
+
 ```sh
 ./playbooks/run.sh
 ```
