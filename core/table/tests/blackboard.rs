@@ -30,7 +30,7 @@ fn make_intent(id: &str, from: Vec<&str>, desc: &str) -> Intent {
 #[test]
 fn test_submit_fact() {
     let mut bb = SqlBlackboard::memory().unwrap();
-    let hash = bb.submit_fact(&make_fact("f001", "test fact"));
+    let hash = bb.submit_fact(&make_fact("f001", "test fact")).unwrap();
     assert_eq!(hash.0, "f001");
     let state = bb.read_state();
     assert_eq!(state.facts.len(), 1);
@@ -40,7 +40,7 @@ fn test_submit_fact() {
 #[test]
 fn test_submit_intent() {
     let mut bb = SqlBlackboard::memory().unwrap();
-    bb.submit_fact(&make_fact("f001", "source fact"));
+    bb.submit_fact(&make_fact("f001", "source fact")).unwrap();
     let hash = bb
         .submit_intent(&make_intent("i001", vec!["f001"], "test intent"))
         .unwrap();
@@ -59,7 +59,7 @@ fn test_intent_missing_fact() {
 #[test]
 fn test_heartbeat_and_conclude() {
     let mut bb = SqlBlackboard::memory().unwrap();
-    bb.submit_fact(&make_fact("f001", "source"));
+    bb.submit_fact(&make_fact("f001", "source")).unwrap();
     bb.submit_intent(&make_intent("i001", vec!["f001"], "explore"))
         .unwrap();
     bb.heartbeat("i001", "agent-a").unwrap();
@@ -73,7 +73,7 @@ fn test_heartbeat_and_conclude() {
 #[test]
 fn test_release_intent() {
     let mut bb = SqlBlackboard::memory().unwrap();
-    bb.submit_fact(&make_fact("f001", "source"));
+    bb.submit_fact(&make_fact("f001", "source")).unwrap();
     bb.submit_intent(&make_intent("i001", vec!["f001"], "explore"))
         .unwrap();
     bb.heartbeat("i001", "agent-a").unwrap();
@@ -89,8 +89,8 @@ fn test_concurrent_session() {
     let _ = std::fs::remove_file(path);
     {
         let mut bb = SqlBlackboard::open(path).unwrap();
-        bb.submit_fact(&make_fact("f001", "persistent fact"));
-        bb.submit_fact(&make_fact("f002", "another fact"));
+        bb.submit_fact(&make_fact("f001", "persistent fact")).unwrap();
+        bb.submit_fact(&make_fact("f002", "another fact")).unwrap();
         bb.submit_intent(&make_intent("i001", vec!["f001"], "persistent intent"))
             .unwrap();
         assert_eq!(bb.read_state().facts.len(), 2);
@@ -111,7 +111,7 @@ fn test_hint() {
         id: FihHash("h001".into()),
         content: "check the web service first".into(),
         creator: "analyst".into(),
-    });
+    }).unwrap();
     let state = bb.read_state();
     assert_eq!(state.hints.len(), 1);
 }
@@ -119,9 +119,9 @@ fn test_hint() {
 #[test]
 fn test_intent_sources_join_on_read() {
     let mut bb = SqlBlackboard::memory().unwrap();
-    bb.submit_fact(&make_fact("f001", "observation"));
-    bb.submit_fact(&make_fact("f002", "inference"));
-    bb.submit_fact(&make_fact("f003", "conclusion"));
+    bb.submit_fact(&make_fact("f001", "observation")).unwrap();
+    bb.submit_fact(&make_fact("f002", "inference")).unwrap();
+    bb.submit_fact(&make_fact("f003", "conclusion")).unwrap();
     let intent = Intent {
         id: FihHash("i_hyper_001".into()),
         from_facts: vec!["f001".into(), "f002".into(), "f003".into()],
@@ -151,7 +151,7 @@ fn test_playbook_sre_lifecycle() {
         origin: "ci-bot".into(),
         content: serde_json::json!({"event": "deploy_complete", "service": "api-gateway", "version": "v2.4.1", "duration_ms": 3420, "status": "success"}),
         creator: "ci-bot".into(),
-    });
+    }).unwrap();
     bb.submit_intent(&Intent {
         id: FihHash("i_sre_001".into()),
         from_facts: vec!["f_deploy_001".into()],
@@ -179,8 +179,8 @@ fn test_playbook_sre_lifecycle() {
 fn test_multi_blackboard_isolation() {
     let mut bb_sensor = SqlBlackboard::memory().unwrap();
     let mut bb_knowledge = SqlBlackboard::memory().unwrap();
-    bb_sensor.submit_fact(&make_fact("f_s1", "sensor reading"));
-    bb_knowledge.submit_fact(&make_fact("f_k1", "knowledge graph node"));
+    bb_sensor.submit_fact(&make_fact("f_s1", "sensor reading")).unwrap();
+    bb_knowledge.submit_fact(&make_fact("f_k1", "knowledge graph node")).unwrap();
     bb_sensor
         .submit_intent(&make_intent("i_s1", vec!["f_s1"], "analyze sensor"))
         .unwrap();
@@ -194,7 +194,7 @@ fn test_multi_blackboard_isolation() {
 #[test]
 fn test_multi_agent_handoff() {
     let mut bb = SqlBlackboard::memory().unwrap();
-    bb.submit_fact(&make_fact("f001", "discovery"));
+    bb.submit_fact(&make_fact("f001", "discovery")).unwrap();
     bb.submit_intent(&make_intent("i001", vec!["f001"], "explore anomaly"))
         .unwrap();
     bb.heartbeat("i001", "agent-a").unwrap();
@@ -217,7 +217,7 @@ fn test_multi_agent_handoff() {
 #[test]
 fn test_protocol_enforcement() {
     let mut bb = SqlBlackboard::memory().unwrap();
-    bb.submit_fact(&make_fact("f001", "data"));
+    bb.submit_fact(&make_fact("f001", "data")).unwrap();
     bb.submit_intent(&make_intent("i001", vec!["f001"], "critical task"))
         .unwrap();
     bb.heartbeat("i001", "agent-a").unwrap();
@@ -236,8 +236,8 @@ fn test_full_persistence_across_sessions() {
     let _ = std::fs::remove_file(path);
     {
         let mut bb = SqlBlackboard::open(path).unwrap();
-        bb.submit_fact(&make_fact("f001", "alpha"));
-        bb.submit_fact(&make_fact("f002", "beta"));
+        bb.submit_fact(&make_fact("f001", "alpha")).unwrap();
+        bb.submit_fact(&make_fact("f002", "beta")).unwrap();
         bb.submit_intent(&make_intent("i001", vec!["f001"], "first"))
             .unwrap();
         bb.submit_intent(&make_intent("i002", vec!["f002"], "second"))
@@ -248,7 +248,7 @@ fn test_full_persistence_across_sessions() {
             id: FihHash("h001".into()),
             content: "strategic hint".into(),
             creator: "planner".into(),
-        });
+        }).unwrap();
     }
     {
         let bb = SqlBlackboard::open(path).unwrap();
@@ -269,7 +269,7 @@ fn test_structured_json_content() {
         origin: "json-test".into(),
         content: complex_content.clone(),
         creator: "tester".into(),
-    });
+    }).unwrap();
     let binding = bb.read_state();
     let fact = binding
         .facts
@@ -290,13 +290,13 @@ fn test_research_cross_document_entity_linking() {
         origin: "whitepaper.llms.md".into(),
         content: serde_json::json!({"concept":"homeomorphic verification","source":"whitepaper §3.4"}),
         creator: "doc-ingest-agent".into(),
-    });
+    }).unwrap();
     bb.submit_fact(&Fact {
         id: FihHash("f_doc_b_001".into()),
         origin: "nexus-readme.llms.md".into(),
         content: serde_json::json!({"concept":"boundaryless extension","source":"README.md"}),
         creator: "doc-ingest-agent".into(),
-    });
+    }).unwrap();
     bb.submit_intent(&Intent {
         id: FihHash("i_research_001".into()),
         from_facts: vec!["f_doc_a_001".into(), "f_doc_b_001".into()],
@@ -335,13 +335,13 @@ fn test_research_contradiction_detection() {
         origin: "doc1".into(),
         content: serde_json::json!({"claim": "A"}),
         creator: "ingest".into(),
-    });
+    }).unwrap();
     bb.submit_fact(&Fact {
         id: FihHash("f_claim_b".into()),
         origin: "doc2".into(),
         content: serde_json::json!({"claim": "not A"}),
         creator: "ingest".into(),
-    });
+    }).unwrap();
     bb.submit_intent(&Intent {
         id: FihHash("i_contradiction_001".into()),
         from_facts: vec!["f_claim_a".into(), "f_claim_b".into()],
@@ -367,13 +367,13 @@ fn test_research_concept_drift_across_sources() {
         origin: "doc1".into(),
         content: serde_json::json!({"concept":"Evolving Memory"}),
         creator: "ingest".into(),
-    });
+    }).unwrap();
     bb.submit_fact(&Fact {
         id: FihHash("f_v2".into()),
         origin: "doc2".into(),
         content: serde_json::json!({"concept":"eKG"}),
         creator: "ingest".into(),
-    });
+    }).unwrap();
     bb.submit_intent(&Intent {
         id: FihHash("i_drift_001".into()),
         from_facts: vec!["f_v1".into(), "f_v2".into()],
@@ -390,7 +390,7 @@ fn test_research_concept_drift_across_sources() {
         id: FihHash("h_drift_001".into()),
         content: "check backward compat".into(),
         creator: "reviewer".into(),
-    });
+    }).unwrap();
     let state = bb.read_state();
     assert_eq!(state.hints.len(), 1);
 }
@@ -398,9 +398,9 @@ fn test_research_concept_drift_across_sources() {
 #[test]
 fn test_research_gap_unexplored_territory() {
     let mut bb = SqlBlackboard::memory().unwrap();
-    bb.submit_fact(&make_fact("f_gap_a", "topic A"));
-    bb.submit_fact(&make_fact("f_gap_b", "topic B"));
-    bb.submit_fact(&make_fact("f_gap_c", "topic C"));
+    bb.submit_fact(&make_fact("f_gap_a", "topic A")).unwrap();
+    bb.submit_fact(&make_fact("f_gap_b", "topic B")).unwrap();
+    bb.submit_fact(&make_fact("f_gap_c", "topic C")).unwrap();
     bb.submit_intent(&Intent {
         id: FihHash("i_gap_001".into()),
         from_facts: vec!["f_gap_a".into(), "f_gap_b".into(), "f_gap_c".into()],
@@ -438,7 +438,7 @@ fn test_research_memory_across_sessions() {
                 origin: format!("doc{i}").into(),
                 content: serde_json::json!({"desc": format!("doc {i}")}),
                 creator: "sync-agent".into(),
-            });
+            }).unwrap();
         }
         assert_eq!(bb.read_state().facts.len(), 4);
     }
@@ -503,8 +503,8 @@ fn test_research_memory_across_sessions() {
 fn test_multi_project_isolation() {
     let mut bb_a = SqlBlackboard::memory_with_project("proj_a").unwrap();
     let mut bb_b = SqlBlackboard::memory_with_project("proj_b").unwrap();
-    bb_a.submit_fact(&make_fact("f001", "project A data"));
-    bb_b.submit_fact(&make_fact("f001", "project B data"));
+    bb_a.submit_fact(&make_fact("f001", "project A data")).unwrap();
+    bb_b.submit_fact(&make_fact("f001", "project B data")).unwrap();
     assert_eq!(bb_a.read_state().facts[0].content, "project A data");
     assert_eq!(bb_b.read_state().facts[0].content, "project B data");
     bb_a.submit_intent(&make_intent("i001", vec!["f001"], "A's intent"))

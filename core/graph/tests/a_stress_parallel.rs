@@ -76,7 +76,7 @@ impl ParallelAnt {
                     origin: self.name.clone(),
                     content: format!("parallel observation at step {step}").into(),
                     creator: self.name.clone(),
-                });
+                }).unwrap();
                 format!("{:<16} submit Fact {id}", self.name)
             }
             2 | 3 => {
@@ -209,7 +209,7 @@ fn test_parallel_many_ants() {
                 origin: "corpus".into(),
                 content: (*content).into(),
                 creator: "system".into(),
-            });
+            }).unwrap();
         }
     }
 

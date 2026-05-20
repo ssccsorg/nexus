@@ -36,7 +36,7 @@ impl Ant {
                     content: format!("observation at step {step} by {}", self.name).into(),
                     creator: self.name.clone(),
                 };
-                bb.submit_fact(&fact);
+                bb.submit_fact(&fact).unwrap();
                 format!("{:<12} submit Fact {id}", self.name)
             }
             // 3: submit intent (requires grounding in existing facts)
@@ -219,7 +219,7 @@ fn test_stress_many_ants() {
             content: (*content).into(),
             creator: "corpus".into(),
         };
-        bb.submit_fact(&fact);
+        bb.submit_fact(&fact).unwrap();
     }
     println!("  Seeded {} facts into empty graph", seed_facts.len());
 

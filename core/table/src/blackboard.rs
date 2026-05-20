@@ -84,6 +84,11 @@ impl SqlBlackboard {
     }
 
     pub fn set_project_status(&self, status: &str) -> Result<(), rusqlite::Error> {
+        if !["active", "stopped", "completed"].contains(&status) {
+            return Err(rusqlite::Error::ToSqlConversionFailure(Box::new(
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("invalid project status: {status}"))
+            )));
+        }
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "UPDATE projects SET status = ?1 WHERE id = ?2",
@@ -119,28 +124,28 @@ impl Blackboard for SqlBlackboard {
         &self.project_id
     }
 
-    fn submit_fact(&mut self, fact: &Fact) -> FihHash {
+    fn submit_fact(&mut self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         let conn = self.conn.lock().unwrap();
         let pid = &self.project_id;
-        let desc = serde_json::to_string(&fact.content).unwrap_or_default();
-        if let Err(e) = conn.execute(
-            "INSERT OR IGNORE INTO facts (id, project_id, description, creator, origin) VALUES (?1, ?2, ?3, ?4, ?5)",
+        let desc = serde_json::to_string(&fact.content)
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        conn.execute(
+            "INSERT INTO facts (id, project_id, description, creator, origin) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![fact.id.0, pid, &desc, &fact.creator, &fact.origin],
-        ) {
-            eprintln!("submit_fact: {e}");
-        }
-        fact.id.clone()
+        )
+        .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        Ok(fact.id.clone())
     }
 
-    fn submit_hint(&mut self, hint: &Hint) {
+    fn submit_hint(&mut self, hint: &Hint) -> Result<(), BlackboardError> {
         let conn = self.conn.lock().unwrap();
         let pid = &self.project_id;
-        if let Err(e) = conn.execute(
-            "INSERT OR IGNORE INTO hints (id, project_id, content, creator) VALUES (?1, ?2, ?3, ?4)",
+        conn.execute(
+            "INSERT INTO hints (id, project_id, content, creator) VALUES (?1, ?2, ?3, ?4)",
             params![hint.id.0, pid, &hint.content, &hint.creator],
-        ) {
-            eprintln!("submit_hint: {e}");
-        }
+        )
+        .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        Ok(())
     }
 
     fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError> {
@@ -270,7 +275,7 @@ impl Blackboard for SqlBlackboard {
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         tx.execute(
-            "INSERT OR IGNORE INTO facts (id, project_id, description, creator, origin) VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO facts (id, project_id, description, creator, origin) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![new_fact_id, pid, result_str, &worker, &new_fact.origin],
         ).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 

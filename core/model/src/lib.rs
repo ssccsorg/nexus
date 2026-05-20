@@ -106,8 +106,8 @@ pub trait Blackboard {
         "default"
     }
 
-    fn submit_fact(&mut self, fact: &Fact) -> FihHash;
-    fn submit_hint(&mut self, hint: &Hint);
+    fn submit_fact(&mut self, fact: &Fact) -> Result<FihHash, BlackboardError>;
+    fn submit_hint(&mut self, hint: &Hint) -> Result<(), BlackboardError>;
     fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError>;
     fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
     fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
@@ -125,10 +125,10 @@ impl<T: Blackboard> Blackboard for &mut T {
     fn project_id(&self) -> &str {
         (**self).project_id()
     }
-    fn submit_fact(&mut self, fact: &Fact) -> FihHash {
+    fn submit_fact(&mut self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         (**self).submit_fact(fact)
     }
-    fn submit_hint(&mut self, hint: &Hint) {
+    fn submit_hint(&mut self, hint: &Hint) -> Result<(), BlackboardError> {
         (**self).submit_hint(hint)
     }
     fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError> {
