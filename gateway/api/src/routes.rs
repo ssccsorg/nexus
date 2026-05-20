@@ -228,12 +228,7 @@ pub async fn submit_hint(
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
-/// Generate a short unique ID (not cryptographically secure).
+/// Generate a v4 UUID string.
 fn uuid_v4() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    format!("{:016x}", nanos)
+    uuid::Uuid::new_v4().to_string()
 }
