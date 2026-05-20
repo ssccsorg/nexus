@@ -155,33 +155,204 @@ impl<T: Blackboard> Blackboard for &mut T {
     }
 }
 
-// ── Storage trait — persistence abstraction ──────────────────────────────
+// ── Unified Storage trait — FIH CRUD, thread-safe via &self ──────────────
 
-/// A single persisted FIH event log entry.
-#[derive(Debug, Clone)]
+/// Unified storage interface for FIH persistence.
+/// Thread-safe via &self (internal mutability, e.g. Mutex<Connection>).
+#[allow(missing_docs)]
+pub trait Storage: Send + Sync {
+    fn project_id(&self) -> &str;
+    fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError>;
+    fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError>;
+    fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError>;
+    fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
+    fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
+    fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
+    fn conclude_intent(
+        &self,
+        intent_id: &str,
+        result: &serde_json::Value,
+    ) -> Result<Fact, BlackboardError>;
+    fn read_state(&self) -> BoardState;
+}
+
+// ── HotStorage marker — in-memory fast path ──────────────────────────────
+
+/// Hot storage: in-memory, fast, early return for edge computing.
+#[allow(missing_docs)]
+pub trait HotStorage: Storage {}
+
+// ── ColdStorage marker — durable backend ─────────────────────────────────
+
+/// Cold storage: durable backend (SQLite, Parquet, etc.).
+#[allow(missing_docs)]
+pub trait ColdStorage: Storage {}
+
+// ── DualStorage — composes Hot + Cold ────────────────────────────────────
+
+/// Composes a Hot + Cold storage pair.
+/// - Reads go to hot (early return, edge computing fast path)
+/// - Writes go to hot first, then cold (dual-write for durability)
+/// - Flush: periodic sync from hot to cold
+pub struct DualStorage {
+    hot: Box<dyn HotStorage>,
+    cold: Box<dyn ColdStorage>,
+}
+
+#[allow(missing_docs)]
+impl DualStorage {
+    pub fn new(hot: Box<dyn HotStorage>, cold: Box<dyn ColdStorage>) -> Self {
+        Self { hot, cold }
+    }
+
+    /// Flush hot state to cold storage.
+    /// Called periodically to ensure durability.
+    ///
+    /// For the initial implementation where every write is dual-written
+    /// (hot + cold on every mutation), flush is a no-op. Future
+    /// async/batched cold write strategies would use this method
+    /// to batch-persist pending operations.
+    pub fn flush(&self) -> Result<(), String> {
+        // no-op: every write is already dual-written
+        Ok(())
+    }
+}
+
+impl Storage for DualStorage {
+    fn project_id(&self) -> &str {
+        // Both hot and cold should agree on project_id; use hot for speed.
+        self.hot.project_id()
+    }
+
+    fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
+        let hash = self.hot.submit_fact(fact)?;
+        // Propagate to cold for durability.
+        self.cold.submit_fact(fact)?;
+        Ok(hash)
+    }
+
+    fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
+        self.hot.submit_hint(hint)?;
+        self.cold.submit_hint(hint)?;
+        Ok(())
+    }
+
+    fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+        let hash = self.hot.submit_intent(intent)?;
+        self.cold.submit_intent(intent)?;
+        Ok(hash)
+    }
+
+    fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        self.hot.claim_intent(intent_id, agent)?;
+        self.cold.claim_intent(intent_id, agent)?;
+        Ok(())
+    }
+
+    fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        self.hot.heartbeat(intent_id, agent)?;
+        self.cold.heartbeat(intent_id, agent)?;
+        Ok(())
+    }
+
+    fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        self.hot.release_intent(intent_id, agent)?;
+        self.cold.release_intent(intent_id, agent)?;
+        Ok(())
+    }
+
+    fn conclude_intent(
+        &self,
+        intent_id: &str,
+        result: &serde_json::Value,
+    ) -> Result<Fact, BlackboardError> {
+        let fact = self.hot.conclude_intent(intent_id, result)?;
+        // For conclusion, the result is a new Fact; write it to cold too.
+        self.cold.conclude_intent(intent_id, result)?;
+        Ok(fact)
+    }
+
+    fn read_state(&self) -> BoardState {
+        // Reads go to hot for the fast path (edge computing).
+        self.hot.read_state()
+    }
+}
+
+// ── Legacy event-log types ────────────────────────────────────────────────
+
+/// A single stored event in a legacy event-log backend.
+/// Used by SqliteStorage and GraphBlackboard for persistence replay.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredEvent {
     pub event_type: String,
     pub payload: String,
 }
 
-/// Storage abstraction for FIH event persistence.
-/// Implementations must be thread-safe (Send + Sync).
-pub trait Storage: Send + Sync {
-    /// Persist one FIH operation. Called on every FIH mutation.
-    fn log_fih(&self, event_type: &str, payload: &str);
-
-    /// Load all past FIH operations in order. Called once on startup.
-    fn load_events(&self) -> Vec<StoredEvent>;
-}
-
 // ── Null storage (no persistence) ─────────────────────────────────────────
 
 /// No-op storage. All FIH operations are discarded.
+/// Implements Storage, HotStorage, and ColdStorage for testing and
+/// default construction.
 pub struct NullStorage;
 
-impl Storage for NullStorage {
-    fn log_fih(&self, _event_type: &str, _payload: &str) {}
-    fn load_events(&self) -> Vec<StoredEvent> {
-        Vec::new()
+impl NullStorage {
+    fn default_project_id() -> &'static str {
+        "default"
     }
 }
+
+#[allow(missing_docs)]
+impl Storage for NullStorage {
+    fn project_id(&self) -> &str {
+        Self::default_project_id()
+    }
+
+    fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
+        Ok(fact.id.clone())
+    }
+
+    fn submit_hint(&self, _hint: &Hint) -> Result<(), BlackboardError> {
+        Ok(())
+    }
+
+    fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+        Ok(intent.id.clone())
+    }
+
+    fn claim_intent(&self, _intent_id: &str, _agent: &str) -> Result<(), BlackboardError> {
+        Ok(())
+    }
+
+    fn heartbeat(&self, _intent_id: &str, _agent: &str) -> Result<(), BlackboardError> {
+        Ok(())
+    }
+
+    fn release_intent(&self, _intent_id: &str, _agent: &str) -> Result<(), BlackboardError> {
+        Ok(())
+    }
+
+    fn conclude_intent(
+        &self,
+        _intent_id: &str,
+        _result: &serde_json::Value,
+    ) -> Result<Fact, BlackboardError> {
+        Ok(Fact {
+            id: FihHash("null".into()),
+            origin: String::new(),
+            content: serde_json::Value::Null,
+            creator: String::new(),
+        })
+    }
+
+    fn read_state(&self) -> BoardState {
+        BoardState {
+            facts: Vec::new(),
+            intents: Vec::new(),
+            hints: Vec::new(),
+        }
+    }
+}
+
+impl HotStorage for NullStorage {}
+
+impl ColdStorage for NullStorage {}

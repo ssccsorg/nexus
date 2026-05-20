@@ -396,10 +396,11 @@ dependencies = [
  "cyrs-plan",
  "cyrs-syntax",
  "nexus-model",
- "nexus-table",
  "petgraph",
+ "rusqlite",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -409,18 +410,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
-]
-
-[[package]]
-name = "nexus-table"
-version = "0.1.0"
-dependencies = [
- "nexus-graph",
- "nexus-model",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
 ]
 
 [[package]]

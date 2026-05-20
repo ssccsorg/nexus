@@ -1,10 +1,13 @@
-// nexus-table — SqlBlackboard: normalized Cairn-pattern FIH Blackboard.
-//
-// Implements `Blackboard` trait directly against normalized SQLite tables
-// (facts, intents, hints, intent_sources). No event replay.
-// Write-through on every mutation. Project-scoped via project_id.
+/// SqlNormalizedStorage — Normalized Cairn-pattern ColdStorage.
+///
+/// Implements [`Storage`] + [`ColdStorage`] directly against normalized
+/// SQLite tables (facts, intents, hints, intent_sources). Write-through
+/// on every mutation. Project-scoped via `project_id`.
+///
+/// Previously `SqlBlackboard` in nexus-table; renamed to clarify its
+/// role as a storage backend (not a Blackboard).
 
-use nexus_model::{Blackboard, BlackboardError, BoardState, Fact, FihHash, Hint, Intent};
+use nexus_model::{BlackboardError, BoardState, ColdStorage, Fact, FihHash, Hint, Intent, Storage};
 use rusqlite::{Connection, params};
 use std::path::Path;
 use std::sync::Mutex;
@@ -12,17 +15,19 @@ use std::sync::Mutex;
 use crate::schema::apply_schema;
 use crate::util::ProjectMeta;
 
-/// Normalized SQLite-backed FIH Blackboard.
-pub struct SqlBlackboard {
+/// Normalized SQLite-backed cold storage.
+pub struct SqlNormalizedStorage {
     conn: Mutex<Connection>,
     project_id: String,
 }
 
-impl SqlBlackboard {
+impl SqlNormalizedStorage {
+    /// Open or create a SQLite database at `path`.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, rusqlite::Error> {
         Self::open_with_project(path, "default")
     }
 
+    /// Open with a specific project ID.
     pub fn open_with_project<P: AsRef<Path>>(
         path: P,
         project_id: &str,
@@ -37,10 +42,12 @@ impl SqlBlackboard {
         Ok(bb)
     }
 
+    /// Create an in-memory database (for testing).
     pub fn memory() -> Result<Self, rusqlite::Error> {
         Self::memory_with_project("default")
     }
 
+    /// Create an in-memory database with a specific project ID.
     pub fn memory_with_project(project_id: &str) -> Result<Self, rusqlite::Error> {
         let conn = Connection::open_in_memory()?;
         apply_schema(&conn)?;
@@ -61,6 +68,7 @@ impl SqlBlackboard {
         Ok(())
     }
 
+    /// Set the project status (active, stopped, completed).
     pub fn set_project_status(&self, status: &str) -> Result<(), rusqlite::Error> {
         if !["active", "stopped", "completed"].contains(&status) {
             return Err(rusqlite::Error::ToSqlConversionFailure(Box::new(
@@ -78,6 +86,7 @@ impl SqlBlackboard {
         Ok(())
     }
 
+    /// Get project metadata.
     pub fn get_project(&self) -> Result<ProjectMeta, rusqlite::Error> {
         let conn = self.conn.lock().unwrap();
         conn.query_row(
@@ -98,14 +107,19 @@ impl SqlBlackboard {
             },
         )
     }
+
+    /// Return the project_id this storage is scoped to.
+    pub fn project_id(&self) -> &str {
+        &self.project_id
+    }
 }
 
-impl Blackboard for SqlBlackboard {
+impl Storage for SqlNormalizedStorage {
     fn project_id(&self) -> &str {
         &self.project_id
     }
 
-    fn submit_fact(&mut self, fact: &Fact) -> Result<FihHash, BlackboardError> {
+    fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         let conn = self.conn.lock().unwrap();
         let pid = &self.project_id;
         let desc = serde_json::to_string(&fact.content)
@@ -118,7 +132,7 @@ impl Blackboard for SqlBlackboard {
         Ok(fact.id.clone())
     }
 
-    fn submit_hint(&mut self, hint: &Hint) -> Result<(), BlackboardError> {
+    fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         let conn = self.conn.lock().unwrap();
         let pid = &self.project_id;
         conn.execute(
@@ -129,7 +143,7 @@ impl Blackboard for SqlBlackboard {
         Ok(())
     }
 
-    fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+    fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
         let mut conn = self.conn.lock().unwrap();
         let pid = &self.project_id;
 
@@ -174,7 +188,7 @@ impl Blackboard for SqlBlackboard {
         Ok(intent.id.clone())
     }
 
-    fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+    fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let conn = self.conn.lock().unwrap();
         let pid = &self.project_id;
         let updated = conn
@@ -194,7 +208,7 @@ impl Blackboard for SqlBlackboard {
         Ok(())
     }
 
-    fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+    fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let conn = self.conn.lock().unwrap();
         let pid = &self.project_id;
         let updated = conn
@@ -214,11 +228,10 @@ impl Blackboard for SqlBlackboard {
         Ok(())
     }
 
-    fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+    fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let conn = self.conn.lock().unwrap();
         let pid = &self.project_id;
 
-        // Atomic: UPDATE only if worker matches (or intent is unclaimed)
         let updated = conn
             .execute(
                 "UPDATE intents SET worker = NULL
@@ -229,7 +242,6 @@ impl Blackboard for SqlBlackboard {
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         if updated == 0 {
-            // Determine the reason: not found, concluded, or claimed by someone else
             let row: Result<(Option<String>, Option<String>), _> = conn.query_row(
                 "SELECT to_fact_id, worker FROM intents WHERE id = ?1 AND project_id = ?2",
                 params![intent_id, pid],
@@ -254,7 +266,7 @@ impl Blackboard for SqlBlackboard {
     }
 
     fn conclude_intent(
-        &mut self,
+        &self,
         intent_id: &str,
         result: &serde_json::Value,
     ) -> Result<Fact, BlackboardError> {
@@ -437,3 +449,5 @@ impl Blackboard for SqlBlackboard {
         }
     }
 }
+
+impl ColdStorage for SqlNormalizedStorage {}
