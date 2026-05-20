@@ -297,7 +297,8 @@ impl Blackboard for SqlBlackboard {
                     concluded_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
              WHERE id = ?3 AND project_id = ?4",
             params![new_fact_id, &worker, intent_id, pid],
-        ).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        )
+        .map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         tx.commit()
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
