@@ -22,8 +22,10 @@ pub mod cypher;
 pub mod mock_gateway;
 
 pub use nexus_model::{
-    Blackboard, BlackboardError, BoardState, ColdStorage, DualStorage, Fact, FihHash, Hint,
-    HotStorage, Intent, NullStorage, Storage,
+    Blackboard, BlackboardError, BoardState, ColdStorage, DualStorage, EvictCapable, Fact,
+    FactCapable, FihHash, FihPersistence, FilterCapable, FlushCapable, Hint, HintCapable,
+    HotStorage, Intent, IntentCapable, NullStorage, ScanCapable, StateFilter, StorageRead,
+    TimeRangeCapable,
 };
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
@@ -171,11 +173,126 @@ impl Default for PetgraphStorage {
     }
 }
 
-impl Storage for PetgraphStorage {
+impl StorageRead for PetgraphStorage {
     fn project_id(&self) -> &str {
         &self.project_id
     }
 
+    fn read_state(&self) -> BoardState {
+        let g = self.graph.lock().unwrap();
+        let mut facts = Vec::new();
+        let mut intents = Vec::new();
+        let mut hints = Vec::new();
+
+        for idx in g.node_indices() {
+            if let Some(w) = g.node_weight(idx) {
+                match w.label.as_str() {
+                    "Fact" => {
+                        facts.push(Fact {
+                            id: FihHash(w.name.clone()),
+                            origin: w
+                                .properties
+                                .get("origin")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .into(),
+                            content: w
+                                .properties
+                                .get("content")
+                                .cloned()
+                                .unwrap_or(serde_json::Value::Null),
+                            creator: w
+                                .properties
+                                .get("creator")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .into(),
+                        });
+                    }
+                    "Intent" => {
+                        let from_facts: Vec<String> = g
+                            .edges_directed(idx, petgraph::Direction::Incoming)
+                            .filter_map(|e| {
+                                let sn = g.node_weight(e.source())?;
+                                Some(sn.name.clone())
+                            })
+                            .collect();
+
+                        intents.push(Intent {
+                            id: FihHash(w.name.clone()),
+                            from_facts,
+                            description: w
+                                .properties
+                                .get("description")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .into(),
+                            creator: w
+                                .properties
+                                .get("creator")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .into(),
+                            worker: w
+                                .properties
+                                .get("worker")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                            to_fact_id: {
+                                // Find conclusion fact node edge
+                                g.edges_directed(idx, petgraph::Direction::Outgoing)
+                                    .find(|e| {
+                                        g.node_weight(e.target()).is_some_and(|n| {
+                                            n.label == "Fact" && n.name.starts_with("f_concl_")
+                                        })
+                                    })
+                                    .and_then(|e| g.node_weight(e.target()).map(|n| n.name.clone()))
+                            },
+                            last_heartbeat_at: None,
+                            created_at: None,
+                            concluded_at: if w
+                                .properties
+                                .get("concluded")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false)
+                            {
+                                Some("yes".into())
+                            } else {
+                                None
+                            },
+                        });
+                    }
+                    "Hint" => {
+                        hints.push(Hint {
+                            id: FihHash(w.name.clone()),
+                            content: w
+                                .properties
+                                .get("content")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .into(),
+                            creator: w
+                                .properties
+                                .get("creator")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .into(),
+                        });
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        BoardState {
+            facts,
+            intents,
+            hints,
+        }
+    }
+}
+
+impl FactCapable for PetgraphStorage {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         let mut g = self.graph.lock().unwrap();
         g.add_node(NodeWeight {
@@ -191,7 +308,9 @@ impl Storage for PetgraphStorage {
         });
         Ok(fact.id.clone())
     }
+}
 
+impl HintCapable for PetgraphStorage {
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         let mut g = self.graph.lock().unwrap();
         g.add_node(NodeWeight {
@@ -206,7 +325,9 @@ impl Storage for PetgraphStorage {
         });
         Ok(())
     }
+}
 
+impl IntentCapable for PetgraphStorage {
     fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
         let mut g = self.graph.lock().unwrap();
 
@@ -341,7 +462,7 @@ impl Storage for PetgraphStorage {
                 let current = w.properties.get("worker").cloned();
                 match current {
                     None => {
-                        // Already unclaimed — no-op
+                        // Already unclaimed -- no-op
                         return Ok(());
                     }
                     Some(serde_json::Value::String(existing)) if existing != agent => {
@@ -360,6 +481,7 @@ impl Storage for PetgraphStorage {
             "Intent {intent_id} not found"
         )))
     }
+
     fn conclude_intent(
         &self,
         intent_id: &str,
@@ -423,122 +545,23 @@ impl Storage for PetgraphStorage {
 
         Ok(new_fact)
     }
+}
 
-    fn read_state(&self) -> BoardState {
-        let g = self.graph.lock().unwrap();
-        let mut facts = Vec::new();
-        let mut intents = Vec::new();
-        let mut hints = Vec::new();
+impl EvictCapable for PetgraphStorage {
+    fn approximate_size(&self) -> usize {
+        self.graph.lock().unwrap().node_count() * 256
+    }
 
-        for idx in g.node_indices() {
-            if let Some(w) = g.node_weight(idx) {
-                match w.label.as_str() {
-                    "Fact" => {
-                        facts.push(Fact {
-                            id: FihHash(w.name.clone()),
-                            origin: w
-                                .properties
-                                .get("origin")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .into(),
-                            content: w
-                                .properties
-                                .get("content")
-                                .cloned()
-                                .unwrap_or(serde_json::Value::Null),
-                            creator: w
-                                .properties
-                                .get("creator")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .into(),
-                        });
-                    }
-                    "Intent" => {
-                        let from_facts: Vec<String> = g
-                            .edges_directed(idx, petgraph::Direction::Incoming)
-                            .filter_map(|e| {
-                                let sn = g.node_weight(e.source())?;
-                                Some(sn.name.clone())
-                            })
-                            .collect();
-
-                        intents.push(Intent {
-                            id: FihHash(w.name.clone()),
-                            from_facts,
-                            description: w
-                                .properties
-                                .get("description")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .into(),
-                            creator: w
-                                .properties
-                                .get("creator")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .into(),
-                            worker: w
-                                .properties
-                                .get("worker")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string()),
-                            to_fact_id: {
-                                // Find conclusion fact node edge
-                                g.edges_directed(idx, petgraph::Direction::Outgoing)
-                                    .find(|e| {
-                                        g.node_weight(e.target()).is_some_and(|n| {
-                                            n.label == "Fact" && n.name.starts_with("f_concl_")
-                                        })
-                                    })
-                                    .and_then(|e| g.node_weight(e.target()).map(|n| n.name.clone()))
-                            },
-                            last_heartbeat_at: None,
-                            created_at: None,
-                            concluded_at: if w
-                                .properties
-                                .get("concluded")
-                                .and_then(|v| v.as_bool())
-                                .unwrap_or(false)
-                            {
-                                Some("yes".into())
-                            } else {
-                                None
-                            },
-                        });
-                    }
-                    "Hint" => {
-                        hints.push(Hint {
-                            id: FihHash(w.name.clone()),
-                            content: w
-                                .properties
-                                .get("content")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .into(),
-                            creator: w
-                                .properties
-                                .get("creator")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .into(),
-                        });
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        BoardState {
-            facts,
-            intents,
-            hints,
-        }
+    fn evict_before(&self, before: &str) -> Result<u64, String> {
+        let _ = before;
+        Ok(0)
     }
 }
 
-impl HotStorage for PetgraphStorage {}
+// FihPersistence and HotStorage for PetgraphStorage
+// are covered by blanket impls in nexus-model:
+//   FihPersistence: impl<T: FactCapable + IntentCapable + HintCapable> FihPersistence for T
+//   HotStorage:     impl<T: FihPersistence + EvictCapable> HotStorage for T
 
 // ── GraphBlackboard — the single Blackboard ────────────────────────────
 
@@ -608,7 +631,7 @@ impl GraphBlackboard {
     /// Flush pending writes to cold storage.
     /// Currently a no-op since every write is dual-written.
     pub fn flush(&self) -> Result<(), String> {
-        self.storage.flush()
+        Ok(())
     }
 
     /// Return the project ID for this Blackboard.

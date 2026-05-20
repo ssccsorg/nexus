@@ -3,7 +3,10 @@
 // Adapted from the old nexus-table test suite. All SqlBlackboard
 // references replaced with SqlNormalizedStorage.
 
-use nexus_model::{BlackboardError, Fact, FihHash, Hint, Intent, Storage};
+use nexus_model::{
+    BlackboardError, Fact, FactCapable, FihHash, Hint, HintCapable, Intent, IntentCapable,
+    StorageRead,
+};
 use nexus_storage_sqlite::SqlNormalizedStorage;
 
 fn make_fact(id: &str, content: &str) -> Fact {

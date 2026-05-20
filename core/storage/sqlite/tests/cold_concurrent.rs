@@ -4,7 +4,9 @@
 // Storage under extreme parallelism to verify that all operations are
 // race-free and error handling is correct.
 
-use nexus_model::{BlackboardError, Fact, FihHash, Intent, Storage};
+use nexus_model::{
+    BlackboardError, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead,
+};
 use nexus_storage_sqlite::SqlNormalizedStorage;
 use std::sync::Arc;
 
