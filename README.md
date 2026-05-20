@@ -1,6 +1,7 @@
 <!-- synced from SSCCS docs -- do not edit directly -->
 
 # neXus
+
 ## Executive Summary
 
 neXus is a self‑evolving, modular and contract‑governed agentic research infrastructure that actively generates, validates, and learns from hypotheses or facts that span the SSCCS’s software‑hardware boundary. All coordinate indirectly through a shared graph of some simple recursive primitives.
@@ -64,9 +65,9 @@ During ingestion, documents, code artifacts, simulation outputs, or sensor strea
 
 Direct uploads from CI/CD, simulators, or robotic platforms to the knowledge graph create coupling, lack change detection, and complicate multi‑source merging. neXus decouples the pipeline:
 
-1.  Object Store: holds the authoritative copy of all artifacts — documentation, code symbols, simulation results, telemetry logs, video streams, hardware‑in‑the‑loop recordings. It provides strong consistency and a standard API.
-2.  Sync Worker: exposes an engine‑agnostic endpoint (`/sync/:engine`). It compares the current state of the object store with a persistent mapping of previously ingested items, computes a diff, and pushes small task chunks into a message queue.
-3.  Queue Consumers: execute the actual API calls on the target engine (delete, upload) and update the mapping. This avoids platform rate limits and allows auto‑scaling.
+1. Object Store: holds the authoritative copy of all artifacts — documentation, code symbols, simulation results, telemetry logs, video streams, hardware‑in‑the‑loop recordings. It provides strong consistency and a standard API.
+2. Sync Worker: exposes an engine‑agnostic endpoint (`/sync/:engine`). It compares the current state of the object store with a persistent mapping of previously ingested items, computes a diff, and pushes small task chunks into a message queue.
+3. Queue Consumers: execute the actual API calls on the target engine (delete, upload) and update the mapping. This avoids platform rate limits and allows auto‑scaling.
 
 The design ensures that every change — whether a commit, a simulation completion, or a robotic demonstration — is reflected in the knowledge graph within seconds.
 
@@ -89,10 +90,10 @@ All actions are recorded in an append‑only Evolving Memory, which serves as th
 
 Collected research trajectories feed an on‑policy reinforcement learning pipeline (Flow‑GRPO):
 
-1.  Rollout collection: each session is stored as a structured log.
-2.  Reward computation: blends knowledge‑graph support, novelty, contract compliance, physical reproducibility, and optional human feedback.
-3.  Group sampling: trajectories are batched for group‑normalised advantages.
-4.  Policy update: the Planner is updated using a clipped objective with KL penalty toward a reference model; the final reward is broadcast to all steps, converting multi‑turn credit assignment into single‑turn updates.
+1. Rollout collection: each session is stored as a structured log.
+2. Reward computation: blends knowledge‑graph support, novelty, contract compliance, physical reproducibility, and optional human feedback.
+3. Group sampling: trajectories are batched for group‑normalised advantages.
+4. Policy update: the Planner is updated using a clipped objective with KL penalty toward a reference model; the final reward is broadcast to all steps, converting multi‑turn credit assignment into single‑turn updates.
 
 Over time, the Planner internalises which strategies produce well‑grounded, innovative, and physically reproducible results.
 
@@ -182,9 +183,9 @@ For neXus, this means the Evolving Memory that currently records Planner‑Execu
 
 When our Observation primitive is described semantically in a whitepaper and simultaneously encoded in a sensor trace from a hardware validation, these two representations induce latent manifolds. If those manifolds are homeomorphic — if they share the same underlying topological structure — then:
 
-1.  Semantic‑guided recovery is possible: a partial physical observation can be completed using knowledge from the whitepaper’s formal description.
-2.  Cross‑domain transfer is verified: a hypothesis validated in simulation can be rigorously transferred to physical hardware.
-3.  Zero‑shot compositional reasoning becomes possible: new experimental designs can be synthesized by composing semantic descriptions in ways guaranteed to have valid physical realizations.
+1. Semantic‑guided recovery is possible: a partial physical observation can be completed using knowledge from the whitepaper’s formal description.
+2. Cross‑domain transfer is verified: a hypothesis validated in simulation can be rigorously transferred to physical hardware.
+3. Zero‑shot compositional reasoning becomes possible: new experimental designs can be synthesized by composing semantic descriptions in ways guaranteed to have valid physical realizations.
 
 These capabilities have been empirically validated on cross‑domain classifier transfer and zero‑shot classification tasks. The same principles apply to transferring knowledge between compiler optimization traces and hardware performance measurements, or between formal specification proofs and physical circuit behavior.
 
@@ -196,9 +197,9 @@ The vision is of neXus as a continuous research manifold: a unified latent space
 
 Three concrete additions to the existing neXus architecture realize this boundaryless extension:
 
-1.  Multi‑Modal Ingestion Handlers. New `EngineHandler` implementations for physics simulation frameworks, robotic platforms, and sensor pipelines. Each presents the same interface but maps to domain‑specific storage and retrieval protocols.
-2.  Homeomorphic Verification Layer. An extension to the Verifier that applies continuity, trust, and distributional distance metrics to determine when a physical observation and a semantic claim share compatible latent structure. This becomes part of the Contract: a hypothesis step is only “verified” when the homeomorphism criterion is satisfied.
-3.  Episodic Knowledge Graph Integration. The Evolving Memory evolves from append‑only JSONL trajectories to a true eKG that preserves temporal ordering, agent provenance, and cross‑modal coherence. This enables the Planner to reason about *when*, *by whom*, and *under what conditions* a discovery was made — essential for reproducibility in physical experiments.
+1. Multi‑Modal Ingestion Handlers. New `EngineHandler` implementations for physics simulation frameworks, robotic platforms, and sensor pipelines. Each presents the same interface but maps to domain‑specific storage and retrieval protocols.
+2. Homeomorphic Verification Layer. An extension to the Verifier that applies continuity, trust, and distributional distance metrics to determine when a physical observation and a semantic claim share compatible latent structure. This becomes part of the Contract: a hypothesis step is only “verified” when the homeomorphism criterion is satisfied.
+3. Episodic Knowledge Graph Integration. The Evolving Memory evolves from append‑only JSONL trajectories to a true eKG that preserves temporal ordering, agent provenance, and cross‑modal coherence. This enables the Planner to reason about *when*, *by whom*, and *under what conditions* a discovery was made — essential for reproducibility in physical experiments.
 
 ## Component Interaction Matrix
 

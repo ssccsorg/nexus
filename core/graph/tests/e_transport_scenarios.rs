@@ -4,7 +4,7 @@
 // all communicating through the FIH protocol via MockGateway's JSON boundary.
 
 use nexus_graph::mock_gateway::MockGateway;
-use nexus_graph::{BlackboardError, Fact, FihHash, GraphBlackboard, Intent};
+use nexus_graph::{Blackboard, BlackboardError, Fact, FihHash, GraphBlackboard, Intent};
 
 // ── Scenario: Intermittent agent (Bluetooth / short-range radio) ─────────
 //
@@ -30,7 +30,8 @@ fn scenario_intermittent_sensor_agent() {
                 "sector": 7
             }),
             creator: "drone-a".into(),
-        });
+        })
+        .unwrap();
         // gw dropped — borrow released
     }
 
@@ -52,7 +53,8 @@ fn scenario_intermittent_sensor_agent() {
                 "sector": 7
             }),
             creator: "drone-a".into(),
-        });
+        })
+        .unwrap();
 
         let state = gw.read_state();
         assert_eq!(state.facts.len(), 2, "second fact visible");
@@ -94,7 +96,8 @@ fn scenario_satellite_burst_agent() {
             origin: origin.to_string(),
             content: content.clone(),
             creator: "sat-1".into(),
-        });
+        })
+        .unwrap();
     }
 
     let state = gw.read_state();
@@ -146,7 +149,8 @@ fn scenario_browser_agent() {
             "Server load exceeds 85% for 3 consecutive hours".into(),
         ),
         creator: "monitor".into(),
-    });
+    })
+    .unwrap();
 
     gw.submit_intent(&Intent {
         id: FihHash("i_investigate".into()),
@@ -203,7 +207,8 @@ fn scenario_multi_language_agents() {
             origin: "python-etl".into(),
             content: serde_json::Value::String("Data pipeline processed 15K records".into()),
             creator: "py-agent".into(),
-        });
+        })
+        .unwrap();
     }
 
     // Rust agent submits a fact
@@ -218,7 +223,8 @@ fn scenario_multi_language_agents() {
                 "latency_p99_ms": 187
             }),
             creator: "rs-agent".into(),
-        });
+        })
+        .unwrap();
     }
 
     // TypeScript agent reads both and submits an intent
@@ -260,7 +266,7 @@ fn scenario_multi_language_agents() {
 
     // Python agent sees the result
     {
-        let mut gw = MockGateway::new(&mut bb);
+        let gw = MockGateway::new(&mut bb);
         let state = gw.read_state();
         assert_eq!(state.facts.len(), 3, "py agent sees concluded fact");
         assert_eq!(state.intents.len(), 1, "py agent sees original intent only");
@@ -286,7 +292,8 @@ fn scenario_conflicting_claims() {
         origin: "test".into(),
         content: serde_json::Value::String("Conflict test ground truth".into()),
         creator: "system".into(),
-    });
+    })
+    .unwrap();
 
     gw.submit_intent(&Intent {
         id: FihHash("i_conflict".into()),
