@@ -72,11 +72,13 @@ pub fn apply_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
 /// Placeholder for future schema migrations.
 /// Call after apply_schema to ensure the schema version is current.
 pub fn migrate(conn: &Connection) -> Result<(), rusqlite::Error> {
-    let version: i32 = conn.query_row(
-        "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1",
-        [],
-        |row| row.get(0),
-    ).unwrap_or(0);
+    let version: i32 = conn
+        .query_row(
+            "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
 
     if version < 1 {
         // Initial schema is applied by apply_schema(). No migrations yet.

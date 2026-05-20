@@ -38,5 +38,8 @@ pub fn utc_now() -> String {
     let mi = (secs % 3600) / 60;
     let s = secs % 60;
 
-    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:06}Z", y, m, d, h, mi, s, micros)
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:06}Z",
+        y, m, d, h, mi, s, micros
+    )
 }
