@@ -254,28 +254,29 @@ impl Storage for PetgraphStorage {
     fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let mut g = self.graph.lock().unwrap();
         for idx in g.node_indices() {
-            if let Some(w) = g.node_weight_mut(idx) {
-                if w.name == intent_id && w.label == "Intent" {
-                    // Check if already concluded
-                    if w.properties
-                        .get("concluded")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false)
-                    {
-                        return Err(BlackboardError::NotFound(format!(
-                            "Intent {intent_id} already concluded"
-                        )));
-                    }
-                    // Check if already claimed
-                    if let Some(serde_json::Value::String(current)) = w.properties.get("worker") {
-                        return Err(BlackboardError::Conflict(format!(
-                            "Intent {intent_id} already claimed by {current}"
-                        )));
-                    }
-                    w.properties
-                        .insert("worker".into(), agent.to_string().into());
-                    return Ok(());
+            if let Some(w) = g.node_weight_mut(idx)
+                && w.name == intent_id
+                && w.label == "Intent"
+            {
+                // Check if already concluded
+                if w.properties
+                    .get("concluded")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
+                    return Err(BlackboardError::NotFound(format!(
+                        "Intent {intent_id} already concluded"
+                    )));
                 }
+                // Check if already claimed
+                if let Some(serde_json::Value::String(current)) = w.properties.get("worker") {
+                    return Err(BlackboardError::Conflict(format!(
+                        "Intent {intent_id} already claimed by {current}"
+                    )));
+                }
+                w.properties
+                    .insert("worker".into(), agent.to_string().into());
+                return Ok(());
             }
         }
         Err(BlackboardError::NotFound(format!(
@@ -286,30 +287,31 @@ impl Storage for PetgraphStorage {
     fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let mut g = self.graph.lock().unwrap();
         for idx in g.node_indices() {
-            if let Some(w) = g.node_weight_mut(idx) {
-                if w.name == intent_id && w.label == "Intent" {
-                    // Check if already concluded
-                    if w.properties
-                        .get("concluded")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false)
-                    {
-                        return Err(BlackboardError::NotFound(format!(
-                            "Intent {intent_id} already concluded"
+            if let Some(w) = g.node_weight_mut(idx)
+                && w.name == intent_id
+                && w.label == "Intent"
+            {
+                // Check if already concluded
+                if w.properties
+                    .get("concluded")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
+                    return Err(BlackboardError::NotFound(format!(
+                        "Intent {intent_id} already concluded"
+                    )));
+                }
+                let current = w.properties.get("worker");
+                match current {
+                    Some(serde_json::Value::String(existing)) if existing != agent => {
+                        return Err(BlackboardError::Conflict(format!(
+                            "Intent {intent_id} is claimed by {existing}, not {agent}"
                         )));
                     }
-                    let current = w.properties.get("worker");
-                    match current {
-                        Some(serde_json::Value::String(existing)) if existing != agent => {
-                            return Err(BlackboardError::Conflict(format!(
-                                "Intent {intent_id} is claimed by {existing}, not {agent}"
-                            )));
-                        }
-                        _ => {
-                            w.properties
-                                .insert("worker".into(), agent.to_string().into());
-                            return Ok(());
-                        }
+                    _ => {
+                        w.properties
+                            .insert("worker".into(), agent.to_string().into());
+                        return Ok(());
                     }
                 }
             }
@@ -322,33 +324,34 @@ impl Storage for PetgraphStorage {
     fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let mut g = self.graph.lock().unwrap();
         for idx in g.node_indices() {
-            if let Some(w) = g.node_weight_mut(idx) {
-                if w.name == intent_id && w.label == "Intent" {
-                    // Check if already concluded
-                    if w.properties
-                        .get("concluded")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false)
-                    {
-                        return Err(BlackboardError::NotFound(format!(
-                            "Intent {intent_id} already concluded"
+            if let Some(w) = g.node_weight_mut(idx)
+                && w.name == intent_id
+                && w.label == "Intent"
+            {
+                // Check if already concluded
+                if w.properties
+                    .get("concluded")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
+                    return Err(BlackboardError::NotFound(format!(
+                        "Intent {intent_id} already concluded"
+                    )));
+                }
+                let current = w.properties.get("worker").cloned();
+                match current {
+                    None => {
+                        // Already unclaimed — no-op
+                        return Ok(());
+                    }
+                    Some(serde_json::Value::String(existing)) if existing != agent => {
+                        return Err(BlackboardError::Forbidden(format!(
+                            "Intent {intent_id} claimed by {existing}"
                         )));
                     }
-                    let current = w.properties.get("worker").cloned();
-                    match current {
-                        None => {
-                            // Already unclaimed — no-op
-                            return Ok(());
-                        }
-                        Some(serde_json::Value::String(existing)) if existing != agent => {
-                            return Err(BlackboardError::Forbidden(format!(
-                                "Intent {intent_id} claimed by {existing}"
-                            )));
-                        }
-                        _ => {
-                            w.properties.remove("worker");
-                            return Ok(());
-                        }
+                    _ => {
+                        w.properties.remove("worker");
+                        return Ok(());
                     }
                 }
             }
@@ -357,7 +360,6 @@ impl Storage for PetgraphStorage {
             "Intent {intent_id} not found"
         )))
     }
-
     fn conclude_intent(
         &self,
         intent_id: &str,
