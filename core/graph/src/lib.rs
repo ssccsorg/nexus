@@ -6,7 +6,7 @@
 //   GraphBlackboard (implements Blackboard + GraphAccess)
 //     ├── storage: DualStorage (hot + cold)
 //     │     ├── hot: PetgraphStorage (Arc<Mutex<petgraph::Graph>>)
-//     │     └── cold: ColdStorage (SqlNormalizedStorage | SqliteStorage | NullStorage)
+//     │     └── cold: ColdStorage (NullStorage | any external impl)
 //     ├── hot_graph: Arc<Mutex<petgraph::Graph>> (shared with PetgraphStorage)
 //     ├── claims: Mutex<HashMap<IntentId, Agent>>
 //     └── project_id: String
@@ -16,18 +16,14 @@
 // both GraphBlackboard (for GraphAccess / Cypher queries) and PetgraphStorage
 // (for Storage operations) access the same in-memory graph.
 //
-// Public API re-exports from nexus-model (Storage, Blackboard traits, FIH types)
-// and from the cold module.
+// Public API re-exports from nexus-model (Storage, Blackboard traits, FIH types).
 
-pub mod cold;
 pub mod cypher;
 pub mod mock_gateway;
-pub mod schema;
-pub mod util;
 
 pub use nexus_model::{
-    Blackboard, BlackboardError, BoardState, ColdStorage, DualStorage,
-    Fact, FihHash, Hint, HotStorage, Intent, NullStorage, Storage, StoredEvent,
+    Blackboard, BlackboardError, BoardState, ColdStorage, DualStorage, Fact, FihHash, Hint,
+    HotStorage, Intent, NullStorage, Storage,
 };
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
@@ -146,7 +142,10 @@ impl PetgraphStorage {
     }
 
     /// Access the graph immutably (for GraphAccess delegation).
-    pub fn with_graph<R>(&self, f: impl FnOnce(&petgraph::Graph<NodeWeight, EdgeWeight>) -> R) -> R {
+    pub fn with_graph<R>(
+        &self,
+        f: impl FnOnce(&petgraph::Graph<NodeWeight, EdgeWeight>) -> R,
+    ) -> R {
         let g = self.graph.lock().unwrap();
         f(&*g)
     }
@@ -213,10 +212,9 @@ impl Storage for PetgraphStorage {
 
         // Validate from_facts exist in graph
         for fid in &intent.from_facts {
-            let found = g.node_indices().any(|i| {
-                g.node_weight(i)
-                    .is_some_and(|w| w.name == *fid)
-            });
+            let found = g
+                .node_indices()
+                .any(|i| g.node_weight(i).is_some_and(|w| w.name == *fid));
             if !found {
                 return Err(BlackboardError::NotFound(format!("Fact {fid} not found")));
             }
@@ -259,14 +257,17 @@ impl Storage for PetgraphStorage {
             if let Some(w) = g.node_weight_mut(idx) {
                 if w.name == intent_id && w.label == "Intent" {
                     // Check if already concluded
-                    if w.properties.get("concluded").and_then(|v| v.as_bool()).unwrap_or(false) {
+                    if w.properties
+                        .get("concluded")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
+                    {
                         return Err(BlackboardError::NotFound(format!(
                             "Intent {intent_id} already concluded"
                         )));
                     }
                     // Check if already claimed
-                    if let Some(serde_json::Value::String(current)) = w.properties.get("worker")
-                    {
+                    if let Some(serde_json::Value::String(current)) = w.properties.get("worker") {
                         return Err(BlackboardError::Conflict(format!(
                             "Intent {intent_id} already claimed by {current}"
                         )));
@@ -288,7 +289,11 @@ impl Storage for PetgraphStorage {
             if let Some(w) = g.node_weight_mut(idx) {
                 if w.name == intent_id && w.label == "Intent" {
                     // Check if already concluded
-                    if w.properties.get("concluded").and_then(|v| v.as_bool()).unwrap_or(false) {
+                    if w.properties
+                        .get("concluded")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
+                    {
                         return Err(BlackboardError::NotFound(format!(
                             "Intent {intent_id} already concluded"
                         )));
@@ -320,7 +325,11 @@ impl Storage for PetgraphStorage {
             if let Some(w) = g.node_weight_mut(idx) {
                 if w.name == intent_id && w.label == "Intent" {
                     // Check if already concluded
-                    if w.properties.get("concluded").and_then(|v| v.as_bool()).unwrap_or(false) {
+                    if w.properties
+                        .get("concluded")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
+                    {
                         return Err(BlackboardError::NotFound(format!(
                             "Intent {intent_id} already concluded"
                         )));
@@ -357,10 +366,13 @@ impl Storage for PetgraphStorage {
         let mut g = self.graph.lock().unwrap();
 
         // Find the intent node
-        let intent_idx = g.node_indices().find(|i| {
-            g.node_weight(*i)
-                .is_some_and(|w| w.name == intent_id && w.label == "Intent")
-        }).ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
+        let intent_idx = g
+            .node_indices()
+            .find(|i| {
+                g.node_weight(*i)
+                    .is_some_and(|w| w.name == intent_id && w.label == "Intent")
+            })
+            .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
 
         let worker = g
             .node_weight(intent_idx)
@@ -474,12 +486,11 @@ impl Storage for PetgraphStorage {
                                 // Find conclusion fact node edge
                                 g.edges_directed(idx, petgraph::Direction::Outgoing)
                                     .find(|e| {
-                                        g.node_weight(e.target())
-                                            .is_some_and(|n| n.label == "Fact" && n.name.starts_with("f_concl_"))
+                                        g.node_weight(e.target()).is_some_and(|n| {
+                                            n.label == "Fact" && n.name.starts_with("f_concl_")
+                                        })
                                     })
-                                    .and_then(|e| {
-                                        g.node_weight(e.target()).map(|n| n.name.clone())
-                                    })
+                                    .and_then(|e| g.node_weight(e.target()).map(|n| n.name.clone()))
                             },
                             last_heartbeat_at: None,
                             created_at: None,
@@ -536,8 +547,6 @@ impl HotStorage for PetgraphStorage {}
 ///
 /// - [`GraphBlackboard::new()`] — in-memory only (hot=PetgraphStorage, cold=NullStorage).
 /// - [`GraphBlackboard::with_storage(hot, cold)`] — custom hot + cold pair.
-/// - [`GraphBlackboard::with_sqlite(path)`] — in-memory hot + SqlNormalizedStorage cold.
-/// - [`GraphBlackboard::with_sqlite_persistent(path, project_id)`] — same with project ID.
 pub struct GraphBlackboard {
     /// DualStorage wrapping hot (PetgraphStorage) + cold (ColdStorage).
     storage: DualStorage,
@@ -582,26 +591,6 @@ impl GraphBlackboard {
             claims: Mutex::new(HashMap::new()),
             project_id,
         }
-    }
-
-    /// Create a Blackboard backed by SQLite (normalized schema).
-    /// Hot = PetgraphStorage, Cold = SqlNormalizedStorage (file-based).
-    pub fn with_sqlite<P: AsRef<std::path::Path>>(
-        path: P,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        Self::with_sqlite_persistent(path, "default")
-    }
-
-    /// Create a Blackboard backed by SQLite with a specific project ID.
-    pub fn with_sqlite_persistent<P: AsRef<std::path::Path>>(
-        path: P,
-        project_id: &str,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let graph = Arc::new(Mutex::new(petgraph::Graph::new()));
-        let hot = PetgraphStorage::with_shared_graph(Arc::clone(&graph), project_id);
-        let cold = cold::SqlNormalizedStorage::open_with_project(path, project_id)?;
-
-        Ok(Self::with_storage(hot, Box::new(cold)))
     }
 
     /// Access the petgraph directly (for Cypher executor and other

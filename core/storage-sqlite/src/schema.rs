@@ -1,8 +1,7 @@
 /// Database schema (Cairn-pattern normalized tables).
 ///
-/// Used by [`crate::cold::SqlNormalizedStorage`] to initialize the
+/// Used by [`crate::sql_normalized::SqlNormalizedStorage`] to initialize the
 /// SQLite schema on first open.
-
 use rusqlite::Connection;
 
 /// Apply the schema to a connection. Idempotent (uses IF NOT EXISTS).
