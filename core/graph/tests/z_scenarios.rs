@@ -22,7 +22,8 @@ fn scenario_contradiction_detection() {
         origin: "paper_iclr_2024".into(),
         content: "Residual GNNs maintain accuracy at 50 layers with skip connections".into(),
         creator: "agent-a".into(),
-    }).unwrap();
+    })
+    .unwrap();
 
     // Agent-B: ingests paper claiming GNNs oversmooth at 6 layers
     bb.submit_fact(&Fact {
@@ -30,7 +31,8 @@ fn scenario_contradiction_detection() {
         origin: "paper_neurips_2023".into(),
         content: "Message-passing GNNs oversmooth beyond 6 layers without normalization".into(),
         creator: "agent-b".into(),
-    }).unwrap();
+    })
+    .unwrap();
 
     // Agent-C: detects the contradiction, submits hypothesis
     bb.submit_intent(&Intent {
@@ -96,7 +98,8 @@ fn scenario_peer_review() {
         origin: "background".into(),
         content: "Surface codes are the leading QEC candidate".into(),
         creator: "system".into(),
-    }).unwrap();
+    })
+    .unwrap();
     bb.submit_intent(&hypothesis).unwrap();
 
     // Phase 2: Reviewer agents submit Hints (review comments)
@@ -104,12 +107,14 @@ fn scenario_peer_review() {
         id: FihHash("h_reviewer1".into()),
         content: "The 0.1% threshold seems optimistic — reference recent experiments".into(),
         creator: "agent-b".into(),
-    }).unwrap();
+    })
+    .unwrap();
     bb.submit_hint(&Hint {
         id: FihHash("h_reviewer2".into()),
         content: "Need to specify distance-3 vs distance-5 surface code constraints".into(),
         creator: "agent-c".into(),
-    }).unwrap();
+    })
+    .unwrap();
 
     // Phase 3: Editor reads hints and concludes
     bb.claim_intent("i_hypothesis", "agent-d").unwrap();
@@ -178,7 +183,8 @@ fn scenario_knowledge_synthesis() {
             origin: "experiment".into(),
             content: (*content).into(),
             creator: creator.to_string(),
-        }).unwrap();
+        })
+        .unwrap();
     }
 
     // Agent-D reads all and synthesizes
@@ -275,7 +281,8 @@ fn scenario_emergency_response() {
             origin: "sensor".into(),
             content: (*content).into(),
             creator: creator.to_string(),
-        }).unwrap();
+        })
+        .unwrap();
     }
 
     // Coordinator submits prioritized response plan as Intent
@@ -366,7 +373,8 @@ fn scenario_bug_fix_pipeline() {
         id: FihHash("h_severity".into()),
         content: "severity=P0, component=payment-api, regression=true".into(),
         creator: "triager".into(),
-    }).unwrap();
+    })
+    .unwrap();
     bb.submit_intent(&Intent {
         id: FihHash("i_triage".into()),
         from_facts: vec!["f_bug_1337".into()],

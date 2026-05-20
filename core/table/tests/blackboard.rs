@@ -89,7 +89,8 @@ fn test_concurrent_session() {
     let path = tmp.path().to_str().unwrap().to_string();
     {
         let mut bb = SqlBlackboard::open(&path).unwrap();
-        bb.submit_fact(&make_fact("f001", "persistent fact")).unwrap();
+        bb.submit_fact(&make_fact("f001", "persistent fact"))
+            .unwrap();
         bb.submit_fact(&make_fact("f002", "another fact")).unwrap();
         bb.submit_intent(&make_intent("i001", vec!["f001"], "persistent intent"))
             .unwrap();
@@ -110,7 +111,8 @@ fn test_hint() {
         id: FihHash("h001".into()),
         content: "check the web service first".into(),
         creator: "analyst".into(),
-    }).unwrap();
+    })
+    .unwrap();
     let state = bb.read_state();
     assert_eq!(state.hints.len(), 1);
 }
@@ -178,8 +180,12 @@ fn test_playbook_sre_lifecycle() {
 fn test_multi_blackboard_isolation() {
     let mut bb_sensor = SqlBlackboard::memory().unwrap();
     let mut bb_knowledge = SqlBlackboard::memory().unwrap();
-    bb_sensor.submit_fact(&make_fact("f_s1", "sensor reading")).unwrap();
-    bb_knowledge.submit_fact(&make_fact("f_k1", "knowledge graph node")).unwrap();
+    bb_sensor
+        .submit_fact(&make_fact("f_s1", "sensor reading"))
+        .unwrap();
+    bb_knowledge
+        .submit_fact(&make_fact("f_k1", "knowledge graph node"))
+        .unwrap();
     bb_sensor
         .submit_intent(&make_intent("i_s1", vec!["f_s1"], "analyze sensor"))
         .unwrap();
@@ -247,7 +253,8 @@ fn test_full_persistence_across_sessions() {
             id: FihHash("h001".into()),
             content: "strategic hint".into(),
             creator: "planner".into(),
-        }).unwrap();
+        })
+        .unwrap();
     }
     {
         let bb = SqlBlackboard::open(&path).unwrap();
@@ -267,7 +274,8 @@ fn test_structured_json_content() {
         origin: "json-test".into(),
         content: complex_content.clone(),
         creator: "tester".into(),
-    }).unwrap();
+    })
+    .unwrap();
     let binding = bb.read_state();
     let fact = binding
         .facts
@@ -294,7 +302,8 @@ fn test_research_cross_document_entity_linking() {
         origin: "nexus-readme.llms.md".into(),
         content: serde_json::json!({"concept":"boundaryless extension","source":"README.md"}),
         creator: "doc-ingest-agent".into(),
-    }).unwrap();
+    })
+    .unwrap();
     bb.submit_intent(&Intent {
         id: FihHash("i_research_001".into()),
         from_facts: vec!["f_doc_a_001".into(), "f_doc_b_001".into()],
@@ -333,13 +342,15 @@ fn test_research_contradiction_detection() {
         origin: "doc1".into(),
         content: serde_json::json!({"claim": "A"}),
         creator: "ingest".into(),
-    }).unwrap();
+    })
+    .unwrap();
     bb.submit_fact(&Fact {
         id: FihHash("f_claim_b".into()),
         origin: "doc2".into(),
         content: serde_json::json!({"claim": "not A"}),
         creator: "ingest".into(),
-    }).unwrap();
+    })
+    .unwrap();
     bb.submit_intent(&Intent {
         id: FihHash("i_contradiction_001".into()),
         from_facts: vec!["f_claim_a".into(), "f_claim_b".into()],
@@ -365,13 +376,15 @@ fn test_research_concept_drift_across_sources() {
         origin: "doc1".into(),
         content: serde_json::json!({"concept":"Evolving Memory"}),
         creator: "ingest".into(),
-    }).unwrap();
+    })
+    .unwrap();
     bb.submit_fact(&Fact {
         id: FihHash("f_v2".into()),
         origin: "doc2".into(),
         content: serde_json::json!({"concept":"eKG"}),
         creator: "ingest".into(),
-    }).unwrap();
+    })
+    .unwrap();
     bb.submit_intent(&Intent {
         id: FihHash("i_drift_001".into()),
         from_facts: vec!["f_v1".into(), "f_v2".into()],
@@ -388,7 +401,8 @@ fn test_research_concept_drift_across_sources() {
         id: FihHash("h_drift_001".into()),
         content: "check backward compat".into(),
         creator: "reviewer".into(),
-    }).unwrap();
+    })
+    .unwrap();
     let state = bb.read_state();
     assert_eq!(state.hints.len(), 1);
 }
@@ -436,7 +450,8 @@ fn test_research_memory_across_sessions() {
                 origin: format!("doc{i}").into(),
                 content: serde_json::json!({"desc": format!("doc {i}")}),
                 creator: "sync-agent".into(),
-            }).unwrap();
+            })
+            .unwrap();
         }
         assert_eq!(bb.read_state().facts.len(), 4);
     }
@@ -500,8 +515,10 @@ fn test_research_memory_across_sessions() {
 fn test_multi_project_isolation() {
     let mut bb_a = SqlBlackboard::memory_with_project("proj_a").unwrap();
     let mut bb_b = SqlBlackboard::memory_with_project("proj_b").unwrap();
-    bb_a.submit_fact(&make_fact("f001", "project A data")).unwrap();
-    bb_b.submit_fact(&make_fact("f001", "project B data")).unwrap();
+    bb_a.submit_fact(&make_fact("f001", "project A data"))
+        .unwrap();
+    bb_b.submit_fact(&make_fact("f001", "project B data"))
+        .unwrap();
     assert_eq!(bb_a.read_state().facts[0].content, "project A data");
     assert_eq!(bb_b.read_state().facts[0].content, "project B data");
     bb_a.submit_intent(&make_intent("i001", vec!["f001"], "A's intent"))

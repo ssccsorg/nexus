@@ -86,7 +86,10 @@ impl SqlBlackboard {
     pub fn set_project_status(&self, status: &str) -> Result<(), rusqlite::Error> {
         if !["active", "stopped", "completed"].contains(&status) {
             return Err(rusqlite::Error::ToSqlConversionFailure(Box::new(
-                std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("invalid project status: {status}"))
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("invalid project status: {status}"),
+                ),
             )));
         }
         let conn = self.conn.lock().unwrap();

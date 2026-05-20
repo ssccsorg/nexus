@@ -41,7 +41,8 @@ fn test_concurrent_heartbeat_all_succeed() {
 
     {
         let mut bb = bb.lock().unwrap();
-        bb.submit_fact(&make_fact("f001", "shared resource")).unwrap();
+        bb.submit_fact(&make_fact("f001", "shared resource"))
+            .unwrap();
         bb.submit_intent(&make_intent("i001", vec!["f001"], "race target"))
             .unwrap();
     }
@@ -137,7 +138,8 @@ fn test_concurrent_fact_submission() {
         let bb = bb.clone();
         handles.push(std::thread::spawn(move || {
             let mut bb = bb.lock().unwrap();
-            bb.submit_fact(&make_fact(&format!("f_{:04}", i), &format!("fact {i}"))).unwrap();
+            bb.submit_fact(&make_fact(&format!("f_{:04}", i), &format!("fact {i}")))
+                .unwrap();
         }));
     }
 
@@ -162,7 +164,8 @@ fn test_concurrent_full_lifecycle() {
             bb.submit_fact(&make_fact(
                 &format!("f_{:04}", i),
                 &format!("ground truth {i}"),
-            )).unwrap();
+            ))
+            .unwrap();
         }
     }
 

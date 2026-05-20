@@ -29,7 +29,8 @@ fn scenario_contradiction_detection_via_gateway() {
             "Residual GNNs maintain accuracy at 50 layers with skip connections".into(),
         ),
         creator: "agent-a".into(),
-    }).unwrap();
+    })
+    .unwrap();
 
     // Agent-B: ingests paper claiming GNNs oversmooth at 6 layers
     gw.submit_fact(&Fact {
@@ -39,7 +40,8 @@ fn scenario_contradiction_detection_via_gateway() {
             "Message-passing GNNs oversmooth beyond 6 layers without normalization".into(),
         ),
         creator: "agent-b".into(),
-    }).unwrap();
+    })
+    .unwrap();
 
     // Agent-C: detects the contradiction, submits hypothesis
     gw.submit_intent(&Intent {
