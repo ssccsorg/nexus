@@ -56,9 +56,7 @@ impl<B: Blackboard> Blackboard for MockGateway<B> {
         intent_id: &str,
         result: &serde_json::Value,
     ) -> Result<Fact, BlackboardError> {
-        let r: serde_json::Value =
-            serde_json::from_slice(&serde_json::to_vec(result).unwrap()).unwrap();
-        self.inner.conclude_intent(intent_id, &r)
+        self.inner.conclude_intent(intent_id, result)
     }
 
     fn read_state(&self) -> BoardState {
