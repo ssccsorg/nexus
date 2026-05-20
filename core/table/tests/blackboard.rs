@@ -485,7 +485,7 @@ fn test_research_memory_across_sessions() {
     }
     {
         let mut bb = SqlBlackboard::open(&path).unwrap();
-        bb.heartbeat("i_link_001", "reviewer").unwrap();
+        bb.heartbeat("i_link_001", "linker").unwrap();
         bb.conclude_intent("i_link_001", &serde_json::json!({"finding": "confirmed"}))
             .unwrap();
         let state = bb.read_state();

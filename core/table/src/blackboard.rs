@@ -61,28 +61,6 @@ impl SqlBlackboard {
         Ok(())
     }
 
-    /// Claim or heartbeat an open intent. Shared by `claim_intent` and `heartbeat`.
-    fn set_worker(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let conn = self.conn.lock().unwrap();
-        let pid = &self.project_id;
-        let now = utc_now();
-
-        let updated = conn
-            .execute(
-                "UPDATE intents SET worker = ?1, last_heartbeat_at = ?2
-             WHERE id = ?3 AND project_id = ?4 AND to_fact_id IS NULL",
-                params![agent, now, intent_id, pid],
-            )
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-
-        if updated == 0 {
-            return Err(BlackboardError::NotFound(format!(
-                "Intent {intent_id} not found or already concluded"
-            )));
-        }
-        Ok(())
-    }
-
     pub fn set_project_status(&self, status: &str) -> Result<(), rusqlite::Error> {
         if !["active", "stopped", "completed"].contains(&status) {
             return Err(rusqlite::Error::ToSqlConversionFailure(Box::new(
@@ -220,7 +198,25 @@ impl Blackboard for SqlBlackboard {
     }
 
     fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        self.set_worker(intent_id, agent)
+        let conn = self.conn.lock().unwrap();
+        let pid = &self.project_id;
+        let now = utc_now();
+
+        let updated = conn
+            .execute(
+                "UPDATE intents SET worker = ?1, last_heartbeat_at = ?2
+             WHERE id = ?3 AND project_id = ?4 AND to_fact_id IS NULL
+               AND (worker IS NULL OR worker = ?5)",
+                params![agent, now, intent_id, pid, agent],
+            )
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+
+        if updated == 0 {
+            return Err(BlackboardError::Conflict(format!(
+                "Intent {intent_id} is claimed by another agent"
+            )));
+        }
+        Ok(())
     }
 
     fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
