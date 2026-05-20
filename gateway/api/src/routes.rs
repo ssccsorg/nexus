@@ -115,7 +115,7 @@ pub async fn submit_fact(
     };
     let hash = {
         let mut bb = state.blackboard.lock().unwrap();
-        bb.submit_fact(&fact)
+        bb.submit_fact(&fact).map_err(err_response)?
     };
     Ok(Json(SubmitFactResponse { id: hash.0 }))
 }
@@ -135,6 +135,11 @@ pub async fn submit_intent(
     Json(req): Json<SubmitIntentRequest>,
 ) -> Result<Json<SubmitIntentResponse>, (StatusCode, Json<ApiError>)> {
     let id = req.id.unwrap_or_else(|| format!("intent_{}", uuid_v4()));
+    if req.from_facts.is_empty() {
+        return Err(err_response(BlackboardError::Forbidden(
+            "intent must be grounded in at least one fact".into(),
+        )));
+    }
     let intent = Intent {
         id: FihHash(id.clone()),
         from_facts: req.from_facts,
@@ -216,18 +221,14 @@ pub async fn submit_hint(
         creator: req.creator,
     };
     let mut bb = state.blackboard.lock().unwrap();
-    bb.submit_hint(&hint);
+    bb.submit_hint(&hint)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiError { error: "hint_error".into(), detail: e.to_string() })))?;
     Ok(Json(()))
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
-/// Generate a short unique ID (not cryptographically secure).
+/// Generate a v4 UUID string.
 fn uuid_v4() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    format!("{:016x}", nanos)
+    uuid::Uuid::new_v4().to_string()
 }

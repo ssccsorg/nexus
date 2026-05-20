@@ -31,7 +31,7 @@ fn main() {
             "layers": 3
         }),
         creator: "agent-a".into(),
-    });
+    }).unwrap();
     let f2 = bb.submit_fact(&Fact {
         id: FihHash::new(&["gnn-oversmoothing"], "fact"),
         origin: "neurips_2023".into(),
@@ -40,7 +40,7 @@ fn main() {
             "threshold": 6
         }),
         creator: "agent-b".into(),
-    });
+    }).unwrap();
     println!("   Fact 1: {}", f1);
     println!("   Fact 2: {}", f2);
 
