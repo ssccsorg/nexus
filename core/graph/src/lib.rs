@@ -147,7 +147,7 @@ impl PetgraphStorage {
         f: impl FnOnce(&petgraph::Graph<NodeWeight, EdgeWeight>) -> R,
     ) -> R {
         let g = self.graph.lock().unwrap();
-        f(&*g)
+        f(&g)
     }
 
     /// Access the graph mutably (for Storage operations).
@@ -156,7 +156,7 @@ impl PetgraphStorage {
         f: impl FnOnce(&mut petgraph::Graph<NodeWeight, EdgeWeight>) -> R,
     ) -> R {
         let mut g = self.graph.lock().unwrap();
-        f(&mut *g)
+        f(&mut g)
     }
 
     /// Flush is a no-op for in-memory storage.
@@ -600,7 +600,7 @@ impl GraphBlackboard {
         f: impl FnOnce(&petgraph::Graph<NodeWeight, EdgeWeight>) -> R,
     ) -> R {
         let g = self.hot_graph.lock().unwrap();
-        f(&*g)
+        f(&g)
     }
 
     /// Flush pending writes to cold storage.
