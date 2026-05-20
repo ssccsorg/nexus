@@ -85,10 +85,10 @@ fn test_release_intent() {
 
 #[test]
 fn test_concurrent_session() {
-    let path = "test_sql_bb.db";
-    let _ = std::fs::remove_file(path);
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    let path = tmp.path().to_str().unwrap().to_string();
     {
-        let mut bb = SqlBlackboard::open(path).unwrap();
+        let mut bb = SqlBlackboard::open(&path).unwrap();
         bb.submit_fact(&make_fact("f001", "persistent fact")).unwrap();
         bb.submit_fact(&make_fact("f002", "another fact")).unwrap();
         bb.submit_intent(&make_intent("i001", vec!["f001"], "persistent intent"))
@@ -96,12 +96,11 @@ fn test_concurrent_session() {
         assert_eq!(bb.read_state().facts.len(), 2);
     }
     {
-        let bb = SqlBlackboard::open(path).unwrap();
+        let bb = SqlBlackboard::open(&path).unwrap();
         let state = bb.read_state();
         assert_eq!(state.facts.len(), 2);
         assert_eq!(state.intents.len(), 1);
     }
-    let _ = std::fs::remove_file(path);
 }
 
 #[test]
@@ -232,10 +231,10 @@ fn test_protocol_enforcement() {
 
 #[test]
 fn test_full_persistence_across_sessions() {
-    let path = "test_full_persist.db";
-    let _ = std::fs::remove_file(path);
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    let path = tmp.path().to_str().unwrap().to_string();
     {
-        let mut bb = SqlBlackboard::open(path).unwrap();
+        let mut bb = SqlBlackboard::open(&path).unwrap();
         bb.submit_fact(&make_fact("f001", "alpha")).unwrap();
         bb.submit_fact(&make_fact("f002", "beta")).unwrap();
         bb.submit_intent(&make_intent("i001", vec!["f001"], "first"))
@@ -251,13 +250,12 @@ fn test_full_persistence_across_sessions() {
         }).unwrap();
     }
     {
-        let bb = SqlBlackboard::open(path).unwrap();
+        let bb = SqlBlackboard::open(&path).unwrap();
         let state = bb.read_state();
         assert_eq!(state.facts.len(), 3);
         assert_eq!(state.intents.len(), 2);
         assert_eq!(state.hints.len(), 1);
     }
-    let _ = std::fs::remove_file(path);
 }
 
 #[test]
@@ -428,10 +426,10 @@ fn test_research_gap_unexplored_territory() {
 
 #[test]
 fn test_research_memory_across_sessions() {
-    let path = "test_research_memory.db";
-    let _ = std::fs::remove_file(path);
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    let path = tmp.path().to_str().unwrap().to_string();
     {
-        let mut bb = SqlBlackboard::open(path).unwrap();
+        let mut bb = SqlBlackboard::open(&path).unwrap();
         for i in 0..4 {
             bb.submit_fact(&Fact {
                 id: FihHash(format!("f_doc_{:03}", i)),
@@ -443,7 +441,7 @@ fn test_research_memory_across_sessions() {
         assert_eq!(bb.read_state().facts.len(), 4);
     }
     {
-        let mut bb = SqlBlackboard::open(path).unwrap();
+        let mut bb = SqlBlackboard::open(&path).unwrap();
         bb.submit_intent(&Intent {
             id: FihHash("i_link_001".into()),
             from_facts: vec!["f_doc_000".into(), "f_doc_001".into()],
@@ -471,7 +469,7 @@ fn test_research_memory_across_sessions() {
         assert_eq!(bb.read_state().intents.len(), 2);
     }
     {
-        let mut bb = SqlBlackboard::open(path).unwrap();
+        let mut bb = SqlBlackboard::open(&path).unwrap();
         bb.heartbeat("i_link_001", "reviewer").unwrap();
         bb.conclude_intent("i_link_001", &serde_json::json!({"finding": "confirmed"}))
             .unwrap();
@@ -496,7 +494,6 @@ fn test_research_memory_across_sessions() {
                 .is_none()
         );
     }
-    let _ = std::fs::remove_file(path);
 }
 
 #[test]

@@ -12,3 +12,4 @@ serde_json.workspace = true
 
 [dev-dependencies]
 nexus-graph = { path = "../graph" }
+tempfile = "3"
