@@ -919,7 +919,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "nexus-graph",
- "nexus-table",
+ "nexus-storage-sqlite",
  "reqwest",
  "serde",
  "serde_json",
@@ -939,7 +939,6 @@ dependencies = [
  "cyrs-plan",
  "cyrs-syntax",
  "nexus-model",
- "nexus-table",
  "petgraph",
  "serde",
  "serde_json",
@@ -955,7 +954,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "nexus-table"
+name = "nexus-storage-sqlite"
 version = "0.1.0"
 dependencies = [
  "nexus-model",
