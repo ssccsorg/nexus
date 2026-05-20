@@ -5,7 +5,7 @@
 // - `storage` — Legacy event-log storage (SqliteStorage)
 // - `blackboard` — Normalized Cairn-pattern Blackboard (SqlBlackboard)
 // - `schema` — Database DDL (apply_schema)
-// - `util` — Shared types and utilities (ProjectMeta, utc_now)
+// - `util` — Shared types and utilities (ProjectMeta)
 
 pub mod blackboard;
 pub mod schema;
@@ -17,4 +17,4 @@ pub use nexus_model::{
     Blackboard, BlackboardError, BoardState, Fact, FihHash, Hint, Intent, Storage, StoredEvent,
 };
 pub use storage::SqliteStorage;
-pub use util::{ProjectMeta, utc_now};
+pub use util::ProjectMeta;

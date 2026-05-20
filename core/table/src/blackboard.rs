@@ -10,7 +10,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use crate::schema::apply_schema;
-use crate::util::{ProjectMeta, utc_now};
+use crate::util::ProjectMeta;
 
 /// Normalized SQLite-backed FIH Blackboard.
 pub struct SqlBlackboard {
@@ -151,14 +151,13 @@ impl Blackboard for SqlBlackboard {
         let tx = conn
             .transaction()
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-
-        let now = utc_now();
         let worker = intent.worker.as_deref();
-        let heartbeat = if worker.is_some() { Some(&now) } else { None };
         tx.execute(
             "INSERT INTO intents (id, project_id, to_fact_id, description, creator, worker, last_heartbeat_at, concluded_at)
-             VALUES (?1, ?2, NULL, ?3, ?4, ?5, ?6, NULL)",
-            params![intent.id.0, pid, intent.description, intent.creator, worker, heartbeat],
+             VALUES (?1, ?2, NULL, ?3, ?4, ?5,
+               CASE WHEN ?5 IS NOT NULL THEN strftime('%Y-%m-%dT%H:%M:%fZ', 'now') ELSE NULL END,
+               NULL)",
+            params![intent.id.0, pid, intent.description, intent.creator, worker],
         ).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         for fid in &intent.from_facts {
@@ -178,14 +177,12 @@ impl Blackboard for SqlBlackboard {
     fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let conn = self.conn.lock().unwrap();
         let pid = &self.project_id;
-        let now = utc_now();
-
         let updated = conn
             .execute(
-                "UPDATE intents SET worker = ?1, last_heartbeat_at = ?2
-             WHERE id = ?3 AND project_id = ?4 AND to_fact_id IS NULL
+                "UPDATE intents SET worker = ?1, last_heartbeat_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE id = ?2 AND project_id = ?3 AND to_fact_id IS NULL
                AND worker IS NULL",
-                params![agent, now, intent_id, pid],
+                params![agent, intent_id, pid],
             )
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
@@ -200,14 +197,12 @@ impl Blackboard for SqlBlackboard {
     fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let conn = self.conn.lock().unwrap();
         let pid = &self.project_id;
-        let now = utc_now();
-
         let updated = conn
             .execute(
-                "UPDATE intents SET worker = ?1, last_heartbeat_at = ?2
-             WHERE id = ?3 AND project_id = ?4 AND to_fact_id IS NULL
-               AND (worker IS NULL OR worker = ?5)",
-                params![agent, now, intent_id, pid, agent],
+                "UPDATE intents SET worker = ?1, last_heartbeat_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE id = ?2 AND project_id = ?3 AND to_fact_id IS NULL
+               AND (worker IS NULL OR worker = ?4)",
+                params![agent, intent_id, pid, agent],
             )
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
@@ -276,7 +271,6 @@ impl Blackboard for SqlBlackboard {
                 format!("Intent {intent_id} not found or already concluded")
             ))?;
 
-        let now = utc_now();
         let result_str =
             serde_json::to_string(&result).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
@@ -298,10 +292,13 @@ impl Blackboard for SqlBlackboard {
         ).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         tx.execute(
-            "UPDATE intents SET to_fact_id = ?1, worker = ?2, last_heartbeat_at = ?3, concluded_at = ?4
-             WHERE id = ?5 AND project_id = ?6",
-            params![new_fact_id, &worker, &now, &now, intent_id, pid],
-        ).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+            "UPDATE intents SET to_fact_id = ?1, worker = ?2,
+                    last_heartbeat_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                    concluded_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE id = ?3 AND project_id = ?4",
+            params![new_fact_id, &worker, intent_id, pid],
+        )
+        .map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         tx.commit()
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
