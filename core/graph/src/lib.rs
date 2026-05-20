@@ -1,14 +1,14 @@
 // nexus-graph — GraphBlackboard: petgraph-backed FIH implementation.
 //
-// Depends on nexus-model for the Blackboard trait, Storage trait, and FIH primitives.
+// Depends on nexus-model for the Blackboard trait and FIH primitives.
+// Uses nexus-table::SqlBlackboard for normalized persistence.
 // GraphAccess trait is petgraph-specific and lives here.
 
 pub mod cypher;
 pub mod mock_gateway;
 
 pub use nexus_model::{
-    Blackboard, BlackboardError, BoardState, Fact, FihHash, Hint, Intent, NullStorage, Storage,
-    StoredEvent,
+    Blackboard, BlackboardError, BoardState, Fact, FihHash, Hint, Intent,
 };
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
@@ -90,7 +90,7 @@ pub struct GraphBlackboard {
     pub graph: petgraph::Graph<NodeWeight, EdgeWeight>,
     _signals: Vec<Signal>,
     claims: HashMap<String, String>,
-    storage: Box<dyn Storage>,
+    persist: Option<nexus_table::SqlBlackboard>,
     loading: bool,
 }
 
@@ -109,7 +109,7 @@ impl Default for GraphBlackboard {
             graph: petgraph::Graph::new(),
             _signals: Vec::new(),
             claims: HashMap::new(),
-            storage: Box::new(NullStorage),
+            persist: None,
             loading: false,
         }
     }
@@ -121,85 +121,86 @@ impl GraphBlackboard {
         Self::default()
     }
 
-    /// Attach a custom storage backend. Loads past events if any.
-    pub fn with_storage(mut self, storage: Box<dyn Storage>) -> Self {
-        self.storage = storage;
+    /// Attach SqlBlackboard for normalized persistence.
+    /// Loads existing facts/intents/hints from storage into the graph on init.
+    pub fn with_persistence(mut self, db: nexus_table::SqlBlackboard) -> Self {
+        self.persist = Some(db);
         self.loading = true;
-        let events = self.storage.load_events();
-        for event in &events {
-            self.replay_one(&event.event_type, &event.payload);
+        if let Some(ref db) = self.persist {
+            let state = db.read_state();
+            for fact in &state.facts {
+                let _ = self.graph.add_node(NodeWeight {
+                    name: fact.id.0.clone(),
+                    label: "Fact".into(),
+                    properties: {
+                        let mut m = std::collections::HashMap::new();
+                        m.insert("origin".into(), fact.origin.clone().into());
+                        m.insert("content".into(), fact.content.clone());
+                        m.insert("creator".into(), fact.creator.clone().into());
+                        m
+                    },
+                });
+            }
+            for intent in &state.intents {
+                let idx = self.graph.add_node(NodeWeight {
+                    name: intent.id.0.clone(),
+                    label: "Intent".into(),
+                    properties: {
+                        let mut m = std::collections::HashMap::new();
+                        m.insert("description".into(), intent.description.clone().into());
+                        m.insert("creator".into(), intent.creator.clone().into());
+                        m
+                    },
+                });
+                // Restore edges from source facts
+                for fid in &intent.from_facts {
+                    if let Some(src) = self.graph.node_indices().find(|i| self.graph.node_weight(*i).is_some_and(|w| w.name == *fid)) {
+                        self.graph.add_edge(src, idx, EdgeWeight {
+                            rel_type: "drives".into(),
+                            properties: HashMap::new(),
+                        });
+                    }
+                }
+                // Restore claim if intent has a worker
+                if let Some(ref worker) = intent.worker {
+                    self.claims.insert(intent.id.0.clone(), worker.clone());
+                }
+            }
+            for hint in &state.hints {
+                let _ = self.graph.add_node(NodeWeight {
+                    name: hint.id.0.clone(),
+                    label: "Hint".into(),
+                    properties: {
+                        let mut m = std::collections::HashMap::new();
+                        m.insert("content".into(), hint.content.clone().into());
+                        m.insert("creator".into(), hint.creator.clone().into());
+                        m
+                    },
+                });
+            }
         }
         self.loading = false;
         self
     }
 
-    fn log_fih(&self, event_type: &str, payload: &str) {
+    fn persist_apply<F>(&mut self, f: F)
+    where
+        F: FnOnce(&mut nexus_table::SqlBlackboard),
+    {
         if !self.loading {
-            self.storage.log_fih(event_type, payload);
+            if let Some(ref mut db) = self.persist {
+                f(db);
+            }
         }
     }
-
-    fn replay_one(&mut self, event_type: &str, payload: &str) {
-        match event_type {
-            "submit_fact" => {
-                if let Ok(fact) = serde_json::from_str::<Fact>(payload) {
-                    let _ = Blackboard::submit_fact(self, &fact);
-                }
-            }
-            "submit_hint" => {
-                if let Ok(hint) = serde_json::from_str::<Hint>(payload) {
-                    let _ = self.submit_hint(&hint);
-                }
-            }
-            "submit_intent" => {
-                if let Ok(intent) = serde_json::from_str::<Intent>(payload) {
-                    let _ = self.submit_intent(&intent);
-                }
-            }
-            "claim_intent" => {
-                if let Ok(c) = serde_json::from_str::<ClaimPayload>(payload) {
-                    let _ = self.claim_intent(&c.id, &c.agent);
-                }
-            }
-            "heartbeat" => {
-                if let Ok(c) = serde_json::from_str::<ClaimPayload>(payload) {
-                    let _ = self.heartbeat(&c.id, &c.agent);
-                }
-            }
-            "release_intent" => {
-                if let Ok(c) = serde_json::from_str::<ClaimPayload>(payload) {
-                    let _ = self.release_intent(&c.id, &c.agent);
-                }
-            }
-            "conclude_intent" => {
-                if let Ok(c) = serde_json::from_str::<ConcludePayload>(payload) {
-                    let v: serde_json::Value = c.result.into();
-                    let _ = self.conclude_intent(&c.id, &v);
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-struct ClaimPayload {
-    id: String,
-    agent: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct ConcludePayload {
-    id: String,
-    result: String,
 }
 
 // ── Blackboard impl ──────────────────────────────────────────────────────
 
 /// Convenience: create a persistent GraphBlackboard backed by SQLite via nexus-table.
 pub fn blackboard_with_sqlite(path: &str) -> Result<GraphBlackboard, String> {
-    let store = nexus_table::SqliteStorage::open(path).map_err(|e| e.to_string())?;
-    Ok(GraphBlackboard::new().with_storage(Box::new(store)))
+    let db = nexus_table::SqlBlackboard::open(path).map_err(|e| e.to_string())?;
+    Ok(GraphBlackboard::new().with_persistence(db))
 }
 
 impl GraphAccess for GraphBlackboard {
@@ -234,8 +235,6 @@ impl GraphAccess for GraphBlackboard {
 
 impl Blackboard for GraphBlackboard {
     fn submit_fact(&mut self, fact: &Fact) -> Result<FihHash, BlackboardError> {
-        let payload = serde_json::to_string(fact).unwrap();
-        self.log_fih("submit_fact", &payload);
         // Store as petgraph node
         let _idx = self.graph.add_node(NodeWeight {
             name: fact.id.0.clone(),
@@ -248,12 +247,11 @@ impl Blackboard for GraphBlackboard {
                 m
             },
         });
+        self.persist_apply(|db| { let _ = db.submit_fact(fact); });
         Ok(fact.id.clone())
     }
 
     fn submit_hint(&mut self, hint: &Hint) -> Result<(), BlackboardError> {
-        let payload = serde_json::to_string(hint).unwrap();
-        self.log_fih("submit_hint", &payload);
         // Store as petgraph node
         self.graph.add_node(NodeWeight {
             name: hint.id.0.clone(),
@@ -265,6 +263,7 @@ impl Blackboard for GraphBlackboard {
                 m
             },
         });
+        self.persist_apply(|db| { let _ = db.submit_hint(hint); });
         Ok(())
     }
 
@@ -279,8 +278,6 @@ impl Blackboard for GraphBlackboard {
                 return Err(BlackboardError::NotFound(format!("Fact {fid} not found")));
             }
         }
-        let payload = serde_json::to_string(intent).unwrap();
-        self.log_fih("submit_intent", &payload);
         let idx = self.graph.add_node(NodeWeight {
             name: intent.id.0.clone(),
             label: "Intent".into(),
@@ -308,6 +305,7 @@ impl Blackboard for GraphBlackboard {
                 );
             }
         }
+        self.persist_apply(|db| { let _ = db.submit_intent(intent); });
         Ok(intent.id.clone())
     }
 
@@ -318,13 +316,8 @@ impl Blackboard for GraphBlackboard {
                 intent_id, current
             )));
         }
-        let payload = serde_json::to_string(&ClaimPayload {
-            id: intent_id.into(),
-            agent: agent.into(),
-        })
-        .unwrap();
-        self.log_fih("claim_intent", &payload);
         self.claims.insert(intent_id.to_string(), agent.to_string());
+        self.persist_apply(|db| { let _ = db.claim_intent(intent_id, agent); });
         Ok(())
     }
 
@@ -339,12 +332,7 @@ impl Blackboard for GraphBlackboard {
         } else {
             self.claims.insert(intent_id.to_string(), agent.to_string());
         }
-        let payload = serde_json::to_string(&ClaimPayload {
-            id: intent_id.into(),
-            agent: agent.into(),
-        })
-        .unwrap();
-        self.log_fih("heartbeat", &payload);
+        self.persist_apply(|db| { let _ = db.heartbeat(intent_id, agent); });
         Ok(())
     }
 
@@ -359,13 +347,8 @@ impl Blackboard for GraphBlackboard {
             }
             _ => {}
         }
-        let payload = serde_json::to_string(&ClaimPayload {
-            id: intent_id.into(),
-            agent: agent.into(),
-        })
-        .unwrap();
-        self.log_fih("release_intent", &payload);
         self.claims.remove(intent_id);
+        self.persist_apply(|db| { let _ = db.release_intent(intent_id, agent); });
         Ok(())
     }
 
@@ -375,12 +358,6 @@ impl Blackboard for GraphBlackboard {
         result: &serde_json::Value,
     ) -> Result<Fact, BlackboardError> {
         let result_str = serde_json::to_string(result).unwrap();
-        let payload = serde_json::to_string(&ConcludePayload {
-            id: intent_id.into(),
-            result: result_str.clone(),
-        })
-        .unwrap();
-        self.log_fih("conclude_intent", &payload);
         self.claims.remove(intent_id);
         let new_fact = Fact {
             id: FihHash::new(&[intent_id, &result_str], "conclusion"),
@@ -389,6 +366,7 @@ impl Blackboard for GraphBlackboard {
             creator: "system".into(),
         };
         let _ = self.submit_fact(&new_fact);
+        self.persist_apply(|db| { let _ = db.conclude_intent(intent_id, result); });
         Ok(new_fact)
     }
 
