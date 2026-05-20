@@ -19,7 +19,7 @@ impl<B: Blackboard> MockGateway<B> {
         Self { inner }
     }
 
-    pub fn submit_fact(&mut self, fact: &Fact) -> FihHash {
+    pub fn submit_fact(&mut self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         let decoded: Fact = serde_json::from_slice(&serde_json::to_vec(fact).unwrap()).unwrap();
         self.inner.submit_fact(&decoded)
     }
@@ -29,7 +29,7 @@ impl<B: Blackboard> MockGateway<B> {
         self.inner.submit_intent(&decoded)
     }
 
-    pub fn submit_hint(&mut self, hint: &Hint) {
+    pub fn submit_hint(&mut self, hint: &Hint) -> Result<(), BlackboardError> {
         let decoded: Hint = serde_json::from_slice(&serde_json::to_vec(hint).unwrap()).unwrap();
         self.inner.submit_hint(&decoded)
     }
@@ -83,7 +83,7 @@ mod tests {
             content: serde_json::Value::String("Mock gateway test".into()),
             creator: "tester".into(),
         };
-        let hash = gw.submit_fact(&fact);
+        let hash = gw.submit_fact(&fact).unwrap();
         assert_eq!(hash.0, "f_mock_001");
 
         let state = gw.read_state();

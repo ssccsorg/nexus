@@ -115,7 +115,7 @@ pub async fn submit_fact(
     };
     let hash = {
         let mut bb = state.blackboard.lock().unwrap();
-        bb.submit_fact(&fact)
+        bb.submit_fact(&fact).map_err(err_response)?
     };
     Ok(Json(SubmitFactResponse { id: hash.0 }))
 }
@@ -216,7 +216,8 @@ pub async fn submit_hint(
         creator: req.creator,
     };
     let mut bb = state.blackboard.lock().unwrap();
-    bb.submit_hint(&hint);
+    bb.submit_hint(&hint)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiError { error: "hint_error".into(), detail: e.to_string() })))?;
     Ok(Json(()))
 }
 

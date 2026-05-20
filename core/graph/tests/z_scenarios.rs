@@ -22,7 +22,7 @@ fn scenario_contradiction_detection() {
         origin: "paper_iclr_2024".into(),
         content: "Residual GNNs maintain accuracy at 50 layers with skip connections".into(),
         creator: "agent-a".into(),
-    });
+    }).unwrap();
 
     // Agent-B: ingests paper claiming GNNs oversmooth at 6 layers
     bb.submit_fact(&Fact {
@@ -30,7 +30,7 @@ fn scenario_contradiction_detection() {
         origin: "paper_neurips_2023".into(),
         content: "Message-passing GNNs oversmooth beyond 6 layers without normalization".into(),
         creator: "agent-b".into(),
-    });
+    }).unwrap();
 
     // Agent-C: detects the contradiction, submits hypothesis
     bb.submit_intent(&Intent {
@@ -96,7 +96,7 @@ fn scenario_peer_review() {
         origin: "background".into(),
         content: "Surface codes are the leading QEC candidate".into(),
         creator: "system".into(),
-    });
+    }).unwrap();
     bb.submit_intent(&hypothesis).unwrap();
 
     // Phase 2: Reviewer agents submit Hints (review comments)
@@ -104,12 +104,12 @@ fn scenario_peer_review() {
         id: FihHash("h_reviewer1".into()),
         content: "The 0.1% threshold seems optimistic — reference recent experiments".into(),
         creator: "agent-b".into(),
-    });
+    }).unwrap();
     bb.submit_hint(&Hint {
         id: FihHash("h_reviewer2".into()),
         content: "Need to specify distance-3 vs distance-5 surface code constraints".into(),
         creator: "agent-c".into(),
-    });
+    }).unwrap();
 
     // Phase 3: Editor reads hints and concludes
     bb.claim_intent("i_hypothesis", "agent-d").unwrap();
@@ -178,7 +178,7 @@ fn scenario_knowledge_synthesis() {
             origin: "experiment".into(),
             content: (*content).into(),
             creator: creator.to_string(),
-        });
+        }).unwrap();
     }
 
     // Agent-D reads all and synthesizes
@@ -191,7 +191,7 @@ fn scenario_knowledge_synthesis() {
         origin: "synthesis".into(),
         content: "SYNTHESIS: Low temperature (-10°C) increases electrolyte viscosity, reducing ion mobility. High discharge rate (2C) generates heat (15°C rise). Combined high charge rate (>1C) below 0°C causes anode lithium plating. Solution: preheat battery to 10°C before fast charging in cold environments.".into(),
         creator: "agent-delta".into(),
-    });
+    }).unwrap();
 
     // Verify synthesis
     let state = bb.read_state();
@@ -275,7 +275,7 @@ fn scenario_emergency_response() {
             origin: "sensor".into(),
             content: (*content).into(),
             creator: creator.to_string(),
-        });
+        }).unwrap();
     }
 
     // Coordinator submits prioritized response plan as Intent
@@ -359,14 +359,14 @@ fn scenario_bug_fix_pipeline() {
         origin: "production".into(),
         content: "CRITICAL: Payment API returns 500 for amounts > $10,000 since deploy v2.3.1 at 2026-06-15T14:32Z. Affects 12% of enterprise transactions.".into(),
         creator: "reporter".into(),
-    });
+    }).unwrap();
 
     // Triager reads the bug, adds metadata as Hint, files a triage Intent
     bb.submit_hint(&Hint {
         id: FihHash("h_severity".into()),
         content: "severity=P0, component=payment-api, regression=true".into(),
         creator: "triager".into(),
-    });
+    }).unwrap();
     bb.submit_intent(&Intent {
         id: FihHash("i_triage".into()),
         from_facts: vec!["f_bug_1337".into()],
@@ -462,7 +462,7 @@ fn scenario_ci_failure_investigation() {
         origin: "ci".into(),
         content: "BUILD FAILED: main branch, commit a1b2c3d, pipeline #8421. 23 test failures, 5 compile errors, 3 dependency warnings.".into(),
         creator: "ci-bot".into(),
-    });
+    }).unwrap();
 
     // Agent-A investigates compile errors
     bb.submit_fact(&Fact {
@@ -470,7 +470,7 @@ fn scenario_ci_failure_investigation() {
         origin: "investigation".into(),
         content: "Compile errors: all 5 are in protocol/buffer.rs — 'PacketHeader' struct size mismatch after adding new field. Missing #[repr(C)] attribute.".into(),
         creator: "agent-a".into(),
-    });
+    }).unwrap();
 
     // Agent-B investigates test failures (independently, same time)
     bb.submit_fact(&Fact {
@@ -478,7 +478,7 @@ fn scenario_ci_failure_investigation() {
         origin: "investigation".into(),
         content: "Test failures: 23/23 are serialization round-trip tests. All fail with 'buffer size mismatch'. Consistent with struct layout change.".into(),
         creator: "agent-b".into(),
-    });
+    }).unwrap();
 
     // Agent-C checks dependencies
     bb.submit_fact(&Fact {
@@ -486,7 +486,7 @@ fn scenario_ci_failure_investigation() {
         origin: "investigation".into(),
         content: "Dependencies: proto-rs v2.4.0 released yesterday — includes automated PacketHeader generator that changed alignment. No API change, but layout differs.".into(),
         creator: "agent-c".into(),
-    });
+    }).unwrap();
 
     // Agent-D reads ALL investigations, identifies root cause
     let state = bb.read_state();
@@ -542,7 +542,7 @@ fn scenario_supply_chain_incident() {
         origin: "github-advisory".into(),
         content: "CRITICAL: CVE-2026-4413 in openssl-sys v0.9.100 — remote buffer overflow in TLS handshake. CVSS 9.8. Affects all services using TLS.".into(),
         creator: "security-bot".into(),
-    });
+    }).unwrap();
 
     // Security team assesses blast radius
     bb.submit_intent(&Intent {
@@ -618,7 +618,7 @@ fn scenario_supply_chain_incident() {
         id: FihHash("h_postmortem".into()),
         content: "Post-mortem action: add openssl-sys to automated dependency vulnerability scanner. ETA: 1 week.".into(),
         creator: "pm-lead".into(),
-    });
+    }).unwrap();
 
     let state = bb.read_state();
     assert_eq!(state.facts.len(), 4, "1 advisory + 3 conclusion facts = 4");
@@ -659,7 +659,7 @@ fn scenario_ssccs_primitive_discovery() {
         origin: "llvm-ir".into(),
         content: "OBSERVATION: 73% of loads/stores in hot loops access consecutive addresses (stride=1). 18% show strided access (stride=4/8). 9% are gather/scatter. Spatial locality is the dominant pattern, not random access.".into(),
         creator: "agent-a".into(),
-    });
+    }).unwrap();
 
     // Agent-B analyzes data flow graphs in MLIR
     bb.submit_fact(&Fact {
@@ -667,7 +667,7 @@ fn scenario_ssccs_primitive_discovery() {
         origin: "mlir".into(),
         content: "OBSERVATION: Data flow subgraphs show strong temporal locality — 89% of SSA values are used within 12 instructions of definition. Def-use chains form natural clusters: compute kernels, memory fences, control boundaries.".into(),
         creator: "agent-b".into(),
-    });
+    }).unwrap();
 
     // Agent-C analyzes control flow structure (CFG)
     bb.submit_fact(&Fact {
@@ -675,7 +675,7 @@ fn scenario_ssccs_primitive_discovery() {
         origin: "cfg-analysis".into(),
         content: "OBSERVATION: CFG natural loops have clear entry/exit points. 94% of basic blocks belong to exactly one loop nest. Loop boundaries are stable across optimization passes — they are structural invariants of the computation, not artifacts.".into(),
         creator: "agent-c".into(),
-    });
+    }).unwrap();
 
     let state = bb.read_state();
     assert_eq!(state.facts.len(), 3, "3 observations from different IRs");
@@ -688,14 +688,14 @@ fn scenario_ssccs_primitive_discovery() {
         id: FihHash("h_convergence_1".into()),
         content: "CROSS-REF: Memory stride=1 patterns align with innermost loops (Agent-C's observation). The memory access unit IS the loop body — a natural computational boundary.".into(),
         creator: "agent-a".into(),
-    });
+    }).unwrap();
 
     // Agent-B notes: SSA def-use clusters match memory regions from Agent-A
     bb.submit_hint(&Hint {
         id: FihHash("h_convergence_2".into()),
         content: "CROSS-REF: SSA value clusters (12-instruction window) correspond to memory stride-1 regions (Agent-A). The data flow cluster and memory access region share the same boundary — this is NOT coincidence.".into(),
         creator: "agent-b".into(),
-    });
+    }).unwrap();
 
     // Agent-C notes: all three dimensions converge on the same structural unit
     bb.submit_fact(&Fact {
@@ -703,7 +703,7 @@ fn scenario_ssccs_primitive_discovery() {
         origin: "cross-reference".into(),
         content: "CONVERGENCE: Memory (spatial), data flow (temporal), and control flow (structural) all identify the same atomic unit: a self-contained loop nest with bounded memory access and localized def-use chains. This unit is universal across the three IRs.".into(),
         creator: "agent-c".into(),
-    });
+    }).unwrap();
 
     println!("  Phase 2: 3 cross-references confirm convergence — a universal atomic unit");
 

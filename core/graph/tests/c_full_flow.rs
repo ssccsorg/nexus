@@ -17,7 +17,7 @@ fn submit_fact(bb: &mut GraphBlackboard, id: &str, origin: &str, content: &str, 
         content: content.into(),
         creator: creator.into(),
     };
-    bb.submit_fact(&fact);
+    bb.submit_fact(&fact).unwrap();
 }
 
 /// Helper: run a Cypher query and count results.

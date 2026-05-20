@@ -143,12 +143,12 @@ impl GraphBlackboard {
         match event_type {
             "submit_fact" => {
                 if let Ok(fact) = serde_json::from_str::<Fact>(payload) {
-                    Blackboard::submit_fact(self, &fact);
+                    let _ = Blackboard::submit_fact(self, &fact);
                 }
             }
             "submit_hint" => {
                 if let Ok(hint) = serde_json::from_str::<Hint>(payload) {
-                    self.submit_hint(&hint);
+                    let _ = self.submit_hint(&hint);
                 }
             }
             "submit_intent" => {
@@ -233,7 +233,7 @@ impl GraphAccess for GraphBlackboard {
 }
 
 impl Blackboard for GraphBlackboard {
-    fn submit_fact(&mut self, fact: &Fact) -> FihHash {
+    fn submit_fact(&mut self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         let payload = serde_json::to_string(fact).unwrap();
         self.log_fih("submit_fact", &payload);
         // Store as petgraph node
@@ -248,10 +248,10 @@ impl Blackboard for GraphBlackboard {
                 m
             },
         });
-        fact.id.clone()
+        Ok(fact.id.clone())
     }
 
-    fn submit_hint(&mut self, hint: &Hint) {
+    fn submit_hint(&mut self, hint: &Hint) -> Result<(), BlackboardError> {
         let payload = serde_json::to_string(hint).unwrap();
         self.log_fih("submit_hint", &payload);
         // Store as petgraph node
@@ -265,6 +265,7 @@ impl Blackboard for GraphBlackboard {
                 m
             },
         });
+        Ok(())
     }
 
     fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError> {

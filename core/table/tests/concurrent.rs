@@ -41,7 +41,7 @@ fn test_concurrent_heartbeat_all_succeed() {
 
     {
         let mut bb = bb.lock().unwrap();
-        bb.submit_fact(&make_fact("f001", "shared resource"));
+        bb.submit_fact(&make_fact("f001", "shared resource")).unwrap();
         bb.submit_intent(&make_intent("i001", vec!["f001"], "race target"))
             .unwrap();
     }
@@ -82,7 +82,7 @@ fn test_concurrent_release_claim_handoff() {
 
     {
         let mut bb = bb.lock().unwrap();
-        bb.submit_fact(&make_fact("f001", "ground truth"));
+        bb.submit_fact(&make_fact("f001", "ground truth")).unwrap();
         bb.submit_intent(&make_intent("i001", vec!["f001"], "handoff target"))
             .unwrap();
     }
@@ -137,7 +137,7 @@ fn test_concurrent_fact_submission() {
         let bb = bb.clone();
         handles.push(std::thread::spawn(move || {
             let mut bb = bb.lock().unwrap();
-            bb.submit_fact(&make_fact(&format!("f_{:04}", i), &format!("fact {i}")));
+            bb.submit_fact(&make_fact(&format!("f_{:04}", i), &format!("fact {i}"))).unwrap();
         }));
     }
 
@@ -162,7 +162,7 @@ fn test_concurrent_full_lifecycle() {
             bb.submit_fact(&make_fact(
                 &format!("f_{:04}", i),
                 &format!("ground truth {i}"),
-            ));
+            )).unwrap();
         }
     }
 
@@ -200,16 +200,21 @@ fn test_concurrent_full_lifecycle() {
     assert!(state.intents.iter().all(|i| i.concluded_at.is_some()));
 }
 
-// ── Scenario 5: Error swallowing in submit_fact ────────────────────────
+// ── Scenario 5: Duplicate fact ID returns error ────────────────────────
 
 #[test]
-fn test_submit_fact_silent_error() {
+fn test_submit_fact_duplicate_id_returns_error() {
     let bb = Arc::new(Mutex::new(SqlBlackboard::memory().unwrap()));
 
-    let hash1 = bb.lock().unwrap().submit_fact(&make_fact("f001", "first"));
-    let hash2 = bb.lock().unwrap().submit_fact(&make_fact("f001", "second"));
+    let result1 = bb.lock().unwrap().submit_fact(&make_fact("f001", "first"));
+    assert!(result1.is_ok(), "first submit should succeed");
 
-    assert_eq!(hash1.0, hash2.0, "both calls return same hash");
+    let result2 = bb.lock().unwrap().submit_fact(&make_fact("f001", "second"));
+    assert!(result2.is_err(), "duplicate ID must return error");
+    match result2.unwrap_err() {
+        BlackboardError::Internal(_) => {} // expected: UNIQUE constraint
+        other => panic!("expected Internal error, got {other:?}"),
+    }
 
     let state = bb.lock().unwrap().read_state();
     assert_eq!(state.facts.len(), 1, "only one fact stored");
@@ -223,6 +228,6 @@ fn test_submit_fact_fk_violation_silent() {
     let mut bb = SqlBlackboard::memory().unwrap();
     assert_eq!(bb.project_id(), "default");
 
-    bb.submit_fact(&make_fact("f001", "this works"));
+    bb.submit_fact(&make_fact("f001", "this works")).unwrap();
     assert_eq!(bb.read_state().facts.len(), 1);
 }
