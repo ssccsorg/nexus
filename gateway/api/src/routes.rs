@@ -135,6 +135,11 @@ pub async fn submit_intent(
     Json(req): Json<SubmitIntentRequest>,
 ) -> Result<Json<SubmitIntentResponse>, (StatusCode, Json<ApiError>)> {
     let id = req.id.unwrap_or_else(|| format!("intent_{}", uuid_v4()));
+    if req.from_facts.is_empty() {
+        return Err(err_response(BlackboardError::Forbidden(
+            "intent must be grounded in at least one fact".into(),
+        )));
+    }
     let intent = Intent {
         id: FihHash(id.clone()),
         from_facts: req.from_facts,
