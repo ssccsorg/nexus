@@ -4,7 +4,7 @@
 // all communicating through the FIH protocol via MockGateway's JSON boundary.
 
 use nexus_graph::mock_gateway::MockGateway;
-use nexus_graph::{BlackboardError, Fact, FihHash, GraphBlackboard, Intent};
+use nexus_graph::{Blackboard, BlackboardError, Fact, FihHash, GraphBlackboard, Intent};
 
 // ── Scenario: Intermittent agent (Bluetooth / short-range radio) ─────────
 //

@@ -1,13 +1,12 @@
 /// Mock gateway for transport-layer testing.
 ///
-/// A transparent proxy that round-trips every FIH primitive through JSON
-/// serialization before reaching the inner Blackboard. This simulates the
-/// exact serialization boundary that a real HTTP gateway (axum in
-/// gateway/api/) would impose.
+/// A transparent proxy that round-trips structured FIH types (Fact, Intent,
+/// Hint, BoardState) through JSON serialisation before reaching the inner
+/// Blackboard. Primitive types (strings, Value) pass through directly since
+/// they are JSON-safe.
 ///
-/// Any scenario test that passes through `MockGateway` validates that the
-/// FIH protocol works correctly across a JSON transport boundary — the same
-/// boundary that separates external agents from the Blackboard.
+/// Implements `Blackboard` trait so it can be used wherever `&mut dyn Blackboard`
+/// is expected.
 use crate::{Blackboard, BlackboardError, BoardState, Fact, FihHash, Hint, Intent};
 
 pub struct MockGateway<B: Blackboard> {
@@ -18,52 +17,51 @@ impl<B: Blackboard> MockGateway<B> {
     pub fn new(inner: B) -> Self {
         Self { inner }
     }
+}
 
-    pub fn submit_fact(&mut self, fact: &Fact) -> Result<FihHash, BlackboardError> {
+impl<B: Blackboard> Blackboard for MockGateway<B> {
+    fn project_id(&self) -> &str {
+        self.inner.project_id()
+    }
+
+    fn submit_fact(&mut self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         let decoded: Fact = serde_json::from_slice(&serde_json::to_vec(fact).unwrap()).unwrap();
         self.inner.submit_fact(&decoded)
     }
 
-    pub fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+    fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError> {
         let decoded: Intent = serde_json::from_slice(&serde_json::to_vec(intent).unwrap()).unwrap();
         self.inner.submit_intent(&decoded)
     }
 
-    pub fn submit_hint(&mut self, hint: &Hint) -> Result<(), BlackboardError> {
+    fn submit_hint(&mut self, hint: &Hint) -> Result<(), BlackboardError> {
         let decoded: Hint = serde_json::from_slice(&serde_json::to_vec(hint).unwrap()).unwrap();
         self.inner.submit_hint(&decoded)
     }
 
-    pub fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let id: String = serde_json::from_slice(&serde_json::to_vec(intent_id).unwrap()).unwrap();
-        let a: String = serde_json::from_slice(&serde_json::to_vec(agent).unwrap()).unwrap();
-        self.inner.claim_intent(&id, &a)
+    fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        self.inner.claim_intent(intent_id, agent)
     }
 
-    pub fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let id: String = serde_json::from_slice(&serde_json::to_vec(intent_id).unwrap()).unwrap();
-        let a: String = serde_json::from_slice(&serde_json::to_vec(agent).unwrap()).unwrap();
-        self.inner.heartbeat(&id, &a)
+    fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        self.inner.heartbeat(intent_id, agent)
     }
 
-    pub fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let id: String = serde_json::from_slice(&serde_json::to_vec(intent_id).unwrap()).unwrap();
-        let a: String = serde_json::from_slice(&serde_json::to_vec(agent).unwrap()).unwrap();
-        self.inner.release_intent(&id, &a)
+    fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        self.inner.release_intent(intent_id, agent)
     }
 
-    pub fn conclude_intent(
+    fn conclude_intent(
         &mut self,
         intent_id: &str,
         result: &serde_json::Value,
     ) -> Result<Fact, BlackboardError> {
-        let id: String = serde_json::from_slice(&serde_json::to_vec(intent_id).unwrap()).unwrap();
         let r: serde_json::Value =
             serde_json::from_slice(&serde_json::to_vec(result).unwrap()).unwrap();
-        self.inner.conclude_intent(&id, &r)
+        self.inner.conclude_intent(intent_id, &r)
     }
 
-    pub fn read_state(&self) -> BoardState {
+    fn read_state(&self) -> BoardState {
         let state = self.inner.read_state();
         serde_json::from_slice(&serde_json::to_vec(&state).unwrap()).unwrap()
     }
