@@ -1,11 +1,14 @@
 // nexus-storage-sqlite — SqliteStorage: legacy event-log storage.
 //
-// Backward-compatible event-log persistence. Implements `Storage` + `ColdStorage`
-// by serializing FIH operations as JSON events in the `fih_events` table.
-// Retained for migration scenarios. New code should use `SqlNormalizedStorage`.
+// Backward-compatible event-log persistence. Implements capability-based
+// Storage traits (`StorageRead`, `FactCapable`, `IntentCapable`, `HintCapable`,
+// `FilterCapable`, `FihPersistence`, `ColdStorage`) by serializing FIH
+// operations as JSON events in the `fih_events` table. Retained for migration
+// scenarios. New code should use `SqlNormalizedStorage`.
 
 use nexus_model::{
-    BlackboardError, BoardState, ColdStorage, Fact, FihHash, Hint, Intent, Storage, StoredEvent,
+    BlackboardError, BoardState, Fact, FactCapable, FihHash, FilterCapable, Hint, HintCapable,
+    Intent, IntentCapable, StateFilter, StorageRead, StoredEvent,
 };
 use rusqlite::{Connection, params};
 use std::path::Path;
@@ -75,68 +78,9 @@ impl SqliteStorage {
     }
 }
 
-impl Storage for SqliteStorage {
+impl StorageRead for SqliteStorage {
     fn project_id(&self) -> &str {
         "default"
-    }
-
-    fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
-        let payload =
-            serde_json::to_string(fact).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.log_fih("submit_fact", &payload);
-        Ok(fact.id.clone())
-    }
-
-    fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
-        let payload =
-            serde_json::to_string(hint).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.log_fih("submit_hint", &payload);
-        Ok(())
-    }
-
-    fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
-        let payload =
-            serde_json::to_string(intent).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.log_fih("submit_intent", &payload);
-        Ok(intent.id.clone())
-    }
-
-    fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let payload = serde_json::json!({"id": intent_id, "agent": agent}).to_string();
-        self.log_fih("claim_intent", &payload);
-        Ok(())
-    }
-
-    fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let payload = serde_json::json!({"id": intent_id, "agent": agent}).to_string();
-        self.log_fih("heartbeat", &payload);
-        Ok(())
-    }
-
-    fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let payload = serde_json::json!({"id": intent_id, "agent": agent}).to_string();
-        self.log_fih("release_intent", &payload);
-        Ok(())
-    }
-
-    fn conclude_intent(
-        &self,
-        intent_id: &str,
-        result: &serde_json::Value,
-    ) -> Result<Fact, BlackboardError> {
-        let result_str = result
-            .as_str()
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| result.to_string());
-        let payload = serde_json::json!({"id": intent_id, "result": result_str}).to_string();
-        self.log_fih("conclude_intent", &payload);
-        let new_fact_id = format!("f_concl_{}", intent_id);
-        Ok(Fact {
-            id: FihHash(new_fact_id),
-            origin: format!("conclusion:{}", intent_id),
-            content: result.clone(),
-            creator: String::new(),
-        })
     }
 
     fn read_state(&self) -> BoardState {
@@ -219,4 +163,74 @@ impl Storage for SqliteStorage {
     }
 }
 
-impl ColdStorage for SqliteStorage {}
+impl FactCapable for SqliteStorage {
+    fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
+        let payload =
+            serde_json::to_string(fact).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.log_fih("submit_fact", &payload);
+        Ok(fact.id.clone())
+    }
+}
+
+impl IntentCapable for SqliteStorage {
+    fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+        let payload =
+            serde_json::to_string(intent).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.log_fih("submit_intent", &payload);
+        Ok(intent.id.clone())
+    }
+
+    fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let payload = serde_json::json!({"id": intent_id, "agent": agent}).to_string();
+        self.log_fih("claim_intent", &payload);
+        Ok(())
+    }
+
+    fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let payload = serde_json::json!({"id": intent_id, "agent": agent}).to_string();
+        self.log_fih("heartbeat", &payload);
+        Ok(())
+    }
+
+    fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let payload = serde_json::json!({"id": intent_id, "agent": agent}).to_string();
+        self.log_fih("release_intent", &payload);
+        Ok(())
+    }
+
+    fn conclude_intent(
+        &self,
+        intent_id: &str,
+        result: &serde_json::Value,
+    ) -> Result<Fact, BlackboardError> {
+        let result_str = result
+            .as_str()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| result.to_string());
+        let payload = serde_json::json!({"id": intent_id, "result": result_str}).to_string();
+        self.log_fih("conclude_intent", &payload);
+        let new_fact_id = format!("f_concl_{}", intent_id);
+        Ok(Fact {
+            id: FihHash(new_fact_id),
+            origin: format!("conclusion:{}", intent_id),
+            content: result.clone(),
+            creator: String::new(),
+        })
+    }
+}
+
+impl HintCapable for SqliteStorage {
+    fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
+        let payload =
+            serde_json::to_string(hint).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.log_fih("submit_hint", &payload);
+        Ok(())
+    }
+}
+
+impl FilterCapable for SqliteStorage {
+    fn read_state_filtered(&self, _filter: &StateFilter) -> BoardState {
+        // For now, returns the full state. SQL-level filtering to be added later.
+        self.read_state()
+    }
+}
