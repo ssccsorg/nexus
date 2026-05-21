@@ -469,12 +469,9 @@ impl FilterCapable for SqlNormalizedStorage {
         };
         let pid = &self.project_id;
 
-        // Build WHERE clause fragments for each table type.
-        // Facts and hints use `id`; intents use `id`; all three have `created_at`.
         let fact_where = build_fact_where(filter, pid);
         let intent_where = build_intent_where(filter, pid);
         let hint_where = build_hint_where(filter, pid);
-
         let limit_off = build_limit_offset(filter);
 
         let facts = conn
@@ -501,6 +498,59 @@ impl FilterCapable for SqlNormalizedStorage {
             })
             .unwrap_or_default();
 
+        // Also load intent_sources for the filtered intents (joins from_facts).
+        // We use a separate query to get source_map for the matching intents.
+        let intent_id_list: Vec<String> = conn
+            .prepare(&format!("SELECT i.id FROM intents i {}", intent_where))
+            .map(|mut stmt| {
+                stmt.query_map([], |row| {
+                    let id: String = row.get(0)?;
+                    Ok(id)
+                })
+                .map(|rows| rows.filter_map(|r| r.ok()).collect())
+                .unwrap_or_default()
+            })
+            .unwrap_or_default();
+
+        let source_map: std::collections::HashMap<String, Vec<String>> = if intent_id_list
+            .is_empty()
+        {
+            std::collections::HashMap::new()
+        } else {
+            let placeholders: Vec<String> = intent_id_list
+                .iter()
+                .enumerate()
+                .map(|(i, _)| format!("?{}", i + 1))
+                .collect();
+            let sql = format!(
+                "SELECT intent_id, fact_id FROM intent_sources WHERE project_id = ? AND intent_id IN ({}) ORDER BY rowid",
+                placeholders.join(",")
+            );
+            let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> =
+                vec![Box::new(pid.to_string())];
+            for id in &intent_id_list {
+                params_vec.push(Box::new(id.clone()));
+            }
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+                params_vec.iter().map(|p| p.as_ref()).collect();
+            conn.prepare(&sql)
+                .map(|mut stmt| {
+                    let mut map: std::collections::HashMap<String, Vec<String>> =
+                        std::collections::HashMap::new();
+                    if let Ok(rows) = stmt.query_map(param_refs.as_slice(), |row| {
+                        let iid: String = row.get(0)?;
+                        let fid: String = row.get(1)?;
+                        Ok((iid, fid))
+                    }) {
+                        for row in rows.flatten() {
+                            map.entry(row.0).or_default().push(row.1);
+                        }
+                    }
+                    map
+                })
+                .unwrap_or_default()
+        };
+
         let intents = conn
             .prepare(&format!(
                 "SELECT i.id, i.description, i.creator, i.worker,
@@ -520,7 +570,7 @@ impl FilterCapable for SqlNormalizedStorage {
                     let concluded_at: Option<String> = row.get(7)?;
                     Ok(Intent {
                         id: FihHash(id.clone()),
-                        from_facts: Vec::new(), // source_map join omitted for filtered reads
+                        from_facts: source_map.get(&id).cloned().unwrap_or_default(),
                         description: desc,
                         creator,
                         worker,
