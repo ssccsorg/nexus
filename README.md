@@ -203,9 +203,13 @@ Three concrete additions to the existing neXus architecture realize this boundar
 ## Component Interaction Matrix
 
 | Component | KG Engine | Object Store | Sync Worker | Planner | Verifier | Generator | Simulation / Hardware |
-|----|----|----|----|----|----|----|----|
-
-*All inter-component flows shown below are mediated through the Blackboard (Fact/Intent/Hint reads and writes). No component invokes another directly.* \| KG Engine \| – \| – \| ← synced by \| ← queried by \| ← grounds \| – \| ← ingests traces \| \| Object Store \| – \| – \| ← read during diff \| – \| – \| – \| ← uploaded by sim/robot \| \| Sync Worker \| → delete/upload \| → list/read \| – \| – \| – \| – \| – \| \| Planner \| → queries \| – \| – \| – \| → delegates \| – \| → invokes sim/robot \| \| Verifier \| → hybrid queries + homeomorphic checks \| – \| – \| ← receives \| – \| → signals \| ← validates physical results \| \| Generator \| – \| – \| – \| – \| ← triggered \| – \| – \|
+|----|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| KG Engine | – | – | ← synced by | ← queried by | ← grounds | – | ← ingests traces |
+| Object Store | – | – | ← read during diff | – | – | – | ← uploaded by sim/robot |
+| Sync Worker | → delete/upload | → list/read | – | – | – | – | – |
+| Planner | → queries | – | – | – | → delegates | – | → invokes sim/robot |
+| Verifier | → hybrid queries + homeomorphic checks | – | – | ← receives | – | → signals | ← validates physical results |
+| Generator | – | – | – | – | ← triggered | – | – |
 
 ## Strategic Alignment
 
