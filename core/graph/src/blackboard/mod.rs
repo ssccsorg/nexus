@@ -214,7 +214,9 @@ impl GraphRead for DefaultBlackboard {
         } else {
             petgraph::Direction::Incoming
         };
-        petgraph::Graph::edges_directed(&*g, idx, dir).map(|e| e.id()).collect()
+        petgraph::Graph::edges_directed(&*g, idx, dir)
+            .map(|e| e.id())
+            .collect()
     }
 }
 
