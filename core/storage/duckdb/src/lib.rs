@@ -3,8 +3,9 @@
 pub mod cypher_sql;
 
 use nexus_model::{
-    BoardState, CypherCapable, Fact, FihHash, FilterCapable, Hint, Intent, PartitionData,
-    ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
+    BoardState, CypherCapable, Fact, FihHash, FilterCapable, FlushCapable, FlushCursor,
+    FlushResult, Hint, Intent, PartitionData, ScanCapable, StateFilter, StorageRead,
+    TimeRangeCapable,
 };
 use std::ops::Range;
 use std::sync::Mutex;
@@ -338,6 +339,18 @@ fn duckdb_column_to_value(row: &duckdb::Row, i: usize) -> serde_json::Value {
         return serde_json::Value::Number(n);
     }
     serde_json::Value::Null
+}
+
+impl FlushCapable for DuckDbStorage {
+    fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
+        // DuckDB reads from Parquet; flushing is writing to Parquet.
+        // For now, no-op — dual-write keeps cold in sync.
+        // TODO(#35): write hot data not yet in Parquet to the R2 Parquet path.
+        Ok(FlushResult {
+            records_flushed: 0,
+            new_cursor: cursor.clone(),
+        })
+    }
 }
 
 impl CypherCapable for DuckDbStorage {

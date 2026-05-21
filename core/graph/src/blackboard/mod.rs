@@ -6,12 +6,15 @@
 
 use nexus_model::{
     Blackboard, BlackboardError, BoardState, ColdStorage, DualStorage, Fact, FactCapable, FihHash,
-    Hint, HintCapable, Intent, IntentCapable, NullStorage, StorageRead,
+    FlushCapable, FlushCursor, Hint, HintCapable, Intent, IntentCapable, NullStorage,
+    StorageRead,
 };
-use serde::{Deserialize, Serialize};
-use nexus_storage_petgraph::{EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage};
+use nexus_storage_petgraph::{
+    EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, StorageSnapshot,
+};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
@@ -92,6 +95,14 @@ impl Drop for ClaimGuard<'_> {
 }
 
 impl ClaimsTracker {
+    fn to_snapshot(&self) -> HashMap<String, String> {
+        self.inner.clone()
+    }
+
+    fn from_snapshot(inner: HashMap<String, String>) -> Self {
+        Self { inner }
+    }
+
     fn release(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         match self.inner.get(intent_id) {
             None => {}
@@ -106,15 +117,6 @@ impl ClaimsTracker {
         }
         Ok(())
     }
-}
-
-/// Serialisable snapshot of `DefaultBlackboard` for R2/blob storage.
-/// Contains only the data needed to reconstruct a worker's partition.
-#[derive(Clone, Serialize, Deserialize)]
-pub struct StorageSnapshot {
-    pub graph: petgraph::Graph<NodeWeight, EdgeWeight>,
-    pub claims: HashMap<String, String>,
-    pub project_id: String,
 }
 
 /// The single Blackboard struct. Combines a hot petgraph (for low-latency
@@ -172,6 +174,11 @@ impl DefaultBlackboard {
     }
 
     pub fn flush(&self) -> Result<(), String> {
+        let cursor = FlushCursor {
+            last_flushed_at: String::new(),
+            partition: self.project_id.clone(),
+        };
+        self.storage.flush_since(&cursor)?;
         Ok(())
     }
 
@@ -191,7 +198,7 @@ impl DefaultBlackboard {
         let g = self.hot_graph.read().unwrap();
         StorageSnapshot {
             graph: g.clone(),
-            claims: self.claims.inner.clone(),
+            claims: self.claims.to_snapshot(),
             project_id: self.project_id.clone(),
         }
     }
@@ -210,9 +217,7 @@ impl DefaultBlackboard {
         Self {
             storage,
             hot_graph: graph,
-            claims: ClaimsTracker {
-                inner: snapshot.claims,
-            },
+            claims: ClaimsTracker::from_snapshot(snapshot.claims),
             project_id: snapshot.project_id,
         }
     }

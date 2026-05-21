@@ -7,8 +7,9 @@
 // Project-scoped via project_id.
 
 use nexus_model::{
-    BlackboardError, BoardState, Fact, FactCapable, FihHash, FilterCapable, Hint, HintCapable,
-    Intent, IntentCapable, PartitionData, ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
+    BlackboardError, BoardState, Fact, FactCapable, FihHash, FilterCapable, FlushCapable,
+    FlushCursor, FlushResult, Hint, HintCapable, Intent, IntentCapable, PartitionData,
+    ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
 };
 use rusqlite::{Connection, params};
 use std::ops::Range;
@@ -724,6 +725,16 @@ fn build_hint_where(filter: &StateFilter, project_id: &str) -> String {
         clauses.push(format!("created_at <= '{}'", until.replace('\'', "''")));
     }
     format!("WHERE {}", clauses.join(" AND "))
+}
+
+impl FlushCapable for SqlNormalizedStorage {
+    fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
+        // SQLite IS the cold store; dual-write keeps it in sync.
+        Ok(FlushResult {
+            records_flushed: 0,
+            new_cursor: cursor.clone(),
+        })
+    }
 }
 
 /// Build LIMIT/OFFSET suffix.

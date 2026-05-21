@@ -1,6 +1,7 @@
 use super::evict::EvictCapable;
 use super::fact::FactCapable;
 use super::filter::FilterCapable;
+use super::flush::FlushCapable;
 use super::hint::HintCapable;
 use super::intent::IntentCapable;
 use super::scan::ScanCapable;
@@ -14,6 +15,6 @@ impl<T: FactCapable + IntentCapable + HintCapable> FihPersistence for T {}
 pub trait HotStorage: FihPersistence + EvictCapable + TimeRangeCapable {}
 impl<T: FihPersistence + EvictCapable + TimeRangeCapable> HotStorage for T {}
 
-/// Cold storage: full FIH + filtered reads + scan + time range (SQLite, Parquet).
-pub trait ColdStorage: FihPersistence + FilterCapable + ScanCapable + TimeRangeCapable {}
-impl<T: FihPersistence + FilterCapable + ScanCapable + TimeRangeCapable> ColdStorage for T {}
+/// Cold storage: full FIH + filtered reads + scan + time range + flush (SQLite, Parquet).
+pub trait ColdStorage: FihPersistence + FilterCapable + ScanCapable + TimeRangeCapable + FlushCapable {}
+impl<T: FihPersistence + FilterCapable + ScanCapable + TimeRangeCapable + FlushCapable> ColdStorage for T {}
