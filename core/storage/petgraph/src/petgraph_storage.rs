@@ -1,6 +1,6 @@
 // nexus-graph — PetgraphStorage: in-memory HotStorage implementation.
 //
-// Wraps petgraph::Graph in Arc<Mutex<>> for thread-safe shared access.
+// Wraps petgraph::Graph in Arc<RwLock<>> for thread-safe shared access.
 // Implements StorageRead, FactCapable, HintCapable, IntentCapable,
 // TimeRangeCapable, and EvictCapable.
 
@@ -12,15 +12,15 @@ use nexus_model::{
 use petgraph::visit::EdgeRef;
 use std::collections::HashMap;
 use std::ops::Range;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
-/// In-memory petgraph-backed storage. Thread-safe via internal Mutex.
+/// In-memory petgraph-backed storage. Thread-safe via internal RwLock.
 ///
-/// The underlying `petgraph::Graph` is shared through an `Arc<Mutex<...>>`
+/// The underlying `petgraph::Graph` is shared through an `Arc<RwLock<...>>`
 /// so that `DefaultBlackboard` can access the same graph for Cypher queries
 /// while `PetgraphStorage` handles FIH persistence.
 pub struct PetgraphStorage {
-    pub graph: Arc<Mutex<petgraph::Graph<NodeWeight, EdgeWeight>>>,
+    pub graph: Arc<RwLock<petgraph::Graph<NodeWeight, EdgeWeight>>>,
     pub project_id: String,
 }
 
@@ -31,13 +31,13 @@ impl PetgraphStorage {
 
     pub fn with_project_id(project_id: &str) -> Self {
         Self {
-            graph: Arc::new(Mutex::new(petgraph::Graph::new())),
+            graph: Arc::new(RwLock::new(petgraph::Graph::new())),
             project_id: project_id.to_string(),
         }
     }
 
     pub fn with_shared_graph(
-        graph: Arc<Mutex<petgraph::Graph<NodeWeight, EdgeWeight>>>,
+        graph: Arc<RwLock<petgraph::Graph<NodeWeight, EdgeWeight>>>,
         project_id: &str,
     ) -> Self {
         Self {
@@ -50,7 +50,7 @@ impl PetgraphStorage {
         &self,
         f: impl FnOnce(&petgraph::Graph<NodeWeight, EdgeWeight>) -> R,
     ) -> R {
-        let g = self.graph.lock().unwrap();
+        let g = self.graph.read().unwrap();
         f(&g)
     }
 
@@ -58,7 +58,7 @@ impl PetgraphStorage {
         &self,
         f: impl FnOnce(&mut petgraph::Graph<NodeWeight, EdgeWeight>) -> R,
     ) -> R {
-        let mut g = self.graph.lock().unwrap();
+        let mut g = self.graph.write().unwrap();
         f(&mut g)
     }
 
@@ -79,7 +79,7 @@ impl StorageRead for PetgraphStorage {
     }
 
     fn read_state(&self) -> BoardState {
-        let g = self.graph.lock().unwrap();
+        let g = self.graph.read().unwrap();
         let mut facts = Vec::new();
         let mut intents = Vec::new();
         let mut hints = Vec::new();
@@ -193,7 +193,7 @@ impl StorageRead for PetgraphStorage {
 
 impl FactCapable for PetgraphStorage {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
-        let mut g = self.graph.lock().unwrap();
+        let mut g = self.graph.write().unwrap();
         g.add_node(NodeWeight {
             name: fact.id.0.clone(),
             label: "Fact".into(),
@@ -211,7 +211,7 @@ impl FactCapable for PetgraphStorage {
 
 impl HintCapable for PetgraphStorage {
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
-        let mut g = self.graph.lock().unwrap();
+        let mut g = self.graph.write().unwrap();
         g.add_node(NodeWeight {
             name: hint.id.0.clone(),
             label: "Hint".into(),
@@ -228,7 +228,7 @@ impl HintCapable for PetgraphStorage {
 
 impl IntentCapable for PetgraphStorage {
     fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
-        let mut g = self.graph.lock().unwrap();
+        let mut g = self.graph.write().unwrap();
 
         for fid in &intent.from_facts {
             let found = g
@@ -270,7 +270,7 @@ impl IntentCapable for PetgraphStorage {
     }
 
     fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let mut g = self.graph.lock().unwrap();
+        let mut g = self.graph.write().unwrap();
         for idx in g.node_indices() {
             if let Some(w) = g.node_weight_mut(idx)
                 && w.name == intent_id
@@ -301,7 +301,7 @@ impl IntentCapable for PetgraphStorage {
     }
 
     fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let mut g = self.graph.lock().unwrap();
+        let mut g = self.graph.write().unwrap();
         for idx in g.node_indices() {
             if let Some(w) = g.node_weight_mut(idx)
                 && w.name == intent_id
@@ -337,7 +337,7 @@ impl IntentCapable for PetgraphStorage {
     }
 
     fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let mut g = self.graph.lock().unwrap();
+        let mut g = self.graph.write().unwrap();
         for idx in g.node_indices() {
             if let Some(w) = g.node_weight_mut(idx)
                 && w.name == intent_id
@@ -377,7 +377,7 @@ impl IntentCapable for PetgraphStorage {
         intent_id: &str,
         result: &serde_json::Value,
     ) -> Result<Fact, BlackboardError> {
-        let mut g = self.graph.lock().unwrap();
+        let mut g = self.graph.write().unwrap();
 
         let intent_idx = g
             .node_indices()
@@ -446,7 +446,7 @@ impl EvictCapable for PetgraphStorage {
         // Estimate: minimum 256 bytes per node. Actual size depends on
         // property map contents (especially JSON document content).
         // TODO(#51): measure actual NodeWeight size instead of fixed factor.
-        self.graph.lock().unwrap().node_count() * 256
+        self.graph.read().unwrap().node_count() * 256
     }
 
     fn evict_before(&self, before: &str) -> Result<u64, String> {
