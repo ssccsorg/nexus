@@ -1,6 +1,4 @@
-use nexus_model::{
-    FilterCapable, ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
-};
+use nexus_model::{FilterCapable, ScanCapable, StateFilter, StorageRead, TimeRangeCapable};
 use nexus_storage_duckdb::DuckDbStorage;
 use tempfile::TempDir;
 
