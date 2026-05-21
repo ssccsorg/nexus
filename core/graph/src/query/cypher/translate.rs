@@ -3,6 +3,12 @@
 /// Handles both [`Plan::External`] (cyrs_plan ReadOp chain) and
 /// [`Plan::Internal`] (legacy PlanIR, fallback). Default path is
 /// always cyrs_plan; internal path exists for robustness.
+///
+/// All query functions take `&impl GraphRead`, so callers can pass
+/// either a `DefaultBlackboard` directly or an `RwLockReadGuard`
+/// obtained via `DefaultBlackboard::snapshot()`. The latter is
+/// preferred for batch operations since it acquires the graph read
+/// lock only once for the entire query execution.
 use petgraph::graph::NodeIndex;
 
 use std::collections::HashMap;
