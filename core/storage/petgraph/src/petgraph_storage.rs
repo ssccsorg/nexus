@@ -20,8 +20,8 @@ use std::sync::{Arc, Mutex};
 /// so that `GraphBlackboard` can access the same graph for Cypher queries
 /// while `PetgraphStorage` handles FIH persistence.
 pub struct PetgraphStorage {
-    pub(crate) graph: Arc<Mutex<petgraph::Graph<NodeWeight, EdgeWeight>>>,
-    pub(crate) project_id: String,
+    pub graph: Arc<Mutex<petgraph::Graph<NodeWeight, EdgeWeight>>>,
+    pub project_id: String,
 }
 
 impl PetgraphStorage {
@@ -36,7 +36,7 @@ impl PetgraphStorage {
         }
     }
 
-    pub(crate) fn with_shared_graph(
+    pub fn with_shared_graph(
         graph: Arc<Mutex<petgraph::Graph<NodeWeight, EdgeWeight>>>,
         project_id: &str,
     ) -> Self {

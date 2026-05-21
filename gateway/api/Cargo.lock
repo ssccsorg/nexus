@@ -914,11 +914,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexus-coordinator-blackboard"
+version = "0.1.0"
+dependencies = [
+ "nexus-model",
+ "nexus-storage-petgraph",
+ "petgraph",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nexus-gateway-api"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "nexus-coordinator-blackboard",
  "nexus-graph",
+ "nexus-storage-petgraph",
  "nexus-storage-sqlite",
  "reqwest",
  "serde",
@@ -938,7 +951,9 @@ dependencies = [
  "cyrs-hir",
  "cyrs-plan",
  "cyrs-syntax",
+ "nexus-coordinator-blackboard",
  "nexus-model",
+ "nexus-storage-petgraph",
  "petgraph",
  "serde",
  "serde_json",
@@ -951,6 +966,16 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "nexus-storage-petgraph"
+version = "0.1.0"
+dependencies = [
+ "nexus-model",
+ "petgraph",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

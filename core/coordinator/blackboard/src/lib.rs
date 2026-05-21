@@ -1,16 +1,14 @@
-// nexus-graph — GraphBlackboard: the single Blackboard struct.
+// nexus-coordinator-blackboard — GraphBlackboard: the single blackboard struct.
 //
 // Combines a hot petgraph (for low-latency access and Cypher queries)
 // with a cold storage backend for durability. Storage is swappable
 // via DualStorage. Claims tracking is local to this struct.
 
-use crate::graph_access::GraphAccess;
-use crate::petgraph_storage::PetgraphStorage;
-use crate::weight::{EdgeWeight, NodeWeight};
 use nexus_model::{
     Blackboard, BlackboardError, BoardState, ColdStorage, DualStorage, Fact, FactCapable, FihHash,
     Hint, HintCapable, Intent, IntentCapable, NullStorage, StorageRead,
 };
+use nexus_storage_petgraph::{GraphAccess, PetgraphStorage, EdgeWeight, NodeWeight};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use std::collections::HashMap;
@@ -68,7 +66,6 @@ impl GraphBlackboard {
     }
 
     /// Flush pending writes to cold storage.
-    /// TODO(#51): wire to FlushCapable once DualStorage delegates it.
     pub fn flush(&self) -> Result<(), String> {
         Ok(())
     }

@@ -6,6 +6,8 @@ license.workspace = true
 
 [dependencies]
 nexus-model = { path = "../model" }
+nexus-storage-petgraph = { path = "../storage/petgraph" }
+nexus-coordinator-blackboard = { path = "../coordinator/blackboard" }
 cyrs-syntax = { git = "https://github.com/phall1/cyrs", package = "cyrs-syntax" }
 cyrs-ast    = { git = "https://github.com/phall1/cyrs", package = "cyrs-ast" }
 cyrs-hir    = { git = "https://github.com/phall1/cyrs", package = "cyrs-hir" }

@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use super::plan::*;
 
-use crate::{GraphAccess, Record};
+use nexus_storage_petgraph::{GraphAccess, Record};
 
 // ── Unified execute ────────────────────────────────────────────────────────
 
