@@ -358,18 +358,16 @@ impl ScanCapable for DuckDbStorage {
 impl TimeRangeCapable for DuckDbStorage {
     fn time_range(&self) -> Option<Range<String>> {
         let conn = self.conn.lock().unwrap();
-        let facts_range: Option<(String, String)> = conn
-            .prepare("SELECT MIN(created_at), MAX(created_at) FROM facts_view")
+        // Avoid DuckDB MIN/MAX bug on VARCHAR columns that contain ISO-like date
+        // strings — it can truncate values.  Use ORDER BY + LIMIT instead.
+        let min: Option<String> = conn
+            .prepare("SELECT created_at FROM facts_view ORDER BY created_at LIMIT 1")
             .ok()
-            .and_then(|mut s| {
-                s.query_row([], |row| {
-                    let min: Option<String> = row.get(0).ok().flatten();
-                    let max: Option<String> = row.get(1).ok().flatten();
-                    Ok(min.zip(max))
-                })
-                .ok()
-                .flatten()
-            });
-        facts_range.map(|(min, max)| min..max)
+            .and_then(|mut s| s.query_row([], |row| row.get(0)).ok());
+        let max: Option<String> = conn
+            .prepare("SELECT created_at FROM facts_view ORDER BY created_at DESC LIMIT 1")
+            .ok()
+            .and_then(|mut s| s.query_row([], |row| row.get(0)).ok());
+        min.zip(max).map(|(lo, hi)| lo..hi)
     }
 }
