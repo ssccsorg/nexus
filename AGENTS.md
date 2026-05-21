@@ -85,3 +85,7 @@ digraph DOTGraph {
 - Code as pessimistically and critically as possible.
 - Do not generate unnecessary code. Produce only what is **essential** for the goal.
 - Do not use text characters to draw diagrams (e.g., trees or boxes using ╔═) in code comments.
+
+### Rust
+
+- Split codes as following their roles - do not code all in `lib.rs`.
