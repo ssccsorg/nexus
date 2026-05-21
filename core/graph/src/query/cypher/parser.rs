@@ -144,6 +144,7 @@ fn resolve_pattern_exprs(
 }
 
 fn resolve_expr(expr: &mut Expr, name_to_id: &HashMap<String, cyrs_hir::VarId>) {
+    #[allow(unreachable_patterns)]
     match expr {
         Expr::Unresolved(name) => {
             if let Some(&id) = name_to_id.get(name.as_str()) {

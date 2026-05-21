@@ -158,7 +158,7 @@ fn test_full_agent_collaboration_flow() {
 #[test]
 fn test_petgraph_time_range() {
     use nexus_graph::{
-        Blackboard, DefaultBlackboard, Fact, FihHash, Intent, PetgraphStorage, TimeRangeCapable,
+        Blackboard, DefaultBlackboard, Fact, FihHash, PetgraphStorage, TimeRangeCapable,
     };
 
     // PetgraphStorage::time_range() returns None (unbounded in-memory store).

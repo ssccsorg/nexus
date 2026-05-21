@@ -86,10 +86,9 @@ pub fn translate(query: &ColdQuery) -> Result<String, String> {
         }
     };
 
-    // Build SQL: all SELECT cases already include FROM {table}
-    // (except aggregate_count which doesn't need a table reference).
+    // Build SQL: all SELECT cases include FROM {table}.
     let sql = if query.aggregate_count {
-        "SELECT COUNT(*) as count".to_string()
+        format!("SELECT COUNT(*) as count FROM {table}")
     } else if query.projections.is_empty() {
         format!("SELECT * FROM {table}")
     } else if query.distinct {
@@ -374,7 +373,7 @@ mod tests {
             aggregate_count: true,
         };
         let sql = translate(&q).unwrap();
-        assert_eq!(sql, "SELECT COUNT(*) as count");
+        assert_eq!(sql, "SELECT COUNT(*) as count FROM facts_view");
     }
 
     #[test]

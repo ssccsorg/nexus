@@ -11,12 +11,12 @@
 //   cd tests/agents && cargo run
 
 use nexus_graph::cypher;
-use nexus_graph::{Blackboard, Fact, FihHash, GraphBlackboard, Intent};
+use nexus_graph::{Blackboard, DefaultBlackboard, Fact, FihHash, Intent};
 
 fn main() {
     println!("=== Rust Privileged Agent: Direct Blackboard Access ===\n");
 
-    let mut bb = GraphBlackboard::new();
+    let mut bb = DefaultBlackboard::new();
 
     // ── Phase 1: Submit facts ────────────────────────────────────────
 

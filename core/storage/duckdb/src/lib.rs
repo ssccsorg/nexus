@@ -323,6 +323,23 @@ impl TimeRangeCapable for DuckDbStorage {
     }
 }
 
+/// Read a column from a DuckDB row as a serde_json::Value.
+/// Tries string first, then integer, then float, then null.
+fn duckdb_column_to_value(row: &duckdb::Row, i: usize) -> serde_json::Value {
+    if let Ok(Some(s)) = row.get::<_, Option<String>>(i) {
+        return serde_json::Value::String(s);
+    }
+    if let Ok(Some(n)) = row.get::<_, Option<i64>>(i) {
+        return serde_json::Value::Number(n.into());
+    }
+    if let Ok(Some(f)) = row.get::<_, Option<f64>>(i) {
+        if let Some(n) = serde_json::Number::from_f64(f) {
+            return serde_json::Value::Number(n);
+        }
+    }
+    serde_json::Value::Null
+}
+
 impl CypherCapable for DuckDbStorage {
     fn query_plan(&self, plan: &serde_json::Value) -> Result<serde_json::Value, String> {
         let cold_query: cypher_sql::ColdQuery = serde_json::from_value(plan.clone())
@@ -332,16 +349,20 @@ impl CypherCapable for DuckDbStorage {
         let mut stmt = conn
             .prepare(&sql)
             .map_err(|e| format!("SQL prepare error: {e}"))?;
+        // For aggregate queries, always project "count" regardless of
+        // cold_query.projections (which may be empty).
+        let result_cols: Vec<String> = if cold_query.aggregate_count {
+            vec!["count".to_string()]
+        } else {
+            cold_query.projections.clone()
+        };
+
         let rows = stmt
             .query_map([], |row| {
                 let mut map = serde_json::Map::new();
-                for (i, col) in cold_query.projections.iter().enumerate() {
-                    let val: Option<String> = row.get(i).ok();
-                    map.insert(
-                        col.clone(),
-                        val.map(serde_json::Value::String)
-                            .unwrap_or(serde_json::Value::Null),
-                    );
+                for (i, col) in result_cols.iter().enumerate() {
+                    let val = duckdb_column_to_value(row, i);
+                    map.insert(col.clone(), val);
                 }
                 Ok(serde_json::Value::Object(map))
             })
