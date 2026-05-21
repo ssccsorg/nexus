@@ -31,6 +31,7 @@ use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::ops::Range;
 use std::sync::{Arc, Mutex};
 
 // ── Node and edge weight types ──────────────────────────────────────────
@@ -547,8 +548,21 @@ impl IntentCapable for PetgraphStorage {
     }
 }
 
+impl TimeRangeCapable for PetgraphStorage {
+    fn time_range(&self) -> Option<Range<String>> {
+        // petgraph is an in-memory hot store with no inherent time bound.
+        // Returns None (universal range) since it can hold any data.
+        // A future implementation may return a bounded recent window
+        // based on the oldest node's creation time.
+        None
+    }
+}
+
 impl EvictCapable for PetgraphStorage {
     fn approximate_size(&self) -> usize {
+        // Estimate: minimum 256 bytes per node. Actual size depends on
+        // property map contents (especially JSON document content).
+        // TODO(#51): measure actual NodeWeight size instead of fixed factor.
         self.graph.lock().unwrap().node_count() * 256
     }
 
@@ -631,6 +645,7 @@ impl GraphBlackboard {
     }
 
     /// Flush pending writes to cold storage.
+    /// TODO(#51): wire to FlushCapable once DualStorage delegates it.
     /// Currently a no-op since every write is dual-written.
     pub fn flush(&self) -> Result<(), String> {
         Ok(())
