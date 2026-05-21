@@ -459,8 +459,181 @@ impl HintCapable for SqlNormalizedStorage {
 }
 
 impl FilterCapable for SqlNormalizedStorage {
-    fn read_state_filtered(&self, _filter: &StateFilter) -> BoardState {
-        // For now, returns the full state. SQL-level filtering to be added later.
-        self.read_state()
+    fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
+        let conn = match self.conn.lock() {
+            Ok(c) => c,
+            Err(poisoned) => {
+                eprintln!("read_state_filtered: mutex poisoned, recovering");
+                poisoned.into_inner()
+            }
+        };
+        let pid = &self.project_id;
+
+        // Build WHERE clause fragments for each table type.
+        // Facts and hints use `id`; intents use `id`; all three have `created_at`.
+        let fact_where = build_fact_where(filter, pid);
+        let intent_where = build_intent_where(filter, pid);
+        let hint_where = build_hint_where(filter, pid);
+
+        let limit_off = build_limit_offset(filter);
+
+        let facts = conn
+            .prepare(&format!(
+                "SELECT id, description, creator, origin FROM facts {} ORDER BY id {}",
+                fact_where, limit_off
+            ))
+            .map(|mut stmt| {
+                stmt.query_map([], |row| {
+                    let id: String = row.get(0)?;
+                    let desc: String = row.get(1)?;
+                    let creator: String = row.get(2).unwrap_or_default();
+                    let origin: String = row.get(3).unwrap_or_default();
+                    Ok(Fact {
+                        id: FihHash(id),
+                        origin,
+                        content: serde_json::from_str(&desc)
+                            .unwrap_or(serde_json::Value::String(desc)),
+                        creator,
+                    })
+                })
+                .map(|rows| rows.filter_map(|r| r.ok()).collect())
+                .unwrap_or_default()
+            })
+            .unwrap_or_default();
+
+        let intents = conn
+            .prepare(&format!(
+                "SELECT i.id, i.description, i.creator, i.worker,
+                        i.to_fact_id, i.last_heartbeat_at, i.created_at, i.concluded_at
+                 FROM intents i {} ORDER BY i.created_at {}",
+                intent_where, limit_off
+            ))
+            .map(|mut stmt| {
+                stmt.query_map([], |row| {
+                    let id: String = row.get(0)?;
+                    let desc: String = row.get(1)?;
+                    let creator: String = row.get(2)?;
+                    let worker: Option<String> = row.get(3)?;
+                    let to_fact_id: Option<String> = row.get(4)?;
+                    let last_heartbeat_at: Option<String> = row.get(5)?;
+                    let created_at: String = row.get(6)?;
+                    let concluded_at: Option<String> = row.get(7)?;
+                    Ok(Intent {
+                        id: FihHash(id.clone()),
+                        from_facts: Vec::new(), // source_map join omitted for filtered reads
+                        description: desc,
+                        creator,
+                        worker,
+                        to_fact_id,
+                        last_heartbeat_at,
+                        created_at: Some(created_at),
+                        concluded_at,
+                    })
+                })
+                .map(|rows| rows.filter_map(|r| r.ok()).collect())
+                .unwrap_or_default()
+            })
+            .unwrap_or_default();
+
+        let hints = conn
+            .prepare(&format!(
+                "SELECT id, content, creator FROM hints {} ORDER BY created_at {}",
+                hint_where, limit_off
+            ))
+            .map(|mut stmt| {
+                stmt.query_map([], |row| {
+                    let id: String = row.get(0)?;
+                    let content: String = row.get(1)?;
+                    let creator: String = row.get(2)?;
+                    Ok(Hint {
+                        id: FihHash(id),
+                        content,
+                        creator,
+                    })
+                })
+                .map(|rows| rows.filter_map(|r| r.ok()).collect())
+                .unwrap_or_default()
+            })
+            .unwrap_or_default();
+
+        BoardState {
+            facts,
+            intents,
+            hints,
+        }
+    }
+}
+
+// ── Helper: build SQL WHERE clauses from StateFilter ────────────────────
+
+/// Build WHERE clause for the facts table.
+fn build_fact_where(filter: &StateFilter, project_id: &str) -> String {
+    let mut clauses: Vec<String> =
+        vec![format!("project_id = '{}'", project_id.replace('\'', "''"))];
+    if let Some(ids) = &filter.fact_ids {
+        let list: Vec<String> = ids
+            .iter()
+            .map(|s| format!("'{}'", s.replace('\'', "''")))
+            .collect();
+        clauses.push(format!("id IN ({})", list.join(",")));
+    }
+    if let Some(since) = &filter.since {
+        clauses.push(format!("created_at >= '{}'", since.replace('\'', "''")));
+    }
+    if let Some(until) = &filter.until {
+        clauses.push(format!("created_at <= '{}'", until.replace('\'', "''")));
+    }
+    format!("WHERE {}", clauses.join(" AND "))
+}
+
+/// Build WHERE clause for the intents table.
+fn build_intent_where(filter: &StateFilter, project_id: &str) -> String {
+    let mut clauses: Vec<String> = vec![format!(
+        "i.project_id = '{}'",
+        project_id.replace('\'', "''")
+    )];
+    if let Some(ids) = &filter.intent_ids {
+        let list: Vec<String> = ids
+            .iter()
+            .map(|s| format!("'{}'", s.replace('\'', "''")))
+            .collect();
+        clauses.push(format!("i.id IN ({})", list.join(",")));
+    }
+    if let Some(since) = &filter.since {
+        clauses.push(format!("i.created_at >= '{}'", since.replace('\'', "''")));
+    }
+    if let Some(until) = &filter.until {
+        clauses.push(format!("i.created_at <= '{}'", until.replace('\'', "''")));
+    }
+    format!("WHERE {}", clauses.join(" AND "))
+}
+
+/// Build WHERE clause for the hints table.
+fn build_hint_where(filter: &StateFilter, project_id: &str) -> String {
+    let mut clauses: Vec<String> =
+        vec![format!("project_id = '{}'", project_id.replace('\'', "''"))];
+    if let Some(ids) = &filter.hint_ids {
+        let list: Vec<String> = ids
+            .iter()
+            .map(|s| format!("'{}'", s.replace('\'', "''")))
+            .collect();
+        clauses.push(format!("id IN ({})", list.join(",")));
+    }
+    if let Some(since) = &filter.since {
+        clauses.push(format!("created_at >= '{}'", since.replace('\'', "''")));
+    }
+    if let Some(until) = &filter.until {
+        clauses.push(format!("created_at <= '{}'", until.replace('\'', "''")));
+    }
+    format!("WHERE {}", clauses.join(" AND "))
+}
+
+/// Build LIMIT/OFFSET suffix.
+fn build_limit_offset(filter: &StateFilter) -> String {
+    match (filter.limit, filter.offset) {
+        (Some(limit), Some(offset)) => format!("LIMIT {} OFFSET {}", limit, offset),
+        (Some(limit), None) => format!("LIMIT {}", limit),
+        (None, Some(offset)) => format!("LIMIT -1 OFFSET {}", offset),
+        (None, None) => String::new(),
     }
 }
