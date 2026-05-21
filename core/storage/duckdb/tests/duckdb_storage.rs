@@ -638,7 +638,10 @@ fn test_cypher_capable_cold_query() {
     });
     let count_result = storage.query_plan(&count_plan).unwrap();
     assert!(count_result.is_array(), "count query returns array");
-    let count_row = count_result.as_array().and_then(|a| a.first()).expect("count query should return a row");
+    let count_row = count_result
+        .as_array()
+        .and_then(|a| a.first())
+        .expect("count query should return a row");
     assert_eq!(count_row["count"], serde_json::json!(2), "expected count=2");
 
     // Empty plan should fail to parse
