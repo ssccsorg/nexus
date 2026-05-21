@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 /// In-memory petgraph-backed storage. Thread-safe via internal Mutex.
 ///
 /// The underlying `petgraph::Graph` is shared through an `Arc<Mutex<...>>`
-/// so that `GraphBlackboard` can access the same graph for Cypher queries
+/// so that `DefaultBlackboard` can access the same graph for Cypher queries
 /// while `PetgraphStorage` handles FIH persistence.
 pub struct PetgraphStorage {
     pub graph: Arc<Mutex<petgraph::Graph<NodeWeight, EdgeWeight>>>,

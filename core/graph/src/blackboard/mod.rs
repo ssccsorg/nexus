@@ -1,8 +1,8 @@
-// nexus-coordinator-blackboard — GraphBlackboard: the single blackboard struct.
+// nexus-graph — DefaultBlackboard: the single blackboard struct.
 //
-// Combines a hot petgraph (for low-latency access and Cypher queries)
-// with a cold storage backend for durability. Storage is swappable
-// via DualStorage. Claims tracking is local to this struct.
+// Part of the graph runtime. Combines a hot petgraph (for low-latency
+// access and Cypher queries) with a cold storage backend for durability.
+// Storage is swappable via DualStorage.
 
 use nexus_model::{
     Blackboard, BlackboardError, BoardState, ColdStorage, DualStorage, Fact, FactCapable, FihHash,
@@ -16,15 +16,14 @@ use std::sync::{Arc, Mutex};
 
 /// The single Blackboard struct. Combines a hot petgraph (for low-latency
 /// access and Cypher queries) with a cold storage backend for durability.
-pub struct GraphBlackboard {
+pub struct DefaultBlackboard {
     storage: DualStorage,
     hot_graph: Arc<Mutex<petgraph::Graph<NodeWeight, EdgeWeight>>>,
     claims: Mutex<HashMap<String, String>>,
     project_id: String,
 }
 
-impl GraphBlackboard {
-    /// Create an in-memory only Blackboard (hot=PetgraphStorage, cold=NullStorage).
+impl DefaultBlackboard {
     pub fn new() -> Self {
         let graph = Arc::new(Mutex::new(petgraph::Graph::new()));
         let hot = Box::new(PetgraphStorage::with_shared_graph(
@@ -42,7 +41,6 @@ impl GraphBlackboard {
         }
     }
 
-    /// Create a Blackboard with custom hot and cold storage backends.
     pub fn with_storage(hot: PetgraphStorage, cold: Box<dyn ColdStorage>) -> Self {
         let hot_graph = Arc::clone(&hot.graph);
         let project_id = hot.project_id.clone();
@@ -56,7 +54,6 @@ impl GraphBlackboard {
         }
     }
 
-    /// Access the petgraph directly (for Cypher executor).
     pub fn with_graph<R>(
         &self,
         f: impl FnOnce(&petgraph::Graph<NodeWeight, EdgeWeight>) -> R,
@@ -65,24 +62,22 @@ impl GraphBlackboard {
         f(&g)
     }
 
-    /// Flush pending writes to cold storage.
     pub fn flush(&self) -> Result<(), String> {
         Ok(())
     }
 
-    /// Return the project ID for this Blackboard.
     pub fn project_id(&self) -> &str {
         &self.project_id
     }
 }
 
-impl Default for GraphBlackboard {
+impl Default for DefaultBlackboard {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl GraphAccess for GraphBlackboard {
+impl GraphAccess for DefaultBlackboard {
     fn node_indices(&self) -> Vec<NodeIndex> {
         let g = self.hot_graph.lock().unwrap();
         g.node_indices().collect()
@@ -134,7 +129,7 @@ impl GraphAccess for GraphBlackboard {
     }
 }
 
-impl Blackboard for GraphBlackboard {
+impl Blackboard for DefaultBlackboard {
     fn project_id(&self) -> &str {
         &self.project_id
     }
@@ -181,9 +176,7 @@ impl Blackboard for GraphBlackboard {
     fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let mut claims = self.claims.lock().unwrap();
         match claims.get(intent_id) {
-            None => {
-                return self.storage.release_intent(intent_id, agent);
-            }
+            None => return self.storage.release_intent(intent_id, agent),
             Some(current) if current != agent => {
                 return Err(BlackboardError::Conflict(format!(
                     "Intent {intent_id} is claimed by {current}, not {agent}"

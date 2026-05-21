@@ -569,23 +569,80 @@ fn test_stress_1000_facts() {
     assert!(state.facts.iter().any(|f| f.id.0 == "fact_999"));
 }
 
-// ── Test 19: CypherCapable trait exists (placeholder for #51) ──────────
+// ── Test 19: CypherCapable — DuckDB Cypher→SQL query execution ───────
 
 #[test]
-fn test_cypher_capable_trait_exists() {
-    // CypherCapable is a placeholder trait for the future Cypher→DuckDB
-    // bridge (#51). Every StorageRead backend gets a default impl that
-    // returns an error. This test confirms the trait is wired correctly.
+fn test_cypher_capable_cold_query() {
+    // CypherCapable for DuckDbStorage translates a ColdQuery to SQL and
+    // executes it against parquet-backed views. This test writes parquet
+    // data and queries it through the CypherCapable interface.
     let tempdir = TempDir::new().unwrap();
-    std::fs::create_dir_all(tempdir.path().join("facts")).unwrap();
+    let facts_dir = tempdir.path().join("facts");
+    std::fs::create_dir_all(&facts_dir).unwrap();
+    let parquet_path = facts_dir.join("data.parquet").to_str().unwrap().to_string();
+
+    write_parquet(
+        "SELECT 'f_a' as fact_id, 'src' as origin, '\"alpha\"' as content, 'tester' as creator, '2026-06-01' as created_at
+         UNION ALL
+         SELECT 'f_b' as fact_id, 'src' as origin, '\"beta\"' as content, 'tester' as creator, '2026-06-02' as created_at",
+        &parquet_path,
+    );
+
     let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
 
-    // The trait exists and can be called (returns error until #51)
-    let result = storage.query_plan(&serde_json::json!({}));
-    assert!(result.is_err(), "CypherCapable is not yet implemented");
+    // Query all facts via ColdQuery
+    let plan = serde_json::json!({
+        "label": "Fact",
+        "filters": [],
+        "projections": ["fact_id", "origin", "content"],
+        "order_by": [],
+        "limit": null,
+        "offset": null,
+        "distinct": false,
+        "aggregate_count": false
+    });
+
+    let result = storage.query_plan(&plan).unwrap();
+    let rows = result.as_array().unwrap();
+    assert_eq!(rows.len(), 2, "expected 2 facts");
+    assert_eq!(rows[0]["fact_id"], "f_a");
+    assert_eq!(rows[1]["fact_id"], "f_b");
+
+    // Query with filter
+    let plan = serde_json::json!({
+        "label": "Fact",
+        "filters": [{"field": "fact_id", "op": "Eq", "value": "f_a"}],
+        "projections": ["fact_id", "content"],
+        "order_by": [],
+        "limit": null,
+        "offset": null,
+        "distinct": false,
+        "aggregate_count": false
+    });
+
+    let result = storage.query_plan(&plan).unwrap();
+    let rows = result.as_array().unwrap();
+    assert_eq!(rows.len(), 1, "expected 1 filtered fact");
+    assert_eq!(rows[0]["fact_id"], "f_a");
+
+    // Query count
+    let plan = serde_json::json!({
+        "label": "Fact",
+        "filters": [],
+        "projections": [],
+        "order_by": [],
+        "limit": null,
+        "offset": null,
+        "distinct": false,
+        "aggregate_count": true
+    });
+
+    // Empty plan should fail to parse
+    let empty_result = storage.query_plan(&serde_json::json!({}));
+    assert!(empty_result.is_err(), "empty plan should fail to parse");
     assert!(
-        result.unwrap_err().contains("CypherCapable"),
-        "error message should reference CypherCapable"
+        empty_result.unwrap_err().contains("ColdQuery"),
+        "error should mention ColdQuery"
     );
 }
 

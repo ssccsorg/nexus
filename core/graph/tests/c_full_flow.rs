@@ -7,10 +7,10 @@
 //   4. Read_state + unit assertions verify correctness (Cypher is for portability)
 
 use nexus_graph::cypher;
-use nexus_graph::{Blackboard, BlackboardError, Fact, FihHash, GraphBlackboard, Intent};
+use nexus_graph::{Blackboard, BlackboardError, DefaultBlackboard, Fact, FihHash, Intent};
 
 /// Helper: submit a fact with minimal boilerplate.
-fn submit_fact(bb: &mut GraphBlackboard, id: &str, origin: &str, content: &str, creator: &str) {
+fn submit_fact(bb: &mut DefaultBlackboard, id: &str, origin: &str, content: &str, creator: &str) {
     let fact = Fact {
         id: FihHash(id.into()),
         origin: origin.into(),
@@ -21,14 +21,14 @@ fn submit_fact(bb: &mut GraphBlackboard, id: &str, origin: &str, content: &str, 
 }
 
 /// Helper: run a Cypher query and count results.
-fn cypher_count(bb: &GraphBlackboard, query: &str) -> usize {
+fn cypher_count(bb: &DefaultBlackboard, query: &str) -> usize {
     let plan = cypher::Plan::from_internal(query).expect("parse failed");
     cypher::execute(bb, &plan).expect("execute failed").len()
 }
 
 #[test]
 fn test_full_agent_collaboration_flow() {
-    let mut bb = GraphBlackboard::new();
+    let mut bb = DefaultBlackboard::new();
 
     // ── Phase 1: Agent-A ingests research facts ───────────────────────
 
@@ -158,7 +158,7 @@ fn test_full_agent_collaboration_flow() {
 #[test]
 fn test_petgraph_time_range() {
     use nexus_graph::{
-        Blackboard, Fact, FihHash, GraphBlackboard, Intent, PetgraphStorage, TimeRangeCapable,
+        Blackboard, DefaultBlackboard, Fact, FihHash, Intent, PetgraphStorage, TimeRangeCapable,
     };
 
     // PetgraphStorage::time_range() returns None (unbounded in-memory store).
@@ -169,9 +169,9 @@ fn test_petgraph_time_range() {
         "petgraph hot store has no time bound"
     );
 
-    // GraphBlackboard::new() uses DualStorage internally.
+    // DefaultBlackboard::new() uses DualStorage internally.
     // PetgraphStorage is the hot layer, NullStorage is the cold layer.
-    let mut bb = GraphBlackboard::new();
+    let mut bb = DefaultBlackboard::new();
     bb.submit_fact(&Fact {
         id: FihHash("f_001".into()),
         origin: "test".into(),
@@ -181,7 +181,7 @@ fn test_petgraph_time_range() {
     .unwrap();
 
     let state = bb.read_state();
-    assert_eq!(state.facts.len(), 1, "fact submitted to GraphBlackboard");
+    assert_eq!(state.facts.len(), 1, "fact submitted to DefaultBlackboard");
     // PetgraphStorage::time_range is None (unbounded).
     // Direct access to DualStorage's time_range is not exposed through
     // the Blackboard trait — this is by design (#51 will add routing).

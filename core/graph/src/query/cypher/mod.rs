@@ -1,4 +1,7 @@
-// nexus-cypher — Cypher → petgraph translation
+// nexus-graph — Cypher → petgraph translation (query frontend)
+//
+// Part of the graph runtime's query layer. Future query frontends
+// (GQL, SQL/PGQ) will be added as siblings of this module.
 //
 // Dual-path architecture:
 //   Plan::External → cyrs_plan::ReadOp (production, default)
