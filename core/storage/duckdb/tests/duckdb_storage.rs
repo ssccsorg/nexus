@@ -25,7 +25,7 @@ fn test_read_empty_state() {
     std::fs::create_dir_all(tempdir.path().join("intents")).unwrap();
     std::fs::create_dir_all(tempdir.path().join("hints")).unwrap();
 
-    let storage = DuckDbStorage::new(&base).unwrap();
+    let storage = DuckDbStorage::new(&base, "test").unwrap();
     let state = storage.read_state();
 
     assert!(state.facts.is_empty(), "expected no facts");
@@ -49,7 +49,7 @@ fn test_read_facts_from_parquet() {
         &parquet_path,
     );
 
-    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap(), "test").unwrap();
     let state = storage.read_state();
 
     assert_eq!(state.facts.len(), 2, "expected 2 facts");
@@ -92,7 +92,7 @@ fn test_read_intents_from_parquet() {
         &parquet_path,
     );
 
-    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap(), "test").unwrap();
     let state = storage.read_state();
 
     assert_eq!(state.intents.len(), 2, "expected 2 intents");
@@ -145,7 +145,7 @@ fn test_read_hints_from_parquet() {
         &parquet_path,
     );
 
-    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap(), "test").unwrap();
     let state = storage.read_state();
 
     assert_eq!(state.hints.len(), 2, "expected 2 hints");
@@ -180,7 +180,7 @@ fn test_filter_by_since() {
         &parquet_path,
     );
 
-    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap(), "test").unwrap();
     let filter = StateFilter {
         since: Some("2026-06-02".to_string()),
         ..Default::default()
@@ -220,7 +220,7 @@ fn test_filter_by_fact_ids() {
         &parquet_path,
     );
 
-    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap(), "test").unwrap();
     let filter = StateFilter {
         fact_ids: Some(vec!["fact_1".to_string()]),
         ..Default::default()
@@ -265,7 +265,7 @@ fn test_scan_partition() {
         &parquet_path_2,
     );
 
-    let storage = DuckDbStorage::new(&base).unwrap();
+    let storage = DuckDbStorage::new(&base, "test").unwrap();
 
     // Scan partition 2026-06-01 — only fact_p1 expected
     let data_1 = storage.scan_partition("2026-06-01").unwrap();
@@ -312,7 +312,7 @@ fn test_read_multiple_parquet_files() {
         &p2,
     );
 
-    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap(), "test").unwrap();
     let state = storage.read_state();
 
     assert_eq!(state.facts.len(), 2, "expected 2 facts from 2 files");
@@ -353,7 +353,7 @@ fn test_full_board_state() {
         &hints_dir.join("data.parquet").to_str().unwrap().to_string(),
     );
 
-    let storage = DuckDbStorage::new(base.to_str().unwrap()).unwrap();
+    let storage = DuckDbStorage::new(base.to_str().unwrap(), "test").unwrap();
     let state = storage.read_state();
 
     assert_eq!(state.facts.len(), 1, "expected 1 fact");
@@ -370,7 +370,7 @@ fn test_full_board_state() {
 fn test_missing_directories() {
     // Create tempdir with NO subdirectories at all
     let tempdir = TempDir::new().unwrap();
-    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap(), "test").unwrap();
     let state = storage.read_state();
     // Should not panic — returns empty BoardState
     assert!(state.facts.is_empty());
@@ -383,7 +383,7 @@ fn test_missing_directories() {
 #[test]
 fn test_scan_nonexistent_partition() {
     let tempdir = TempDir::new().unwrap();
-    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap(), "test").unwrap();
     // Scanning a partition that doesn't exist should return empty data, not error
     let data = storage.scan_partition("2099-99-99").unwrap();
     assert_eq!(data.partition, "2099-99-99");
@@ -401,7 +401,7 @@ fn test_time_range_empty() {
     std::fs::create_dir_all(tempdir.path().join("intents")).unwrap();
     std::fs::create_dir_all(tempdir.path().join("hints")).unwrap();
 
-    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap(), "test").unwrap();
     let range = storage.time_range();
     // Empty storage should return None
     assert!(range.is_none(), "expected None for empty storage");
@@ -427,7 +427,7 @@ fn test_filter_combined() {
         &parquet_path,
     );
 
-    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap(), "test").unwrap();
     let filter = StateFilter {
         fact_ids: Some(vec!["f_2".into(), "f_3".into()]),
         since: Some("2026-06-04".into()),
@@ -472,7 +472,7 @@ fn test_filter_intent_and_hint_ids() {
         &hints_dir.join("data.parquet").to_str().unwrap().to_string(),
     );
 
-    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap(), "test").unwrap();
 
     // Filter by intent_ids
     let ifilter = StateFilter {
@@ -517,7 +517,7 @@ fn test_complex_json_content() {
         &parquet_path,
     );
 
-    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap(), "test").unwrap();
     let state = storage.read_state();
 
     let nested = state.facts.iter().find(|f| f.id.0 == "f_nested").unwrap();
@@ -561,7 +561,7 @@ fn test_stress_1000_facts() {
         &parquet_path,
     );
 
-    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap(), "test").unwrap();
     let state = storage.read_state();
 
     assert_eq!(state.facts.len(), 1000, "expected 1000 facts");
@@ -588,7 +588,7 @@ fn test_cypher_capable_cold_query() {
         &parquet_path,
     );
 
-    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap(), "test").unwrap();
 
     // Query all facts via ColdQuery
     let plan = serde_json::json!({
@@ -678,7 +678,7 @@ fn test_time_range_routing_demo() {
         &parquet_path,
     );
 
-    let cold = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+    let cold = DuckDbStorage::new(tempdir.path().to_str().unwrap(), "test").unwrap();
     let cold_range = cold.time_range();
 
     assert!(
@@ -739,7 +739,7 @@ fn test_filter_limit_offset() {
         &parquet_path,
     );
 
-    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap(), "test").unwrap();
 
     // LIMIT 2
     let filter = StateFilter {
