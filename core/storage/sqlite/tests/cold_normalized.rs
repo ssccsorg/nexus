@@ -5,7 +5,7 @@
 
 use nexus_model::{
     BlackboardError, Fact, FactCapable, FihHash, Hint, HintCapable, Intent, IntentCapable,
-    StorageRead,
+    ScanCapable, StorageRead, TimeRangeCapable,
 };
 use nexus_storage_sqlite::SqlNormalizedStorage;
 
@@ -549,6 +549,60 @@ fn test_project_with_custom_title() {
     assert_eq!(proj.id, "research_001");
     assert_eq!(proj.status, "active");
     assert!(proj.created_at.len() > 10);
+}
+
+#[test]
+fn test_time_range() {
+    let bb = SqlNormalizedStorage::memory().unwrap();
+    // No data yet → range should be None
+    assert!(bb.time_range().is_none(), "empty storage has no time range");
+
+    // Submit intents spanning a known range
+    bb.submit_fact(&make_fact("f001", "fact one")).unwrap();
+    bb.submit_intent(&make_intent("i001", vec!["f001"], "intent one"))
+        .unwrap();
+    bb.submit_fact(&make_fact("f002", "fact two")).unwrap();
+    bb.submit_intent(&make_intent("i002", vec!["f002"], "intent two"))
+        .unwrap();
+
+    let range = bb.time_range();
+    assert!(
+        range.is_some(),
+        "storage with intents should have a time range"
+    );
+    let range = range.unwrap();
+    // Both intents created within the same transaction window → start <= end
+    assert!(range.start <= range.end, "time range start must be <= end");
+}
+
+#[test]
+fn test_scan_partition_default() {
+    let bb = SqlNormalizedStorage::memory().unwrap();
+    bb.submit_fact(&make_fact("f001", "scan data")).unwrap();
+    bb.submit_intent(&make_intent("i001", vec!["f001"], "scan intent"))
+        .unwrap();
+    bb.submit_hint(&Hint {
+        id: FihHash("h001".into()),
+        content: "scan hint".into(),
+        creator: "tester".into(),
+    })
+    .unwrap();
+
+    // Scan with "default" partition (matches project_id in memory storage)
+    let data = bb.scan_partition("default").unwrap();
+    assert_eq!(data.partition, "default");
+    assert_eq!(data.facts.len(), 1, "expected 1 fact in default partition");
+    assert_eq!(data.intents.len(), 1, "expected 1 intent");
+    assert_eq!(data.hints.len(), 1, "expected 1 hint");
+
+    // Scan with non-matching partition → empty
+    let empty = bb.scan_partition("nonexistent").unwrap();
+    assert!(
+        empty.facts.is_empty(),
+        "non-matching partition returns no facts"
+    );
+    assert!(empty.intents.is_empty());
+    assert!(empty.hints.is_empty());
 }
 
 #[test]

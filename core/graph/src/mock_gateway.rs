@@ -68,11 +68,11 @@ impl<B: Blackboard> Blackboard for MockGateway<B> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::GraphBlackboard;
+    use crate::DefaultBlackboard;
 
     #[test]
     fn test_mock_gateway_submit_fact() {
-        let mut gw = MockGateway::new(GraphBlackboard::new());
+        let mut gw = MockGateway::new(DefaultBlackboard::new());
         let fact = Fact {
             id: FihHash("f_mock_001".into()),
             origin: "mock-test".into(),

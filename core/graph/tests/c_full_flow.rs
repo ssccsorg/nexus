@@ -7,10 +7,10 @@
 //   4. Read_state + unit assertions verify correctness (Cypher is for portability)
 
 use nexus_graph::cypher;
-use nexus_graph::{Blackboard, BlackboardError, Fact, FihHash, GraphBlackboard, Intent};
+use nexus_graph::{Blackboard, BlackboardError, DefaultBlackboard, Fact, FihHash, Intent};
 
 /// Helper: submit a fact with minimal boilerplate.
-fn submit_fact(bb: &mut GraphBlackboard, id: &str, origin: &str, content: &str, creator: &str) {
+fn submit_fact(bb: &mut DefaultBlackboard, id: &str, origin: &str, content: &str, creator: &str) {
     let fact = Fact {
         id: FihHash(id.into()),
         origin: origin.into(),
@@ -21,14 +21,14 @@ fn submit_fact(bb: &mut GraphBlackboard, id: &str, origin: &str, content: &str, 
 }
 
 /// Helper: run a Cypher query and count results.
-fn cypher_count(bb: &GraphBlackboard, query: &str) -> usize {
+fn cypher_count(bb: &DefaultBlackboard, query: &str) -> usize {
     let plan = cypher::Plan::from_internal(query).expect("parse failed");
     cypher::execute(bb, &plan).expect("execute failed").len()
 }
 
 #[test]
 fn test_full_agent_collaboration_flow() {
-    let mut bb = GraphBlackboard::new();
+    let mut bb = DefaultBlackboard::new();
 
     // ── Phase 1: Agent-A ingests research facts ───────────────────────
 
@@ -151,4 +151,101 @@ fn test_full_agent_collaboration_flow() {
     println!("  ✓ Full FIH lifecycle + Cypher queries work end-to-end");
     println!("  ✓ 3 agents (A, B, C) interacting through Blackboard alone");
     println!("  ✓ No direct agent-to-agent communication — all via FIH");
+}
+
+// ── PetgraphStorage TimeRangeCapable ────────────────────────────────────
+
+#[test]
+fn test_petgraph_time_range() {
+    use nexus_graph::{
+        Blackboard, DefaultBlackboard, Fact, FihHash, PetgraphStorage, TimeRangeCapable,
+    };
+
+    // PetgraphStorage::time_range() returns None (unbounded in-memory store).
+    // This test verifies the trait is wired correctly.
+    let hot = PetgraphStorage::new();
+    assert!(
+        hot.time_range().is_none(),
+        "petgraph hot store has no time bound"
+    );
+
+    // DefaultBlackboard::new() uses DualStorage internally.
+    // PetgraphStorage is the hot layer, NullStorage is the cold layer.
+    let mut bb = DefaultBlackboard::new();
+    bb.submit_fact(&Fact {
+        id: FihHash("f_001".into()),
+        origin: "test".into(),
+        content: serde_json::json!("data"),
+        creator: "tester".into(),
+    })
+    .unwrap();
+
+    let state = bb.read_state();
+    assert_eq!(state.facts.len(), 1, "fact submitted to DefaultBlackboard");
+    // PetgraphStorage::time_range is None (unbounded).
+    // Direct access to DualStorage's time_range is not exposed through
+    // the Blackboard trait — this is by design (#51 will add routing).
+    // The hot layer is unbounded until #51 adds bounded range logic.
+}
+
+// ── StorageSnapshot serialisation round-trip ───────────────────────────
+
+#[test]
+fn test_storage_snapshot_roundtrip() {
+    use nexus_graph::{Blackboard, Fact, FihHash, Intent};
+    use nexus_graph::{DefaultBlackboard, StorageSnapshot};
+
+    // Build a blackboard with some data
+    let mut bb = DefaultBlackboard::new();
+    bb.submit_fact(&Fact {
+        id: FihHash("f_snap_1".into()),
+        origin: "snap-test".into(),
+        content: serde_json::json!("snapshot data"),
+        creator: "tester".into(),
+    })
+    .unwrap();
+    bb.submit_fact(&Fact {
+        id: FihHash("f_snap_2".into()),
+        origin: "snap-test".into(),
+        content: serde_json::json!("more data"),
+        creator: "tester".into(),
+    })
+    .unwrap();
+    bb.submit_intent(&Intent {
+        id: FihHash("i_snap_1".into()),
+        from_facts: vec!["f_snap_1".into()],
+        description: "snapshot intent".into(),
+        creator: "tester".into(),
+        worker: None,
+        to_fact_id: None,
+        last_heartbeat_at: None,
+        created_at: None,
+        concluded_at: None,
+    })
+    .unwrap();
+
+    // Snapshot: serialise → deserialise
+    let snapshot = bb.to_snapshot();
+    let json = serde_json::to_vec(&snapshot).expect("serialise");
+    let restored_snapshot: StorageSnapshot = serde_json::from_slice(&json).expect("deserialise");
+    let mut restored = DefaultBlackboard::from_snapshot(restored_snapshot);
+
+    // Verify: same facts, same intents
+    let state = restored.read_state();
+    assert_eq!(state.facts.len(), 2, "snapshot should preserve 2 facts");
+    assert_eq!(state.intents.len(), 1, "snapshot should preserve 1 intent");
+    assert_eq!(state.facts[0].id.0, "f_snap_1");
+
+    // Verify: Cypher still works on restored blackboard
+    let plan = cypher::Plan::from_internal("MATCH (f:Fact) RETURN f").unwrap();
+    let count = cypher::execute(&restored, &plan).unwrap().len();
+    assert_eq!(count, 2, "Cypher works on restored snapshot");
+
+    // Verify: claims tracker is restored
+    restored
+        .claim_intent("i_snap_1", "agent-x")
+        .expect("claim should work on restored bb");
+
+    println!("  ✓ StorageSnapshot round-trip: {}", json.len());
+    println!("  ✓ {json:?}");
 }

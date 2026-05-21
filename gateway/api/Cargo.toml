@@ -6,6 +6,7 @@ license = "Apache-2.0"
 
 [dependencies]
 nexus-graph = { path = "../../core/graph" }
+nexus-storage-petgraph = { path = "../../core/storage/petgraph" }
 nexus-storage-sqlite = { path = "../../core/storage/sqlite" }
 axum = "0.8"
 serde = { version = "1", features = ["derive"] }
