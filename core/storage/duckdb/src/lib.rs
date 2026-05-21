@@ -10,18 +10,15 @@ use nexus_model::{
 use std::ops::Range;
 use std::sync::Mutex;
 
-#[allow(dead_code)]
 pub struct DuckDbStorage {
     conn: Mutex<duckdb::Connection>,
     base_path: String,
-    facts_glob: String,
-    intents_glob: String,
-    hints_glob: String,
+    project_id: String,
 }
 
 #[allow(missing_docs)]
 impl DuckDbStorage {
-    pub fn new(base_path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(base_path: &str, project_id: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let conn = duckdb::Connection::open_in_memory()?;
         conn.execute_batch("LOAD parquet;")?;
 
@@ -48,9 +45,7 @@ impl DuckDbStorage {
         Ok(Self {
             conn: Mutex::new(conn),
             base_path: base_path.to_string(),
-            facts_glob,
-            intents_glob,
-            hints_glob,
+            project_id: project_id.to_string(),
         })
     }
 
@@ -229,7 +224,7 @@ impl DuckDbStorage {
 
 impl StorageRead for DuckDbStorage {
     fn project_id(&self) -> &str {
-        "cold"
+        &self.project_id
     }
     fn read_state(&self) -> BoardState {
         BoardState {
