@@ -16,7 +16,7 @@ use std::sync::{Arc, RwLock};
 
 /// In-memory petgraph-backed storage. Thread-safe via internal RwLock.
 ///
-/// The underlying `petgraph::Graph` is shared through an `Arc<RwLock<...>>`
+/// The underlying `petgraph::Graph` is shared through an `Arc<Mutex<...>>`
 /// so that `DefaultBlackboard` can access the same graph for Cypher queries
 /// while `PetgraphStorage` handles FIH persistence.
 pub struct PetgraphStorage {
