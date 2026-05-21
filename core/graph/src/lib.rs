@@ -23,4 +23,4 @@ pub use nexus_model::{
     HotStorage, Intent, IntentCapable, NullStorage, ScanCapable, StateFilter, StorageRead,
     TimeRangeCapable,
 };
-pub use nexus_storage_petgraph::{EdgeWeight, GraphAccess, NodeWeight, PetgraphStorage, Record};
+pub use nexus_storage_petgraph::{EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Record};

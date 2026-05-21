@@ -1,14 +1,14 @@
-// nexus-graph — GraphAccess trait: petgraph query interface for Cypher executor.
+// nexus-graph — GraphRead / GraphWrite traits: petgraph query and mutation interfaces for Cypher executor.
 
 use crate::weight::{EdgeWeight, NodeWeight};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 
-/// Access interface for petgraph queries (Cypher executor).
+/// Read-only access interface for petgraph queries (Cypher executor).
 ///
 /// All methods return owned values so the trait can be implemented for
 /// types behind a Mutex (e.g. DefaultBlackboard).
-pub trait GraphAccess {
+pub trait GraphRead {
     fn node_indices(&self) -> Vec<NodeIndex>;
     fn edge_indices(&self) -> Vec<EdgeIndex>;
     fn node_weight(&self, idx: NodeIndex) -> Option<NodeWeight>;
@@ -16,11 +16,15 @@ pub trait GraphAccess {
     fn edge_endpoints(&self, idx: EdgeIndex) -> Option<(NodeIndex, NodeIndex)>;
     fn neighbors_undirected(&self, idx: NodeIndex) -> Vec<NodeIndex>;
     fn edges_directed(&self, idx: NodeIndex, outgoing: bool) -> Vec<EdgeIndex>;
+}
+
+/// Mutable mutation interface for petgraph.
+pub trait GraphWrite {
     fn add_node(&mut self, weight: NodeWeight) -> NodeIndex;
     fn add_edge(&mut self, from: NodeIndex, to: NodeIndex, weight: EdgeWeight) -> EdgeIndex;
 }
 
-impl GraphAccess for petgraph::Graph<NodeWeight, EdgeWeight> {
+impl GraphRead for petgraph::Graph<NodeWeight, EdgeWeight> {
     fn node_indices(&self) -> Vec<NodeIndex> {
         self.node_indices().collect()
     }
@@ -53,7 +57,9 @@ impl GraphAccess for petgraph::Graph<NodeWeight, EdgeWeight> {
         };
         self.edges_directed(idx, dir).map(|e| e.id()).collect()
     }
+}
 
+impl GraphWrite for petgraph::Graph<NodeWeight, EdgeWeight> {
     fn add_node(&mut self, weight: NodeWeight) -> NodeIndex {
         self.add_node(weight)
     }
