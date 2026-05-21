@@ -22,8 +22,8 @@ pub mod cypher;
 pub mod mock_gateway;
 
 pub use nexus_model::{
-    Blackboard, BlackboardError, BoardState, ColdStorage, DualStorage, EvictCapable, Fact,
-    FactCapable, FihHash, FihPersistence, FilterCapable, FlushCapable, Hint, HintCapable,
+    Blackboard, BlackboardError, BoardState, ColdStorage, CypherCapable, DualStorage, EvictCapable,
+    Fact, FactCapable, FihHash, FihPersistence, FilterCapable, FlushCapable, Hint, HintCapable,
     HotStorage, Intent, IntentCapable, NullStorage, ScanCapable, StateFilter, StorageRead,
     TimeRangeCapable,
 };
