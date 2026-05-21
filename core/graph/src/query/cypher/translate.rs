@@ -502,10 +502,7 @@ fn find_nodes_by_label_str<G: GraphRead>(graph: &G, label: Option<&str>) -> Vec<
 
 // ── Internal executor (legacy PlanIR, fallback) ────────────────────────────
 
-fn execute_internal<G: GraphRead>(
-    graph: &G,
-    plan: &PlanIR,
-) -> Result<Vec<Record>, TranslateError> {
+fn execute_internal<G: GraphRead>(graph: &G, plan: &PlanIR) -> Result<Vec<Record>, TranslateError> {
     let mut records: Vec<Record> = Vec::new();
     let mut current_nodes: Option<Vec<NodeIndex>> = None;
     let mut current_var: Option<String> = None;

@@ -42,11 +42,9 @@ impl ClaimsTracker {
 
     fn verify_owner(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         match self.inner.get(intent_id) {
-            Some(current) if current != agent => {
-                Err(BlackboardError::Conflict(format!(
-                    "Intent {intent_id} is claimed by {current}, not {agent}"
-                )))
-            }
+            Some(current) if current != agent => Err(BlackboardError::Conflict(format!(
+                "Intent {intent_id} is claimed by {current}, not {agent}"
+            ))),
             _ => Ok(()),
         }
     }
@@ -174,7 +172,6 @@ impl GraphRead for DefaultBlackboard {
         };
         g.edges_directed(idx, dir).map(|e| e.id()).collect()
     }
-
 }
 
 impl GraphWrite for DefaultBlackboard {
