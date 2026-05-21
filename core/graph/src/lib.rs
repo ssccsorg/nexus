@@ -553,6 +553,8 @@ impl EvictCapable for PetgraphStorage {
     }
 
     fn evict_before(&self, before: &str) -> Result<u64, String> {
+        // TODO(#35): implement actual eviction in dispatcher runtime.
+        // Currently no-op. petgraph keeps all data in memory.
         let _ = before;
         Ok(0)
     }

@@ -52,19 +52,17 @@ impl DuckDbStorage {
     }
 
     fn read_facts(&self) -> Vec<Fact> {
-        /* unchanged */
         self.exec_fact_query("SELECT fact_id, origin, content, creator, created_at FROM facts_view")
     }
     fn read_intents(&self) -> Vec<Intent> {
-        /* unchanged */
         self.exec_intent_query("SELECT intent_id, from_facts, description, creator, worker, to_fact_id, last_heartbeat_at, created_at, concluded_at FROM intents_view")
     }
     fn read_hints(&self) -> Vec<Hint> {
-        /* unchanged */
         self.exec_hint_query("SELECT hint_id, content, creator, created_at FROM hints_view")
     }
 
-    fn build_where_clause(&self, filter: &StateFilter) -> String {
+    /// Build WHERE clause for the facts view using fact_id + time filters.
+    fn build_fact_where(filter: &StateFilter) -> String {
         let mut clauses: Vec<String> = Vec::new();
         if let Some(ids) = &filter.fact_ids {
             let list = ids
@@ -74,6 +72,22 @@ impl DuckDbStorage {
                 .join(",");
             clauses.push(format!("fact_id IN ({})", list));
         }
+        if let Some(since) = &filter.since {
+            clauses.push(format!("created_at >= '{}'", since.replace('\'', "''")));
+        }
+        if let Some(until) = &filter.until {
+            clauses.push(format!("created_at <= '{}'", until.replace('\'', "''")));
+        }
+        if clauses.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", clauses.join(" AND "))
+        }
+    }
+
+    /// Build WHERE clause for the intents view using intent_id + time filters.
+    fn build_intent_where(filter: &StateFilter) -> String {
+        let mut clauses: Vec<String> = Vec::new();
         if let Some(ids) = &filter.intent_ids {
             let list = ids
                 .iter()
@@ -81,6 +95,30 @@ impl DuckDbStorage {
                 .collect::<Vec<_>>()
                 .join(",");
             clauses.push(format!("intent_id IN ({})", list));
+        }
+        if let Some(since) = &filter.since {
+            clauses.push(format!("created_at >= '{}'", since.replace('\'', "''")));
+        }
+        if let Some(until) = &filter.until {
+            clauses.push(format!("created_at <= '{}'", until.replace('\'', "''")));
+        }
+        if clauses.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", clauses.join(" AND "))
+        }
+    }
+
+    /// Build WHERE clause for the hints view using hint_id + time filters.
+    fn build_hint_where(filter: &StateFilter) -> String {
+        let mut clauses: Vec<String> = Vec::new();
+        if let Some(ids) = &filter.hint_ids {
+            let list = ids
+                .iter()
+                .map(|s| format!("'{}'", s.replace('\'', "''")))
+                .collect::<Vec<_>>()
+                .join(",");
+            clauses.push(format!("hint_id IN ({})", list));
         }
         if let Some(since) = &filter.since {
             clauses.push(format!("created_at >= '{}'", since.replace('\'', "''")));
@@ -201,34 +239,46 @@ impl StorageRead for DuckDbStorage {
 
 impl FilterCapable for DuckDbStorage {
     fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
-        let wc = self.build_where_clause(filter);
+        let fwc = Self::build_fact_where(filter);
+        let iwc = Self::build_intent_where(filter);
+        let hwc = Self::build_hint_where(filter);
         let lo = Self::build_limit_offset(filter);
         let needs_filter = filter.fact_ids.is_some()
             || filter.intent_ids.is_some()
+            || filter.hint_ids.is_some()
             || filter.since.is_some()
             || filter.until.is_some()
             || filter.limit.is_some()
             || filter.offset.is_some();
 
-        let facts = if needs_filter || filter.fact_ids.is_some() {
+        let facts = if needs_filter {
             self.exec_fact_query(&format!(
                 "SELECT fact_id, origin, content, creator, created_at FROM facts_view {} {}",
-                wc, lo
+                fwc, lo
             ))
         } else {
             self.read_facts()
         };
 
-        let intents = if needs_filter || filter.intent_ids.is_some() {
-            self.exec_intent_query(&format!("SELECT intent_id, from_facts, description, creator, worker, to_fact_id, last_heartbeat_at, created_at, concluded_at FROM intents_view {} {}", wc, lo))
+        let intents = if needs_filter {
+            self.exec_intent_query(&format!("SELECT intent_id, from_facts, description, creator, worker, to_fact_id, last_heartbeat_at, created_at, concluded_at FROM intents_view {} {}", iwc, lo))
         } else {
             self.read_intents()
+        };
+
+        let hints = if needs_filter {
+            self.exec_hint_query(&format!(
+                "SELECT hint_id, content, creator, created_at FROM hints_view {} {}",
+                hwc, lo
+            ))
+        } else {
+            self.read_hints()
         };
 
         BoardState {
             facts,
             intents,
-            hints: self.read_hints(),
+            hints,
         }
     }
 }
