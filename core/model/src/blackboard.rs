@@ -1,0 +1,57 @@
+use crate::error::BlackboardError;
+use crate::fih::{BoardState, Fact, FihHash, Hint, Intent};
+
+// ── Blackboard trait — FIH lifecycle (public, stable) ─────────────────────
+
+pub trait Blackboard {
+    fn project_id(&self) -> &str {
+        "default"
+    }
+
+    fn submit_fact(&mut self, fact: &Fact) -> Result<FihHash, BlackboardError>;
+    fn submit_hint(&mut self, hint: &Hint) -> Result<(), BlackboardError>;
+    fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError>;
+    fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
+    fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
+    fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
+    fn conclude_intent(
+        &mut self,
+        intent_id: &str,
+        result: &serde_json::Value,
+    ) -> Result<Fact, BlackboardError>;
+    fn read_state(&self) -> BoardState;
+}
+
+impl<T: Blackboard> Blackboard for &mut T {
+    fn project_id(&self) -> &str {
+        (**self).project_id()
+    }
+    fn submit_fact(&mut self, fact: &Fact) -> Result<FihHash, BlackboardError> {
+        (**self).submit_fact(fact)
+    }
+    fn submit_hint(&mut self, hint: &Hint) -> Result<(), BlackboardError> {
+        (**self).submit_hint(hint)
+    }
+    fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+        (**self).submit_intent(intent)
+    }
+    fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        (**self).claim_intent(intent_id, agent)
+    }
+    fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        (**self).heartbeat(intent_id, agent)
+    }
+    fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        (**self).release_intent(intent_id, agent)
+    }
+    fn conclude_intent(
+        &mut self,
+        intent_id: &str,
+        result: &serde_json::Value,
+    ) -> Result<Fact, BlackboardError> {
+        (**self).conclude_intent(intent_id, result)
+    }
+    fn read_state(&self) -> BoardState {
+        (**self).read_state()
+    }
+}

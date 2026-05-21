@@ -1,21 +1,40 @@
-// nexus-graph — GraphBlackboard: petgraph-backed FIH implementation.
+// nexus-graph — GraphBlackboard: petgraph-backed FIH Blackboard.
 //
-// Depends on nexus-model for the Blackboard trait, Storage trait, and FIH primitives.
-// GraphAccess trait is petgraph-specific and lives here.
+// Architecture
+// ============
+//
+//   GraphBlackboard (implements Blackboard + GraphAccess)
+//     ├── storage: DualStorage (hot + cold)
+//     │     ├── hot: PetgraphStorage (Arc<Mutex<petgraph::Graph>>)
+//     │     └── cold: ColdStorage (NullStorage | any external impl)
+//     ├── hot_graph: Arc<Mutex<petgraph::Graph>> (shared with PetgraphStorage)
+//     ├── claims: Mutex<HashMap<IntentId, Agent>>
+//     └── project_id: String
+//
+// `GraphBlackboard` is the **single** Blackboard struct. Storage is swappable
+// via DualStorage. The petgraph hot store is shared through an Arc so that
+// both GraphBlackboard (for GraphAccess / Cypher queries) and PetgraphStorage
+// (for Storage operations) access the same in-memory graph.
+//
+// Public API re-exports from nexus-model (Storage, Blackboard traits, FIH types).
 
 pub mod cypher;
 pub mod mock_gateway;
 
 pub use nexus_model::{
-    Blackboard, BlackboardError, BoardState, Fact, FihHash, Hint, Intent, NullStorage, Storage,
-    StoredEvent,
+    Blackboard, BlackboardError, BoardState, ColdStorage, CypherCapable, DualStorage, EvictCapable,
+    Fact, FactCapable, FihHash, FihPersistence, FilterCapable, FlushCapable, Hint, HintCapable,
+    HotStorage, Intent, IntentCapable, NullStorage, ScanCapable, StateFilter, StorageRead,
+    TimeRangeCapable,
 };
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::ops::Range;
+use std::sync::{Arc, Mutex};
 
-// ── Internal storage types ────────────────────────────────────────────────
+// ── Node and edge weight types ──────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeWeight {
@@ -35,13 +54,17 @@ pub struct Record {
     pub fields: HashMap<String, serde_json::Value>,
 }
 
-// ── GraphAccess trait (internal — cypher executor) ───────────────────────
+// ── GraphAccess trait ──────────────────────────────────────────────────
 
+/// Access interface for petgraph queries (Cypher executor).
+///
+/// All methods return owned values so the trait can be implemented for
+/// types behind a Mutex (e.g. GraphBlackboard).
 pub trait GraphAccess {
     fn node_indices(&self) -> Vec<NodeIndex>;
     fn edge_indices(&self) -> Vec<EdgeIndex>;
-    fn node_weight(&self, idx: NodeIndex) -> Option<&NodeWeight>;
-    fn edge_weight(&self, idx: EdgeIndex) -> Option<&EdgeWeight>;
+    fn node_weight(&self, idx: NodeIndex) -> Option<NodeWeight>;
+    fn edge_weight(&self, idx: EdgeIndex) -> Option<EdgeWeight>;
     fn edge_endpoints(&self, idx: EdgeIndex) -> Option<(NodeIndex, NodeIndex)>;
     fn neighbors_undirected(&self, idx: NodeIndex) -> Vec<NodeIndex>;
     fn edges_directed(&self, idx: NodeIndex, outgoing: bool) -> Vec<EdgeIndex>;
@@ -56,11 +79,11 @@ impl GraphAccess for petgraph::Graph<NodeWeight, EdgeWeight> {
     fn edge_indices(&self) -> Vec<EdgeIndex> {
         self.edge_indices().collect()
     }
-    fn node_weight(&self, idx: NodeIndex) -> Option<&NodeWeight> {
-        petgraph::Graph::node_weight(self, idx)
+    fn node_weight(&self, idx: NodeIndex) -> Option<NodeWeight> {
+        petgraph::Graph::node_weight(self, idx).cloned()
     }
-    fn edge_weight(&self, idx: EdgeIndex) -> Option<&EdgeWeight> {
-        petgraph::Graph::edge_weight(self, idx)
+    fn edge_weight(&self, idx: EdgeIndex) -> Option<EdgeWeight> {
+        petgraph::Graph::edge_weight(self, idx).cloned()
     }
     fn edge_endpoints(&self, idx: EdgeIndex) -> Option<(NodeIndex, NodeIndex)> {
         self.edge_endpoints(idx)
@@ -84,321 +107,86 @@ impl GraphAccess for petgraph::Graph<NodeWeight, EdgeWeight> {
     }
 }
 
-// ── GraphBlackboard (petgraph-backed, implements both traits) ────────────
+// ── PetgraphStorage — HotStorage implementation ────────────────────────
 
-pub struct GraphBlackboard {
-    pub graph: petgraph::Graph<NodeWeight, EdgeWeight>,
-    _signals: Vec<Signal>,
-    claims: HashMap<String, String>,
-    storage: Box<dyn Storage>,
-    loading: bool,
+/// In-memory petgraph-backed storage. Thread-safe via internal Mutex.
+///
+/// The underlying `petgraph::Graph` is shared through an `Arc<Mutex<...>>`
+/// so that `GraphBlackboard` can access the same graph for Cypher queries
+/// while `PetgraphStorage` handles FIH persistence.
+pub struct PetgraphStorage {
+    graph: Arc<Mutex<petgraph::Graph<NodeWeight, EdgeWeight>>>,
+    project_id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Signal {
-    pub agent_id: String,
-    pub zone: String,
-    pub payload: String,
-    pub timestamp: u64,
-    pub decay_rate: f64,
-}
-
-impl Default for GraphBlackboard {
-    fn default() -> Self {
-        Self {
-            graph: petgraph::Graph::new(),
-            _signals: Vec::new(),
-            claims: HashMap::new(),
-            storage: Box::new(NullStorage),
-            loading: false,
-        }
-    }
-}
-
-impl GraphBlackboard {
-    /// In-memory only (no persistence).
+impl PetgraphStorage {
+    /// Creates a new empty PetgraphStorage with project_id "default".
     pub fn new() -> Self {
-        Self::default()
+        Self::with_project_id("default")
     }
 
-    /// Attach a custom storage backend. Loads past events if any.
-    pub fn with_storage(mut self, storage: Box<dyn Storage>) -> Self {
-        self.storage = storage;
-        self.loading = true;
-        let events = self.storage.load_events();
-        for event in &events {
-            self.replay_one(&event.event_type, &event.payload);
-        }
-        self.loading = false;
-        self
-    }
-
-    fn log_fih(&self, event_type: &str, payload: &str) {
-        if !self.loading {
-            self.storage.log_fih(event_type, payload);
+    /// Creates a new empty PetgraphStorage with a specific project_id.
+    pub fn with_project_id(project_id: &str) -> Self {
+        Self {
+            graph: Arc::new(Mutex::new(petgraph::Graph::new())),
+            project_id: project_id.to_string(),
         }
     }
 
-    fn replay_one(&mut self, event_type: &str, payload: &str) {
-        match event_type {
-            "submit_fact" => {
-                if let Ok(fact) = serde_json::from_str::<Fact>(payload) {
-                    let _ = Blackboard::submit_fact(self, &fact);
-                }
-            }
-            "submit_hint" => {
-                if let Ok(hint) = serde_json::from_str::<Hint>(payload) {
-                    let _ = self.submit_hint(&hint);
-                }
-            }
-            "submit_intent" => {
-                if let Ok(intent) = serde_json::from_str::<Intent>(payload) {
-                    let _ = self.submit_intent(&intent);
-                }
-            }
-            "claim_intent" => {
-                if let Ok(c) = serde_json::from_str::<ClaimPayload>(payload) {
-                    let _ = self.claim_intent(&c.id, &c.agent);
-                }
-            }
-            "heartbeat" => {
-                if let Ok(c) = serde_json::from_str::<ClaimPayload>(payload) {
-                    let _ = self.heartbeat(&c.id, &c.agent);
-                }
-            }
-            "release_intent" => {
-                if let Ok(c) = serde_json::from_str::<ClaimPayload>(payload) {
-                    let _ = self.release_intent(&c.id, &c.agent);
-                }
-            }
-            "conclude_intent" => {
-                if let Ok(c) = serde_json::from_str::<ConcludePayload>(payload) {
-                    let v: serde_json::Value = c.result.into();
-                    let _ = self.conclude_intent(&c.id, &v);
-                }
-            }
-            _ => {}
+    /// Creates a new PetgraphStorage sharing the given graph Arc.
+    fn with_shared_graph(
+        graph: Arc<Mutex<petgraph::Graph<NodeWeight, EdgeWeight>>>,
+        project_id: &str,
+    ) -> Self {
+        Self {
+            graph,
+            project_id: project_id.to_string(),
         }
     }
-}
 
-#[derive(Serialize, Deserialize)]
-struct ClaimPayload {
-    id: String,
-    agent: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct ConcludePayload {
-    id: String,
-    result: String,
-}
-
-// ── Blackboard impl ──────────────────────────────────────────────────────
-
-/// Convenience: create a persistent GraphBlackboard backed by SQLite via nexus-table.
-pub fn blackboard_with_sqlite(path: &str) -> Result<GraphBlackboard, String> {
-    let store = nexus_table::SqliteStorage::open(path).map_err(|e| e.to_string())?;
-    Ok(GraphBlackboard::new().with_storage(Box::new(store)))
-}
-
-impl GraphAccess for GraphBlackboard {
-    fn node_indices(&self) -> Vec<NodeIndex> {
-        GraphAccess::node_indices(&self.graph)
-    }
-    fn edge_indices(&self) -> Vec<EdgeIndex> {
-        GraphAccess::edge_indices(&self.graph)
-    }
-    fn node_weight(&self, idx: NodeIndex) -> Option<&NodeWeight> {
-        GraphAccess::node_weight(&self.graph, idx)
-    }
-    fn edge_weight(&self, idx: EdgeIndex) -> Option<&EdgeWeight> {
-        GraphAccess::edge_weight(&self.graph, idx)
-    }
-    fn edge_endpoints(&self, idx: EdgeIndex) -> Option<(NodeIndex, NodeIndex)> {
-        GraphAccess::edge_endpoints(&self.graph, idx)
-    }
-    fn neighbors_undirected(&self, idx: NodeIndex) -> Vec<NodeIndex> {
-        GraphAccess::neighbors_undirected(&self.graph, idx)
-    }
-    fn edges_directed(&self, idx: NodeIndex, outgoing: bool) -> Vec<EdgeIndex> {
-        GraphAccess::edges_directed(&self.graph, idx, outgoing)
-    }
-    fn add_node(&mut self, weight: NodeWeight) -> NodeIndex {
-        GraphAccess::add_node(&mut self.graph, weight)
-    }
-    fn add_edge(&mut self, from: NodeIndex, to: NodeIndex, weight: EdgeWeight) -> EdgeIndex {
-        GraphAccess::add_edge(&mut self.graph, from, to, weight)
-    }
-}
-
-impl Blackboard for GraphBlackboard {
-    fn submit_fact(&mut self, fact: &Fact) -> Result<FihHash, BlackboardError> {
-        let payload = serde_json::to_string(fact).unwrap();
-        self.log_fih("submit_fact", &payload);
-        // Store as petgraph node
-        let _idx = self.graph.add_node(NodeWeight {
-            name: fact.id.0.clone(),
-            label: "Fact".into(),
-            properties: {
-                let mut m = std::collections::HashMap::new();
-                m.insert("origin".into(), fact.origin.clone().into());
-                m.insert("content".into(), fact.content.clone());
-                m.insert("creator".into(), fact.creator.clone().into());
-                m
-            },
-        });
-        Ok(fact.id.clone())
+    /// Access the graph immutably (for GraphAccess delegation).
+    pub fn with_graph<R>(
+        &self,
+        f: impl FnOnce(&petgraph::Graph<NodeWeight, EdgeWeight>) -> R,
+    ) -> R {
+        let g = self.graph.lock().unwrap();
+        f(&g)
     }
 
-    fn submit_hint(&mut self, hint: &Hint) -> Result<(), BlackboardError> {
-        let payload = serde_json::to_string(hint).unwrap();
-        self.log_fih("submit_hint", &payload);
-        // Store as petgraph node
-        self.graph.add_node(NodeWeight {
-            name: hint.id.0.clone(),
-            label: "Hint".into(),
-            properties: {
-                let mut m = std::collections::HashMap::new();
-                m.insert("content".into(), hint.content.clone().into());
-                m.insert("creator".into(), hint.creator.clone().into());
-                m
-            },
-        });
+    /// Access the graph mutably (for Storage operations).
+    pub fn with_graph_mut<R>(
+        &self,
+        f: impl FnOnce(&mut petgraph::Graph<NodeWeight, EdgeWeight>) -> R,
+    ) -> R {
+        let mut g = self.graph.lock().unwrap();
+        f(&mut g)
+    }
+
+    /// Flush is a no-op for in-memory storage.
+    pub fn flush(&self) -> Result<(), String> {
         Ok(())
     }
+}
 
-    fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError> {
-        // Validate from_facts exist in graph
-        for fid in &intent.from_facts {
-            let found = self
-                .graph
-                .node_indices()
-                .any(|i| self.graph.node_weight(i).is_some_and(|w| w.name == *fid));
-            if !found {
-                return Err(BlackboardError::NotFound(format!("Fact {fid} not found")));
-            }
-        }
-        let payload = serde_json::to_string(intent).unwrap();
-        self.log_fih("submit_intent", &payload);
-        let idx = self.graph.add_node(NodeWeight {
-            name: intent.id.0.clone(),
-            label: "Intent".into(),
-            properties: {
-                let mut m = std::collections::HashMap::new();
-                m.insert("description".into(), intent.description.clone().into());
-                m.insert("creator".into(), intent.creator.clone().into());
-                m
-            },
-        });
-        // Create edges from each source fact to this intent
-        for fid in &intent.from_facts {
-            if let Some(src) = self
-                .graph
-                .node_indices()
-                .find(|i| self.graph.node_weight(*i).is_some_and(|w| w.name == *fid))
-            {
-                self.graph.add_edge(
-                    src,
-                    idx,
-                    EdgeWeight {
-                        rel_type: "drives".into(),
-                        properties: HashMap::new(),
-                    },
-                );
-            }
-        }
-        Ok(intent.id.clone())
+impl Default for PetgraphStorage {
+    fn default() -> Self {
+        Self::new()
     }
+}
 
-    fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        if let Some(current) = self.claims.get(intent_id) {
-            return Err(BlackboardError::Conflict(format!(
-                "Intent {} is already claimed by {}",
-                intent_id, current
-            )));
-        }
-        let payload = serde_json::to_string(&ClaimPayload {
-            id: intent_id.into(),
-            agent: agent.into(),
-        })
-        .unwrap();
-        self.log_fih("claim_intent", &payload);
-        self.claims.insert(intent_id.to_string(), agent.to_string());
-        Ok(())
-    }
-
-    fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        if let Some(current) = self.claims.get(intent_id) {
-            if current != agent {
-                return Err(BlackboardError::Conflict(format!(
-                    "Intent {} is claimed by {}, not {}",
-                    intent_id, current, agent
-                )));
-            }
-        } else {
-            self.claims.insert(intent_id.to_string(), agent.to_string());
-        }
-        let payload = serde_json::to_string(&ClaimPayload {
-            id: intent_id.into(),
-            agent: agent.into(),
-        })
-        .unwrap();
-        self.log_fih("heartbeat", &payload);
-        Ok(())
-    }
-
-    fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        match self.claims.get(intent_id) {
-            None => return Ok(()),
-            Some(current) if current != agent => {
-                return Err(BlackboardError::Conflict(format!(
-                    "Intent {} is claimed by {}, not {}",
-                    intent_id, current, agent
-                )));
-            }
-            _ => {}
-        }
-        let payload = serde_json::to_string(&ClaimPayload {
-            id: intent_id.into(),
-            agent: agent.into(),
-        })
-        .unwrap();
-        self.log_fih("release_intent", &payload);
-        self.claims.remove(intent_id);
-        Ok(())
-    }
-
-    fn conclude_intent(
-        &mut self,
-        intent_id: &str,
-        result: &serde_json::Value,
-    ) -> Result<Fact, BlackboardError> {
-        let result_str = serde_json::to_string(result).unwrap();
-        let payload = serde_json::to_string(&ConcludePayload {
-            id: intent_id.into(),
-            result: result_str.clone(),
-        })
-        .unwrap();
-        self.log_fih("conclude_intent", &payload);
-        self.claims.remove(intent_id);
-        let new_fact = Fact {
-            id: FihHash::new(&[intent_id, &result_str], "conclusion"),
-            origin: format!("conclusion:{}", intent_id),
-            content: result.clone(),
-            creator: "system".into(),
-        };
-        let _ = self.submit_fact(&new_fact);
-        Ok(new_fact)
+impl StorageRead for PetgraphStorage {
+    fn project_id(&self) -> &str {
+        &self.project_id
     }
 
     fn read_state(&self) -> BoardState {
+        let g = self.graph.lock().unwrap();
         let mut facts = Vec::new();
         let mut intents = Vec::new();
         let mut hints = Vec::new();
 
-        for idx in self.graph.node_indices() {
-            if let Some(w) = self.graph.node_weight(idx) {
+        for idx in g.node_indices() {
+            if let Some(w) = g.node_weight(idx) {
                 match w.label.as_str() {
                     "Fact" => {
                         facts.push(Fact {
@@ -423,20 +211,17 @@ impl Blackboard for GraphBlackboard {
                         });
                     }
                     "Intent" => {
+                        let from_facts: Vec<String> = g
+                            .edges_directed(idx, petgraph::Direction::Incoming)
+                            .filter_map(|e| {
+                                let sn = g.node_weight(e.source())?;
+                                Some(sn.name.clone())
+                            })
+                            .collect();
+
                         intents.push(Intent {
                             id: FihHash(w.name.clone()),
-                            from_facts: {
-                                let mut src = Vec::new();
-                                for e in self
-                                    .graph
-                                    .edges_directed(idx, petgraph::Direction::Incoming)
-                                {
-                                    if let Some(sn) = self.graph.node_weight(e.source()) {
-                                        src.push(sn.name.clone());
-                                    }
-                                }
-                                src
-                            },
+                            from_facts,
                             description: w
                                 .properties
                                 .get("description")
@@ -449,11 +234,33 @@ impl Blackboard for GraphBlackboard {
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("")
                                 .into(),
-                            worker: None,
-                            to_fact_id: None,
+                            worker: w
+                                .properties
+                                .get("worker")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                            to_fact_id: {
+                                // Find conclusion fact node edge
+                                g.edges_directed(idx, petgraph::Direction::Outgoing)
+                                    .find(|e| {
+                                        g.node_weight(e.target()).is_some_and(|n| {
+                                            n.label == "Fact" && n.name.starts_with("f_concl_")
+                                        })
+                                    })
+                                    .and_then(|e| g.node_weight(e.target()).map(|n| n.name.clone()))
+                            },
                             last_heartbeat_at: None,
                             created_at: None,
-                            concluded_at: None,
+                            concluded_at: if w
+                                .properties
+                                .get("concluded")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false)
+                            {
+                                Some("yes".into())
+                            } else {
+                                None
+                            },
                         });
                     }
                     "Hint" => {
@@ -483,5 +290,504 @@ impl Blackboard for GraphBlackboard {
             intents,
             hints,
         }
+    }
+}
+
+impl FactCapable for PetgraphStorage {
+    fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
+        let mut g = self.graph.lock().unwrap();
+        g.add_node(NodeWeight {
+            name: fact.id.0.clone(),
+            label: "Fact".into(),
+            properties: {
+                let mut m = HashMap::new();
+                m.insert("origin".into(), fact.origin.clone().into());
+                m.insert("content".into(), fact.content.clone());
+                m.insert("creator".into(), fact.creator.clone().into());
+                m
+            },
+        });
+        Ok(fact.id.clone())
+    }
+}
+
+impl HintCapable for PetgraphStorage {
+    fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
+        let mut g = self.graph.lock().unwrap();
+        g.add_node(NodeWeight {
+            name: hint.id.0.clone(),
+            label: "Hint".into(),
+            properties: {
+                let mut m = HashMap::new();
+                m.insert("content".into(), hint.content.clone().into());
+                m.insert("creator".into(), hint.creator.clone().into());
+                m
+            },
+        });
+        Ok(())
+    }
+}
+
+impl IntentCapable for PetgraphStorage {
+    fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+        let mut g = self.graph.lock().unwrap();
+
+        // Validate from_facts exist in graph
+        for fid in &intent.from_facts {
+            let found = g
+                .node_indices()
+                .any(|i| g.node_weight(i).is_some_and(|w| w.name == *fid));
+            if !found {
+                return Err(BlackboardError::NotFound(format!("Fact {fid} not found")));
+            }
+        }
+
+        let idx = g.add_node(NodeWeight {
+            name: intent.id.0.clone(),
+            label: "Intent".into(),
+            properties: {
+                let mut m = HashMap::new();
+                m.insert("description".into(), intent.description.clone().into());
+                m.insert("creator".into(), intent.creator.clone().into());
+                m
+            },
+        });
+
+        // Create edges from each source fact to this intent
+        for fid in &intent.from_facts {
+            if let Some(src) = g
+                .node_indices()
+                .find(|i| g.node_weight(*i).is_some_and(|w| w.name == *fid))
+            {
+                g.add_edge(
+                    src,
+                    idx,
+                    EdgeWeight {
+                        rel_type: "drives".into(),
+                        properties: HashMap::new(),
+                    },
+                );
+            }
+        }
+
+        Ok(intent.id.clone())
+    }
+
+    fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let mut g = self.graph.lock().unwrap();
+        for idx in g.node_indices() {
+            if let Some(w) = g.node_weight_mut(idx)
+                && w.name == intent_id
+                && w.label == "Intent"
+            {
+                // Check if already concluded
+                if w.properties
+                    .get("concluded")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
+                    return Err(BlackboardError::NotFound(format!(
+                        "Intent {intent_id} already concluded"
+                    )));
+                }
+                // Check if already claimed
+                if let Some(serde_json::Value::String(current)) = w.properties.get("worker") {
+                    return Err(BlackboardError::Conflict(format!(
+                        "Intent {intent_id} already claimed by {current}"
+                    )));
+                }
+                w.properties
+                    .insert("worker".into(), agent.to_string().into());
+                return Ok(());
+            }
+        }
+        Err(BlackboardError::NotFound(format!(
+            "Intent {intent_id} not found"
+        )))
+    }
+
+    fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let mut g = self.graph.lock().unwrap();
+        for idx in g.node_indices() {
+            if let Some(w) = g.node_weight_mut(idx)
+                && w.name == intent_id
+                && w.label == "Intent"
+            {
+                // Check if already concluded
+                if w.properties
+                    .get("concluded")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
+                    return Err(BlackboardError::NotFound(format!(
+                        "Intent {intent_id} already concluded"
+                    )));
+                }
+                let current = w.properties.get("worker");
+                match current {
+                    Some(serde_json::Value::String(existing)) if existing != agent => {
+                        return Err(BlackboardError::Conflict(format!(
+                            "Intent {intent_id} is claimed by {existing}, not {agent}"
+                        )));
+                    }
+                    _ => {
+                        w.properties
+                            .insert("worker".into(), agent.to_string().into());
+                        return Ok(());
+                    }
+                }
+            }
+        }
+        Err(BlackboardError::NotFound(format!(
+            "Intent {intent_id} not found"
+        )))
+    }
+
+    fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let mut g = self.graph.lock().unwrap();
+        for idx in g.node_indices() {
+            if let Some(w) = g.node_weight_mut(idx)
+                && w.name == intent_id
+                && w.label == "Intent"
+            {
+                // Check if already concluded
+                if w.properties
+                    .get("concluded")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
+                    return Err(BlackboardError::NotFound(format!(
+                        "Intent {intent_id} already concluded"
+                    )));
+                }
+                let current = w.properties.get("worker").cloned();
+                match current {
+                    None => {
+                        // Already unclaimed -- no-op
+                        return Ok(());
+                    }
+                    Some(serde_json::Value::String(existing)) if existing != agent => {
+                        return Err(BlackboardError::Forbidden(format!(
+                            "Intent {intent_id} claimed by {existing}"
+                        )));
+                    }
+                    _ => {
+                        w.properties.remove("worker");
+                        return Ok(());
+                    }
+                }
+            }
+        }
+        Err(BlackboardError::NotFound(format!(
+            "Intent {intent_id} not found"
+        )))
+    }
+
+    fn conclude_intent(
+        &self,
+        intent_id: &str,
+        result: &serde_json::Value,
+    ) -> Result<Fact, BlackboardError> {
+        let mut g = self.graph.lock().unwrap();
+
+        // Find the intent node
+        let intent_idx = g
+            .node_indices()
+            .find(|i| {
+                g.node_weight(*i)
+                    .is_some_and(|w| w.name == intent_id && w.label == "Intent")
+            })
+            .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
+
+        let worker = g
+            .node_weight(intent_idx)
+            .and_then(|w| w.properties.get("worker"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        // Mark intent as concluded
+        if let Some(w) = g.node_weight_mut(intent_idx) {
+            w.properties
+                .insert("concluded".into(), serde_json::Value::Bool(true));
+            w.properties.remove("worker");
+        }
+
+        // Create conclusion fact node
+        let new_fact_id = format!("f_concl_{}", intent_id);
+        let new_fact = Fact {
+            id: FihHash(new_fact_id.clone()),
+            origin: format!("conclusion:{}", intent_id),
+            content: result.clone(),
+            creator: worker,
+        };
+
+        let fact_idx = g.add_node(NodeWeight {
+            name: new_fact_id,
+            label: "Fact".into(),
+            properties: {
+                let mut m = HashMap::new();
+                m.insert("origin".into(), new_fact.origin.clone().into());
+                m.insert("content".into(), new_fact.content.clone());
+                m.insert("creator".into(), new_fact.creator.clone().into());
+                m
+            },
+        });
+
+        // Edge from conclusion fact back to intent
+        g.add_edge(
+            intent_idx,
+            fact_idx,
+            EdgeWeight {
+                rel_type: "concludes".into(),
+                properties: HashMap::new(),
+            },
+        );
+
+        Ok(new_fact)
+    }
+}
+
+impl TimeRangeCapable for PetgraphStorage {
+    fn time_range(&self) -> Option<Range<String>> {
+        // petgraph is an in-memory hot store with no inherent time bound.
+        // Returns None (universal range) since it can hold any data.
+        // A future implementation may return a bounded recent window
+        // based on the oldest node's creation time.
+        None
+    }
+}
+
+impl EvictCapable for PetgraphStorage {
+    fn approximate_size(&self) -> usize {
+        // Estimate: minimum 256 bytes per node. Actual size depends on
+        // property map contents (especially JSON document content).
+        // TODO(#51): measure actual NodeWeight size instead of fixed factor.
+        self.graph.lock().unwrap().node_count() * 256
+    }
+
+    fn evict_before(&self, before: &str) -> Result<u64, String> {
+        // TODO(#35): implement actual eviction in dispatcher runtime.
+        // Currently no-op. petgraph keeps all data in memory.
+        let _ = before;
+        Ok(0)
+    }
+}
+
+// FihPersistence and HotStorage for PetgraphStorage
+// are covered by blanket impls in nexus-model:
+//   FihPersistence: impl<T: FactCapable + IntentCapable + HintCapable> FihPersistence for T
+//   HotStorage:     impl<T: FihPersistence + EvictCapable> HotStorage for T
+
+// ── GraphBlackboard — the single Blackboard ────────────────────────────
+
+/// The single Blackboard struct. Combines a hot petgraph (for low-latency
+/// access and Cypher queries) with a cold storage backend for durability.
+///
+/// # Constructors
+///
+/// - [`GraphBlackboard::new()`] — in-memory only (hot=PetgraphStorage, cold=NullStorage).
+/// - [`GraphBlackboard::with_storage(hot, cold)`] — custom hot + cold pair.
+pub struct GraphBlackboard {
+    /// DualStorage wrapping hot (PetgraphStorage) + cold (ColdStorage).
+    storage: DualStorage,
+    /// Shared reference to the petgraph (for GraphAccess / Cypher).
+    hot_graph: Arc<Mutex<petgraph::Graph<NodeWeight, EdgeWeight>>>,
+    /// Claims tracking: IntentId → Agent.
+    claims: Mutex<HashMap<String, String>>,
+    /// Project scope.
+    project_id: String,
+}
+
+impl GraphBlackboard {
+    /// Create an in-memory only Blackboard (hot=PetgraphStorage, cold=NullStorage).
+    pub fn new() -> Self {
+        let graph = Arc::new(Mutex::new(petgraph::Graph::new()));
+        let hot = Box::new(PetgraphStorage::with_shared_graph(
+            Arc::clone(&graph),
+            "default",
+        ));
+        let cold = Box::new(NullStorage);
+        let storage = DualStorage::new(hot, cold);
+
+        Self {
+            storage,
+            hot_graph: graph,
+            claims: Mutex::new(HashMap::new()),
+            project_id: "default".into(),
+        }
+    }
+
+    /// Create a Blackboard with custom hot and cold storage backends.
+    /// The hot storage must be a `PetgraphStorage` whose graph is shared
+    /// with this Blackboard for GraphAccess.
+    pub fn with_storage(hot: PetgraphStorage, cold: Box<dyn ColdStorage>) -> Self {
+        let hot_graph = Arc::clone(&hot.graph);
+        let project_id = hot.project_id.clone();
+        let storage = DualStorage::new(Box::new(hot), cold);
+
+        Self {
+            storage,
+            hot_graph,
+            claims: Mutex::new(HashMap::new()),
+            project_id,
+        }
+    }
+
+    /// Access the petgraph directly (for Cypher executor and other
+    /// low-level graph traversal).
+    pub fn with_graph<R>(
+        &self,
+        f: impl FnOnce(&petgraph::Graph<NodeWeight, EdgeWeight>) -> R,
+    ) -> R {
+        let g = self.hot_graph.lock().unwrap();
+        f(&g)
+    }
+
+    /// Flush pending writes to cold storage.
+    /// TODO(#51): wire to FlushCapable once DualStorage delegates it.
+    /// Currently a no-op since every write is dual-written.
+    pub fn flush(&self) -> Result<(), String> {
+        Ok(())
+    }
+
+    /// Return the project ID for this Blackboard.
+    pub fn project_id(&self) -> &str {
+        &self.project_id
+    }
+}
+
+impl Default for GraphBlackboard {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl GraphAccess for GraphBlackboard {
+    fn node_indices(&self) -> Vec<NodeIndex> {
+        let g = self.hot_graph.lock().unwrap();
+        g.node_indices().collect()
+    }
+
+    fn edge_indices(&self) -> Vec<EdgeIndex> {
+        let g = self.hot_graph.lock().unwrap();
+        g.edge_indices().collect()
+    }
+
+    fn node_weight(&self, idx: NodeIndex) -> Option<NodeWeight> {
+        let g = self.hot_graph.lock().unwrap();
+        g.node_weight(idx).cloned()
+    }
+
+    fn edge_weight(&self, idx: EdgeIndex) -> Option<EdgeWeight> {
+        let g = self.hot_graph.lock().unwrap();
+        g.edge_weight(idx).cloned()
+    }
+
+    fn edge_endpoints(&self, idx: EdgeIndex) -> Option<(NodeIndex, NodeIndex)> {
+        let g = self.hot_graph.lock().unwrap();
+        g.edge_endpoints(idx)
+    }
+
+    fn neighbors_undirected(&self, idx: NodeIndex) -> Vec<NodeIndex> {
+        let g = self.hot_graph.lock().unwrap();
+        g.neighbors_undirected(idx).collect()
+    }
+
+    fn edges_directed(&self, idx: NodeIndex, outgoing: bool) -> Vec<EdgeIndex> {
+        let g = self.hot_graph.lock().unwrap();
+        let dir = if outgoing {
+            petgraph::Direction::Outgoing
+        } else {
+            petgraph::Direction::Incoming
+        };
+        g.edges_directed(idx, dir).map(|e| e.id()).collect()
+    }
+
+    fn add_node(&mut self, weight: NodeWeight) -> NodeIndex {
+        let mut g = self.hot_graph.lock().unwrap();
+        g.add_node(weight)
+    }
+
+    fn add_edge(&mut self, from: NodeIndex, to: NodeIndex, weight: EdgeWeight) -> EdgeIndex {
+        let mut g = self.hot_graph.lock().unwrap();
+        g.add_edge(from, to, weight)
+    }
+}
+
+impl Blackboard for GraphBlackboard {
+    fn project_id(&self) -> &str {
+        &self.project_id
+    }
+
+    fn submit_fact(&mut self, fact: &Fact) -> Result<FihHash, BlackboardError> {
+        self.storage.submit_fact(fact)
+    }
+
+    fn submit_hint(&mut self, hint: &Hint) -> Result<(), BlackboardError> {
+        self.storage.submit_hint(hint)
+    }
+
+    fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+        self.storage.submit_intent(intent)
+    }
+
+    fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let mut claims = self.claims.lock().unwrap();
+        if let Some(current) = claims.get(intent_id) {
+            return Err(BlackboardError::Conflict(format!(
+                "Intent {intent_id} already claimed by {current}"
+            )));
+        }
+        self.storage.claim_intent(intent_id, agent)?;
+        claims.insert(intent_id.to_string(), agent.to_string());
+        Ok(())
+    }
+
+    fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let mut claims = self.claims.lock().unwrap();
+        match claims.get(intent_id) {
+            Some(current) if current != agent => {
+                return Err(BlackboardError::Conflict(format!(
+                    "Intent {intent_id} is claimed by {current}, not {agent}"
+                )));
+            }
+            _ => {
+                claims.insert(intent_id.to_string(), agent.to_string());
+            }
+        }
+        self.storage.heartbeat(intent_id, agent)
+    }
+
+    fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let mut claims = self.claims.lock().unwrap();
+        match claims.get(intent_id) {
+            None => {
+                return self.storage.release_intent(intent_id, agent);
+            }
+            Some(current) if current != agent => {
+                return Err(BlackboardError::Conflict(format!(
+                    "Intent {intent_id} is claimed by {current}, not {agent}"
+                )));
+            }
+            _ => {
+                claims.remove(intent_id);
+            }
+        }
+        self.storage.release_intent(intent_id, agent)
+    }
+
+    fn conclude_intent(
+        &mut self,
+        intent_id: &str,
+        result: &serde_json::Value,
+    ) -> Result<Fact, BlackboardError> {
+        let mut claims = self.claims.lock().unwrap();
+        claims.remove(intent_id);
+        self.storage.conclude_intent(intent_id, result)
+    }
+
+    fn read_state(&self) -> BoardState {
+        self.storage.read_state()
     }
 }

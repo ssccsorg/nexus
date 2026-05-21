@@ -1,8 +1,13 @@
-// nexus-table — Integration tests for SqlBlackboard + SqliteStorage.
+// nexus-storage-sqlite — Integration tests for SqlNormalizedStorage.
+//
+// Adapted from the old nexus-table test suite. All SqlBlackboard
+// references replaced with SqlNormalizedStorage.
 
-use nexus_table::{
-    Blackboard, BlackboardError, Fact, FihHash, Hint, Intent, SqlBlackboard, SqliteStorage, Storage,
+use nexus_model::{
+    BlackboardError, Fact, FactCapable, FihHash, Hint, HintCapable, Intent, IntentCapable,
+    StorageRead,
 };
+use nexus_storage_sqlite::SqlNormalizedStorage;
 
 fn make_fact(id: &str, content: &str) -> Fact {
     Fact {
@@ -29,7 +34,7 @@ fn make_intent(id: &str, from: Vec<&str>, desc: &str) -> Intent {
 
 #[test]
 fn test_submit_fact() {
-    let mut bb = SqlBlackboard::memory().unwrap();
+    let bb = SqlNormalizedStorage::memory().unwrap();
     let hash = bb.submit_fact(&make_fact("f001", "test fact")).unwrap();
     assert_eq!(hash.0, "f001");
     let state = bb.read_state();
@@ -39,7 +44,7 @@ fn test_submit_fact() {
 
 #[test]
 fn test_submit_intent() {
-    let mut bb = SqlBlackboard::memory().unwrap();
+    let bb = SqlNormalizedStorage::memory().unwrap();
     bb.submit_fact(&make_fact("f001", "source fact")).unwrap();
     let hash = bb
         .submit_intent(&make_intent("i001", vec!["f001"], "test intent"))
@@ -51,14 +56,14 @@ fn test_submit_intent() {
 
 #[test]
 fn test_intent_missing_fact() {
-    let mut bb = SqlBlackboard::memory().unwrap();
+    let bb = SqlNormalizedStorage::memory().unwrap();
     let result = bb.submit_intent(&make_intent("i001", vec!["f_nonexistent"], "test"));
     assert!(result.is_err());
 }
 
 #[test]
 fn test_heartbeat_and_conclude() {
-    let mut bb = SqlBlackboard::memory().unwrap();
+    let bb = SqlNormalizedStorage::memory().unwrap();
     bb.submit_fact(&make_fact("f001", "source")).unwrap();
     bb.submit_intent(&make_intent("i001", vec!["f001"], "explore"))
         .unwrap();
@@ -72,7 +77,7 @@ fn test_heartbeat_and_conclude() {
 
 #[test]
 fn test_release_intent() {
-    let mut bb = SqlBlackboard::memory().unwrap();
+    let bb = SqlNormalizedStorage::memory().unwrap();
     bb.submit_fact(&make_fact("f001", "source")).unwrap();
     bb.submit_intent(&make_intent("i001", vec!["f001"], "explore"))
         .unwrap();
@@ -88,7 +93,7 @@ fn test_concurrent_session() {
     let tmp = tempfile::NamedTempFile::new().unwrap();
     let path = tmp.path().to_str().unwrap().to_string();
     {
-        let mut bb = SqlBlackboard::open(&path).unwrap();
+        let bb = SqlNormalizedStorage::open(&path).unwrap();
         bb.submit_fact(&make_fact("f001", "persistent fact"))
             .unwrap();
         bb.submit_fact(&make_fact("f002", "another fact")).unwrap();
@@ -97,7 +102,7 @@ fn test_concurrent_session() {
         assert_eq!(bb.read_state().facts.len(), 2);
     }
     {
-        let bb = SqlBlackboard::open(&path).unwrap();
+        let bb = SqlNormalizedStorage::open(&path).unwrap();
         let state = bb.read_state();
         assert_eq!(state.facts.len(), 2);
         assert_eq!(state.intents.len(), 1);
@@ -106,7 +111,7 @@ fn test_concurrent_session() {
 
 #[test]
 fn test_hint() {
-    let mut bb = SqlBlackboard::memory().unwrap();
+    let bb = SqlNormalizedStorage::memory().unwrap();
     bb.submit_hint(&Hint {
         id: FihHash("h001".into()),
         content: "check the web service first".into(),
@@ -119,7 +124,7 @@ fn test_hint() {
 
 #[test]
 fn test_intent_sources_join_on_read() {
-    let mut bb = SqlBlackboard::memory().unwrap();
+    let bb = SqlNormalizedStorage::memory().unwrap();
     bb.submit_fact(&make_fact("f001", "observation")).unwrap();
     bb.submit_fact(&make_fact("f002", "inference")).unwrap();
     bb.submit_fact(&make_fact("f003", "conclusion")).unwrap();
@@ -146,7 +151,7 @@ fn test_intent_sources_join_on_read() {
 
 #[test]
 fn test_playbook_sre_lifecycle() {
-    let mut bb = SqlBlackboard::memory().unwrap();
+    let bb = SqlNormalizedStorage::memory().unwrap();
     bb.submit_fact(&Fact {
         id: FihHash("f_deploy_001".into()),
         origin: "ci-bot".into(),
@@ -178,8 +183,8 @@ fn test_playbook_sre_lifecycle() {
 
 #[test]
 fn test_multi_blackboard_isolation() {
-    let mut bb_sensor = SqlBlackboard::memory().unwrap();
-    let mut bb_knowledge = SqlBlackboard::memory().unwrap();
+    let bb_sensor = SqlNormalizedStorage::memory().unwrap();
+    let bb_knowledge = SqlNormalizedStorage::memory().unwrap();
     bb_sensor
         .submit_fact(&make_fact("f_s1", "sensor reading"))
         .unwrap();
@@ -198,7 +203,7 @@ fn test_multi_blackboard_isolation() {
 
 #[test]
 fn test_multi_agent_handoff() {
-    let mut bb = SqlBlackboard::memory().unwrap();
+    let bb = SqlNormalizedStorage::memory().unwrap();
     bb.submit_fact(&make_fact("f001", "discovery")).unwrap();
     bb.submit_intent(&make_intent("i001", vec!["f001"], "explore anomaly"))
         .unwrap();
@@ -221,7 +226,7 @@ fn test_multi_agent_handoff() {
 
 #[test]
 fn test_protocol_enforcement() {
-    let mut bb = SqlBlackboard::memory().unwrap();
+    let bb = SqlNormalizedStorage::memory().unwrap();
     bb.submit_fact(&make_fact("f001", "data")).unwrap();
     bb.submit_intent(&make_intent("i001", vec!["f001"], "critical task"))
         .unwrap();
@@ -240,7 +245,7 @@ fn test_full_persistence_across_sessions() {
     let tmp = tempfile::NamedTempFile::new().unwrap();
     let path = tmp.path().to_str().unwrap().to_string();
     {
-        let mut bb = SqlBlackboard::open(&path).unwrap();
+        let bb = SqlNormalizedStorage::open(&path).unwrap();
         bb.submit_fact(&make_fact("f001", "alpha")).unwrap();
         bb.submit_fact(&make_fact("f002", "beta")).unwrap();
         bb.submit_intent(&make_intent("i001", vec!["f001"], "first"))
@@ -257,7 +262,7 @@ fn test_full_persistence_across_sessions() {
         .unwrap();
     }
     {
-        let bb = SqlBlackboard::open(&path).unwrap();
+        let bb = SqlNormalizedStorage::open(&path).unwrap();
         let state = bb.read_state();
         assert_eq!(state.facts.len(), 3);
         assert_eq!(state.intents.len(), 2);
@@ -267,7 +272,7 @@ fn test_full_persistence_across_sessions() {
 
 #[test]
 fn test_structured_json_content() {
-    let mut bb = SqlBlackboard::memory().unwrap();
+    let bb = SqlNormalizedStorage::memory().unwrap();
     let complex_content = serde_json::json!({"nested": {"array": [1,2,3], "object": {"key":"value"}, "null": null, "bool": true, "number": 42.5}});
     bb.submit_fact(&Fact {
         id: FihHash("f_complex".into()),
@@ -290,7 +295,7 @@ fn test_structured_json_content() {
 
 #[test]
 fn test_research_cross_document_entity_linking() {
-    let mut bb = SqlBlackboard::memory().unwrap();
+    let bb = SqlNormalizedStorage::memory().unwrap();
     bb.submit_fact(&Fact {
         id: FihHash("f_doc_a_001".into()),
         origin: "whitepaper.llms.md".into(),
@@ -336,7 +341,7 @@ fn test_research_cross_document_entity_linking() {
 
 #[test]
 fn test_research_contradiction_detection() {
-    let mut bb = SqlBlackboard::memory().unwrap();
+    let bb = SqlNormalizedStorage::memory().unwrap();
     bb.submit_fact(&Fact {
         id: FihHash("f_claim_a".into()),
         origin: "doc1".into(),
@@ -370,7 +375,7 @@ fn test_research_contradiction_detection() {
 
 #[test]
 fn test_research_concept_drift_across_sources() {
-    let mut bb = SqlBlackboard::memory().unwrap();
+    let bb = SqlNormalizedStorage::memory().unwrap();
     bb.submit_fact(&Fact {
         id: FihHash("f_v1".into()),
         origin: "doc1".into(),
@@ -409,7 +414,7 @@ fn test_research_concept_drift_across_sources() {
 
 #[test]
 fn test_research_gap_unexplored_territory() {
-    let mut bb = SqlBlackboard::memory().unwrap();
+    let bb = SqlNormalizedStorage::memory().unwrap();
     bb.submit_fact(&make_fact("f_gap_a", "topic A")).unwrap();
     bb.submit_fact(&make_fact("f_gap_b", "topic B")).unwrap();
     bb.submit_fact(&make_fact("f_gap_c", "topic C")).unwrap();
@@ -443,7 +448,7 @@ fn test_research_memory_across_sessions() {
     let tmp = tempfile::NamedTempFile::new().unwrap();
     let path = tmp.path().to_str().unwrap().to_string();
     {
-        let mut bb = SqlBlackboard::open(&path).unwrap();
+        let bb = SqlNormalizedStorage::open(&path).unwrap();
         for i in 0..4 {
             bb.submit_fact(&Fact {
                 id: FihHash(format!("f_doc_{:03}", i)),
@@ -456,7 +461,7 @@ fn test_research_memory_across_sessions() {
         assert_eq!(bb.read_state().facts.len(), 4);
     }
     {
-        let mut bb = SqlBlackboard::open(&path).unwrap();
+        let bb = SqlNormalizedStorage::open(&path).unwrap();
         bb.submit_intent(&Intent {
             id: FihHash("i_link_001".into()),
             from_facts: vec!["f_doc_000".into(), "f_doc_001".into()],
@@ -484,7 +489,7 @@ fn test_research_memory_across_sessions() {
         assert_eq!(bb.read_state().intents.len(), 2);
     }
     {
-        let mut bb = SqlBlackboard::open(&path).unwrap();
+        let bb = SqlNormalizedStorage::open(&path).unwrap();
         bb.heartbeat("i_link_001", "linker").unwrap();
         bb.conclude_intent("i_link_001", &serde_json::json!({"finding": "confirmed"}))
             .unwrap();
@@ -513,8 +518,8 @@ fn test_research_memory_across_sessions() {
 
 #[test]
 fn test_multi_project_isolation() {
-    let mut bb_a = SqlBlackboard::memory_with_project("proj_a").unwrap();
-    let mut bb_b = SqlBlackboard::memory_with_project("proj_b").unwrap();
+    let bb_a = SqlNormalizedStorage::memory_with_project("proj_a").unwrap();
+    let bb_b = SqlNormalizedStorage::memory_with_project("proj_b").unwrap();
     bb_a.submit_fact(&make_fact("f001", "project A data"))
         .unwrap();
     bb_b.submit_fact(&make_fact("f001", "project B data"))
@@ -529,7 +534,7 @@ fn test_multi_project_isolation() {
 
 #[test]
 fn test_project_lifecycle() {
-    let bb = SqlBlackboard::memory_with_project("lifecycle_test").unwrap();
+    let bb = SqlNormalizedStorage::memory_with_project("lifecycle_test").unwrap();
     assert_eq!(bb.get_project().unwrap().status, "active");
     bb.set_project_status("stopped").unwrap();
     assert_eq!(bb.get_project().unwrap().status, "stopped");
@@ -539,7 +544,7 @@ fn test_project_lifecycle() {
 
 #[test]
 fn test_project_with_custom_title() {
-    let bb = SqlBlackboard::memory_with_project("research_001").unwrap();
+    let bb = SqlNormalizedStorage::memory_with_project("research_001").unwrap();
     let proj = bb.get_project().unwrap();
     assert_eq!(proj.id, "research_001");
     assert_eq!(proj.status, "active");
@@ -548,6 +553,7 @@ fn test_project_with_custom_title() {
 
 #[test]
 fn test_sqlite_storage_backward_compat() {
+    use nexus_storage_sqlite::SqliteStorage;
     let store = SqliteStorage::memory().unwrap();
     store.log_fih("test_event", "{\"key\": \"value\"}");
     let events = store.load_events();
