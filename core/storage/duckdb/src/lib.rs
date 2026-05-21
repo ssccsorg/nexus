@@ -332,10 +332,10 @@ fn duckdb_column_to_value(row: &duckdb::Row, i: usize) -> serde_json::Value {
     if let Ok(Some(n)) = row.get::<_, Option<i64>>(i) {
         return serde_json::Value::Number(n.into());
     }
-    if let Ok(Some(f)) = row.get::<_, Option<f64>>(i) {
-        if let Some(n) = serde_json::Number::from_f64(f) {
-            return serde_json::Value::Number(n);
-        }
+    if let Ok(Some(f)) = row.get::<_, Option<f64>>(i)
+        && let Some(n) = serde_json::Number::from_f64(f)
+    {
+        return serde_json::Value::Number(n);
     }
     serde_json::Value::Null
 }
