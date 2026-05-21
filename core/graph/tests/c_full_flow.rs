@@ -152,3 +152,38 @@ fn test_full_agent_collaboration_flow() {
     println!("  ✓ 3 agents (A, B, C) interacting through Blackboard alone");
     println!("  ✓ No direct agent-to-agent communication — all via FIH");
 }
+
+// ── PetgraphStorage TimeRangeCapable ────────────────────────────────────
+
+#[test]
+fn test_petgraph_time_range() {
+    use nexus_graph::{
+        Blackboard, Fact, FihHash, GraphBlackboard, Intent, PetgraphStorage, TimeRangeCapable,
+    };
+
+    // PetgraphStorage::time_range() returns None (unbounded in-memory store).
+    // This test verifies the trait is wired correctly.
+    let hot = PetgraphStorage::new();
+    assert!(
+        hot.time_range().is_none(),
+        "petgraph hot store has no time bound"
+    );
+
+    // GraphBlackboard::new() uses DualStorage internally.
+    // PetgraphStorage is the hot layer, NullStorage is the cold layer.
+    let mut bb = GraphBlackboard::new();
+    bb.submit_fact(&Fact {
+        id: FihHash("f_001".into()),
+        origin: "test".into(),
+        content: serde_json::json!("data"),
+        creator: "tester".into(),
+    })
+    .unwrap();
+
+    let state = bb.read_state();
+    assert_eq!(state.facts.len(), 1, "fact submitted to GraphBlackboard");
+    // PetgraphStorage::time_range is None (unbounded).
+    // Direct access to DualStorage's time_range is not exposed through
+    // the Blackboard trait — this is by design (#51 will add routing).
+    // The hot layer is unbounded until #51 adds bounded range logic.
+}
