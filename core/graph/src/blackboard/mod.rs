@@ -10,6 +10,7 @@ use nexus_model::{
 };
 use nexus_storage_petgraph::{EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage};
 use petgraph::graph::{EdgeIndex, NodeIndex};
+use petgraph::visit::EdgeRef;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -55,15 +56,19 @@ impl ClaimsTracker {
 
 /// RAII guard: releases claim on drop if not committed.
 /// Prevents stale claims when the caller panics or forgets to conclude.
+///
+/// Holds a direct reference to `ClaimsTracker` (not the `Mutex`), so it
+/// can release without re-locking. The caller must already hold the
+/// `MutexGuard`.
 struct ClaimGuard<'a> {
-    claims: &'a Mutex<ClaimsTracker>,
+    claims: &'a mut ClaimsTracker,
     intent_id: String,
     agent: String,
     committed: bool,
 }
 
 impl<'a> ClaimGuard<'a> {
-    fn new(claims: &'a Mutex<ClaimsTracker>, intent_id: String, agent: String) -> Self {
+    fn new(claims: &'a mut ClaimsTracker, intent_id: String, agent: String) -> Self {
         Self {
             claims,
             intent_id,
@@ -80,9 +85,7 @@ impl<'a> ClaimGuard<'a> {
 impl Drop for ClaimGuard<'_> {
     fn drop(&mut self) {
         if !self.committed {
-            if let Ok(mut claims) = self.claims.lock() {
-                let _ = claims.release(&self.intent_id, &self.agent);
-            }
+            let _ = self.claims.release(&self.intent_id, &self.agent);
         }
     }
 }
@@ -176,37 +179,42 @@ impl Default for DefaultBlackboard {
 impl GraphRead for DefaultBlackboard {
     fn node_indices(&self) -> Vec<NodeIndex> {
         let g = self.hot_graph.read().unwrap();
-        g.node_indices()
+        petgraph::Graph::node_indices(&*g).collect()
     }
 
     fn edge_indices(&self) -> Vec<EdgeIndex> {
         let g = self.hot_graph.read().unwrap();
-        g.edge_indices()
+        petgraph::Graph::edge_indices(&*g).collect()
     }
 
     fn node_weight(&self, idx: NodeIndex) -> Option<NodeWeight> {
         let g = self.hot_graph.read().unwrap();
-        g.node_weight(idx)
+        petgraph::Graph::node_weight(&*g, idx).cloned()
     }
 
     fn edge_weight(&self, idx: EdgeIndex) -> Option<EdgeWeight> {
         let g = self.hot_graph.read().unwrap();
-        g.edge_weight(idx)
+        petgraph::Graph::edge_weight(&*g, idx).cloned()
     }
 
     fn edge_endpoints(&self, idx: EdgeIndex) -> Option<(NodeIndex, NodeIndex)> {
         let g = self.hot_graph.read().unwrap();
-        g.edge_endpoints(idx)
+        petgraph::Graph::edge_endpoints(&*g, idx)
     }
 
     fn neighbors_undirected(&self, idx: NodeIndex) -> Vec<NodeIndex> {
         let g = self.hot_graph.read().unwrap();
-        g.neighbors_undirected(idx)
+        petgraph::Graph::neighbors_undirected(&*g, idx).collect()
     }
 
     fn edges_directed(&self, idx: NodeIndex, outgoing: bool) -> Vec<EdgeIndex> {
         let g = self.hot_graph.read().unwrap();
-        g.edges_directed(idx, outgoing)
+        let dir = if outgoing {
+            petgraph::Direction::Outgoing
+        } else {
+            petgraph::Direction::Incoming
+        };
+        petgraph::Graph::edges_directed(&*g, idx, dir).map(|e| e.id()).collect()
     }
 }
 
@@ -242,7 +250,7 @@ impl Blackboard for DefaultBlackboard {
     fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let mut claims = self.claims.lock().unwrap();
         claims.try_claim(intent_id, agent)?;
-        let mut guard = ClaimGuard::new(&self.claims, intent_id.to_string(), agent.to_string());
+        let mut guard = ClaimGuard::new(&mut *claims, intent_id.to_string(), agent.to_string());
         self.storage.claim_intent(intent_id, agent)?;
         guard.commit();
         Ok(())
