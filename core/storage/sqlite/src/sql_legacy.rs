@@ -8,9 +8,11 @@
 
 use nexus_model::{
     BlackboardError, BoardState, Fact, FactCapable, FihHash, FilterCapable, Hint, HintCapable,
-    Intent, IntentCapable, StateFilter, StorageRead, StoredEvent,
+    Intent, IntentCapable, PartitionData, ScanCapable, StateFilter, StorageRead, StoredEvent,
+    TimeRangeCapable,
 };
 use rusqlite::{Connection, params};
+use std::ops::Range;
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -230,7 +232,28 @@ impl HintCapable for SqliteStorage {
 
 impl FilterCapable for SqliteStorage {
     fn read_state_filtered(&self, _filter: &StateFilter) -> BoardState {
-        // For now, returns the full state. SQL-level filtering to be added later.
+        // TODO(#51): implement SQL WHERE clause generation similar to
+        // sql_normalized.rs::build_fact_where / build_intent_where / build_hint_where.
+        // Currently returns the full state without filtering.
         self.read_state()
+    }
+}
+
+impl ScanCapable for SqliteStorage {
+    fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
+        // Legacy event-log storage does not support partitions.
+        Ok(PartitionData {
+            partition: partition.to_string(),
+            facts: Vec::new(),
+            intents: Vec::new(),
+            hints: Vec::new(),
+        })
+    }
+}
+
+impl TimeRangeCapable for SqliteStorage {
+    fn time_range(&self) -> Option<Range<String>> {
+        // Legacy event-log storage has no structured timestamps.
+        None
     }
 }

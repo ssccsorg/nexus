@@ -8,9 +8,10 @@
 
 use nexus_model::{
     BlackboardError, BoardState, Fact, FactCapable, FihHash, FilterCapable, Hint, HintCapable,
-    Intent, IntentCapable, StateFilter, StorageRead,
+    Intent, IntentCapable, PartitionData, ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
 };
 use rusqlite::{Connection, params};
+use std::ops::Range;
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -611,6 +612,53 @@ impl FilterCapable for SqlNormalizedStorage {
             intents,
             hints,
         }
+    }
+}
+
+impl ScanCapable for SqlNormalizedStorage {
+    fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
+        // SQLite is project-scoped, not partition-based.
+        // Return data only if partition matches project_id.
+        if partition != self.project_id && partition != "default" {
+            return Ok(PartitionData {
+                partition: partition.to_string(),
+                facts: Vec::new(),
+                intents: Vec::new(),
+                hints: Vec::new(),
+            });
+        }
+        let state = self.read_state();
+        Ok(PartitionData {
+            partition: partition.to_string(),
+            facts: state.facts,
+            intents: state.intents,
+            hints: state.hints,
+        })
+    }
+}
+
+impl TimeRangeCapable for SqlNormalizedStorage {
+    fn time_range(&self) -> Option<Range<String>> {
+        let conn = match self.conn.lock() {
+            Ok(c) => c,
+            Err(poisoned) => {
+                eprintln!("time_range: mutex poisoned, recovering");
+                poisoned.into_inner()
+            }
+        };
+        let pid = &self.project_id;
+        // Use intents.created_at as the time anchor (always populated).
+        conn.query_row(
+            "SELECT MIN(created_at), MAX(created_at) FROM intents WHERE project_id = ?1",
+            params![pid],
+            |row| {
+                let min: Option<String> = row.get(0).ok().flatten();
+                let max: Option<String> = row.get(1).ok().flatten();
+                Ok(min.zip(max))
+            },
+        )
+        .unwrap_or(None)
+        .map(|(lo, hi)| lo..hi)
     }
 }
 

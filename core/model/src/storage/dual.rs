@@ -1,11 +1,16 @@
 use super::aggregate::{ColdStorage, HotStorage};
+use super::evict::EvictCapable;
 use super::fact::FactCapable;
 use super::filter::{FilterCapable, StateFilter};
 use super::hint::HintCapable;
 use super::intent::IntentCapable;
 use super::read::StorageRead;
+use super::scan::PartitionData;
+use super::scan::ScanCapable;
+use super::time_range::TimeRangeCapable;
 use crate::error::BlackboardError;
 use crate::fih::{BoardState, Fact, FihHash, Hint, Intent};
+use std::ops::Range;
 
 /// Composes a Hot + Cold storage pair.
 ///
@@ -102,5 +107,44 @@ impl HintCapable for DualStorage {
 impl FilterCapable for DualStorage {
     fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
         self.cold.read_state_filtered(filter)
+    }
+}
+
+// ── Memory management: delegate to hot ──
+
+impl EvictCapable for DualStorage {
+    fn approximate_size(&self) -> usize {
+        self.hot.approximate_size()
+    }
+
+    fn evict_before(&self, before: &str) -> Result<u64, String> {
+        self.hot.evict_before(before)
+    }
+}
+
+// ── Partition scan: delegate to cold ──
+
+impl ScanCapable for DualStorage {
+    fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
+        self.cold.scan_partition(partition)
+    }
+}
+
+// ── Time range: merge hot and cold ranges ──
+
+impl TimeRangeCapable for DualStorage {
+    fn time_range(&self) -> Option<Range<String>> {
+        let hot_range = self.hot.time_range();
+        let cold_range = self.cold.time_range();
+        match (hot_range, cold_range) {
+            (Some(h), Some(c)) => {
+                let start = std::cmp::min(h.start, c.start);
+                let end = std::cmp::max(h.end, c.end);
+                Some(start..end)
+            }
+            (Some(h), None) => Some(h),
+            (None, Some(c)) => Some(c),
+            (None, None) => None,
+        }
     }
 }
