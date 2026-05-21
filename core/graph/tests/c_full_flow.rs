@@ -187,3 +187,66 @@ fn test_petgraph_time_range() {
     // the Blackboard trait — this is by design (#51 will add routing).
     // The hot layer is unbounded until #51 adds bounded range logic.
 }
+
+// ── StorageSnapshot serialisation round-trip ───────────────────────────
+
+#[test]
+fn test_storage_snapshot_roundtrip() {
+    use nexus_graph::{DefaultBlackboard, StorageSnapshot};
+    use nexus_graph::{Blackboard, Fact, FihHash, Intent};
+
+    // Build a blackboard with some data
+    let mut bb = DefaultBlackboard::new();
+    bb.submit_fact(&Fact {
+        id: FihHash("f_snap_1".into()),
+        origin: "snap-test".into(),
+        content: serde_json::json!("snapshot data"),
+        creator: "tester".into(),
+    })
+    .unwrap();
+    bb.submit_fact(&Fact {
+        id: FihHash("f_snap_2".into()),
+        origin: "snap-test".into(),
+        content: serde_json::json!("more data"),
+        creator: "tester".into(),
+    })
+    .unwrap();
+    bb.submit_intent(&Intent {
+        id: FihHash("i_snap_1".into()),
+        from_facts: vec!["f_snap_1".into()],
+        description: "snapshot intent".into(),
+        creator: "tester".into(),
+        worker: None,
+        to_fact_id: None,
+        last_heartbeat_at: None,
+        created_at: None,
+        concluded_at: None,
+    })
+    .unwrap();
+
+    // Snapshot: serialise → deserialise
+    let snapshot = bb.to_snapshot();
+    let json = serde_json::to_vec(&snapshot).expect("serialise");
+    let restored_snapshot: StorageSnapshot =
+        serde_json::from_slice(&json).expect("deserialise");
+    let mut restored = DefaultBlackboard::from_snapshot(restored_snapshot);
+
+    // Verify: same facts, same intents
+    let state = restored.read_state();
+    assert_eq!(state.facts.len(), 2, "snapshot should preserve 2 facts");
+    assert_eq!(state.intents.len(), 1, "snapshot should preserve 1 intent");
+    assert_eq!(state.facts[0].id.0, "f_snap_1");
+
+    // Verify: Cypher still works on restored blackboard
+    let plan = cypher::Plan::from_internal("MATCH (f:Fact) RETURN f").unwrap();
+    let count = cypher::execute(&restored, &plan).unwrap().len();
+    assert_eq!(count, 2, "Cypher works on restored snapshot");
+
+    // Verify: claims tracker is restored
+    restored
+        .claim_intent("i_snap_1", "agent-x")
+        .expect("claim should work on restored bb");
+
+    println!("  ✓ StorageSnapshot round-trip: {}", json.len());
+    println!("  ✓ {json:?}");
+}

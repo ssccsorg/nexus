@@ -8,6 +8,7 @@ use nexus_model::{
     Blackboard, BlackboardError, BoardState, ColdStorage, DualStorage, Fact, FactCapable, FihHash,
     Hint, HintCapable, Intent, IntentCapable, NullStorage, StorageRead,
 };
+use serde::{Deserialize, Serialize};
 use nexus_storage_petgraph::{EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
@@ -19,8 +20,9 @@ use std::sync::{Arc, RwLock};
 /// Acts as a local cache in front of the storage layer's claim tracking.
 /// The storage layer is the source of truth; this cache provides fast
 /// conflict detection without a storage round-trip.
+#[derive(Clone, Serialize, Deserialize)]
 struct ClaimsTracker {
-    inner: HashMap<String, String>,
+    pub(crate) inner: HashMap<String, String>,
 }
 
 impl ClaimsTracker {
@@ -106,6 +108,15 @@ impl ClaimsTracker {
     }
 }
 
+/// Serialisable snapshot of `DefaultBlackboard` for R2/blob storage.
+/// Contains only the data needed to reconstruct a worker's partition.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct StorageSnapshot {
+    pub graph: petgraph::Graph<NodeWeight, EdgeWeight>,
+    pub claims: HashMap<String, String>,
+    pub project_id: String,
+}
+
 /// The single Blackboard struct. Combines a hot petgraph (for low-latency
 /// access and Cypher queries) with a cold storage backend for durability.
 ///
@@ -172,6 +183,38 @@ impl DefaultBlackboard {
         &self,
     ) -> std::sync::RwLockReadGuard<'_, petgraph::Graph<NodeWeight, EdgeWeight>> {
         self.hot_graph.read().unwrap()
+    }
+
+    /// Serialise the current state for blob storage (R2, S3, etc.).
+    /// Clones the graph and claims — use sparingly, not on every iteration.
+    pub fn to_snapshot(&self) -> StorageSnapshot {
+        let g = self.hot_graph.read().unwrap();
+        StorageSnapshot {
+            graph: g.clone(),
+            claims: self.claims.inner.clone(),
+            project_id: self.project_id.clone(),
+        }
+    }
+
+    /// Reconstruct a `DefaultBlackboard` from a previously saved snapshot.
+    /// Creates a fresh `PetgraphStorage + NullStorage` pair; the caller may
+    /// replace the cold backend via `with_storage()` afterward.
+    pub fn from_snapshot(snapshot: StorageSnapshot) -> Self {
+        let graph = Arc::new(RwLock::new(snapshot.graph));
+        let hot = Box::new(PetgraphStorage::with_shared_graph(
+            Arc::clone(&graph),
+            &snapshot.project_id,
+        ));
+        let cold = Box::new(NullStorage);
+        let storage = DualStorage::new(hot, cold);
+        Self {
+            storage,
+            hot_graph: graph,
+            claims: ClaimsTracker {
+                inner: snapshot.claims,
+            },
+            project_id: snapshot.project_id,
+        }
     }
 }
 
