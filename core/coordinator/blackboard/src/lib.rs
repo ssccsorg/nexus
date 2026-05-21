@@ -8,7 +8,7 @@ use nexus_model::{
     Blackboard, BlackboardError, BoardState, ColdStorage, DualStorage, Fact, FactCapable, FihHash,
     Hint, HintCapable, Intent, IntentCapable, NullStorage, StorageRead,
 };
-use nexus_storage_petgraph::{GraphAccess, PetgraphStorage, EdgeWeight, NodeWeight};
+use nexus_storage_petgraph::{EdgeWeight, GraphAccess, NodeWeight, PetgraphStorage};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use std::collections::HashMap;
