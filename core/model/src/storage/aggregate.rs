@@ -16,5 +16,11 @@ pub trait HotStorage: FihPersistence + EvictCapable + TimeRangeCapable {}
 impl<T: FihPersistence + EvictCapable + TimeRangeCapable> HotStorage for T {}
 
 /// Cold storage: full FIH + filtered reads + scan + time range + flush (SQLite, Parquet).
-pub trait ColdStorage: FihPersistence + FilterCapable + ScanCapable + TimeRangeCapable + FlushCapable {}
-impl<T: FihPersistence + FilterCapable + ScanCapable + TimeRangeCapable + FlushCapable> ColdStorage for T {}
+pub trait ColdStorage:
+    FihPersistence + FilterCapable + ScanCapable + TimeRangeCapable + FlushCapable
+{
+}
+impl<T: FihPersistence + FilterCapable + ScanCapable + TimeRangeCapable + FlushCapable> ColdStorage
+    for T
+{
+}
