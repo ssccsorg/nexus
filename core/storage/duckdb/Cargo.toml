@@ -1,15 +1,14 @@
 [package]
-name = "nexus-table"
+name = "nexus-storage-duckdb"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-nexus-model = { path = "../model" }
-rusqlite.workspace = true
+nexus-model = { path = "../../model" }
+duckdb = { version = "1.105", features = ["bundled", "parquet"] }
 serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
-nexus-graph = { path = "../graph" }
 tempfile = "3"

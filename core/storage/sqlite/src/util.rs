@@ -1,6 +1,6 @@
-// nexus-table — Utility functions and shared types.
-
-/// Lightweight project metadata matching Cairn's Project schema.
+/// Utility types for nexus-storage-sqlite. Re-exported from the old nexus-table
+/// crate for backward compatibility. Lightweight project metadata matching
+/// Cairn's Project schema.
 #[derive(Debug, Clone)]
 pub struct ProjectMeta {
     pub id: String,

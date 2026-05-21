@@ -3,7 +3,8 @@ resolver = "2"
 members = [
     "model",
     "graph",
-    "table",
+    "storage/sqlite",
+        "storage/duckdb"
 ]
 
 [workspace.package]
