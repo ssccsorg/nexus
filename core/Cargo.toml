@@ -4,7 +4,9 @@ members = [
     "model",
     "graph",
     "storage/sqlite",
-        "storage/duckdb"
+    "storage/duckdb",
+    "storage/petgraph",
+    "coordinator/blackboard"
 ]
 
 [workspace.package]

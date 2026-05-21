@@ -1,6 +1,7 @@
 // Shared application state for the gateway API server.
 
-use nexus_graph::{GraphBlackboard, PetgraphStorage};
+use nexus_coordinator_blackboard::GraphBlackboard;
+use nexus_storage_petgraph::PetgraphStorage;
 use nexus_storage_sqlite::SqlNormalizedStorage;
 use std::sync::{Arc, Mutex};
 
