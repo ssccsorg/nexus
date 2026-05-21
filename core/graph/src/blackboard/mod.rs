@@ -1,0 +1,337 @@
+// nexus-graph — DefaultBlackboard: the single blackboard struct.
+//
+// Part of the graph runtime. Combines a hot petgraph (for low-latency
+// access and Cypher queries) with a cold storage backend for durability.
+// Storage is swappable via DualStorage.
+
+use nexus_model::{
+    Blackboard, BlackboardError, BoardState, ColdStorage, DualStorage, Fact, FactCapable, FihHash,
+    FlushCapable, FlushCursor, Hint, HintCapable, Intent, IntentCapable, NullStorage, StorageRead,
+};
+use nexus_storage_petgraph::{
+    EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, StorageSnapshot,
+};
+use petgraph::graph::{EdgeIndex, NodeIndex};
+use petgraph::visit::EdgeRef;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+
+/// Tracks intent claims — which agent has claimed which intent.
+///
+/// Acts as a local cache in front of the storage layer's claim tracking.
+/// The storage layer is the source of truth; this cache provides fast
+/// conflict detection without a storage round-trip.
+#[derive(Clone, Serialize, Deserialize)]
+struct ClaimsTracker {
+    pub(crate) inner: HashMap<String, String>,
+}
+
+impl ClaimsTracker {
+    fn new() -> Self {
+        Self {
+            inner: HashMap::new(),
+        }
+    }
+
+    fn try_claim(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        if let Some(current) = self.inner.get(intent_id) {
+            return Err(BlackboardError::Conflict(format!(
+                "Intent {intent_id} already claimed by {current}"
+            )));
+        }
+        self.inner.insert(intent_id.to_string(), agent.to_string());
+        Ok(())
+    }
+
+    fn verify_owner(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        match self.inner.get(intent_id) {
+            Some(current) if current != agent => Err(BlackboardError::Conflict(format!(
+                "Intent {intent_id} is claimed by {current}, not {agent}"
+            ))),
+            _ => Ok(()),
+        }
+    }
+
+    fn remove(&mut self, intent_id: &str) {
+        self.inner.remove(intent_id);
+    }
+}
+
+/// RAII guard: releases claim on drop if not committed.
+/// Prevents stale claims when the caller panics or forgets to conclude.
+///
+/// Holds `&mut ClaimsTracker` directly — no re-lock needed on drop
+/// since `DefaultBlackboard.claims` is lock-free.
+struct ClaimGuard<'a> {
+    claims: &'a mut ClaimsTracker,
+    intent_id: String,
+    agent: String,
+    committed: bool,
+}
+
+impl<'a> ClaimGuard<'a> {
+    fn new(claims: &'a mut ClaimsTracker, intent_id: String, agent: String) -> Self {
+        Self {
+            claims,
+            intent_id,
+            agent,
+            committed: false,
+        }
+    }
+
+    fn commit(&mut self) {
+        self.committed = true;
+    }
+}
+
+impl Drop for ClaimGuard<'_> {
+    fn drop(&mut self) {
+        if !self.committed {
+            let _ = self.claims.release(&self.intent_id, &self.agent);
+        }
+    }
+}
+
+impl ClaimsTracker {
+    fn to_snapshot(&self) -> HashMap<String, String> {
+        self.inner.clone()
+    }
+
+    fn from_snapshot(inner: HashMap<String, String>) -> Self {
+        Self { inner }
+    }
+
+    fn release(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        match self.inner.get(intent_id) {
+            None => {}
+            Some(current) if current != agent => {
+                return Err(BlackboardError::Conflict(format!(
+                    "Intent {intent_id} is claimed by {current}, not {agent}"
+                )));
+            }
+            _ => {
+                self.inner.remove(intent_id);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The single Blackboard struct. Combines a hot petgraph (for low-latency
+/// access and Cypher queries) with a cold storage backend for durability.
+///
+/// **Lock-free by default**: `claims` has no Mutex — single-worker ownership.
+/// `hot_graph` is shared with `PetgraphStorage` via `Arc<RwLock<>>` but
+/// the lock is internal to the storage layer, not this struct.
+///
+/// For multi-worker thread-safe access, wrap in `Arc<Mutex<DefaultBlackboard>>`.
+pub struct DefaultBlackboard {
+    storage: DualStorage,
+    hot_graph: Arc<RwLock<petgraph::Graph<NodeWeight, EdgeWeight>>>,
+    claims: ClaimsTracker,
+    project_id: String,
+}
+
+impl DefaultBlackboard {
+    pub fn new() -> Self {
+        let graph = Arc::new(RwLock::new(petgraph::Graph::new()));
+        let hot = Box::new(PetgraphStorage::with_shared_graph(
+            Arc::clone(&graph),
+            "default",
+        ));
+        let cold = Box::new(NullStorage);
+        let storage = DualStorage::new(hot, cold);
+
+        Self {
+            storage,
+            hot_graph: graph,
+            claims: ClaimsTracker::new(),
+            project_id: "default".into(),
+        }
+    }
+
+    pub fn with_storage(hot: PetgraphStorage, cold: Box<dyn ColdStorage>) -> Self {
+        let hot_graph = Arc::clone(&hot.graph);
+        let project_id = hot.project_id.clone();
+        let storage = DualStorage::new(Box::new(hot), cold);
+
+        Self {
+            storage,
+            hot_graph,
+            claims: ClaimsTracker::new(),
+            project_id,
+        }
+    }
+
+    pub fn with_graph<R>(
+        &self,
+        f: impl FnOnce(&petgraph::Graph<NodeWeight, EdgeWeight>) -> R,
+    ) -> R {
+        let g = self.hot_graph.read().unwrap();
+        f(&g)
+    }
+
+    pub fn flush(&self) -> Result<(), String> {
+        // Dual-write keeps cold in sync already; flush is a no-op today.
+        // TODO(#35): incremental flush — track cursor across invocations,
+        // export hot-only data to Parquet/R2 before evict_before().
+        let cursor = FlushCursor {
+            last_flushed_at: String::new(),
+            partition: self.project_id.clone(),
+        };
+        self.storage.flush_since(&cursor)?;
+        Ok(())
+    }
+
+    pub fn project_id(&self) -> &str {
+        &self.project_id
+    }
+
+    pub fn snapshot(
+        &self,
+    ) -> std::sync::RwLockReadGuard<'_, petgraph::Graph<NodeWeight, EdgeWeight>> {
+        self.hot_graph.read().unwrap()
+    }
+
+    /// Serialise the current state for blob storage (R2, S3, etc.).
+    /// Clones the graph and claims — use sparingly, not on every iteration.
+    pub fn to_snapshot(&self) -> StorageSnapshot {
+        let g = self.hot_graph.read().unwrap();
+        StorageSnapshot {
+            graph: g.clone(),
+            claims: self.claims.to_snapshot(),
+            project_id: self.project_id.clone(),
+        }
+    }
+
+    /// Reconstruct a `DefaultBlackboard` from a previously saved snapshot.
+    /// Creates a fresh `PetgraphStorage + NullStorage` pair; the caller may
+    /// replace the cold backend via `with_storage()` afterward.
+    pub fn from_snapshot(snapshot: StorageSnapshot) -> Self {
+        let graph = Arc::new(RwLock::new(snapshot.graph));
+        let hot = Box::new(PetgraphStorage::with_shared_graph(
+            Arc::clone(&graph),
+            &snapshot.project_id,
+        ));
+        let cold = Box::new(NullStorage);
+        let storage = DualStorage::new(hot, cold);
+        Self {
+            storage,
+            hot_graph: graph,
+            claims: ClaimsTracker::from_snapshot(snapshot.claims),
+            project_id: snapshot.project_id,
+        }
+    }
+}
+
+impl Default for DefaultBlackboard {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl GraphRead for DefaultBlackboard {
+    fn node_indices(&self) -> Vec<NodeIndex> {
+        let g = self.hot_graph.read().unwrap();
+        petgraph::Graph::node_indices(&*g).collect()
+    }
+
+    fn edge_indices(&self) -> Vec<EdgeIndex> {
+        let g = self.hot_graph.read().unwrap();
+        petgraph::Graph::edge_indices(&*g).collect()
+    }
+
+    fn node_weight(&self, idx: NodeIndex) -> Option<NodeWeight> {
+        let g = self.hot_graph.read().unwrap();
+        petgraph::Graph::node_weight(&*g, idx).cloned()
+    }
+
+    fn edge_weight(&self, idx: EdgeIndex) -> Option<EdgeWeight> {
+        let g = self.hot_graph.read().unwrap();
+        petgraph::Graph::edge_weight(&*g, idx).cloned()
+    }
+
+    fn edge_endpoints(&self, idx: EdgeIndex) -> Option<(NodeIndex, NodeIndex)> {
+        let g = self.hot_graph.read().unwrap();
+        petgraph::Graph::edge_endpoints(&*g, idx)
+    }
+
+    fn neighbors_undirected(&self, idx: NodeIndex) -> Vec<NodeIndex> {
+        let g = self.hot_graph.read().unwrap();
+        petgraph::Graph::neighbors_undirected(&*g, idx).collect()
+    }
+
+    fn edges_directed(&self, idx: NodeIndex, outgoing: bool) -> Vec<EdgeIndex> {
+        let g = self.hot_graph.read().unwrap();
+        let dir = if outgoing {
+            petgraph::Direction::Outgoing
+        } else {
+            petgraph::Direction::Incoming
+        };
+        petgraph::Graph::edges_directed(&*g, idx, dir)
+            .map(|e| e.id())
+            .collect()
+    }
+}
+
+impl GraphWrite for DefaultBlackboard {
+    fn add_node(&mut self, weight: NodeWeight) -> NodeIndex {
+        let mut g = self.hot_graph.write().unwrap();
+        g.add_node(weight)
+    }
+
+    fn add_edge(&mut self, from: NodeIndex, to: NodeIndex, weight: EdgeWeight) -> EdgeIndex {
+        let mut g = self.hot_graph.write().unwrap();
+        g.add_edge(from, to, weight)
+    }
+}
+
+impl Blackboard for DefaultBlackboard {
+    fn project_id(&self) -> &str {
+        &self.project_id
+    }
+
+    fn submit_fact(&mut self, fact: &Fact) -> Result<FihHash, BlackboardError> {
+        self.storage.submit_fact(fact)
+    }
+
+    fn submit_hint(&mut self, hint: &Hint) -> Result<(), BlackboardError> {
+        self.storage.submit_hint(hint)
+    }
+
+    fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+        self.storage.submit_intent(intent)
+    }
+
+    fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        self.claims.try_claim(intent_id, agent)?;
+        let mut guard = ClaimGuard::new(&mut self.claims, intent_id.to_string(), agent.to_string());
+        self.storage.claim_intent(intent_id, agent)?;
+        guard.commit();
+        Ok(())
+    }
+
+    fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        self.claims.verify_owner(intent_id, agent)?;
+        self.storage.heartbeat(intent_id, agent)
+    }
+
+    fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        self.claims.release(intent_id, agent)?;
+        self.storage.release_intent(intent_id, agent)
+    }
+
+    fn conclude_intent(
+        &mut self,
+        intent_id: &str,
+        result: &serde_json::Value,
+    ) -> Result<Fact, BlackboardError> {
+        self.claims.remove(intent_id);
+        self.storage.conclude_intent(intent_id, result)
+    }
+
+    fn read_state(&self) -> BoardState {
+        self.storage.read_state()
+    }
+}

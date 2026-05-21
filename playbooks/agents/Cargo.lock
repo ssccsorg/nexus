@@ -247,6 +247,7 @@ dependencies = [
  "cyrs-plan",
  "cyrs-syntax",
  "nexus-model",
+ "nexus-storage-petgraph",
  "petgraph",
  "serde",
  "serde_json",
@@ -270,6 +271,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexus-storage-petgraph"
+version = "0.1.0"
+dependencies = [
+ "nexus-model",
+ "petgraph",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "petgraph"
 version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -277,6 +288,8 @@ checksum = "b4c5cc86750666a3ed20bdaf5ca2a0344f9c67674cae0515bec2da16fbaa47db"
 dependencies = [
  "fixedbitset",
  "indexmap",
+ "serde",
+ "serde_derive",
 ]
 
 [[package]]

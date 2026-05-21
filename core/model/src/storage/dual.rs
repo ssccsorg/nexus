@@ -2,6 +2,7 @@ use super::aggregate::{ColdStorage, HotStorage};
 use super::evict::EvictCapable;
 use super::fact::FactCapable;
 use super::filter::{FilterCapable, StateFilter};
+use super::flush::{FlushCapable, FlushCursor, FlushResult};
 use super::hint::HintCapable;
 use super::intent::IntentCapable;
 use super::read::StorageRead;
@@ -53,7 +54,7 @@ impl StorageRead for DualStorage {
 impl FactCapable for DualStorage {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         let hash = self.hot.submit_fact(fact)?;
-        self.cold.submit_fact(fact)?;
+        let _ = self.cold.submit_fact(fact);
         Ok(hash)
     }
 }
@@ -61,25 +62,25 @@ impl FactCapable for DualStorage {
 impl IntentCapable for DualStorage {
     fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
         let hash = self.hot.submit_intent(intent)?;
-        self.cold.submit_intent(intent)?;
+        let _ = self.cold.submit_intent(intent);
         Ok(hash)
     }
 
     fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         self.hot.claim_intent(intent_id, agent)?;
-        self.cold.claim_intent(intent_id, agent)?;
+        let _ = self.cold.claim_intent(intent_id, agent);
         Ok(())
     }
 
     fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         self.hot.heartbeat(intent_id, agent)?;
-        self.cold.heartbeat(intent_id, agent)?;
+        let _ = self.cold.heartbeat(intent_id, agent);
         Ok(())
     }
 
     fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         self.hot.release_intent(intent_id, agent)?;
-        self.cold.release_intent(intent_id, agent)?;
+        let _ = self.cold.release_intent(intent_id, agent);
         Ok(())
     }
 
@@ -89,7 +90,7 @@ impl IntentCapable for DualStorage {
         result: &serde_json::Value,
     ) -> Result<Fact, BlackboardError> {
         let fact = self.hot.conclude_intent(intent_id, result)?;
-        self.cold.conclude_intent(intent_id, result)?;
+        let _ = self.cold.conclude_intent(intent_id, result);
         Ok(fact)
     }
 }
@@ -97,7 +98,7 @@ impl IntentCapable for DualStorage {
 impl HintCapable for DualStorage {
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         self.hot.submit_hint(hint)?;
-        self.cold.submit_hint(hint)?;
+        let _ = self.cold.submit_hint(hint);
         Ok(())
     }
 }
@@ -146,5 +147,13 @@ impl TimeRangeCapable for DualStorage {
             (None, Some(c)) => Some(c),
             (None, None) => None,
         }
+    }
+}
+
+// ── Flush: delegate to cold (cold is the durable target) ──
+
+impl FlushCapable for DualStorage {
+    fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
+        self.cold.flush_since(cursor)
     }
 }

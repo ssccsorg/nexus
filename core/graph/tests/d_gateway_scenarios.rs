@@ -3,11 +3,11 @@
 // Validates that the FIH protocol produces identical results when all
 // primitives cross a JSON serialization boundary (simulating a real HTTP
 // transport). Each scenario here mirrors its counterpart in z_scenarios.rs
-// but communicates through MockGateway instead of calling GraphBlackboard
+// but communicates through MockGateway instead of calling DefaultBlackboard
 // directly.
 
 use nexus_graph::mock_gateway::MockGateway;
-use nexus_graph::{Blackboard, Fact, FihHash, GraphBlackboard, Intent};
+use nexus_graph::{Blackboard, DefaultBlackboard, Fact, FihHash, Intent};
 
 /// Contradiction Detection — via MockGateway (JSON transport boundary).
 ///
@@ -19,7 +19,7 @@ use nexus_graph::{Blackboard, Fact, FihHash, GraphBlackboard, Intent};
 /// except all FIH operations pass through MockGateway's JSON round-trip.
 #[test]
 fn scenario_contradiction_detection_via_gateway() {
-    let mut gw = MockGateway::new(GraphBlackboard::new());
+    let mut gw = MockGateway::new(DefaultBlackboard::new());
 
     // Agent-A: ingests paper claiming GNNs work fine at 50 layers
     gw.submit_fact(&Fact {

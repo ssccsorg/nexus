@@ -25,9 +25,11 @@
 pub mod blackboard;
 pub mod error;
 pub mod fih;
+pub mod interner;
 pub mod storage;
 
 pub use blackboard::Blackboard;
 pub use error::BlackboardError;
 pub use fih::{BoardState, Fact, FihHash, Hint, Intent};
+pub use interner::Interner;
 pub use storage::*;

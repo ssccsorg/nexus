@@ -1,12 +1,12 @@
 // Parallel stress test: many threads concurrently reading/writing the Blackboard.
 //
-// Uses Arc<Mutex<GraphBlackboard>> to allow true concurrent access.
+// Uses Arc<Mutex<DefaultBlackboard>> to allow true concurrent access.
 // Tests FIH invariants under interleaved read-write contention:
 //   - submit_fact while another thread reads_state
 //   - claim_intent while another thread concludes
 //   - heartbeat while another thread releases
 
-use nexus_graph::{Blackboard, Fact, FihHash, GraphBlackboard, Intent};
+use nexus_graph::{Blackboard, DefaultBlackboard, Fact, FihHash, Intent};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicU64, Ordering},
@@ -63,7 +63,7 @@ impl ParallelAnt {
 
     /// Execute one random operation on the shared Blackboard.
     /// Returns (step_log, is_healthy) where is_healthy = false if ant should stop.
-    fn act(&mut self, bb: &mut GraphBlackboard, step: u64) -> String {
+    fn act(&mut self, bb: &mut DefaultBlackboard, step: u64) -> String {
         let action = self.rng.range(8);
 
         // Phase-biased: early steps submit facts, later steps do lifecycle
@@ -177,7 +177,7 @@ impl ParallelAnt {
 
 #[test]
 fn test_parallel_many_ants() {
-    let bb = Arc::new(Mutex::new(GraphBlackboard::new()));
+    let bb = Arc::new(Mutex::new(DefaultBlackboard::new()));
 
     // Seed initial facts
     {

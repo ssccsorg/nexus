@@ -1,24 +1,24 @@
 // nexus-storage-duckdb — DuckDB-backed cold storage for analytical queries.
 
+pub mod cypher_sql;
+
 use nexus_model::{
-    BoardState, Fact, FihHash, FilterCapable, Hint, Intent, PartitionData, ScanCapable,
-    StateFilter, StorageRead, TimeRangeCapable,
+    BoardState, CypherCapable, Fact, FihHash, FilterCapable, FlushCapable, FlushCursor,
+    FlushResult, Hint, Intent, PartitionData, ScanCapable, StateFilter, StorageRead,
+    TimeRangeCapable,
 };
 use std::ops::Range;
 use std::sync::Mutex;
 
-#[allow(dead_code)]
 pub struct DuckDbStorage {
     conn: Mutex<duckdb::Connection>,
     base_path: String,
-    facts_glob: String,
-    intents_glob: String,
-    hints_glob: String,
+    project_id: String,
 }
 
 #[allow(missing_docs)]
 impl DuckDbStorage {
-    pub fn new(base_path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(base_path: &str, project_id: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let conn = duckdb::Connection::open_in_memory()?;
         conn.execute_batch("LOAD parquet;")?;
 
@@ -45,9 +45,7 @@ impl DuckDbStorage {
         Ok(Self {
             conn: Mutex::new(conn),
             base_path: base_path.to_string(),
-            facts_glob,
-            intents_glob,
-            hints_glob,
+            project_id: project_id.to_string(),
         })
     }
 
@@ -226,7 +224,7 @@ impl DuckDbStorage {
 
 impl StorageRead for DuckDbStorage {
     fn project_id(&self) -> &str {
-        "cold"
+        &self.project_id
     }
     fn read_state(&self) -> BoardState {
         BoardState {
@@ -318,5 +316,66 @@ impl TimeRangeCapable for DuckDbStorage {
             .ok()
             .and_then(|mut s| s.query_row([], |row| row.get(0)).ok());
         min.zip(max).map(|(lo, hi)| lo..hi)
+    }
+}
+
+/// Read a column from a DuckDB row as a serde_json::Value.
+/// Tries string first, then integer, then float, then null.
+fn duckdb_column_to_value(row: &duckdb::Row, i: usize) -> serde_json::Value {
+    if let Ok(Some(s)) = row.get::<_, Option<String>>(i) {
+        return serde_json::Value::String(s);
+    }
+    if let Ok(Some(n)) = row.get::<_, Option<i64>>(i) {
+        return serde_json::Value::Number(n.into());
+    }
+    if let Ok(Some(f)) = row.get::<_, Option<f64>>(i)
+        && let Some(n) = serde_json::Number::from_f64(f)
+    {
+        return serde_json::Value::Number(n);
+    }
+    serde_json::Value::Null
+}
+
+impl FlushCapable for DuckDbStorage {
+    fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
+        // DuckDB reads from Parquet; flushing is writing to Parquet.
+        // For now, no-op — dual-write keeps cold in sync.
+        // TODO(#35): write hot data not yet in Parquet to the R2 Parquet path.
+        Ok(FlushResult {
+            records_flushed: 0,
+            new_cursor: cursor.clone(),
+        })
+    }
+}
+
+impl CypherCapable for DuckDbStorage {
+    fn query_plan(&self, plan: &serde_json::Value) -> Result<serde_json::Value, String> {
+        let cold_query: cypher_sql::ColdQuery = serde_json::from_value(plan.clone())
+            .map_err(|e| format!("DuckDbStorage CypherCapable: failed to parse ColdQuery: {e}"))?;
+        let sql = cypher_sql::translate(&cold_query)?;
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| format!("SQL prepare error: {e}"))?;
+        // For aggregate queries, always project "count" regardless of
+        // cold_query.projections (which may be empty).
+        let result_cols: Vec<String> = if cold_query.aggregate_count {
+            vec!["count".to_string()]
+        } else {
+            cold_query.projections.clone()
+        };
+
+        let rows = stmt
+            .query_map([], |row| {
+                let mut map = serde_json::Map::new();
+                for (i, col) in result_cols.iter().enumerate() {
+                    let val = duckdb_column_to_value(row, i);
+                    map.insert(col.clone(), val);
+                }
+                Ok(serde_json::Value::Object(map))
+            })
+            .map_err(|e| format!("SQL query error: {e}"))?;
+        let results: Vec<serde_json::Value> = rows.filter_map(|r| r.ok()).collect();
+        Ok(serde_json::Value::Array(results))
     }
 }

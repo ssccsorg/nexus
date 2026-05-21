@@ -4,7 +4,7 @@
 // all communicating through the FIH protocol via MockGateway's JSON boundary.
 
 use nexus_graph::mock_gateway::MockGateway;
-use nexus_graph::{Blackboard, BlackboardError, Fact, FihHash, GraphBlackboard, Intent};
+use nexus_graph::{Blackboard, BlackboardError, DefaultBlackboard, Fact, FihHash, Intent};
 
 // ── Scenario: Intermittent agent (Bluetooth / short-range radio) ─────────
 //
@@ -15,7 +15,7 @@ use nexus_graph::{Blackboard, BlackboardError, Fact, FihHash, GraphBlackboard, I
 
 #[test]
 fn scenario_intermittent_sensor_agent() {
-    let mut bb = GraphBlackboard::new();
+    let mut bb = DefaultBlackboard::new();
 
     // Session 1: agent connects, submits a fact, disconnects
     {
@@ -71,7 +71,7 @@ fn scenario_intermittent_sensor_agent() {
 
 #[test]
 fn scenario_satellite_burst_agent() {
-    let mut gw = MockGateway::new(GraphBlackboard::new());
+    let mut gw = MockGateway::new(DefaultBlackboard::new());
 
     let readings = [
         (
@@ -140,7 +140,7 @@ fn scenario_satellite_burst_agent() {
 
 #[test]
 fn scenario_browser_agent() {
-    let mut gw = MockGateway::new(GraphBlackboard::new());
+    let mut gw = MockGateway::new(DefaultBlackboard::new());
 
     gw.submit_fact(&Fact {
         id: FihHash("f_background".into()),
@@ -192,12 +192,12 @@ fn scenario_browser_agent() {
 // ── Scenario: Multi-language agents (heterogeneous clients) ─────────────
 //
 // Three agents built in different languages (simulated by separate
-// MockGateway instances sharing the same GraphBlackboard) communicate
+// MockGateway instances sharing the same DefaultBlackboard) communicate
 // through JSON. Each gateway drops its borrow before the next acquires it.
 
 #[test]
 fn scenario_multi_language_agents() {
-    let mut bb = GraphBlackboard::new();
+    let mut bb = DefaultBlackboard::new();
 
     // Python agent submits a fact
     {
@@ -285,7 +285,7 @@ fn scenario_multi_language_agents() {
 
 #[test]
 fn scenario_conflicting_claims() {
-    let mut gw = MockGateway::new(GraphBlackboard::new());
+    let mut gw = MockGateway::new(DefaultBlackboard::new());
 
     gw.submit_fact(&Fact {
         id: FihHash("f_conflict".into()),
