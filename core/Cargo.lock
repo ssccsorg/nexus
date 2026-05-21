@@ -496,7 +496,7 @@ dependencies = [
 [[package]]
 name = "cyrs-ast"
 version = "0.1.0"
-source = "git+https://github.com/phall1/cyrs#a987001a54a9f174eef8db92095ec010b8bfec9e"
+source = "git+https://github.com/phall1/cyrs#f81f404e7f06731d69f89f5134cbdd2d251053da"
 dependencies = [
  "cyrs-syntax",
  "smol_str",
@@ -505,7 +505,7 @@ dependencies = [
 [[package]]
 name = "cyrs-hir"
 version = "0.1.0"
-source = "git+https://github.com/phall1/cyrs#a987001a54a9f174eef8db92095ec010b8bfec9e"
+source = "git+https://github.com/phall1/cyrs#f81f404e7f06731d69f89f5134cbdd2d251053da"
 dependencies = [
  "cyrs-ast",
  "cyrs-syntax",
@@ -516,7 +516,7 @@ dependencies = [
 [[package]]
 name = "cyrs-plan"
 version = "0.1.0"
-source = "git+https://github.com/phall1/cyrs#a987001a54a9f174eef8db92095ec010b8bfec9e"
+source = "git+https://github.com/phall1/cyrs#f81f404e7f06731d69f89f5134cbdd2d251053da"
 dependencies = [
  "cyrs-hir",
  "indexmap",
@@ -526,7 +526,7 @@ dependencies = [
 [[package]]
 name = "cyrs-syntax"
 version = "0.1.0"
-source = "git+https://github.com/phall1/cyrs#a987001a54a9f174eef8db92095ec010b8bfec9e"
+source = "git+https://github.com/phall1/cyrs#f81f404e7f06731d69f89f5134cbdd2d251053da"
 dependencies = [
  "drop_bomb",
  "logos",
@@ -1340,17 +1340,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nexus-coordinator-blackboard"
-version = "0.1.0"
-dependencies = [
- "nexus-model",
- "nexus-storage-petgraph",
- "petgraph",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "nexus-graph"
 version = "0.1.0"
 dependencies = [
@@ -1358,7 +1347,6 @@ dependencies = [
  "cyrs-hir",
  "cyrs-plan",
  "cyrs-syntax",
- "nexus-coordinator-blackboard",
  "nexus-model",
  "nexus-storage-petgraph",
  "petgraph",

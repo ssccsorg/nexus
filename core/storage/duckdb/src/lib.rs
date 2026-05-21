@@ -1,8 +1,10 @@
 // nexus-storage-duckdb — DuckDB-backed cold storage for analytical queries.
 
+pub mod cypher_sql;
+
 use nexus_model::{
-    BoardState, Fact, FihHash, FilterCapable, Hint, Intent, PartitionData, ScanCapable,
-    StateFilter, StorageRead, TimeRangeCapable,
+    BoardState, CypherCapable, Fact, FihHash, FilterCapable, Hint, Intent, PartitionData,
+    ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
 };
 use std::ops::Range;
 use std::sync::Mutex;
@@ -318,5 +320,33 @@ impl TimeRangeCapable for DuckDbStorage {
             .ok()
             .and_then(|mut s| s.query_row([], |row| row.get(0)).ok());
         min.zip(max).map(|(lo, hi)| lo..hi)
+    }
+}
+
+impl CypherCapable for DuckDbStorage {
+    fn query_plan(&self, plan: &serde_json::Value) -> Result<serde_json::Value, String> {
+        let cold_query: cypher_sql::ColdQuery = serde_json::from_value(plan.clone())
+            .map_err(|e| format!("DuckDbStorage CypherCapable: failed to parse ColdQuery: {e}"))?;
+        let sql = cypher_sql::translate(&cold_query)?;
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| format!("SQL prepare error: {e}"))?;
+        let rows = stmt
+            .query_map([], |row| {
+                let mut map = serde_json::Map::new();
+                for (i, col) in cold_query.projections.iter().enumerate() {
+                    let val: Option<String> = row.get(i).ok();
+                    map.insert(
+                        col.clone(),
+                        val.map(serde_json::Value::String)
+                            .unwrap_or(serde_json::Value::Null),
+                    );
+                }
+                Ok(serde_json::Value::Object(map))
+            })
+            .map_err(|e| format!("SQL query error: {e}"))?;
+        let results: Vec<serde_json::Value> = rows.filter_map(|r| r.ok()).collect();
+        Ok(serde_json::Value::Array(results))
     }
 }

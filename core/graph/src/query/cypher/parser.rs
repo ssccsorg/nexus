@@ -247,6 +247,7 @@ fn resolve_expr(expr: &mut Expr, name_to_id: &HashMap<String, cyrs_hir::VarId>) 
         | Expr::String(_)
         | Expr::Var(_)
         | Expr::Param(_) => {}
+        _ => {}
     }
 }
 

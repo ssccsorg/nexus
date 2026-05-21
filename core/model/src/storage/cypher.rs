@@ -19,6 +19,10 @@ pub trait CypherCapable: StorageRead {
     }
 }
 
-/// Blanket impl: every StorageRead backend gets a default CypherCapable
-/// that returns an error. Concrete backends override this in #51.
-impl<T: StorageRead> CypherCapable for T {}
+// Concrete backends implement `CypherCapable` explicitly. Backends that
+// do not implement it fall through to the trait's default error-returning
+// method.
+//
+// There is intentionally no blanket impl: Rust does not allow overriding
+// blanket impls with concrete impls, so each backend must be registered
+// explicitly.

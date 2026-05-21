@@ -7,7 +7,7 @@ use petgraph::visit::EdgeRef;
 /// Access interface for petgraph queries (Cypher executor).
 ///
 /// All methods return owned values so the trait can be implemented for
-/// types behind a Mutex (e.g. GraphBlackboard).
+/// types behind a Mutex (e.g. DefaultBlackboard).
 pub trait GraphAccess {
     fn node_indices(&self) -> Vec<NodeIndex>;
     fn edge_indices(&self) -> Vec<EdgeIndex>;
