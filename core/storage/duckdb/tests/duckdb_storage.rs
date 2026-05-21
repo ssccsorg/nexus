@@ -1,4 +1,6 @@
-use nexus_model::{FilterCapable, ScanCapable, StateFilter, StorageRead, TimeRangeCapable};
+use nexus_model::{
+    CypherCapable, FilterCapable, ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
+};
 use nexus_storage_duckdb::DuckDbStorage;
 use tempfile::TempDir;
 
@@ -565,6 +567,89 @@ fn test_stress_1000_facts() {
     assert_eq!(state.facts.len(), 1000, "expected 1000 facts");
     assert!(state.facts.iter().any(|f| f.id.0 == "fact_0"));
     assert!(state.facts.iter().any(|f| f.id.0 == "fact_999"));
+}
+
+// ── Test 19: CypherCapable trait exists (placeholder for #51) ──────────
+
+#[test]
+fn test_cypher_capable_trait_exists() {
+    // CypherCapable is a placeholder trait for the future Cypher→DuckDB
+    // bridge (#51). Every StorageRead backend gets a default impl that
+    // returns an error. This test confirms the trait is wired correctly.
+    let tempdir = TempDir::new().unwrap();
+    std::fs::create_dir_all(tempdir.path().join("facts")).unwrap();
+    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+
+    // The trait exists and can be called (returns error until #51)
+    let result = storage.query_plan(&serde_json::json!({}));
+    assert!(result.is_err(), "CypherCapable is not yet implemented");
+    assert!(
+        result.unwrap_err().contains("CypherCapable"),
+        "error message should reference CypherCapable"
+    );
+}
+
+// ── Test 20: TimeRangeCapable routing demo (hot vs cold) ─────────────
+
+#[test]
+fn test_time_range_routing_demo() {
+    // This test demonstrates that TimeRangeCapable enables the SSCCS-Nexus
+    // planner to distinguish between hot (bounded range) and cold
+    // (universal / unbounded) storage backends for query routing.
+    //
+    // Future routing logic (#51):
+    //   if query_time_range ⊆ hot.time_range() → petgraph (µs)
+    //   else → DuckDB / Parquet (columnar scan)
+
+    let tempdir = TempDir::new().unwrap();
+    let facts_dir = tempdir.path().join("facts");
+    std::fs::create_dir_all(&facts_dir).unwrap();
+    let parquet_path = facts_dir.join("data.parquet").to_str().unwrap().to_string();
+
+    // Write facts with a known time span: 2026-06-01 to 2026-06-10
+    write_parquet(
+        "SELECT 'fact_1' as fact_id, 'src' as origin, '\"a\"' as content, 'tester' as creator, '2026-06-01' as created_at
+         UNION ALL
+         SELECT 'fact_10' as fact_id, 'src' as origin, '\"b\"' as content, 'tester' as creator, '2026-06-10' as created_at",
+        &parquet_path,
+    );
+
+    let cold = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+    let cold_range = cold.time_range();
+
+    assert!(
+        cold_range.is_some(),
+        "cold storage with data has a time range"
+    );
+    let cold_range = cold_range.unwrap();
+    assert_eq!(cold_range.start, "2026-06-01");
+    assert_eq!(cold_range.end, "2026-06-10");
+
+    // Simulate routing decision based on query vs backend time ranges.
+    // A query asking for data after 2026-06-05 would overlap with cold.
+    let query_since = "2026-06-05";
+    let query_until = "2026-06-15";
+
+    // Check if query range overlaps with cold range
+    let query_overlaps_cold =
+        query_since <= cold_range.end.as_str() && query_until >= cold_range.start.as_str();
+    assert!(
+        query_overlaps_cold,
+        "query range should overlap cold storage"
+    );
+
+    // A query asking for data before 2026-05-01 would NOT overlap with cold.
+    let early_query_until = "2026-05-01";
+    let early_overlaps = early_query_until >= cold_range.start.as_str();
+    assert!(
+        !early_overlaps,
+        "early query should not overlap cold storage"
+    );
+
+    // This is the routing logic that SSCCS-Nexus planner will use (#51):
+    //   if query ⊆ hot.time_range() → execute on petgraph
+    //   elif query ⊆ cold.time_range() → execute on DuckDB
+    //   else → hybrid (UNION ALL)
 }
 
 // ── Test 18: filter with limit and offset ───────────────────────────────
