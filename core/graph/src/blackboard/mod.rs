@@ -12,7 +12,7 @@ use nexus_storage_petgraph::{EdgeWeight, GraphRead, GraphWrite, NodeWeight, Petg
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
 /// Tracks intent claims — which agent has claimed which intent.
 ///
@@ -57,9 +57,8 @@ impl ClaimsTracker {
 /// RAII guard: releases claim on drop if not committed.
 /// Prevents stale claims when the caller panics or forgets to conclude.
 ///
-/// Holds a direct reference to `ClaimsTracker` (not the `Mutex`), so it
-/// can release without re-locking. The caller must already hold the
-/// `MutexGuard`.
+/// Holds `&mut ClaimsTracker` directly — no re-lock needed on drop
+/// since `DefaultBlackboard.claims` is lock-free.
 struct ClaimGuard<'a> {
     claims: &'a mut ClaimsTracker,
     intent_id: String,
@@ -109,10 +108,16 @@ impl ClaimsTracker {
 
 /// The single Blackboard struct. Combines a hot petgraph (for low-latency
 /// access and Cypher queries) with a cold storage backend for durability.
+///
+/// **Lock-free by default**: `claims` has no Mutex — single-worker ownership.
+/// `hot_graph` is shared with `PetgraphStorage` via `Arc<RwLock<>>` but
+/// the lock is internal to the storage layer, not this struct.
+///
+/// For multi-worker thread-safe access, wrap in `Arc<Mutex<DefaultBlackboard>>`.
 pub struct DefaultBlackboard {
     storage: DualStorage,
     hot_graph: Arc<RwLock<petgraph::Graph<NodeWeight, EdgeWeight>>>,
-    claims: Mutex<ClaimsTracker>,
+    claims: ClaimsTracker,
     project_id: String,
 }
 
@@ -129,7 +134,7 @@ impl DefaultBlackboard {
         Self {
             storage,
             hot_graph: graph,
-            claims: Mutex::new(ClaimsTracker::new()),
+            claims: ClaimsTracker::new(),
             project_id: "default".into(),
         }
     }
@@ -142,7 +147,7 @@ impl DefaultBlackboard {
         Self {
             storage,
             hot_graph,
-            claims: Mutex::new(ClaimsTracker::new()),
+            claims: ClaimsTracker::new(),
             project_id,
         }
     }
@@ -250,23 +255,20 @@ impl Blackboard for DefaultBlackboard {
     }
 
     fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let mut claims = self.claims.lock().unwrap();
-        claims.try_claim(intent_id, agent)?;
-        let mut guard = ClaimGuard::new(&mut *claims, intent_id.to_string(), agent.to_string());
+        self.claims.try_claim(intent_id, agent)?;
+        let mut guard = ClaimGuard::new(&mut self.claims, intent_id.to_string(), agent.to_string());
         self.storage.claim_intent(intent_id, agent)?;
         guard.commit();
         Ok(())
     }
 
     fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let claims = self.claims.lock().unwrap();
-        claims.verify_owner(intent_id, agent)?;
+        self.claims.verify_owner(intent_id, agent)?;
         self.storage.heartbeat(intent_id, agent)
     }
 
     fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let mut claims = self.claims.lock().unwrap();
-        claims.release(intent_id, agent)?;
+        self.claims.release(intent_id, agent)?;
         self.storage.release_intent(intent_id, agent)
     }
 
@@ -275,8 +277,7 @@ impl Blackboard for DefaultBlackboard {
         intent_id: &str,
         result: &serde_json::Value,
     ) -> Result<Fact, BlackboardError> {
-        let mut claims = self.claims.lock().unwrap();
-        claims.remove(intent_id);
+        self.claims.remove(intent_id);
         self.storage.conclude_intent(intent_id, result)
     }
 
