@@ -16,7 +16,7 @@ pub mod query;
 // Full path: nexus_graph::query::cypher or nexus_graph::cypher.
 pub use query::cypher;
 
-pub use blackboard::{DefaultBlackboard, StorageSnapshot};
+pub use blackboard::DefaultBlackboard;
 pub use nexus_model::{
     Blackboard, BlackboardError, BoardState, ColdStorage, CypherCapable, DualStorage, EvictCapable,
     Fact, FactCapable, FihHash, FihPersistence, FilterCapable, FlushCapable, Hint, HintCapable,
@@ -24,5 +24,5 @@ pub use nexus_model::{
     TimeRangeCapable,
 };
 pub use nexus_storage_petgraph::{
-    EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Record,
+    EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Record, StorageSnapshot,
 };

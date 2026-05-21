@@ -192,8 +192,8 @@ fn test_petgraph_time_range() {
 
 #[test]
 fn test_storage_snapshot_roundtrip() {
-    use nexus_graph::{DefaultBlackboard, StorageSnapshot};
     use nexus_graph::{Blackboard, Fact, FihHash, Intent};
+    use nexus_graph::{DefaultBlackboard, StorageSnapshot};
 
     // Build a blackboard with some data
     let mut bb = DefaultBlackboard::new();
@@ -227,8 +227,7 @@ fn test_storage_snapshot_roundtrip() {
     // Snapshot: serialise → deserialise
     let snapshot = bb.to_snapshot();
     let json = serde_json::to_vec(&snapshot).expect("serialise");
-    let restored_snapshot: StorageSnapshot =
-        serde_json::from_slice(&json).expect("deserialise");
+    let restored_snapshot: StorageSnapshot = serde_json::from_slice(&json).expect("deserialise");
     let mut restored = DefaultBlackboard::from_snapshot(restored_snapshot);
 
     // Verify: same facts, same intents
