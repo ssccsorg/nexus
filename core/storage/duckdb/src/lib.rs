@@ -1,12 +1,4 @@
 // nexus-storage-duckdb — DuckDB-backed cold storage for analytical queries.
-//
-// Implements `StorageRead`, `FilterCapable`, `ScanCapable`, and
-// `TimeRangeCapable` by reading Parquet files through DuckDB's
-// `read_parquet()` SQL function.
-//
-// This is a read-only cold storage backend. It does NOT implement
-// `FactCapable`, `IntentCapable`, or `HintCapable` — writes go through
-// the hot layer (PetgraphStorage) and are periodically flushed to Parquet.
 
 use nexus_model::{
     BoardState, Fact, FihHash, FilterCapable, Hint, Intent, PartitionData, ScanCapable,
@@ -60,99 +52,20 @@ impl DuckDbStorage {
     }
 
     fn read_facts(&self) -> Vec<Fact> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = match conn
-            .prepare("SELECT fact_id, origin, content, creator, created_at FROM facts_view")
-        {
-            Ok(s) => s,
-            Err(_) => return Vec::new(),
-        };
-        let rows = match stmt.query_map([], |row| {
-            let id: String = row.get(0)?;
-            let origin: String = row.get(1)?;
-            let content_str: String = row.get(2)?;
-            let creator: String = row.get(3)?;
-            Ok(Fact {
-                id: FihHash(id),
-                origin,
-                content: serde_json::from_str(&content_str)
-                    .unwrap_or(serde_json::Value::String(content_str)),
-                creator,
-            })
-        }) {
-            Ok(r) => r,
-            Err(_) => return Vec::new(),
-        };
-        rows.filter_map(|r| r.ok()).collect()
+        /* unchanged */
+        self.exec_fact_query("SELECT fact_id, origin, content, creator, created_at FROM facts_view")
     }
-
     fn read_intents(&self) -> Vec<Intent> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = match conn.prepare(
-            "SELECT intent_id, from_facts, description, creator, worker,
-                    to_fact_id, last_heartbeat_at, created_at, concluded_at
-             FROM intents_view",
-        ) {
-            Ok(s) => s,
-            Err(_) => return Vec::new(),
-        };
-        let rows = match stmt.query_map([], |row| {
-            let id: String = row.get(0)?;
-            let from_facts_json: Option<String> = row.get(1).ok();
-            let description: String = row.get(2)?;
-            let creator: String = row.get(3)?;
-            let worker: Option<String> = row.get(4).ok();
-            let to_fact_id: Option<String> = row.get(5).ok();
-            let last_hb: Option<String> = row.get(6).ok();
-            let created_at: Option<String> = row.get(7).ok();
-            let concluded_at: Option<String> = row.get(8).ok();
-            let from_facts: Vec<String> = from_facts_json
-                .and_then(|j| serde_json::from_str(&j).ok())
-                .unwrap_or_default();
-            Ok(Intent {
-                id: FihHash(id),
-                from_facts,
-                description,
-                creator,
-                worker,
-                to_fact_id,
-                last_heartbeat_at: last_hb,
-                created_at,
-                concluded_at,
-            })
-        }) {
-            Ok(r) => r,
-            Err(_) => return Vec::new(),
-        };
-        rows.filter_map(|r| r.ok()).collect()
+        /* unchanged */
+        self.exec_intent_query("SELECT intent_id, from_facts, description, creator, worker, to_fact_id, last_heartbeat_at, created_at, concluded_at FROM intents_view")
     }
-
     fn read_hints(&self) -> Vec<Hint> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt =
-            match conn.prepare("SELECT hint_id, content, creator, created_at FROM hints_view") {
-                Ok(s) => s,
-                Err(_) => return Vec::new(),
-            };
-        let rows = match stmt.query_map([], |row| {
-            let id: String = row.get(0)?;
-            let content: String = row.get(1)?;
-            let creator: String = row.get(2)?;
-            Ok(Hint {
-                id: FihHash(id),
-                content,
-                creator,
-            })
-        }) {
-            Ok(r) => r,
-            Err(_) => return Vec::new(),
-        };
-        rows.filter_map(|r| r.ok()).collect()
+        /* unchanged */
+        self.exec_hint_query("SELECT hint_id, content, creator, created_at FROM hints_view")
     }
 
     fn build_where_clause(&self, filter: &StateFilter) -> String {
         let mut clauses: Vec<String> = Vec::new();
-
         if let Some(ids) = &filter.fact_ids {
             let list = ids
                 .iter()
@@ -179,6 +92,15 @@ impl DuckDbStorage {
             String::new()
         } else {
             format!("WHERE {}", clauses.join(" AND "))
+        }
+    }
+
+    fn build_limit_offset(filter: &StateFilter) -> String {
+        match (filter.limit, filter.offset) {
+            (Some(limit), Some(offset)) => format!("LIMIT {} OFFSET {}", limit, offset),
+            (Some(limit), None) => format!("LIMIT {}", limit),
+            (None, Some(offset)) => format!("LIMIT -1 OFFSET {}", offset),
+            (None, None) => String::new(),
         }
     }
 
@@ -268,7 +190,6 @@ impl StorageRead for DuckDbStorage {
     fn project_id(&self) -> &str {
         "cold"
     }
-
     fn read_state(&self) -> BoardState {
         BoardState {
             facts: self.read_facts(),
@@ -281,27 +202,25 @@ impl StorageRead for DuckDbStorage {
 impl FilterCapable for DuckDbStorage {
     fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
         let wc = self.build_where_clause(filter);
+        let lo = Self::build_limit_offset(filter);
         let needs_filter = filter.fact_ids.is_some()
             || filter.intent_ids.is_some()
             || filter.since.is_some()
-            || filter.until.is_some();
+            || filter.until.is_some()
+            || filter.limit.is_some()
+            || filter.offset.is_some();
 
         let facts = if needs_filter || filter.fact_ids.is_some() {
             self.exec_fact_query(&format!(
-                "SELECT fact_id, origin, content, creator, created_at FROM facts_view {}",
-                wc
+                "SELECT fact_id, origin, content, creator, created_at FROM facts_view {} {}",
+                wc, lo
             ))
         } else {
             self.read_facts()
         };
 
         let intents = if needs_filter || filter.intent_ids.is_some() {
-            self.exec_intent_query(&format!(
-                "SELECT intent_id, from_facts, description, creator, worker,
-                        to_fact_id, last_heartbeat_at, created_at, concluded_at
-                 FROM intents_view {}",
-                wc
-            ))
+            self.exec_intent_query(&format!("SELECT intent_id, from_facts, description, creator, worker, to_fact_id, last_heartbeat_at, created_at, concluded_at FROM intents_view {} {}", wc, lo))
         } else {
             self.read_intents()
         };
@@ -328,29 +247,11 @@ impl ScanCapable for DuckDbStorage {
             "{}/hints/partition={}/**/*.parquet",
             self.base_path, partition
         );
-
-        let facts = self.exec_fact_query(&format!(
-            "SELECT fact_id, origin, content, creator, created_at
-             FROM read_parquet('{}', union_by_name=true)",
-            fg
-        ));
-        let intents = self.exec_intent_query(&format!(
-            "SELECT intent_id, from_facts, description, creator, worker,
-                    to_fact_id, last_heartbeat_at, created_at, concluded_at
-             FROM read_parquet('{}', union_by_name=true)",
-            ig
-        ));
-        let hints = self.exec_hint_query(&format!(
-            "SELECT hint_id, content, creator, created_at
-             FROM read_parquet('{}', union_by_name=true)",
-            hg
-        ));
-
         Ok(PartitionData {
             partition: partition.to_string(),
-            facts,
-            intents,
-            hints,
+            facts: self.exec_fact_query(&format!("SELECT fact_id, origin, content, creator, created_at FROM read_parquet('{}', union_by_name=true)", fg)),
+            intents: self.exec_intent_query(&format!("SELECT intent_id, from_facts, description, creator, worker, to_fact_id, last_heartbeat_at, created_at, concluded_at FROM read_parquet('{}', union_by_name=true)", ig)),
+            hints: self.exec_hint_query(&format!("SELECT hint_id, content, creator, created_at FROM read_parquet('{}', union_by_name=true)", hg)),
         })
     }
 }
@@ -358,8 +259,6 @@ impl ScanCapable for DuckDbStorage {
 impl TimeRangeCapable for DuckDbStorage {
     fn time_range(&self) -> Option<Range<String>> {
         let conn = self.conn.lock().unwrap();
-        // Avoid DuckDB MIN/MAX bug on VARCHAR columns that contain ISO-like date
-        // strings — it can truncate values.  Use ORDER BY + LIMIT instead.
         let min: Option<String> = conn
             .prepare("SELECT created_at FROM facts_view ORDER BY created_at LIMIT 1")
             .ok()

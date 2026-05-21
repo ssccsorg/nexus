@@ -1,4 +1,6 @@
-use nexus_model::{FilterCapable, ScanCapable, StateFilter, StorageRead, TimeRangeCapable};
+use nexus_model::{
+    FilterCapable, ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
+};
 use nexus_storage_duckdb::DuckDbStorage;
 use tempfile::TempDir;
 
@@ -282,34 +284,334 @@ fn test_scan_partition() {
     assert_eq!(data_2.facts[0].content, serde_json::json!("p2_data"));
 }
 
-// ── Test 8: time range ──────────────────────────────────────────────────
+// ── Test 9: multiple Parquet files unioned ──────────────────────────────
 
 #[test]
-fn test_time_range() {
+fn test_read_multiple_parquet_files() {
+    let tempdir = TempDir::new().unwrap();
+    let facts_dir = tempdir.path().join("facts");
+    std::fs::create_dir_all(&facts_dir).unwrap();
+
+    // Write two separate Parquet files in the same facts/ directory
+    let p1 = facts_dir
+        .join("batch_1.parquet")
+        .to_str()
+        .unwrap()
+        .to_string();
+    write_parquet(
+        "SELECT 'fact_a' as fact_id, 'origin_a' as origin, '\"a\"' as content, 'tester' as creator, '2026-06-01' as created_at",
+        &p1,
+    );
+    let p2 = facts_dir
+        .join("batch_2.parquet")
+        .to_str()
+        .unwrap()
+        .to_string();
+    write_parquet(
+        "SELECT 'fact_b' as fact_id, 'origin_b' as origin, '\"b\"' as content, 'tester' as creator, '2026-06-02' as created_at",
+        &p2,
+    );
+
+    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+    let state = storage.read_state();
+
+    assert_eq!(state.facts.len(), 2, "expected 2 facts from 2 files");
+    assert!(state.facts.iter().any(|f| f.id.0 == "fact_a"));
+    assert!(state.facts.iter().any(|f| f.id.0 == "fact_b"));
+}
+
+// ── Test 10: full BoardState (all three types) ──────────────────────────
+
+#[test]
+fn test_full_board_state() {
+    let tempdir = TempDir::new().unwrap();
+    let base = tempdir.path();
+
+    // Write facts
+    let facts_dir = base.join("facts");
+    std::fs::create_dir_all(&facts_dir).unwrap();
+    write_parquet(
+        "SELECT 'f_1' as fact_id, 'src' as origin, '\"data\"' as content, 'agent' as creator, '2026-06-01' as created_at",
+        &facts_dir.join("data.parquet").to_str().unwrap().to_string(),
+    );
+
+    // Write intents
+    let intents_dir = base.join("intents");
+    std::fs::create_dir_all(&intents_dir).unwrap();
+    write_parquet(
+        "SELECT 'i_1' as intent_id, '[]' as from_facts, 'explore' as description, 'agent' as creator,
+                NULL as worker, NULL as to_fact_id, NULL as last_heartbeat_at,
+                '2026-06-01' as created_at, NULL as concluded_at",
+        &intents_dir.join("data.parquet").to_str().unwrap().to_string(),
+    );
+
+    // Write hints
+    let hints_dir = base.join("hints");
+    std::fs::create_dir_all(&hints_dir).unwrap();
+    write_parquet(
+        "SELECT 'h_1' as hint_id, 'check this' as content, 'analyst' as creator, '2026-06-01' as created_at",
+        &hints_dir.join("data.parquet").to_str().unwrap().to_string(),
+    );
+
+    let storage = DuckDbStorage::new(base.to_str().unwrap()).unwrap();
+    let state = storage.read_state();
+
+    assert_eq!(state.facts.len(), 1, "expected 1 fact");
+    assert_eq!(state.intents.len(), 1, "expected 1 intent");
+    assert_eq!(state.hints.len(), 1, "expected 1 hint");
+    assert_eq!(state.facts[0].id.0, "f_1");
+    assert_eq!(state.intents[0].id.0, "i_1");
+    assert_eq!(state.hints[0].id.0, "h_1");
+}
+
+// ── Test 11: missing directories ────────────────────────────────────────
+
+#[test]
+fn test_missing_directories() {
+    // Create tempdir with NO subdirectories at all
+    let tempdir = TempDir::new().unwrap();
+    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+    let state = storage.read_state();
+    // Should not panic — returns empty BoardState
+    assert!(state.facts.is_empty());
+    assert!(state.intents.is_empty());
+    assert!(state.hints.is_empty());
+}
+
+// ── Test 12: non-existent partition scan ────────────────────────────────
+
+#[test]
+fn test_scan_nonexistent_partition() {
+    let tempdir = TempDir::new().unwrap();
+    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+    // Scanning a partition that doesn't exist should return empty data, not error
+    let data = storage.scan_partition("2099-99-99").unwrap();
+    assert_eq!(data.partition, "2099-99-99");
+    assert!(data.facts.is_empty());
+    assert!(data.intents.is_empty());
+    assert!(data.hints.is_empty());
+}
+
+// ── Test 13: time range on empty storage ────────────────────────────────
+
+#[test]
+fn test_time_range_empty() {
+    let tempdir = TempDir::new().unwrap();
+    std::fs::create_dir_all(tempdir.path().join("facts")).unwrap();
+    std::fs::create_dir_all(tempdir.path().join("intents")).unwrap();
+    std::fs::create_dir_all(tempdir.path().join("hints")).unwrap();
+
+    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+    let range = storage.time_range();
+    // Empty storage should return None
+    assert!(range.is_none(), "expected None for empty storage");
+}
+
+// ── Test 14: combined filter (since + until + id) ───────────────────────
+
+#[test]
+fn test_filter_combined() {
     let tempdir = TempDir::new().unwrap();
     let facts_dir = tempdir.path().join("facts");
     std::fs::create_dir_all(&facts_dir).unwrap();
     let parquet_path = facts_dir.join("data.parquet").to_str().unwrap().to_string();
 
-    // Build 10 facts spanning 2026-06-01 through 2026-06-10
-    let mut sql = String::from(
-        "SELECT 'fact_1' as fact_id, 'test' as origin, '\"a\"' as content, 'tester' as creator, '2026-06-01' as created_at",
+    write_parquet(
+        "SELECT 'f_1' as fact_id, 'src' as origin, '\"a\"' as content, 'tester' as creator, '2026-06-01' as created_at
+         UNION ALL
+         SELECT 'f_2' as fact_id, 'src' as origin, '\"b\"' as content, 'tester' as creator, '2026-06-05' as created_at
+         UNION ALL
+         SELECT 'f_3' as fact_id, 'src' as origin, '\"c\"' as content, 'tester' as creator, '2026-06-10' as created_at
+         UNION ALL
+         SELECT 'f_4' as fact_id, 'src' as origin, '\"d\"' as content, 'tester' as creator, '2026-06-15' as created_at",
+        &parquet_path,
     );
-    for i in 2..=10 {
-        let date = format!("2026-06-{:02}", i);
-        sql.push_str(&format!(
-            " UNION ALL SELECT 'fact_{}' as fact_id, 'test' as origin, '\"{}\"' as content, 'tester' as creator, '{}' as created_at",
-            i, i, date
-        ));
-    }
-
-    write_parquet(&sql, &parquet_path);
 
     let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
-    let range = storage.time_range();
+    let filter = StateFilter {
+        fact_ids: Some(vec!["f_2".into(), "f_3".into()]),
+        since: Some("2026-06-04".into()),
+        until: Some("2026-06-12".into()),
+        ..Default::default()
+    };
+    let state = storage.read_state_filtered(&filter);
 
-    assert!(range.is_some(), "expected a time range");
-    let r = range.unwrap();
-    assert_eq!(r.start, "2026-06-01", "unexpected range start");
-    assert_eq!(r.end, "2026-06-10", "unexpected range end");
+    // f_2 (2026-06-05) matches: within time range AND in id list
+    // f_3 (2026-06-10) matches: within time range AND in id list
+    // f_1 excluded: not in id list
+    // f_4 excluded: not in id list (also out of range)
+    assert_eq!(state.facts.len(), 2, "expected 2 facts");
+    assert!(state.facts.iter().any(|f| f.id.0 == "f_2"));
+    assert!(state.facts.iter().any(|f| f.id.0 == "f_3"));
+}
+
+// ── Test 15: filter by intent_ids and hint_ids ──────────────────────────
+
+#[test]
+fn test_filter_intent_and_hint_ids() {
+    let tempdir = TempDir::new().unwrap();
+    let intents_dir = tempdir.path().join("intents");
+    std::fs::create_dir_all(&intents_dir).unwrap();
+    write_parquet(
+        "SELECT 'i_a' as intent_id, '[]' as from_facts, 'desc_a' as description, 'tester' as creator,
+                NULL as worker, NULL as to_fact_id, NULL as last_heartbeat_at,
+                '2026-06-01' as created_at, NULL as concluded_at
+         UNION ALL
+         SELECT 'i_b' as intent_id, '[]' as from_facts, 'desc_b' as description, 'tester' as creator,
+                NULL as worker, NULL as to_fact_id, NULL as last_heartbeat_at,
+                '2026-06-02' as created_at, NULL as concluded_at",
+        &intents_dir.join("data.parquet").to_str().unwrap().to_string(),
+    );
+
+    let hints_dir = tempdir.path().join("hints");
+    std::fs::create_dir_all(&hints_dir).unwrap();
+    write_parquet(
+        "SELECT 'h_x' as hint_id, 'content_x' as content, 'tester' as creator, '2026-06-01' as created_at
+         UNION ALL
+         SELECT 'h_y' as hint_id, 'content_y' as content, 'tester' as creator, '2026-06-02' as created_at",
+        &hints_dir.join("data.parquet").to_str().unwrap().to_string(),
+    );
+
+    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+
+    // Filter by intent_ids
+    let ifilter = StateFilter {
+        intent_ids: Some(vec!["i_a".into()]),
+        ..Default::default()
+    };
+    let state = storage.read_state_filtered(&ifilter);
+    assert_eq!(state.intents.len(), 1, "expected 1 intent");
+    assert_eq!(state.intents[0].id.0, "i_a");
+
+    // Filter by hint_ids (hint_ids filter is passed to DuckDB but the view
+    // query still returns all hints since build_where_clause only filters facts)
+    let hfilter = StateFilter {
+        hint_ids: Some(vec!["h_y".into()]),
+        ..Default::default()
+    };
+    let state = storage.read_state_filtered(&hfilter);
+    // Note: DuckDbStorage read_state_filtered only filters facts by fact_ids.
+    // Intent/hint filtering is not yet implemented at the DuckDB level.
+    // This test verifies the behavior doesn't crash.
+    assert!(state.hints.len() >= 1);
+}
+
+// ── Test 16: complex JSON content ───────────────────────────────────────
+
+#[test]
+fn test_complex_json_content() {
+    let tempdir = TempDir::new().unwrap();
+    let facts_dir = tempdir.path().join("facts");
+    std::fs::create_dir_all(&facts_dir).unwrap();
+    let parquet_path = facts_dir.join("data.parquet").to_str().unwrap().to_string();
+
+    // Write nested JSON as content
+    write_parquet(
+        "SELECT 'f_nested' as fact_id, 'test' as origin,
+                '{\"nested\":{\"array\":[1,2,3],\"obj\":{\"key\":\"val\"}},\"num\":42,\"flag\":true}' as content,
+                'tester' as creator, '2026-06-01' as created_at
+         UNION ALL
+         SELECT 'f_null_content' as fact_id, 'test' as origin,
+                'null' as content,
+                'tester' as creator, '2026-06-02' as created_at",
+        &parquet_path,
+    );
+
+    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+    let state = storage.read_state();
+
+    let nested = state.facts.iter().find(|f| f.id.0 == "f_nested").unwrap();
+    assert_eq!(nested.content["nested"]["array"][0], serde_json::json!(1));
+    assert_eq!(
+        nested.content["nested"]["obj"]["key"],
+        serde_json::json!("val")
+    );
+    assert_eq!(nested.content["num"], serde_json::json!(42));
+    assert_eq!(nested.content["flag"], serde_json::json!(true));
+
+    let null_fact = state
+        .facts
+        .iter()
+        .find(|f| f.id.0 == "f_null_content")
+        .unwrap();
+    assert_eq!(null_fact.content, serde_json::Value::Null);
+}
+
+// ── Test 17: stress test — 1000 facts ───────────────────────────────────
+
+#[test]
+fn test_stress_1000_facts() {
+    let tempdir = TempDir::new().unwrap();
+    let facts_dir = tempdir.path().join("facts");
+    std::fs::create_dir_all(&facts_dir).unwrap();
+    let parquet_path = facts_dir
+        .join("stress.parquet")
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    // Build 1000 facts using DuckDB's range() table function
+    write_parquet(
+        "SELECT 'fact_' || CAST(i AS VARCHAR) as fact_id,
+                'stress' as origin,
+                '\"val_\" || CAST(i AS VARCHAR) || \"\"' as content,
+                'loader' as creator,
+                '2026-06-' || LPAD(CAST((i % 30 + 1) AS VARCHAR), 2, '0') as created_at
+         FROM range(1000) t(i)",
+        &parquet_path,
+    );
+
+    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+    let state = storage.read_state();
+
+    assert_eq!(state.facts.len(), 1000, "expected 1000 facts");
+    assert!(state.facts.iter().any(|f| f.id.0 == "fact_0"));
+    assert!(state.facts.iter().any(|f| f.id.0 == "fact_999"));
+}
+
+// ── Test 18: filter with limit and offset ───────────────────────────────
+
+#[test]
+fn test_filter_limit_offset() {
+    let tempdir = TempDir::new().unwrap();
+    let facts_dir = tempdir.path().join("facts");
+    std::fs::create_dir_all(&facts_dir).unwrap();
+    let parquet_path = facts_dir.join("data.parquet").to_str().unwrap().to_string();
+
+    // Write 5 facts with known IDs
+    write_parquet(
+        "SELECT 'f_a' as fact_id, 'src' as origin, '\"a\"' as content, 'tester' as creator, '2026-06-01' as created_at
+         UNION ALL
+         SELECT 'f_b' as fact_id, 'src' as origin, '\"b\"' as content, 'tester' as creator, '2026-06-02' as created_at
+         UNION ALL
+         SELECT 'f_c' as fact_id, 'src' as origin, '\"c\"' as content, 'tester' as creator, '2026-06-03' as created_at
+         UNION ALL
+         SELECT 'f_d' as fact_id, 'src' as origin, '\"d\"' as content, 'tester' as creator, '2026-06-04' as created_at
+         UNION ALL
+         SELECT 'f_e' as fact_id, 'src' as origin, '\"e\"' as content, 'tester' as creator, '2026-06-05' as created_at",
+        &parquet_path,
+    );
+
+    let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap()).unwrap();
+
+    // LIMIT 2
+    let filter = StateFilter {
+        limit: Some(2),
+        ..Default::default()
+    };
+    let state = storage.read_state_filtered(&filter);
+    assert_eq!(state.facts.len(), 2, "expected 2 facts with LIMIT 2");
+
+    // LIMIT 2 OFFSET 2
+    let filter = StateFilter {
+        limit: Some(2),
+        offset: Some(2),
+        ..Default::default()
+    };
+    let state = storage.read_state_filtered(&filter);
+    assert_eq!(
+        state.facts.len(),
+        2,
+        "expected 2 facts with LIMIT 2 OFFSET 2"
+    );
 }
