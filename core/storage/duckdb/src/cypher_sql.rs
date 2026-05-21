@@ -236,7 +236,7 @@ pub fn translate(query: &ColdQuery) -> Result<String, String> {
     let mut sql = format!("{cte_prefix}{select_clause} FROM {table}");
 
     // 4. WHERE clause (regular filters + json filters + vector filters)
-    let where_parts = build_where_clause(query, &table)?;
+    let where_parts = build_where_clause(query, table)?;
 
     if !where_parts.is_empty() {
         sql = format!("{} WHERE {}", sql, where_parts.join(" AND "));
@@ -425,16 +425,16 @@ fn build_order_clause(query: &ColdQuery) -> Result<Option<String>, String> {
     }
 
     // Vector score ordering
-    if let Some(vs) = &query.vector_score {
-        if vs.sort_by_score {
-            let alias = vs.alias.as_deref().unwrap_or("score");
-            let dir = match vs.metric.to_lowercase().as_str() {
-                "cosine" => "DESC",   // higher cosine = more similar
-                "euclidean" => "ASC", // smaller distance = more similar
-                _ => "DESC",
-            };
-            order_parts.push(format!("{} {}", quote_ident(alias), dir));
-        }
+    if let Some(vs) = &query.vector_score
+        && vs.sort_by_score
+    {
+        let alias = vs.alias.as_deref().unwrap_or("score");
+        let dir = match vs.metric.to_lowercase().as_str() {
+            "cosine" => "DESC",   // higher cosine = more similar
+            "euclidean" => "ASC", // smaller distance = more similar
+            _ => "DESC",
+        };
+        order_parts.push(format!("{} {}", quote_ident(alias), dir));
     }
 
     if order_parts.is_empty() {
@@ -496,12 +496,22 @@ fn translate_filter(f: &ColdFilter, table: &str) -> Result<String, String> {
             ))
         }
         "FtsMatchAnd" => {
-            // Multi-term AND match: each term must appear.
-            // Uses DuckDB's fts_main_{table}.match with phrase query.
-            let fts_table = fts_index_name(table);
-            Ok(format!(
-                "{col} IN (SELECT doc_id FROM {fts_table} WHERE {fts_table}.match({val_str}))"
-            ))
+            // Multi-term AND match: every term must appear somewhere.
+            // Splits terms and uses CONTAINS with AND (no FTS index required).
+            let terms = extract_terms(&val_str);
+            if terms.len() <= 1 {
+                return Ok(format!("CONTAINS({col}, {val_str})"));
+            }
+            let and_clauses: Vec<String> = terms
+                .iter()
+                .map(|t| {
+                    format!(
+                        "CONTAINS({col}, {})",
+                        value_to_sql(&Value::String(t.to_string()))
+                    )
+                })
+                .collect();
+            Ok(format!("({})", and_clauses.join(" AND ")))
         }
         "FtsMatchOr" => {
             // Multi-term OR match: any term suffices.
@@ -591,12 +601,26 @@ fn apply_limit_offset(query: &ColdQuery, sql: String) -> String {
 // ── Helper utilities ───────────────────────────────────────────────────────
 
 /// Quote a SQL identifier (column or alias) to handle reserved words.
+///
+/// Qualified names containing dots (e.g. `table.column`) are split and each
+/// segment is quoted separately, producing `"table"."column"`.
 fn quote_ident(name: &str) -> String {
-    // If already quoted, return as-is.
+    // If already fully quoted, return as-is.
     if name.starts_with('"') && name.ends_with('"') {
         return name.to_string();
     }
-    // If it contains special characters or is a reserved word, quote it.
+    // Qualified identifier: split on dot, quote each segment.
+    if name.contains('.') {
+        let parts: Vec<String> = name
+            .split('.')
+            .map(|seg| {
+                let seg = seg.trim();
+                quote_ident(seg)
+            })
+            .collect();
+        return parts.join(".");
+    }
+    // If it contains special characters, quote it.
     if name.chars().any(|c| !c.is_ascii_alphanumeric() && c != '_') {
         format!("\"{}\"", name.replace('"', "\"\""))
     } else {
@@ -1866,9 +1890,13 @@ mod tests {
     #[test]
     fn test_quote_ident_reserved_word() {
         assert_eq!(quote_ident("select"), "select"); // unreserved in DuckDB context
-        assert_eq!(quote_ident("a.b"), r#""a.b""#);
         assert_eq!(quote_ident("count(fact_id)"), r#""count(fact_id)""#);
         assert_eq!(quote_ident("simple"), "simple");
+        // Dotted qualified names: each segment quoted independently if needed.
+        assert_eq!(quote_ident("a.b"), "a.b"); // simple: no quotes needed
+        assert_eq!(quote_ident("a.b-c"), r#"a."b-c""#); // segment with hyphen needs quoting
+        assert_eq!(quote_ident("tbl.col"), "tbl.col");
+        assert_eq!(quote_ident("schema.table.col"), "schema.table.col");
     }
 
     #[test]
@@ -1886,5 +1914,322 @@ mod tests {
         assert_eq!(fts_index_name("intents_view"), "fts_main_intents");
         assert_eq!(fts_index_name("hints_view"), "fts_main_hints");
         assert_eq!(fts_index_name("custom_table"), "fts_main_custom_table");
+    }
+
+    // ── Gap coverage: untagged filter operators (Gt, Lt, Gte, Lte) ────────
+
+    #[test]
+    fn test_filter_gt() {
+        let mut q = base_query("Fact");
+        q.filters = vec![ColdFilter {
+            field: "score".into(),
+            op: "Gt".into(),
+            value: Value::Number(serde_json::Number::from(80)),
+        }];
+        let sql = translate(&q).unwrap();
+        assert_eq!(sql, "SELECT * FROM facts_view WHERE score > 80");
+    }
+
+    #[test]
+    fn test_filter_lt() {
+        let mut q = base_query("Fact");
+        q.filters = vec![ColdFilter {
+            field: "score".into(),
+            op: "Lt".into(),
+            value: Value::Number(serde_json::Number::from(50)),
+        }];
+        let sql = translate(&q).unwrap();
+        assert_eq!(sql, "SELECT * FROM facts_view WHERE score < 50");
+    }
+
+    #[test]
+    fn test_filter_gte() {
+        let mut q = base_query("Fact");
+        q.filters = vec![ColdFilter {
+            field: "score".into(),
+            op: "Gte".into(),
+            value: Value::Number(serde_json::Number::from(60)),
+        }];
+        let sql = translate(&q).unwrap();
+        assert_eq!(sql, "SELECT * FROM facts_view WHERE score >= 60");
+    }
+
+    #[test]
+    fn test_filter_lte() {
+        let mut q = base_query("Fact");
+        q.filters = vec![ColdFilter {
+            field: "score".into(),
+            op: "Lte".into(),
+            value: Value::Number(serde_json::Number::from(100)),
+        }];
+        let sql = translate(&q).unwrap();
+        assert_eq!(sql, "SELECT * FROM facts_view WHERE score <= 100");
+    }
+
+    #[test]
+    fn test_filter_in_non_array_error() {
+        let mut q = base_query("Fact");
+        q.filters = vec![ColdFilter {
+            field: "origin".into(),
+            op: "In".into(),
+            value: Value::String("not_an_array".into()),
+        }];
+        let result = translate(&q);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .contains("In filter requires an array value")
+        );
+    }
+
+    // ── Gap coverage: JSON filter Ne, Lt, Gte, Lte ────────────────────────
+
+    #[test]
+    fn test_json_filter_ne() {
+        let mut q = base_query("Fact");
+        q.json_filters = vec![JsonFilter {
+            column: "metadata".into(),
+            path: "$.status".into(),
+            op: "Ne".into(),
+            value: Value::String("archived".into()),
+        }];
+        let sql = translate(&q).unwrap();
+        assert_eq!(
+            sql,
+            "SELECT * FROM facts_view WHERE json_extract_string(metadata, '$.status') != 'archived'"
+        );
+    }
+
+    #[test]
+    fn test_json_filter_lt() {
+        let mut q = base_query("Fact");
+        q.json_filters = vec![JsonFilter {
+            column: "metadata".into(),
+            path: "$.priority".into(),
+            op: "Lt".into(),
+            value: Value::Number(serde_json::Number::from(3)),
+        }];
+        let sql = translate(&q).unwrap();
+        assert_eq!(
+            sql,
+            "SELECT * FROM facts_view WHERE json_extract_string(metadata, '$.priority') < 3"
+        );
+    }
+
+    #[test]
+    fn test_json_filter_gte() {
+        let mut q = base_query("Fact");
+        q.json_filters = vec![JsonFilter {
+            column: "metadata".into(),
+            path: "$.confidence".into(),
+            op: "Gte".into(),
+            value: Value::Number(serde_json::Number::from(90)),
+        }];
+        let sql = translate(&q).unwrap();
+        assert_eq!(
+            sql,
+            "SELECT * FROM facts_view WHERE json_extract_string(metadata, '$.confidence') >= 90"
+        );
+    }
+
+    #[test]
+    fn test_json_filter_lte() {
+        let mut q = base_query("Fact");
+        q.json_filters = vec![JsonFilter {
+            column: "metadata".into(),
+            path: "$.revision".into(),
+            op: "Lte".into(),
+            value: Value::Number(serde_json::Number::from(5)),
+        }];
+        let sql = translate(&q).unwrap();
+        assert_eq!(
+            sql,
+            "SELECT * FROM facts_view WHERE json_extract_string(metadata, '$.revision') <= 5"
+        );
+    }
+
+    #[test]
+    fn test_json_filter_in_non_array_error() {
+        let mut q = base_query("Fact");
+        q.json_filters = vec![JsonFilter {
+            column: "metadata".into(),
+            path: "$.category".into(),
+            op: "In".into(),
+            value: Value::String("not_an_array".into()),
+        }];
+        let result = translate(&q);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .contains("In filter requires an array value")
+        );
+    }
+
+    // ── Gap coverage: FtsMatchAnd (semantically distinct from FtsMatch) ────
+
+    #[test]
+    fn test_fts_match_and_multi_term() {
+        // FtsMatchAnd generates AND of CONTAINS per term (no FTS index needed).
+        let mut q = base_query("Fact");
+        q.filters = vec![ColdFilter {
+            field: "content".into(),
+            op: "FtsMatchAnd".into(),
+            value: Value::String("neural network transformer".into()),
+        }];
+        let sql = translate(&q).unwrap();
+        assert!(sql.contains("CONTAINS(content, 'neural') AND CONTAINS(content, 'network') AND CONTAINS(content, 'transformer')"));
+        assert!(!sql.contains("fts_main"));
+    }
+
+    #[test]
+    fn test_fts_match_and_single_term_falls_back() {
+        let mut q = base_query("Fact");
+        q.filters = vec![ColdFilter {
+            field: "content".into(),
+            op: "FtsMatchAnd".into(),
+            value: Value::String("single".into()),
+        }];
+        let sql = translate(&q).unwrap();
+        assert_eq!(
+            sql,
+            "SELECT * FROM facts_view WHERE CONTAINS(content, 'single')"
+        );
+    }
+
+    // ── Gap coverage: offset_without_limit ─────────────────────────────────
+
+    #[test]
+    fn test_offset_without_limit() {
+        let mut q = base_query("Fact");
+        q.projections = vec!["fact_id".into()];
+        q.offset = Some(10);
+        let sql = translate(&q).unwrap();
+        // DuckDB requires LIMIT with OFFSET; translator emits LIMIT 1000000
+        assert_eq!(
+            sql,
+            "SELECT fact_id FROM facts_view LIMIT 1000000 OFFSET 10"
+        );
+    }
+
+    // ── Gap coverage: SELECT DISTINCT * ────────────────────────────────────
+
+    #[test]
+    fn test_select_distinct_star() {
+        let mut q = base_query("Fact");
+        q.distinct = true;
+        // Empty projections + distinct = SELECT DISTINCT *
+        let sql = translate(&q).unwrap();
+        assert_eq!(sql, "SELECT DISTINCT * FROM facts_view");
+    }
+
+    // ── Gap coverage: window function unknown func pass-through ────────────
+
+    #[test]
+    fn test_window_unknown_func_passthrough() {
+        let mut q = base_query("Fact");
+        q.projections = vec!["fact_id".into()];
+        q.window_funcs = vec![WindowFuncDef {
+            func: "NTILE".into(),
+            column: Some("score".into()),
+            partition_by: vec!["origin".into()],
+            order_by: vec![],
+            alias: Some("quartile".into()),
+        }];
+        let sql = translate(&q).unwrap();
+        // Unknown func names pass through as-is: NTILE(score)
+        assert!(sql.contains("NTILE(score) OVER (PARTITION BY origin) AS quartile"));
+    }
+
+    // ── Gap coverage: CTE subquery error propagation ───────────────────────
+
+    #[test]
+    fn test_cte_subquery_error_propagation() {
+        let bad_sub = Box::new(ColdQuery {
+            label: "UnknownLabel".into(),
+            filters: vec![],
+            projections: vec![],
+            order_by: vec![],
+            limit: None,
+            offset: None,
+            distinct: false,
+            aggregate_count: false,
+            with_ctes: vec![],
+            group_by: vec![],
+            aggregates: vec![],
+            window_funcs: vec![],
+            json_projections: vec![],
+            json_filters: vec![],
+            vector_filters: vec![],
+            vector_score: None,
+        });
+
+        let mut q = base_query("Fact");
+        q.with_ctes = vec![CteDef {
+            alias: "bad_cte".into(),
+            subquery: bad_sub,
+        }];
+        let result = translate(&q);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unknown label"));
+    }
+
+    // ── Gap coverage: FTS on Hint table ───────────────────────────────────
+
+    #[test]
+    fn test_fts_match_hint() {
+        let mut q = base_query("Hint");
+        q.projections = vec!["hint_id".into()];
+        q.filters = vec![ColdFilter {
+            field: "content".into(),
+            op: "FtsMatch".into(),
+            value: Value::String("action item".into()),
+        }];
+        let sql = translate(&q).unwrap();
+        assert_eq!(
+            sql,
+            "SELECT hint_id FROM hints_view WHERE content IN (SELECT doc_id FROM fts_main_hints WHERE fts_main_hints.match('action item'))"
+        );
+    }
+
+    // ── Gap coverage: dotted column in GROUP BY ───────────────────────────
+
+    #[test]
+    fn test_group_by_dotted_column() {
+        // quote_ident splits on dot: each segment is quoted independently.
+        // Simple segments like "f", "origin", "fact_id" need no quoting.
+        let mut q = base_query("Fact");
+        q.projections = vec!["f.origin".into()];
+        q.group_by = vec!["f.origin".into()];
+        q.aggregates = vec![AggregateDef {
+            func: "COUNT".into(),
+            column: "f.fact_id".into(),
+            alias: Some("cnt".into()),
+        }];
+        let sql = translate(&q).unwrap();
+        assert_eq!(
+            sql,
+            "SELECT f.origin, COUNT(f.fact_id) AS cnt FROM facts_view GROUP BY f.origin"
+        );
+    }
+
+    // ── Gap coverage: distinct + aggregates ───────────────────────────────
+
+    #[test]
+    fn test_distinct_with_aggregates() {
+        let mut q = base_query("Fact");
+        q.projections = vec!["origin".into()];
+        q.distinct = true;
+        q.aggregates = vec![AggregateDef {
+            func: "COUNT".into(),
+            column: "fact_id".into(),
+            alias: Some("cnt".into()),
+        }];
+        let sql = translate(&q).unwrap();
+        assert_eq!(
+            sql,
+            "SELECT DISTINCT origin, COUNT(fact_id) AS cnt FROM facts_view"
+        );
     }
 }
