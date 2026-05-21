@@ -6,8 +6,7 @@
 
 use nexus_model::{
     Blackboard, BlackboardError, BoardState, ColdStorage, DualStorage, Fact, FactCapable, FihHash,
-    FlushCapable, FlushCursor, Hint, HintCapable, Intent, IntentCapable, NullStorage,
-    StorageRead,
+    FlushCapable, FlushCursor, Hint, HintCapable, Intent, IntentCapable, NullStorage, StorageRead,
 };
 use nexus_storage_petgraph::{
     EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, StorageSnapshot,
@@ -174,6 +173,9 @@ impl DefaultBlackboard {
     }
 
     pub fn flush(&self) -> Result<(), String> {
+        // Dual-write keeps cold in sync already; flush is a no-op today.
+        // TODO(#35): incremental flush — track cursor across invocations,
+        // export hot-only data to Parquet/R2 before evict_before().
         let cursor = FlushCursor {
             last_flushed_at: String::new(),
             partition: self.project_id.clone(),

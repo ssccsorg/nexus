@@ -8,8 +8,8 @@
 
 use nexus_model::{
     BlackboardError, BoardState, Fact, FactCapable, FihHash, FilterCapable, FlushCapable,
-    FlushCursor, FlushResult, Hint, HintCapable, Intent, IntentCapable, PartitionData,
-    ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
+    FlushCursor, FlushResult, Hint, HintCapable, Intent, IntentCapable, PartitionData, ScanCapable,
+    StateFilter, StorageRead, TimeRangeCapable,
 };
 use rusqlite::{Connection, params};
 use std::ops::Range;
