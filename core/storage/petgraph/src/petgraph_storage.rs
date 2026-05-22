@@ -465,10 +465,37 @@ impl TimeRangeCapable for PetgraphStorage {
 
 impl EvictCapable for PetgraphStorage {
     fn approximate_size(&self) -> usize {
-        // Estimate: minimum 256 bytes per node. Actual size depends on
-        // property map contents (especially JSON document content).
-        // TODO(#51): measure actual NodeWeight size instead of fixed factor.
-        self.graph.read().unwrap().node_count() * 256
+        let g = self.graph.read().unwrap();
+        let mut total = 0usize;
+        for idx in g.node_indices() {
+            if let Some(w) = g.node_weight(idx) {
+                // Base overhead: name + label + HashMap
+                total += w.name.len() + w.label.len() + 64;
+                for (k, v) in &w.properties {
+                    total += k.len();
+                    match v {
+                        serde_json::Value::String(s) => total += s.len(),
+                        serde_json::Value::Number(n) => total += n.to_string().len(),
+                        serde_json::Value::Array(arr) => total += arr.len() * 16,
+                        serde_json::Value::Object(obj) => total += obj.len() * 32,
+                        _ => total += 8,
+                    }
+                }
+            }
+        }
+        // Account for edges: each edge stores rel_type + properties
+        for idx in g.edge_indices() {
+            if let Some(e) = g.edge_weight(idx) {
+                total += e.rel_type.len() + 32;
+                for (k, v) in &e.properties {
+                    total += k.len() + 8;
+                    if let serde_json::Value::String(s) = v {
+                        total += s.len();
+                    }
+                }
+            }
+        }
+        total
     }
 
     fn evict_before(&self, before: &str) -> Result<u64, String> {
