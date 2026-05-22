@@ -1,5 +1,5 @@
 [package]
-name = "nexus-dispatcher"
+name = "nexus-process"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

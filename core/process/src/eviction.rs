@@ -1,4 +1,4 @@
-// nexus-dispatcher — Eviction: flush + evict_before cycle for hot memory management.
+// nexus-process — Eviction: flush + evict_before cycle for hot memory management.
 //
 // The eviction cycle bounds hot storage memory by:
 //   1. Checking `approximate_size()` against a threshold
@@ -11,7 +11,6 @@
 use nexus_graph::DefaultBlackboard;
 
 /// Run a single eviction check on the given blackboard.
-///
 /// Returns the number of evicted nodes.
 pub fn try_evict(bb: &DefaultBlackboard, threshold: usize) -> Result<u64, String> {
     let size = bb.storage_size();

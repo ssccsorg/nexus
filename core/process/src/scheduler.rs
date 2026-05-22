@@ -1,15 +1,10 @@
-// nexus-dispatcher — Scheduler: polling loop, Intent dispatch, heartbeat monitor.
+// nexus-process — Scheduler: polling loop, Intent dispatch, heartbeat monitor.
 //
 // The scheduler runs the OODA loop for a worker's partition:
 //   1. Poll `read_state()` for unclaimed Intents
 //   2. Dispatch unclaimed Intents to registered task handlers
 //   3. Monitor heartbeat TTL — release stale claims
 //   4. Trigger periodic eviction when memory exceeds threshold
-//
-// Usage (future):
-//   let mut sched = Scheduler::new(bb);
-//   sched.register(Box::new(GapDetector::new()));
-//   sched.run(iterations); // runs N OODA cycles
 
 use nexus_graph::{Blackboard, DefaultBlackboard};
 use std::time::Duration;
@@ -42,7 +37,6 @@ pub struct Scheduler<'a> {
 }
 
 impl<'a> Scheduler<'a> {
-    /// Create a new scheduler bound to a blackboard.
     pub fn new(bb: &'a mut DefaultBlackboard) -> Self {
         Self {
             bb,
