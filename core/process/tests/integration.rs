@@ -6,8 +6,8 @@
 //   3. Verify the gap detector submits Intents for orphaned facts
 
 use nexus_graph::{Blackboard, DefaultBlackboard, Fact, FihHash};
-use nexus_process::tasks::gap_detector::GapDetector;
 use nexus_process::scheduler::Scheduler;
+use nexus_process::tasks::gap_detector::GapDetector;
 
 #[test]
 fn test_gap_detector_creates_intents_for_orphaned_facts() {
@@ -44,12 +44,19 @@ fn test_gap_detector_creates_intents_for_orphaned_facts() {
 
     // Run one OODA tick
     let submitted = sched.tick().expect("tick should succeed");
-    assert_eq!(submitted, 1, "gap detector should submit 1 intent for sensor-a");
+    assert_eq!(
+        submitted, 1,
+        "gap detector should submit 1 intent for sensor-a"
+    );
 
     // Verify the intent appears in board state
     let state = Blackboard::read_state(&sched.bb);
     assert_eq!(state.intents.len(), 1, "exactly 1 intent should exist");
-    assert_eq!(state.intents[0].from_facts.len(), 2, "intent should reference both sensor-a facts");
+    assert_eq!(
+        state.intents[0].from_facts.len(),
+        2,
+        "intent should reference both sensor-a facts"
+    );
     assert!(state.intents[0].description.contains("Synthesise"));
     assert!(state.intents[0].description.contains("sensor-a"));
 }
