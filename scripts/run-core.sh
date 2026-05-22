@@ -30,7 +30,7 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
-run_check()  { cargo check -p nexus-graph -p nexus-storage-sqlite -p nexus-storage-duckdb -p nexus-storage-petgraph -p nexus-dispatcher && cargo check; }
+run_check()  { cargo check -p nexus-graph -p nexus-storage-sqlite -p nexus-storage-duckdb -p nexus-storage-petgraph -p nexus-process && cargo check; }
 run_fmt()    { cargo fmt; }
 run_clippy() { cargo clippy -- -D warnings 2>&1 | head -20 || true; }
 run_test()   {
