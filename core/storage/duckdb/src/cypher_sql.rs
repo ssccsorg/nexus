@@ -20,9 +20,7 @@
 //   - CTE / WITH clause support
 //   - ORDER BY, LIMIT, OFFSET, DISTINCT
 
-use nexus_model::cold_query::{
-    ColdFilter, ColdQuery, JsonFilter, VectorFilter, WindowFuncDef,
-};
+use nexus_model::cold_query::{ColdFilter, ColdQuery, JsonFilter, VectorFilter, WindowFuncDef};
 use serde_json::Value;
 
 // ── SQL translation ────────────────────────────────────────────────────────
@@ -514,9 +512,7 @@ fn value_to_sql(v: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nexus_model::cold_query::{
-        AggregateDef, ColdOrder, CteDef, JsonProjection, VectorScore,
-    };
+    use nexus_model::cold_query::{AggregateDef, ColdOrder, CteDef, JsonProjection, VectorScore};
 
     // ── Existing test helpers ──────────────────────────────────────────────
 

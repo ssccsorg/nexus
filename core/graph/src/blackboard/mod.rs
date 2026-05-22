@@ -4,17 +4,17 @@
 // access and Cypher queries) with a cold storage backend for durability.
 // Storage is swappable via DualStorage.
 
+use crate::query::cypher::{Plan, TranslateError, execute_with_cold};
 use nexus_model::{
-    Blackboard, BlackboardError, BoardState, ColdStorage, DualStorage, EvictCapable, Fact,
-    FactCapable, FihHash, FlushCapable, FlushCursor, Hint, HintCapable, Intent, IntentCapable,
-    NullStorage, StorageRead,
+    Blackboard, BlackboardError, BoardState, ColdStorage, CypherCapable, DualStorage, EvictCapable,
+    Fact, FactCapable, FihHash, FlushCapable, FlushCursor, Hint, HintCapable, Intent,
+    IntentCapable, NullStorage, StorageRead,
 };
 use nexus_storage_petgraph::{
     EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Record, StorageSnapshot,
 };
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
-use crate::query::cypher::{execute_with_cold, Plan, TranslateError};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -320,6 +320,14 @@ impl EvictCapable for DefaultBlackboard {
 
     fn evict_before(&self, before: &str) -> Result<u64, String> {
         EvictCapable::evict_before(&self.storage, before)
+    }
+}
+
+// ── Cypher query — delegates to storage (DualStorage → cold) ─────────────
+
+impl CypherCapable for DefaultBlackboard {
+    fn query_plan(&self, plan: &serde_json::Value) -> Result<serde_json::Value, String> {
+        self.storage.query_plan(plan)
     }
 }
 
