@@ -41,6 +41,8 @@ run_test()   {
     cargo test -p nexus-storage-petgraph -- --nocapture 2>&1
     echo "---"
     cargo test -p nexus-graph -- --nocapture 2>&1
+    echo "---"
+    cargo test -p nexus-process -- --nocapture 2>&1
 }
 run_all() {
     echo "=== fmt ===" && run_fmt
