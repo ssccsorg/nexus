@@ -5,13 +5,13 @@
 //   2. Run the scheduler with gap detector registered
 //   3. Verify the gap detector submits Intents for orphaned facts
 
-use nexus_graph::{Blackboard, DefaultBlackboard, Fact, FihHash};
+use nexus_graph::{create_blackboard, Blackboard, Fact, FihHash};
 use nexus_process::scheduler::Scheduler;
 use nexus_process::tasks::gap_detector::GapDetector;
 
 #[test]
 fn test_gap_detector_creates_intents_for_orphaned_facts() {
-    let mut bb = DefaultBlackboard::new();
+    let mut bb = create_blackboard();
 
     // Seed two facts from the same origin (both orphaned — no intent references them)
     bb.submit_fact(&Fact {
@@ -38,7 +38,7 @@ fn test_gap_detector_creates_intents_for_orphaned_facts() {
     })
     .unwrap();
 
-    // Create scheduler with gap detector — takes ownership of bb
+    // Create scheduler with gap detector
     let mut sched = Scheduler::new(bb);
     sched.register(Box::new(GapDetector::new()));
 
@@ -63,7 +63,7 @@ fn test_gap_detector_creates_intents_for_orphaned_facts() {
 
 #[test]
 fn test_gap_detector_no_orphans_no_intents() {
-    let bb = DefaultBlackboard::new();
+    let bb = create_blackboard();
 
     // No facts — gap detector should not create intents
     let mut sched = Scheduler::new(bb);
@@ -74,7 +74,7 @@ fn test_gap_detector_no_orphans_no_intents() {
 
 #[test]
 fn test_scheduler_multiple_ticks() {
-    let mut bb = DefaultBlackboard::new();
+    let mut bb = create_blackboard();
     bb.submit_fact(&Fact {
         id: FihHash("f_a".into()),
         origin: "src".into(),

@@ -93,15 +93,22 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
         }
 
         // ── Heartbeat TTL check ───────────────────────────────────────
-        // Release intents whose heartbeat is older than TTL.
-        // Uses the intent's `last_heartbeat_at` which is set by the
-        // claiming agent on each heartbeat() call.
+        // Release intents whose heartbeat is older than config.heartbeat_ttl.
+        // `last_heartbeat_at` is set by the storage layer on each heartbeat().
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
         for intent in &state.intents {
-            // TODO(#35): proper timestamp comparison and release
-            if let Some(worker) = &intent.worker
-                && intent.last_heartbeat_at.is_some()
-            {
-                let _ = worker;
+            if let Some(worker) = &intent.worker {
+                if let Some(ref hb_str) = intent.last_heartbeat_at {
+                    if let Ok(hb_secs) = hb_str.parse::<u64>() {
+                        let elapsed = now_secs.saturating_sub(hb_secs);
+                        if elapsed > self.config.heartbeat_ttl.as_secs() {
+                            let _ = self.bb.release_intent(&intent.id.0, worker);
+                        }
+                    }
+                }
             }
         }
 
