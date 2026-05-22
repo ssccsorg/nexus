@@ -7,7 +7,7 @@
 // directly.
 
 use nexus_graph::mock_gateway::MockGateway;
-use nexus_graph::{Blackboard, create_blackboard, Fact, FihHash, Intent};
+use nexus_graph::{Blackboard, Fact, FihHash, Intent, create_blackboard};
 
 /// Contradiction Detection — via MockGateway (JSON transport boundary).
 ///
