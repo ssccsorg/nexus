@@ -1,0 +1,11 @@
+[package]
+name = "nexus-dispatcher"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+nexus-model = { path = "../model" }
+nexus-graph = { path = "../graph" }
+serde.workspace = true
+serde_json.workspace = true

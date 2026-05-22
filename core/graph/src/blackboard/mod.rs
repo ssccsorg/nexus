@@ -5,8 +5,9 @@
 // Storage is swappable via DualStorage.
 
 use nexus_model::{
-    Blackboard, BlackboardError, BoardState, ColdStorage, DualStorage, Fact, FactCapable, FihHash,
-    FlushCapable, FlushCursor, Hint, HintCapable, Intent, IntentCapable, NullStorage, StorageRead,
+    Blackboard, BlackboardError, BoardState, ColdStorage, DualStorage, EvictCapable, Fact,
+    FactCapable, FihHash, FlushCapable, FlushCursor, Hint, HintCapable, Intent, IntentCapable,
+    NullStorage, StorageRead,
 };
 use nexus_storage_petgraph::{
     EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, StorageSnapshot,
@@ -284,6 +285,17 @@ impl GraphWrite for DefaultBlackboard {
     fn add_edge(&mut self, from: NodeIndex, to: NodeIndex, weight: EdgeWeight) -> EdgeIndex {
         let mut g = self.hot_graph.write().unwrap();
         g.add_edge(from, to, weight)
+    }
+}
+
+// ── Storage introspection ──────────────────────────────────────────────────
+
+impl DefaultBlackboard {
+    /// Approximate memory usage of the hot storage layer.
+    /// Used by the dispatcher eviction cycle to decide when to flush + evict.
+    pub fn storage_size(&self) -> usize {
+        // DualStorage delegates EvictCapable to hot.
+        EvictCapable::approximate_size(&self.storage)
     }
 }
 

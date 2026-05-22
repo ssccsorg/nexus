@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "model",
     "graph",
+    "dispatcher",
     "storage/sqlite",
     "storage/duckdb",
     "storage/petgraph",

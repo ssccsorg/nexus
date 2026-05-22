@@ -1340,6 +1340,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexus-dispatcher"
+version = "0.1.0"
+dependencies = [
+ "nexus-graph",
+ "nexus-model",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nexus-graph"
 version = "0.1.0"
 dependencies = [
