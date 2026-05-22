@@ -3,9 +3,9 @@
 pub mod cypher_sql;
 
 use nexus_model::{
-    BoardState, CypherCapable, Fact, FihHash, FilterCapable, FlushCapable, FlushCursor,
-    FlushResult, Hint, Intent, PartitionData, ScanCapable, StateFilter, StorageRead,
-    TimeRangeCapable,
+    cold_query::ColdQuery, BoardState, CypherCapable, Fact, FihHash, FilterCapable,
+    FlushCapable, FlushCursor, FlushResult, Hint, Intent, PartitionData, ScanCapable,
+    StateFilter, StorageRead, TimeRangeCapable,
 };
 use std::ops::Range;
 use std::sync::Mutex;
@@ -350,7 +350,7 @@ impl FlushCapable for DuckDbStorage {
 
 impl CypherCapable for DuckDbStorage {
     fn query_plan(&self, plan: &serde_json::Value) -> Result<serde_json::Value, String> {
-        let cold_query: cypher_sql::ColdQuery = serde_json::from_value(plan.clone())
+        let cold_query: ColdQuery = serde_json::from_value(plan.clone())
             .map_err(|e| format!("DuckDbStorage CypherCapable: failed to parse ColdQuery: {e}"))?;
         let sql = cypher_sql::translate(&cold_query)?;
         let conn = self.conn.lock().unwrap();
