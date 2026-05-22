@@ -5,6 +5,7 @@
 // TimeRangeCapable, and EvictCapable.
 
 use crate::weight::{EdgeWeight, NodeWeight};
+use petgraph::graph::NodeIndex;
 use nexus_model::{
     BlackboardError, BoardState, EvictCapable, Fact, FactCapable, FihHash, Hint, HintCapable,
     Intent, IntentCapable, StorageRead, TimeRangeCapable,
@@ -471,9 +472,56 @@ impl EvictCapable for PetgraphStorage {
     }
 
     fn evict_before(&self, before: &str) -> Result<u64, String> {
-        // TODO(#35): implement actual eviction in dispatcher runtime.
-        // Currently no-op. petgraph keeps all data in memory.
-        let _ = before;
-        Ok(0)
+        let before_secs: u64 = before.parse().map_err(|e| format!("invalid timestamp: {e}"))?;
+        let mut g = self.graph.write().unwrap();
+        let mut removed = 0u64;
+
+        // Collect nodes to remove: concluded intents and their orphaned facts
+        let to_remove: Vec<NodeIndex> = g
+            .node_indices()
+            .filter(|idx| {
+                if let Some(w) = g.node_weight(*idx) {
+                    match w.label.as_str() {
+                        "Intent" => {
+                            // Remove concluded intents older than `before`
+                            if let Some(concluded) = w.properties.get("concluded") {
+                                if let Some(true) = concluded.as_bool() {
+                                    if let Some(ts) = w
+                                        .properties
+                                        .get("last_heartbeat_at")
+                                        .and_then(|v| v.as_i64())
+                                    {
+                                        return (ts as u64) < before_secs;
+                                    }
+                                }
+                            }
+                            false
+                        }
+                        "Fact" => {
+                            // Remove facts not referenced by any intent
+                            let referenced = g.node_indices().any(|i| {
+                                g.node_weight(i).is_some_and(|nw| nw.label == "Intent")
+                                    && g.edges_directed(i, petgraph::Direction::Incoming)
+                                        .any(|e| {
+                                            g.node_weight(e.source())
+                                                .is_some_and(|sw| sw.name == w.name)
+                                        })
+                            });
+                            !referenced
+                        }
+                        _ => false,
+                    }
+                } else {
+                    false
+                }
+            })
+            .collect();
+
+        for idx in to_remove {
+            g.remove_node(idx);
+            removed += 1;
+        }
+
+        Ok(removed)
     }
 }
