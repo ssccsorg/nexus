@@ -52,9 +52,9 @@ run_all() {
 }
 
 case $MODE in
-    check)  run_check ;;
-    clippy) run_clippy ;;
-    test)   run_test ;;
+    check)  echo "=== fmt ===" && run_fmt && run_check ;;
+    clippy) echo "=== fmt ===" && run_fmt && run_clippy ;;
+    test)   echo "=== fmt ===" && run_fmt && run_test ;;
     all)
         echo "nexus-core CI (local)"
         run_all

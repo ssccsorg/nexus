@@ -12,10 +12,7 @@ use nexus_model::EvictCapable;
 
 /// Run a single eviction check on the given backend.
 /// Returns the number of evicted nodes.
-pub fn try_evict(
-    backend: &impl EvictCapable,
-    threshold: usize,
-) -> Result<u64, ProcessError> {
+pub fn try_evict(backend: &impl EvictCapable, threshold: usize) -> Result<u64, ProcessError> {
     let size = EvictCapable::approximate_size(backend);
     if size < threshold {
         return Ok(0);
