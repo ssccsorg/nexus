@@ -147,7 +147,11 @@ impl StorageRead for PetgraphStorage {
                                     })
                                     .and_then(|e| g.node_weight(e.target()).map(|n| n.name.clone()))
                             },
-                            last_heartbeat_at: None,
+                            last_heartbeat_at: w
+                                .properties
+                                .get("last_heartbeat_at")
+                                .and_then(|v| v.as_i64())
+                                .map(|ts| ts.to_string()),
                             created_at: None,
                             concluded_at: if w
                                 .properties
@@ -292,6 +296,14 @@ impl IntentCapable for PetgraphStorage {
                 }
                 w.properties
                     .insert("worker".into(), agent.to_string().into());
+                if let Ok(now) = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                {
+                    w.properties.insert(
+                        "last_heartbeat_at".into(),
+                        serde_json::Value::Number(now.as_secs().into()),
+                    );
+                }
                 return Ok(());
             }
         }
@@ -326,6 +338,15 @@ impl IntentCapable for PetgraphStorage {
                     _ => {
                         w.properties
                             .insert("worker".into(), agent.to_string().into());
+                        // Record heartbeat timestamp for TTL monitoring
+                        if let Ok(now) = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                        {
+                            w.properties.insert(
+                                "last_heartbeat_at".into(),
+                                serde_json::Value::Number(now.as_secs().into()),
+                            );
+                        }
                         return Ok(());
                     }
                 }
