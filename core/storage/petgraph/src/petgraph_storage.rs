@@ -5,11 +5,11 @@
 // TimeRangeCapable, and EvictCapable.
 
 use crate::weight::{EdgeWeight, NodeWeight};
-use petgraph::graph::NodeIndex;
 use nexus_model::{
     BlackboardError, BoardState, EvictCapable, Fact, FactCapable, FihHash, Hint, HintCapable,
     Intent, IntentCapable, StorageRead, TimeRangeCapable,
 };
+use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use std::collections::HashMap;
 use std::ops::Range;
@@ -297,8 +297,7 @@ impl IntentCapable for PetgraphStorage {
                 }
                 w.properties
                     .insert("worker".into(), agent.to_string().into());
-                if let Ok(now) = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
+                if let Ok(now) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
                 {
                     w.properties.insert(
                         "last_heartbeat_at".into(),
@@ -340,8 +339,8 @@ impl IntentCapable for PetgraphStorage {
                         w.properties
                             .insert("worker".into(), agent.to_string().into());
                         // Record heartbeat timestamp for TTL monitoring
-                        if let Ok(now) = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
+                        if let Ok(now) =
+                            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
                         {
                             w.properties.insert(
                                 "last_heartbeat_at".into(),
@@ -499,7 +498,9 @@ impl EvictCapable for PetgraphStorage {
     }
 
     fn evict_before(&self, before: &str) -> Result<u64, String> {
-        let before_secs: u64 = before.parse().map_err(|e| format!("invalid timestamp: {e}"))?;
+        let before_secs: u64 = before
+            .parse()
+            .map_err(|e| format!("invalid timestamp: {e}"))?;
         let mut g = self.graph.write().unwrap();
 
         // Phase 1: collect intent nodes that are either:
@@ -510,7 +511,9 @@ impl EvictCapable for PetgraphStorage {
             std::collections::HashSet::new();
 
         for idx in g.node_indices() {
-            let Some(w) = g.node_weight(idx) else { continue };
+            let Some(w) = g.node_weight(idx) else {
+                continue;
+            };
             match w.label.as_str() {
                 "Intent" => {
                     let is_concluded = w
@@ -518,7 +521,10 @@ impl EvictCapable for PetgraphStorage {
                         .get("concluded")
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false);
-                    let hb_ts = w.properties.get("last_heartbeat_at").and_then(|v| v.as_i64());
+                    let hb_ts = w
+                        .properties
+                        .get("last_heartbeat_at")
+                        .and_then(|v| v.as_i64());
 
                     let should_evict = match (is_concluded, hb_ts) {
                         // Concluded with heartbeat older than cutoff
@@ -548,7 +554,9 @@ impl EvictCapable for PetgraphStorage {
 
         // Phase 2: collect orphaned facts (not referenced by any kept intent)
         for idx in g.node_indices() {
-            let Some(w) = g.node_weight(idx) else { continue };
+            let Some(w) = g.node_weight(idx) else {
+                continue;
+            };
             if w.label == "Fact" && !referenced_fact_names.contains(&w.name) {
                 to_remove.push(idx);
             }
