@@ -21,7 +21,8 @@ pub trait ColdStorage:
     FihPersistence + FilterCapable + ScanCapable + TimeRangeCapable + FlushCapable + CypherCapable
 {
 }
-impl<T: FihPersistence + FilterCapable + ScanCapable + TimeRangeCapable + FlushCapable + CypherCapable> ColdStorage
-    for T
+impl<
+    T: FihPersistence + FilterCapable + ScanCapable + TimeRangeCapable + FlushCapable + CypherCapable,
+> ColdStorage for T
 {
 }

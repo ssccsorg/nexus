@@ -45,8 +45,9 @@ pub fn execute_with_cold<G: GraphRead, C: CypherCapable>(
     if let Some(cold_query) = plan.to_cold_query() {
         let plan_json =
             serde_json::to_value(&cold_query).map_err(|e| TranslateError::Other(e.to_string()))?;
-        let result =
-            cold.query_plan(&plan_json).map_err(|e| TranslateError::Other(e))?;
+        let result = cold
+            .query_plan(&plan_json)
+            .map_err(|e| TranslateError::Other(e))?;
         // Parse the JSON array result into Vec<Record>.
         let records: Vec<Record> = if let serde_json::Value::Array(arr) = result {
             arr.into_iter()

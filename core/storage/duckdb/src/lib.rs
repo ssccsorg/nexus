@@ -3,9 +3,9 @@
 pub mod cypher_sql;
 
 use nexus_model::{
-    cold_query::ColdQuery, BoardState, CypherCapable, Fact, FihHash, FilterCapable,
-    FlushCapable, FlushCursor, FlushResult, Hint, Intent, PartitionData, ScanCapable,
-    StateFilter, StorageRead, TimeRangeCapable,
+    BoardState, CypherCapable, Fact, FihHash, FilterCapable, FlushCapable, FlushCursor,
+    FlushResult, Hint, Intent, PartitionData, ScanCapable, StateFilter, StorageRead,
+    TimeRangeCapable, cold_query::ColdQuery,
 };
 use std::ops::Range;
 use std::sync::Mutex;

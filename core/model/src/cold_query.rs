@@ -7,7 +7,6 @@
 /// Pure data — no DuckDB dependency. Re-exported from `nexus_model` so both
 /// `nexus-storage-duckdb` and `nexus-graph` can use them without circular
 /// dependency.
-
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
