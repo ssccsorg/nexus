@@ -23,6 +23,7 @@
 //   Aggregate: ColdStorage    = FihPersistence + FilterCapable
 
 pub mod blackboard;
+pub mod cold_query;
 pub mod error;
 pub mod fih;
 pub mod interner;

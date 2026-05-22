@@ -4,13 +4,14 @@
 // access and Cypher queries) with a cold storage backend for durability.
 // Storage is swappable via DualStorage.
 
+use crate::query::cypher::{Plan, TranslateError, execute_with_cold};
 use nexus_model::{
-    Blackboard, BlackboardError, BoardState, ColdStorage, DualStorage, EvictCapable, Fact,
-    FactCapable, FihHash, FlushCapable, FlushCursor, Hint, HintCapable, Intent, IntentCapable,
-    NullStorage, StorageRead,
+    Blackboard, BlackboardError, BoardState, ColdStorage, CypherCapable, DualStorage, EvictCapable,
+    Fact, FactCapable, FihHash, FlushCapable, FlushCursor, Hint, HintCapable, Intent,
+    IntentCapable, NullStorage, StorageRead,
 };
 use nexus_storage_petgraph::{
-    EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, StorageSnapshot,
+    EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Record, StorageSnapshot,
 };
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
@@ -28,6 +29,7 @@ struct ClaimsTracker {
     pub(crate) inner: HashMap<String, String>,
 }
 
+#[allow(dead_code)]
 impl ClaimsTracker {
     fn new() -> Self {
         Self {
@@ -134,6 +136,7 @@ pub(crate) struct DefaultBlackboard {
     project_id: String,
 }
 
+#[allow(dead_code)]
 impl DefaultBlackboard {
     pub fn new() -> Self {
         let graph = Arc::new(RwLock::new(petgraph::Graph::new()));
@@ -171,6 +174,16 @@ impl DefaultBlackboard {
     ) -> R {
         let g = self.hot_graph.read().unwrap();
         f(&g)
+    }
+
+    /// Execute a Cypher query plan with hot/cold routing.
+    ///
+    /// Hot queries run against the in-memory petgraph (µs).
+    /// Cold-eligible queries (simple tabular scans) route to the cold storage
+    /// backend (DuckDB/Parquet) via the `CypherCapable` trait.
+    pub fn query(&self, plan: &Plan) -> Result<Vec<Record>, TranslateError> {
+        let hot = self.hot_graph.read().unwrap();
+        execute_with_cold(&*hot, &self.storage, plan)
     }
 
     pub fn flush(&self) -> Result<(), String> {
@@ -309,6 +322,14 @@ impl EvictCapable for DefaultBlackboard {
 
     fn evict_before(&self, before: &str) -> Result<u64, String> {
         EvictCapable::evict_before(&self.storage, before)
+    }
+}
+
+// ── Cypher query — delegates to storage (DualStorage → cold) ─────────────
+
+impl CypherCapable for DefaultBlackboard {
+    fn query_plan(&self, plan: &serde_json::Value) -> Result<serde_json::Value, String> {
+        self.storage.query_plan(plan)
     }
 }
 

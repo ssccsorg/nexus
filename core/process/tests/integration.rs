@@ -9,7 +9,7 @@
 // This is the canonical "many iterations" validation:
 //   simple rules + repetition → correct emergent behavior.
 
-use nexus_graph::{create_blackboard, Blackboard, EvictCapable, Fact, FihHash, Intent};
+use nexus_graph::{Blackboard, EvictCapable, Fact, FihHash, Intent, create_blackboard};
 use nexus_process::scheduler::Scheduler;
 use nexus_process::tasks::gap_detector::GapDetector;
 
@@ -63,11 +63,20 @@ fn flow_intent_lifecycle() {
     let state = Blackboard::read_state(&sched.bb);
     let intent_id = state.intents[0].id.0.clone();
 
-    sched.bb.claim_intent(&intent_id, "agent-alpha").expect("claim");
-    sched.bb.heartbeat(&intent_id, "agent-alpha").expect("heartbeat");
+    sched
+        .bb
+        .claim_intent(&intent_id, "agent-alpha")
+        .expect("claim");
+    sched
+        .bb
+        .heartbeat(&intent_id, "agent-alpha")
+        .expect("heartbeat");
 
     let result = serde_json::json!("synthesis complete");
-    let new_fact = sched.bb.conclude_intent(&intent_id, &result).expect("conclude");
+    let new_fact = sched
+        .bb
+        .conclude_intent(&intent_id, &result)
+        .expect("conclude");
     assert_eq!(new_fact.content, result);
 
     let state = Blackboard::read_state(&sched.bb);
@@ -87,7 +96,10 @@ fn flow_eviction() {
     let ids: Vec<String> = state.intents.iter().map(|i| i.id.0.clone()).collect();
     for id in &ids {
         sched.bb.claim_intent(id, "evictor").expect("claim");
-        sched.bb.conclude_intent(id, &serde_json::json!("done")).expect("conclude");
+        sched
+            .bb
+            .conclude_intent(id, &serde_json::json!("done"))
+            .expect("conclude");
     }
 
     let _ = EvictCapable::evict_before(&sched.bb, "9999999999").expect("evict");
