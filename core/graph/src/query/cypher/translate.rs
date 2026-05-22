@@ -21,6 +21,10 @@ use nexus_storage_petgraph::{GraphRead, Record};
 // ── Unified execute ────────────────────────────────────────────────────────
 
 /// Execute a query plan against the hot petgraph only.
+///
+/// This is the hot-only execution path. For production use with
+/// hot/cold routing, prefer [`execute_with_cold`] which automatically
+/// routes cold-eligible queries to the cold storage backend.
 pub fn execute<G: GraphRead>(graph: &G, plan: &Plan) -> Result<Vec<Record>, TranslateError> {
     match plan {
         Plan::External(ext) => execute_external(graph, ext),

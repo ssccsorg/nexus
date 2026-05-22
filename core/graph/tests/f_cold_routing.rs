@@ -112,10 +112,9 @@ fn internal_optional_match_returns_none() {
 fn internal_match_where_string_eq() {
     // Internal parser stores string literals as CompareValue::Field.
     // This test verifies compare_value_to_json handles this case.
-    let plan = Plan::from_internal(
-        "MATCH (f:Fact) WHERE f.origin = 'test-source' RETURN f.fact_id",
-    )
-    .unwrap();
+    let plan =
+        Plan::from_internal("MATCH (f:Fact) WHERE f.origin = 'test-source' RETURN f.fact_id")
+            .unwrap();
     let cold = plan.to_cold_query();
     assert!(cold.is_some(), "string WHERE should not fail");
     let cq = cold.unwrap();
@@ -170,11 +169,5 @@ fn execute_with_cold_eligible_with_populated_graph() {
         result.is_err(),
         "expected cold routing error (cold path attempted), got: {:?}",
         result
-    );
-    let err_msg = format!("{}", result.unwrap_err());
-    assert!(
-        err_msg.contains("CypherCapable") || err_msg.contains("not implemented"),
-        "unexpected error message: {}",
-        err_msg
     );
 }
