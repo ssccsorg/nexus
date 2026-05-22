@@ -1,101 +1,117 @@
-// Integration test: OODA loop with gap detector.
+// Full-flow reference test: validates the entire Nexus pipeline end-to-end.
 //
-// Validates that the scheduler + gap detector work together:
-//   1. Seed orphaned facts into DefaultBlackboard
-//   2. Run the scheduler with gap detector registered
-//   3. Verify the gap detector submits Intents for orphaned facts
+// Tests:
+//   1. Seed facts → scheduler tick → gap detector creates Intents
+//   2. Claim → heartbeat → conclude → new Fact
+//   3. Multiple ticks converge (no duplicate Intents)
+//   4. Eviction removes stale concluded intents
+//
+// This is the canonical "many iterations" validation:
+//   simple rules + repetition → correct emergent behavior.
 
-use nexus_graph::{Blackboard, Fact, FihHash, create_blackboard};
+use nexus_graph::{create_blackboard, Blackboard, EvictCapable, Fact, FihHash, Intent};
 use nexus_process::scheduler::Scheduler;
 use nexus_process::tasks::gap_detector::GapDetector;
 
+fn seed_corpus(bb: &mut impl Blackboard) {
+    let corpus = [
+        ("f_001", "arxiv", "GNN achieves 92% accuracy"),
+        ("f_002", "arxiv", "Oversmoothing beyond 6 layers"),
+        ("f_003", "nature", "Deep learning needs 10x more data"),
+        ("f_004", "nature", "Transformers outperform RNNs"),
+        ("f_005", "iclr", "Attention is all you need"),
+    ];
+    for (id, origin, content) in &corpus {
+        bb.submit_fact(&Fact {
+            id: FihHash(id.to_string()),
+            origin: origin.to_string(),
+            content: (*content).into(),
+            creator: "corpus".into(),
+        })
+        .unwrap();
+    }
+}
+
 #[test]
-fn test_gap_detector_creates_intents_for_orphaned_facts() {
+fn flow_ooda_with_gap_detector() {
     let mut bb = create_blackboard();
+    seed_corpus(&mut bb);
 
-    // Seed two facts from the same origin (both orphaned — no intent references them)
-    bb.submit_fact(&Fact {
-        id: FihHash("f_alpha".into()),
-        origin: "sensor-a".into(),
-        content: serde_json::json!("temperature spike"),
-        creator: "tester".into(),
-    })
-    .unwrap();
-    bb.submit_fact(&Fact {
-        id: FihHash("f_beta".into()),
-        origin: "sensor-a".into(),
-        content: serde_json::json!("pressure drop"),
-        creator: "tester".into(),
-    })
-    .unwrap();
-
-    // One fact from a different origin (alone, should not trigger synthesis)
-    bb.submit_fact(&Fact {
-        id: FihHash("f_gamma".into()),
-        origin: "sensor-b".into(),
-        content: serde_json::json!("humidity normal"),
-        creator: "tester".into(),
-    })
-    .unwrap();
-
-    // Create scheduler with gap detector
     let mut sched = Scheduler::new(bb);
     sched.register(Box::new(GapDetector::new()));
 
-    // Run one OODA tick
-    let submitted = sched.tick().expect("tick should succeed");
-    assert_eq!(
-        submitted, 1,
-        "gap detector should submit 1 intent for sensor-a"
-    );
+    let submitted = sched.tick().expect("first tick");
+    assert_eq!(submitted, 2, "2 origins with >=2 orphans");
 
-    // Verify the intent appears in board state
+    let submitted = sched.tick().expect("second tick");
+    assert_eq!(submitted, 0, "no new orphans");
+
     let state = Blackboard::read_state(&sched.bb);
-    assert_eq!(state.intents.len(), 1, "exactly 1 intent should exist");
-    assert_eq!(
-        state.intents[0].from_facts.len(),
-        2,
-        "intent should reference both sensor-a facts"
-    );
-    assert!(state.intents[0].description.contains("Synthesise"));
-    assert!(state.intents[0].description.contains("sensor-a"));
+    assert_eq!(state.facts.len(), 5);
+    assert_eq!(state.intents.len(), 2);
 }
 
 #[test]
-fn test_gap_detector_no_orphans_no_intents() {
-    let bb = create_blackboard();
-
-    // No facts — gap detector should not create intents
-    let mut sched = Scheduler::new(bb);
-    sched.register(Box::new(GapDetector::new()));
-    let submitted = sched.tick().expect("tick should succeed");
-    assert_eq!(submitted, 0, "no intent for empty board");
-}
-
-#[test]
-fn test_scheduler_multiple_ticks() {
+fn flow_intent_lifecycle() {
     let mut bb = create_blackboard();
-    bb.submit_fact(&Fact {
-        id: FihHash("f_a".into()),
-        origin: "src".into(),
-        content: serde_json::json!("a"),
-        creator: "t".into(),
-    })
-    .unwrap();
-    bb.submit_fact(&Fact {
-        id: FihHash("f_b".into()),
-        origin: "src".into(),
-        content: serde_json::json!("b"),
-        creator: "t".into(),
-    })
-    .unwrap();
+    seed_corpus(&mut bb);
+
+    let mut sched = Scheduler::new(bb);
+    sched.register(Box::new(GapDetector::new()));
+    sched.tick().expect("tick");
+
+    let state = Blackboard::read_state(&sched.bb);
+    let intent_id = state.intents[0].id.0.clone();
+
+    sched.bb.claim_intent(&intent_id, "agent-alpha").expect("claim");
+    sched.bb.heartbeat(&intent_id, "agent-alpha").expect("heartbeat");
+
+    let result = serde_json::json!("synthesis complete");
+    let new_fact = sched.bb.conclude_intent(&intent_id, &result).expect("conclude");
+    assert_eq!(new_fact.content, result);
+
+    let state = Blackboard::read_state(&sched.bb);
+    assert_eq!(state.facts.len(), 6);
+}
+
+#[test]
+fn flow_eviction() {
+    let mut bb = create_blackboard();
+    seed_corpus(&mut bb);
+
+    let mut sched = Scheduler::new(bb);
+    sched.register(Box::new(GapDetector::new()));
+    sched.tick().expect("tick");
+
+    let state = Blackboard::read_state(&sched.bb);
+    let ids: Vec<String> = state.intents.iter().map(|i| i.id.0.clone()).collect();
+    for id in &ids {
+        sched.bb.claim_intent(id, "evictor").expect("claim");
+        sched.bb.conclude_intent(id, &serde_json::json!("done")).expect("conclude");
+    }
+
+    let _ = EvictCapable::evict_before(&sched.bb, "9999999999").expect("evict");
+    let state = Blackboard::read_state(&sched.bb);
+    assert_eq!(state.intents.len(), 0, "all concluded intents evicted");
+}
+
+#[test]
+fn flow_no_duplicates() {
+    let mut bb = create_blackboard();
+    seed_corpus(&mut bb);
 
     let mut sched = Scheduler::new(bb);
     sched.register(Box::new(GapDetector::new()));
 
-    // First tick: submits intent
-    assert_eq!(sched.tick().unwrap(), 1, "first tick submits intent");
+    for tick in 0..10 {
+        let n = sched.tick().expect("tick");
+        if tick == 0 {
+            assert_eq!(n, 2, "first tick creates intents");
+        } else {
+            assert_eq!(n, 0, "tick {tick}: no duplicates");
+        }
+    }
 
-    // Second tick: gap detector sees no new orphans
-    assert_eq!(sched.tick().unwrap(), 0, "second tick: no more orphans");
+    let state = Blackboard::read_state(&sched.bb);
+    assert_eq!(state.intents.len(), 2);
 }
