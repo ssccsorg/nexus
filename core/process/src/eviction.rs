@@ -7,22 +7,24 @@
 //
 // This implements the Stigmergy pheromone evaporation metaphor:
 // old signals decay over time, making room for new ones.
+//
+// Generic over `impl EvictCapable`. Works with any storage backend
+// that supports memory management.
 
-use nexus_graph::DefaultBlackboard;
+use nexus_model::EvictCapable;
 
-/// Run a single eviction check on the given blackboard.
+/// Run a single eviction check on the given backend.
 /// Returns the number of evicted nodes.
-pub fn try_evict(bb: &DefaultBlackboard, threshold: usize) -> Result<u64, String> {
-    let size = bb.storage_size();
+pub fn try_evict(backend: &impl EvictCapable, threshold: usize) -> Result<u64, String> {
+    let size = EvictCapable::approximate_size(backend);
     if size < threshold {
         return Ok(0); // under threshold, no eviction needed
     }
 
     // TODO(#35): implement eviction
-    // 1. bb.to_snapshot() → serialise current state
-    // 2. R2.put("partition/{project_id}/{ts}.json", snapshot)
-    // 3. bb.flush() → ensure cold is up to date
-    // 4. bb.evict_before(timestamp) → remove old nodes from hot
+    // 1. Snapshot the hot state before evicting
+    // 2. Persist to R2/Parquet
+    // 3. Call backend.evict_before(timestamp)
     let _ = size;
     Ok(0)
 }

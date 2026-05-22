@@ -1,13 +1,17 @@
-// nexus-process — Scheduler: polling loop, Intent dispatch, heartbeat monitor.
+// nexus-process — Scheduler: OODA loop polling, Intent dispatch, heartbeat monitor.
 //
-// The scheduler runs the OODA loop for a worker's partition:
+// The scheduler drives the OODA cycle for any Blackboard implementation:
 //   1. Poll `read_state()` for unclaimed Intents
-//   2. Dispatch unclaimed Intents to registered task handlers
+//   2. Dispatch to registered stigmergy task handlers
 //   3. Monitor heartbeat TTL — release stale claims
 //   4. Trigger periodic eviction when memory exceeds threshold
+//
+// Generic over `B: Blackboard + EvictCapable`. The caller may use
+// `DefaultBlackboard`, `Arc<Mutex<DefaultBlackboard>>`, or any future
+// implementation — only the trait protocol matters.
 
 use crate::tasks::{TaskHandler, TaskOutput};
-use nexus_graph::{Blackboard, DefaultBlackboard};
+use nexus_model::{Blackboard, EvictCapable};
 use std::time::Duration;
 
 /// Configuration for the scheduler loop.
@@ -31,15 +35,19 @@ impl Default for SchedulerConfig {
     }
 }
 
-/// The OODA loop scheduler.
-pub struct Scheduler<'a> {
-    bb: &'a mut DefaultBlackboard,
+/// The OODA loop scheduler. Generic over any `Blackboard + EvictCapable`.
+///
+/// The blackboard is consumed (owned), not borrowed. For shared access,
+/// pass `Arc<Mutex<B>>` which implements `Blackboard` via the blanket impl
+/// on `&mut T`.
+pub struct Scheduler<B: Blackboard + EvictCapable> {
+    pub bb: B,
     config: SchedulerConfig,
-    tasks: Vec<Box<dyn TaskHandler + 'a>>,
+    tasks: Vec<Box<dyn TaskHandler>>,
 }
 
-impl<'a> Scheduler<'a> {
-    pub fn new(bb: &'a mut DefaultBlackboard) -> Self {
+impl<B: Blackboard + EvictCapable> Scheduler<B> {
+    pub fn new(bb: B) -> Self {
         Self {
             bb,
             config: SchedulerConfig::default(),
@@ -48,7 +56,7 @@ impl<'a> Scheduler<'a> {
     }
 
     /// Register a stigmergy task handler (gap detector, etc.).
-    pub fn register(&mut self, task: Box<dyn TaskHandler + 'a>) {
+    pub fn register(&mut self, task: Box<dyn TaskHandler>) {
         self.tasks.push(task);
     }
 
@@ -63,7 +71,7 @@ impl<'a> Scheduler<'a> {
     /// Returns the number of Intents submitted this tick.
     pub fn tick(&mut self) -> Result<usize, String> {
         // ── Observe ────────────────────────────────────────────────────
-        let state = self.bb.read_state();
+        let state = Blackboard::read_state(&self.bb);
 
         // ── Orient ─────────────────────────────────────────────────────
         let mut combined = TaskOutput::default();
@@ -90,19 +98,17 @@ impl<'a> Scheduler<'a> {
         // claiming agent on each heartbeat() call.
         for intent in &state.intents {
             if let Some(worker) = &intent.worker {
-                if let Some(ref hb) = intent.last_heartbeat_at {
-                    // Simple TTL check: if heartbeat string is older
-                    // than config.heartbeat_ttl, release.
-                    // TODO(#35): proper timestamp comparison.
-                    let _ = (worker, hb);
+                if let Some(ref _hb) = intent.last_heartbeat_at {
+                    // TODO(#35): proper timestamp comparison and release
+                    let _ = worker;
                 }
             }
         }
 
         // ── Memory check → eviction ───────────────────────────────────
-        let size = self.bb.storage_size();
+        let size = EvictCapable::approximate_size(&self.bb);
         if size > self.config.eviction_threshold {
-            let _ = crate::eviction::try_evict(self.bb, self.config.eviction_threshold);
+            let _ = crate::eviction::try_evict(&self.bb, self.config.eviction_threshold);
         }
 
         Ok(intent_count)

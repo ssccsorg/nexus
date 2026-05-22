@@ -288,14 +288,27 @@ impl GraphWrite for DefaultBlackboard {
     }
 }
 
-// ── Storage introspection ──────────────────────────────────────────────────
+// ── StorageRead — delegates to hot storage ────────────────────────────────
 
-impl DefaultBlackboard {
-    /// Approximate memory usage of the hot storage layer.
-    /// Used by the dispatcher eviction cycle to decide when to flush + evict.
-    pub fn storage_size(&self) -> usize {
-        // DualStorage delegates EvictCapable to hot.
+impl StorageRead for DefaultBlackboard {
+    fn project_id(&self) -> &str {
+        &self.project_id
+    }
+
+    fn read_state(&self) -> BoardState {
+        self.storage.read_state()
+    }
+}
+
+// ── Eviction support — delegates to storage ───────────────────────────────
+
+impl EvictCapable for DefaultBlackboard {
+    fn approximate_size(&self) -> usize {
         EvictCapable::approximate_size(&self.storage)
+    }
+
+    fn evict_before(&self, before: &str) -> Result<u64, String> {
+        EvictCapable::evict_before(&self.storage, before)
     }
 }
 
