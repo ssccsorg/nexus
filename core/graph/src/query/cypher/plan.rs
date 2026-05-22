@@ -105,9 +105,14 @@ impl ExternalPlan {
                 }
                 ReadOp::Project { items, .. } => {
                     for item in items {
-                        // Only include simple alias-as-column projections.
-                        if let cyrs_plan::Expr::Var(_) = &item.expr {
-                            projections.push(item.alias.to_string());
+                        match &item.expr {
+                            cyrs_plan::Expr::Prop { prop, .. } => {
+                                // f.fact_id → "fact_id" (DuckDB view column name)
+                                projections.push(prop.to_string());
+                            }
+                            // Var means "return whole node" → leave empty (SELECT *)
+                            cyrs_plan::Expr::Var(_) => {}
+                            _ => {}
                         }
                     }
                 }
@@ -260,6 +265,11 @@ fn compare_value_to_json(v: &CompareValue) -> Option<Value> {
             Some(Value::Number(n))
         }
         CompareValue::Str(s) => Some(Value::String(s.clone())),
+        // Parser stores string literals as FieldRef { variable: "value", property: None }.
+        CompareValue::Field(field) if field.property.is_none() => {
+            Some(Value::String(field.variable.clone()))
+        }
+        // Actual field references (f.origin) cannot be literal values.
         CompareValue::Field(_) => None,
     }
 }

@@ -74,6 +74,8 @@ fn external_source_project_limit() {
     let cq = cold.unwrap();
     assert_eq!(cq.label, "Fact");
     assert_eq!(cq.limit, Some(10));
+    // f.fact_id → "fact_id" (DuckDB view column, not "f.fact_id")
+    assert_eq!(cq.projections, vec!["fact_id"]);
 }
 
 // ── Internal Plan (PlanIR) → ColdQuery ──────────────────────────────────────
@@ -102,6 +104,22 @@ fn internal_non_fih_label_returns_none() {
 fn internal_optional_match_returns_none() {
     let plan = Plan::from_internal("OPTIONAL MATCH (f:Fact) RETURN f.fact_id").unwrap();
     assert!(plan.to_cold_query().is_none());
+}
+
+// ── Internal Plan → ColdQuery: string WHERE (was broken before fix) ────────
+
+#[test]
+fn internal_match_where_string_eq() {
+    // Internal parser stores string literals as CompareValue::Field.
+    // This test verifies compare_value_to_json handles this case.
+    let plan = Plan::from_internal(
+        "MATCH (f:Fact) WHERE f.origin = 'test-source' RETURN f.fact_id",
+    )
+    .unwrap();
+    let cold = plan.to_cold_query();
+    assert!(cold.is_some(), "string WHERE should not fail");
+    let cq = cold.unwrap();
+    assert!(!cq.filters.is_empty(), "should have at least one filter");
 }
 
 // ── execute_with_cold: hot/cold routing ────────────────────────────────────
