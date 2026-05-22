@@ -5,8 +5,8 @@
 // This is the "many iterations" heuristic — eventually, every pair gets
 // an Intent if it's interesting enough.
 
-use nexus_model::{BoardState, Fact, FihHash, Intent};
 use super::{TaskHandler, TaskOutput};
+use nexus_model::{BoardState, Fact, FihHash, Intent};
 
 /// A gap detector that spots orphaned concepts (Facts with no Intent
 /// grounding them to other Facts).
@@ -53,11 +53,7 @@ impl TaskHandler for GapDetector {
         // For origins with multiple orphaned facts, submit a synthesis Intent
         for (origin, facts) in &by_origin {
             if facts.len() >= 2 {
-                let desc = format!(
-                    "Synthesise {} orphaned facts from {}",
-                    facts.len(),
-                    origin
-                );
+                let desc = format!("Synthesise {} orphaned facts from {}", facts.len(), origin);
                 let intent = Intent {
                     id: FihHash::new(&[origin, "gap"], "intent"),
                     from_facts: facts.iter().map(|f| f.id.0.clone()).collect(),

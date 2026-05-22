@@ -97,11 +97,11 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
         // Uses the intent's `last_heartbeat_at` which is set by the
         // claiming agent on each heartbeat() call.
         for intent in &state.intents {
-            if let Some(worker) = &intent.worker {
-                if let Some(ref _hb) = intent.last_heartbeat_at {
-                    // TODO(#35): proper timestamp comparison and release
-                    let _ = worker;
-                }
+            // TODO(#35): proper timestamp comparison and release
+            if let Some(worker) = &intent.worker
+                && intent.last_heartbeat_at.is_some()
+            {
+                let _ = worker;
             }
         }
 
