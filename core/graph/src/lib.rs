@@ -21,7 +21,9 @@ use blackboard::DefaultBlackboard;
 
 /// Create a default blackboard with in-memory petgraph hot storage
 /// and no cold backend. Equivalent to `DefaultBlackboard::new()`.
-pub fn create_blackboard() -> impl Blackboard + EvictCapable + StorageRead + GraphRead {
+/// Create a default blackboard with in-memory petgraph hot storage
+/// and no cold backend.
+pub fn create_blackboard() -> impl Blackboard + EvictCapable + StorageRead + Snapshottable {
     DefaultBlackboard::new()
 }
 
@@ -29,8 +31,16 @@ pub fn create_blackboard() -> impl Blackboard + EvictCapable + StorageRead + Gra
 pub fn create_blackboard_with_storage(
     hot: PetgraphStorage,
     cold: Box<dyn ColdStorage>,
-) -> impl Blackboard + EvictCapable + StorageRead + GraphRead {
+) -> impl Blackboard + EvictCapable + StorageRead + Snapshottable {
     DefaultBlackboard::with_storage(hot, cold)
+}
+
+/// Reconstruct a blackboard from a previously saved snapshot.
+/// Equivalent to `DefaultBlackboard::from_snapshot()`.
+pub fn create_blackboard_from_snapshot(
+    snapshot: StorageSnapshot,
+) -> impl Blackboard + EvictCapable + StorageRead + Snapshottable {
+    DefaultBlackboard::from_snapshot(snapshot)
 }
 
 pub use nexus_model::{
@@ -40,5 +50,6 @@ pub use nexus_model::{
     TimeRangeCapable,
 };
 pub use nexus_storage_petgraph::{
-    EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Record, StorageSnapshot,
+    EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Record, Snapshottable,
+    StorageSnapshot,
 };

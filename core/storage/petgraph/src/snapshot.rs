@@ -20,3 +20,12 @@ pub struct StorageSnapshot {
     pub claims: HashMap<String, String>,
     pub project_id: String,
 }
+
+/// A backend that can export and import its full state as a snapshot.
+///
+/// Workers use this to persist their partition to blob storage (R2, S3)
+/// and restore it on the next invocation — no external database needed.
+pub trait Snapshottable {
+    fn to_snapshot(&self) -> StorageSnapshot;
+    fn from_snapshot(snapshot: StorageSnapshot) -> Self;
+}

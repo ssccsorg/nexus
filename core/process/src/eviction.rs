@@ -50,6 +50,5 @@ pub fn try_evict(
         .as_secs();
     let cutoff = now_secs.saturating_sub(120);
 
-    EvictCapable::evict_before(backend, &cutoff.to_string())
-        .map_err(ProcessError::Eviction)
+    EvictCapable::evict_before(backend, &cutoff.to_string()).map_err(ProcessError::Eviction)
 }

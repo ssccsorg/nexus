@@ -10,7 +10,7 @@ use nexus_model::{
     NullStorage, StorageRead,
 };
 use nexus_storage_petgraph::{
-    EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, StorageSnapshot,
+    EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Snapshottable, StorageSnapshot,
 };
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
@@ -358,6 +358,16 @@ impl Blackboard for DefaultBlackboard {
 
     fn read_state(&self) -> BoardState {
         self.storage.read_state()
+    }
+}
+
+impl Snapshottable for DefaultBlackboard {
+    fn to_snapshot(&self) -> StorageSnapshot {
+        DefaultBlackboard::to_snapshot(self)
+    }
+
+    fn from_snapshot(snapshot: StorageSnapshot) -> Self {
+        DefaultBlackboard::from_snapshot(snapshot)
     }
 }
 
