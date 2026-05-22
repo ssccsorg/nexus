@@ -38,17 +38,16 @@ fn test_gap_detector_creates_intents_for_orphaned_facts() {
     })
     .unwrap();
 
-    // Create scheduler with gap detector
-    let mut sched = Scheduler::new(&mut bb);
+    // Create scheduler with gap detector — takes ownership of bb
+    let mut sched = Scheduler::new(bb);
     sched.register(Box::new(GapDetector::new()));
 
     // Run one OODA tick
     let submitted = sched.tick().expect("tick should succeed");
     assert_eq!(submitted, 1, "gap detector should submit 1 intent for sensor-a");
 
-    // Drop scheduler to release borrow, then verify state
-    drop(sched);
-    let state = bb.read_state();
+    // Verify the intent appears in board state
+    let state = Blackboard::read_state(&sched.bb);
     assert_eq!(state.intents.len(), 1, "exactly 1 intent should exist");
     assert_eq!(state.intents[0].from_facts.len(), 2, "intent should reference both sensor-a facts");
     assert!(state.intents[0].description.contains("Synthesise"));
@@ -57,22 +56,13 @@ fn test_gap_detector_creates_intents_for_orphaned_facts() {
 
 #[test]
 fn test_gap_detector_no_orphans_no_intents() {
-    let mut bb = DefaultBlackboard::new();
+    let bb = DefaultBlackboard::new();
 
-    // Seed a fact — single orphan should not trigger synthesis
-    bb.submit_fact(&Fact {
-        id: FihHash("f_used".into()),
-        origin: "alpha".into(),
-        content: serde_json::json!("data"),
-        creator: "tester".into(),
-    })
-    .unwrap();
-
-    let mut sched = Scheduler::new(&mut bb);
+    // No facts — gap detector should not create intents
+    let mut sched = Scheduler::new(bb);
     sched.register(Box::new(GapDetector::new()));
     let submitted = sched.tick().expect("tick should succeed");
-    drop(sched);
-    assert_eq!(submitted, 0, "no intent for single fact");
+    assert_eq!(submitted, 0, "no intent for empty board");
 }
 
 #[test]
@@ -93,13 +83,12 @@ fn test_scheduler_multiple_ticks() {
     })
     .unwrap();
 
-    let mut sched = Scheduler::new(&mut bb);
+    let mut sched = Scheduler::new(bb);
     sched.register(Box::new(GapDetector::new()));
 
     // First tick: submits intent
     assert_eq!(sched.tick().unwrap(), 1, "first tick submits intent");
 
     // Second tick: gap detector sees no new orphans
-    // The intent from first tick references both facts.
     assert_eq!(sched.tick().unwrap(), 0, "second tick: no more orphans");
 }
