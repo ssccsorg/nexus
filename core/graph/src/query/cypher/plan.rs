@@ -130,24 +130,12 @@ impl ExternalPlan {
             }
         }
 
-        Some(ColdQuery {
-            label: label?,
-            filters,
-            projections,
-            order_by: Vec::new(),
-            limit,
-            offset: None,
-            distinct,
-            aggregate_count: false,
-            with_ctes: Vec::new(),
-            group_by: Vec::new(),
-            aggregates: Vec::new(),
-            window_funcs: Vec::new(),
-            json_projections: Vec::new(),
-            json_filters: Vec::new(),
-            vector_filters: Vec::new(),
-            vector_score: None,
-        })
+        let mut cq = ColdQuery::new(label?);
+        cq.filters = filters;
+        cq.projections = projections;
+        cq.limit = limit;
+        cq.distinct = distinct;
+        Some(cq)
     }
 }
 
@@ -158,10 +146,6 @@ impl PlanIR {
         let mut label: Option<String> = None;
         let mut filters: Vec<ColdFilter> = Vec::new();
         let mut projections: Vec<String> = Vec::new();
-        let limit: Option<usize> = None;
-        let offset: Option<usize> = None;
-        let distinct = false;
-
         for clause in &self.clauses {
             match clause {
                 Clause::Match(m) => {
@@ -217,24 +201,10 @@ impl PlanIR {
             }
         }
 
-        Some(ColdQuery {
-            label: label?,
-            filters,
-            projections,
-            order_by: Vec::new(),
-            limit,
-            offset,
-            distinct,
-            aggregate_count: false,
-            with_ctes: Vec::new(),
-            group_by: Vec::new(),
-            aggregates: Vec::new(),
-            window_funcs: Vec::new(),
-            json_projections: Vec::new(),
-            json_filters: Vec::new(),
-            vector_filters: Vec::new(),
-            vector_score: None,
-        })
+        let mut cq = ColdQuery::new(label?);
+        cq.filters = filters;
+        cq.projections = projections;
+        Some(cq)
     }
 }
 

@@ -74,6 +74,30 @@ pub struct ColdQuery {
     pub vector_score: Option<VectorScore>,
 }
 
+impl ColdQuery {
+    /// Create a new ColdQuery with default values for all optional fields.
+    pub fn new(label: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            filters: Vec::new(),
+            projections: Vec::new(),
+            order_by: Vec::new(),
+            limit: None,
+            offset: None,
+            distinct: false,
+            aggregate_count: false,
+            with_ctes: Vec::new(),
+            group_by: Vec::new(),
+            aggregates: Vec::new(),
+            window_funcs: Vec::new(),
+            json_projections: Vec::new(),
+            json_filters: Vec::new(),
+            vector_filters: Vec::new(),
+            vector_score: None,
+        }
+    }
+}
+
 /// A single filter condition (AND-composed).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColdFilter {
