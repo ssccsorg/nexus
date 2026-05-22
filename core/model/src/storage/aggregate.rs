@@ -1,3 +1,4 @@
+use super::cypher::CypherCapable;
 use super::evict::EvictCapable;
 use super::fact::FactCapable;
 use super::filter::FilterCapable;
@@ -15,12 +16,12 @@ impl<T: FactCapable + IntentCapable + HintCapable> FihPersistence for T {}
 pub trait HotStorage: FihPersistence + EvictCapable + TimeRangeCapable {}
 impl<T: FihPersistence + EvictCapable + TimeRangeCapable> HotStorage for T {}
 
-/// Cold storage: full FIH + filtered reads + scan + time range + flush (SQLite, Parquet).
+/// Cold storage: full FIH + filtered reads + scan + time range + flush + Cypher query (SQLite, DuckDB/Parquet).
 pub trait ColdStorage:
-    FihPersistence + FilterCapable + ScanCapable + TimeRangeCapable + FlushCapable
+    FihPersistence + FilterCapable + ScanCapable + TimeRangeCapable + FlushCapable + CypherCapable
 {
 }
-impl<T: FihPersistence + FilterCapable + ScanCapable + TimeRangeCapable + FlushCapable> ColdStorage
+impl<T: FihPersistence + FilterCapable + ScanCapable + TimeRangeCapable + FlushCapable + CypherCapable> ColdStorage
     for T
 {
 }

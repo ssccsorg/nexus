@@ -1,5 +1,6 @@
 use std::ops::Range;
 
+use super::cypher::CypherCapable;
 use super::evict::EvictCapable;
 use super::fact::FactCapable;
 use super::filter::{FilterCapable, StateFilter};
@@ -111,6 +112,8 @@ impl FlushCapable for NullStorage {
         })
     }
 }
+
+impl CypherCapable for NullStorage {}
 
 impl TimeRangeCapable for NullStorage {
     fn time_range(&self) -> Option<Range<String>> {

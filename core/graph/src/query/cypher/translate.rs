@@ -15,15 +15,60 @@ use std::collections::HashMap;
 
 use super::plan::*;
 
+use nexus_model::CypherCapable;
 use nexus_storage_petgraph::{GraphRead, Record};
 
 // ── Unified execute ────────────────────────────────────────────────────────
 
+/// Execute a query plan against the hot petgraph only.
 pub fn execute<G: GraphRead>(graph: &G, plan: &Plan) -> Result<Vec<Record>, TranslateError> {
     match plan {
         Plan::External(ext) => execute_external(graph, ext),
         Plan::Internal(ir) => execute_internal(graph, ir),
     }
+}
+
+/// Execute a query plan with hot/cold routing.
+///
+/// If the plan can be expressed as a `ColdQuery`, it is routed to the cold
+/// storage backend via `CypherCapable::query_plan()`. Otherwise, it falls
+/// back to the hot petgraph executor.
+///
+/// This is the preferred entry point for production use, where `DualStorage`
+/// or a `DuckDbStorage` instance is available as the cold backend.
+pub fn execute_with_cold<G: GraphRead, C: CypherCapable>(
+    graph: &G,
+    cold: &C,
+    plan: &Plan,
+) -> Result<Vec<Record>, TranslateError> {
+    // Try cold routing first.
+    if let Some(cold_query) = plan.to_cold_query() {
+        let plan_json =
+            serde_json::to_value(&cold_query).map_err(|e| TranslateError::Other(e.to_string()))?;
+        let result =
+            cold.query_plan(&plan_json).map_err(|e| TranslateError::Other(e))?;
+        // Parse the JSON array result into Vec<Record>.
+        let records: Vec<Record> = if let serde_json::Value::Array(arr) = result {
+            arr.into_iter()
+                .map(|item| {
+                    let fields = if let serde_json::Value::Object(obj) = item {
+                        obj.into_iter().collect()
+                    } else {
+                        HashMap::new()
+                    };
+                    Record { fields }
+                })
+                .collect()
+        } else {
+            return Err(TranslateError::Other(
+                "cold query result is not an array".into(),
+            ));
+        };
+        return Ok(records);
+    }
+
+    // Fallback to hot petgraph executor.
+    execute(graph, plan)
 }
 
 // ── External executor (cyrs_plan ReadOp) ───────────────────────────────────
@@ -607,6 +652,7 @@ fn execute_internal<G: GraphRead>(graph: &G, plan: &PlanIR) -> Result<Vec<Record
 pub enum TranslateError {
     NotFound(String),
     Ambiguous(String),
+    Other(String),
 }
 
 impl std::fmt::Display for TranslateError {
@@ -614,6 +660,7 @@ impl std::fmt::Display for TranslateError {
         match self {
             Self::NotFound(msg) => write!(f, "not found: {msg}"),
             Self::Ambiguous(msg) => write!(f, "ambiguous: {msg}"),
+            Self::Other(msg) => write!(f, "{msg}"),
         }
     }
 }

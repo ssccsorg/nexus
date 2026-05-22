@@ -10,10 +10,11 @@ use nexus_model::{
     NullStorage, StorageRead,
 };
 use nexus_storage_petgraph::{
-    EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, StorageSnapshot,
+    EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Record, StorageSnapshot,
 };
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
+use crate::query::cypher::{execute_with_cold, Plan, TranslateError};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -171,6 +172,16 @@ impl DefaultBlackboard {
     ) -> R {
         let g = self.hot_graph.read().unwrap();
         f(&g)
+    }
+
+    /// Execute a Cypher query plan with hot/cold routing.
+    ///
+    /// Hot queries run against the in-memory petgraph (µs).
+    /// Cold-eligible queries (simple tabular scans) route to the cold storage
+    /// backend (DuckDB/Parquet) via the `CypherCapable` trait.
+    pub fn query(&self, plan: &Plan) -> Result<Vec<Record>, TranslateError> {
+        let hot = self.hot_graph.read().unwrap();
+        execute_with_cold(&*hot, &self.storage, plan)
     }
 
     pub fn flush(&self) -> Result<(), String> {
