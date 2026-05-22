@@ -6,7 +6,7 @@
 //   - claim_intent while another thread concludes
 //   - heartbeat while another thread releases
 
-use nexus_graph::{Blackboard, DefaultBlackboard, Fact, FihHash, Intent};
+use nexus_graph::{Blackboard, create_blackboard, Fact, FihHash, Intent};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicU64, Ordering},
@@ -63,7 +63,7 @@ impl ParallelAnt {
 
     /// Execute one random operation on the shared Blackboard.
     /// Returns (step_log, is_healthy) where is_healthy = false if ant should stop.
-    fn act(&mut self, bb: &mut DefaultBlackboard, step: u64) -> String {
+    fn act(&mut self, bb: &mut impl Blackboard, step: u64) -> String {
         let action = self.rng.range(8);
 
         // Phase-biased: early steps submit facts, later steps do lifecycle
@@ -177,7 +177,7 @@ impl ParallelAnt {
 
 #[test]
 fn test_parallel_many_ants() {
-    let bb = Arc::new(Mutex::new(DefaultBlackboard::new()));
+    let bb = Arc::new(Mutex::new(create_blackboard()));
 
     // Seed initial facts
     {
@@ -234,7 +234,7 @@ fn test_parallel_many_ants() {
                 for step in 0..OPS_PER_THREAD {
                     let log = {
                         let mut guard = bb.lock().unwrap();
-                        ant.act(&mut guard, step)
+                        ant.act(&mut *guard, step)
                     };
                     if log.contains("submit Fact") {
                         local_facts += 1;

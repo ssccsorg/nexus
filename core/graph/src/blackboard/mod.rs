@@ -127,7 +127,7 @@ impl ClaimsTracker {
 /// the lock is internal to the storage layer, not this struct.
 ///
 /// For multi-worker thread-safe access, wrap in `Arc<Mutex<DefaultBlackboard>>`.
-pub struct DefaultBlackboard {
+pub(crate) struct DefaultBlackboard {
     storage: DualStorage,
     hot_graph: Arc<RwLock<petgraph::Graph<NodeWeight, EdgeWeight>>>,
     claims: ClaimsTracker,
@@ -358,5 +358,62 @@ impl Blackboard for DefaultBlackboard {
 
     fn read_state(&self) -> BoardState {
         self.storage.read_state()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cypher;
+    use nexus_model::{Blackboard, Fact, FihHash, Intent};
+
+    #[test]
+    fn test_storage_snapshot_roundtrip() {
+        let mut bb = DefaultBlackboard::new();
+
+        bb.submit_fact(&Fact {
+            id: FihHash("f_snap_1".into()),
+            origin: "snap-test".into(),
+            content: serde_json::json!("snapshot data"),
+            creator: "tester".into(),
+        })
+        .unwrap();
+        bb.submit_fact(&Fact {
+            id: FihHash("f_snap_2".into()),
+            origin: "snap-test".into(),
+            content: serde_json::json!("more data"),
+            creator: "tester".into(),
+        })
+        .unwrap();
+        bb.submit_intent(&Intent {
+            id: FihHash("i_snap_1".into()),
+            from_facts: vec!["f_snap_1".into()],
+            description: "snapshot intent".into(),
+            creator: "tester".into(),
+            worker: None,
+            to_fact_id: None,
+            last_heartbeat_at: None,
+            created_at: None,
+            concluded_at: None,
+        })
+        .unwrap();
+
+        let snapshot = bb.to_snapshot();
+        let json = serde_json::to_vec(&snapshot).expect("serialise");
+        let restored_snapshot: StorageSnapshot =
+            serde_json::from_slice(&json).expect("deserialise");
+        let mut restored = DefaultBlackboard::from_snapshot(restored_snapshot);
+
+        let state = <DefaultBlackboard as Blackboard>::read_state(&restored);
+        assert_eq!(state.facts.len(), 2);
+        assert_eq!(state.intents.len(), 1);
+
+        let plan = cypher::Plan::from_internal("MATCH (f:Fact) RETURN f").unwrap();
+        let count = cypher::execute(&restored, &plan).unwrap().len();
+        assert_eq!(count, 2, "Cypher works on restored snapshot");
+
+        restored
+            .claim_intent("i_snap_1", "agent-x")
+            .expect("claim should work on restored bb");
     }
 }
