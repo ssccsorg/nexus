@@ -5,7 +5,7 @@
 //   2. Run the scheduler with gap detector registered
 //   3. Verify the gap detector submits Intents for orphaned facts
 
-use nexus_graph::{create_blackboard, Blackboard, Fact, FihHash};
+use nexus_graph::{Blackboard, Fact, FihHash, create_blackboard};
 use nexus_process::scheduler::Scheduler;
 use nexus_process::tasks::gap_detector::GapDetector;
 

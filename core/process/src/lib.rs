@@ -11,6 +11,9 @@
 //   eviction/   ← flush + evict_before memory management
 //   tasks/      ← stigmergy detectors (gap detection, knowledge promotion)
 
+pub mod error;
 pub mod eviction;
 pub mod scheduler;
 pub mod tasks;
+
+pub use error::ProcessError;

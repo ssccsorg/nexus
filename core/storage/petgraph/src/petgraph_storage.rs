@@ -474,52 +474,63 @@ impl EvictCapable for PetgraphStorage {
     fn evict_before(&self, before: &str) -> Result<u64, String> {
         let before_secs: u64 = before.parse().map_err(|e| format!("invalid timestamp: {e}"))?;
         let mut g = self.graph.write().unwrap();
-        let mut removed = 0u64;
 
-        // Collect nodes to remove: concluded intents and their orphaned facts
-        let to_remove: Vec<NodeIndex> = g
-            .node_indices()
-            .filter(|idx| {
-                if let Some(w) = g.node_weight(*idx) {
-                    match w.label.as_str() {
-                        "Intent" => {
-                            // Remove concluded intents older than `before`
-                            if let Some(concluded) = w.properties.get("concluded") {
-                                if let Some(true) = concluded.as_bool() {
-                                    if let Some(ts) = w
-                                        .properties
-                                        .get("last_heartbeat_at")
-                                        .and_then(|v| v.as_i64())
-                                    {
-                                        return (ts as u64) < before_secs;
-                                    }
-                                }
+        // Phase 1: collect intent nodes that are either:
+        //   - concluded and older than `before`, OR
+        //   - claimed but heartbeat expired before `before`
+        let mut to_remove: Vec<NodeIndex> = Vec::new();
+        let mut referenced_fact_names: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+
+        for idx in g.node_indices() {
+            let Some(w) = g.node_weight(idx) else { continue };
+            match w.label.as_str() {
+                "Intent" => {
+                    let is_concluded = w
+                        .properties
+                        .get("concluded")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let hb_ts = w.properties.get("last_heartbeat_at").and_then(|v| v.as_i64());
+
+                    let should_evict = match (is_concluded, hb_ts) {
+                        // Concluded with heartbeat older than cutoff
+                        (true, Some(ts)) => (ts as u64) < before_secs,
+                        // Concluded with no heartbeat → treat as expired
+                        (true, None) => true,
+                        // Unconcluded but heartbeat expired
+                        (false, Some(ts)) => (ts as u64) < before_secs,
+                        // Unconcluded with no heartbeat → keep
+                        (false, None) => false,
+                    };
+
+                    if should_evict {
+                        to_remove.push(idx);
+                    } else {
+                        // Collect fact names referenced by kept intents
+                        for e in g.edges_directed(idx, petgraph::Direction::Incoming) {
+                            if let Some(sn) = g.node_weight(e.source()) {
+                                referenced_fact_names.insert(sn.name.clone());
                             }
-                            false
                         }
-                        "Fact" => {
-                            // Remove facts not referenced by any intent
-                            let referenced = g.node_indices().any(|i| {
-                                g.node_weight(i).is_some_and(|nw| nw.label == "Intent")
-                                    && g.edges_directed(i, petgraph::Direction::Incoming)
-                                        .any(|e| {
-                                            g.node_weight(e.source())
-                                                .is_some_and(|sw| sw.name == w.name)
-                                        })
-                            });
-                            !referenced
-                        }
-                        _ => false,
                     }
-                } else {
-                    false
                 }
-            })
-            .collect();
+                _ => {}
+            }
+        }
 
+        // Phase 2: collect orphaned facts (not referenced by any kept intent)
+        for idx in g.node_indices() {
+            let Some(w) = g.node_weight(idx) else { continue };
+            if w.label == "Fact" && !referenced_fact_names.contains(&w.name) {
+                to_remove.push(idx);
+            }
+        }
+
+        // Phase 3: remove collected nodes
+        let removed = to_remove.len() as u64;
         for idx in to_remove {
             g.remove_node(idx);
-            removed += 1;
         }
 
         Ok(removed)

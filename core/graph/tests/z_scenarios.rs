@@ -4,7 +4,7 @@
 // research problem. No agent talks directly to another — all via Blackboard.
 
 use nexus_graph::cypher;
-use nexus_graph::{Blackboard, create_blackboard, Fact, FihHash, Hint, Intent};
+use nexus_graph::{Blackboard, Fact, FihHash, Hint, Intent, create_blackboard};
 
 // ── Scenario 1: Contradiction Detection ───────────────────────────────────
 //

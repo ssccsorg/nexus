@@ -7,7 +7,7 @@
 //   4. Read_state + unit assertions verify correctness (Cypher is for portability)
 
 use nexus_graph::cypher;
-use nexus_graph::{Blackboard, BlackboardError, create_blackboard, Fact, FihHash, Intent};
+use nexus_graph::{Blackboard, BlackboardError, Fact, FihHash, Intent, create_blackboard};
 
 /// Helper: submit a fact with minimal boilerplate.
 fn submit_fact(bb: &mut impl Blackboard, id: &str, origin: &str, content: &str, creator: &str) {
@@ -158,7 +158,7 @@ fn test_full_agent_collaboration_flow() {
 #[test]
 fn test_petgraph_time_range() {
     use nexus_graph::{
-        Blackboard, create_blackboard, Fact, FihHash, PetgraphStorage, TimeRangeCapable,
+        Blackboard, Fact, FihHash, PetgraphStorage, TimeRangeCapable, create_blackboard,
     };
 
     // PetgraphStorage::time_range() returns None (unbounded in-memory store).
@@ -187,5 +187,3 @@ fn test_petgraph_time_range() {
     // the Blackboard trait — this is by design (#51 will add routing).
     // The hot layer is unbounded until #51 adds bounded range logic.
 }
-
-

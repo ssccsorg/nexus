@@ -7,7 +7,7 @@
 //   - Intent lifecycle completes correctly under contention
 
 use nexus_graph::cypher;
-use nexus_graph::{Blackboard, create_blackboard, Fact, FihHash, Intent};
+use nexus_graph::{Blackboard, Fact, FihHash, Intent, create_blackboard};
 use std::collections::HashSet;
 
 /// An agent that randomly reads and writes the Blackboard.

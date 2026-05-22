@@ -10,6 +10,7 @@
 // `DefaultBlackboard`, `Arc<Mutex<DefaultBlackboard>>`, or any future
 // implementation — only the trait protocol matters.
 
+use crate::error::ProcessError;
 use crate::tasks::{TaskHandler, TaskOutput};
 use nexus_model::{Blackboard, EvictCapable};
 use std::time::Duration;
@@ -69,7 +70,7 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
     ///   4. **Act**: submit new Facts from task output
     ///
     /// Returns the number of Intents submitted this tick.
-    pub fn tick(&mut self) -> Result<usize, String> {
+    pub fn tick(&mut self) -> Result<usize, ProcessError> {
         // ── Observe ────────────────────────────────────────────────────
         let state = Blackboard::read_state(&self.bb);
 
@@ -115,14 +116,15 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
         // ── Memory check → eviction ───────────────────────────────────
         let size = EvictCapable::approximate_size(&self.bb);
         if size > self.config.eviction_threshold {
-            let _ = crate::eviction::try_evict(&self.bb, self.config.eviction_threshold);
+            // TODO(#35): pass SnapshotSaver when R2 persistence is wired
+            let _ = crate::eviction::try_evict(&self.bb, self.config.eviction_threshold, None)?;
         }
 
         Ok(intent_count)
     }
 
     /// Run N complete OODA iterations.
-    pub fn run(&mut self, iterations: usize) -> Result<usize, String> {
+    pub fn run(&mut self, iterations: usize) -> Result<usize, ProcessError> {
         let mut total = 0;
         for _ in 0..iterations {
             total += self.tick()?;
