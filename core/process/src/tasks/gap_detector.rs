@@ -7,14 +7,23 @@
 
 use super::{TaskHandler, TaskOutput};
 use nexus_model::{BoardState, Fact, FihHash, Intent};
+use std::collections::HashSet;
 
 /// A gap detector that spots orphaned concepts (Facts with no Intent
 /// grounding them to other Facts).
-pub struct GapDetector;
+///
+/// Tracks previously-synthesised (origin, fact_count) pairs to avoid
+/// submitting duplicate Intents on successive OODA ticks.
+pub struct GapDetector {
+    /// Set of (origin, fact_count) tuples already synthesised.
+    seen: HashSet<(String, usize)>,
+}
 
 impl GapDetector {
     pub fn new() -> Self {
-        Self
+        Self {
+            seen: HashSet::new(),
+        }
     }
 }
 
@@ -31,7 +40,7 @@ impl TaskHandler for GapDetector {
 
     fn orient(&mut self, state: &BoardState) -> TaskOutput {
         // Find facts that are not referenced by any intent
-        let referenced: std::collections::HashSet<&str> = state
+        let referenced: HashSet<&str> = state
             .intents
             .iter()
             .flat_map(|i| i.from_facts.iter().map(|s| s.as_str()))
@@ -59,6 +68,12 @@ impl TaskHandler for GapDetector {
         // For origins with multiple orphaned facts, submit a synthesis Intent
         for (origin, facts) in &by_origin {
             if facts.len() >= 2 {
+                let key = ((*origin).to_string(), facts.len());
+                if self.seen.contains(&key) {
+                    continue; // already synthesised this exact set
+                }
+                self.seen.insert(key);
+
                 let desc = format!("Synthesise {} orphaned facts from {}", facts.len(), origin);
                 let intent = Intent {
                     id: FihHash::new(&[origin, "gap"], "intent"),

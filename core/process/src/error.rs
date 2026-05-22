@@ -1,15 +1,15 @@
-// nexus-process — Error types for the process layer.
+// ── Process-level errors ───────────────────────────────────────────────────
 
 use std::fmt;
 
-/// Errors that can occur during OODA loop execution.
-#[derive(Debug)]
+/// Errors originating from the OODA loop runtime (process crate).
+#[derive(Debug, Clone)]
 pub enum ProcessError {
-    /// The blackboard rejected an operation (e.g. duplicate Intent, not found).
+    /// Blackboard operation failed.
     Blackboard(String),
-    /// Eviction backend failed.
+    /// Memory eviction failed.
     Eviction(String),
-    /// Snapshot persistence failed.
+    /// Snapshot serialization/deserialization failed.
     Snapshot(String),
     /// Internal process error.
     Internal(String),
@@ -18,18 +18,18 @@ pub enum ProcessError {
 impl fmt::Display for ProcessError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Blackboard(msg) => write!(f, "blackboard: {msg}"),
-            Self::Eviction(msg) => write!(f, "eviction: {msg}"),
-            Self::Snapshot(msg) => write!(f, "snapshot: {msg}"),
-            Self::Internal(msg) => write!(f, "internal: {msg}"),
+            Self::Blackboard(msg) => write!(f, "blackboard error: {msg}"),
+            Self::Eviction(msg) => write!(f, "eviction error: {msg}"),
+            Self::Snapshot(msg) => write!(f, "snapshot error: {msg}"),
+            Self::Internal(msg) => write!(f, "internal error: {msg}"),
         }
     }
 }
 
 impl std::error::Error for ProcessError {}
 
-impl From<String> for ProcessError {
-    fn from(msg: String) -> Self {
-        Self::Internal(msg)
+impl From<nexus_model::BlackboardError> for ProcessError {
+    fn from(e: nexus_model::BlackboardError) -> Self {
+        Self::Blackboard(e.to_string())
     }
 }
