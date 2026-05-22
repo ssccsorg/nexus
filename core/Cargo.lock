@@ -1370,6 +1370,7 @@ version = "0.1.0"
 dependencies = [
  "nexus-graph",
  "nexus-model",
+ "nexus-storage-petgraph",
  "serde",
  "serde_json",
 ]

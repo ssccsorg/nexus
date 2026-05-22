@@ -6,23 +6,17 @@
 //   3. Monitor heartbeat TTL — release stale claims
 //   4. Trigger periodic eviction when memory exceeds threshold
 //
-// Generic over `B: Blackboard + EvictCapable`. The caller may use
-// `DefaultBlackboard`, `Arc<Mutex<DefaultBlackboard>>`, or any future
-// implementation — only the trait protocol matters.
+// Generic over `B: Blackboard + EvictCapable`.
 
 use crate::error::ProcessError;
 use crate::tasks::{TaskHandler, TaskOutput};
 use nexus_model::{Blackboard, EvictCapable};
 use std::time::Duration;
 
-/// Configuration for the scheduler loop.
 #[derive(Debug, Clone)]
 pub struct SchedulerConfig {
-    /// Interval between OODA iterations.
     pub tick_interval: Duration,
-    /// Maximum memory before eviction is triggered (bytes).
     pub eviction_threshold: usize,
-    /// Heartbeat TTL — release claims older than this.
     pub heartbeat_ttl: Duration,
 }
 
@@ -36,11 +30,6 @@ impl Default for SchedulerConfig {
     }
 }
 
-/// The OODA loop scheduler. Generic over any `Blackboard + EvictCapable`.
-///
-/// The blackboard is consumed (owned), not borrowed. For shared access,
-/// pass `Arc<Mutex<B>>` which implements `Blackboard` via the blanket impl
-/// on `&mut T`.
 pub struct Scheduler<B: Blackboard + EvictCapable> {
     pub bb: B,
     config: SchedulerConfig,
@@ -56,25 +45,13 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
         }
     }
 
-    /// Register a stigmergy task handler (gap detector, etc.).
     pub fn register(&mut self, task: Box<dyn TaskHandler>) {
         self.tasks.push(task);
     }
 
-    /// Run a single OODA iteration.
-    ///
-    /// Phases:
-    ///   1. **Observe**: read current state from the blackboard
-    ///   2. **Orient**: run registered task handlers on the state
-    ///   3. **Decide**: submit new Intents from task output
-    ///   4. **Act**: submit new Facts from task output
-    ///
-    /// Returns the number of Intents submitted this tick.
     pub fn tick(&mut self) -> Result<usize, ProcessError> {
-        // ── Observe ────────────────────────────────────────────────────
         let state = Blackboard::read_state(&self.bb);
 
-        // ── Orient ─────────────────────────────────────────────────────
         let mut combined = TaskOutput::default();
         for task in &mut self.tasks {
             let output = task.orient(&state);
@@ -82,20 +59,14 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
             combined.facts.extend(output.facts);
         }
 
-        // ── Decide (submit intents) ────────────────────────────────────
         let intent_count = combined.intents.len();
         for intent in &combined.intents {
             let _ = self.bb.submit_intent(intent);
         }
-
-        // ── Act (submit facts) ─────────────────────────────────────────
         for fact in &combined.facts {
             let _ = self.bb.submit_fact(fact);
         }
 
-        // ── Heartbeat TTL check ───────────────────────────────────────
-        // Release intents whose heartbeat is older than config.heartbeat_ttl.
-        // `last_heartbeat_at` is set by the storage layer on each heartbeat().
         let now_secs = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -113,17 +84,14 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
             }
         }
 
-        // ── Memory check → eviction ───────────────────────────────────
         let size = EvictCapable::approximate_size(&self.bb);
         if size > self.config.eviction_threshold {
-            // TODO(#35): pass SnapshotSaver when R2 persistence is wired
-            let _ = crate::eviction::try_evict(&self.bb, self.config.eviction_threshold, None)?;
+            crate::eviction::try_evict(&self.bb, self.config.eviction_threshold)?;
         }
 
         Ok(intent_count)
     }
 
-    /// Run N complete OODA iterations.
     pub fn run(&mut self, iterations: usize) -> Result<usize, ProcessError> {
         let mut total = 0;
         for _ in 0..iterations {

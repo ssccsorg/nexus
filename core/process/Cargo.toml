@@ -6,6 +6,9 @@ license.workspace = true
 
 [dependencies]
 nexus-model = { path = "../model" }
+
+[dev-dependencies]
 nexus-graph = { path = "../graph" }
+nexus-storage-petgraph = { path = "../storage/petgraph" }
 serde.workspace = true
 serde_json.workspace = true
