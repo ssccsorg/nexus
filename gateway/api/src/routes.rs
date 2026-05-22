@@ -8,7 +8,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use nexus_graph::{Blackboard, BlackboardError, Fact, FihHash, Hint, Intent};
+use nexus_graph::{BlackboardError, Fact, FihHash, Hint, Intent};
 use serde::{Deserialize, Serialize};
 
 use crate::state::AppState;

@@ -7,7 +7,7 @@
 //   - Intent lifecycle completes correctly under contention
 
 use nexus_graph::cypher;
-use nexus_graph::{Blackboard, DefaultBlackboard, Fact, FihHash, Intent};
+use nexus_graph::{Blackboard, create_blackboard, Fact, FihHash, Intent};
 use std::collections::HashSet;
 
 /// An agent that randomly reads and writes the Blackboard.
@@ -25,7 +25,7 @@ impl Ant {
     }
 
     /// Perform one random action. Returns a log line.
-    fn act(&mut self, bb: &mut DefaultBlackboard, rng: &mut TestRng, step: usize) -> String {
+    fn act(&mut self, bb: &mut impl Blackboard, rng: &mut TestRng, step: usize) -> String {
         match rng.gen_range(8) {
             // 0-2: submit facts (high probability — knowledge injection)
             0 | 1 | 2 => {
@@ -156,7 +156,7 @@ impl TestRng {
 
 #[test]
 fn test_stress_many_ants() {
-    let mut bb = DefaultBlackboard::new();
+    let mut bb = create_blackboard();
     let mut rng = TestRng::new(42);
 
     // Phase 1: seed with initial facts (research corpus)

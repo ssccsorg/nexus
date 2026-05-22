@@ -7,7 +7,7 @@
 // directly.
 
 use nexus_graph::mock_gateway::MockGateway;
-use nexus_graph::{Blackboard, DefaultBlackboard, Fact, FihHash, Intent};
+use nexus_graph::{Blackboard, create_blackboard, Fact, FihHash, Intent};
 
 /// Contradiction Detection — via MockGateway (JSON transport boundary).
 ///
@@ -19,7 +19,7 @@ use nexus_graph::{Blackboard, DefaultBlackboard, Fact, FihHash, Intent};
 /// except all FIH operations pass through MockGateway's JSON round-trip.
 #[test]
 fn scenario_contradiction_detection_via_gateway() {
-    let mut gw = MockGateway::new(DefaultBlackboard::new());
+    let mut gw = MockGateway::new(create_blackboard());
 
     // Agent-A: ingests paper claiming GNNs work fine at 50 layers
     gw.submit_fact(&Fact {

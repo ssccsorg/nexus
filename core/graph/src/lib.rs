@@ -16,7 +16,23 @@ pub mod query;
 // Full path: nexus_graph::query::cypher or nexus_graph::cypher.
 pub use query::cypher;
 
-pub use blackboard::DefaultBlackboard;
+// DefaultBlackboard is crate-internal. External consumers use the factory.
+use blackboard::DefaultBlackboard;
+
+/// Create a default blackboard with in-memory petgraph hot storage
+/// and no cold backend. Equivalent to `DefaultBlackboard::new()`.
+pub fn create_blackboard() -> impl Blackboard + EvictCapable + StorageRead + GraphRead {
+    DefaultBlackboard::new()
+}
+
+/// Create a blackboard with custom hot and cold storage.
+pub fn create_blackboard_with_storage(
+    hot: PetgraphStorage,
+    cold: Box<dyn ColdStorage>,
+) -> impl Blackboard + EvictCapable + StorageRead + GraphRead {
+    DefaultBlackboard::with_storage(hot, cold)
+}
+
 pub use nexus_model::{
     Blackboard, BlackboardError, BoardState, ColdStorage, CypherCapable, DualStorage, EvictCapable,
     Fact, FactCapable, FihHash, FihPersistence, FilterCapable, FlushCapable, Hint, HintCapable,
