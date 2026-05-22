@@ -18,6 +18,12 @@ impl GapDetector {
     }
 }
 
+impl Default for GapDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TaskHandler for GapDetector {
     fn name(&self) -> &str {
         "gap-detector"
