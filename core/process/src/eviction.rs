@@ -2,8 +2,7 @@
 //
 // The eviction cycle bounds hot storage memory by:
 //   1. Checking `approximate_size()` against a threshold
-//   2. Serialising the hot graph to a persistent snapshot
-//   3. Evicting stale nodes from the hot store
+//   2. Calling `evict_before(timestamp)` to remove stale nodes
 //
 // This implements the Stigmergy pheromone evaporation metaphor:
 // old signals decay over time, making room for new ones.
@@ -15,16 +14,21 @@ use nexus_model::EvictCapable;
 
 /// Run a single eviction check on the given backend.
 /// Returns the number of evicted nodes.
+///
+/// When memory exceeds `threshold`, computes a cutoff timestamp
+/// (currently now minus retention) and evicts nodes older than that.
 pub fn try_evict(backend: &impl EvictCapable, threshold: usize) -> Result<u64, String> {
     let size = EvictCapable::approximate_size(backend);
     if size < threshold {
         return Ok(0); // under threshold, no eviction needed
     }
 
-    // TODO(#35): implement eviction
-    // 1. Snapshot the hot state before evicting
-    // 2. Persist to R2/Parquet
-    // 3. Call backend.evict_before(timestamp)
-    let _ = size;
-    Ok(0)
+    // Cutoff: 2x heartbeat TTL (120s default) before now
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let cutoff = now_secs.saturating_sub(120);
+
+    EvictCapable::evict_before(backend, &cutoff.to_string())
 }
