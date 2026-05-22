@@ -29,6 +29,7 @@ struct ClaimsTracker {
     pub(crate) inner: HashMap<String, String>,
 }
 
+#[allow(dead_code)]
 impl ClaimsTracker {
     fn new() -> Self {
         Self {
@@ -135,6 +136,7 @@ pub(crate) struct DefaultBlackboard {
     project_id: String,
 }
 
+#[allow(dead_code)]
 impl DefaultBlackboard {
     pub fn new() -> Self {
         let graph = Arc::new(RwLock::new(petgraph::Graph::new()));
