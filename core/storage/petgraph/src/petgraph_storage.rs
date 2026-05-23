@@ -514,41 +514,33 @@ impl EvictCapable for PetgraphStorage {
             let Some(w) = g.node_weight(idx) else {
                 continue;
             };
-            match w.label.as_str() {
-                "Intent" => {
-                    let is_concluded = w
-                        .properties
-                        .get("concluded")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false);
-                    let hb_ts = w
-                        .properties
-                        .get("last_heartbeat_at")
-                        .and_then(|v| v.as_i64());
+            if w.label.as_str() == "Intent" {
+                let is_concluded = w
+                    .properties
+                    .get("concluded")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let hb_ts = w
+                    .properties
+                    .get("last_heartbeat_at")
+                    .and_then(|v| v.as_i64());
 
-                    let should_evict = match (is_concluded, hb_ts) {
-                        // Concluded with heartbeat older than cutoff
-                        (true, Some(ts)) => (ts as u64) < before_secs,
-                        // Concluded with no heartbeat → treat as expired
-                        (true, None) => true,
-                        // Unconcluded but heartbeat expired
-                        (false, Some(ts)) => (ts as u64) < before_secs,
-                        // Unconcluded with no heartbeat → keep
-                        (false, None) => false,
-                    };
+                let should_evict = match (is_concluded, hb_ts) {
+                    (true, Some(ts)) => (ts as u64) < before_secs,
+                    (true, None) => true,
+                    (false, Some(ts)) => (ts as u64) < before_secs,
+                    (false, None) => false,
+                };
 
-                    if should_evict {
-                        to_remove.push(idx);
-                    } else {
-                        // Collect fact names referenced by kept intents
-                        for e in g.edges_directed(idx, petgraph::Direction::Incoming) {
-                            if let Some(sn) = g.node_weight(e.source()) {
-                                referenced_fact_names.insert(sn.name.clone());
-                            }
+                if should_evict {
+                    to_remove.push(idx);
+                } else {
+                    for e in g.edges_directed(idx, petgraph::Direction::Incoming) {
+                        if let Some(sn) = g.node_weight(e.source()) {
+                            referenced_fact_names.insert(sn.name.clone());
                         }
                     }
                 }
-                _ => {}
             }
         }
 

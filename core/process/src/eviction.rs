@@ -24,9 +24,5 @@ pub fn try_evict(backend: &impl EvictCapable, threshold: usize) -> Result<u64, P
         .as_secs();
     let cutoff = now_secs.saturating_sub(3600);
 
-    let removed = backend
-        .evict_before(&cutoff.to_string())
-        .map_err(|e| ProcessError::Eviction(e))?;
-
-    Ok(removed)
+    EvictCapable::evict_before(backend, &cutoff.to_string()).map_err(ProcessError::Eviction)
 }
