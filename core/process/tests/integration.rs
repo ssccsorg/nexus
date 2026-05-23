@@ -8,8 +8,8 @@
 //   5. Cross-worker snapshot — Worker A builds state → Worker B restores → continues
 
 use nexus_graph::{
-    Blackboard, CypherCapable, EvictCapable, Fact, FihHash, Intent, Snapshottable, StorageSnapshot,
-    create_blackboard, create_blackboard_from_snapshot,
+    Blackboard, EvictCapable, Fact, FihHash, Snapshottable, StorageSnapshot, create_blackboard,
+    create_blackboard_from_snapshot,
 };
 use nexus_process::scheduler::Scheduler;
 use nexus_process::tasks::gap_detector::GapDetector;
