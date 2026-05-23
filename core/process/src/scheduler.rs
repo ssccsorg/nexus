@@ -72,14 +72,13 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
             .unwrap_or_default()
             .as_secs();
         for intent in &state.intents {
-            if let Some(worker) = &intent.worker {
-                if let Some(ref hb_str) = intent.last_heartbeat_at {
-                    if let Ok(hb_secs) = hb_str.parse::<u64>() {
-                        let elapsed = now_secs.saturating_sub(hb_secs);
-                        if elapsed > self.config.heartbeat_ttl.as_secs() {
-                            let _ = self.bb.release_intent(&intent.id.0, worker);
-                        }
-                    }
+            if let Some(worker) = &intent.worker
+                && let Some(ref hb_str) = intent.last_heartbeat_at
+                && let Ok(hb_secs) = hb_str.parse::<u64>()
+            {
+                let elapsed = now_secs.saturating_sub(hb_secs);
+                if elapsed > self.config.heartbeat_ttl.as_secs() {
+                    let _ = self.bb.release_intent(&intent.id.0, worker);
                 }
             }
         }

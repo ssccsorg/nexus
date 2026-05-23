@@ -8,7 +8,7 @@
 //   5. Cross-worker snapshot — Worker A builds state → Worker B restores → continues
 
 use nexus_graph::{
-    Blackboard, EvictCapable, Fact, FihHash, Intent, Snapshottable, StorageSnapshot,
+    Blackboard, CypherCapable, EvictCapable, Fact, FihHash, Intent, Snapshottable, StorageSnapshot,
     create_blackboard, create_blackboard_from_snapshot,
 };
 use nexus_process::scheduler::Scheduler;
@@ -60,6 +60,7 @@ fn flow_intent_lifecycle() {
 
     let state = Blackboard::read_state(&sched.bb);
     let intent_id = state.intents[0].id.0.clone();
+
     sched
         .bb
         .claim_intent(&intent_id, "agent-alpha")
