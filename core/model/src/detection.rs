@@ -1,3 +1,7 @@
+// Hint processing is not yet implemented in the detection layer.
+// Hint governance and human feedback injection belong in a future
+// agent-level module, not in automated detectors.
+
 // nexus-model — Detection capability traits for stigmergy detectors.
 //
 // Following the same pattern as storage capability traits (StorageRead,
@@ -15,15 +19,13 @@
 //   - Minimal implementations (only implement what you need)
 //   - Future: EmbeddingSimilarityDetection, TemporalAnomalyDetection, etc.
 
-use crate::fih::{BoardState, Fact, Intent};
+use crate::fih::{BoardState, Fact};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Output from a detector's orient phase.
+/// Output from a detector's orient phase — detector emits Facts only.
 #[derive(Debug, Default)]
 pub struct DetectionOutput {
-    /// Intents to submit via `Blackboard::submit_intent()`.
-    pub intents: Vec<Intent>,
     /// Facts to submit via `Blackboard::submit_fact()`.
     pub facts: Vec<Fact>,
 }

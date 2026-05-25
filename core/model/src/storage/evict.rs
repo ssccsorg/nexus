@@ -5,11 +5,9 @@ pub trait EvictCapable: StorageRead {
     fn approximate_size(&self) -> usize;
     fn evict_before(&self, before: &str) -> Result<u64, String>;
 
-    /// Evict intents that are NOT concluded and older than `older_than_secs`.
-    ///
-    /// Unlike `evict_before` (which targets concluded/stale-claimed intents),
-    /// this targets unclaimed, unconcluded intents that have accumulated
-    /// from stigmergy detectors (gap, contradiction, state-change).
+    /// Evict intents that are neither claimed nor concluded, and older
+    /// than `older_than_secs`. These intents accumulated from automated
+    /// observers and were never acted upon by any agent.
     ///
     /// Default: no-op. Cold storage typically doesn't need this;
     /// implementations that do (PetgraphStorage) override.

@@ -15,7 +15,7 @@
 //   agent → claim_intent()    ← agent: takes ownership of the exploration
 //   agent → heartbeat()       ← agent: signals liveness during work
 //   agent → conclude_intent() ← agent: produces result → new Fact created
-//   evict_before(timestamp)   ← scheduler: removes concluded intents, orphaned facts
+//   evict_before(timestamp)   ← scheduler: removes concluded intents only
 //
 // Key architectural constraint: detectors NEVER create Intents.
 // Intents are agent actions. Facts are observations.

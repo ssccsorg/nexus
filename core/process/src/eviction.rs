@@ -12,6 +12,7 @@
 pub fn try_evict_flush(
     backend: &(impl nexus_model::EvictCapable + nexus_model::FlushCapable),
     threshold: usize,
+    cutoff_secs: u64,
 ) -> Result<u64, String> {
     let size = nexus_model::EvictCapable::approximate_size(backend);
     if size < threshold {
@@ -32,6 +33,6 @@ pub fn try_evict_flush(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let cutoff = now_secs.saturating_sub(3600);
+    let cutoff = now_secs.saturating_sub(cutoff_secs);
     backend.evict_before(&cutoff.to_string())
 }

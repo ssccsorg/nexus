@@ -3,10 +3,9 @@
 // The scheduler drives the OODA cycle for any Blackboard implementation:
 //   1. Poll `read_state()` for current board state
 //   2. Run all registered detection tasks (GapDetection, ContradictionDetection, etc.)
-//   3. Submit generated Intents and Facts
+//   3. Submit generated Facts (detectors emit Facts only)
 //   4. Monitor heartbeat TTL — release stale claims
-//   5. Trigger periodic eviction when memory exceeds threshold
-//      (always flush first, then evict — cold failure is non-fatal)
+//   5. Delegate eviction to try_evict / try_evict_flush
 //
 // Generic over `B: Blackboard + EvictCapable (+ optionally FlushCapable)`.
 // Detection tasks implement `DetectionCapable` (or marker traits) from nexus-model.
@@ -22,7 +21,11 @@ pub struct SchedulerConfig {
     pub heartbeat_ttl: Duration,
     /// Maximum age for unclaimed, unconcluded intents before eviction.
     /// Default: 3600s (1 hour). Set to 0 to evict all stale intents immediately.
-    pub stale_intent_ttl: Duration,
+    pub unclaimed_intent_ttl: Duration,
+    /// Age cutoff (in seconds) for evicting cold storage nodes.
+    /// Nodes older than this cutoff are evicted during flush cycles.
+    /// Default: 86400s (24 hours).
+    pub eviction_cutoff_secs: u64,
 }
 
 impl Default for SchedulerConfig {
@@ -31,7 +34,8 @@ impl Default for SchedulerConfig {
             tick_interval: Duration::from_millis(100),
             eviction_threshold: 1024 * 1024 * 10,
             heartbeat_ttl: Duration::from_secs(60),
-            stale_intent_ttl: Duration::from_secs(3600),
+            unclaimed_intent_ttl: Duration::from_secs(3600),
+            eviction_cutoff_secs: 86400,
         }
     }
 }
@@ -75,10 +79,12 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
         B: nexus_model::FlushCapable,
     {
         let threshold = self.config.eviction_threshold;
+        let cutoff_secs = self.config.eviction_cutoff_secs;
         self._tick_inner(move |bb: &B| {
             let size = EvictCapable::approximate_size(bb);
             if size > threshold {
-                crate::eviction::try_evict_flush(bb, threshold).map_err(ProcessError::Eviction)?;
+                crate::eviction::try_evict_flush(bb, threshold, cutoff_secs)
+                    .map_err(ProcessError::Eviction)?;
             }
             Ok(())
         })
@@ -96,14 +102,12 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
         let mut combined = DetectionOutput::default();
         for task in &mut self.tasks {
             let output = task.orient(&state);
-            combined.intents.extend(output.intents);
             combined.facts.extend(output.facts);
         }
 
         let fact_count = combined.facts.len();
-        for intent in &combined.intents {
-            let _ = self.bb.submit_intent(intent);
-        }
+        // submit_fact is idempotent: same FihHash produces the same Fact.
+        // Detectors re-emit already-recorded patterns harmlessly.
         for fact in &combined.facts {
             let _ = self.bb.submit_fact(fact);
         }
@@ -127,10 +131,10 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
         evict_fn(&self.bb)?;
 
         // Evict stale unclaimed intents
-        if self.config.stale_intent_ttl.as_secs() > 0 {
+        if self.config.unclaimed_intent_ttl.as_secs() > 0 {
             let _ = self
                 .bb
-                .evict_stale_intents(self.config.stale_intent_ttl.as_secs());
+                .evict_stale_intents(self.config.unclaimed_intent_ttl.as_secs());
         }
 
         Ok(fact_count)
