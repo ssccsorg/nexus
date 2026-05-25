@@ -7,7 +7,7 @@
 use crate::query::cypher::{Plan, TranslateError, execute_with_cold};
 use nexus_model::{
     Blackboard, BlackboardError, BoardState, ColdStorage, CypherCapable, DualStorage, EvictCapable,
-    Fact, FactCapable, FihHash, FlushCapable, FlushCursor, Hint, HintCapable, Intent,
+    Fact, FactCapable, FihHash, FlushCapable, FlushCursor, FlushResult, Hint, HintCapable, Intent,
     IntentCapable, NullStorage, StorageRead,
 };
 use nexus_storage_petgraph::{
@@ -324,6 +324,18 @@ impl EvictCapable for DefaultBlackboard {
 
     fn evict_before(&self, before: &str) -> Result<u64, String> {
         EvictCapable::evict_before(&self.storage, before)
+    }
+
+    fn evict_stale_intents(&self, older_than_secs: u64) -> Result<u64, String> {
+        EvictCapable::evict_stale_intents(&self.storage, older_than_secs)
+    }
+}
+
+// ── Flush — delegates to storage (DualStorage → cold) ────────────────────
+
+impl FlushCapable for DefaultBlackboard {
+    fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
+        self.storage.flush_since(cursor)
     }
 }
 
