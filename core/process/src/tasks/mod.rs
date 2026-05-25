@@ -20,7 +20,9 @@ pub trait TaskHandler {
     fn orient(&mut self, state: &BoardState) -> TaskOutput;
 }
 
+pub mod contradiction_detector;
 pub mod gap_detector;
+pub mod new_document_analyzer;
 
 /// Output from a task handler: Intents and Facts to submit.
 #[derive(Debug, Default)]
