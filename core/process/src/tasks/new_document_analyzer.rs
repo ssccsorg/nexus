@@ -101,7 +101,7 @@ impl DetectionCapable for NewDocumentAnalyzer {
                         concluded_at: None,
                     });
                 } else {
-                    let existing: Vec<&str> = existing_pos_set.iter().map(|s| *s).collect();
+                    let existing: Vec<&str> = existing_pos_set.iter().copied().collect();
                     output.intents.push(Intent {
                         id: FihHash::new(&[tid, "challenge"], "intent"),
                         from_facts: vec![tid.clone()],
