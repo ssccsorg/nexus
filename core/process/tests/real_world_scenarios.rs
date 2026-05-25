@@ -1,13 +1,31 @@
-// Real-world usage scenario tests: simulates how Nexus is consumed
-// in actual SSCCS research workflows. Uses claims from real documents
-// at docs.ssccs.org to validate the full FIH lifecycle.
+// Nexus Real-World Scenario Tests
+// ================================
+// Simulates how Nexus is consumed in actual SSCCS research workflows.
+// Uses claims from real documents at docs.ssccs.org.
+//
+// These scenarios validate that the detection layer works on realistic,
+// cross-domain document collections — not just synthetic test data.
+//
+// FIH Flow demonstrated in each scenario:
+//   1. submit_fact(document_claim)     ← knowledge ingestion
+//   2. detector.orient(state)          ← automated pattern observation
+//   3. detector → Fact(gap|contradiction|state_change)  ← immutable record
+//   4. agent reads detector Facts      ← stigmergy: agents perceive traces
+//   5. agent → submit_intent()         ← agent proposes action
+//   6. agent → claim → conclude        ← FIH lifecycle completion
+//   7. new synthesis Fact created      ← knowledge grows
 //
 // Scenarios:
 //   1. Cross-domain discovery (manifesto + spatz + eurollvm)
+//      — philosophy meets hardware meets compiler infrastructure
 //   2. Peer review challenge (rust_zerocost challenges manifesto purity)
+//      — practical implementation questions ontological claims
 //   3. Incremental knowledge growth (many iterations, emergent patterns)
+//      — detectors produce facts → agents create intents → new facts → repeat
 //   4. Multi-agent collaboration (agents read detector facts, create intents)
+//      — 3 specialized agents, no direct communication, stigmergy only
 //   5. Document revision (v1 → detector facts → v2 arrives → state change)
+//      — knowledge evolution tracked through detector observations
 
 use nexus_graph::{
     Blackboard, EvictCapable, Fact, FihHash, Intent, Snapshottable, StorageSnapshot,

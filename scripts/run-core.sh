@@ -6,10 +6,10 @@
 # Use run.sh at the project root for comprehensive CI (core + docker + gateway).
 #
 # Mirrors .github/workflows/core.yml locally:
-#   cargo fmt | check | clippy | test
+#   cargo fmt | clippy --fix | check | clippy | test
 #
 # Usage:
-#   scripts/run-core.sh               # Full check: fmt + clippy + test
+#   scripts/run-core.sh               # Full check
 #   scripts/run-core.sh --check       # Check only
 #   scripts/run-core.sh --clippy      # Clippy only
 #   scripts/run-core.sh --test        # Test only
@@ -32,7 +32,11 @@ done
 
 run_check()  { cargo check -p nexus-graph -p nexus-storage-sqlite -p nexus-storage-duckdb -p nexus-storage-petgraph -p nexus-process && cargo check; }
 run_fmt()    { cargo fmt; }
-run_clippy() { cargo clippy -- -D warnings 2>&1 | head -20 || true; }
+# Auto-fix trivial clippy warnings (unused imports, redundant clones, etc.)
+# before running the strict check. --allow-dirty lets it modify working tree.
+run_clippy_fix() { cargo clippy --fix --allow-dirty --allow-staged 2>&1 || true; }
+# Strict clippy: deny all warnings. Must pass for CI to succeed.
+run_clippy() { cargo clippy -- -D warnings; }
 run_test()   {
     cargo test -p nexus-storage-sqlite -- --nocapture 2>&1
     echo "---"
@@ -46,6 +50,8 @@ run_test()   {
 }
 run_all() {
     echo "=== fmt ===" && run_fmt
+    echo "=== clippy --fix ===" && run_clippy_fix
+    echo "=== fmt (after fix) ===" && run_fmt
     echo "=== check ===" && run_check
     echo "=== clippy ===" && run_clippy
     echo "=== test ===" && run_test
@@ -53,7 +59,7 @@ run_all() {
 
 case $MODE in
     check)  echo "=== fmt ===" && run_fmt && run_check ;;
-    clippy) echo "=== fmt ===" && run_fmt && run_clippy ;;
+    clippy) echo "=== fmt ===" && run_fmt && run_clippy_fix && run_fmt && run_clippy ;;
     test)   echo "=== fmt ===" && run_fmt && run_test ;;
     all)
         echo "nexus-core CI (local)"
