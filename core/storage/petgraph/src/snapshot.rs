@@ -1,6 +1,7 @@
 // nexus-storage-petgraph — Serializable snapshot for R2/blob persistence.
 
 use crate::weight::{EdgeWeight, NodeWeight};
+use nexus_model::TaskStates;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -14,9 +15,26 @@ use std::collections::HashMap;
 /// - `graph`: the full petgraph structure (nodes + edges + properties)
 /// - `claims`: agent->intent ownership map (derived from ClaimsTracker)
 /// - `project_id`: partition identifier
+/// - `task_states`: serialized detector state for cross-worker continuity
+///   (e.g., StateChangeDetector checkpoint, GapDetector seen-sets)
 #[derive(Clone, Serialize, Deserialize)]
 pub struct StorageSnapshot {
     pub graph: petgraph::Graph<NodeWeight, EdgeWeight>,
     pub claims: HashMap<String, String>,
     pub project_id: String,
+    /// Detector states, keyed by detector name (e.g. "state-change-detector").
+    /// Each value is an opaque JSON blob — the detector owns its schema.
+    /// Default empty for backward compatibility with snapshots that predate
+    /// detector state persistence.
+    #[serde(default)]
+    pub task_states: TaskStates,
+}
+
+/// A backend that can export and import its full state as a snapshot.
+///
+/// Workers use this to persist their partition to blob storage (R2, S3)
+/// and restore it on the next invocation — no external database needed.
+pub trait Snapshottable {
+    fn to_snapshot(&self) -> StorageSnapshot;
+    fn from_snapshot(snapshot: StorageSnapshot) -> Self;
 }

@@ -7,9 +7,9 @@
 // Project-scoped via project_id.
 
 use nexus_model::{
-    BlackboardError, BoardState, Fact, FactCapable, FihHash, FilterCapable, FlushCapable,
-    FlushCursor, FlushResult, Hint, HintCapable, Intent, IntentCapable, PartitionData, ScanCapable,
-    StateFilter, StorageRead, TimeRangeCapable,
+    BlackboardError, BoardState, CypherCapable, Fact, FactCapable, FihHash, FilterCapable,
+    FlushCapable, FlushCursor, FlushResult, Hint, HintCapable, Intent, IntentCapable,
+    PartitionData, ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
 };
 use rusqlite::{Connection, params};
 use std::ops::Range;
@@ -736,6 +736,8 @@ impl FlushCapable for SqlNormalizedStorage {
         })
     }
 }
+
+impl CypherCapable for SqlNormalizedStorage {}
 
 /// Build LIMIT/OFFSET suffix.
 fn build_limit_offset(filter: &StateFilter) -> String {

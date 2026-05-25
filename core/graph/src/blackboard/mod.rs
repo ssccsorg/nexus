@@ -4,12 +4,15 @@
 // access and Cypher queries) with a cold storage backend for durability.
 // Storage is swappable via DualStorage.
 
+use crate::query::cypher::{Plan, TranslateError, execute_with_cold};
 use nexus_model::{
-    Blackboard, BlackboardError, BoardState, ColdStorage, DualStorage, Fact, FactCapable, FihHash,
-    FlushCapable, FlushCursor, Hint, HintCapable, Intent, IntentCapable, NullStorage, StorageRead,
+    Blackboard, BlackboardError, BoardState, ColdStorage, CypherCapable, DualStorage, EvictCapable,
+    Fact, FactCapable, FihHash, FlushCapable, FlushCursor, FlushResult, Hint, HintCapable, Intent,
+    IntentCapable, NullStorage, StorageRead,
 };
 use nexus_storage_petgraph::{
-    EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, StorageSnapshot,
+    EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Record, Snapshottable,
+    StorageSnapshot,
 };
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
@@ -27,6 +30,7 @@ struct ClaimsTracker {
     pub(crate) inner: HashMap<String, String>,
 }
 
+#[allow(dead_code)]
 impl ClaimsTracker {
     fn new() -> Self {
         Self {
@@ -126,13 +130,14 @@ impl ClaimsTracker {
 /// the lock is internal to the storage layer, not this struct.
 ///
 /// For multi-worker thread-safe access, wrap in `Arc<Mutex<DefaultBlackboard>>`.
-pub struct DefaultBlackboard {
+pub(crate) struct DefaultBlackboard {
     storage: DualStorage,
     hot_graph: Arc<RwLock<petgraph::Graph<NodeWeight, EdgeWeight>>>,
     claims: ClaimsTracker,
     project_id: String,
 }
 
+#[allow(dead_code)]
 impl DefaultBlackboard {
     pub fn new() -> Self {
         let graph = Arc::new(RwLock::new(petgraph::Graph::new()));
@@ -172,6 +177,16 @@ impl DefaultBlackboard {
         f(&g)
     }
 
+    /// Execute a Cypher query plan with hot/cold routing.
+    ///
+    /// Hot queries run against the in-memory petgraph (µs).
+    /// Cold-eligible queries (simple tabular scans) route to the cold storage
+    /// backend (DuckDB/Parquet) via the `CypherCapable` trait.
+    pub fn query(&self, plan: &Plan) -> Result<Vec<Record>, TranslateError> {
+        let hot = self.hot_graph.read().unwrap();
+        execute_with_cold(&*hot, &self.storage, plan)
+    }
+
     pub fn flush(&self) -> Result<(), String> {
         // Dual-write keeps cold in sync already; flush is a no-op today.
         // TODO(#35): incremental flush — track cursor across invocations,
@@ -202,6 +217,7 @@ impl DefaultBlackboard {
             graph: g.clone(),
             claims: self.claims.to_snapshot(),
             project_id: self.project_id.clone(),
+            task_states: std::collections::HashMap::new(),
         }
     }
 
@@ -287,6 +303,50 @@ impl GraphWrite for DefaultBlackboard {
     }
 }
 
+// ── StorageRead — delegates to hot storage ────────────────────────────────
+
+impl StorageRead for DefaultBlackboard {
+    fn project_id(&self) -> &str {
+        &self.project_id
+    }
+
+    fn read_state(&self) -> BoardState {
+        self.storage.read_state()
+    }
+}
+
+// ── Eviction support — delegates to storage ───────────────────────────────
+
+impl EvictCapable for DefaultBlackboard {
+    fn approximate_size(&self) -> usize {
+        EvictCapable::approximate_size(&self.storage)
+    }
+
+    fn evict_before(&self, before: &str) -> Result<u64, String> {
+        EvictCapable::evict_before(&self.storage, before)
+    }
+
+    fn evict_stale_intents(&self, older_than_secs: u64) -> Result<u64, String> {
+        EvictCapable::evict_stale_intents(&self.storage, older_than_secs)
+    }
+}
+
+// ── Flush — delegates to storage (DualStorage → cold) ────────────────────
+
+impl FlushCapable for DefaultBlackboard {
+    fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
+        self.storage.flush_since(cursor)
+    }
+}
+
+// ── Cypher query — delegates to storage (DualStorage → cold) ─────────────
+
+impl CypherCapable for DefaultBlackboard {
+    fn query_plan(&self, plan: &serde_json::Value) -> Result<serde_json::Value, String> {
+        self.storage.query_plan(plan)
+    }
+}
+
 impl Blackboard for DefaultBlackboard {
     fn project_id(&self) -> &str {
         &self.project_id
@@ -333,5 +393,72 @@ impl Blackboard for DefaultBlackboard {
 
     fn read_state(&self) -> BoardState {
         self.storage.read_state()
+    }
+}
+
+impl Snapshottable for DefaultBlackboard {
+    fn to_snapshot(&self) -> StorageSnapshot {
+        DefaultBlackboard::to_snapshot(self)
+    }
+
+    fn from_snapshot(snapshot: StorageSnapshot) -> Self {
+        DefaultBlackboard::from_snapshot(snapshot)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cypher;
+    use nexus_model::{Blackboard, Fact, FihHash, Intent};
+
+    #[test]
+    fn test_storage_snapshot_roundtrip() {
+        let mut bb = DefaultBlackboard::new();
+
+        bb.submit_fact(&Fact {
+            id: FihHash("f_snap_1".into()),
+            origin: "snap-test".into(),
+            content: serde_json::json!("snapshot data"),
+            creator: "tester".into(),
+        })
+        .unwrap();
+        bb.submit_fact(&Fact {
+            id: FihHash("f_snap_2".into()),
+            origin: "snap-test".into(),
+            content: serde_json::json!("more data"),
+            creator: "tester".into(),
+        })
+        .unwrap();
+        bb.submit_intent(&Intent {
+            id: FihHash("i_snap_1".into()),
+            from_facts: vec!["f_snap_1".into()],
+            description: "snapshot intent".into(),
+            creator: "tester".into(),
+            worker: None,
+            to_fact_id: None,
+            last_heartbeat_at: None,
+            created_at: None,
+            concluded_at: None,
+        })
+        .unwrap();
+
+        let snapshot = bb.to_snapshot();
+        let json = serde_json::to_vec(&snapshot).expect("serialise");
+        let restored_snapshot: StorageSnapshot =
+            serde_json::from_slice(&json).expect("deserialise");
+        let mut restored = DefaultBlackboard::from_snapshot(restored_snapshot);
+
+        let state = <DefaultBlackboard as Blackboard>::read_state(&restored);
+        assert_eq!(state.facts.len(), 2);
+        assert_eq!(state.intents.len(), 1);
+
+        let plan = cypher::Plan::from_internal("MATCH (f:Fact) RETURN f").unwrap();
+        let count = cypher::execute(&restored, &plan).unwrap().len();
+        assert_eq!(count, 2, "Cypher works on restored snapshot");
+
+        restored
+            .claim_intent("i_snap_1", "agent-x")
+            .expect("claim should work on restored bb");
     }
 }

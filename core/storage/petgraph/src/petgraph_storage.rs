@@ -9,6 +9,7 @@ use nexus_model::{
     BlackboardError, BoardState, EvictCapable, Fact, FactCapable, FihHash, Hint, HintCapable,
     Intent, IntentCapable, StorageRead, TimeRangeCapable,
 };
+use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use std::collections::HashMap;
 use std::ops::Range;
@@ -147,8 +148,16 @@ impl StorageRead for PetgraphStorage {
                                     })
                                     .and_then(|e| g.node_weight(e.target()).map(|n| n.name.clone()))
                             },
-                            last_heartbeat_at: None,
-                            created_at: None,
+                            last_heartbeat_at: w
+                                .properties
+                                .get("last_heartbeat_at")
+                                .and_then(|v| v.as_i64())
+                                .map(|ts| ts.to_string()),
+                            created_at: w
+                                .properties
+                                .get("created_at")
+                                .and_then(|v| v.as_i64())
+                                .map(|ts| ts.to_string()),
                             concluded_at: if w
                                 .properties
                                 .get("concluded")
@@ -246,6 +255,11 @@ impl IntentCapable for PetgraphStorage {
                 let mut m = HashMap::new();
                 m.insert("description".into(), intent.description.clone().into());
                 m.insert("creator".into(), intent.creator.clone().into());
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64;
+                m.insert("created_at".into(), serde_json::json!(now));
                 m
             },
         });
@@ -292,6 +306,13 @@ impl IntentCapable for PetgraphStorage {
                 }
                 w.properties
                     .insert("worker".into(), agent.to_string().into());
+                if let Ok(now) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                {
+                    w.properties.insert(
+                        "last_heartbeat_at".into(),
+                        serde_json::Value::Number(now.as_secs().into()),
+                    );
+                }
                 return Ok(());
             }
         }
@@ -326,6 +347,15 @@ impl IntentCapable for PetgraphStorage {
                     _ => {
                         w.properties
                             .insert("worker".into(), agent.to_string().into());
+                        // Record heartbeat timestamp for TTL monitoring
+                        if let Ok(now) =
+                            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                        {
+                            w.properties.insert(
+                                "last_heartbeat_at".into(),
+                                serde_json::Value::Number(now.as_secs().into()),
+                            );
+                        }
                         return Ok(());
                     }
                 }
@@ -443,16 +473,145 @@ impl TimeRangeCapable for PetgraphStorage {
 
 impl EvictCapable for PetgraphStorage {
     fn approximate_size(&self) -> usize {
-        // Estimate: minimum 256 bytes per node. Actual size depends on
-        // property map contents (especially JSON document content).
-        // TODO(#51): measure actual NodeWeight size instead of fixed factor.
-        self.graph.read().unwrap().node_count() * 256
+        let g = self.graph.read().unwrap();
+        let mut total = 0usize;
+        for idx in g.node_indices() {
+            if let Some(w) = g.node_weight(idx) {
+                // Base overhead: name + label + HashMap
+                total += w.name.len() + w.label.len() + 64;
+                for (k, v) in &w.properties {
+                    total += k.len();
+                    match v {
+                        serde_json::Value::String(s) => total += s.len(),
+                        serde_json::Value::Number(n) => total += n.to_string().len(),
+                        serde_json::Value::Array(arr) => total += arr.len() * 16,
+                        serde_json::Value::Object(obj) => total += obj.len() * 32,
+                        _ => total += 8,
+                    }
+                }
+            }
+        }
+        // Account for edges: each edge stores rel_type + properties
+        for idx in g.edge_indices() {
+            if let Some(e) = g.edge_weight(idx) {
+                total += e.rel_type.len() + 32;
+                for (k, v) in &e.properties {
+                    total += k.len() + 8;
+                    if let serde_json::Value::String(s) = v {
+                        total += s.len();
+                    }
+                }
+            }
+        }
+        total
     }
 
     fn evict_before(&self, before: &str) -> Result<u64, String> {
-        // TODO(#35): implement actual eviction in dispatcher runtime.
-        // Currently no-op. petgraph keeps all data in memory.
-        let _ = before;
-        Ok(0)
+        let before_secs: u64 = before
+            .parse()
+            .map_err(|e| format!("invalid timestamp: {e}"))?;
+        let mut g = self.graph.write().unwrap();
+
+        // Phase 1: collect intent nodes that are either:
+        //   - concluded and older than `before`, OR
+        //   - claimed but heartbeat expired before `before`
+        let mut to_remove: Vec<NodeIndex> = Vec::new();
+        let mut referenced_fact_names: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+
+        for idx in g.node_indices() {
+            let Some(w) = g.node_weight(idx) else {
+                continue;
+            };
+            if w.label.as_str() == "Intent" {
+                let is_concluded = w
+                    .properties
+                    .get("concluded")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let hb_ts = w
+                    .properties
+                    .get("last_heartbeat_at")
+                    .and_then(|v| v.as_i64());
+
+                let should_evict = match (is_concluded, hb_ts) {
+                    (true, Some(ts)) => (ts as u64) < before_secs,
+                    (true, None) => true,
+                    (false, Some(ts)) => (ts as u64) < before_secs,
+                    (false, None) => false,
+                };
+
+                if should_evict {
+                    to_remove.push(idx);
+                } else {
+                    for e in g.edges_directed(idx, petgraph::Direction::Incoming) {
+                        if let Some(sn) = g.node_weight(e.source()) {
+                            referenced_fact_names.insert(sn.name.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Phase 2: (removed) Facts are NEVER removed by eviction.
+        // A Fact is an immutable observation. It must persist indefinitely.
+        // Memory pressure should be managed by flush-to-cold, not Fact deletion.
+
+        // Phase 3: remove collected Intent nodes only
+        let removed = to_remove.len() as u64;
+        for idx in to_remove {
+            g.remove_node(idx);
+        }
+
+        Ok(removed)
+    }
+
+    fn evict_stale_intents(&self, older_than_secs: u64) -> Result<u64, String> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let cutoff = now.saturating_sub(older_than_secs);
+
+        let mut g = self.graph.write().unwrap();
+        let mut to_remove: Vec<NodeIndex> = Vec::new();
+
+        for idx in g.node_indices() {
+            let Some(w) = g.node_weight(idx) else {
+                continue;
+            };
+            if w.label.as_str() != "Intent" {
+                continue;
+            }
+            // Skip concluded intents — those are handled by evict_before
+            let is_concluded = w
+                .properties
+                .get("concluded")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            if is_concluded {
+                continue;
+            }
+            // Skip claimed intents (have a worker)
+            let has_worker = w.properties.contains_key("worker");
+            if has_worker {
+                continue;
+            }
+            // Check age
+            let created = w
+                .properties
+                .get("created_at")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0) as u64;
+            if created < cutoff {
+                to_remove.push(idx);
+            }
+        }
+
+        let removed = to_remove.len() as u64;
+        for idx in to_remove {
+            g.remove_node(idx);
+        }
+        Ok(removed)
     }
 }
