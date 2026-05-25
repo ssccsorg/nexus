@@ -11,7 +11,7 @@
 // Detection tasks implement `DetectionCapable` (or marker traits) from nexus-model.
 
 use crate::error::ProcessError;
-use nexus_model::{Blackboard, DetectionCapable, DetectionOutput, EvictCapable};
+use nexus_model::{Blackboard, DetectionCapable, DetectionOutput, EvictCapable, TaskStates};
 use std::time::Duration;
 
 #[derive(Debug, Clone)]
@@ -114,5 +114,29 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
             total += self.tick()?;
         }
         Ok(total)
+    }
+
+    /// Collect serializable state from all registered detectors.
+    /// Called before snapshot to persist detector state alongside
+    /// the blackboard state.
+    pub fn collect_task_states(&self) -> TaskStates {
+        let mut states = TaskStates::new();
+        for task in &self.tasks {
+            if let Some(state) = task.snapshot_state() {
+                states.insert(task.name().to_string(), state);
+            }
+        }
+        states
+    }
+
+    /// Restore detector state from a previously saved snapshot.
+    /// Called after snapshot restore to prevent duplicate detection
+    /// of already-observed patterns.
+    pub fn restore_task_states(&mut self, states: &TaskStates) {
+        for task in &mut self.tasks {
+            if let Some(state) = states.get(task.name()) {
+                task.restore_state(state.clone());
+            }
+        }
     }
 }

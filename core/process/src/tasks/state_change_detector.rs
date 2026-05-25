@@ -47,11 +47,16 @@ impl DetectionCapable for StateChangeDetector {
     }
 
     fn orient(&mut self, state: &BoardState) -> DetectionOutput {
-        // Count only document-source facts (exclude self and other detectors)
+        // Count only document-source facts (exclude all detector output)
         let current_facts = state
             .facts
             .iter()
-            .filter(|f| f.origin != "state-change-detector")
+            .filter(|f| {
+                f.origin != "state-change-detector"
+                    && f.origin != "gap-detector"
+                    && f.origin != "contradiction-detector"
+                    && f.origin != "new-document-analyzer"
+            })
             .count();
         let current_open = state
             .intents
@@ -110,6 +115,30 @@ impl DetectionCapable for StateChangeDetector {
         });
 
         output
+    }
+
+    fn snapshot_state(&self) -> Option<serde_json::Value> {
+        self.checkpoint.as_ref().map(|cp| {
+            serde_json::json!({
+                "fact_count": cp.fact_count,
+                "open_intent_count": cp.open_intent_count,
+            })
+        })
+    }
+
+    fn restore_state(&mut self, state: serde_json::Value) {
+        let fc = state
+            .get("fact_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize;
+        let oi = state
+            .get("open_intent_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize;
+        self.checkpoint = Some(DetectionCheckpoint {
+            fact_count: fc,
+            open_intent_count: oi,
+        });
     }
 }
 
