@@ -1,13 +1,47 @@
-// Document-level scenario test: validates the full Nexus pipeline with
-// real SSCCS document claims.
+// Nexus Document Scenario Tests
+// =============================
+// End-to-end validation of the FIH lifecycle using real SSCCS document claims.
 //
-// Refactored for correct FIH semantics:
+// These tests exercise the complete stigmergy cycle:
+//
+//   Phase 1: Knowledge Ingestion
+//     submit_fact(claim) → Blackboard accumulates document knowledge
+//     Each Fact encodes {claim, topic, position, source_doc}
+//
+//   Phase 2: Gap Detection (detector → Fact)
+//     GapDetector.orient(state) scans all document-source facts
+//     Finds orphaned facts (not referenced by any Intent)
+//     Records gap Facts: {type:"gap", subtype:"origin-orphan"|"cross-origin"}
+//     Duplicate prevention via seen_origin / seen_topic sets
+//
+//   Phase 3: Contradiction Detection (detector → Fact)
+//     ContradictionDetector groups facts by topic, then by position
+//     Same topic + different positions → contradiction Fact
+//     {type:"contradiction", topic, position_a, position_b, origins}
+//
+//   Phase 4: New Document Analysis (detector → Fact)
+//     NewDocumentAnalyzer compares incoming facts against existing corpus
+//     Same topic, same position → +factor (support)
+//     Same topic, different position → -factor (challenge)
+//     New topic → gap (exploration frontier)
+//
+//   Phase 5: Agent Action (agent → Intent → conclude → Fact)
+//     Agent reads detector Facts (contradictions, gaps)
+//     Creates Intent referencing those Facts
+//     Claims → heartbeats → concludes the Intent
+//     Conclusion creates new synthesized Fact
+//
+//   Phase 6: Eviction + Snapshot
+//     evict_before removes concluded Intents + orphaned Facts
+//     to_snapshot() serializes full state
+//     from_snapshot() restores for cross-worker continuity
+//
+// Architectural invariants verified:
 //   - Detectors produce Facts (observations), never Intents (actions)
-//   - Agents read detector Facts and create Intents to act on them
-//   - Intents go through claim → heartbeat → conclude lifecycle
-//   - Concluded Intents produce new Facts → recursive knowledge growth
-//
-// Stigmergy principle: dumb detectors, infinite iterations, emergent accuracy.
+//   - Detectors exclude their own origin (no self-re-analysis)
+//   - Agent is the only source of Intents
+//   - Facts are immutable and survive eviction (unless orphaned)
+//   - Snapshots preserve all Facts, Intents, and claim state
 
 use nexus_graph::{
     Blackboard, EvictCapable, Fact, FihHash, Intent, Snapshottable, StorageSnapshot,
@@ -19,7 +53,7 @@ use nexus_process::tasks::gap_detector::GapDetector;
 use nexus_process::tasks::new_document_analyzer::NewDocumentAnalyzer;
 use nexus_process::tasks::state_change_detector::StateChangeDetector;
 
-// ── Helper: construct a claim Fact ──────────────────────────────────────
+// ── Helper: construct a claim Fact with {claim, topic, position} content ─
 
 fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) -> Fact {
     Fact {
@@ -34,11 +68,11 @@ fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) 
     }
 }
 
-// ── Seed data ───────────────────────────────────────────────────────────
+// ── Document corpus: 4 initial documents, 19 claims ────────────────────
 
 fn seed_initial_corpus(bb: &mut impl Blackboard) {
     let facts = [
-        // manifesto.llms.md
+        // manifesto.llms.md — ontology ("what computation IS")
         claim(
             "m01",
             "manifesto.llms.md",
@@ -81,7 +115,7 @@ fn seed_initial_corpus(bb: &mut impl Blackboard) {
             "design-priority",
             "fidelity-first",
         ),
-        // guide.llms.md
+        // guide.llms.md — developer usage ("how to USE SSCCS")
         claim(
             "g01",
             "guide.llms.md",
@@ -117,7 +151,7 @@ fn seed_initial_corpus(bb: &mut impl Blackboard) {
             "energy-efficiency",
             "data-movement-cost",
         ),
-        // nexus/index.llms.md
+        // nexus/index.llms.md — architecture overview
         claim(
             "n01",
             "nexus/index.llms.md",
@@ -146,7 +180,7 @@ fn seed_initial_corpus(bb: &mut impl Blackboard) {
             "architecture-layers",
             "five-layer",
         ),
-        // nexus/impl_init.llms.md
+        // nexus/impl_init.llms.md — implementation details
         claim(
             "i01",
             "nexus/impl_init.llms.md",
@@ -191,8 +225,11 @@ fn initial_ids() -> Vec<String> {
     .collect()
 }
 
+// ── New documents: 2 additional documents, 8 claims ────────────────────
+
 fn seed_new_documents(bb: &mut impl Blackboard) {
     let facts = [
+        // nexus/notes/acp_nexus.llms.md — agent protocol analysis
         claim(
             "a01",
             "nexus/notes/acp_nexus.llms.md",
@@ -221,6 +258,7 @@ fn seed_new_documents(bb: &mut impl Blackboard) {
             "llm-backend",
             "provider-agnostic",
         ),
+        // notes/iclr26_insight.llms.md — research paper analysis
         claim(
             "c01",
             "notes/iclr26_insight.llms.md",
@@ -255,7 +293,7 @@ fn seed_new_documents(bb: &mut impl Blackboard) {
     }
 }
 
-// ── Tick helper ────────────────────────────────────────────────────────
+// ── Tick helper: runs one OODA cycle, returns facts_submitted + full state ─
 
 struct TickResult {
     facts_submitted: usize,
@@ -271,7 +309,7 @@ fn do_tick(sched: &mut Scheduler<impl Blackboard + EvictCapable + Snapshottable>
     }
 }
 
-/// Count detector Facts of a given type (using content["type"]).
+/// Count detector Facts by creator and type.
 fn count_detector_facts(state: &nexus_graph::BoardState, detector: &str, fact_type: &str) -> usize {
     state
         .facts
@@ -281,7 +319,17 @@ fn count_detector_facts(state: &nexus_graph::BoardState, detector: &str, fact_ty
         .count()
 }
 
-// ── Agent: create Intents from contradiction Facts ─────────────────────
+// ── Agent: reads contradiction Facts, creates Intents, concludes them ──
+//
+// This function simulates an agent performing the FIH action cycle:
+//   1. Read state, find Facts from contradiction-detector
+//   2. Filter by topic
+//   3. Create Intent referencing the contradiction Fact
+//   4. Claim → heartbeat → conclude with a resolution
+//   5. Conclusion becomes a new synthesized Fact
+//
+// This is the ONLY correct way to act on detector output:
+// detector observes → agent decides → agent acts
 
 fn agent_resolve_contradictions(
     sched: &mut Scheduler<impl Blackboard + EvictCapable + Snapshottable>,
@@ -300,7 +348,6 @@ fn agent_resolve_contradictions(
         if !t.contains(topic_filter) {
             continue;
         }
-        // Create an Intent to resolve this contradiction
         let intent = Intent {
             id: FihHash::new(&[&fact.id.0, agent_name], "resolve"),
             from_facts: vec![fact.id.0.clone()],
@@ -329,7 +376,26 @@ fn agent_resolve_contradictions(
 }
 
 // ═════════════════════════════════════════════════════════════════════════
-//  Scenario: Full document lifecycle with correct FIH semantics
+//  Scenario: Full Document Lifecycle
+//
+//  Demonstrates the complete FIH cycle from ingestion to synthesis.
+//
+//  FIH Flow:
+//    Phase 1: 19 document Facts ingested (4 sources)
+//    Phase 2: GapDetector produces gap Facts (origin + cross-origin)
+//    Phase 3: ContradictionDetector produces contradiction Facts
+//             (field-definition has 3 positions across documents)
+//    Phase 4: 8 new Facts arrive (ACP + ICLR documents)
+//             NewDocumentAnalyzer produces +/-/gap analysis Facts
+//    Phase 5: ContradictionDetector finds new tensions
+//             (time-ontology, design-priority, field-definition)
+//    Phase 6: 3 agents resolve contradictions → new synthesis Facts
+//    Phase 7: Snapshot before eviction → cross-worker restore
+//
+//  Core components exercised:
+//    Scheduler, GapDetector, ContradictionDetector, NewDocumentAnalyzer,
+//    Blackboard (submit/claim/heartbeat/conclude/read_state),
+//    EvictCapable, Snapshottable
 // ═════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -348,7 +414,7 @@ fn scenario_full_document_lifecycle() {
         "Phase 1: 19 initial facts from 4 documents"
     );
 
-    // ── Phase 2: Gap detection → Facts ─────────────────────────────
+    // Phase 2: Gap detection → Facts (observations, not actions)
     let r1 = do_tick(&mut sched);
     let gap_facts = count_detector_facts(&r1.state, "gap-detector", "gap");
     assert!(
@@ -357,7 +423,7 @@ fn scenario_full_document_lifecycle() {
         gap_facts
     );
 
-    // ── Phase 3: Contradiction detection → Facts ───────────────────
+    // Phase 3: Contradiction detection → Facts
     let r2 = do_tick(&mut sched);
     let contradiction_facts =
         count_detector_facts(&r2.state, "contradiction-detector", "contradiction");
@@ -366,13 +432,12 @@ fn scenario_full_document_lifecycle() {
         "Phase 3: contradiction detector recorded {} facts",
         contradiction_facts
     );
-    // field-definition has 3 positions → at least 2 contradiction pairs
     assert!(
         contradiction_facts >= 2,
         "field-definition has 3 positions, >=2 pairs"
     );
 
-    // ── Phase 4: New documents arrive → NDA Facts ─────────────────
+    // Phase 4: New documents arrive → NDA analysis Facts
     sched.register(Box::new(NewDocumentAnalyzer::with_baseline(initial_ids())));
     seed_new_documents(&mut sched.bb);
 
@@ -380,7 +445,7 @@ fn scenario_full_document_lifecycle() {
     let nda_facts = count_detector_facts(&r3.state, "new-document-analyzer", "doc_analysis");
     assert_eq!(nda_facts, 8, "Phase 4: 8 new facts analyzed");
 
-    // ── Phase 5: Contradiction detector finds new tensions ─────────
+    // Phase 5: Contradiction detector finds tensions with new documents
     let r4 = do_tick(&mut sched);
     let all_contradictions =
         count_detector_facts(&r4.state, "contradiction-detector", "contradiction");
@@ -390,8 +455,7 @@ fn scenario_full_document_lifecycle() {
         all_contradictions
     );
 
-    // ── Phase 6: Agent resolves contradictions ────────────────────
-    // Agent reads contradiction Facts, creates Intents, concludes them
+    // Phase 6: Agents resolve contradictions → Intent → conclude → new Facts
     agent_resolve_contradictions(
         &mut sched,
         "agent-alpha",
@@ -419,8 +483,7 @@ fn scenario_full_document_lifecycle() {
         total_facts
     );
 
-    // ── Phase 7: Snapshot then Eviction ────────────────────────────
-    // Snapshot BEFORE eviction to capture the full state
+    // Phase 7: Snapshot → eviction
     let snapshot = Snapshottable::to_snapshot(&sched.bb);
     let json = serde_json::to_vec(&snapshot).expect("serialize");
     let restored: StorageSnapshot = serde_json::from_slice(&json).expect("deserialize");
@@ -443,6 +506,19 @@ fn scenario_full_document_lifecycle() {
     );
 }
 
+// ═════════════════════════════════════════════════════════════════════════
+//  Scenario: Gap Facts are Immutable Observations
+//
+//  Verifies that detector Facts survive eviction (they're Facts, not
+//  Intents) and are stable across ticks (no duplicate generation).
+//
+//  Key FIH semantics:
+//    - Detector output = Fact = immutable observation
+//    - evict_before removes Intents and orphaned Facts
+//    - Detector Facts that reference document Facts are NOT orphaned
+//      (they're part of the knowledge graph)
+//    - Duplicate prevention: seen sets prevent re-observation
+// ═════════════════════════════════════════════════════════════════════════
 #[test]
 fn scenario_gap_facts_are_immutable_observations() {
     let mut bb = create_blackboard();
@@ -451,11 +527,9 @@ fn scenario_gap_facts_are_immutable_observations() {
     let mut sched = Scheduler::new(bb);
     sched.register(Box::new(GapDetector::new()));
 
-    // Tick 1: gap Facts recorded
     let r1 = do_tick(&mut sched);
     let gap_facts_t1 = count_detector_facts(&r1.state, "gap-detector", "gap");
 
-    // Tick 2: same data → no new gap Facts (already observed)
     let r2 = do_tick(&mut sched);
     let gap_facts_t2 = count_detector_facts(&r2.state, "gap-detector", "gap");
     assert_eq!(
@@ -463,7 +537,6 @@ fn scenario_gap_facts_are_immutable_observations() {
         "Gap facts are stable — no duplicates"
     );
 
-    // Gap facts persist (they're Facts, not evicted Intents)
     EvictCapable::evict_before(&sched.bb, "9999999999").expect("evict");
     let state = Blackboard::read_state(&sched.bb);
     let gap_after_evict = count_detector_facts(&state, "gap-detector", "gap");
@@ -473,33 +546,40 @@ fn scenario_gap_facts_are_immutable_observations() {
     );
 }
 
+// ═════════════════════════════════════════════════════════════════════════
+//  Scenario: State Change Detector (Cairn ReasonCheckpoint Pattern)
+//
+//  Demonstrates the count-based state change detection:
+//    Tick 1: silent initialization (records baseline checkpoint)
+//    Tick 2: 19 facts arrive → state_change Fact (facts:0→19)
+//    Tick 3: no change → no Fact produced
+//    Tick 4: 8 more facts → state_change Fact (facts:19→27)
+//
+//  Stigmergy: state changes are Facts. What to do about them is an
+//  agent decision in a later iteration.
+// ═════════════════════════════════════════════════════════════════════════
 #[test]
 fn scenario_state_change_detector_facts() {
     let bb = create_blackboard();
     let mut sched = Scheduler::new(bb);
     sched.register(Box::new(StateChangeDetector::new()));
 
-    // Tick 1: silent init
     let r1 = do_tick(&mut sched);
     assert_eq!(r1.facts_submitted, 0, "Tick 1: silent init");
 
-    // Seed + tick 2: fact count changed → state_change Fact
     seed_initial_corpus(&mut sched.bb);
     let r2 = do_tick(&mut sched);
     let sc_facts = count_detector_facts(&r2.state, "state-change-detector", "state_change");
     assert_eq!(sc_facts, 1, "Tick 2: state_change Fact recorded");
 
-    // Tick 3: no change → no new Fact
     let r3 = do_tick(&mut sched);
     assert_eq!(r3.facts_submitted, 0, "Tick 3: no change, no fact");
 
-    // Add new docs → Tick 4: another state_change Fact
     seed_new_documents(&mut sched.bb);
     let r4 = do_tick(&mut sched);
     let sc_facts_t4 = count_detector_facts(&r4.state, "state-change-detector", "state_change");
-    // Tick 2: facts 0→19, Tick 4: facts 19→27
     assert_eq!(
         sc_facts_t4, 2,
-        "Tick 4: 2 state_change Facts (facts 0→19, then 19→27)"
+        "Tick 4: 2 state_change Facts (0→19, then 19→27)"
     );
 }

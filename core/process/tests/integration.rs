@@ -1,14 +1,25 @@
-// Full-flow reference tests: validates the entire Nexus pipeline end-to-end.
+// Nexus Process Integration Tests
+// ================================
+// Executable specification of the core FIH (Fact/Intent/Hint) lifecycle.
+// These tests define the contract between the process layer and the
+// storage/graph layers. Every test documents the expected behavior
+// that any Blackboard implementation must satisfy.
 //
-// Refactored for correct FIH semantics: detectors produce Facts (observations),
-// agents read Facts and create Intents (actions).
+// FIH Lifecycle Contract (the "Cairn pattern"):
 //
-// Scenarios:
-//   1. OODA with gap detector — seed → tick → verify gap Facts created
-//   2. Agent reads gap Fact → creates Intent → claim → conclude
-//   3. Eviction — conclude → evict_before → verify removal
-//   4. Duplicate prevention — gap Facts stable across ticks
-//   5. Cross-worker snapshot — Worker A builds state → Worker B restores
+//   submit_fact(claim)         ← ingester: raw knowledge enters the system
+//   detector.orient(state)     ← scheduler: every tick, detectors observe
+//   detector → Fact(gap)      ← detector: records pattern as immutable Fact
+//   agent reads Fact(gap)     ← agent: perceives detector observation
+//   agent → submit_intent()   ← agent: proposes action based on observation
+//   agent → claim_intent()    ← agent: takes ownership of the exploration
+//   agent → heartbeat()       ← agent: signals liveness during work
+//   agent → conclude_intent() ← agent: produces result → new Fact created
+//   evict_before(timestamp)   ← scheduler: removes concluded intents, orphaned facts
+//
+// Key architectural constraint: detectors NEVER create Intents.
+// Intents are agent actions. Facts are observations.
+// This separation is the core FIH semantics enforcement.
 
 use nexus_graph::{
     Blackboard, EvictCapable, Fact, FihHash, Intent, Snapshottable, StorageSnapshot,
@@ -36,11 +47,24 @@ fn seed_corpus(bb: &mut impl Blackboard) {
     }
 }
 
-/// Count detector Facts by creator.
 fn count_detector_facts(state: &nexus_graph::BoardState, creator: &str) -> usize {
     state.facts.iter().filter(|f| f.creator == creator).count()
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Test: flow_ooda_with_gap_detector
+//
+// Verifies: Scheduler → GapDetector → Facts flow.
+//
+// Sequence:
+//   1. Seed 5 facts from 3 origins (arxiv×2, nature×2, iclr×1)
+//   2. Scheduler.tick() calls GapDetector.orient(state)
+//   3. GapDetector finds orphaned facts per origin, records gap Facts
+//   4. Second tick: same data → no new gap Facts (duplicate prevention)
+//
+// Core layer exercised: Scheduler, DetectionCapable trait, GapDetector,
+//   Blackboard::submit_fact, Blackboard::read_state
+// ─────────────────────────────────────────────────────────────────────────
 #[test]
 fn flow_ooda_with_gap_detector() {
     let mut bb = create_blackboard();
@@ -49,7 +73,6 @@ fn flow_ooda_with_gap_detector() {
     let mut sched = Scheduler::new(bb);
     sched.register(Box::new(GapDetector::new()));
 
-    // Gap detector produces Facts, not Intents
     let facts_submitted = sched.tick().expect("first tick");
     assert!(facts_submitted > 0, "gap detector produces gap facts");
     let facts_submitted_2 = sched.tick().expect("second tick");
@@ -64,10 +87,25 @@ fn flow_ooda_with_gap_detector() {
         count_detector_facts(&state, "gap-detector") > 0,
         "gap facts exist"
     );
-    // No intents (detectors don't create intents anymore)
     assert_eq!(state.intents.len(), 0);
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Test: flow_agent_creates_intent_from_detector_fact
+//
+// Verifies: Agent reads detector Fact → creates Intent → conclude cycle.
+//
+// This is the CORRECT FIH flow (after detector refactoring):
+//   1. Detector produces gap Facts (observations)
+//   2. Agent reads gap Facts from read_state()
+//   3. Agent creates Intent referencing those Facts
+//   4. Agent claims, heartbeats, concludes the Intent
+//   5. Conclusion creates a new Fact
+//
+// Core layer exercised: Blackboard::submit_intent, claim_intent,
+//   heartbeat, conclude_intent, read_state
+// Architectural guarantee: detector output (Facts) ≠ agent output (Intents)
+// ─────────────────────────────────────────────────────────────────────────
 #[test]
 fn flow_agent_creates_intent_from_detector_fact() {
     let mut bb = create_blackboard();
@@ -76,7 +114,6 @@ fn flow_agent_creates_intent_from_detector_fact() {
     sched.register(Box::new(GapDetector::new()));
     sched.tick().expect("tick");
 
-    // Agent reads gap Facts from detector, creates an Intent
     let state = Blackboard::read_state(&sched.bb);
     let gap_facts: Vec<&Fact> = state
         .facts
@@ -119,6 +156,20 @@ fn flow_agent_creates_intent_from_detector_fact() {
     );
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Test: flow_eviction
+//
+// Verifies: evict_before removes concluded intents.
+//
+// Sequence:
+//   1. Agent creates + concludes an Intent
+//   2. evict_before("9999999999") — cutoff far in the future
+//   3. Concluded intent is removed from state.intents
+//   4. Referenced facts survive (they're still needed)
+//
+// Core layer exercised: EvictCapable::evict_before, Blackboard::read_state
+// Stigmergy metaphor: pheromone evaporation — old signals decay
+// ─────────────────────────────────────────────────────────────────────────
 #[test]
 fn flow_eviction() {
     let mut bb = create_blackboard();
@@ -127,7 +178,6 @@ fn flow_eviction() {
     sched.register(Box::new(GapDetector::new()));
     sched.tick().expect("tick");
 
-    // Agent creates and concludes an intent
     let intent = Intent {
         id: FihHash("evict-test".into()),
         from_facts: vec!["f_001".into()],
@@ -148,7 +198,6 @@ fn flow_eviction() {
 
     EvictCapable::evict_before(&sched.bb, "9999999999").expect("evict");
     let state = Blackboard::read_state(&sched.bb);
-    // evict_before removes orphaned facts not referenced by kept intents.
     assert_eq!(state.intents.len(), 0, "concluded intent evicted");
     assert!(
         state.facts.len() >= 2,
@@ -157,6 +206,19 @@ fn flow_eviction() {
     );
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Test: flow_no_duplicates
+//
+// Verifies: detectors are idempotent across ticks.
+//
+// Sequence:
+//   1. Tick 0: detector produces gap Facts for current orphan set
+//   2. Ticks 1-9: same data → no new Facts (seen set prevents duplicates)
+//   3. Gap Facts count stable across all ticks
+//
+// Core layer exercised: GapDetector.seen_origin, DetectionCapable::orient
+// Stigmergy guarantee: detectors observe, don't re-observe same pattern
+// ─────────────────────────────────────────────────────────────────────────
 #[test]
 fn flow_no_duplicates() {
     let mut bb = create_blackboard();
@@ -164,13 +226,11 @@ fn flow_no_duplicates() {
     let mut sched = Scheduler::new(bb);
     sched.register(Box::new(GapDetector::new()));
 
-    // First tick produces gap facts
     let n0 = sched.tick().expect("tick 0");
     assert!(n0 > 0, "tick 0: gap facts produced");
     let state0 = Blackboard::read_state(&sched.bb);
     let gap_count_0 = count_detector_facts(&state0, "gap-detector");
 
-    // Subsequent ticks: no new gap facts (same data, already observed)
     for tick in 1..10 {
         let n = sched.tick().expect("tick");
         assert_eq!(n, 0, "tick {tick}: no new facts");
@@ -183,8 +243,23 @@ fn flow_no_duplicates() {
     );
 }
 
-// ── Cross-worker snapshot scenario ─────────────────────────────────────
-
+// ─────────────────────────────────────────────────────────────────────────
+// Test: flow_cross_worker_snapshot
+//
+// Verifies: knowledge persists across worker boundaries via snapshot.
+//
+// This is the stigmergy persistence pattern:
+//   1. Worker A: seeds corpus, runs detector, produces analysis Facts
+//   2. Worker A: to_snapshot() → JSON (simulates R2 blob storage)
+//   3. Worker B: from_snapshot(JSON) → restores full state
+//   4. Worker B: sees Worker A's facts, continues work independently
+//   5. Worker B: submits new fact, creates & concludes intent
+//
+// Core layer exercised: Snapshottable::to_snapshot,
+//   create_blackboard_from_snapshot, StorageSnapshot serialization
+// Stigmergy guarantee: workers communicate only through shared state,
+//   never through direct calls
+// ─────────────────────────────────────────────────────────────────────────
 #[test]
 fn flow_cross_worker_snapshot() {
     let mut bb_a = create_blackboard();
@@ -197,11 +272,9 @@ fn flow_cross_worker_snapshot() {
     let facts_a = state_a.facts.len();
     let gap_a = count_detector_facts(&state_a, "gap-detector");
 
-    // Worker A: snapshot → JSON
     let snapshot_a = Snapshottable::to_snapshot(&sched.bb);
     let json = serde_json::to_vec(&snapshot_a).expect("serialize");
 
-    // Worker B: restore from snapshot
     let snapshot_b: StorageSnapshot = serde_json::from_slice(&json).expect("deserialize");
     let mut bb_b = create_blackboard_from_snapshot(snapshot_b);
 
@@ -214,7 +287,6 @@ fn flow_cross_worker_snapshot() {
     let gap_b = count_detector_facts(&state, "gap-detector");
     assert_eq!(gap_a, gap_b, "gap facts preserved in snapshot");
 
-    // Worker B: adds new fact, creates and concludes intent
     bb_b.submit_fact(&Fact {
         id: FihHash("f_worker_b_001".into()),
         origin: "worker-b".into(),
@@ -245,9 +317,5 @@ fn flow_cross_worker_snapshot() {
         facts_a + 2,
         "A's facts + 1 new + 1 conclusion"
     );
-    assert_eq!(
-        state.intents.len(),
-        1,
-        "Worker B's intent persists (not yet evicted)"
-    );
+    assert_eq!(state.intents.len(), 1, "Worker B's intent persists");
 }
