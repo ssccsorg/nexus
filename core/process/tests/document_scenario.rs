@@ -19,6 +19,7 @@ use nexus_process::scheduler::Scheduler;
 use nexus_process::tasks::contradiction_detector::ContradictionDetector;
 use nexus_process::tasks::gap_detector::GapDetector;
 use nexus_process::tasks::new_document_analyzer::NewDocumentAnalyzer;
+use nexus_process::tasks::state_change_detector::StateChangeDetector;
 
 // ── Helper: construct a claim Fact ──────────────────────────────────────
 
@@ -580,4 +581,97 @@ fn scenario_new_document_no_duplicates() {
     // Third tick: no new intents submitted (all facts already seen)
     let r3 = do_tick(&mut sched);
     assert_eq!(r3.intents_submitted, 0, "Third tick: no new intents");
+}
+
+// ── Cairn-style StateChangeDetector: ReasonCheckpoint pattern ─────────
+
+#[test]
+fn scenario_state_change_detector_cairn_pattern() {
+    let bb = create_blackboard();
+
+    let mut sched = Scheduler::new(bb);
+    sched.register(Box::new(StateChangeDetector::new()));
+
+    // Tick 1: initialize silently (no checkpoint yet)
+    let r1 = do_tick(&mut sched);
+    assert_eq!(r1.intents_submitted, 0, "Tick 1: silent init");
+
+    // Seed initial corpus
+    seed_initial_corpus(&mut sched.bb);
+
+    // Tick 2: fact count changed 0→19 → reason intent
+    let r2 = do_tick(&mut sched);
+    assert_eq!(
+        r2.intents_submitted, 1,
+        "Tick 2: reason triggered by facts:0->19"
+    );
+    let reason_intents: Vec<_> = r2
+        .state
+        .intents
+        .iter()
+        .filter(|i| i.creator == "state-change-detector")
+        .collect();
+    assert_eq!(reason_intents.len(), 1);
+    assert!(reason_intents[0].description.contains("facts:0->19"));
+
+    // Tick 3: no change → no intent
+    let r3 = do_tick(&mut sched);
+    assert_eq!(r3.intents_submitted, 0, "Tick 3: no change, no reason");
+
+    // Add new documents
+    seed_new_documents(&mut sched.bb);
+
+    // Tick 4: facts 19→27 → reason intent
+    let r4 = do_tick(&mut sched);
+    assert_eq!(
+        r4.intents_submitted, 1,
+        "Tick 4: reason triggered by facts:19->27"
+    );
+
+    // Claim and conclude the reason intent (simulates agent work)
+    let state = Blackboard::read_state(&sched.bb);
+    let reason_id = &state
+        .intents
+        .iter()
+        .find(|i| i.creator == "state-change-detector")
+        .expect("reason intent exists")
+        .id
+        .0;
+    sched.bb.claim_intent(reason_id, "analyst").expect("claim");
+    sched.bb.heartbeat(reason_id, "analyst").expect("heartbeat");
+    sched
+        .bb
+        .conclude_intent(
+            reason_id,
+            &serde_json::json!({"analysis": "8 new claims added from ACP and ICLR documents"}),
+        )
+        .expect("conclude");
+
+    // Tick 5: open_intent count changed (reason concluded)
+    // When the reason intent is concluded, open_intents drops, which
+    // is a state change that triggers another reason (Cairn pattern).
+    let r5 = do_tick(&mut sched);
+    let reason_intents_t5: Vec<_> = r5
+        .state
+        .intents
+        .iter()
+        .filter(|i| i.creator == "state-change-detector")
+        .collect();
+    assert!(
+        !reason_intents_t5.is_empty(),
+        "Tick 5: reason triggered by open_intent completion (Cairn checkpoint pattern)"
+    );
+
+    // Snapshot round-trip: facts preserved
+    let snapshot = Snapshottable::to_snapshot(&sched.bb);
+    let json = serde_json::to_vec(&snapshot).expect("serialize");
+    let restored: StorageSnapshot = serde_json::from_slice(&json).expect("deserialize");
+    let bb_restored = create_blackboard_from_snapshot(restored);
+
+    let state_restored = Blackboard::read_state(&bb_restored);
+    assert_eq!(
+        state_restored.facts.len(),
+        28,
+        "Snapshot preserves 28 facts (19 initial + 8 new + 1 conclusion)"
+    );
 }
