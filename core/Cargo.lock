@@ -1365,6 +1365,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexus-process"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "nexus-graph",
+ "nexus-model",
+ "nexus-storage-petgraph",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nexus-storage-duckdb"
 version = "0.1.0"
 dependencies = [

@@ -21,14 +21,29 @@
 //   Aggregate: FihPersistence = FactCapable + IntentCapable + HintCapable
 //   Aggregate: HotStorage     = FihPersistence + EvictCapable
 //   Aggregate: ColdStorage    = FihPersistence + FilterCapable
+//
+// # Detection capability traits (mirrors storage pattern)
+//
+//   DetectionCapable             — base: name + orient (all detectors)
+//    ├── GapDetection            — orphan/cross-origin gap discovery
+//    ├── ContradictionDetection  — conflicting claims on same topic
+//    └── StateChangeDetection    — count-based change triggers (Cairn pattern)
+//
+//   Aggregate: FullDetection = GapDetection + ContradictionDetection + StateChangeDetection
 
 pub mod blackboard;
+pub mod cold_query;
+pub mod detection;
 pub mod error;
 pub mod fih;
 pub mod interner;
 pub mod storage;
 
 pub use blackboard::Blackboard;
+pub use detection::{
+    ContradictionDetection, DetectionCapable, DetectionCheckpoint, DetectionOutput, FullDetection,
+    GapDetection, StateChangeDetection, TaskStates,
+};
 pub use error::BlackboardError;
 pub use fih::{BoardState, Fact, FihHash, Hint, Intent};
 pub use interner::Interner;

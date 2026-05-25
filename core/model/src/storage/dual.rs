@@ -1,4 +1,5 @@
 use super::aggregate::{ColdStorage, HotStorage};
+use super::cypher::CypherCapable;
 use super::evict::EvictCapable;
 use super::fact::FactCapable;
 use super::filter::{FilterCapable, StateFilter};
@@ -121,6 +122,10 @@ impl EvictCapable for DualStorage {
     fn evict_before(&self, before: &str) -> Result<u64, String> {
         self.hot.evict_before(before)
     }
+
+    fn evict_stale_intents(&self, older_than_secs: u64) -> Result<u64, String> {
+        self.hot.evict_stale_intents(older_than_secs)
+    }
 }
 
 // ── Partition scan: delegate to cold ──
@@ -155,5 +160,13 @@ impl TimeRangeCapable for DualStorage {
 impl FlushCapable for DualStorage {
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
         self.cold.flush_since(cursor)
+    }
+}
+
+// ── Cypher query: delegate to cold ──
+
+impl CypherCapable for DualStorage {
+    fn query_plan(&self, plan: &serde_json::Value) -> Result<serde_json::Value, String> {
+        self.cold.query_plan(plan)
     }
 }
