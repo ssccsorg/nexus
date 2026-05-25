@@ -714,7 +714,7 @@ fn scenario_multi_agent_collaboration() {
 
 #[test]
 fn scenario_document_revision() {
-    let mut bb = create_blackboard();
+    let bb = create_blackboard();
 
     // v1: Initial document claims
     let v1 = [
