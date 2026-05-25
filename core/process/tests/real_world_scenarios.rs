@@ -446,16 +446,18 @@ fn scenario_peer_review_challenge() {
 
 #[test]
 fn scenario_incremental_knowledge_growth() {
-    let mut bb = create_blackboard();
-    seed_cross_domain(&mut bb);
+    let bb = create_blackboard();
 
     let mut sched = Scheduler::new(bb);
     sched.register(Box::new(GapDetector::new()));
     sched.register(Box::new(ContradictionDetector::new()));
     sched.register(Box::new(StateChangeDetector::new()));
 
-    // Phase 1: Initial analysis (silent init for state_change)
+    // Phase 1: Silent init at 0 facts
     let _ = do_tick(&mut sched);
+
+    // Seed AFTER silent init so state_change detects 0→11
+    seed_cross_domain(&mut sched.bb);
 
     // Phase 2: First real tick — all detectors fire
     let r2 = do_tick(&mut sched);
@@ -739,16 +741,21 @@ fn scenario_document_revision() {
         ),
     ];
     let v1_ids: Vec<String> = v1.iter().map(|f| f.id.0.clone()).collect();
-    for f in &v1 {
-        bb.submit_fact(f).unwrap();
-    }
 
     let mut sched = Scheduler::new(bb);
     sched.register(Box::new(GapDetector::new()));
     sched.register(Box::new(StateChangeDetector::new()));
+
+    // Phase 1: Silent init at 0 facts
+    let _ = do_tick(&mut sched);
+
+    // Seed v1 AFTER silent init
+    for f in &v1 {
+        sched.bb.submit_fact(f).unwrap();
+    }
     sched.register(Box::new(NewDocumentAnalyzer::with_baseline(v1_ids)));
 
-    // Phase 1: Analyze v1
+    // Phase 1b: v1 ingestion detected
     let _r1 = do_tick(&mut sched); // state_change detects 0→3 facts
     let r2 = do_tick(&mut sched); // gap detection on 3 facts (may be too few for gaps)
 

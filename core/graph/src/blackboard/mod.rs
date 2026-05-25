@@ -217,6 +217,7 @@ impl DefaultBlackboard {
             graph: g.clone(),
             claims: self.claims.to_snapshot(),
             project_id: self.project_id.clone(),
+            task_states: std::collections::HashMap::new(),
         }
     }
 

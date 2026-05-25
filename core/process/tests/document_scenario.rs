@@ -583,3 +583,94 @@ fn scenario_state_change_detector_facts() {
         "Tick 4: 2 state_change Facts (0→19, then 19→27)"
     );
 }
+
+// ═════════════════════════════════════════════════════════════════════════
+//  Scenario: Detector State Persistence Across Snapshot
+//
+//  Verifies that detector internal state (checkpoints) survives
+//  snapshot round-trip, preventing duplicate detection after restore.
+//
+//  Flow:
+//    Worker A:
+//      1. Seed facts, run StateChangeDetector (records checkpoint)
+//      2. to_snapshot() → inject task_states via collect_task_states()
+//      3. Serialize to JSON
+//    Worker B:
+//      4. Deserialize snapshot
+//      5. Create blackboard from snapshot
+//      6. Create fresh StateChangeDetector, call restore_task_states()
+//      7. Run tick — should produce 0 facts (checkpoint restored, no change)
+//
+//  Without task_states: Worker B would see all facts as "new" and
+//  create a spurious state_change Fact.
+// ═════════════════════════════════════════════════════════════════════════
+#[test]
+fn scenario_detector_state_snapshot_roundtrip() {
+    // Worker A: create scheduler FIRST (0 facts), then seed
+    let bb_a = create_blackboard();
+    let mut sched_a = Scheduler::new(bb_a);
+    sched_a.register(Box::new(StateChangeDetector::new()));
+    sched_a.register(Box::new(GapDetector::new()));
+
+    // Tick 1: 0 facts → silent init for state_change, gap detector finds nothing
+    let _ = do_tick(&mut sched_a);
+
+    // Seed facts (state now has 19 document facts)
+    seed_initial_corpus(&mut sched_a.bb);
+
+    // Tick 2: StateChangeDetector sees 0→19 → state_change Fact created
+    let r2 = do_tick(&mut sched_a);
+    assert!(
+        r2.facts_submitted > 0,
+        "Worker A tick 2: state_change + gap facts"
+    );
+    let sc_a = count_detector_facts(&r2.state, "state-change-detector", "state_change");
+    assert_eq!(sc_a, 1, "Worker A: one state_change Fact (0→19)");
+
+    // Collect detector state + snapshot
+    let task_states = sched_a.collect_task_states();
+    assert!(
+        task_states.contains_key("state-change-detector"),
+        "StateChangeDetector checkpoint saved"
+    );
+
+    let mut snapshot = Snapshottable::to_snapshot(&sched_a.bb);
+    snapshot.task_states = task_states;
+    let json = serde_json::to_vec(&snapshot).expect("serialize");
+
+    // Worker B: restore from snapshot
+    let restored: StorageSnapshot = serde_json::from_slice(&json).expect("deserialize");
+    assert!(
+        restored.task_states.contains_key("state-change-detector"),
+        "Checkpoint preserved in snapshot"
+    );
+
+    let bb_b = create_blackboard_from_snapshot(restored.clone());
+    let mut sched_b = Scheduler::new(bb_b);
+    sched_b.register(Box::new(StateChangeDetector::new()));
+    sched_b.register(Box::new(GapDetector::new()));
+    sched_b.restore_task_states(&restored.task_states);
+
+    // Worker B's first tick: GapDetector re-creates gap facts
+    // (content-addressed, harmless). StateChangeDetector must NOT
+    // produce a state_change Fact because checkpoint was restored.
+    let r_b = do_tick(&mut sched_b);
+    assert!(
+        r_b.facts_submitted > 0,
+        "Worker B: gap facts re-created (content-addressed, idempotent)"
+    );
+
+    let sc_facts = count_detector_facts(&r_b.state, "state-change-detector", "state_change");
+    assert_eq!(
+        sc_facts, 1,
+        "Worker B: exactly 1 state_change Fact (Worker A's, preserved in snapshot)"
+    );
+
+    // Run another tick — still no NEW state_change (checkpoint matches)
+    let r_b2 = do_tick(&mut sched_b);
+    let sc_facts_2 = count_detector_facts(&r_b2.state, "state-change-detector", "state_change");
+    assert_eq!(
+        sc_facts_2, 1,
+        "Worker B tick 2: no new state_change (checkpoint stable)"
+    );
+}

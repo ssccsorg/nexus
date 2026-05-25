@@ -42,7 +42,7 @@ pub mod storage;
 pub use blackboard::Blackboard;
 pub use detection::{
     ContradictionDetection, DetectionCapable, DetectionCheckpoint, DetectionOutput, FullDetection,
-    GapDetection, StateChangeDetection,
+    GapDetection, StateChangeDetection, TaskStates,
 };
 pub use error::BlackboardError;
 pub use fih::{BoardState, Fact, FihHash, Hint, Intent};

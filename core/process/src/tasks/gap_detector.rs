@@ -49,7 +49,12 @@ impl DetectionCapable for GapDetector {
         let doc_facts: Vec<&Fact> = state
             .facts
             .iter()
-            .filter(|f| f.origin != "gap-detector")
+            .filter(|f| {
+                f.origin != "gap-detector"
+                    && f.origin != "contradiction-detector"
+                    && f.origin != "state-change-detector"
+                    && f.origin != "new-document-analyzer"
+            })
             .collect();
 
         let referenced: HashSet<&str> = state

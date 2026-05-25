@@ -16,6 +16,8 @@
 //   - Future: EmbeddingSimilarityDetection, TemporalAnomalyDetection, etc.
 
 use crate::fih::{BoardState, Fact, Intent};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Output from a detector's orient phase.
 #[derive(Debug, Default)]
@@ -34,6 +36,16 @@ pub trait DetectionCapable {
     /// Examine the current state and produce new FIH primitives.
     /// Called every OODA tick during the Orient phase.
     fn orient(&mut self, state: &BoardState) -> DetectionOutput;
+
+    /// Export detector state for snapshot persistence.
+    /// Default: None (stateless detector). Override to persist state.
+    fn snapshot_state(&self) -> Option<serde_json::Value> {
+        None
+    }
+
+    /// Restore detector state from a previously saved snapshot.
+    /// Default: no-op. Override to restore persisted state.
+    fn restore_state(&mut self, _state: serde_json::Value) {}
 }
 
 /// Detects gaps between facts: orphaned concepts, cross-origin clusters,
@@ -49,11 +61,15 @@ pub trait ContradictionDetection: DetectionCapable {}
 
 /// Snapshot-safe checkpoint for state change detection.
 /// Only counts — no individual IDs — so it survives serialization.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DetectionCheckpoint {
     pub fact_count: usize,
     pub open_intent_count: usize,
 }
+
+/// Serialized detector states, keyed by detector name.
+/// Stored in StorageSnapshot for cross-worker persistence.
+pub type TaskStates = HashMap<String, serde_json::Value>;
 
 /// Detects when the Blackboard state has changed sufficiently to warrant
 /// a new analysis cycle. Uses count-based checkpoints (Cairn pattern).
