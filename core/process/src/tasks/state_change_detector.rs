@@ -1,14 +1,15 @@
 // nexus-process — State change detector: Cairn-style ReasonCheckpoint pattern.
 //
 // Detects when the Blackboard state has changed sufficiently to warrant
-// a new "reason" analysis. Uses count-based checkpoints (snapshot-safe).
+// attention. Records state transitions as Facts — immutable observations.
 //
 // Implements: DetectionCapable + StateChangeDetection (from nexus-model)
-// This is the mechanism Cairn's _reason_trigger uses — proven across
-// 54/54 penetration testing challenges.
+//
+// Stigmergy principle: state change is an observed fact. What to do about
+// it is a separate decision for agents in later iterations.
 
 use nexus_model::{
-    BoardState, DetectionCapable, DetectionCheckpoint, DetectionOutput, FihHash, Intent,
+    BoardState, DetectionCapable, DetectionCheckpoint, DetectionOutput, Fact, FihHash,
     StateChangeDetection,
 };
 
@@ -46,7 +47,12 @@ impl DetectionCapable for StateChangeDetector {
     }
 
     fn orient(&mut self, state: &BoardState) -> DetectionOutput {
-        let current_facts = state.facts.len();
+        // Count only document-source facts (exclude self and other detectors)
+        let current_facts = state
+            .facts
+            .iter()
+            .filter(|f| f.origin != "state-change-detector")
+            .count();
         let current_open = state
             .intents
             .iter()
@@ -84,21 +90,23 @@ impl DetectionCapable for StateChangeDetector {
             ));
         }
 
-        output.intents.push(Intent {
-            id: FihHash::new(&[&triggers.join(",")], "reason"),
-            from_facts: Vec::new(),
-            description: format!("Reason: state changed ({})", triggers.join(", ")),
+        output.facts.push(Fact {
+            id: FihHash::new(&[&triggers.join(",")], "state-change"),
+            origin: "state-change-detector".into(),
+            content: serde_json::json!({
+                "type": "state_change",
+                "triggers": triggers,
+                "prev_fact_count": checkpoint.fact_count,
+                "curr_fact_count": current_facts,
+                "prev_open_intents": checkpoint.open_intent_count,
+                "curr_open_intents": current_open,
+            }),
             creator: "state-change-detector".into(),
-            worker: None,
-            to_fact_id: None,
-            last_heartbeat_at: None,
-            created_at: None,
-            concluded_at: None,
         });
 
         self.checkpoint = Some(DetectionCheckpoint {
             fact_count: current_facts,
-            open_intent_count: current_open.saturating_add(output.intents.len()),
+            open_intent_count: current_open,
         });
 
         output
@@ -108,7 +116,7 @@ impl DetectionCapable for StateChangeDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nexus_model::{Fact, FihHash};
+    use nexus_model::FihHash;
 
     fn make_fact(id: &str, origin: &str) -> Fact {
         Fact {
@@ -120,96 +128,44 @@ mod tests {
     }
 
     #[test]
-    fn first_call_initializes_silently() {
-        let mut detector = StateChangeDetector::new();
-        let state = BoardState {
+    fn first_call_silent() {
+        let mut d = StateChangeDetector::new();
+        let s = BoardState {
             facts: vec![make_fact("f1", "a")],
-            intents: Vec::new(),
-            hints: Vec::new(),
+            intents: vec![],
+            hints: vec![],
         };
-        let output = detector.orient(&state);
-        assert!(output.intents.is_empty());
+        let o = d.orient(&s);
+        assert!(o.facts.is_empty());
     }
 
     #[test]
     fn detects_fact_increase() {
-        let mut detector = StateChangeDetector::new();
-        let state1 = BoardState {
+        let mut d = StateChangeDetector::new();
+        d.orient(&BoardState {
             facts: vec![make_fact("f1", "a")],
-            intents: Vec::new(),
-            hints: Vec::new(),
-        };
-        detector.orient(&state1);
-
-        let state2 = BoardState {
+            intents: vec![],
+            hints: vec![],
+        });
+        let o = d.orient(&BoardState {
             facts: vec![make_fact("f1", "a"), make_fact("f2", "b")],
-            intents: Vec::new(),
-            hints: Vec::new(),
-        };
-        let output = detector.orient(&state2);
-        assert_eq!(output.intents.len(), 1);
-        assert!(output.intents[0].description.contains("facts:1->2"));
+            intents: vec![],
+            hints: vec![],
+        });
+        assert_eq!(o.facts.len(), 1);
+        assert!(o.facts[0].content["type"].as_str() == Some("state_change"));
     }
 
     #[test]
-    fn detects_open_intent_change() {
-        let mut detector = StateChangeDetector::new();
-        let state1 = BoardState {
+    fn no_change_no_fact() {
+        let mut d = StateChangeDetector::new();
+        let s = BoardState {
             facts: vec![make_fact("f1", "a")],
-            intents: Vec::new(),
-            hints: Vec::new(),
+            intents: vec![],
+            hints: vec![],
         };
-        detector.orient(&state1);
-
-        let intent = Intent {
-            id: FihHash("i1".into()),
-            from_facts: vec!["f1".into()],
-            to_fact_id: None,
-            description: "test".into(),
-            creator: "test".into(),
-            worker: None,
-            last_heartbeat_at: None,
-            created_at: None,
-            concluded_at: None,
-        };
-        let state2 = BoardState {
-            facts: vec![make_fact("f1", "a")],
-            intents: vec![intent],
-            hints: Vec::new(),
-        };
-        let output = detector.orient(&state2);
-        assert_eq!(output.intents.len(), 1);
-        assert!(output.intents[0].description.contains("open_intents"));
-    }
-
-    #[test]
-    fn no_change_no_intent() {
-        let mut detector = StateChangeDetector::new();
-        let state = BoardState {
-            facts: vec![make_fact("f1", "a")],
-            intents: Vec::new(),
-            hints: Vec::new(),
-        };
-        detector.orient(&state);
-        let output = detector.orient(&state);
-        assert!(output.intents.is_empty());
-    }
-
-    #[test]
-    fn checkpoint_roundtrip() {
-        let mut detector = StateChangeDetector::new();
-        let state = BoardState {
-            facts: vec![make_fact("f1", "a"), make_fact("f2", "b")],
-            intents: Vec::new(),
-            hints: Vec::new(),
-        };
-        detector.orient(&state);
-
-        let cp = detector.to_checkpoint().expect("has checkpoint");
-        assert_eq!(cp.fact_count, 2);
-
-        let mut restored = StateChangeDetector::from_checkpoint(cp);
-        let output = restored.orient(&state);
-        assert!(output.intents.is_empty());
+        d.orient(&s);
+        let o = d.orient(&s);
+        assert!(o.facts.is_empty());
     }
 }

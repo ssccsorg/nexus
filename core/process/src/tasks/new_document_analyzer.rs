@@ -1,15 +1,19 @@
 // nexus-process — New-document analyzer: evaluates incoming facts against existing knowledge.
 //
-// When new Facts appear on the Blackboard, the analyzer compares each
-// against the existing corpus:
+// When new Facts appear, the analyzer compares each against the existing
+// corpus and records observations as Facts:
 //   +factor (support):     same topic, same position
 //   -factor (challenge):   same topic, different position
 //   gap (explore):         new topic not in existing corpus
 //
 // Implements: DetectionCapable (standalone, no marker trait)
+//
+// Stigmergy principle: each new document's relationship to existing
+// knowledge is an observed fact. What to do about challenges or gaps
+// is for agents to decide in later iterations.
 
 use super::common::{position_of, topic_of};
-use nexus_model::{BoardState, DetectionCapable, DetectionOutput, Fact, FihHash, Intent};
+use nexus_model::{BoardState, DetectionCapable, DetectionOutput, Fact, FihHash};
 use std::collections::{HashMap, HashSet};
 
 pub struct NewDocumentAnalyzer {
@@ -84,59 +88,40 @@ impl DetectionCapable for NewDocumentAnalyzer {
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
 
-            if let Some(existing_pos_set) = existing_positions.get(topic) {
+            let (factor, detail) = if let Some(existing_pos_set) = existing_positions.get(topic) {
                 if existing_pos_set.contains(position) {
-                    output.intents.push(Intent {
-                        id: FihHash::new(&[tid, "support"], "intent"),
-                        from_facts: vec![tid.clone()],
-                        description: format!(
-                            "+factor on '{}': '{}' from {} supports existing position [{}]",
-                            topic, claim_text, fact.origin, position
-                        ),
-                        creator: "new-document-analyzer".into(),
-                        worker: None,
-                        to_fact_id: None,
-                        last_heartbeat_at: None,
-                        created_at: None,
-                        concluded_at: None,
-                    });
+                    (
+                        "+factor",
+                        format!("supports existing position [{}]", position),
+                    )
                 } else {
                     let existing: Vec<&str> = existing_pos_set.iter().copied().collect();
-                    output.intents.push(Intent {
-                        id: FihHash::new(&[tid, "challenge"], "intent"),
-                        from_facts: vec![tid.clone()],
-                        description: format!(
-                            "-factor on '{}': '{}' from {} claims [{}], but existing holds [{}]",
-                            topic,
-                            claim_text,
-                            fact.origin,
+                    (
+                        "-factor",
+                        format!(
+                            "claims [{}], but existing holds [{}]",
                             position,
                             existing.join(", ")
                         ),
-                        creator: "new-document-analyzer".into(),
-                        worker: None,
-                        to_fact_id: None,
-                        last_heartbeat_at: None,
-                        created_at: None,
-                        concluded_at: None,
-                    });
+                    )
                 }
             } else {
-                output.intents.push(Intent {
-                    id: FihHash::new(&[tid, "new-topic"], "intent"),
-                    from_facts: vec![tid.clone()],
-                    description: format!(
-                        "Gap discovered: new topic '{}' from {} — '{}'",
-                        topic, fact.origin, claim_text
-                    ),
-                    creator: "new-document-analyzer".into(),
-                    worker: None,
-                    to_fact_id: None,
-                    last_heartbeat_at: None,
-                    created_at: None,
-                    concluded_at: None,
-                });
-            }
+                ("gap", format!("new topic '{}'", topic))
+            };
+
+            output.facts.push(Fact {
+                id: FihHash::new(&[tid, factor], "doc-analysis"),
+                origin: "new-document-analyzer".into(),
+                content: serde_json::json!({
+                    "type": "doc_analysis",
+                    "factor": factor,
+                    "topic": topic,
+                    "claim": claim_text,
+                    "source": fact.origin,
+                    "detail": detail,
+                }),
+                creator: "new-document-analyzer".into(),
+            });
 
             existing_positions
                 .entry(topic)

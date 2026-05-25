@@ -1,13 +1,16 @@
 // nexus-process — Contradiction detector: finds conflicting claims across documents.
 //
-// When two Facts from different documents share the same topic but express
-// different positions, the detector creates a "resolve-contradiction" Intent.
+// Detects pairs of Facts that share a topic but hold different positions.
+// Records contradictions as Facts — immutable observations of tension.
 //
 // Implements: DetectionCapable + ContradictionDetection (from nexus-model)
+//
+// Stigmergy principle: a contradiction is an observed fact about the
+// knowledge state. Resolution is a separate act (Intent) by an agent.
 
 use super::common::{position_of, topic_of};
 use nexus_model::{
-    BoardState, ContradictionDetection, DetectionCapable, DetectionOutput, Fact, FihHash, Intent,
+    BoardState, ContradictionDetection, DetectionCapable, DetectionOutput, Fact, FihHash,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -37,8 +40,16 @@ impl DetectionCapable for ContradictionDetector {
     }
 
     fn orient(&mut self, state: &BoardState) -> DetectionOutput {
+        // Only analyze document-source facts (skip detector output)
         let mut by_topic: HashMap<&str, HashMap<&str, Vec<&Fact>>> = HashMap::new();
         for fact in &state.facts {
+            if fact.origin == "contradiction-detector"
+                || fact.origin == "gap-detector"
+                || fact.origin == "state-change-detector"
+                || fact.origin == "new-document-analyzer"
+            {
+                continue;
+            }
             if let (Some(topic), Some(position)) = (topic_of(fact), position_of(fact)) {
                 by_topic
                     .entry(topic)
@@ -71,34 +82,23 @@ impl DetectionCapable for ContradictionDetector {
                     }
                     self.seen.insert(key.clone());
 
-                    let from_facts: Vec<String> = positions[pos_a]
-                        .iter()
-                        .chain(positions[pos_b].iter())
-                        .map(|f| f.id.0.clone())
-                        .collect();
-
                     let origins_a: Vec<&str> =
                         positions[pos_a].iter().map(|f| f.origin.as_str()).collect();
                     let origins_b: Vec<&str> =
                         positions[pos_b].iter().map(|f| f.origin.as_str()).collect();
 
-                    output.intents.push(Intent {
+                    output.facts.push(Fact {
                         id: FihHash::new(&[topic, pa, pb], "contradiction"),
-                        from_facts,
-                        description: format!(
-                            "Resolve contradiction on '{}': [{}] (from {}) vs [{}] (from {})",
-                            topic,
-                            pa,
-                            origins_a.join(", "),
-                            pb,
-                            origins_b.join(", ")
-                        ),
+                        origin: "contradiction-detector".into(),
+                        content: serde_json::json!({
+                            "type": "contradiction",
+                            "topic": topic,
+                            "position_a": pa,
+                            "position_b": pb,
+                            "origins_a": origins_a,
+                            "origins_b": origins_b,
+                        }),
                         creator: "contradiction-detector".into(),
-                        worker: None,
-                        to_fact_id: None,
-                        last_heartbeat_at: None,
-                        created_at: None,
-                        concluded_at: None,
                     });
                 }
             }

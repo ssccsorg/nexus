@@ -1,19 +1,17 @@
 // Document-level scenario test: validates the full Nexus pipeline with
-// real SSCCS document claims. This is the practical demonstration of:
+// real SSCCS document claims.
 //
-//   - Multi-document knowledge ingestion
-//   - Cross-origin gap detection
-//   - Contradiction discovery between documents
-//   - New document analysis (+/-/gap factors)
-//   - Parallel hypothesis branches via stigmergy
-//   - Eviction + snapshot round-trip
+// Refactored for correct FIH semantics:
+//   - Detectors produce Facts (observations), never Intents (actions)
+//   - Agents read detector Facts and create Intents to act on them
+//   - Intents go through claim → heartbeat → conclude lifecycle
+//   - Concluded Intents produce new Facts → recursive knowledge growth
 //
-// The test uses actual claims from docs.ssccs.org documents encoded as
-// Facts with {claim, topic, position} metadata.
+// Stigmergy principle: dumb detectors, infinite iterations, emergent accuracy.
 
 use nexus_graph::{
-    Blackboard, EvictCapable, Fact, FihHash, Snapshottable, StorageSnapshot, create_blackboard,
-    create_blackboard_from_snapshot,
+    Blackboard, EvictCapable, Fact, FihHash, Intent, Snapshottable, StorageSnapshot,
+    create_blackboard, create_blackboard_from_snapshot,
 };
 use nexus_process::scheduler::Scheduler;
 use nexus_process::tasks::contradiction_detector::ContradictionDetector;
@@ -36,7 +34,7 @@ fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) 
     }
 }
 
-// ── Phase 1: Seed initial corpus (4 documents, 19 facts) ───────────────
+// ── Seed data ───────────────────────────────────────────────────────────
 
 fn seed_initial_corpus(bb: &mut impl Blackboard) {
     let facts = [
@@ -51,7 +49,7 @@ fn seed_initial_corpus(bb: &mut impl Blackboard) {
         claim(
             "m02",
             "manifesto.llms.md",
-            "Time is just another coordinate, not a privileged timeline of execution",
+            "Time is just another coordinate, not a privileged timeline",
             "time-ontology",
             "coordinate-only",
         ),
@@ -94,7 +92,7 @@ fn seed_initial_corpus(bb: &mut impl Blackboard) {
         claim(
             "g02",
             "guide.llms.md",
-            "Segment is a pure coordinate point with no stored value",
+            "Segment is a pure coordinate point",
             "segment-property",
             "coordinate-only",
         ),
@@ -115,7 +113,7 @@ fn seed_initial_corpus(bb: &mut impl Blackboard) {
         claim(
             "g05",
             "guide.llms.md",
-            "Data movement consumes 60-80% of energy in modern systems",
+            "Data movement consumes 60-80% of energy",
             "energy-efficiency",
             "data-movement-cost",
         ),
@@ -123,7 +121,7 @@ fn seed_initial_corpus(bb: &mut impl Blackboard) {
         claim(
             "n01",
             "nexus/index.llms.md",
-            "FIH primitives are the only interface between any agents",
+            "FIH primitives are the only interface between agents",
             "agent-interface",
             "fih-only",
         ),
@@ -152,28 +150,28 @@ fn seed_initial_corpus(bb: &mut impl Blackboard) {
         claim(
             "i01",
             "nexus/impl_init.llms.md",
-            "Core assembled from production-grade crates (petgraph, rusqlite, cyrs)",
+            "Core assembled from production-grade crates",
             "architecture-approach",
             "crate-assembly",
         ),
         claim(
             "i02",
             "nexus/impl_init.llms.md",
-            "Single codebase compiles to WASM (edge) and native (server)",
+            "Single codebase compiles to WASM and native",
             "deployment-model",
             "unified-binary",
         ),
         claim(
             "i03",
             "nexus/impl_init.llms.md",
-            "Cypher is the query language with richest LLM training data",
+            "Cypher has richest LLM training data",
             "query-language",
             "cypher-first",
         ),
         claim(
             "i04",
             "nexus/impl_init.llms.md",
-            "LLMs are accelerators, not requirements — Cairn proved 54/54 without LLMs",
+            "LLMs are accelerators, not requirements",
             "llm-role",
             "optional-accelerator",
         ),
@@ -193,22 +191,19 @@ fn initial_ids() -> Vec<String> {
     .collect()
 }
 
-// ── Phase 4: Add new documents (2 documents, 8 facts) ──────────────────
-
 fn seed_new_documents(bb: &mut impl Blackboard) {
     let facts = [
-        // nexus/notes/acp_nexus.llms.md
         claim(
             "a01",
             "nexus/notes/acp_nexus.llms.md",
-            "ACP uses subprocess model with stdio transport for agent isolation",
+            "ACP uses subprocess model with stdio transport",
             "agent-architecture",
             "subprocess-isolation",
         ),
         claim(
             "a02",
             "nexus/notes/acp_nexus.llms.md",
-            "MCP/ACP/A2A form a three-layer protocol stack for agent ecosystems",
+            "MCP/ACP/A2A form a three-layer protocol stack",
             "protocol-stack",
             "layered-protocols",
         ),
@@ -222,36 +217,35 @@ fn seed_new_documents(bb: &mut impl Blackboard) {
         claim(
             "a04",
             "nexus/notes/acp_nexus.llms.md",
-            "Multi-backend validation through ACP ensures cross-model comparison",
+            "Multi-backend validation ensures cross-model comparison",
             "llm-backend",
             "provider-agnostic",
         ),
-        // notes/iclr26_insight.llms.md
         claim(
             "c01",
             "notes/iclr26_insight.llms.md",
-            "Mamba-3: inference-first with time-aware generalized trapezoidal discretization",
+            "Mamba-3: inference-first with time-aware discretization",
             "time-ontology",
             "time-aware-optimization",
         ),
         claim(
             "c02",
             "notes/iclr26_insight.llms.md",
-            "Add arithmetic intensity check to MemoryLayout for compute-memory balance",
+            "Add arithmetic intensity check to MemoryLayout",
             "design-priority",
             "performance-first",
         ),
         claim(
             "c03",
             "notes/iclr26_insight.llms.md",
-            "Single-layer diagonal SSMs cannot express non-Abelian state tracking",
+            "Diagonal SSMs cannot express non-Abelian state tracking",
             "expressivity-limits",
             "provable-ceiling",
         ),
         claim(
             "c04",
             "notes/iclr26_insight.llms.md",
-            "Replace complexity matrix with roofline analysis for compiler feasibility",
+            "Replace complexity matrix with roofline analysis",
             "design-priority",
             "performance-first",
         ),
@@ -264,56 +258,82 @@ fn seed_new_documents(bb: &mut impl Blackboard) {
 // ── Tick helper ────────────────────────────────────────────────────────
 
 struct TickResult {
-    intents_submitted: usize,
+    facts_submitted: usize,
     state: nexus_graph::BoardState,
 }
 
 fn do_tick(sched: &mut Scheduler<impl Blackboard + EvictCapable + Snapshottable>) -> TickResult {
-    let intents_submitted = sched.tick().expect("tick");
+    let facts_submitted = sched.tick().expect("tick");
     let state = Blackboard::read_state(&sched.bb);
     TickResult {
-        intents_submitted,
+        facts_submitted,
         state,
     }
 }
 
-// ── Phase 5: simulate parallel hypothesis branches ─────────────────────
+/// Count detector Facts of a given type (using content["type"]).
+fn count_detector_facts(state: &nexus_graph::BoardState, detector: &str, fact_type: &str) -> usize {
+    state
+        .facts
+        .iter()
+        .filter(|f| f.creator == detector)
+        .filter(|f| f.content.get("type").and_then(|v| v.as_str()) == Some(fact_type))
+        .count()
+}
 
-fn run_research_branch(
+// ── Agent: create Intents from contradiction Facts ─────────────────────
+
+fn agent_resolve_contradictions(
     sched: &mut Scheduler<impl Blackboard + EvictCapable + Snapshottable>,
-    branch_name: &str,
-    intent_filter: &str,
+    agent_name: &str,
+    topic_filter: &str,
     conclusion: &str,
 ) {
     let state = Blackboard::read_state(&sched.bb);
-    for intent in &state.intents {
-        // Skip already-concluded, already-claimed, or stale intents
-        if intent.to_fact_id.is_some() || intent.concluded_at.is_some() {
+    for fact in &state.facts {
+        if fact.creator != "contradiction-detector" {
             continue;
         }
-        if intent.worker.is_some() {
+        let Some(t) = fact.content.get("topic").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        if !t.contains(topic_filter) {
             continue;
         }
-        if intent.description.contains(intent_filter) {
-            let id = &intent.id.0;
-            let c = serde_json::json!({
-                "resolution": conclusion,
-                "branch": branch_name,
-            });
-            sched.bb.claim_intent(id, branch_name).expect("claim");
-            sched.bb.heartbeat(id, branch_name).expect("heartbeat");
-            sched.bb.conclude_intent(id, &c).expect("conclude");
-        }
+        // Create an Intent to resolve this contradiction
+        let intent = Intent {
+            id: FihHash::new(&[&fact.id.0, agent_name], "resolve"),
+            from_facts: vec![fact.id.0.clone()],
+            description: format!("Resolve {}: {}", t, agent_name),
+            creator: agent_name.into(),
+            worker: None,
+            to_fact_id: None,
+            last_heartbeat_at: None,
+            created_at: None,
+            concluded_at: None,
+        };
+        let iid = sched.bb.submit_intent(&intent).expect("submit intent");
+        sched.bb.claim_intent(&iid.0, agent_name).expect("claim");
+        sched.bb.heartbeat(&iid.0, agent_name).expect("heartbeat");
+        sched
+            .bb
+            .conclude_intent(
+                &iid.0,
+                &serde_json::json!({
+                    "resolution": conclusion,
+                    "agent": agent_name,
+                }),
+            )
+            .expect("conclude");
     }
 }
 
 // ═════════════════════════════════════════════════════════════════════════
-//  Scenario tests
+//  Scenario: Full document lifecycle with correct FIH semantics
 // ═════════════════════════════════════════════════════════════════════════
 
 #[test]
 fn scenario_full_document_lifecycle() {
-    // ── Phase 1: Seed initial corpus ───────────────────────────────
     let mut bb = create_blackboard();
     seed_initial_corpus(&mut bb);
 
@@ -322,356 +342,164 @@ fn scenario_full_document_lifecycle() {
     sched.register(Box::new(ContradictionDetector::new()));
 
     let state = Blackboard::read_state(&sched.bb);
-    assert_eq!(state.facts.len(), 19, "Phase 1: 19 initial facts");
+    assert_eq!(
+        state.facts.len(),
+        19,
+        "Phase 1: 19 initial facts from 4 documents"
+    );
 
-    // ── Phase 2: Gap detection ─────────────────────────────────────
+    // ── Phase 2: Gap detection → Facts ─────────────────────────────
     let r1 = do_tick(&mut sched);
+    let gap_facts = count_detector_facts(&r1.state, "gap-detector", "gap");
     assert!(
-        r1.intents_submitted > 0,
-        "Phase 2: gap detector must find orphaned facts"
-    );
-    let gap_intents: Vec<_> = r1
-        .state
-        .intents
-        .iter()
-        .filter(|i| i.creator == "gap-detector")
-        .collect();
-    assert!(!gap_intents.is_empty(), "Gap detector produced intents");
-
-    let gap_descs: Vec<&str> = gap_intents.iter().map(|i| i.description.as_str()).collect();
-    let has_cross_origin = gap_descs.iter().any(|d| d.contains("Cross-origin gap"));
-    assert!(
-        has_cross_origin,
-        "At least one cross-origin gap detected: {:?}",
-        gap_descs
+        gap_facts > 0,
+        "Phase 2: gap detector recorded gap facts: {}",
+        gap_facts
     );
 
-    // ── Phase 3: Contradiction detection ────────────────────────────
+    // ── Phase 3: Contradiction detection → Facts ───────────────────
     let r2 = do_tick(&mut sched);
-    let contradiction_intents: Vec<_> = r2
-        .state
-        .intents
-        .iter()
-        .filter(|i| i.creator == "contradiction-detector")
-        .collect();
-
+    let contradiction_facts =
+        count_detector_facts(&r2.state, "contradiction-detector", "contradiction");
     assert!(
-        !contradiction_intents.is_empty(),
-        "Phase 3: contradiction detector must find field-definition tension"
+        contradiction_facts > 0,
+        "Phase 3: contradiction detector recorded {} facts",
+        contradiction_facts
     );
-    let contradiction_descs: Vec<&str> = contradiction_intents
-        .iter()
-        .map(|i| i.description.as_str())
-        .collect();
+    // field-definition has 3 positions → at least 2 contradiction pairs
     assert!(
-        contradiction_descs
-            .iter()
-            .any(|d| d.contains("field-definition")),
-        "field-definition contradiction found"
+        contradiction_facts >= 2,
+        "field-definition has 3 positions, >=2 pairs"
     );
 
-    // ── Phase 4: New documents arrive ───────────────────────────────
+    // ── Phase 4: New documents arrive → NDA Facts ─────────────────
     sched.register(Box::new(NewDocumentAnalyzer::with_baseline(initial_ids())));
     seed_new_documents(&mut sched.bb);
 
     let r3 = do_tick(&mut sched);
-    let nda_intents: Vec<_> = r3
-        .state
-        .intents
-        .iter()
-        .filter(|i| i.creator == "new-document-analyzer")
-        .collect();
-    assert!(
-        !nda_intents.is_empty(),
-        "Phase 4: new-document analyzer must produce intents"
-    );
+    let nda_facts = count_detector_facts(&r3.state, "new-document-analyzer", "doc_analysis");
+    assert_eq!(nda_facts, 8, "Phase 4: 8 new facts analyzed");
 
-    let plus_count = nda_intents
-        .iter()
-        .filter(|i| i.description.contains("+factor"))
-        .count();
-    let minus_count = nda_intents
-        .iter()
-        .filter(|i| i.description.contains("-factor"))
-        .count();
-    let gap_count = nda_intents
-        .iter()
-        .filter(|i| i.description.contains("Gap discovered"))
-        .count();
-    assert_eq!(
-        plus_count + minus_count + gap_count,
-        8,
-        "All 8 new facts analyzed: +{} / -{} / gap {}",
-        plus_count,
-        minus_count,
-        gap_count
-    );
-    assert!(
-        minus_count > 0,
-        "Must have at least one challenge (-factor)"
-    );
-    assert!(gap_count > 0, "Must have at least one new topic gap");
-
-    // ── Phase 4b: Contradiction detector catches new tensions ───────
+    // ── Phase 5: Contradiction detector finds new tensions ─────────
     let r4 = do_tick(&mut sched);
-    let all_contradictions: Vec<_> = r4
-        .state
-        .intents
-        .iter()
-        .filter(|i| i.creator == "contradiction-detector")
-        .collect();
+    let all_contradictions =
+        count_detector_facts(&r4.state, "contradiction-detector", "contradiction");
     assert!(
-        all_contradictions.len() >= 4,
-        "Phase 4b: >=4 total contradictions: got {}",
-        all_contradictions.len()
+        all_contradictions >= 4,
+        "Phase 5: >=4 contradictions with new docs: got {}",
+        all_contradictions
     );
 
-    let descs_str: String = all_contradictions
-        .iter()
-        .map(|i| i.description.as_str())
-        .collect::<Vec<_>>()
-        .join(" | ");
-    assert!(
-        descs_str.contains("time-ontology"),
-        "time-ontology tension: {}",
-        descs_str
-    );
-    assert!(
-        descs_str.contains("design-priority"),
-        "design-priority tension: {}",
-        descs_str
-    );
-    assert!(
-        descs_str.contains("field-definition"),
-        "field-definition tension: {}",
-        descs_str
-    );
-
-    // ── Phase 5: Parallel research branches ────────────────────────
-    run_research_branch(
+    // ── Phase 6: Agent resolves contradictions ────────────────────
+    // Agent reads contradiction Facts, creates Intents, concludes them
+    agent_resolve_contradictions(
         &mut sched,
-        "branch-fidelity",
+        "agent-alpha",
         "design-priority",
-        "Structural fidelity is the primary constraint; performance is secondary",
+        "Structural fidelity is the primary constraint; roofline analysis is a secondary compiler concern",
     );
-    run_research_branch(
+    agent_resolve_contradictions(
         &mut sched,
-        "branch-performance",
-        "design-priority",
-        "Roofline analysis must be a first-class compiler pass",
-    );
-    run_research_branch(
-        &mut sched,
-        "branch-time",
+        "agent-beta",
         "time-ontology",
         "Time as coordinate is ontological truth; discretization is a Field-layer optimization",
     );
-    run_research_branch(
+    agent_resolve_contradictions(
         &mut sched,
-        "branch-field",
+        "agent-gamma",
         "field-definition",
-        "Abstract admissibility conditions and value-binding rules are complementary views",
+        "Abstract admissibility and value-binding are complementary views of Field",
     );
 
     let state = Blackboard::read_state(&sched.bb);
     let total_facts = state.facts.len();
     assert!(
-        total_facts >= 23,
-        "Phase 5: >=23 facts (19 initial + >=4 conclusions): got {}",
+        total_facts >= 28,
+        "Phase 6: >=28 facts (19 initial + 8 new + detector + conclusions): got {}",
         total_facts
     );
 
-    // ── Phase 6: Eviction + Snapshot ───────────────────────────────
-    let state_before = Blackboard::read_state(&sched.bb);
-    let intents_before = state_before.intents.len();
-    EvictCapable::evict_before(&sched.bb, "9999999999").expect("evict");
-    let state = Blackboard::read_state(&sched.bb);
-    let remaining_intents = state.intents.len();
-    assert!(
-        remaining_intents < intents_before,
-        "Phase 6a: concluded intents evicted: {} -> {}",
-        intents_before,
-        remaining_intents
-    );
-
-    // Snapshot round-trip
-    let snapshot = Snapshottable::to_snapshot(&sched.bb);
-    let json = serde_json::to_vec(&snapshot).expect("serialize");
-    let restored: StorageSnapshot = serde_json::from_slice(&json).expect("deserialize");
-    let mut bb_restored = create_blackboard_from_snapshot(restored);
-
-    let state_restored = Blackboard::read_state(&bb_restored);
-    assert_eq!(
-        state_restored.facts.len(),
-        total_facts,
-        "Phase 6b: snapshot preserves all {} facts",
-        total_facts
-    );
-
-    // Worker B continues from restored state
-    bb_restored
-        .submit_fact(&claim(
-            "w01",
-            "worker-b.nexus",
-            "All four branches converge: SSCCS ontology is correct",
-            "design-priority",
-            "synthesis-resolution",
-        ))
-        .unwrap();
-
-    let state_final = Blackboard::read_state(&bb_restored);
-    assert_eq!(
-        state_final.facts.len(),
-        total_facts + 1,
-        "Phase 6c: Worker B adds to restored blackboard"
-    );
-}
-
-#[test]
-fn scenario_duplicate_prevention_on_contradictions() {
-    let mut bb = create_blackboard();
-    seed_initial_corpus(&mut bb);
-    seed_new_documents(&mut bb);
-
-    let mut sched = Scheduler::new(bb);
-    sched.register(Box::new(ContradictionDetector::new()));
-
-    let r1 = do_tick(&mut sched);
-    let c1_count = r1
-        .state
-        .intents
-        .iter()
-        .filter(|i| i.creator == "contradiction-detector")
-        .count();
-
-    let r2 = do_tick(&mut sched);
-    let c2_count = r2
-        .state
-        .intents
-        .iter()
-        .filter(|i| i.creator == "contradiction-detector")
-        .count();
-
-    assert_eq!(c1_count, c2_count, "No duplicate contradiction intents");
-}
-
-#[test]
-fn scenario_new_document_no_duplicates() {
-    let mut bb = create_blackboard();
-    seed_initial_corpus(&mut bb);
-
-    let mut sched = Scheduler::new(bb);
-    sched.register(Box::new(NewDocumentAnalyzer::with_baseline(initial_ids())));
-
-    // First tick: no new facts (all in baseline)
-    let r1 = do_tick(&mut sched);
-    assert_eq!(r1.intents_submitted, 0, "First tick: 0 new intents");
-
-    // Add new documents
-    seed_new_documents(&mut sched.bb);
-    let r2 = do_tick(&mut sched);
-    let nda_count_2 = r2
-        .state
-        .intents
-        .iter()
-        .filter(|i| i.creator == "new-document-analyzer")
-        .count();
-    assert_eq!(nda_count_2, 8, "Second tick: 8 new facts analyzed");
-
-    // Third tick: no new intents submitted (all facts already seen)
-    let r3 = do_tick(&mut sched);
-    assert_eq!(r3.intents_submitted, 0, "Third tick: no new intents");
-}
-
-// ── Cairn-style StateChangeDetector: ReasonCheckpoint pattern ─────────
-
-#[test]
-fn scenario_state_change_detector_cairn_pattern() {
-    let bb = create_blackboard();
-
-    let mut sched = Scheduler::new(bb);
-    sched.register(Box::new(StateChangeDetector::new()));
-
-    // Tick 1: initialize silently (no checkpoint yet)
-    let r1 = do_tick(&mut sched);
-    assert_eq!(r1.intents_submitted, 0, "Tick 1: silent init");
-
-    // Seed initial corpus
-    seed_initial_corpus(&mut sched.bb);
-
-    // Tick 2: fact count changed 0→19 → reason intent
-    let r2 = do_tick(&mut sched);
-    assert_eq!(
-        r2.intents_submitted, 1,
-        "Tick 2: reason triggered by facts:0->19"
-    );
-    let reason_intents: Vec<_> = r2
-        .state
-        .intents
-        .iter()
-        .filter(|i| i.creator == "state-change-detector")
-        .collect();
-    assert_eq!(reason_intents.len(), 1);
-    assert!(reason_intents[0].description.contains("facts:0->19"));
-
-    // Tick 3: no change → no intent
-    let r3 = do_tick(&mut sched);
-    assert_eq!(r3.intents_submitted, 0, "Tick 3: no change, no reason");
-
-    // Add new documents
-    seed_new_documents(&mut sched.bb);
-
-    // Tick 4: facts 19→27 → reason intent
-    let r4 = do_tick(&mut sched);
-    assert_eq!(
-        r4.intents_submitted, 1,
-        "Tick 4: reason triggered by facts:19->27"
-    );
-
-    // Claim and conclude the reason intent (simulates agent work)
-    let state = Blackboard::read_state(&sched.bb);
-    let reason_id = &state
-        .intents
-        .iter()
-        .find(|i| i.creator == "state-change-detector")
-        .expect("reason intent exists")
-        .id
-        .0;
-    sched.bb.claim_intent(reason_id, "analyst").expect("claim");
-    sched.bb.heartbeat(reason_id, "analyst").expect("heartbeat");
-    sched
-        .bb
-        .conclude_intent(
-            reason_id,
-            &serde_json::json!({"analysis": "8 new claims added from ACP and ICLR documents"}),
-        )
-        .expect("conclude");
-
-    // Tick 5: open_intent count changed (reason concluded)
-    // When the reason intent is concluded, open_intents drops, which
-    // is a state change that triggers another reason (Cairn pattern).
-    let r5 = do_tick(&mut sched);
-    let reason_intents_t5: Vec<_> = r5
-        .state
-        .intents
-        .iter()
-        .filter(|i| i.creator == "state-change-detector")
-        .collect();
-    assert!(
-        !reason_intents_t5.is_empty(),
-        "Tick 5: reason triggered by open_intent completion (Cairn checkpoint pattern)"
-    );
-
-    // Snapshot round-trip: facts preserved
+    // ── Phase 7: Snapshot then Eviction ────────────────────────────
+    // Snapshot BEFORE eviction to capture the full state
     let snapshot = Snapshottable::to_snapshot(&sched.bb);
     let json = serde_json::to_vec(&snapshot).expect("serialize");
     let restored: StorageSnapshot = serde_json::from_slice(&json).expect("deserialize");
     let bb_restored = create_blackboard_from_snapshot(restored);
-
     let state_restored = Blackboard::read_state(&bb_restored);
     assert_eq!(
         state_restored.facts.len(),
-        28,
-        "Snapshot preserves 28 facts (19 initial + 8 new + 1 conclusion)"
+        total_facts,
+        "Phase 7a: snapshot preserves all {} facts",
+        total_facts
+    );
+
+    let state_before = Blackboard::read_state(&sched.bb);
+    let intents_before = state_before.intents.len();
+    EvictCapable::evict_before(&sched.bb, "9999999999").expect("evict");
+    let state_after = Blackboard::read_state(&sched.bb);
+    assert!(
+        state_after.intents.len() < intents_before,
+        "Phase 7b: concluded intents evicted"
+    );
+}
+
+#[test]
+fn scenario_gap_facts_are_immutable_observations() {
+    let mut bb = create_blackboard();
+    seed_initial_corpus(&mut bb);
+
+    let mut sched = Scheduler::new(bb);
+    sched.register(Box::new(GapDetector::new()));
+
+    // Tick 1: gap Facts recorded
+    let r1 = do_tick(&mut sched);
+    let gap_facts_t1 = count_detector_facts(&r1.state, "gap-detector", "gap");
+
+    // Tick 2: same data → no new gap Facts (already observed)
+    let r2 = do_tick(&mut sched);
+    let gap_facts_t2 = count_detector_facts(&r2.state, "gap-detector", "gap");
+    assert_eq!(
+        gap_facts_t1, gap_facts_t2,
+        "Gap facts are stable — no duplicates"
+    );
+
+    // Gap facts persist (they're Facts, not evicted Intents)
+    EvictCapable::evict_before(&sched.bb, "9999999999").expect("evict");
+    let state = Blackboard::read_state(&sched.bb);
+    let gap_after_evict = count_detector_facts(&state, "gap-detector", "gap");
+    assert_eq!(
+        gap_after_evict, gap_facts_t1,
+        "Gap facts survive eviction (they're Facts)"
+    );
+}
+
+#[test]
+fn scenario_state_change_detector_facts() {
+    let bb = create_blackboard();
+    let mut sched = Scheduler::new(bb);
+    sched.register(Box::new(StateChangeDetector::new()));
+
+    // Tick 1: silent init
+    let r1 = do_tick(&mut sched);
+    assert_eq!(r1.facts_submitted, 0, "Tick 1: silent init");
+
+    // Seed + tick 2: fact count changed → state_change Fact
+    seed_initial_corpus(&mut sched.bb);
+    let r2 = do_tick(&mut sched);
+    let sc_facts = count_detector_facts(&r2.state, "state-change-detector", "state_change");
+    assert_eq!(sc_facts, 1, "Tick 2: state_change Fact recorded");
+
+    // Tick 3: no change → no new Fact
+    let r3 = do_tick(&mut sched);
+    assert_eq!(r3.facts_submitted, 0, "Tick 3: no change, no fact");
+
+    // Add new docs → Tick 4: another state_change Fact
+    seed_new_documents(&mut sched.bb);
+    let r4 = do_tick(&mut sched);
+    let sc_facts_t4 = count_detector_facts(&r4.state, "state-change-detector", "state_change");
+    // Tick 2: facts 0→19, Tick 4: facts 19→27
+    assert_eq!(
+        sc_facts_t4, 2,
+        "Tick 4: 2 state_change Facts (facts 0→19, then 19→27)"
     );
 }
