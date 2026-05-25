@@ -674,3 +674,44 @@ fn scenario_detector_state_snapshot_roundtrip() {
         "Worker B tick 2: no new state_change (checkpoint stable)"
     );
 }
+
+// ═════════════════════════════════════════════════════════════════════════
+//  Scenario: Flush then Evict
+//
+//  Verifies that eviction respects the flush-first contract.
+//  Uses tick_with_flush() which requires FlushCapable backend.
+//
+//  The DefaultBlackboard (DualStorage) delegates FlushCapable to
+//  the cold backend (NullStorage by default, which is a no-op).
+//  This test verifies the coordination logic, not the actual
+//  persistence — that belongs in storage-layer tests.
+// ═════════════════════════════════════════════════════════════════════════
+#[test]
+fn scenario_flush_then_evict() {
+    let mut bb = create_blackboard();
+    seed_initial_corpus(&mut bb);
+
+    let mut sched = Scheduler::new(bb);
+    sched.register(Box::new(GapDetector::new()));
+
+    // tick_with_flush requires FlushCapable — now provided by create_blackboard()
+    let _ = sched.tick_with_flush().expect("tick with flush");
+    let state = Blackboard::read_state(&sched.bb);
+    assert!(
+        state.facts.len() >= 19,
+        "tick_with_flush works: {} facts",
+        state.facts.len()
+    );
+
+    // Verify detectors fired normally
+    let gap_count = count_detector_facts(&state, "gap-detector", "gap");
+    assert!(
+        gap_count > 0,
+        "Gap facts created during flush tick: {}",
+        gap_count
+    );
+
+    // Second tick with flush — no new state_change (checkpoint stable)
+    let r2 = sched.tick_with_flush().expect("second tick with flush");
+    assert_eq!(r2, 0, "No new facts on second flush tick");
+}

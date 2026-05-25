@@ -6,8 +6,9 @@
 //   3. Submit generated Intents and Facts
 //   4. Monitor heartbeat TTL — release stale claims
 //   5. Trigger periodic eviction when memory exceeds threshold
+//      (always flush first, then evict — cold failure is non-fatal)
 //
-// Generic over `B: Blackboard + EvictCapable`.
+// Generic over `B: Blackboard + EvictCapable (+ optionally FlushCapable)`.
 // Detection tasks implement `DetectionCapable` (or marker traits) from nexus-model.
 
 use crate::error::ProcessError;
@@ -59,7 +60,37 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
 
     /// Run one OODA tick. Returns the number of new Facts submitted
     /// by detectors (detectors produce Facts, not Intents).
+    ///
+    /// When the backend also implements `FlushCapable`, eviction
+    /// flushes cold storage first before evicting hot memory.
+    /// Use `tick_with_flush()` for the flush+evict cycle.
     pub fn tick(&mut self) -> Result<usize, ProcessError> {
+        self._tick_inner(|_bb| Ok(()))
+    }
+
+    /// Like `tick()` but runs the flush+evict cycle when memory
+    /// exceeds threshold. Requires the backend to implement `FlushCapable`.
+    pub fn tick_with_flush(&mut self) -> Result<usize, ProcessError>
+    where
+        B: nexus_model::FlushCapable,
+    {
+        let threshold = self.config.eviction_threshold;
+        self._tick_inner(move |bb: &B| {
+            let size = EvictCapable::approximate_size(bb);
+            if size > threshold {
+                crate::eviction::try_evict_flush(bb, threshold).map_err(ProcessError::Eviction)?;
+            }
+            Ok(())
+        })
+    }
+
+    /// Inner tick logic shared between `tick()` and `tick_with_flush()`.
+    /// The `evict_fn` parameter allows the caller to decide whether to
+    /// use simple eviction or flush+evict.
+    fn _tick_inner(
+        &mut self,
+        evict_fn: impl FnOnce(&B) -> Result<(), ProcessError>,
+    ) -> Result<usize, ProcessError> {
         let state = Blackboard::read_state(&self.bb);
 
         let mut combined = DetectionOutput::default();
@@ -93,12 +124,9 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
             }
         }
 
-        let size = EvictCapable::approximate_size(&self.bb);
-        if size > self.config.eviction_threshold {
-            crate::eviction::try_evict(&self.bb, self.config.eviction_threshold)?;
-        }
+        evict_fn(&self.bb)?;
 
-        // Evict stale unclaimed intents (stigmergy detectors accumulate these)
+        // Evict stale unclaimed intents
         if self.config.stale_intent_ttl.as_secs() > 0 {
             let _ = self
                 .bb
@@ -117,8 +145,6 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
     }
 
     /// Collect serializable state from all registered detectors.
-    /// Called before snapshot to persist detector state alongside
-    /// the blackboard state.
     pub fn collect_task_states(&self) -> TaskStates {
         let mut states = TaskStates::new();
         for task in &self.tasks {
@@ -130,8 +156,6 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
     }
 
     /// Restore detector state from a previously saved snapshot.
-    /// Called after snapshot restore to prevent duplicate detection
-    /// of already-observed patterns.
     pub fn restore_task_states(&mut self, states: &TaskStates) {
         for task in &mut self.tasks {
             if let Some(state) = states.get(task.name()) {

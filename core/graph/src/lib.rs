@@ -22,7 +22,7 @@ use blackboard::DefaultBlackboard;
 /// Create a default blackboard with in-memory petgraph hot storage
 /// and no cold backend. Equivalent to `DefaultBlackboard::new()`.
 pub fn create_blackboard()
--> impl Blackboard + CypherCapable + EvictCapable + GraphRead + Snapshottable {
+-> impl Blackboard + CypherCapable + EvictCapable + FlushCapable + GraphRead + Snapshottable {
     DefaultBlackboard::new()
 }
 
