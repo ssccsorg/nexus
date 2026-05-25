@@ -12,6 +12,7 @@
 // Custom detectors implement the appropriate trait and can be mixed in
 // with the defaults — same pattern as swappable storage backends.
 
+pub(crate) mod common;
 pub mod contradiction_detector;
 pub mod gap_detector;
 pub mod new_document_analyzer;

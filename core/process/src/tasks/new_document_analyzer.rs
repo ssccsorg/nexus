@@ -8,6 +8,7 @@
 //
 // Implements: DetectionCapable (standalone, no marker trait)
 
+use super::common::{position_of, topic_of};
 use nexus_model::{BoardState, DetectionCapable, DetectionOutput, Fact, FihHash, Intent};
 use std::collections::{HashMap, HashSet};
 
@@ -33,14 +34,6 @@ impl Default for NewDocumentAnalyzer {
     fn default() -> Self {
         Self::new()
     }
-}
-
-fn topic_of(fact: &Fact) -> Option<&str> {
-    fact.content.get("topic")?.as_str()
-}
-
-fn position_of(fact: &Fact) -> Option<&str> {
-    fact.content.get("position")?.as_str()
 }
 
 impl DetectionCapable for NewDocumentAnalyzer {

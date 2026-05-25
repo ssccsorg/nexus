@@ -34,7 +34,7 @@ impl Default for SchedulerConfig {
 pub struct Scheduler<B: Blackboard + EvictCapable> {
     pub bb: B,
     config: SchedulerConfig,
-    pub tasks: Vec<Box<dyn DetectionCapable>>,
+    tasks: Vec<Box<dyn DetectionCapable>>,
 }
 
 impl<B: Blackboard + EvictCapable> Scheduler<B> {

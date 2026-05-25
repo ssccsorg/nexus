@@ -5,6 +5,7 @@
 //
 // Implements: DetectionCapable + ContradictionDetection (from nexus-model)
 
+use super::common::{position_of, topic_of};
 use nexus_model::{
     BoardState, ContradictionDetection, DetectionCapable, DetectionOutput, Fact, FihHash, Intent,
 };
@@ -29,14 +30,6 @@ impl Default for ContradictionDetector {
 }
 
 impl ContradictionDetection for ContradictionDetector {}
-
-fn topic_of(fact: &Fact) -> Option<&str> {
-    fact.content.get("topic")?.as_str()
-}
-
-fn position_of(fact: &Fact) -> Option<&str> {
-    fact.content.get("position")?.as_str()
-}
 
 impl DetectionCapable for ContradictionDetector {
     fn name(&self) -> &str {
