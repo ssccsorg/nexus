@@ -553,17 +553,11 @@ impl EvictCapable for PetgraphStorage {
             }
         }
 
-        // Phase 2: collect orphaned facts (not referenced by any kept intent)
-        for idx in g.node_indices() {
-            let Some(w) = g.node_weight(idx) else {
-                continue;
-            };
-            if w.label == "Fact" && !referenced_fact_names.contains(&w.name) {
-                to_remove.push(idx);
-            }
-        }
+        // Phase 2: (removed) Facts are NEVER removed by eviction.
+        // A Fact is an immutable observation. It must persist indefinitely.
+        // Memory pressure should be managed by flush-to-cold, not Fact deletion.
 
-        // Phase 3: remove collected nodes
+        // Phase 3: remove collected Intent nodes only
         let removed = to_remove.len() as u64;
         for idx in to_remove {
             g.remove_node(idx);
