@@ -9,6 +9,7 @@
 // This is the "many iterations" heuristic — eventually, every pair gets
 // an Intent if it's interesting enough.
 
+use super::common::topic_of;
 use nexus_model::{
     BoardState, DetectionCapable, DetectionOutput, Fact, FihHash, GapDetection, Intent,
 };
@@ -20,7 +21,7 @@ use std::collections::{HashMap, HashSet};
 /// Tracks previously-synthesised (key) pairs to avoid submitting
 /// duplicate Intents on successive OODA ticks.
 pub struct GapDetector {
-    seen_origin: HashSet<(String, usize)>,
+    seen_origin: HashSet<(String, String)>,
     seen_topic: HashSet<(String, String, String)>,
 }
 
@@ -40,10 +41,6 @@ impl Default for GapDetector {
 }
 
 impl GapDetection for GapDetector {}
-
-fn topic_of(fact: &Fact) -> Option<&str> {
-    fact.content.get("topic")?.as_str()
-}
 
 impl DetectionCapable for GapDetector {
     fn name(&self) -> &str {
@@ -77,7 +74,9 @@ impl DetectionCapable for GapDetector {
 
         for (origin, facts) in &by_origin {
             if facts.len() >= 2 {
-                let key = ((*origin).to_string(), facts.len());
+                let mut ids: Vec<&str> = facts.iter().map(|f| f.id.0.as_str()).collect();
+                ids.sort();
+                let key = ((*origin).to_string(), ids.join(","));
                 if self.seen_origin.contains(&key) {
                     continue;
                 }
