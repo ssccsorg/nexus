@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 nexus-model = { path = "../model" }
+serde_json.workspace = true
 
 [dev-dependencies]
 nexus-graph = { path = "../graph" }

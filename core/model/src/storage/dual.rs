@@ -122,6 +122,10 @@ impl EvictCapable for DualStorage {
     fn evict_before(&self, before: &str) -> Result<u64, String> {
         self.hot.evict_before(before)
     }
+
+    fn evict_stale_intents(&self, older_than_secs: u64) -> Result<u64, String> {
+        self.hot.evict_stale_intents(older_than_secs)
+    }
 }
 
 // ── Partition scan: delegate to cold ──

@@ -19,6 +19,9 @@ pub struct SchedulerConfig {
     pub tick_interval: Duration,
     pub eviction_threshold: usize,
     pub heartbeat_ttl: Duration,
+    /// Maximum age for unclaimed, unconcluded intents before eviction.
+    /// Default: 3600s (1 hour). Set to 0 to evict all stale intents immediately.
+    pub stale_intent_ttl: Duration,
 }
 
 impl Default for SchedulerConfig {
@@ -27,6 +30,7 @@ impl Default for SchedulerConfig {
             tick_interval: Duration::from_millis(100),
             eviction_threshold: 1024 * 1024 * 10,
             heartbeat_ttl: Duration::from_secs(60),
+            stale_intent_ttl: Duration::from_secs(3600),
         }
     }
 }
@@ -53,6 +57,8 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
         self.tasks.push(task);
     }
 
+    /// Run one OODA tick. Returns the number of new Facts submitted
+    /// by detectors (detectors produce Facts, not Intents).
     pub fn tick(&mut self) -> Result<usize, ProcessError> {
         let state = Blackboard::read_state(&self.bb);
 
@@ -63,7 +69,7 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
             combined.facts.extend(output.facts);
         }
 
-        let intent_count = combined.intents.len();
+        let fact_count = combined.facts.len();
         for intent in &combined.intents {
             let _ = self.bb.submit_intent(intent);
         }
@@ -92,7 +98,14 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
             crate::eviction::try_evict(&self.bb, self.config.eviction_threshold)?;
         }
 
-        Ok(intent_count)
+        // Evict stale unclaimed intents (stigmergy detectors accumulate these)
+        if self.config.stale_intent_ttl.as_secs() > 0 {
+            let _ = self
+                .bb
+                .evict_stale_intents(self.config.stale_intent_ttl.as_secs());
+        }
+
+        Ok(fact_count)
     }
 
     pub fn run(&mut self, iterations: usize) -> Result<usize, ProcessError> {

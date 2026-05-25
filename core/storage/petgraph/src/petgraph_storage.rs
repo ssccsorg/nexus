@@ -153,7 +153,11 @@ impl StorageRead for PetgraphStorage {
                                 .get("last_heartbeat_at")
                                 .and_then(|v| v.as_i64())
                                 .map(|ts| ts.to_string()),
-                            created_at: None,
+                            created_at: w
+                                .properties
+                                .get("created_at")
+                                .and_then(|v| v.as_i64())
+                                .map(|ts| ts.to_string()),
                             concluded_at: if w
                                 .properties
                                 .get("concluded")
@@ -251,6 +255,11 @@ impl IntentCapable for PetgraphStorage {
                 let mut m = HashMap::new();
                 m.insert("description".into(), intent.description.clone().into());
                 m.insert("creator".into(), intent.creator.clone().into());
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64;
+                m.insert("created_at".into(), serde_json::json!(now));
                 m
             },
         });
@@ -560,6 +569,55 @@ impl EvictCapable for PetgraphStorage {
             g.remove_node(idx);
         }
 
+        Ok(removed)
+    }
+
+    fn evict_stale_intents(&self, older_than_secs: u64) -> Result<u64, String> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let cutoff = now.saturating_sub(older_than_secs);
+
+        let mut g = self.graph.write().unwrap();
+        let mut to_remove: Vec<NodeIndex> = Vec::new();
+
+        for idx in g.node_indices() {
+            let Some(w) = g.node_weight(idx) else {
+                continue;
+            };
+            if w.label.as_str() != "Intent" {
+                continue;
+            }
+            // Skip concluded intents — those are handled by evict_before
+            let is_concluded = w
+                .properties
+                .get("concluded")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            if is_concluded {
+                continue;
+            }
+            // Skip claimed intents (have a worker)
+            let has_worker = w.properties.contains_key("worker");
+            if has_worker {
+                continue;
+            }
+            // Check age
+            let created = w
+                .properties
+                .get("created_at")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0) as u64;
+            if created < cutoff {
+                to_remove.push(idx);
+            }
+        }
+
+        let removed = to_remove.len() as u64;
+        for idx in to_remove {
+            g.remove_node(idx);
+        }
         Ok(removed)
     }
 }

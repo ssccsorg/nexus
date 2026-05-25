@@ -1,25 +1,20 @@
 // nexus-process — Gap detector: identifies unexplored concept pairs.
 //
-// Detects orphaned Facts at two levels:
+// Detects orphaned Facts at two levels and records them as Facts:
 //   1. Origin-based: Facts from the same origin with no grounding Intent.
 //   2. Topic-based (cross-origin): Facts on the same topic from different
-//      origins that have no connecting Intent — a cross-document research gap.
+//      origins — a cross-document research gap.
 //
 // Implements: DetectionCapable + GapDetection (from nexus-model)
-// This is the "many iterations" heuristic — eventually, every pair gets
-// an Intent if it's interesting enough.
+//
+// Stigmergy principle: dumb observation, infinite iterations.
+// This detector does not propose action (Intent) — it observes and records
+// gaps as Facts. Other agents or later iterations may act on these Facts.
 
 use super::common::topic_of;
-use nexus_model::{
-    BoardState, DetectionCapable, DetectionOutput, Fact, FihHash, GapDetection, Intent,
-};
+use nexus_model::{BoardState, DetectionCapable, DetectionOutput, Fact, FihHash, GapDetection};
 use std::collections::{HashMap, HashSet};
 
-/// A gap detector that spots orphaned concepts (Facts with no Intent
-/// grounding them to other Facts).
-///
-/// Tracks previously-synthesised (key) pairs to avoid submitting
-/// duplicate Intents on successive OODA ticks.
 pub struct GapDetector {
     seen_origin: HashSet<(String, String)>,
     seen_topic: HashSet<(String, String, String)>,
@@ -48,16 +43,25 @@ impl DetectionCapable for GapDetector {
     }
 
     fn orient(&mut self, state: &BoardState) -> DetectionOutput {
+        // Only analyze document-source facts.
+        // Detector output facts have origin "gap-detector" etc. —
+        // they are observations, not primary sources to re-analyze.
+        let doc_facts: Vec<&Fact> = state
+            .facts
+            .iter()
+            .filter(|f| f.origin != "gap-detector")
+            .collect();
+
         let referenced: HashSet<&str> = state
             .intents
             .iter()
             .flat_map(|i| i.from_facts.iter().map(|s| s.as_str()))
             .collect();
 
-        let orphaned: Vec<&Fact> = state
-            .facts
+        let orphaned: Vec<&Fact> = doc_facts
             .iter()
             .filter(|f| !referenced.contains(f.id.0.as_str()))
+            .copied()
             .collect();
 
         if orphaned.is_empty() {
@@ -80,19 +84,19 @@ impl DetectionCapable for GapDetector {
                 if self.seen_origin.contains(&key) {
                     continue;
                 }
-                self.seen_origin.insert(key);
+                self.seen_origin.insert(key.clone());
 
-                let desc = format!("Synthesise {} orphaned facts from {}", facts.len(), origin);
-                output.intents.push(Intent {
-                    id: FihHash::new(&[origin, "gap"], "intent"),
-                    from_facts: facts.iter().map(|f| f.id.0.clone()).collect(),
-                    description: desc,
+                output.facts.push(Fact {
+                    id: FihHash::new(&[origin, "gap"], "fact"),
+                    origin: "gap-detector".into(),
+                    content: serde_json::json!({
+                        "type": "gap",
+                        "subtype": "origin-orphan",
+                        "origin": origin,
+                        "orphan_count": facts.len(),
+                        "fact_ids": facts.iter().map(|f| &f.id.0).collect::<Vec<_>>(),
+                    }),
                     creator: "gap-detector".into(),
-                    worker: None,
-                    to_fact_id: None,
-                    last_heartbeat_at: None,
-                    created_at: None,
-                    concluded_at: None,
                 });
             }
         }
@@ -119,40 +123,26 @@ impl DetectionCapable for GapDetector {
                 for j in (i + 1)..origin_keys.len() {
                     let oa = origin_keys[i];
                     let ob = origin_keys[j];
-                    let (oa_sorted, ob_sorted) = if oa < ob { (*oa, *ob) } else { (*ob, *oa) };
-                    let key = (
-                        topic.to_string(),
-                        oa_sorted.to_string(),
-                        ob_sorted.to_string(),
-                    );
+                    let (oa_s, ob_s) = if oa < ob { (*oa, *ob) } else { (*ob, *oa) };
+                    let key = (topic.to_string(), oa_s.to_string(), ob_s.to_string());
                     if self.seen_topic.contains(&key) {
                         continue;
                     }
-                    self.seen_topic.insert(key);
+                    self.seen_topic.insert(key.clone());
 
-                    let from_facts: Vec<String> = origins[oa]
-                        .iter()
-                        .chain(origins[ob].iter())
-                        .map(|f| f.id.0.clone())
-                        .collect();
-
-                    output.intents.push(Intent {
-                        id: FihHash::new(&[topic, oa_sorted, ob_sorted], "cross-gap"),
-                        from_facts,
-                        description: format!(
-                            "Cross-origin gap on '{}': {} facts from {} ↔ {} facts from {}",
-                            topic,
-                            origins[oa].len(),
-                            oa,
-                            origins[ob].len(),
-                            ob
-                        ),
+                    output.facts.push(Fact {
+                        id: FihHash::new(&[topic, oa_s, ob_s], "cross-gap"),
+                        origin: "gap-detector".into(),
+                        content: serde_json::json!({
+                            "type": "gap",
+                            "subtype": "cross-origin",
+                            "topic": topic,
+                            "origin_a": oa_s,
+                            "origin_b": ob_s,
+                            "count_a": origins[oa].len(),
+                            "count_b": origins[ob].len(),
+                        }),
                         creator: "gap-detector".into(),
-                        worker: None,
-                        to_fact_id: None,
-                        last_heartbeat_at: None,
-                        created_at: None,
-                        concluded_at: None,
                     });
                 }
             }
