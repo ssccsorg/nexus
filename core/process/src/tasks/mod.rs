@@ -23,6 +23,7 @@ pub trait TaskHandler {
 pub mod contradiction_detector;
 pub mod gap_detector;
 pub mod new_document_analyzer;
+pub mod state_change_detector;
 
 /// Output from a task handler: Intents and Facts to submit.
 #[derive(Debug, Default)]
