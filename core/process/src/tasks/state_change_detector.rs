@@ -1,53 +1,24 @@
 // nexus-process — State change detector: Cairn-style ReasonCheckpoint pattern.
 //
 // Detects when the Blackboard state has changed sufficiently to warrant
-// a new "reason" analysis. Unlike NewDocumentAnalyzer (which tracks per-fact
-// IDs and loses state on restart), this uses simple count-based checkpoints:
+// a new "reason" analysis. Uses count-based checkpoints (snapshot-safe).
 //
-//   - Facts count increased → new knowledge arrived
-//   - Intents opened or all concluded → stigmergy cycle completed
-//
-// This is the mechanism that Cairn's _reason_trigger uses — proven across
-// 54/54 penetration testing challenges. It is snapshot-safe by design:
-// only counts are compared, no individual IDs.
+// Implements: DetectionCapable + StateChangeDetection (from nexus-model)
+// This is the mechanism Cairn's _reason_trigger uses — proven across
+// 54/54 penetration testing challenges.
 
-use super::{TaskHandler, TaskOutput};
-use nexus_model::{BoardState, FihHash, Intent};
+use nexus_model::{
+    BoardState, DetectionCapable, DetectionCheckpoint, DetectionOutput, FihHash, Intent,
+    StateChangeDetection,
+};
 
-/// Snapshot-safe state checkpoint. Only counts, no IDs.
-///
-/// Designed to be serializable via serde (when trait extension adds it)
-/// or via manual JSON construction for snapshot persistence.
-#[derive(Debug, Clone, Default)]
-pub struct ReasonCheckpoint {
-    pub fact_count: usize,
-    pub open_intent_count: usize,
-}
-
-/// Detects state changes and optionally creates a "reason" Intent.
-///
-/// On the first call (no checkpoint), it initializes silently.
-/// On subsequent calls, if facts increased or open intents changed,
-/// it creates a reason Intent to re-analyze the board.
 pub struct StateChangeDetector {
-    checkpoint: Option<ReasonCheckpoint>,
+    checkpoint: Option<DetectionCheckpoint>,
 }
 
 impl StateChangeDetector {
     pub fn new() -> Self {
         Self { checkpoint: None }
-    }
-
-    /// Restore from a previously saved checkpoint (e.g., after snapshot reload).
-    pub fn from_checkpoint(checkpoint: ReasonCheckpoint) -> Self {
-        Self {
-            checkpoint: Some(checkpoint),
-        }
-    }
-
-    /// Export current checkpoint for snapshot serialization.
-    pub fn to_checkpoint(&self) -> Option<ReasonCheckpoint> {
-        self.checkpoint.clone()
     }
 }
 
@@ -57,12 +28,24 @@ impl Default for StateChangeDetector {
     }
 }
 
-impl TaskHandler for StateChangeDetector {
+impl StateChangeDetection for StateChangeDetector {
+    fn to_checkpoint(&self) -> Option<DetectionCheckpoint> {
+        self.checkpoint.clone()
+    }
+
+    fn from_checkpoint(checkpoint: DetectionCheckpoint) -> Self {
+        Self {
+            checkpoint: Some(checkpoint),
+        }
+    }
+}
+
+impl DetectionCapable for StateChangeDetector {
     fn name(&self) -> &str {
         "state-change-detector"
     }
 
-    fn orient(&mut self, state: &BoardState) -> TaskOutput {
+    fn orient(&mut self, state: &BoardState) -> DetectionOutput {
         let current_facts = state.facts.len();
         let current_open = state
             .intents
@@ -70,11 +53,10 @@ impl TaskHandler for StateChangeDetector {
             .filter(|i| i.to_fact_id.is_none())
             .count();
 
-        let mut output = TaskOutput::default();
+        let mut output = DetectionOutput::default();
 
         let Some(ref checkpoint) = self.checkpoint else {
-            // First call: initialize silently
-            self.checkpoint = Some(ReasonCheckpoint {
+            self.checkpoint = Some(DetectionCheckpoint {
                 fact_count: current_facts,
                 open_intent_count: current_open,
             });
@@ -88,7 +70,6 @@ impl TaskHandler for StateChangeDetector {
             return output;
         }
 
-        // Build a reason description
         let mut triggers: Vec<String> = Vec::new();
         if facts_changed {
             triggers.push(format!(
@@ -103,25 +84,19 @@ impl TaskHandler for StateChangeDetector {
             ));
         }
 
-        let desc = format!("Reason: state changed ({})", triggers.join(", "));
-        let intent = Intent {
+        output.intents.push(Intent {
             id: FihHash::new(&[&triggers.join(",")], "reason"),
-            from_facts: Vec::new(), // reason is a meta-intent, not tied to specific facts
-            description: desc,
+            from_facts: Vec::new(),
+            description: format!("Reason: state changed ({})", triggers.join(", ")),
             creator: "state-change-detector".into(),
             worker: None,
             to_fact_id: None,
             last_heartbeat_at: None,
             created_at: None,
             concluded_at: None,
-        };
-        output.intents.push(intent);
+        });
 
-        // Update checkpoint AFTER creating the intent.
-        // Add 1 to open_intent_count to account for the reason intent
-        // we just created (it will be submitted to the blackboard by the
-        // scheduler, increasing the count we'll see on the next tick).
-        self.checkpoint = Some(ReasonCheckpoint {
+        self.checkpoint = Some(DetectionCheckpoint {
             fact_count: current_facts,
             open_intent_count: current_open.saturating_add(output.intents.len()),
         });
@@ -153,7 +128,7 @@ mod tests {
             hints: Vec::new(),
         };
         let output = detector.orient(&state);
-        assert!(output.intents.is_empty(), "first call: no intents");
+        assert!(output.intents.is_empty());
     }
 
     #[test]
@@ -164,7 +139,7 @@ mod tests {
             intents: Vec::new(),
             hints: Vec::new(),
         };
-        detector.orient(&state1); // initialize
+        detector.orient(&state1);
 
         let state2 = BoardState {
             facts: vec![make_fact("f1", "a"), make_fact("f2", "b")],
@@ -172,11 +147,8 @@ mod tests {
             hints: Vec::new(),
         };
         let output = detector.orient(&state2);
-        assert_eq!(output.intents.len(), 1, "fact increase triggers reason");
-        assert!(
-            output.intents[0].description.contains("facts:1->2"),
-            "reason describes the change"
-        );
+        assert_eq!(output.intents.len(), 1);
+        assert!(output.intents[0].description.contains("facts:1->2"));
     }
 
     #[test]
@@ -206,15 +178,8 @@ mod tests {
             hints: Vec::new(),
         };
         let output = detector.orient(&state2);
-        assert_eq!(
-            output.intents.len(),
-            1,
-            "open intent change triggers reason"
-        );
-        assert!(
-            output.intents[0].description.contains("open_intents"),
-            "reason describes open_intent change"
-        );
+        assert_eq!(output.intents.len(), 1);
+        assert!(output.intents[0].description.contains("open_intents"));
     }
 
     #[test]
@@ -225,9 +190,9 @@ mod tests {
             intents: Vec::new(),
             hints: Vec::new(),
         };
-        detector.orient(&state); // initialize
-        let output = detector.orient(&state); // no change
-        assert!(output.intents.is_empty(), "no change: no reason intent");
+        detector.orient(&state);
+        let output = detector.orient(&state);
+        assert!(output.intents.is_empty());
     }
 
     #[test]
@@ -243,9 +208,8 @@ mod tests {
         let cp = detector.to_checkpoint().expect("has checkpoint");
         assert_eq!(cp.fact_count, 2);
 
-        // Simulate snapshot reload
         let mut restored = StateChangeDetector::from_checkpoint(cp);
         let output = restored.orient(&state);
-        assert!(output.intents.is_empty(), "restored: no false positive");
+        assert!(output.intents.is_empty());
     }
 }

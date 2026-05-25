@@ -1,16 +1,17 @@
 // nexus-process — Scheduler: OODA loop polling, Intent dispatch, heartbeat monitor.
 //
 // The scheduler drives the OODA cycle for any Blackboard implementation:
-//   1. Poll `read_state()` for unclaimed Intents
-//   2. Dispatch to registered stigmergy task handlers
-//   3. Monitor heartbeat TTL — release stale claims
-//   4. Trigger periodic eviction when memory exceeds threshold
+//   1. Poll `read_state()` for current board state
+//   2. Run all registered detection tasks (GapDetection, ContradictionDetection, etc.)
+//   3. Submit generated Intents and Facts
+//   4. Monitor heartbeat TTL — release stale claims
+//   5. Trigger periodic eviction when memory exceeds threshold
 //
 // Generic over `B: Blackboard + EvictCapable`.
+// Detection tasks implement `DetectionCapable` (or marker traits) from nexus-model.
 
 use crate::error::ProcessError;
-use crate::tasks::{TaskHandler, TaskOutput};
-use nexus_model::{Blackboard, EvictCapable};
+use nexus_model::{Blackboard, DetectionCapable, DetectionOutput, EvictCapable};
 use std::time::Duration;
 
 #[derive(Debug, Clone)]
@@ -33,7 +34,7 @@ impl Default for SchedulerConfig {
 pub struct Scheduler<B: Blackboard + EvictCapable> {
     pub bb: B,
     config: SchedulerConfig,
-    tasks: Vec<Box<dyn TaskHandler>>,
+    pub tasks: Vec<Box<dyn DetectionCapable>>,
 }
 
 impl<B: Blackboard + EvictCapable> Scheduler<B> {
@@ -45,14 +46,17 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
         }
     }
 
-    pub fn register(&mut self, task: Box<dyn TaskHandler>) {
+    /// Register a detection task. Any type implementing `DetectionCapable`
+    /// (or its marker subtraits like `GapDetection`, `ContradictionDetection`,
+    /// `StateChangeDetection`) can be registered.
+    pub fn register(&mut self, task: Box<dyn DetectionCapable>) {
         self.tasks.push(task);
     }
 
     pub fn tick(&mut self) -> Result<usize, ProcessError> {
         let state = Blackboard::read_state(&self.bb);
 
-        let mut combined = TaskOutput::default();
+        let mut combined = DetectionOutput::default();
         for task in &mut self.tasks {
             let output = task.orient(&state);
             combined.intents.extend(output.intents);
