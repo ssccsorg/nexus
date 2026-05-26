@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// Persisted across scheduler invocations so that `flush_since` exports
 /// only data ingested after the last completed flush.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FlushCursor {
     pub last_flushed_at: String,
     pub partition: String,
