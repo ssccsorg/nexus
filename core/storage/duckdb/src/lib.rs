@@ -35,16 +35,9 @@ impl DuckDbStorage {
         let conn = duckdb::Connection::open_in_memory()?;
         conn.execute_batch("LOAD parquet;")?;
 
-        // Ensure directories exist for read_parquet globs.
-        for dir in &["facts", "intents", "hints"] {
-            std::fs::create_dir_all(std::path::Path::new(base_path).join(dir))?;
-        }
-
-        // Write a 0-row sentinel Parquet file so read_parquet() glob always
-        // succeeds even on first run with empty directories.
         // Write a 0-row sentinel Parquet per entity type so read_parquet()
-        // glob always succeeds. 0-row files affect neither query results
-        // nor flush counts, but satisfy DuckDB's "at least one file" check.
+        // glob always succeeds. Sentinels go directly under the entity dir
+        // to match the broad initial glob {dir}/**/*.parquet.
         for (dir, id_col) in &[
             ("facts", "fact_id"),
             ("intents", "intent_id"),
@@ -60,25 +53,20 @@ impl DuckDbStorage {
             }
         }
 
-        let facts_glob = format!("{}/facts/**/*.parquet", base_path);
-        let intents_glob = format!("{}/intents/**/*.parquet", base_path);
-        let hints_glob = format!("{}/hints/**/*.parquet", base_path);
-
-        let _ = conn.execute_batch(&format!(
-            "CREATE VIEW IF NOT EXISTS facts_view AS
-             SELECT * FROM read_parquet('{}', union_by_name=true);",
-            facts_glob
-        ));
-        let _ = conn.execute_batch(&format!(
-            "CREATE VIEW IF NOT EXISTS intents_view AS
-             SELECT * FROM read_parquet('{}', union_by_name=true);",
-            intents_glob
-        ));
-        let _ = conn.execute_batch(&format!(
-            "CREATE VIEW IF NOT EXISTS hints_view AS
-             SELECT * FROM read_parquet('{}', union_by_name=true);",
-            hints_glob
-        ));
+        // Broad initial glob to cover all existing files.
+        // flush_since narrows its refresh to the project's partition.
+        for (dir, view) in &[
+            ("facts", "facts_view"),
+            ("intents", "intents_view"),
+            ("hints", "hints_view"),
+        ] {
+            let glob = format!("{}/{}/**/*.parquet", base_path, dir);
+            let _ = conn.execute_batch(&format!(
+                "CREATE VIEW IF NOT EXISTS {} AS
+                 SELECT * FROM read_parquet('{}', union_by_name=true);",
+                view, glob
+            ));
+        }
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -411,14 +399,13 @@ impl FlushCapable for DuckDbStorage {
         let conn = self.conn.lock().unwrap();
         let base_path = &self.base_path;
 
-        // Refresh views: DuckDB's read_parquet() throws when the glob matches
-        // no files, so we accept view creation may fail on first run.
-        // COPY facts_view below also falls back to 0 records on failure.
-        for (view, glob) in [
-            ("facts_view", format!("{base_path}/facts/**/*.parquet")),
-            ("intents_view", format!("{base_path}/intents/**/*.parquet")),
-            ("hints_view", format!("{base_path}/hints/**/*.parquet")),
+        // Refresh views scoped to this project's partition.
+        for (dir, view) in &[
+            ("facts", "facts_view"),
+            ("intents", "intents_view"),
+            ("hints", "hints_view"),
         ] {
+            let glob = format!("{base_path}/{dir}/partition={partition}/**/*.parquet");
             let _ = conn.execute(
                 &format!("CREATE OR REPLACE VIEW {view} AS SELECT * FROM read_parquet('{glob}', union_by_name=true);"),
                 [],
