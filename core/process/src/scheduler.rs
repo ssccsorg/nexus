@@ -83,7 +83,15 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
         self._tick_inner(move |bb: &mut B| {
             let size = EvictCapable::approximate_size(&*bb);
             if size > threshold {
-                crate::eviction::try_evict_flush(bb, threshold, cutoff_secs)
+                // Use empty cursor (full flush) at scheduler level.
+                // The gateway or higher-level orchestrator should
+                // call DefaultBlackboard::flush() directly to get
+                // incremental flush with cursor persistence.
+                let cursor = nexus_model::FlushCursor {
+                    last_flushed_at: String::new(),
+                    partition: bb.project_id().to_string(),
+                };
+                crate::eviction::try_evict_flush(bb, &cursor, threshold, cutoff_secs)
                     .map_err(ProcessError::Eviction)?;
             }
             Ok(())
