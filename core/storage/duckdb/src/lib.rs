@@ -35,6 +35,31 @@ impl DuckDbStorage {
         let conn = duckdb::Connection::open_in_memory()?;
         conn.execute_batch("LOAD parquet;")?;
 
+        // Ensure directories exist for read_parquet globs.
+        for dir in &["facts", "intents", "hints"] {
+            std::fs::create_dir_all(std::path::Path::new(base_path).join(dir))?;
+        }
+
+        // Write a 0-row sentinel Parquet file so read_parquet() glob always
+        // succeeds even on first run with empty directories.
+        // Write a 0-row sentinel Parquet per entity type so read_parquet()
+        // glob always succeeds. 0-row files affect neither query results
+        // nor flush counts, but satisfy DuckDB's "at least one file" check.
+        for (dir, id_col) in &[
+            ("facts", "fact_id"),
+            ("intents", "intent_id"),
+            ("hints", "hint_id"),
+        ] {
+            let sentinel_path = format!("{}/{}/.sentinel.parquet", base_path, dir);
+            if !std::path::Path::new(&sentinel_path).exists() {
+                let sql = format!(
+                    "COPY (SELECT 'sentinel'::VARCHAR as {}, 'system'::VARCHAR as origin, ''::VARCHAR as content, 'system'::VARCHAR as creator, '0'::VARCHAR as created_at LIMIT 0) TO '{}' (FORMAT PARQUET);",
+                    id_col, sentinel_path
+                );
+                let _ = conn.execute_batch(&sql);
+            }
+        }
+
         let facts_glob = format!("{}/facts/**/*.parquet", base_path);
         let intents_glob = format!("{}/intents/**/*.parquet", base_path);
         let hints_glob = format!("{}/hints/**/*.parquet", base_path);
@@ -384,11 +409,11 @@ impl FlushCapable for DuckDbStorage {
         let hint_path = format!("{}/{}.parquet", hints_dir, now_ts);
 
         let conn = self.conn.lock().unwrap();
-
-        // Ensure views exist before attempting COPY. DuckDB views backed by
-        // read_parquet() may not have been created in new() when the glob
-        // matched no files (empty directory on first run).
         let base_path = &self.base_path;
+
+        // Refresh views: DuckDB's read_parquet() throws when the glob matches
+        // no files, so we accept view creation may fail on first run.
+        // COPY facts_view below also falls back to 0 records on failure.
         for (view, glob) in [
             ("facts_view", format!("{base_path}/facts/**/*.parquet")),
             ("intents_view", format!("{base_path}/intents/**/*.parquet")),
@@ -413,9 +438,10 @@ impl FlushCapable for DuckDbStorage {
             "COPY (SELECT fact_id, origin, content, creator, created_at FROM facts_view {}) TO '{}' (FORMAT PARQUET);",
             fact_where, fact_path
         );
-        let fact_count: usize = conn
-            .execute(&fact_sql, [])
-            .map_err(|e| format!("DuckDB flush facts error: {e}"))?;
+        let fact_count: usize = match conn.execute(&fact_sql, []) {
+            Ok(c) => c,
+            Err(_) => 0, // View may not exist yet (empty directory)
+        };
 
         let intent_where = if since.is_empty() {
             String::new()
