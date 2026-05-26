@@ -11,7 +11,7 @@
 // Detection tasks implement `DetectionCapable` (or marker traits) from nexus-model.
 
 use crate::error::ProcessError;
-use nexus_model::{Blackboard, DetectionCapable, DetectionOutput, EvictCapable, FlushCapable, TaskStates};
+use nexus_model::{Blackboard, DetectionCapable, DetectionOutput, EvictCapable, TaskStates};
 use std::time::Duration;
 
 #[derive(Debug, Clone)]

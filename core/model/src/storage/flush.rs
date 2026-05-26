@@ -18,6 +18,12 @@ pub struct FlushResult {
     pub new_cursor: FlushCursor,
 }
 
+impl From<FlushResult> for (u64, FlushCursor) {
+    fn from(r: FlushResult) -> Self {
+        (r.records_flushed, r.new_cursor)
+    }
+}
+
 /// Backend supports incremental export (flush).
 pub trait FlushCapable: StorageRead {
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String>;
