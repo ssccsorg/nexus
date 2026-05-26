@@ -7,8 +7,10 @@ use nexus_model::{
     FlushResult, Hint, Intent, PartitionData, ScanCapable, StateFilter, StorageRead,
     TimeRangeCapable, cold_query::ColdQuery,
 };
+use std::fs;
 use std::ops::Range;
 use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct DuckDbStorage {
     conn: Mutex<duckdb::Connection>,
@@ -338,12 +340,112 @@ fn duckdb_column_to_value(row: &duckdb::Row, i: usize) -> serde_json::Value {
 
 impl FlushCapable for DuckDbStorage {
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
-        // DuckDB reads from Parquet; flushing is writing to Parquet.
-        // For now, no-op — dual-write keeps cold in sync.
-        // TODO(#35): write hot data not yet in Parquet to the R2 Parquet path.
+        // DuckDB reads from Parquet; flushing writes recently-ingested
+        // hot data (newer than cursor.last_flushed_at) to Parquet files
+        // partitioned by {project_id}/{entity}/{timestamp}.parquet.
+        //
+        // When cursor.last_flushed_at is empty, this is a full flush
+        // (all data is considered recent).
+
+        let since = &cursor.last_flushed_at;
+        let partition = &cursor.partition;
+
+        // Determine a timestamp for the output file name.
+        let now_ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+            .to_string();
+
+        // Ensure output directories exist.
+        let facts_dir = format!("{}/facts/partition={}", self.base_path, partition);
+        let intents_dir = format!("{}/intents/partition={}", self.base_path, partition);
+        let hints_dir = format!("{}/hints/partition={}", self.base_path, partition);
+
+        let _ = fs::create_dir_all(&facts_dir);
+        let _ = fs::create_dir_all(&intents_dir);
+        let _ = fs::create_dir_all(&hints_dir);
+
+        let fact_path = format!("{}/{}.parquet", facts_dir, now_ts);
+        let intent_path = format!("{}/{}.parquet", intents_dir, now_ts);
+        let hint_path = format!("{}/{}.parquet", hints_dir, now_ts);
+
+        let conn = self.conn.lock().unwrap();
+
+        // Export facts newer than `since` (or all if since is empty).
+        let fact_where = if since.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE created_at > '{}'", since.replace('\'', "''"))
+        };
+        let fact_sql = format!(
+            "COPY (SELECT fact_id, origin, content, creator, created_at FROM facts_view {}) TO '{}' (FORMAT PARQUET);",
+            fact_where, fact_path
+        );
+        let fact_count: usize = conn
+            .execute(&fact_sql)
+            .map_err(|e| format!("DuckDB flush facts error: {e}"))?;
+
+        let intent_where = if since.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE created_at > '{}'", since.replace('\'', "''"))
+        };
+        let intent_sql = format!(
+            "COPY (SELECT intent_id, from_facts, description, creator, worker, to_fact_id, last_heartbeat_at, created_at, concluded_at FROM intents_view {}) TO '{}' (FORMAT PARQUET);",
+            intent_where, intent_path
+        );
+        let _: usize = conn
+            .execute(&intent_sql)
+            .map_err(|e| format!("DuckDB flush intents error: {e}"))?;
+
+        let hint_where = if since.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE created_at > '{}'", since.replace('\'', "''"))
+        };
+        let hint_sql = format!(
+            "COPY (SELECT hint_id, content, creator, created_at FROM hints_view {}) TO '{}' (FORMAT PARQUET);",
+            hint_where, hint_path
+        );
+        let _: usize = conn
+            .execute(&hint_sql)
+            .map_err(|e| format!("DuckDB flush hints error: {e}"))?;
+
+        // Refresh views so subsequent reads include the new files.
+        let base_path = &self.base_path;
+        let facts_glob = format!("{base_path}/facts/**/*.parquet");
+        let intents_glob = format!("{base_path}/intents/**/*.parquet");
+        let hints_glob = format!("{base_path}/hints/**/*.parquet");
+
+        conn.execute(
+            &format!(
+                "CREATE OR REPLACE VIEW facts_view AS SELECT * FROM read_parquet('{}', union_by_name=true);",
+                facts_glob
+            )
+        ).map_err(|e| format!("DuckDB refresh facts_view error: {e}"))?;
+        conn.execute(
+            &format!(
+                "CREATE OR REPLACE VIEW intents_view AS SELECT * FROM read_parquet('{}', union_by_name=true);",
+                intents_glob
+            )
+        ).map_err(|e| format!("DuckDB refresh intents_view error: {e}"))?;
+        conn.execute(
+            &format!(
+                "CREATE OR REPLACE VIEW hints_view AS SELECT * FROM read_parquet('{}', union_by_name=true);",
+                hints_glob
+            )
+        ).map_err(|e| format!("DuckDB refresh hints_view error: {e}"))?;
+
+        let records_flushed = fact_count as u64;
+        let new_cursor = FlushCursor {
+            last_flushed_at: now_ts,
+            partition: partition.clone(),
+        };
+
         Ok(FlushResult {
-            records_flushed: 0,
-            new_cursor: cursor.clone(),
+            records_flushed,
+            new_cursor,
         })
     }
 }

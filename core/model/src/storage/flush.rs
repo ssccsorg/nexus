@@ -1,7 +1,11 @@
 use super::read::StorageRead;
+use serde::{Deserialize, Serialize};
 
 /// Cursor for incremental flush. Tracks the last flushed position.
-#[derive(Debug, Clone)]
+///
+/// Persisted across scheduler invocations so that `flush_since` exports
+/// only data ingested after the last completed flush.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlushCursor {
     pub last_flushed_at: String,
     pub partition: String,
