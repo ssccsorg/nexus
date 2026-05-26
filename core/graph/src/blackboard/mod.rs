@@ -222,17 +222,16 @@ impl DefaultBlackboard {
         // Find existing cursor node, overwrite its weight content.
         let existing: Option<NodeIndex> = g
             .node_indices()
-            .find(|i| matches!(g.node_weight(*i), Some(n) if n.id == cursor_key));
+            .find(|i| matches!(g.node_weight(*i), Some(n) if n.name == cursor_key));
         if let Some(idx) = existing {
             if let Some(w) = g.node_weight_mut(idx) {
-                w.content = payload;
+                w.properties.insert("payload".into(), payload);
             }
         } else {
             g.add_node(NodeWeight {
-                id: cursor_key,
-                kind: "__meta".into(),
-                content: payload,
-                fact_id: None,
+                name: cursor_key,
+                label: "__meta".into(),
+                properties: HashMap::from([("payload".into(), payload)]),
             });
         }
     }
@@ -267,15 +266,14 @@ impl DefaultBlackboard {
         let g = self.hot_graph.read().unwrap();
         let cursor_key = format!("__flush_cursor_{}", self.project_id);
         for idx in g.node_indices() {
-            if let Some(n) = g.node_weight(idx) {
-                if n.id == cursor_key {
-                    if let Some(last_flushed_at) = n.content["last_flushed_at"].as_str() {
-                        return FlushCursor {
-                            last_flushed_at: last_flushed_at.to_string(),
-                            partition: self.project_id.clone(),
-                        };
-                    }
-                }
+            if let Some(n) = g.node_weight(idx)
+                && n.name == cursor_key
+                && let Some(last_flushed_at) = n.properties["payload"]["last_flushed_at"].as_str()
+            {
+                return FlushCursor {
+                    last_flushed_at: last_flushed_at.to_string(),
+                    partition: self.project_id.clone(),
+                };
             }
         }
         FlushCursor {
@@ -310,13 +308,12 @@ impl DefaultBlackboard {
             // Only add if not already present (e.g. preserved from graph clone).
             let exists = g
                 .node_indices()
-                .any(|i| matches!(g.node_weight(i), Some(n) if n.id == cursor_key));
+                .any(|i| matches!(g.node_weight(i), Some(n) if n.name == cursor_key));
             if !exists && !snapshot.flush_cursor.last_flushed_at.is_empty() {
                 g.add_node(NodeWeight {
-                    id: cursor_key,
-                    kind: "__meta".into(),
-                    content: payload,
-                    fact_id: None,
+                    name: cursor_key,
+                    label: "__meta".into(),
+                    properties: HashMap::from([("payload".into(), payload)]),
                 });
             }
         }
