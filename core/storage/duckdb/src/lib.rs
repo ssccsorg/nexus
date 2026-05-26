@@ -425,10 +425,7 @@ impl FlushCapable for DuckDbStorage {
             "COPY (SELECT fact_id, origin, content, creator, created_at FROM facts_view {}) TO '{}' (FORMAT PARQUET);",
             fact_where, fact_path
         );
-        let fact_count: usize = match conn.execute(&fact_sql, []) {
-            Ok(c) => c,
-            Err(_) => 0, // View may not exist yet (empty directory)
-        };
+        let fact_count: usize = conn.execute(&fact_sql, []).unwrap_or_default(); // 0 if view not yet created
 
         let intent_where = if since.is_empty() {
             String::new()
