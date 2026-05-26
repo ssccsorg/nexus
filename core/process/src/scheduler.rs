@@ -11,7 +11,7 @@
 // Detection tasks implement `DetectionCapable` (or marker traits) from nexus-model.
 
 use crate::error::ProcessError;
-use nexus_model::{Blackboard, DetectionCapable, DetectionOutput, EvictCapable, TaskStates};
+use nexus_model::{Blackboard, DetectionCapable, DetectionOutput, EvictCapable, FlushCapable, TaskStates};
 use std::time::Duration;
 
 #[derive(Debug, Clone)]
@@ -69,7 +69,7 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
     /// flushes cold storage first before evicting hot memory.
     /// Use `tick_with_flush()` for the flush+evict cycle.
     pub fn tick(&mut self) -> Result<usize, ProcessError> {
-        self._tick_inner(|_bb| Ok(()))
+        self._tick_inner(|_bb: &mut B| Ok(()))
     }
 
     /// Like `tick()` but runs the flush+evict cycle when memory
@@ -80,8 +80,8 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
     {
         let threshold = self.config.eviction_threshold;
         let cutoff_secs = self.config.eviction_cutoff_secs;
-        self._tick_inner(move |bb: &B| {
-            let size = EvictCapable::approximate_size(bb);
+        self._tick_inner(move |bb: &mut B| {
+            let size = EvictCapable::approximate_size(&*bb);
             if size > threshold {
                 crate::eviction::try_evict_flush(bb, threshold, cutoff_secs)
                     .map_err(ProcessError::Eviction)?;
@@ -95,7 +95,7 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
     /// use simple eviction or flush+evict.
     fn _tick_inner(
         &mut self,
-        evict_fn: impl FnOnce(&B) -> Result<(), ProcessError>,
+        evict_fn: impl FnOnce(&mut B) -> Result<(), ProcessError>,
     ) -> Result<usize, ProcessError> {
         let state = Blackboard::read_state(&self.bb);
 
@@ -128,7 +128,7 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
             }
         }
 
-        evict_fn(&self.bb)?;
+        evict_fn(&mut self.bb)?;
 
         // Evict stale unclaimed intents
         if self.config.unclaimed_intent_ttl.as_secs() > 0 {
