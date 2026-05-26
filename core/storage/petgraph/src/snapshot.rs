@@ -1,7 +1,7 @@
 // nexus-storage-petgraph — Serializable snapshot for R2/blob persistence.
 
 use crate::weight::{EdgeWeight, NodeWeight};
-use nexus_model::TaskStates;
+use nexus_model::{FlushCursor, TaskStates};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -17,6 +17,8 @@ use std::collections::HashMap;
 /// - `project_id`: partition identifier
 /// - `task_states`: serialized detector state for cross-worker continuity
 ///   (e.g., StateChangeDetector checkpoint, GapDetector seen-sets)
+/// - `flush_cursor`: last flush position (empty = full flush); persisted
+///   so incremental flush works across scheduler invocations
 #[derive(Clone, Serialize, Deserialize)]
 pub struct StorageSnapshot {
     pub graph: petgraph::Graph<NodeWeight, EdgeWeight>,
@@ -28,6 +30,8 @@ pub struct StorageSnapshot {
     /// detector state persistence.
     #[serde(default)]
     pub task_states: TaskStates,
+    #[serde(default)]
+    pub flush_cursor: FlushCursor,
 }
 
 /// A backend that can export and import its full state as a snapshot.
