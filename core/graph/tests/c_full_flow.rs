@@ -187,4 +187,3 @@ fn test_petgraph_time_range() {
     // the Blackboard trait — this is by design (#51 will add routing).
     // The hot layer is unbounded until #51 adds bounded range logic.
 }
-
