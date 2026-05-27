@@ -7,8 +7,10 @@ use nexus_model::{
     FlushResult, Hint, Intent, PartitionData, ScanCapable, StateFilter, StorageRead,
     TimeRangeCapable, cold_query::ColdQuery,
 };
+use std::fs;
 use std::ops::Range;
 use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct DuckDbStorage {
     conn: Mutex<duckdb::Connection>,
@@ -18,29 +20,53 @@ pub struct DuckDbStorage {
 
 #[allow(missing_docs)]
 impl DuckDbStorage {
+    /// The base path for Parquet file storage.
+    pub fn base_path(&self) -> &str {
+        &self.base_path
+    }
+
+    /// Access the underlying DuckDB connection.
+    /// Used by integration tests to inject data directly.
+    pub fn conn(&self) -> &Mutex<duckdb::Connection> {
+        &self.conn
+    }
+
     pub fn new(base_path: &str, project_id: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let conn = duckdb::Connection::open_in_memory()?;
         conn.execute_batch("LOAD parquet;")?;
 
-        let facts_glob = format!("{}/facts/**/*.parquet", base_path);
-        let intents_glob = format!("{}/intents/**/*.parquet", base_path);
-        let hints_glob = format!("{}/hints/**/*.parquet", base_path);
+        // Write a 0-row sentinel Parquet per entity type so read_parquet()
+        // glob always succeeds. Sentinels go directly under the entity dir
+        // to match the broad initial glob {dir}/**/*.parquet.
+        for (dir, id_col) in &[
+            ("facts", "fact_id"),
+            ("intents", "intent_id"),
+            ("hints", "hint_id"),
+        ] {
+            let sentinel_path = format!("{}/{}/.sentinel.parquet", base_path, dir);
+            if !std::path::Path::new(&sentinel_path).exists() {
+                let sql = format!(
+                    "COPY (SELECT 'sentinel'::VARCHAR as {}, 'system'::VARCHAR as origin, ''::VARCHAR as content, 'system'::VARCHAR as creator, '0'::VARCHAR as created_at LIMIT 0) TO '{}' (FORMAT PARQUET);",
+                    id_col, sentinel_path
+                );
+                let _ = conn.execute_batch(&sql);
+            }
+        }
 
-        let _ = conn.execute_batch(&format!(
-            "CREATE VIEW IF NOT EXISTS facts_view AS
-             SELECT * FROM read_parquet('{}', union_by_name=true);",
-            facts_glob
-        ));
-        let _ = conn.execute_batch(&format!(
-            "CREATE VIEW IF NOT EXISTS intents_view AS
-             SELECT * FROM read_parquet('{}', union_by_name=true);",
-            intents_glob
-        ));
-        let _ = conn.execute_batch(&format!(
-            "CREATE VIEW IF NOT EXISTS hints_view AS
-             SELECT * FROM read_parquet('{}', union_by_name=true);",
-            hints_glob
-        ));
+        // Broad initial glob to cover all existing files.
+        // flush_since narrows its refresh to the project's partition.
+        for (dir, view) in &[
+            ("facts", "facts_view"),
+            ("intents", "intents_view"),
+            ("hints", "hints_view"),
+        ] {
+            let glob = format!("{}/{}/**/*.parquet", base_path, dir);
+            let _ = conn.execute_batch(&format!(
+                "CREATE VIEW IF NOT EXISTS {} AS
+                 SELECT * FROM read_parquet('{}', union_by_name=true);",
+                view, glob
+            ));
+        }
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -338,12 +364,118 @@ fn duckdb_column_to_value(row: &duckdb::Row, i: usize) -> serde_json::Value {
 
 impl FlushCapable for DuckDbStorage {
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
-        // DuckDB reads from Parquet; flushing is writing to Parquet.
-        // For now, no-op — dual-write keeps cold in sync.
-        // TODO(#35): write hot data not yet in Parquet to the R2 Parquet path.
+        // DuckDB reads from Parquet; flushing writes recently-ingested
+        // hot data (newer than cursor.last_flushed_at) to Parquet files
+        // partitioned by {project_id}/{entity}/{timestamp}.parquet.
+        //
+        // When cursor.last_flushed_at is empty, this is a full flush
+        // (all data is considered recent).
+
+        let since = &cursor.last_flushed_at;
+        let partition = &cursor.partition;
+
+        // Timestamp for output file name and cursor.
+        // Unix epoch seconds: string comparison is correct when both
+        // created_at and cursor use the same epoch-second format.
+        let now_ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
+            .to_string();
+
+        // Ensure output directories exist.
+        let facts_dir = format!("{}/facts/partition={}", self.base_path, partition);
+        let intents_dir = format!("{}/intents/partition={}", self.base_path, partition);
+        let hints_dir = format!("{}/hints/partition={}", self.base_path, partition);
+
+        let _ = fs::create_dir_all(&facts_dir);
+        let _ = fs::create_dir_all(&intents_dir);
+        let _ = fs::create_dir_all(&hints_dir);
+
+        let fact_path = format!("{}/{}.parquet", facts_dir, now_ts);
+        let intent_path = format!("{}/{}.parquet", intents_dir, now_ts);
+        let hint_path = format!("{}/{}.parquet", hints_dir, now_ts);
+
+        let conn = self.conn.lock().unwrap();
+        let base_path = &self.base_path;
+
+        // Refresh views scoped to this project's partition.
+        for (dir, view) in &[
+            ("facts", "facts_view"),
+            ("intents", "intents_view"),
+            ("hints", "hints_view"),
+        ] {
+            let glob = format!("{base_path}/{dir}/partition={partition}/**/*.parquet");
+            let _ = conn.execute(
+                &format!("CREATE OR REPLACE VIEW {view} AS SELECT * FROM read_parquet('{glob}', union_by_name=true);"),
+                [],
+            );
+        }
+
+        // Export facts newer than `since` (or all if since is empty).
+        let fact_where = if since.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE created_at > '{}'", since.replace('\'', "''"))
+        };
+        // Preserve original created_at — do NOT override it.
+        // Incremental flush relies on cursor.last_flushed_at tracking
+        // and the WHERE clause, not on mutating exported data.
+        let fact_sql = format!(
+            "COPY (SELECT fact_id, origin, content, creator, created_at FROM facts_view {}) TO '{}' (FORMAT PARQUET);",
+            fact_where, fact_path
+        );
+        let fact_count: usize = conn.execute(&fact_sql, []).unwrap_or_default(); // 0 if view not yet created
+
+        let intent_where = if since.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE created_at > '{}'", since.replace('\'', "''"))
+        };
+        let intent_sql = format!(
+            "COPY (SELECT intent_id, from_facts, description, creator, worker, to_fact_id, last_heartbeat_at, created_at, concluded_at FROM intents_view {}) TO '{}' (FORMAT PARQUET);",
+            intent_where, intent_path
+        );
+        // Intents and hints exports are best-effort — the views may not
+        // exist if no data has been written for those entity types yet.
+        let _ = conn.execute(&intent_sql, []);
+
+        let hint_where = if since.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE created_at > '{}'", since.replace('\'', "''"))
+        };
+        let hint_sql = format!(
+            "COPY (SELECT hint_id, content, creator, created_at FROM hints_view {}) TO '{}' (FORMAT PARQUET);",
+            hint_where, hint_path
+        );
+        let _ = conn.execute(&hint_sql, []);
+
+        // Refresh views so subsequent reads include the new files.
+        // View glob uses the existing parquet dirs (facts/intents/hints),
+        // NOT the partition subdir that flush writes to. This prevents
+        // flushing from re-exporting its own output on subsequent calls.
+        let view_updates = [
+            ("facts_view", format!("{base_path}/facts/**/*.parquet")),
+            ("intents_view", format!("{base_path}/intents/**/*.parquet")),
+            ("hints_view", format!("{base_path}/hints/**/*.parquet")),
+        ];
+        for (name, glob) in &view_updates {
+            let _ = conn.execute(
+                &format!("CREATE OR REPLACE VIEW {name} AS SELECT * FROM read_parquet('{glob}', union_by_name=true);"),
+                [],
+            );
+        }
+
+        let records_flushed = fact_count as u64;
+        let new_cursor = FlushCursor {
+            last_flushed_at: now_ts,
+            partition: partition.clone(),
+        };
+
         Ok(FlushResult {
-            records_flushed: 0,
-            new_cursor: cursor.clone(),
+            records_flushed,
+            new_cursor,
         })
     }
 }
