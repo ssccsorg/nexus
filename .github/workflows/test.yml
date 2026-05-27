@@ -25,48 +25,40 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Layer 1: Core library (nexus-api + nexus-graph + nexus-table)
-  # Entry point: scripts/run-core.sh
+  # Layer 1: Core library
   core:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
-
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "core"
           cache-targets: true
-
       - name: Core checks
         run: ./run.sh --core
 
-  # Layer 2: Gateway server + consumer playbooks
-  # Entry point: playbooks/run.sh (self-contained, starts/stops server)
+  # Layer 2: Gateway API + playbooks
   gateway:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-
       - uses: dtolnay/rust-toolchain@stable
-
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
             gateway/api
             playbooks/agents
           cache-targets: true
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
+      - name: Gateway API tests
+        run: cd gateway/api && cargo test
       - name: Gateway + playbook verification
         run: ./run.sh --playbooks
