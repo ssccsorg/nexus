@@ -1,4 +1,5 @@
 use std::ops::Range;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::cypher::CypherCapable;
 use super::evict::EvictCapable;
@@ -106,9 +107,17 @@ impl EvictCapable for NullStorage {
 
 impl FlushCapable for NullStorage {
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
+        let now_ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
+            .to_string();
         Ok(FlushResult {
             records_flushed: 0,
-            new_cursor: cursor.clone(),
+            new_cursor: FlushCursor {
+                last_flushed_at: now_ts,
+                partition: cursor.partition.clone(),
+            },
         })
     }
 }
