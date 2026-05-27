@@ -4,8 +4,7 @@
 // and storage-level FIH operations directly (not via DefaultBlackboard).
 
 use nexus_model::{EvictCapable, Fact, FactCapable, FihHash, Hint, HintCapable, StorageRead};
-use nexus_storage_petgraph::{NodeWeight, PetgraphStorage};
-use std::collections::HashMap;
+use nexus_storage_petgraph::PetgraphStorage;
 
 fn storage() -> PetgraphStorage {
     PetgraphStorage::with_project_id("test")
@@ -50,7 +49,7 @@ fn test_add_and_retrieve_node() {
 
 #[test]
 fn test_submit_and_read_fact() {
-    let mut s = storage();
+    let s = storage();
     s.submit_fact(&fact("f_001")).unwrap();
 
     let state = s.read_state();
@@ -61,7 +60,7 @@ fn test_submit_and_read_fact() {
 
 #[test]
 fn test_submit_multiple_facts() {
-    let mut s = storage();
+    let s = storage();
     s.submit_fact(&fact("f_a")).unwrap();
     s.submit_fact(&fact("f_b")).unwrap();
     s.submit_fact(&fact("f_c")).unwrap();
@@ -72,7 +71,7 @@ fn test_submit_multiple_facts() {
 
 #[test]
 fn test_submit_fact_duplicate_id() {
-    let mut s = storage();
+    let s = storage();
     s.submit_fact(&fact("f_dup")).unwrap();
     // PetgraphStorage does not deduplicate — same ID adds another node.
     // Deduplication is DualStorage's responsibility.
@@ -87,7 +86,7 @@ fn test_submit_fact_duplicate_id() {
 
 #[test]
 fn test_submit_and_read_hint() {
-    let mut s = storage();
+    let s = storage();
     s.submit_hint(&hint("h_001")).unwrap();
 
     let state = s.read_state();
@@ -99,7 +98,7 @@ fn test_submit_and_read_hint() {
 
 #[test]
 fn test_approximate_size_grows_with_data() {
-    let mut s = storage();
+    let s = storage();
     let empty_size = s.approximate_size();
 
     for i in 0..100 {
@@ -144,7 +143,7 @@ fn test_submit_intent_requires_existing_fact() {
 fn test_conclude_intent_creates_fact() {
     use nexus_model::{Intent, IntentCapable};
 
-    let mut s = storage();
+    let s = storage();
     s.submit_fact(&fact("f_base")).unwrap();
 
     let intent = Intent {
@@ -177,7 +176,7 @@ fn test_conclude_intent_creates_fact() {
 fn test_evict_before_removes_old_concluded_intents() {
     use nexus_model::{Intent, IntentCapable};
 
-    let mut s = storage();
+    let s = storage();
     s.submit_fact(&fact("f_ev")).unwrap();
 
     let now = now_secs();
@@ -206,7 +205,7 @@ fn test_evict_before_removes_old_concluded_intents() {
 
 #[test]
 fn test_evict_before_does_not_remove_facts() {
-    let mut s = storage();
+    let s = storage();
     s.submit_fact(&fact("f_safe")).unwrap();
 
     let before = s.evict_before(&(now_secs() + 99999).to_string()).unwrap();
@@ -221,7 +220,7 @@ fn test_evict_before_does_not_remove_facts() {
 
 #[test]
 fn test_read_state_returns_board_state() {
-    let mut s = storage();
+    let s = storage();
     s.submit_fact(&fact("f_rs")).unwrap();
 
     let state = s.read_state();

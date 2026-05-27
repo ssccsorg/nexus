@@ -428,7 +428,7 @@ impl Snapshottable for DefaultBlackboard {
 mod tests {
     use super::*;
     use crate::cypher;
-    use nexus_model::{Blackboard, Fact, FihHash, FlushCapable, Intent};
+    use nexus_model::{Blackboard, Fact, FihHash, Intent};
 
     fn tick() {
         std::thread::sleep(std::time::Duration::from_millis(1100));

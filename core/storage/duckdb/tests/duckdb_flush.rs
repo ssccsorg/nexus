@@ -18,7 +18,7 @@
 //!
 //! All existing `nexus-storage-duckdb` tests (82 tests) pass unchanged.
 
-use nexus_model::{FlushCapable, FlushCursor, FlushResult, StorageRead}; // project_id via StorageRead
+use nexus_model::{FlushCapable, FlushCursor, StorageRead}; // project_id via StorageRead
 use nexus_storage_duckdb::DuckDbStorage;
 use tempfile::TempDir;
 
@@ -49,6 +49,7 @@ fn inject_fact(storage: &DuckDbStorage, fact_id: &str, created_at: &str) {
     let _ = conn.execute(&sql, []);
 }
 
+#[allow(dead_code)]
 fn now_ts() -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -515,7 +516,7 @@ fn test_concurrent_flush() {
 
     // Inject data
     {
-        let mut s = storage.lock().unwrap();
+        let s = storage.lock().unwrap();
         let t0 = past_ts();
         inject_fact(&s, "f_con_1", &t0);
         inject_fact(&s, "f_con_2", &t0);
@@ -525,10 +526,10 @@ fn test_concurrent_flush() {
 
     // 10 threads flush concurrently with the same cursor
     let mut handles = Vec::new();
-    for i in 0..10 {
+    for _ in 0..10 {
         let s = Arc::clone(&storage);
         let handle = thread::spawn(move || {
-            let mut s = s.lock().unwrap();
+            let s = s.lock().unwrap();
             let (count, cursor) = s
                 .flush_since(&FlushCursor {
                     last_flushed_at: String::new(),
@@ -569,7 +570,7 @@ fn test_flush_during_read() {
 
     // Inject data
     {
-        let mut s = storage.lock().unwrap();
+        let s = storage.lock().unwrap();
         let t0 = past_ts();
         for i in 0..100 {
             inject_fact(&s, &format!("f_dr_{}", i), &t0);
@@ -580,7 +581,7 @@ fn test_flush_during_read() {
     let s_flush = Arc::clone(&storage);
     let flush_h = thread::spawn(move || {
         for _ in 0..5 {
-            let mut s = s_flush.lock().unwrap();
+            let s = s_flush.lock().unwrap();
             let _ = s
                 .flush_since(&FlushCursor {
                     last_flushed_at: String::new(),
@@ -597,10 +598,7 @@ fn test_flush_during_read() {
             let s = s_read.lock().unwrap();
             let state = s.read_state();
             // read_state should never panic regardless of concurrent flush
-            assert!(
-                state.facts.len() >= 0,
-                "read_state stable under concurrent flush"
-            );
+            let _ = state.facts.len();
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
     });
