@@ -135,6 +135,9 @@ pub(crate) struct DefaultBlackboard {
     hot_graph: Arc<RwLock<petgraph::Graph<NodeWeight, EdgeWeight>>>,
     claims: ClaimsTracker,
     project_id: String,
+    /// Last flush position. Persisted via StorageSnapshot.flush_cursor
+    /// and restored on worker restart. No metadata node needed.
+    flush_cursor: FlushCursor,
 }
 
 #[allow(dead_code)]
@@ -153,6 +156,7 @@ impl DefaultBlackboard {
             hot_graph: graph,
             claims: ClaimsTracker::new(),
             project_id: "default".into(),
+            flush_cursor: FlushCursor::default(),
         }
     }
 
@@ -166,6 +170,7 @@ impl DefaultBlackboard {
             hot_graph,
             claims: ClaimsTracker::new(),
             project_id,
+            flush_cursor: FlushCursor::default(),
         }
     }
 
@@ -189,9 +194,9 @@ impl DefaultBlackboard {
 
     /// Flush recently-ingested data to cold storage.
     ///
-    /// Reads the last flush cursor from the hot graph, passes it to
-    /// the cold backend's `flush_since`, and persists the updated cursor
-    /// so that subsequent flushes export only data added since this call.
+    /// Reads the last flush cursor, passes it to the cold backend's
+    /// `flush_since`, and persists the updated cursor for incremental
+    /// export on the next call.
     ///
     /// The cold backend determines what "flush" means:
     /// - `NullStorage`: no-op (no cold storage configured)
@@ -199,41 +204,12 @@ impl DefaultBlackboard {
     /// - `DuckDbStorage`: exports hot data newer than cursor to Parquet files
     /// - Future backends: their own incremental export semantics
     pub fn flush(&mut self) -> Result<(), String> {
-        let cursor = self.read_flush_cursor();
         let FlushResult {
             records_flushed: _,
             new_cursor,
-        } = self.storage.flush_since(&cursor)?;
-        self.update_flush_cursor(new_cursor);
+        } = self.storage.flush_since(&self.flush_cursor)?;
+        self.flush_cursor = new_cursor;
         Ok(())
-    }
-
-    fn update_flush_cursor(&mut self, cursor: FlushCursor) {
-        // The cursor is stored in the hot graph as a special metadata node
-        // so it survives snapshot serialisation and restoration.
-        // TODO(#58): optimise to a dedicated field once StorageSnapshot is
-        // wire-format stable.
-        let mut g = self.hot_graph.write().unwrap();
-        let cursor_key = format!("__flush_cursor_{}", self.project_id);
-        let payload = serde_json::json!({
-            "last_flushed_at": cursor.last_flushed_at,
-            "partition": cursor.partition,
-        });
-        // Find existing cursor node, overwrite its weight content.
-        let existing: Option<NodeIndex> = g
-            .node_indices()
-            .find(|i| matches!(g.node_weight(*i), Some(n) if n.name == cursor_key));
-        if let Some(idx) = existing {
-            if let Some(w) = g.node_weight_mut(idx) {
-                w.properties.insert("payload".into(), payload);
-            }
-        } else {
-            g.add_node(NodeWeight {
-                name: cursor_key,
-                label: "__meta".into(),
-                properties: HashMap::from([("payload".into(), payload)]),
-            });
-        }
     }
 
     pub fn project_id(&self) -> &str {
@@ -250,35 +226,12 @@ impl DefaultBlackboard {
     /// Clones the graph and claims — use sparingly, not on every iteration.
     pub fn to_snapshot(&self) -> StorageSnapshot {
         let g = self.hot_graph.read().unwrap();
-        let flush_cursor = self.read_flush_cursor();
         StorageSnapshot {
             graph: g.clone(),
             claims: self.claims.to_snapshot(),
             project_id: self.project_id.clone(),
             task_states: std::collections::HashMap::new(),
-            flush_cursor,
-        }
-    }
-
-    /// Read the persisted flush cursor from the hot graph's metadata node.
-    /// Returns an empty cursor (full flush default) if no cursor node exists.
-    fn read_flush_cursor(&self) -> FlushCursor {
-        let g = self.hot_graph.read().unwrap();
-        let cursor_key = format!("__flush_cursor_{}", self.project_id);
-        for idx in g.node_indices() {
-            if let Some(n) = g.node_weight(idx)
-                && n.name == cursor_key
-                && let Some(last_flushed_at) = n.properties["payload"]["last_flushed_at"].as_str()
-            {
-                return FlushCursor {
-                    last_flushed_at: last_flushed_at.to_string(),
-                    partition: self.project_id.clone(),
-                };
-            }
-        }
-        FlushCursor {
-            last_flushed_at: String::new(),
-            partition: self.project_id.clone(),
+            flush_cursor: self.flush_cursor.clone(),
         }
     }
 
@@ -296,33 +249,12 @@ impl DefaultBlackboard {
         let cold = Box::new(NullStorage);
         let storage = DualStorage::new(hot, cold);
 
-        // Restore the flush cursor as a metadata node in the hot graph
-        // so that the next flush() invocation finds it via read_flush_cursor().
-        {
-            let mut g = graph.write().unwrap();
-            let cursor_key = format!("__flush_cursor_{}", snapshot.project_id);
-            let payload = serde_json::json!({
-                "last_flushed_at": snapshot.flush_cursor.last_flushed_at,
-                "partition": snapshot.flush_cursor.partition,
-            });
-            // Only add if not already present (e.g. preserved from graph clone).
-            let exists = g
-                .node_indices()
-                .any(|i| matches!(g.node_weight(i), Some(n) if n.name == cursor_key));
-            if !exists && !snapshot.flush_cursor.last_flushed_at.is_empty() {
-                g.add_node(NodeWeight {
-                    name: cursor_key,
-                    label: "__meta".into(),
-                    properties: HashMap::from([("payload".into(), payload)]),
-                });
-            }
-        }
-
         Self {
             storage,
             hot_graph: graph,
             claims: ClaimsTracker::from_snapshot(snapshot.claims.clone()),
             project_id: snapshot.project_id.clone(),
+            flush_cursor: snapshot.flush_cursor.clone(),
         }
     }
 }
