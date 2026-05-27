@@ -42,7 +42,7 @@ jobs:
           cache-targets: true
 
       - name: Core checks
-        run: ./scripts/run-core.sh
+        run: ./run.sh --core
 
   # Layer 2: Gateway server + consumer playbooks
   # Entry point: playbooks/run.sh (self-contained, starts/stops server)
@@ -69,4 +69,4 @@ jobs:
           python-version: "3.12"
 
       - name: Gateway + playbook verification
-        run: ./playbooks/run.sh
+        run: ./run.sh --playbooks
