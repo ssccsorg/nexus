@@ -20,6 +20,9 @@ case "${1:-}" in
         shift
         exec ./scripts/run-core.sh "$@"
         ;;
+    --gateway-api)
+        cd gateway/api && cargo test
+        ;;
     --playbooks)
         exec ./playbooks/run.sh
         ;;
@@ -29,14 +32,18 @@ case "${1:-}" in
     --help|-h)
         echo "Usage: $0 [OPTION]"
         echo "  (no arg)     Core checks + playbooks [default]"
-        echo "  --core       Core checks only"
-        echo "  --playbooks  Consumer playbooks only"
-        echo "  --gateway    Start gateway API server"
+        echo "  --core        Core checks only"
+        echo "  --gateway-api Gateway API unit tests"
+        echo "  --playbooks   Consumer playbooks only"
+        echo "  --gateway     Start gateway API server"
         ;;
     "")
         # Default: run everything
         echo "=== Core ==="
         ./scripts/run-core.sh
+        echo ""
+        echo "=== Gateway API ==="
+        (cd gateway/api && cargo test)
         echo ""
         echo "=== Playbooks ==="
         ./playbooks/run.sh

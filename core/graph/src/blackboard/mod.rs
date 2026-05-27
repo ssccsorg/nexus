@@ -135,6 +135,9 @@ pub(crate) struct DefaultBlackboard {
     hot_graph: Arc<RwLock<petgraph::Graph<NodeWeight, EdgeWeight>>>,
     claims: ClaimsTracker,
     project_id: String,
+    /// Last flush position. Persisted via StorageSnapshot.flush_cursor
+    /// and restored on worker restart.
+    pub(crate) flush_cursor: FlushCursor,
 }
 
 #[allow(dead_code)]
@@ -153,6 +156,7 @@ impl DefaultBlackboard {
             hot_graph: graph,
             claims: ClaimsTracker::new(),
             project_id: "default".into(),
+            flush_cursor: FlushCursor::default(),
         }
     }
 
@@ -166,6 +170,7 @@ impl DefaultBlackboard {
             hot_graph,
             claims: ClaimsTracker::new(),
             project_id,
+            flush_cursor: FlushCursor::default(),
         }
     }
 
@@ -187,15 +192,23 @@ impl DefaultBlackboard {
         execute_with_cold(&*hot, &self.storage, plan)
     }
 
-    pub fn flush(&self) -> Result<(), String> {
-        // Dual-write keeps cold in sync already; flush is a no-op today.
-        // TODO(#35): incremental flush — track cursor across invocations,
-        // export hot-only data to Parquet/R2 before evict_before().
-        let cursor = FlushCursor {
-            last_flushed_at: String::new(),
-            partition: self.project_id.clone(),
-        };
-        self.storage.flush_since(&cursor)?;
+    /// Flush recently-ingested data to cold storage.
+    ///
+    /// Reads the last flush cursor, passes it to the cold backend's
+    /// `flush_since`, and persists the updated cursor for incremental
+    /// export on the next call.
+    ///
+    /// The cold backend determines what "flush" means:
+    /// - `NullStorage`: no-op (no cold storage configured)
+    /// - `SqlNormalizedStorage`: no-op (dual-write keeps SQLite in sync)
+    /// - `DuckDbStorage`: exports hot data newer than cursor to Parquet files
+    /// - Future backends: their own incremental export semantics
+    pub fn flush(&mut self) -> Result<(), String> {
+        let FlushResult {
+            records_flushed: _,
+            new_cursor,
+        } = self.storage.flush_since(&self.flush_cursor)?;
+        self.flush_cursor = new_cursor;
         Ok(())
     }
 
@@ -218,25 +231,30 @@ impl DefaultBlackboard {
             claims: self.claims.to_snapshot(),
             project_id: self.project_id.clone(),
             task_states: std::collections::HashMap::new(),
+            flush_cursor: self.flush_cursor.clone(),
         }
     }
 
     /// Reconstruct a `DefaultBlackboard` from a previously saved snapshot.
+    ///
+    /// Internal helper used by `Snapshottable::from_snapshot`.
     /// Creates a fresh `PetgraphStorage + NullStorage` pair; the caller may
     /// replace the cold backend via `with_storage()` afterward.
-    pub fn from_snapshot(snapshot: StorageSnapshot) -> Self {
-        let graph = Arc::new(RwLock::new(snapshot.graph));
+    fn from_snapshot_inner(snapshot: &StorageSnapshot) -> Self {
+        let graph = Arc::new(RwLock::new(snapshot.graph.clone()));
         let hot = Box::new(PetgraphStorage::with_shared_graph(
             Arc::clone(&graph),
             &snapshot.project_id,
         ));
         let cold = Box::new(NullStorage);
         let storage = DualStorage::new(hot, cold);
+
         Self {
             storage,
             hot_graph: graph,
-            claims: ClaimsTracker::from_snapshot(snapshot.claims),
-            project_id: snapshot.project_id,
+            claims: ClaimsTracker::from_snapshot(snapshot.claims.clone()),
+            project_id: snapshot.project_id.clone(),
+            flush_cursor: snapshot.flush_cursor.clone(),
         }
     }
 }
@@ -402,7 +420,7 @@ impl Snapshottable for DefaultBlackboard {
     }
 
     fn from_snapshot(snapshot: StorageSnapshot) -> Self {
-        DefaultBlackboard::from_snapshot(snapshot)
+        DefaultBlackboard::from_snapshot_inner(&snapshot)
     }
 }
 
@@ -411,6 +429,190 @@ mod tests {
     use super::*;
     use crate::cypher;
     use nexus_model::{Blackboard, Fact, FihHash, Intent};
+
+    fn tick() {
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+    }
+
+    fn bb_with_facts(count: usize) -> DefaultBlackboard {
+        let mut bb = DefaultBlackboard::new();
+        for i in 0..count {
+            bb.submit_fact(&Fact {
+                id: FihHash(format!("f_{}", i)),
+                origin: "test".into(),
+                content: serde_json::json!(format!("data_{}", i)),
+                creator: "tester".into(),
+            })
+            .unwrap();
+        }
+        bb
+    }
+
+    #[test]
+    fn test_fresh_blackboard_has_empty_cursor() {
+        let bb = DefaultBlackboard::new();
+        assert!(
+            bb.flush_cursor.last_flushed_at.is_empty(),
+            "fresh blackboard cursor should be empty"
+        );
+        assert!(
+            bb.flush_cursor.partition.is_empty(),
+            "fresh blackboard partition should be empty"
+        );
+    }
+
+    #[test]
+    fn test_flush_updates_cursor() {
+        let mut bb = bb_with_facts(3);
+        tick();
+        bb.flush().unwrap();
+        assert!(
+            !bb.flush_cursor.last_flushed_at.is_empty(),
+            "flush should set cursor timestamp"
+        );
+    }
+
+    #[test]
+    fn test_consecutive_flushes_advance_cursor() {
+        let mut bb = DefaultBlackboard::new();
+        let mut prev = String::new();
+        for i in 0..5 {
+            tick();
+            bb.flush().unwrap();
+            let ts = bb.flush_cursor.last_flushed_at.clone();
+            if i == 0 {
+                assert!(!ts.is_empty(), "first flush sets cursor");
+            } else {
+                assert!(ts > prev, "cursor advances: {} > {}", ts, prev);
+            }
+            prev = ts;
+        }
+    }
+
+    #[test]
+    fn test_cursor_survives_snapshot_roundtrip() {
+        let mut bb = bb_with_facts(2);
+        tick();
+        bb.flush().unwrap();
+        let original_ts = bb.flush_cursor.last_flushed_at.clone();
+
+        let snapshot = bb.to_snapshot();
+        let json = serde_json::to_vec(&snapshot).unwrap();
+        let restored: StorageSnapshot = serde_json::from_slice(&json).unwrap();
+        let restored_bb = DefaultBlackboard::from_snapshot_inner(&restored);
+
+        assert_eq!(
+            restored_bb.flush_cursor.last_flushed_at, original_ts,
+            "cursor preserved across snapshot round-trip"
+        );
+    }
+
+    #[test]
+    fn test_old_snapshot_without_cursor_gets_default() {
+        let snapshot = StorageSnapshot {
+            graph: petgraph::Graph::new(),
+            claims: std::collections::HashMap::new(),
+            project_id: "legacy".into(),
+            task_states: std::collections::HashMap::new(),
+            flush_cursor: FlushCursor::default(),
+        };
+        let json = serde_json::to_vec(&snapshot).unwrap();
+        let mut v: serde_json::Value = serde_json::from_slice(&json).unwrap();
+        v.as_object_mut().unwrap().remove("flush_cursor");
+        let old: StorageSnapshot =
+            serde_json::from_slice(&serde_json::to_vec(&v).unwrap()).unwrap();
+        assert!(old.flush_cursor.last_flushed_at.is_empty());
+    }
+
+    #[test]
+    fn test_flush_after_restore_continues_from_cursor() {
+        let mut bb = bb_with_facts(1);
+        tick();
+        bb.flush().unwrap();
+        let ts1 = bb.flush_cursor.last_flushed_at.clone();
+
+        let mut restored = DefaultBlackboard::from_snapshot_inner(&bb.to_snapshot());
+        tick();
+        restored.flush().unwrap();
+        let ts2 = restored.flush_cursor.last_flushed_at;
+        assert!(ts2 > ts1, "restored continues from saved cursor");
+    }
+
+    #[test]
+    fn test_cursor_independent_of_graph_mutations() {
+        let mut bb = DefaultBlackboard::new();
+        tick();
+        bb.flush().unwrap();
+        let ts_before = bb.flush_cursor.last_flushed_at.clone();
+
+        bb.submit_fact(&Fact {
+            id: FihHash("f_extra".into()),
+            origin: "test".into(),
+            content: serde_json::json!("extra"),
+            creator: "tester".into(),
+        })
+        .unwrap();
+
+        assert_eq!(bb.flush_cursor.last_flushed_at, ts_before);
+    }
+
+    #[test]
+    fn test_independent_blackboards_independent_cursors() {
+        let mut a = bb_with_facts(1);
+        let mut b = bb_with_facts(1);
+        tick();
+        a.flush().unwrap();
+        assert!(b.flush_cursor.last_flushed_at.is_empty());
+        tick();
+        b.flush().unwrap();
+        assert!(!b.flush_cursor.last_flushed_at.is_empty());
+    }
+
+    #[test]
+    fn test_flush_noop_backend() {
+        let mut bb = bb_with_facts(5);
+        tick();
+        bb.flush().unwrap();
+        assert!(!bb.flush_cursor.last_flushed_at.is_empty());
+    }
+
+    #[test]
+    fn test_flush_cycle_with_facts() {
+        let mut bb = DefaultBlackboard::new();
+        let mut prev_ts = String::new();
+        for i in 0..5 {
+            bb.submit_fact(&Fact {
+                id: FihHash(format!("f_cycle_{}", i)),
+                origin: "test".into(),
+                content: serde_json::json!(format!("cycle_{}", i)),
+                creator: "tester".into(),
+            })
+            .unwrap();
+            tick();
+            bb.flush().unwrap();
+            let ts = bb.flush_cursor.last_flushed_at.clone();
+            if i > 0 {
+                assert!(ts > prev_ts, "cursor advances on cycle {}", i);
+            }
+            prev_ts = ts;
+        }
+    }
+
+    #[test]
+    fn test_flush_empty_blackboard() {
+        let mut bb = DefaultBlackboard::new();
+        tick();
+        bb.flush().unwrap();
+        assert!(!bb.flush_cursor.last_flushed_at.is_empty());
+    }
+
+    #[test]
+    fn test_cursor_timestamp_numeric() {
+        let mut bb = bb_with_facts(1);
+        tick();
+        bb.flush().unwrap();
+        assert!(bb.flush_cursor.last_flushed_at.parse::<u64>().is_ok());
+    }
 
     #[test]
     fn test_storage_snapshot_roundtrip() {
@@ -447,7 +649,7 @@ mod tests {
         let json = serde_json::to_vec(&snapshot).expect("serialise");
         let restored_snapshot: StorageSnapshot =
             serde_json::from_slice(&json).expect("deserialise");
-        let mut restored = DefaultBlackboard::from_snapshot(restored_snapshot);
+        let mut restored = DefaultBlackboard::from_snapshot_inner(&restored_snapshot);
 
         let state = <DefaultBlackboard as Blackboard>::read_state(&restored);
         assert_eq!(state.facts.len(), 2);

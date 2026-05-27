@@ -17,7 +17,6 @@ Requires:
 """
 
 import json
-import sys
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
@@ -97,7 +96,7 @@ def main():
 
     # Step 8: Final state
     state = get("/state")
-    print(f"\n=== Final Board State ===")
+    print("\n=== Final Board State ===")
     print(f"   Facts:   {len(state['facts'])}")
     print(f"   Intents: {len(state['intents'])}")
     print(f"   Hints:   {len(state['hints'])}")
