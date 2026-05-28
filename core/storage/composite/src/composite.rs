@@ -1,10 +1,10 @@
-// TieredColdStorage — platform-independent cold storage backed by a
+// CompositeColdStorage — platform-independent cold storage backed by a
 // KeyValueStore (KV) + BlobStore (blob) + ObjectStore (object) trio.
 //
 // # Three-tier architecture
 //
 // External bindings (rs-worker, CF Workers WASM bindings) inject concrete
-// K/B/O implementations. TieredColdStorage itself is fully platform-independent
+// K/B/O implementations. CompositeColdStorage itself is fully platform-independent
 // and contains no Cloudflare-specific code.
 //
 // ```
@@ -14,7 +14,7 @@
 //                 └──────────────────┬───────────────────────┘
 //                                    │
 //                 ┌──────────────────┴───────────────────────┐
-//                 │        TieredColdStorage<K, B, O, C>     │
+//                 │        CompositeColdStorage<K, B, O, C>     │
 //                 │                                          │
 //                 │  ┌─────────┐  ┌─────────┐  ┌──────────┐ │
 //                 │  │ Tier 1  │  │ Tier 2  │  │ Tier 3   │ │
@@ -95,12 +95,12 @@ impl<T: Serialize> Stamped<T> {
     }
 }
 
-// ── TieredColdStorage ──────────────────────────────────────────────────────
+// ── CompositeColdStorage ──────────────────────────────────────────────────────
 
 /// Cold storage backend backed by a KeyValueStore + BlobStore + ObjectStore trio.
 ///
 /// Generic over K (KeyValueStore), B (BlobStore), and O (ObjectStore), allowing
-/// the same TieredColdStorage logic to run in tests (MockKv + MockBlob +
+/// the same CompositeColdStorage logic to run in tests (MockKv + MockBlob +
 /// MockObject), CF Workers (worker::kv::Namespace + R2 + Durable Object), or
 /// servers (sled + filesystem + Redis lock).
 ///
@@ -116,7 +116,12 @@ impl<T: Serialize> Stamped<T> {
 /// - `{project_id}/flush/facts/{partition}/{ts}.jsonl`
 /// - `{project_id}/flush/intents/{partition}/{ts}.jsonl`
 /// - `{project_id}/flush/hints/{partition}/{ts}.jsonl`
-pub struct TieredColdStorage<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now = SystemClock> {
+pub struct CompositeColdStorage<
+    K: KeyValueStore,
+    B: BlobStore,
+    O: ObjectStore,
+    C: Now = SystemClock,
+> {
     kv: K,
     blob: B,
     object: O,
@@ -126,7 +131,7 @@ pub struct TieredColdStorage<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: 
 
 // ── Generic constructor (caller chooses the clock) ─────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> TieredColdStorage<K, B, O, C> {
+impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> CompositeColdStorage<K, B, O, C> {
     pub fn new(kv: K, blob: B, object: O, clock: C, project_id: impl Into<String>) -> Self {
         Self {
             kv,
@@ -313,7 +318,7 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> TieredColdStorage<K
 
 // ── Convenience constructor (defaults to SystemClock) ──────────────────────
 
-impl<K: KeyValueStore, B: BlobStore, O: ObjectStore> TieredColdStorage<K, B, O, SystemClock> {
+impl<K: KeyValueStore, B: BlobStore, O: ObjectStore> CompositeColdStorage<K, B, O, SystemClock> {
     pub fn new_with_system_clock(kv: K, blob: B, object: O, project_id: impl Into<String>) -> Self {
         Self {
             kv,
@@ -328,7 +333,7 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore> TieredColdStorage<K, B, O, 
 // ── StorageRead ───────────────────────────────────────────────────────────
 
 impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> StorageRead
-    for TieredColdStorage<K, B, O, C>
+    for CompositeColdStorage<K, B, O, C>
 {
     fn project_id(&self) -> &str {
         self.project()
@@ -339,7 +344,7 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> StorageRead
             Ok(f) => f,
             Err(e) => {
                 log::warn!(
-                    "TieredColdStorage[{}] read_facts failed: {}",
+                    "CompositeColdStorage[{}] read_facts failed: {}",
                     self.project(),
                     e
                 );
@@ -350,7 +355,7 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> StorageRead
             Ok(i) => i,
             Err(e) => {
                 log::warn!(
-                    "TieredColdStorage[{}] read_intents failed: {}",
+                    "CompositeColdStorage[{}] read_intents failed: {}",
                     self.project(),
                     e
                 );
@@ -361,7 +366,7 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> StorageRead
             Ok(h) => h,
             Err(e) => {
                 log::warn!(
-                    "TieredColdStorage[{}] read_hints failed: {}",
+                    "CompositeColdStorage[{}] read_hints failed: {}",
                     self.project(),
                     e
                 );
@@ -379,7 +384,7 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> StorageRead
 // ── FactCapable ───────────────────────────────────────────────────────────
 
 impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> FactCapable
-    for TieredColdStorage<K, B, O, C>
+    for CompositeColdStorage<K, B, O, C>
 {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         let key = fact_key(self.project(), &fact.id.0);
@@ -396,7 +401,7 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> FactCapable
 // ── IntentCapable ─────────────────────────────────────────────────────────
 
 impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> IntentCapable
-    for TieredColdStorage<K, B, O, C>
+    for CompositeColdStorage<K, B, O, C>
 {
     fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
         let key = intent_key(self.project(), &intent.id.0);
@@ -555,7 +560,7 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> IntentCapable
 // ── HintCapable ───────────────────────────────────────────────────────────
 
 impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> HintCapable
-    for TieredColdStorage<K, B, O, C>
+    for CompositeColdStorage<K, B, O, C>
 {
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         let key = hint_key(self.project(), &hint.id.0);
@@ -572,7 +577,7 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> HintCapable
 // ── FilterCapable ─────────────────────────────────────────────────────────
 
 impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> FilterCapable
-    for TieredColdStorage<K, B, O, C>
+    for CompositeColdStorage<K, B, O, C>
 {
     fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
         let mut facts: Vec<Fact> = self.read_facts().unwrap_or_default();
@@ -629,7 +634,7 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> FilterCapable
 // ── ScanCapable ───────────────────────────────────────────────────────────
 
 impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> ScanCapable
-    for TieredColdStorage<K, B, O, C>
+    for CompositeColdStorage<K, B, O, C>
 {
     fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
         let kv_facts = self.read_facts()?;
@@ -667,7 +672,7 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> ScanCapable
 // ── EvictCapable ──────────────────────────────────────────────────────────
 
 impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> EvictCapable
-    for TieredColdStorage<K, B, O, C>
+    for CompositeColdStorage<K, B, O, C>
 {
     fn approximate_size(&self) -> usize {
         let kv_count = self.kv.list("").map(|k| k.len()).unwrap_or(0);
@@ -699,7 +704,7 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> EvictCapable
 // ── TimeRangeCapable ───────────────────────────────────────────────────────
 
 impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> TimeRangeCapable
-    for TieredColdStorage<K, B, O, C>
+    for CompositeColdStorage<K, B, O, C>
 {
     fn time_range(&self) -> Option<Range<String>> {
         None
@@ -709,7 +714,7 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> TimeRangeCapable
 // ── FlushCapable ──────────────────────────────────────────────────────────
 
 impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> FlushCapable
-    for TieredColdStorage<K, B, O, C>
+    for CompositeColdStorage<K, B, O, C>
 {
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
         let since = &cursor.last_flushed_at;
@@ -792,6 +797,6 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> FlushCapable
 // ── CypherCapable ─────────────────────────────────────────────────────────
 
 impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> CypherCapable
-    for TieredColdStorage<K, B, O, C>
+    for CompositeColdStorage<K, B, O, C>
 {
 }

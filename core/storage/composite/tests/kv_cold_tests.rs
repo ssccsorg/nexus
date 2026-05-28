@@ -1,11 +1,11 @@
-// Integration tests for TieredColdStorage with MockKv + MockBlob + MockObject.
+// Integration tests for CompositeColdStorage with MockKv + MockBlob + MockObject.
 
 use nexus_model::{
     BlackboardError, EvictCapable, Fact, FactCapable, FilterCapable, FlushCapable, FlushCursor,
     Hint, HintCapable, Intent, IntentCapable, ScanCapable, StateFilter, StorageRead,
 };
 use nexus_storage_kv_cold::{
-    BlobStore, KeyValueStore, MockBlob, MockKv, MockObject, TieredColdStorage,
+    BlobStore, CompositeColdStorage, KeyValueStore, MockBlob, MockKv, MockObject,
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -41,8 +41,8 @@ fn test_hint(id: &str) -> Hint {
     }
 }
 
-fn storage() -> TieredColdStorage<MockKv, MockBlob, MockObject> {
-    TieredColdStorage::new_with_system_clock(
+fn storage() -> CompositeColdStorage<MockKv, MockBlob, MockObject> {
+    CompositeColdStorage::new_with_system_clock(
         MockKv::new(),
         MockBlob::new(),
         MockObject::new(),
@@ -51,7 +51,7 @@ fn storage() -> TieredColdStorage<MockKv, MockBlob, MockObject> {
 }
 
 /// Create storage pre-populated with `n` facts.
-fn storage_with_facts(n: usize) -> TieredColdStorage<MockKv, MockBlob, MockObject> {
+fn storage_with_facts(n: usize) -> CompositeColdStorage<MockKv, MockBlob, MockObject> {
     let s = storage();
     for i in 0..n {
         s.submit_fact(&test_fact(&format!("f_{i}")))
@@ -61,7 +61,7 @@ fn storage_with_facts(n: usize) -> TieredColdStorage<MockKv, MockBlob, MockObjec
 }
 
 /// Create storage pre-populated with `n` intents.
-fn storage_with_intents(n: usize) -> TieredColdStorage<MockKv, MockBlob, MockObject> {
+fn storage_with_intents(n: usize) -> CompositeColdStorage<MockKv, MockBlob, MockObject> {
     let s = storage();
     for i in 0..n {
         s.submit_intent(&test_intent(&format!("int_{i}")))
@@ -424,7 +424,7 @@ fn test_evict_before_keeps_recent_blobs() {
 
 #[test]
 fn test_submit_flush_read_cycle() {
-    let s = TieredColdStorage::new_with_system_clock(
+    let s = CompositeColdStorage::new_with_system_clock(
         MockKv::new(),
         MockBlob::new(),
         MockObject::new(),

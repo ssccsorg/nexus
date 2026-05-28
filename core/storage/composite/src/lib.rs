@@ -1,6 +1,6 @@
 // nexus-storage-kv-cold — Platform-independent multi-tier cold storage for FIH.
 //
-// Provides KeyValueStore, BlobStore, and ObjectStore traits, plus TieredColdStorage
+// Provides KeyValueStore, BlobStore, and ObjectStore traits, plus CompositeColdStorage
 // which implements the full ColdStorage trait by orchestrating three tiers:
 //
 //   Tier 1 (KV)     — fast single-key r/w, recent buffer, cursor persistence
@@ -8,17 +8,17 @@
 //   Tier 3 (Object) — CAS-based coordination, snapshot ownership (Durable Object, future)
 //
 // External bindings (rs-worker, CF Workers) inject concrete K/B/O implementations.
-// TieredColdStorage itself is fully platform-independent.
+// CompositeColdStorage itself is fully platform-independent.
 
+pub mod composite;
 pub mod mock;
-pub mod tiered;
 
 // Re-export traits and main type.
+pub use composite::CompositeColdStorage;
 pub use mock::{MockBlob, MockKv, MockObject};
-pub use tiered::TieredColdStorage;
 
 // Now trait and SystemClock are defined directly in this module (see below).
-// tiered.rs accesses them via `use crate::{Now, SystemClock}`.
+// composite.rs accesses them via `use crate::{Now, SystemClock}`.
 
 /// Simple key-value store abstraction.
 ///
@@ -78,7 +78,7 @@ pub trait ObjectStore: Send + Sync {
 /// Clock abstraction for platform-independent timestamp generation.
 ///
 /// Implementations: SystemClock (native), js_sys::Date (WASM).
-/// Without this trait, TieredColdStorage would be hardcoded to SystemTime::now(),
+/// Without this trait, CompositeColdStorage would be hardcoded to SystemTime::now(),
 /// which is incorrect for WASM targets and makes testing impossible.
 pub trait Now: Send + Sync {
     /// Return current time as a nanosecond-precision string.
