@@ -270,7 +270,6 @@ fn test_multi_entity_persistence_through_dual_storage() {
 // composite being present as cold.
 
 #[test]
-#[test]
 fn test_evict_after_flush_removes_both_hot_and_cold_blobs() {
     let bb = make_bb();
     let mut guard = bb;
