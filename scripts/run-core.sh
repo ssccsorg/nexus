@@ -17,7 +17,8 @@
 #
 
 set -e
-cd "$(dirname "$0")/../core"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT/core"
 
 MODE="all"
 
@@ -31,7 +32,7 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
-run_check()  { cargo check -p nexus-graph -p nexus-storage-sqlite -p nexus-storage-duckdb -p nexus-storage-petgraph -p nexus-process && cargo check; }
+run_check()  { cargo check -p nexus-graph -p nexus-storage-sqlite -p nexus-storage-petgraph -p nexus-process && cargo check && (cd "$REPO_ROOT/ext" && cargo check); }
 
 # ── Pre-flight auto-fixes: catch trivial issues before strict checks ────
 
@@ -46,13 +47,13 @@ run_clippy() { cargo clippy --workspace -- -D warnings; }
 run_test()   {
     cargo test -p nexus-storage-sqlite -- --nocapture 2>&1
     echo "---"
-    cargo test -p nexus-storage-duckdb -- --nocapture 2>&1
-    echo "---"
     cargo test -p nexus-storage-petgraph -- --nocapture 2>&1
     echo "---"
     cargo test -p nexus-graph -- --nocapture 2>&1
     echo "---"
     cargo test -p nexus-process -- --nocapture 2>&1
+    echo "---"
+    (cd "$REPO_ROOT/ext" && cargo test -p nexus-storage-duckdb -- --nocapture 2>&1)
 }
 run_all() {
     echo "=== fmt --all ===" && run_fmt

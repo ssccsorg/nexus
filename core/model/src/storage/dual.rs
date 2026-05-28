@@ -112,19 +112,23 @@ impl FilterCapable for DualStorage {
     }
 }
 
-// ── Memory management: delegate to hot ──
+// ── Memory management: delegate to both hot and cold ──
 
 impl EvictCapable for DualStorage {
     fn approximate_size(&self) -> usize {
-        self.hot.approximate_size()
+        self.hot.approximate_size() + self.cold.approximate_size()
     }
 
     fn evict_before(&self, before: &str) -> Result<u64, String> {
-        self.hot.evict_before(before)
+        let hot_evicted = self.hot.evict_before(before)?;
+        let cold_evicted = self.cold.evict_before(before)?;
+        Ok(hot_evicted + cold_evicted)
     }
 
     fn evict_stale_intents(&self, older_than_secs: u64) -> Result<u64, String> {
-        self.hot.evict_stale_intents(older_than_secs)
+        let hot_evicted = self.hot.evict_stale_intents(older_than_secs)?;
+        let cold_evicted = self.cold.evict_stale_intents(older_than_secs)?;
+        Ok(hot_evicted + cold_evicted)
     }
 }
 
