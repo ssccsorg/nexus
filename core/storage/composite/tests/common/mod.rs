@@ -20,15 +20,6 @@ impl MockKv {
             data: Arc::new(RwLock::new(HashMap::new())),
         }
     }
-
-    /// Number of entries in the store (for assertions).
-    pub fn len(&self) -> usize {
-        self.data.read().unwrap().len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
 }
 
 impl Default for MockKv {
@@ -80,15 +71,6 @@ impl MockBlob {
         Self {
             data: Arc::new(RwLock::new(HashMap::new())),
         }
-    }
-
-    /// Number of blobs stored (for assertions).
-    pub fn len(&self) -> usize {
-        self.data.read().unwrap().len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
     }
 }
 
