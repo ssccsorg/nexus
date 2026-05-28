@@ -211,51 +211,6 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> CompositeColdStorag
         Ok(hints)
     }
 
-    /// Read all facts and their submission timestamps from KV.
-    fn read_facts_stamped(&self) -> Result<Vec<Stamped<Fact>>, String> {
-        let prefix = fact_prefix(self.project());
-        let keys = self.kv.list(&prefix)?;
-        let mut facts = Vec::with_capacity(keys.len());
-        for key in &keys {
-            if let Some(json) = self.kv.get(key)?
-                && let Ok(stamped) = serde_json::from_str::<Stamped<Fact>>(&json)
-            {
-                facts.push(stamped);
-            }
-        }
-        Ok(facts)
-    }
-
-    /// Read all intents and their submission timestamps from KV.
-    fn read_intents_stamped(&self) -> Result<Vec<Stamped<Intent>>, String> {
-        let prefix = intent_prefix(self.project());
-        let keys = self.kv.list(&prefix)?;
-        let mut intents = Vec::with_capacity(keys.len());
-        for key in &keys {
-            if let Some(json) = self.kv.get(key)?
-                && let Ok(stamped) = serde_json::from_str::<Stamped<Intent>>(&json)
-            {
-                intents.push(stamped);
-            }
-        }
-        Ok(intents)
-    }
-
-    /// Read all hints and their submission timestamps from KV.
-    fn read_hints_stamped(&self) -> Result<Vec<Stamped<Hint>>, String> {
-        let prefix = hint_prefix(self.project());
-        let keys = self.kv.list(&prefix)?;
-        let mut hints = Vec::with_capacity(keys.len());
-        for key in &keys {
-            if let Some(json) = self.kv.get(key)?
-                && let Ok(stamped) = serde_json::from_str::<Stamped<Hint>>(&json)
-            {
-                hints.push(stamped);
-            }
-        }
-        Ok(hints)
-    }
-
     // ── JSON lines deserialization ──────────────────────────────────────────
 
     fn read_jsonl_lines<T>(bytes: &[u8]) -> Result<Vec<T>, String>
@@ -276,10 +231,16 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> CompositeColdStorag
         let blob_keys = self.blob.list(&prefix)?;
         let mut all = Vec::new();
         for key in &blob_keys {
-            if let Some(bytes) = self.blob.get(key)?
-                && let Ok(items) = Self::read_jsonl_lines::<Fact>(&bytes)
-            {
-                all.extend(items);
+            if let Some(bytes) = self.blob.get(key)? {
+                match Self::read_jsonl_lines::<Fact>(&bytes) {
+                    Ok(items) => all.extend(items),
+                    Err(e) => log::warn!(
+                        "CompositeColdStorage[{}] skipping partial blob {}: {}",
+                        self.project(),
+                        key,
+                        e
+                    ),
+                }
             }
         }
         Ok(all)
@@ -291,10 +252,16 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> CompositeColdStorag
         let blob_keys = self.blob.list(&prefix)?;
         let mut all = Vec::new();
         for key in &blob_keys {
-            if let Some(bytes) = self.blob.get(key)?
-                && let Ok(items) = Self::read_jsonl_lines::<Intent>(&bytes)
-            {
-                all.extend(items);
+            if let Some(bytes) = self.blob.get(key)? {
+                match Self::read_jsonl_lines::<Intent>(&bytes) {
+                    Ok(items) => all.extend(items),
+                    Err(e) => log::warn!(
+                        "CompositeColdStorage[{}] skipping partial blob {}: {}",
+                        self.project(),
+                        key,
+                        e
+                    ),
+                }
             }
         }
         Ok(all)
@@ -306,10 +273,16 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> CompositeColdStorag
         let blob_keys = self.blob.list(&prefix)?;
         let mut all = Vec::new();
         for key in &blob_keys {
-            if let Some(bytes) = self.blob.get(key)?
-                && let Ok(items) = Self::read_jsonl_lines::<Hint>(&bytes)
-            {
-                all.extend(items);
+            if let Some(bytes) = self.blob.get(key)? {
+                match Self::read_jsonl_lines::<Hint>(&bytes) {
+                    Ok(items) => all.extend(items),
+                    Err(e) => log::warn!(
+                        "CompositeColdStorage[{}] skipping partial blob {}: {}",
+                        self.project(),
+                        key,
+                        e
+                    ),
+                }
             }
         }
         Ok(all)
@@ -746,60 +719,64 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> FlushCapable
         let partition = &cursor.partition;
         let now_ts = self.clock.now_nanos();
 
-        // Read stamped data and filter by submission timestamp.
-        let all_facts = self.read_facts_stamped()?;
-        let flushed_facts: Vec<Fact> = all_facts
-            .into_iter()
-            .filter(|s| since.is_empty() || s.submitted_at.as_str() > since.as_str())
-            .map(|s| s.data)
-            .collect();
+        // Streaming flush: iterate KV keys one by one, filter by cursor,
+        // write matching entries immediately to blob. Never loads all data
+        // into memory at once — critical for WASM where heap is limited.
+        let fact_prefix = fact_prefix(self.project());
+        let fact_keys = self.kv.list(&fact_prefix)?;
 
-        let all_intents = self.read_intents_stamped()?;
-        let flushed_intents: Vec<Intent> = all_intents
-            .into_iter()
-            .filter(|s| since.is_empty() || s.submitted_at.as_str() > since.as_str())
-            .map(|s| s.data)
-            .collect();
+        let mut fact_lines: Vec<String> = Vec::new();
+        for key in &fact_keys {
+            if let Some(json) = self.kv.get(key)?
+                && let Ok(stamped) = serde_json::from_str::<Stamped<Fact>>(&json)
+                && (since.is_empty() || stamped.submitted_at.as_str() > since.as_str())
+                && let Ok(line) = serde_json::to_string(&stamped.data)
+            {
+                fact_lines.push(line);
+            }
+        }
 
-        let all_hints = self.read_hints_stamped()?;
-        let flushed_hints: Vec<Hint> = all_hints
-            .into_iter()
-            .filter(|s| since.is_empty() || s.submitted_at.as_str() > since.as_str())
-            .map(|s| s.data)
-            .collect();
+        let intent_prefix = intent_prefix(self.project());
+        let intent_keys = self.kv.list(&intent_prefix)?;
+        let mut intent_lines: Vec<String> = Vec::new();
+        for key in &intent_keys {
+            if let Some(json) = self.kv.get(key)?
+                && let Ok(stamped) = serde_json::from_str::<Stamped<Intent>>(&json)
+                && (since.is_empty() || stamped.submitted_at.as_str() > since.as_str())
+                && let Ok(line) = serde_json::to_string(&stamped.data)
+            {
+                intent_lines.push(line);
+            }
+        }
 
-        let records_flushed =
-            (flushed_facts.len() + flushed_intents.len() + flushed_hints.len()) as u64;
+        let hint_prefix = hint_prefix(self.project());
+        let hint_keys = self.kv.list(&hint_prefix)?;
+        let mut hint_lines: Vec<String> = Vec::new();
+        for key in &hint_keys {
+            if let Some(json) = self.kv.get(key)?
+                && let Ok(stamped) = serde_json::from_str::<Stamped<Hint>>(&json)
+                && (since.is_empty() || stamped.submitted_at.as_str() > since.as_str())
+                && let Ok(line) = serde_json::to_string(&stamped.data)
+            {
+                hint_lines.push(line);
+            }
+        }
 
-        // Write filtered data as JSON lines to blobs.
-        if !flushed_facts.is_empty() {
-            let lines: Vec<String> = flushed_facts
-                .iter()
-                .filter_map(|f| serde_json::to_string(f).ok())
-                .collect();
+        let records_flushed = (fact_lines.len() + intent_lines.len() + hint_lines.len()) as u64;
+
+        // Write JSON lines to blobs.
+        if !fact_lines.is_empty() {
             let blob_key = flush_blob_key(self.project(), "facts", partition, &now_ts);
-            let bytes = lines.join("\n").into_bytes();
-            self.blob.put(&blob_key, &bytes)?;
+            self.blob.put(&blob_key, fact_lines.join("\n").as_bytes())?;
         }
-
-        if !flushed_intents.is_empty() {
-            let lines: Vec<String> = flushed_intents
-                .iter()
-                .filter_map(|i| serde_json::to_string(i).ok())
-                .collect();
+        if !intent_lines.is_empty() {
             let blob_key = flush_blob_key(self.project(), "intents", partition, &now_ts);
-            let bytes = lines.join("\n").into_bytes();
-            self.blob.put(&blob_key, &bytes)?;
+            self.blob
+                .put(&blob_key, intent_lines.join("\n").as_bytes())?;
         }
-
-        if !flushed_hints.is_empty() {
-            let lines: Vec<String> = flushed_hints
-                .iter()
-                .filter_map(|h| serde_json::to_string(h).ok())
-                .collect();
+        if !hint_lines.is_empty() {
             let blob_key = flush_blob_key(self.project(), "hints", partition, &now_ts);
-            let bytes = lines.join("\n").into_bytes();
-            self.blob.put(&blob_key, &bytes)?;
+            self.blob.put(&blob_key, hint_lines.join("\n").as_bytes())?;
         }
 
         let new_cursor = FlushCursor {
