@@ -596,25 +596,25 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> FilterCapable
         // Filter by time range (Intents have created_at; Facts and Hints don't).
         // Parse timestamps as u128 for numeric comparison; string comparison
         // (e.g. "9" > "100") is incorrect for variable-length numeric encodings.
-        if let Some(since_str) = &filter.since {
-            if let Ok(since_ts) = since_str.parse::<u128>() {
-                intents.retain(|i| {
-                    i.created_at
-                        .as_ref()
-                        .and_then(|c| c.parse::<u128>().ok())
-                        .is_none_or(|ts| ts >= since_ts)
-                });
-            }
+        if let Some(since_str) = &filter.since
+            && let Ok(since_ts) = since_str.parse::<u128>()
+        {
+            intents.retain(|i| {
+                i.created_at
+                    .as_ref()
+                    .and_then(|c| c.parse::<u128>().ok())
+                    .is_none_or(|ts| ts >= since_ts)
+            });
         }
-        if let Some(until_str) = &filter.until {
-            if let Ok(until_ts) = until_str.parse::<u128>() {
-                intents.retain(|i| {
-                    i.created_at
-                        .as_ref()
-                        .and_then(|c| c.parse::<u128>().ok())
-                        .is_none_or(|ts| ts <= until_ts)
-                });
-            }
+        if let Some(until_str) = &filter.until
+            && let Ok(until_ts) = until_str.parse::<u128>()
+        {
+            intents.retain(|i| {
+                i.created_at
+                    .as_ref()
+                    .and_then(|c| c.parse::<u128>().ok())
+                    .is_none_or(|ts| ts <= until_ts)
+            });
         }
 
         // Apply offset + limit
@@ -681,14 +681,27 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> EvictCapable
     for CompositeColdStorage<K, B, O, C>
 {
     fn approximate_size(&self) -> usize {
-        let kv_count = self.kv.list("").map(|k| k.len()).unwrap_or(0);
-        let blob_count = self.blob.list("").map(|k| k.len()).unwrap_or(0);
+        // Scope to this project's keys: KV uses {project_id}: prefix, blob
+        // uses {project_id}/ prefix. Without scoping, list("") returns all
+        // keys across all projects sharing the same underlying store.
+        let kv_count = self
+            .kv
+            .list(&format!("{}:", self.project()))
+            .map(|k| k.len())
+            .unwrap_or(0);
+        let blob_count = self
+            .blob
+            .list(&format!("{}/", self.project()))
+            .map(|k| k.len())
+            .unwrap_or(0);
         kv_count + blob_count
     }
 
     fn evict_before(&self, before: &str) -> Result<u64, String> {
-        let before_ts: u64 = before.parse().unwrap_or(u64::MAX);
-        let blob_keys = self.blob.list("")?;
+        let before_ts: u64 = before.parse().map_err(|e| {
+            format!("invalid eviction timestamp '{}': {}", before, e)
+        })?;
+        let blob_keys = self.blob.list(&format!("{}/", self.project()))?;
         let mut evicted = 0u64;
         for key in &blob_keys {
             // Key format: {project_id}/flush/{entity}/{partition}/{ts}.jsonl
@@ -749,10 +762,10 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> FlushCapable
                 && let Ok(stamped) = serde_json::from_str::<Stamped<Fact>>(&json)
             {
                 let ts: u128 = stamped.submitted_at.parse().unwrap_or(0);
-                if ts > since_ts {
-                    if let Ok(line) = serde_json::to_string(&stamped.data) {
-                        fact_lines.push(line);
-                    }
+                if ts > since_ts
+                    && let Ok(line) = serde_json::to_string(&stamped.data)
+                {
+                    fact_lines.push(line);
                 }
             }
         }
@@ -765,10 +778,10 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> FlushCapable
                 && let Ok(stamped) = serde_json::from_str::<Stamped<Intent>>(&json)
             {
                 let ts: u128 = stamped.submitted_at.parse().unwrap_or(0);
-                if ts > since_ts {
-                    if let Ok(line) = serde_json::to_string(&stamped.data) {
-                        intent_lines.push(line);
-                    }
+                if ts > since_ts
+                    && let Ok(line) = serde_json::to_string(&stamped.data)
+                {
+                    intent_lines.push(line);
                 }
             }
         }
@@ -781,10 +794,10 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> FlushCapable
                 && let Ok(stamped) = serde_json::from_str::<Stamped<Hint>>(&json)
             {
                 let ts: u128 = stamped.submitted_at.parse().unwrap_or(0);
-                if ts > since_ts {
-                    if let Ok(line) = serde_json::to_string(&stamped.data) {
-                        hint_lines.push(line);
-                    }
+                if ts > since_ts
+                    && let Ok(line) = serde_json::to_string(&stamped.data)
+                {
+                    hint_lines.push(line);
                 }
             }
         }
