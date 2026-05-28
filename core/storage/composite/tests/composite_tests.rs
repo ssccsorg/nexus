@@ -5,8 +5,9 @@ use nexus_model::{
     Hint, HintCapable, Intent, IntentCapable, ScanCapable, StateFilter, StorageRead,
 };
 use nexus_storage_kv_cold::{
-    BlobStore, CompositeColdStorage, KeyValueStore, MockBlob, MockKv, MockObject,
+    BlobStore, CompositeColdStorage, KeyValueStore, MockBlob, MockKv, MockObject, ObjectStore,
 };
+use std::sync::{Arc, Barrier};
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -472,4 +473,75 @@ fn test_conclude_intent_creates_fact_and_removes_intent() {
     let state = s.read_state();
     assert!(!state.intents.iter().any(|i| i.id.0 == "int_0"));
     assert!(state.facts.iter().any(|f| f.origin == "intent:int_0"));
+}
+
+// ── ObjectStore tests ─────────────────────────────────────────────────────
+
+#[test]
+fn test_mock_object_cas_basic() {
+    let obj = MockObject::new();
+
+    // Initial state is None.
+    assert_eq!(obj.get_state().unwrap(), None);
+
+    // Set initial state to empty string (unclaimed sentinel).
+    obj.set_state("").unwrap();
+    assert_eq!(obj.get_state().unwrap(), Some("".into()));
+
+    // CAS: empty → agent-a. Should succeed.
+    let ok = obj.compare_and_swap("", "agent-a").unwrap();
+    assert!(ok, "first CAS should succeed");
+    assert_eq!(obj.get_state().unwrap(), Some("agent-a".into()));
+
+    // CAS: empty → agent-b. Should fail because current is agent-a.
+    let ok = obj.compare_and_swap("", "agent-b").unwrap();
+    assert!(!ok, "second CAS should fail — state is not empty");
+    assert_eq!(obj.get_state().unwrap(), Some("agent-a".into()));
+
+    // CAS: agent-a → agent-b. Ownership transfer should succeed.
+    let ok = obj.compare_and_swap("agent-a", "agent-b").unwrap();
+    assert!(ok, "ownership transfer CAS should succeed");
+    assert_eq!(obj.get_state().unwrap(), Some("agent-b".into()));
+}
+
+#[test]
+fn test_concurrent_claim_demonstrates_race() {
+    // Two threads claim the same intent simultaneously.
+    //
+    // With the current KV-only read-then-write, both threads can read
+    // worker=None before either writes, causing both claims to report
+    // success. The last writer wins the KV entry.
+    //
+    // When ObjectStore::compare_and_swap is integrated into claim_intent,
+    // exactly one thread will succeed.
+    let s = Arc::new(storage_with_intents(1));
+    let barrier = Arc::new(Barrier::new(2));
+
+    let s_a = Arc::clone(&s);
+    let b_a = Arc::clone(&barrier);
+    let h_a = std::thread::spawn(move || {
+        b_a.wait();
+        s_a.claim_intent("int_0", "agent-a")
+    });
+
+    let s_b = Arc::clone(&s);
+    let b_b = Arc::clone(&barrier);
+    let h_b = std::thread::spawn(move || {
+        b_b.wait();
+        s_b.claim_intent("int_0", "agent-b")
+    });
+
+    let r_a = h_a.join().unwrap();
+    let r_b = h_b.join().unwrap();
+
+    let ok_count = [&r_a, &r_b].iter().filter(|r| matches!(r, Ok(()))).count();
+    assert!(ok_count >= 1, "at least one claim must succeed");
+
+    // Verify exactly one agent holds the claim in KV.
+    let state = s.read_state();
+    let intent = state.intents.iter().find(|i| i.id.0 == "int_0").unwrap();
+    assert!(
+        intent.worker.is_some(),
+        "intent is claimed by at least one agent"
+    );
 }
