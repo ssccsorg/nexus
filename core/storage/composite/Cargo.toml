@@ -1,3 +1,5 @@
+# Package name (nexus-storage-kv-cold) preserved for backward compatibility.
+# Directory name (composite/) reflects the 3-tier KV+Blob+Object architecture.
 [package]
 name = "nexus-storage-kv-cold"
 version.workspace = true

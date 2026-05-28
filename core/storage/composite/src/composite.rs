@@ -124,6 +124,10 @@ pub struct CompositeColdStorage<
 > {
     kv: K,
     blob: B,
+    // ObjectStore integration is pending (see claim_intent TODO).
+    // CAS-based coordination will resolve the current read-then-write
+    // race condition when wired in.
+    #[allow(dead_code)]
     object: O,
     clock: C,
     project_id: String,
@@ -414,6 +418,21 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> IntentCapable
         Ok(intent.id.clone())
     }
 
+    /// Claim an intent for an agent.
+    ///
+    /// Currently uses KV read-then-write which is not atomic under
+    /// multi-worker concurrency. In a distributed environment, two workers
+    /// can both pass the `worker.is_some()` check and overwrite each
+    /// other's claim.
+    ///
+    /// TODO: integrate `self.object.compare_and_swap()` before the KV
+    /// read to provide CAS-based mutual exclusion. The ObjectStore tier
+    /// is designed for this.
+    ///
+    /// Flow after integration:
+    ///   1. `object.compare_and_swap("", agent)` — atomic claim gate
+    ///   2. If CAS succeeded → update KV for data consistency
+    ///   3. If CAS failed → return Conflict with current owner
     fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let key = intent_key(self.project(), intent_id);
         let json = self
