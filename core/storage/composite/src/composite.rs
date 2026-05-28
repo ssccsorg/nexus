@@ -698,9 +698,9 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> EvictCapable
     }
 
     fn evict_before(&self, before: &str) -> Result<u64, String> {
-        let before_ts: u64 = before.parse().map_err(|e| {
-            format!("invalid eviction timestamp '{}': {}", before, e)
-        })?;
+        let before_ts: u64 = before
+            .parse()
+            .map_err(|e| format!("invalid eviction timestamp '{}': {}", before, e))?;
         let blob_keys = self.blob.list(&format!("{}/", self.project()))?;
         let mut evicted = 0u64;
         for key in &blob_keys {
