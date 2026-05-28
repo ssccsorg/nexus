@@ -593,20 +593,28 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> FilterCapable
             hints.retain(|h| ids.contains(&h.id.0));
         }
 
-        // Filter by time range (Intents have created_at; Facts and Hints don't)
-        if let Some(since) = &filter.since {
-            intents.retain(|i| {
-                i.created_at
-                    .as_ref()
-                    .is_none_or(|c| c.as_str() >= since.as_str())
-            });
+        // Filter by time range (Intents have created_at; Facts and Hints don't).
+        // Parse timestamps as u128 for numeric comparison; string comparison
+        // (e.g. "9" > "100") is incorrect for variable-length numeric encodings.
+        if let Some(since_str) = &filter.since {
+            if let Ok(since_ts) = since_str.parse::<u128>() {
+                intents.retain(|i| {
+                    i.created_at
+                        .as_ref()
+                        .and_then(|c| c.parse::<u128>().ok())
+                        .is_none_or(|ts| ts >= since_ts)
+                });
+            }
         }
-        if let Some(until) = &filter.until {
-            intents.retain(|i| {
-                i.created_at
-                    .as_ref()
-                    .is_none_or(|c| c.as_str() <= until.as_str())
-            });
+        if let Some(until_str) = &filter.until {
+            if let Ok(until_ts) = until_str.parse::<u128>() {
+                intents.retain(|i| {
+                    i.created_at
+                        .as_ref()
+                        .and_then(|c| c.parse::<u128>().ok())
+                        .is_none_or(|ts| ts <= until_ts)
+                });
+            }
         }
 
         // Apply offset + limit
@@ -715,7 +723,17 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> FlushCapable
     for CompositeColdStorage<K, B, O, C>
 {
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
-        let since = &cursor.last_flushed_at;
+        // Parse the cursor timestamp as u128 for numeric comparison.
+        // String-based comparison (e.g. "9" > "100") is incorrect for
+        // variable-length numeric encodings.
+        let since_ts: u128 = if cursor.last_flushed_at.is_empty() {
+            0
+        } else {
+            cursor
+                .last_flushed_at
+                .parse()
+                .map_err(|e| format!("invalid cursor timestamp: {e}"))?
+        };
         let partition = &cursor.partition;
         let now_ts = self.clock.now_nanos();
 
@@ -729,10 +747,13 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> FlushCapable
         for key in &fact_keys {
             if let Some(json) = self.kv.get(key)?
                 && let Ok(stamped) = serde_json::from_str::<Stamped<Fact>>(&json)
-                && (since.is_empty() || stamped.submitted_at.as_str() > since.as_str())
-                && let Ok(line) = serde_json::to_string(&stamped.data)
             {
-                fact_lines.push(line);
+                let ts: u128 = stamped.submitted_at.parse().unwrap_or(0);
+                if ts > since_ts {
+                    if let Ok(line) = serde_json::to_string(&stamped.data) {
+                        fact_lines.push(line);
+                    }
+                }
             }
         }
 
@@ -742,10 +763,13 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> FlushCapable
         for key in &intent_keys {
             if let Some(json) = self.kv.get(key)?
                 && let Ok(stamped) = serde_json::from_str::<Stamped<Intent>>(&json)
-                && (since.is_empty() || stamped.submitted_at.as_str() > since.as_str())
-                && let Ok(line) = serde_json::to_string(&stamped.data)
             {
-                intent_lines.push(line);
+                let ts: u128 = stamped.submitted_at.parse().unwrap_or(0);
+                if ts > since_ts {
+                    if let Ok(line) = serde_json::to_string(&stamped.data) {
+                        intent_lines.push(line);
+                    }
+                }
             }
         }
 
@@ -755,10 +779,13 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> FlushCapable
         for key in &hint_keys {
             if let Some(json) = self.kv.get(key)?
                 && let Ok(stamped) = serde_json::from_str::<Stamped<Hint>>(&json)
-                && (since.is_empty() || stamped.submitted_at.as_str() > since.as_str())
-                && let Ok(line) = serde_json::to_string(&stamped.data)
             {
-                hint_lines.push(line);
+                let ts: u128 = stamped.submitted_at.parse().unwrap_or(0);
+                if ts > since_ts {
+                    if let Ok(line) = serde_json::to_string(&stamped.data) {
+                        hint_lines.push(line);
+                    }
+                }
             }
         }
 
