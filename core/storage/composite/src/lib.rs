@@ -11,11 +11,9 @@
 // CompositeColdStorage itself is fully platform-independent.
 
 pub mod composite;
-pub mod mock;
 
 // Re-export traits and main type.
 pub use composite::CompositeColdStorage;
-pub use mock::{MockBlob, MockKv, MockObject};
 
 // Now trait and SystemClock are defined directly in this module (see below).
 // composite.rs accesses them via `use crate::{Now, SystemClock}`.
