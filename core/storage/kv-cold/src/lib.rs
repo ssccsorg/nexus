@@ -16,6 +16,9 @@ pub mod mock;
 pub use kv_cold::KvColdStorage;
 pub use mock::{MockBlob, MockKv};
 
+// Now trait and SystemClock are defined directly in this module (see below).
+// kv_cold.rs accesses them via `use crate::{Now, SystemClock}`.
+
 /// Simple key-value store abstraction.
 ///
 /// Implementations: MockKv (test), worker::kv::Namespace (CF Workers),
@@ -50,6 +53,32 @@ pub trait BlobStore: Send + Sync {
 
     /// List all blob keys with the given prefix.
     fn list(&self, prefix: &str) -> Result<Vec<String>, String>;
+}
+
+// ── Now trait ─────────────────────────────────────────────────────────────
+
+/// Clock abstraction for platform-independent timestamp generation.
+///
+/// Implementations: SystemClock (native), js_sys::Date (WASM).
+/// Without this trait, KvColdStorage would be hardcoded to SystemTime::now(),
+/// which is incorrect for WASM targets and makes testing impossible.
+pub trait Now: Send + Sync {
+    /// Return current time as a nanosecond-precision string.
+    fn now_nanos(&self) -> String;
+}
+
+/// SystemTime-based clock. Correct for native targets.
+#[derive(Debug, Clone, Copy)]
+pub struct SystemClock;
+
+impl Now for SystemClock {
+    fn now_nanos(&self) -> String {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+            .to_string()
+    }
 }
 
 // ── Internal key conventions ─────────────────────────────────────────────
