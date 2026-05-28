@@ -1,20 +1,71 @@
-// KvColdStorage — Platform-independent KV + Blob cold storage.
+// TieredColdStorage — platform-independent cold storage backed by a
+// KeyValueStore (KV) + BlobStore (blob) + ObjectStore (object) trio.
 //
-// Architecture:
-//   KV store holds recent Facts/Intents/Hints as JSON values, wrapped in a
-//   Timestamped envelope that records submission time. This allows
-//   flush_since to correctly filter by cursor (epoch-second timestamp)
-//   without relying on entity IDs for ordering.
+// # Three-tier architecture
 //
-//   Blob store holds JSON-lines snapshots produced by flush operations.
-//   read_state / scan_partition combine KV (recent) and BlobStore (flushed).
+// External bindings (rs-worker, CF Workers WASM bindings) inject concrete
+// K/B/O implementations. TieredColdStorage itself is fully platform-independent
+// and contains no Cloudflare-specific code.
 //
-//   JSON lines format (no Parquet dependency) keeps the crate purely Rust
-//   with no C bindings. A future upgrade can add Parquet via arrow/parquet-wasm.
+// ```
+//                 ┌──────────────────────────────────────────┐
+//                 │          ColdStorage trait                │
+//                 │  (FihPersistence + Filter + Scan + Flush) │
+//                 └──────────────────┬───────────────────────┘
+//                                    │
+//                 ┌──────────────────┴───────────────────────┐
+//                 │        TieredColdStorage<K, B, O, C>     │
+//                 │                                          │
+//                 │  ┌─────────┐  ┌─────────┐  ┌──────────┐ │
+//                 │  │ Tier 1  │  │ Tier 2  │  │ Tier 3   │ │
+//                 │  │ KV      │  │ Blob    │  │ Object   │ │
+//                 │  │ recent  │  │ archive │  │ coord.   │ │
+//                 │  └────┬────┘  └────┬────┘  └────┬─────┘ │
+//                 └───────┼───────────┼──────────────┼──────┘
+//                         │           │              │
+//                    Workers KV    R2 bucket    Durable Object
+//                    Sled          filesystem    Redis lock
+//                    MockKv        MockBlob      MockObject
+// ```
+//
+// # Tier roles
+//
+// | Tier | Store | Role | Write | Read |
+// |------|-------|------|-------|------|
+// | 1 | KV | Recent buffer, cursor persistence | `submit_fact`/`claim_intent` | `get(key)`, `list(prefix)` |
+// | 2 | Blob | JSON-lines archive, flush target | `flush_since` | bulk `scan_partition` |
+// | 3 | Object | CAS-based claim coordination, snapshot ownership | `compare_and_swap` | `get_state` |
+//
+// # Data flow
+//
+// 1. **Ingest**: `submit_fact` writes to KV only (Tier 1). Fast single-key write.
+// 2. **Flush**: `flush_since` reads recent data from KV (by submission timestamp),
+//    serializes to JSON-lines, writes to Blob (Tier 2). Cursor persisted in KV.
+// 3. **Archive**: `evict_before` removes old Blob entries from Tier 2.
+// 4. **Coordinate**: `claim_intent`/`heartbeat`/`release_intent` use KV data +
+//    optional CAS via Object (Tier 3) for cross-worker conflict resolution.
+// 5. **Read**: `read_state` reads KV only (recent). `scan_partition` merges
+//    KV (recent) + Blob (flushed) with dedup by entity ID.
+//
+// # KV storage layout
+//
+// - `{project_id}:fact:{fact_id}` → JSON `Stamped<Fact>`
+// - `{project_id}:intent:{intent_id}` → JSON `Stamped<Intent>`
+// - `{project_id}:hint:{hint_id}` → JSON `Stamped<Hint>`
+// - `{project_id}:cursor` → JSON `FlushCursor`
+//
+// # Blob storage layout (produced by flush_since)
+//
+// - `{project_id}/flush/facts/{partition}/{ts}.jsonl`
+// - `{project_id}/flush/intents/{partition}/{ts}.jsonl`
+// - `{project_id}/flush/hints/{partition}/{ts}.jsonl`
+//
+// JSON lines format (no Parquet dependency) keeps the crate purely Rust
+// with no C bindings. A future upgrade can add Parquet via arrow/parquet-wasm.
 
 use crate::{
-    BlobStore, KeyValueStore, cursor_key, fact_key, fact_prefix, flush_blob_key, flush_blob_prefix,
-    hint_key, hint_prefix, intent_key, intent_prefix,
+    BlobStore, KeyValueStore, ObjectStore, cursor_key, fact_key, fact_prefix, flush_blob_key,
+    flush_blob_prefix, hint_key, hint_prefix, intent_key, intent_prefix,
 };
 use crate::{Now, SystemClock};
 use log;
@@ -44,13 +95,14 @@ impl<T: Serialize> Stamped<T> {
     }
 }
 
-// ── KvColdStorage ──────────────────────────────────────────────────────────
+// ── TieredColdStorage ──────────────────────────────────────────────────────
 
-/// Cold storage backend backed by a KeyValueStore + BlobStore pair.
+/// Cold storage backend backed by a KeyValueStore + BlobStore + ObjectStore trio.
 ///
-/// Generic over K (KeyValueStore) and B (BlobStore), allowing the same
-/// KvColdStorage logic to run in tests (MockKv + MockBlob), CF Workers
-/// (worker::kv::Namespace + R2), or servers (sled + filesystem).
+/// Generic over K (KeyValueStore), B (BlobStore), and O (ObjectStore), allowing
+/// the same TieredColdStorage logic to run in tests (MockKv + MockBlob +
+/// MockObject), CF Workers (worker::kv::Namespace + R2 + Durable Object), or
+/// servers (sled + filesystem + Redis lock).
 ///
 /// # Storage layout
 ///
@@ -64,20 +116,22 @@ impl<T: Serialize> Stamped<T> {
 /// - `{project_id}/flush/facts/{partition}/{ts}.jsonl`
 /// - `{project_id}/flush/intents/{partition}/{ts}.jsonl`
 /// - `{project_id}/flush/hints/{partition}/{ts}.jsonl`
-pub struct KvColdStorage<K: KeyValueStore, B: BlobStore, C: Now = SystemClock> {
+pub struct TieredColdStorage<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now = SystemClock> {
     kv: K,
     blob: B,
+    object: O,
     clock: C,
     project_id: String,
 }
 
 // ── Generic constructor (caller chooses the clock) ─────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore, C: Now> KvColdStorage<K, B, C> {
-    pub fn new(kv: K, blob: B, clock: C, project_id: impl Into<String>) -> Self {
+impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> TieredColdStorage<K, B, O, C> {
+    pub fn new(kv: K, blob: B, object: O, clock: C, project_id: impl Into<String>) -> Self {
         Self {
             kv,
             blob,
+            object,
             clock,
             project_id: project_id.into(),
         }
@@ -91,6 +145,11 @@ impl<K: KeyValueStore, B: BlobStore, C: Now> KvColdStorage<K, B, C> {
     /// Access the underlying Blob store.
     pub fn blob(&self) -> &B {
         &self.blob
+    }
+
+    /// Access the underlying Object store.
+    pub fn object(&self) -> &O {
+        &self.object
     }
 
     // ── Internal helpers ────────────────────────────────────────────────────
@@ -254,11 +313,12 @@ impl<K: KeyValueStore, B: BlobStore, C: Now> KvColdStorage<K, B, C> {
 
 // ── Convenience constructor (defaults to SystemClock) ──────────────────────
 
-impl<K: KeyValueStore, B: BlobStore> KvColdStorage<K, B, SystemClock> {
-    pub fn new_with_system_clock(kv: K, blob: B, project_id: impl Into<String>) -> Self {
+impl<K: KeyValueStore, B: BlobStore, O: ObjectStore> TieredColdStorage<K, B, O, SystemClock> {
+    pub fn new_with_system_clock(kv: K, blob: B, object: O, project_id: impl Into<String>) -> Self {
         Self {
             kv,
             blob,
+            object,
             clock: SystemClock,
             project_id: project_id.into(),
         }
@@ -267,7 +327,9 @@ impl<K: KeyValueStore, B: BlobStore> KvColdStorage<K, B, SystemClock> {
 
 // ── StorageRead ───────────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore, C: Now> StorageRead for KvColdStorage<K, B, C> {
+impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> StorageRead
+    for TieredColdStorage<K, B, O, C>
+{
     fn project_id(&self) -> &str {
         self.project()
     }
@@ -276,7 +338,11 @@ impl<K: KeyValueStore, B: BlobStore, C: Now> StorageRead for KvColdStorage<K, B,
         let facts = match self.read_facts() {
             Ok(f) => f,
             Err(e) => {
-                log::warn!("KvColdStorage[{}] read_facts failed: {}", self.project(), e);
+                log::warn!(
+                    "TieredColdStorage[{}] read_facts failed: {}",
+                    self.project(),
+                    e
+                );
                 Vec::new()
             }
         };
@@ -284,7 +350,7 @@ impl<K: KeyValueStore, B: BlobStore, C: Now> StorageRead for KvColdStorage<K, B,
             Ok(i) => i,
             Err(e) => {
                 log::warn!(
-                    "KvColdStorage[{}] read_intents failed: {}",
+                    "TieredColdStorage[{}] read_intents failed: {}",
                     self.project(),
                     e
                 );
@@ -294,7 +360,11 @@ impl<K: KeyValueStore, B: BlobStore, C: Now> StorageRead for KvColdStorage<K, B,
         let hints = match self.read_hints() {
             Ok(h) => h,
             Err(e) => {
-                log::warn!("KvColdStorage[{}] read_hints failed: {}", self.project(), e);
+                log::warn!(
+                    "TieredColdStorage[{}] read_hints failed: {}",
+                    self.project(),
+                    e
+                );
                 Vec::new()
             }
         };
@@ -308,7 +378,9 @@ impl<K: KeyValueStore, B: BlobStore, C: Now> StorageRead for KvColdStorage<K, B,
 
 // ── FactCapable ───────────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore, C: Now> FactCapable for KvColdStorage<K, B, C> {
+impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> FactCapable
+    for TieredColdStorage<K, B, O, C>
+{
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         let key = fact_key(self.project(), &fact.id.0);
         let stamped = Stamped::new(fact.clone(), self.clock.now_nanos());
@@ -323,7 +395,9 @@ impl<K: KeyValueStore, B: BlobStore, C: Now> FactCapable for KvColdStorage<K, B,
 
 // ── IntentCapable ─────────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore, C: Now> IntentCapable for KvColdStorage<K, B, C> {
+impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> IntentCapable
+    for TieredColdStorage<K, B, O, C>
+{
     fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
         let key = intent_key(self.project(), &intent.id.0);
         let stamped = Stamped::new(intent.clone(), self.clock.now_nanos());
@@ -480,7 +554,9 @@ impl<K: KeyValueStore, B: BlobStore, C: Now> IntentCapable for KvColdStorage<K, 
 
 // ── HintCapable ───────────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore, C: Now> HintCapable for KvColdStorage<K, B, C> {
+impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> HintCapable
+    for TieredColdStorage<K, B, O, C>
+{
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         let key = hint_key(self.project(), &hint.id.0);
         let stamped = Stamped::new(hint.clone(), self.clock.now_nanos());
@@ -495,7 +571,9 @@ impl<K: KeyValueStore, B: BlobStore, C: Now> HintCapable for KvColdStorage<K, B,
 
 // ── FilterCapable ─────────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore, C: Now> FilterCapable for KvColdStorage<K, B, C> {
+impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> FilterCapable
+    for TieredColdStorage<K, B, O, C>
+{
     fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
         let mut facts: Vec<Fact> = self.read_facts().unwrap_or_default();
         let mut intents: Vec<Intent> = self.read_intents().unwrap_or_default();
@@ -550,7 +628,9 @@ impl<K: KeyValueStore, B: BlobStore, C: Now> FilterCapable for KvColdStorage<K, 
 
 // ── ScanCapable ───────────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore, C: Now> ScanCapable for KvColdStorage<K, B, C> {
+impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> ScanCapable
+    for TieredColdStorage<K, B, O, C>
+{
     fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
         let kv_facts = self.read_facts()?;
         let kv_intents = self.read_intents()?;
@@ -586,7 +666,9 @@ impl<K: KeyValueStore, B: BlobStore, C: Now> ScanCapable for KvColdStorage<K, B,
 
 // ── EvictCapable ──────────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore, C: Now> EvictCapable for KvColdStorage<K, B, C> {
+impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> EvictCapable
+    for TieredColdStorage<K, B, O, C>
+{
     fn approximate_size(&self) -> usize {
         let kv_count = self.kv.list("").map(|k| k.len()).unwrap_or(0);
         let blob_count = self.blob.list("").map(|k| k.len()).unwrap_or(0);
@@ -616,7 +698,9 @@ impl<K: KeyValueStore, B: BlobStore, C: Now> EvictCapable for KvColdStorage<K, B
 
 // ── TimeRangeCapable ───────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore, C: Now> TimeRangeCapable for KvColdStorage<K, B, C> {
+impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> TimeRangeCapable
+    for TieredColdStorage<K, B, O, C>
+{
     fn time_range(&self) -> Option<Range<String>> {
         None
     }
@@ -624,7 +708,9 @@ impl<K: KeyValueStore, B: BlobStore, C: Now> TimeRangeCapable for KvColdStorage<
 
 // ── FlushCapable ──────────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore, C: Now> FlushCapable for KvColdStorage<K, B, C> {
+impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> FlushCapable
+    for TieredColdStorage<K, B, O, C>
+{
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
         let since = &cursor.last_flushed_at;
         let partition = &cursor.partition;
@@ -705,4 +791,7 @@ impl<K: KeyValueStore, B: BlobStore, C: Now> FlushCapable for KvColdStorage<K, B
 
 // ── CypherCapable ─────────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore, C: Now> CypherCapable for KvColdStorage<K, B, C> {}
+impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> CypherCapable
+    for TieredColdStorage<K, B, O, C>
+{
+}

@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-nexus-model = { path = "../../model" }
+nexus-model = { path = "../../core/model" }
 duckdb = { version = "1.105", features = ["bundled", "parquet"] }
 serde.workspace = true
 serde_json.workspace = true

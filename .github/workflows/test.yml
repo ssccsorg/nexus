@@ -34,7 +34,9 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "core"
+          workspaces: |
+            core
+            ext
           cache-targets: true
       - name: Core checks
         run: ./run.sh --core

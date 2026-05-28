@@ -5,7 +5,6 @@ members = [
     "graph",
     "process",
     "storage/sqlite",
-    "storage/duckdb",
     "storage/petgraph",
     "storage/kv-cold",
 ]
