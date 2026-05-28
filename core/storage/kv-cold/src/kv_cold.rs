@@ -13,10 +13,11 @@
 //   with no C bindings. A future upgrade can add Parquet via arrow/parquet-wasm.
 
 use crate::{
-    BlobStore, KeyValueStore,
-    cursor_key, fact_key, fact_prefix, flush_blob_key, flush_blob_prefix,
+    BlobStore, KeyValueStore, cursor_key, fact_key, fact_prefix, flush_blob_key, flush_blob_prefix,
     hint_key, hint_prefix, intent_key, intent_prefix,
 };
+use crate::{Now, SystemClock};
+use log;
 use nexus_model::{
     BlackboardError, BoardState, CypherCapable, EvictCapable, Fact, FactCapable, FihHash,
     FilterCapable, FlushCapable, FlushCursor, FlushResult, Hint, HintCapable, Intent,
@@ -24,7 +25,6 @@ use nexus_model::{
 };
 use serde::{Deserialize, Serialize};
 use std::ops::Range;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 // ── Timestamped envelope ───────────────────────────────────────────────────
 
@@ -36,9 +36,9 @@ struct Stamped<T> {
 }
 
 impl<T: Serialize> Stamped<T> {
-    fn new(data: T) -> Self {
+    fn new(data: T, now: String) -> Self {
         Self {
-            submitted_at: timestamp_now(),
+            submitted_at: now,
             data,
         }
     }
@@ -64,17 +64,21 @@ impl<T: Serialize> Stamped<T> {
 /// - `{project_id}/flush/facts/{partition}/{ts}.jsonl`
 /// - `{project_id}/flush/intents/{partition}/{ts}.jsonl`
 /// - `{project_id}/flush/hints/{partition}/{ts}.jsonl`
-pub struct KvColdStorage<K: KeyValueStore, B: BlobStore> {
+pub struct KvColdStorage<K: KeyValueStore, B: BlobStore, C: Now = SystemClock> {
     kv: K,
     blob: B,
+    clock: C,
     project_id: String,
 }
 
-impl<K: KeyValueStore, B: BlobStore> KvColdStorage<K, B> {
-    pub fn new(kv: K, blob: B, project_id: impl Into<String>) -> Self {
+// ── Generic constructor (caller chooses the clock) ─────────────────────────
+
+impl<K: KeyValueStore, B: BlobStore, C: Now> KvColdStorage<K, B, C> {
+    pub fn new(kv: K, blob: B, clock: C, project_id: impl Into<String>) -> Self {
         Self {
             kv,
             blob,
+            clock,
             project_id: project_id.into(),
         }
     }
@@ -101,10 +105,10 @@ impl<K: KeyValueStore, B: BlobStore> KvColdStorage<K, B> {
         let keys = self.kv.list(&prefix)?;
         let mut facts = Vec::with_capacity(keys.len());
         for key in &keys {
-            if let Some(json) = self.kv.get(key)? {
-                if let Ok(stamped) = serde_json::from_str::<Stamped<Fact>>(&json) {
-                    facts.push(stamped.data);
-                }
+            if let Some(json) = self.kv.get(key)?
+                && let Ok(stamped) = serde_json::from_str::<Stamped<Fact>>(&json)
+            {
+                facts.push(stamped.data);
             }
         }
         facts.sort_by(|a, b| a.id.0.cmp(&b.id.0));
@@ -117,10 +121,10 @@ impl<K: KeyValueStore, B: BlobStore> KvColdStorage<K, B> {
         let keys = self.kv.list(&prefix)?;
         let mut intents = Vec::with_capacity(keys.len());
         for key in &keys {
-            if let Some(json) = self.kv.get(key)? {
-                if let Ok(stamped) = serde_json::from_str::<Stamped<Intent>>(&json) {
-                    intents.push(stamped.data);
-                }
+            if let Some(json) = self.kv.get(key)?
+                && let Ok(stamped) = serde_json::from_str::<Stamped<Intent>>(&json)
+            {
+                intents.push(stamped.data);
             }
         }
         intents.sort_by(|a, b| a.id.0.cmp(&b.id.0));
@@ -133,10 +137,10 @@ impl<K: KeyValueStore, B: BlobStore> KvColdStorage<K, B> {
         let keys = self.kv.list(&prefix)?;
         let mut hints = Vec::with_capacity(keys.len());
         for key in &keys {
-            if let Some(json) = self.kv.get(key)? {
-                if let Ok(stamped) = serde_json::from_str::<Stamped<Hint>>(&json) {
-                    hints.push(stamped.data);
-                }
+            if let Some(json) = self.kv.get(key)?
+                && let Ok(stamped) = serde_json::from_str::<Stamped<Hint>>(&json)
+            {
+                hints.push(stamped.data);
             }
         }
         hints.sort_by(|a, b| a.id.0.cmp(&b.id.0));
@@ -149,10 +153,10 @@ impl<K: KeyValueStore, B: BlobStore> KvColdStorage<K, B> {
         let keys = self.kv.list(&prefix)?;
         let mut facts = Vec::with_capacity(keys.len());
         for key in &keys {
-            if let Some(json) = self.kv.get(key)? {
-                if let Ok(stamped) = serde_json::from_str::<Stamped<Fact>>(&json) {
-                    facts.push(stamped);
-                }
+            if let Some(json) = self.kv.get(key)?
+                && let Ok(stamped) = serde_json::from_str::<Stamped<Fact>>(&json)
+            {
+                facts.push(stamped);
             }
         }
         Ok(facts)
@@ -164,10 +168,10 @@ impl<K: KeyValueStore, B: BlobStore> KvColdStorage<K, B> {
         let keys = self.kv.list(&prefix)?;
         let mut intents = Vec::with_capacity(keys.len());
         for key in &keys {
-            if let Some(json) = self.kv.get(key)? {
-                if let Ok(stamped) = serde_json::from_str::<Stamped<Intent>>(&json) {
-                    intents.push(stamped);
-                }
+            if let Some(json) = self.kv.get(key)?
+                && let Ok(stamped) = serde_json::from_str::<Stamped<Intent>>(&json)
+            {
+                intents.push(stamped);
             }
         }
         Ok(intents)
@@ -179,10 +183,10 @@ impl<K: KeyValueStore, B: BlobStore> KvColdStorage<K, B> {
         let keys = self.kv.list(&prefix)?;
         let mut hints = Vec::with_capacity(keys.len());
         for key in &keys {
-            if let Some(json) = self.kv.get(key)? {
-                if let Ok(stamped) = serde_json::from_str::<Stamped<Hint>>(&json) {
-                    hints.push(stamped);
-                }
+            if let Some(json) = self.kv.get(key)?
+                && let Ok(stamped) = serde_json::from_str::<Stamped<Hint>>(&json)
+            {
+                hints.push(stamped);
             }
         }
         Ok(hints)
@@ -208,10 +212,10 @@ impl<K: KeyValueStore, B: BlobStore> KvColdStorage<K, B> {
         let blob_keys = self.blob.list(&prefix)?;
         let mut all = Vec::new();
         for key in &blob_keys {
-            if let Some(bytes) = self.blob.get(key)? {
-                if let Ok(items) = Self::read_jsonl_lines::<Fact>(&bytes) {
-                    all.extend(items);
-                }
+            if let Some(bytes) = self.blob.get(key)?
+                && let Ok(items) = Self::read_jsonl_lines::<Fact>(&bytes)
+            {
+                all.extend(items);
             }
         }
         Ok(all)
@@ -223,10 +227,10 @@ impl<K: KeyValueStore, B: BlobStore> KvColdStorage<K, B> {
         let blob_keys = self.blob.list(&prefix)?;
         let mut all = Vec::new();
         for key in &blob_keys {
-            if let Some(bytes) = self.blob.get(key)? {
-                if let Ok(items) = Self::read_jsonl_lines::<Intent>(&bytes) {
-                    all.extend(items);
-                }
+            if let Some(bytes) = self.blob.get(key)?
+                && let Ok(items) = Self::read_jsonl_lines::<Intent>(&bytes)
+            {
+                all.extend(items);
             }
         }
         Ok(all)
@@ -238,27 +242,62 @@ impl<K: KeyValueStore, B: BlobStore> KvColdStorage<K, B> {
         let blob_keys = self.blob.list(&prefix)?;
         let mut all = Vec::new();
         for key in &blob_keys {
-            if let Some(bytes) = self.blob.get(key)? {
-                if let Ok(items) = Self::read_jsonl_lines::<Hint>(&bytes) {
-                    all.extend(items);
-                }
+            if let Some(bytes) = self.blob.get(key)?
+                && let Ok(items) = Self::read_jsonl_lines::<Hint>(&bytes)
+            {
+                all.extend(items);
             }
         }
         Ok(all)
     }
 }
 
+// ── Convenience constructor (defaults to SystemClock) ──────────────────────
+
+impl<K: KeyValueStore, B: BlobStore> KvColdStorage<K, B, SystemClock> {
+    pub fn new_with_system_clock(kv: K, blob: B, project_id: impl Into<String>) -> Self {
+        Self {
+            kv,
+            blob,
+            clock: SystemClock,
+            project_id: project_id.into(),
+        }
+    }
+}
+
 // ── StorageRead ───────────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore> StorageRead for KvColdStorage<K, B> {
+impl<K: KeyValueStore, B: BlobStore, C: Now> StorageRead for KvColdStorage<K, B, C> {
     fn project_id(&self) -> &str {
         self.project()
     }
 
     fn read_state(&self) -> BoardState {
-        let facts = self.read_facts().unwrap_or_default();
-        let intents = self.read_intents().unwrap_or_default();
-        let hints = self.read_hints().unwrap_or_default();
+        let facts = match self.read_facts() {
+            Ok(f) => f,
+            Err(e) => {
+                log::warn!("KvColdStorage[{}] read_facts failed: {}", self.project(), e);
+                Vec::new()
+            }
+        };
+        let intents = match self.read_intents() {
+            Ok(i) => i,
+            Err(e) => {
+                log::warn!(
+                    "KvColdStorage[{}] read_intents failed: {}",
+                    self.project(),
+                    e
+                );
+                Vec::new()
+            }
+        };
+        let hints = match self.read_hints() {
+            Ok(h) => h,
+            Err(e) => {
+                log::warn!("KvColdStorage[{}] read_hints failed: {}", self.project(), e);
+                Vec::new()
+            }
+        };
         BoardState {
             facts,
             intents,
@@ -269,10 +308,10 @@ impl<K: KeyValueStore, B: BlobStore> StorageRead for KvColdStorage<K, B> {
 
 // ── FactCapable ───────────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore> FactCapable for KvColdStorage<K, B> {
+impl<K: KeyValueStore, B: BlobStore, C: Now> FactCapable for KvColdStorage<K, B, C> {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         let key = fact_key(self.project(), &fact.id.0);
-        let stamped = Stamped::new(fact.clone());
+        let stamped = Stamped::new(fact.clone(), self.clock.now_nanos());
         let json = serde_json::to_string(&stamped)
             .map_err(|e| BlackboardError::Internal(format!("serialize fact: {e}")))?;
         self.kv
@@ -284,10 +323,10 @@ impl<K: KeyValueStore, B: BlobStore> FactCapable for KvColdStorage<K, B> {
 
 // ── IntentCapable ─────────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore> IntentCapable for KvColdStorage<K, B> {
+impl<K: KeyValueStore, B: BlobStore, C: Now> IntentCapable for KvColdStorage<K, B, C> {
     fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
         let key = intent_key(self.project(), &intent.id.0);
-        let stamped = Stamped::new(intent.clone());
+        let stamped = Stamped::new(intent.clone(), self.clock.now_nanos());
         let json = serde_json::to_string(&stamped)
             .map_err(|e| BlackboardError::Internal(format!("serialize intent: {e}")))?;
         self.kv
@@ -312,7 +351,7 @@ impl<K: KeyValueStore, B: BlobStore> IntentCapable for KvColdStorage<K, B> {
                     )));
                 }
                 stamped.data.worker = Some(agent.to_string());
-                stamped.data.last_heartbeat_at = Some(timestamp_now());
+                stamped.data.last_heartbeat_at = Some(self.clock.now_nanos());
                 let updated = serde_json::to_string(&stamped)
                     .map_err(|e| BlackboardError::Internal(format!("serialize: {e}")))?;
                 self.kv
@@ -349,7 +388,7 @@ impl<K: KeyValueStore, B: BlobStore> IntentCapable for KvColdStorage<K, B> {
                     }
                     _ => {}
                 }
-                stamped.data.last_heartbeat_at = Some(timestamp_now());
+                stamped.data.last_heartbeat_at = Some(self.clock.now_nanos());
                 let updated = serde_json::to_string(&stamped)
                     .map_err(|e| BlackboardError::Internal(format!("serialize: {e}")))?;
                 self.kv
@@ -416,16 +455,19 @@ impl<K: KeyValueStore, B: BlobStore> IntentCapable for KvColdStorage<K, B> {
                     .map_err(|e| BlackboardError::Internal(e.to_string()))?;
                 let fact = Fact {
                     id: FihHash::new(
-                        &[intent_id, &serde_json::to_string(result).unwrap_or_default()],
+                        &[
+                            intent_id,
+                            &serde_json::to_string(result).unwrap_or_default(),
+                        ],
                         "concluded",
                     ),
                     origin: format!("intent:{intent_id}"),
                     content: result.clone(),
                     creator: stamped.data.creator.clone(),
                 };
-                self.kv.delete(&key).map_err(|e| {
-                    BlackboardError::Internal(format!("kv delete: {e}"))
-                })?;
+                self.kv
+                    .delete(&key)
+                    .map_err(|e| BlackboardError::Internal(format!("kv delete: {e}")))?;
                 self.submit_fact(&fact)?;
                 Ok(fact)
             }
@@ -438,10 +480,10 @@ impl<K: KeyValueStore, B: BlobStore> IntentCapable for KvColdStorage<K, B> {
 
 // ── HintCapable ───────────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore> HintCapable for KvColdStorage<K, B> {
+impl<K: KeyValueStore, B: BlobStore, C: Now> HintCapable for KvColdStorage<K, B, C> {
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         let key = hint_key(self.project(), &hint.id.0);
-        let stamped = Stamped::new(hint.clone());
+        let stamped = Stamped::new(hint.clone(), self.clock.now_nanos());
         let json = serde_json::to_string(&stamped)
             .map_err(|e| BlackboardError::Internal(format!("serialize hint: {e}")))?;
         self.kv
@@ -453,46 +495,50 @@ impl<K: KeyValueStore, B: BlobStore> HintCapable for KvColdStorage<K, B> {
 
 // ── FilterCapable ─────────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore> FilterCapable for KvColdStorage<K, B> {
+impl<K: KeyValueStore, B: BlobStore, C: Now> FilterCapable for KvColdStorage<K, B, C> {
     fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
-        let facts = self
-            .read_facts()
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|f| {
-                if let Some(ids) = &filter.fact_ids {
-                    ids.contains(&f.id.0)
-                } else {
-                    true
-                }
-            })
-            .collect();
+        let mut facts: Vec<Fact> = self.read_facts().unwrap_or_default();
+        let mut intents: Vec<Intent> = self.read_intents().unwrap_or_default();
+        let mut hints: Vec<Hint> = self.read_hints().unwrap_or_default();
 
-        let intents = self
-            .read_intents()
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|i| {
-                if let Some(ids) = &filter.intent_ids {
-                    ids.contains(&i.id.0)
-                } else {
-                    true
-                }
-            })
-            .collect();
+        // Filter by IDs
+        if let Some(ids) = &filter.fact_ids {
+            facts.retain(|f| ids.contains(&f.id.0));
+        }
+        if let Some(ids) = &filter.intent_ids {
+            intents.retain(|i| ids.contains(&i.id.0));
+        }
+        if let Some(ids) = &filter.hint_ids {
+            hints.retain(|h| ids.contains(&h.id.0));
+        }
 
-        let hints = self
-            .read_hints()
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|h| {
-                if let Some(ids) = &filter.hint_ids {
-                    ids.contains(&h.id.0)
-                } else {
-                    true
-                }
-            })
-            .collect();
+        // Filter by time range (Intents have created_at; Facts and Hints don't)
+        if let Some(since) = &filter.since {
+            intents.retain(|i| {
+                i.created_at
+                    .as_ref()
+                    .is_none_or(|c| c.as_str() >= since.as_str())
+            });
+        }
+        if let Some(until) = &filter.until {
+            intents.retain(|i| {
+                i.created_at
+                    .as_ref()
+                    .is_none_or(|c| c.as_str() <= until.as_str())
+            });
+        }
+
+        // Apply offset + limit
+        let offset = filter.offset.unwrap_or(0);
+        if let Some(limit) = filter.limit {
+            facts = facts.into_iter().skip(offset).take(limit).collect();
+            intents = intents.into_iter().skip(offset).take(limit).collect();
+            hints = hints.into_iter().skip(offset).take(limit).collect();
+        } else if offset > 0 {
+            facts = facts.into_iter().skip(offset).collect();
+            intents = intents.into_iter().skip(offset).collect();
+            hints = hints.into_iter().skip(offset).collect();
+        }
 
         BoardState {
             facts,
@@ -504,7 +550,7 @@ impl<K: KeyValueStore, B: BlobStore> FilterCapable for KvColdStorage<K, B> {
 
 // ── ScanCapable ───────────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore> ScanCapable for KvColdStorage<K, B> {
+impl<K: KeyValueStore, B: BlobStore, C: Now> ScanCapable for KvColdStorage<K, B, C> {
     fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
         let kv_facts = self.read_facts()?;
         let kv_intents = self.read_intents()?;
@@ -540,7 +586,7 @@ impl<K: KeyValueStore, B: BlobStore> ScanCapable for KvColdStorage<K, B> {
 
 // ── EvictCapable ──────────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore> EvictCapable for KvColdStorage<K, B> {
+impl<K: KeyValueStore, B: BlobStore, C: Now> EvictCapable for KvColdStorage<K, B, C> {
     fn approximate_size(&self) -> usize {
         let kv_count = self.kv.list("").map(|k| k.len()).unwrap_or(0);
         let blob_count = self.blob.list("").map(|k| k.len()).unwrap_or(0);
@@ -553,16 +599,15 @@ impl<K: KeyValueStore, B: BlobStore> EvictCapable for KvColdStorage<K, B> {
         let mut evicted = 0u64;
         for key in &blob_keys {
             // Key format: {project_id}/flush/{entity}/{partition}/{ts}.jsonl
-            if key.ends_with(".jsonl") {
-                if let Some(ts_str) = key.strip_suffix(".jsonl").and_then(|k| k.rsplit('/').next())
-                {
-                    if let Ok(ts) = ts_str.parse::<u64>() {
-                        if ts < before_ts {
-                            self.blob.delete(key)?;
-                            evicted += 1;
-                        }
-                    }
-                }
+            if key.ends_with(".jsonl")
+                && let Some(ts_str) = key
+                    .strip_suffix(".jsonl")
+                    .and_then(|k| k.rsplit('/').next())
+                && let Ok(ts) = ts_str.parse::<u64>()
+                && ts < before_ts
+            {
+                self.blob.delete(key)?;
+                evicted += 1;
             }
         }
         Ok(evicted)
@@ -571,7 +616,7 @@ impl<K: KeyValueStore, B: BlobStore> EvictCapable for KvColdStorage<K, B> {
 
 // ── TimeRangeCapable ───────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore> TimeRangeCapable for KvColdStorage<K, B> {
+impl<K: KeyValueStore, B: BlobStore, C: Now> TimeRangeCapable for KvColdStorage<K, B, C> {
     fn time_range(&self) -> Option<Range<String>> {
         None
     }
@@ -579,31 +624,31 @@ impl<K: KeyValueStore, B: BlobStore> TimeRangeCapable for KvColdStorage<K, B> {
 
 // ── FlushCapable ──────────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore> FlushCapable for KvColdStorage<K, B> {
+impl<K: KeyValueStore, B: BlobStore, C: Now> FlushCapable for KvColdStorage<K, B, C> {
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
         let since = &cursor.last_flushed_at;
         let partition = &cursor.partition;
-        let now_ts = timestamp_now();
+        let now_ts = self.clock.now_nanos();
 
         // Read stamped data and filter by submission timestamp.
         let all_facts = self.read_facts_stamped()?;
         let flushed_facts: Vec<Fact> = all_facts
             .into_iter()
-            .filter(|s| since.is_empty() || s.submitted_at.as_str() >= since.as_str())
+            .filter(|s| since.is_empty() || s.submitted_at.as_str() > since.as_str())
             .map(|s| s.data)
             .collect();
 
         let all_intents = self.read_intents_stamped()?;
         let flushed_intents: Vec<Intent> = all_intents
             .into_iter()
-            .filter(|s| since.is_empty() || s.submitted_at.as_str() >= since.as_str())
+            .filter(|s| since.is_empty() || s.submitted_at.as_str() > since.as_str())
             .map(|s| s.data)
             .collect();
 
         let all_hints = self.read_hints_stamped()?;
         let flushed_hints: Vec<Hint> = all_hints
             .into_iter()
-            .filter(|s| since.is_empty() || s.submitted_at.as_str() >= since.as_str())
+            .filter(|s| since.is_empty() || s.submitted_at.as_str() > since.as_str())
             .map(|s| s.data)
             .collect();
 
@@ -660,14 +705,4 @@ impl<K: KeyValueStore, B: BlobStore> FlushCapable for KvColdStorage<K, B> {
 
 // ── CypherCapable ─────────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore> CypherCapable for KvColdStorage<K, B> {}
-
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-fn timestamp_now() -> String {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos()
-        .to_string()
-}
+impl<K: KeyValueStore, B: BlobStore, C: Now> CypherCapable for KvColdStorage<K, B, C> {}

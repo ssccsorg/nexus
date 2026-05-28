@@ -40,7 +40,7 @@ fn test_hint(id: &str) -> Hint {
 }
 
 fn storage() -> KvColdStorage<MockKv, MockBlob> {
-    KvColdStorage::new(MockKv::new(), MockBlob::new(), "test-project")
+    KvColdStorage::new_with_system_clock(MockKv::new(), MockBlob::new(), "test-project")
 }
 
 /// Create storage pre-populated with `n` facts.
@@ -171,10 +171,12 @@ fn test_intent_lifecycle() {
     assert!(!state.intents.iter().any(|i| i.id.0 == intent_id));
 
     // Fact was created by conclusion
-    assert!(state
-        .facts
-        .iter()
-        .any(|f| f.origin == format!("intent:{intent_id}")));
+    assert!(
+        state
+            .facts
+            .iter()
+            .any(|f| f.origin == format!("intent:{intent_id}"))
+    );
 }
 
 #[test]
@@ -283,10 +285,7 @@ fn test_flush_persists_data_to_blob() {
     // Blob store should contain the flushed data.
     let blob_keys = s.blob().list("").expect("list blobs");
     assert!(!blob_keys.is_empty(), "blobs exist after flush");
-    let fact_blobs: Vec<_> = blob_keys
-        .iter()
-        .filter(|k| k.contains("/facts/"))
-        .collect();
+    let fact_blobs: Vec<_> = blob_keys.iter().filter(|k| k.contains("/facts/")).collect();
     assert_eq!(fact_blobs.len(), 1, "one facts blob");
 
     // Verify blob content is valid JSON lines.
@@ -357,7 +356,10 @@ fn test_flush_with_partition() {
 
     // Blob should be under the partition prefix.
     let blob_keys = s.blob().list("").expect("list blobs");
-    assert!(blob_keys[0].contains("partition-x"), "partition in blob key");
+    assert!(
+        blob_keys[0].contains("partition-x"),
+        "partition in blob key"
+    );
 }
 
 #[test]
@@ -415,7 +417,7 @@ fn test_evict_before_keeps_recent_blobs() {
 
 #[test]
 fn test_submit_flush_read_cycle() {
-    let s = KvColdStorage::new(MockKv::new(), MockBlob::new(), "cycle-test");
+    let s = KvColdStorage::new_with_system_clock(MockKv::new(), MockBlob::new(), "cycle-test");
 
     // Submit data
     s.submit_fact(&test_fact("f_x")).expect("submit fact");
