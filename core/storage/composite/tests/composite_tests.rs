@@ -481,39 +481,57 @@ fn test_conclude_intent_creates_fact_and_removes_intent() {
 fn test_mock_object_cas_basic() {
     let obj = MockObject::new();
 
-    // Initial state is None.
-    assert_eq!(obj.get_state().unwrap(), None);
+    // Key does not exist — get_state returns None.
+    assert_eq!(obj.get_state("intent:test").unwrap(), None);
 
-    // Set initial state to empty string (unclaimed sentinel).
-    obj.set_state("").unwrap();
-    assert_eq!(obj.get_state().unwrap(), Some("".into()));
+    // Key matches "" (default) → put_state succeeds.
+    let ok = obj.put_state("intent:test", "", "agent-a").unwrap();
+    assert!(ok, "first put_state on empty key should succeed");
+    assert_eq!(
+        obj.get_state("intent:test").unwrap(),
+        Some("agent-a".into())
+    );
 
-    // CAS: empty → agent-a. Should succeed.
-    let ok = obj.compare_and_swap("", "agent-a").unwrap();
-    assert!(ok, "first CAS should succeed");
-    assert_eq!(obj.get_state().unwrap(), Some("agent-a".into()));
+    // Key has "agent-a" — put_state with "" fails.
+    let ok = obj.put_state("intent:test", "", "agent-b").unwrap();
+    assert!(!ok, "second put_state should fail — state is agent-a");
+    assert_eq!(
+        obj.get_state("intent:test").unwrap(),
+        Some("agent-a".into())
+    );
 
-    // CAS: empty → agent-b. Should fail because current is agent-a.
-    let ok = obj.compare_and_swap("", "agent-b").unwrap();
-    assert!(!ok, "second CAS should fail — state is not empty");
-    assert_eq!(obj.get_state().unwrap(), Some("agent-a".into()));
+    // Ownership transfer: put_state with correct expected.
+    let ok = obj.put_state("intent:test", "agent-a", "agent-b").unwrap();
+    assert!(ok, "ownership transfer put_state should succeed");
+    assert_eq!(
+        obj.get_state("intent:test").unwrap(),
+        Some("agent-b".into())
+    );
 
-    // CAS: agent-a → agent-b. Ownership transfer should succeed.
-    let ok = obj.compare_and_swap("agent-a", "agent-b").unwrap();
-    assert!(ok, "ownership transfer CAS should succeed");
-    assert_eq!(obj.get_state().unwrap(), Some("agent-b".into()));
+    // Independent keys are isolated.
+    let ok = obj.put_state("intent:other", "", "agent-x").unwrap();
+    assert!(ok, "independent key put_state should succeed");
+    assert_eq!(
+        obj.get_state("intent:test").unwrap(),
+        Some("agent-b".into()),
+        "other key does not affect test key"
+    );
+
+    // Release: put_state to "" removes the key.
+    let ok = obj.put_state("intent:test", "agent-b", "").unwrap();
+    assert!(ok, "release put_state should succeed");
+    assert_eq!(
+        obj.get_state("intent:test").unwrap(),
+        None,
+        "released key returns None"
+    );
 }
 
 #[test]
-fn test_concurrent_claim_demonstrates_race() {
+fn test_concurrent_claim_with_cas_exactly_one_succeeds() {
     // Two threads claim the same intent simultaneously.
-    //
-    // With the current KV-only read-then-write, both threads can read
-    // worker=None before either writes, causing both claims to report
-    // success. The last writer wins the KV entry.
-    //
-    // When ObjectStore::compare_and_swap is integrated into claim_intent,
-    // exactly one thread will succeed.
+    // With ObjectStore CAS integrated into claim_intent, exactly one
+    // worker should succeed and the other should get Conflict.
     let s = Arc::new(storage_with_intents(1));
     let barrier = Arc::new(Barrier::new(2));
 
@@ -534,14 +552,23 @@ fn test_concurrent_claim_demonstrates_race() {
     let r_a = h_a.join().unwrap();
     let r_b = h_b.join().unwrap();
 
+    // With CAS: exactly one Ok, exactly one Conflict.
     let ok_count = [&r_a, &r_b].iter().filter(|r| matches!(r, Ok(()))).count();
-    assert!(ok_count >= 1, "at least one claim must succeed");
+    let conflict_count = [&r_a, &r_b]
+        .iter()
+        .filter(|r| matches!(r, Err(BlackboardError::Conflict(_))))
+        .count();
+    assert_eq!(
+        ok_count, 1,
+        "exactly one claim must succeed with CAS, got {ok_count}"
+    );
+    assert_eq!(
+        conflict_count, 1,
+        "exactly one claim must get Conflict with CAS, got {conflict_count}"
+    );
 
     // Verify exactly one agent holds the claim in KV.
     let state = s.read_state();
     let intent = state.intents.iter().find(|i| i.id.0 == "int_0").unwrap();
-    assert!(
-        intent.worker.is_some(),
-        "intent is claimed by at least one agent"
-    );
+    assert!(intent.worker.is_some(), "intent is claimed");
 }

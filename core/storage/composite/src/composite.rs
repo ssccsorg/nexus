@@ -124,10 +124,6 @@ pub struct CompositeColdStorage<
 > {
     kv: K,
     blob: B,
-    // ObjectStore integration is pending (see claim_intent TODO).
-    // CAS-based coordination will resolve the current read-then-write
-    // race condition when wired in.
-    #[allow(dead_code)]
     object: O,
     clock: C,
     project_id: String,
@@ -420,21 +416,31 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> IntentCapable
 
     /// Claim an intent for an agent.
     ///
-    /// Currently uses KV read-then-write which is not atomic under
-    /// multi-worker concurrency. In a distributed environment, two workers
-    /// can both pass the `worker.is_some()` check and overwrite each
-    /// other's claim.
+    /// Uses a two-step protocol for cross-worker safety:
+    ///   1. `object.cas(key, "", agent)` — atomic CAS gate.
+    ///      Only one worker succeeds; others get Conflict.
+    ///   2. Update KV with worker and heartbeat for data consistency.
     ///
-    /// TODO: integrate `self.object.compare_and_swap()` before the KV
-    /// read to provide CAS-based mutual exclusion. The ObjectStore tier
-    /// is designed for this.
-    ///
-    /// Flow after integration:
-    ///   1. `object.compare_and_swap("", agent)` — atomic claim gate
-    ///   2. If CAS succeeded → update KV for data consistency
-    ///   3. If CAS failed → return Conflict with current owner
+    /// If KV entry is missing despite CAS success (concurrent conclude),
+    /// the CAS is rolled back and NotFound is returned.
     fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let key = intent_key(self.project(), intent_id);
+
+        // Atomic CAS gate: only one worker can claim this intent.
+        // The ObjectStore key matches the KV intent key, creating a per-intent
+        // namespace. In CF Workers this becomes a Durable Object per intent.
+        // Sentinel empty string = unclaimed; agent name = claimed.
+        let claimed = self
+            .object
+            .put_state(&key, "", agent)
+            .map_err(|e| BlackboardError::Internal(format!("object cas: {e}")))?;
+        if !claimed {
+            return Err(BlackboardError::Conflict(format!(
+                "Intent {intent_id} already claimed by another worker"
+            )));
+        }
+
+        // CAS succeeded: update KV for data consistency.
         let json = self
             .kv
             .get(&key)
@@ -443,11 +449,6 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> IntentCapable
             Some(raw) => {
                 let mut stamped: Stamped<Intent> = serde_json::from_str(&raw)
                     .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-                if stamped.data.worker.is_some() {
-                    return Err(BlackboardError::Conflict(format!(
-                        "Intent {intent_id} already claimed"
-                    )));
-                }
                 stamped.data.worker = Some(agent.to_string());
                 stamped.data.last_heartbeat_at = Some(self.clock.now_nanos());
                 let updated = serde_json::to_string(&stamped)
@@ -457,9 +458,14 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> IntentCapable
                     .map_err(|e| BlackboardError::Internal(format!("kv set: {e}")))?;
                 Ok(())
             }
-            None => Err(BlackboardError::NotFound(format!(
-                "Intent {intent_id} not found"
-            ))),
+            None => {
+                // CAS won but KV entry was deleted concurrently (conclude).
+                // Release CAS and return NotFound.
+                let _ = self.object.put_state(&key, agent, "");
+                Err(BlackboardError::NotFound(format!(
+                    "Intent {intent_id} not found"
+                )))
+            }
         }
     }
 

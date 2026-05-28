@@ -56,21 +56,25 @@ pub trait BlobStore: Send + Sync {
     fn list(&self, prefix: &str) -> Result<Vec<String>, String>;
 }
 
-/// Atomic single-owner state for coordination.
+/// Atomic CAS store for cross-worker coordination.
 ///
-/// Implementations: MockObject (test), Durable Object (CF Workers),
+/// Implementations: MockObject (test), Durable Object stub (CF Workers),
 /// Redis lock (server).
 ///
-/// The core operation is `compare_and_swap` which enables atomic
-/// claim/release for Intents without a central coordinator.
+/// Each key represents an independent CAS namespace. In CF Workers,
+/// `key` maps to a DO instance ID, making each Intent claim its own
+/// atomic gate.
 pub trait ObjectStore: Send + Sync {
-    /// Read current state.
-    fn get_state(&self) -> Result<Option<String>, String>;
-    /// Set state unconditionally.
-    fn set_state(&self, value: &str) -> Result<(), String>;
-    /// Atomically set state only if current value matches expected.
-    /// Returns true if the swap succeeded (value was updated).
-    fn compare_and_swap(&self, expected: &str, new: &str) -> Result<bool, String>;
+    /// Read current state for a key. Returns None if key does not exist.
+    fn get_state(&self, key: &str) -> Result<Option<String>, String>;
+    /// Compare-and-swap: atomically set `key` to `new` only if current
+    /// value matches `expected`. Returns true if the swap succeeded.
+    ///
+    /// Usage patterns (all CAS under the hood):
+    ///   `put_state(k, "", agent)`     — first claim (expected is empty)
+    ///   `put_state(k, old, new)`      — ownership transfer
+    ///   `put_state(k, val, "")`       — release (empty = delete)
+    fn put_state(&self, key: &str, expected: &str, new: &str) -> Result<bool, String>;
 }
 
 // ── Now trait ─────────────────────────────────────────────────────────────
