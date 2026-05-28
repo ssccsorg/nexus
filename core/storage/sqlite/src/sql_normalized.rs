@@ -7,9 +7,9 @@
 // Project-scoped via project_id.
 
 use nexus_model::{
-    BlackboardError, BoardState, CypherCapable, Fact, FactCapable, FihHash, FilterCapable,
-    FlushCapable, FlushCursor, FlushResult, Hint, HintCapable, Intent, IntentCapable,
-    PartitionData, ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
+    BlackboardError, BoardState, CypherCapable, EvictCapable, Fact, FactCapable, FihHash,
+    FilterCapable, FlushCapable, FlushCursor, FlushResult, Hint, HintCapable, Intent,
+    IntentCapable, PartitionData, ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
 };
 use rusqlite::{Connection, params};
 use std::ops::Range;
@@ -739,7 +739,28 @@ impl FlushCapable for SqlNormalizedStorage {
 
 impl CypherCapable for SqlNormalizedStorage {}
 
-/// Build LIMIT/OFFSET suffix.
+impl EvictCapable for SqlNormalizedStorage {
+    fn approximate_size(&self) -> usize {
+        let conn = self.conn.lock().unwrap();
+        let pid = &self.project_id;
+        let fact_count: usize = conn
+            .query_row(
+                "SELECT COUNT(*) FROM facts WHERE project_id = ?1",
+                params![pid],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        fact_count
+    }
+
+    fn evict_before(&self, _before: &str) -> Result<u64, String> {
+        // SQLite IS the cold store; data cannot be evicted without
+        // violating durability guarantees.
+        Ok(0)
+    }
+}
+
+/// Build LIMIT/OFFSET suffix for SQL queries.
 fn build_limit_offset(filter: &StateFilter) -> String {
     match (filter.limit, filter.offset) {
         (Some(limit), Some(offset)) => format!("LIMIT {} OFFSET {}", limit, offset),

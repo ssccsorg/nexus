@@ -270,7 +270,8 @@ fn test_multi_entity_persistence_through_dual_storage() {
 // composite being present as cold.
 
 #[test]
-fn test_evict_after_flush_does_not_affect_cold() {
+#[test]
+fn test_evict_after_flush_removes_both_hot_and_cold_blobs() {
     let bb = make_bb();
     let mut guard = bb;
 
@@ -279,11 +280,19 @@ fn test_evict_after_flush_does_not_affect_cold() {
     let cursor = FlushCursor::default();
     <_ as FlushCapable>::flush_since(&guard, &cursor).unwrap();
 
-    // DualStorage.evict_before delegates to hot (petgraph).
-    // Hot eviction with future timestamp should report 0 — petgraph has
-    // no blob to evict (blobs are in composite cold).
+    // DualStorage now delegates evict_before to both hot and cold.
+    // Hot (petgraph) evicts stale intents (0 here — only facts).
+    // Cold (composite) evicts flushed blobs older than the threshold.
+    // With a future timestamp, all cold blobs should be evicted.
     let evicted = <_ as EvictCapable>::evict_before(&guard, "9999999999999999999").unwrap();
-    assert_eq!(evicted, 0, "hot eviction does not touch cold blobs");
+    assert!(
+        evicted >= 1,
+        "evict_before removes at least 1 cold blob, got {evicted}"
+    );
+
+    // Second flush produces a new blob (cold was cleaned but KV data remains).
+    let r2 = <_ as FlushCapable>::flush_since(&guard, &cursor).unwrap();
+    assert_eq!(r2.records_flushed, 1, "re-flush after evict still works");
 }
 
 // ── Flush → snapshot roundtrip → NullStorage cold is no-op ────────────────
