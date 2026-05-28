@@ -7,9 +7,9 @@
 // scenarios. New code should use `SqlNormalizedStorage`.
 
 use nexus_model::{
-    BlackboardError, BoardState, Fact, FactCapable, FihHash, FilterCapable, Hint, HintCapable,
-    Intent, IntentCapable, PartitionData, ScanCapable, StateFilter, StorageRead, StoredEvent,
-    TimeRangeCapable,
+    BlackboardError, BoardState, EvictCapable, Fact, FactCapable, FihHash, FilterCapable, Hint,
+    HintCapable, Intent, IntentCapable, PartitionData, ScanCapable, StateFilter, StorageRead,
+    StoredEvent, TimeRangeCapable,
 };
 use rusqlite::{Connection, params};
 use std::ops::Range;
@@ -255,5 +255,15 @@ impl TimeRangeCapable for SqliteStorage {
     fn time_range(&self) -> Option<Range<String>> {
         // Legacy event-log storage has no structured timestamps.
         None
+    }
+}
+
+impl EvictCapable for SqliteStorage {
+    fn approximate_size(&self) -> usize {
+        0
+    }
+
+    fn evict_before(&self, _before: &str) -> Result<u64, String> {
+        Ok(0)
     }
 }

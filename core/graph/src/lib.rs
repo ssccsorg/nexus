@@ -30,7 +30,7 @@ pub fn create_blackboard()
 pub fn create_blackboard_with_storage(
     hot: PetgraphStorage,
     cold: Box<dyn ColdStorage>,
-) -> impl Blackboard + CypherCapable + EvictCapable + GraphRead + Snapshottable {
+) -> impl Blackboard + CypherCapable + EvictCapable + FlushCapable + GraphRead + Snapshottable {
     DefaultBlackboard::with_storage(hot, cold)
 }
 
@@ -38,8 +38,19 @@ pub fn create_blackboard_with_storage(
 /// Equivalent to `DefaultBlackboard::from_snapshot()`.
 pub fn create_blackboard_from_snapshot(
     snapshot: StorageSnapshot,
-) -> impl Blackboard + CypherCapable + EvictCapable + GraphRead + Snapshottable {
+) -> impl Blackboard + CypherCapable + EvictCapable + FlushCapable + GraphRead + Snapshottable {
     DefaultBlackboard::from_snapshot(snapshot)
+}
+
+/// Reconstruct a blackboard from a snapshot with a custom cold storage.
+/// Use this after worker restart: the snapshot restores the hot petgraph
+/// graph, flush cursor, and claims, while the caller provides the cold
+/// backend (e.g., a fresh CompositeColdStorage with current KV bindings).
+pub fn create_blackboard_from_snapshot_with_cold(
+    snapshot: StorageSnapshot,
+    cold: Box<dyn ColdStorage>,
+) -> impl Blackboard + CypherCapable + EvictCapable + FlushCapable + GraphRead + Snapshottable {
+    DefaultBlackboard::from_snapshot_with_cold(&snapshot, cold)
 }
 
 pub use nexus_model::{

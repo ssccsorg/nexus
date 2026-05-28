@@ -16,13 +16,25 @@ impl<T: FactCapable + IntentCapable + HintCapable> FihPersistence for T {}
 pub trait HotStorage: FihPersistence + EvictCapable + TimeRangeCapable {}
 impl<T: FihPersistence + EvictCapable + TimeRangeCapable> HotStorage for T {}
 
-/// Cold storage: full FIH + filtered reads + scan + time range + flush + Cypher query (SQLite, DuckDB/Parquet).
+/// Cold storage: full FIH + filtered reads + scan + time range + flush + Cypher query + eviction.
 pub trait ColdStorage:
-    FihPersistence + FilterCapable + ScanCapable + TimeRangeCapable + FlushCapable + CypherCapable
+    FihPersistence
+    + FilterCapable
+    + ScanCapable
+    + TimeRangeCapable
+    + FlushCapable
+    + CypherCapable
+    + EvictCapable
 {
 }
 impl<
-    T: FihPersistence + FilterCapable + ScanCapable + TimeRangeCapable + FlushCapable + CypherCapable,
+    T: FihPersistence
+        + FilterCapable
+        + ScanCapable
+        + TimeRangeCapable
+        + FlushCapable
+        + CypherCapable
+        + EvictCapable,
 > ColdStorage for T
 {
 }

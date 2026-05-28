@@ -257,6 +257,27 @@ impl DefaultBlackboard {
             flush_cursor: snapshot.flush_cursor.clone(),
         }
     }
+
+    /// Reconstruct from a snapshot with a caller-provided cold backend.
+    /// The hot petgraph graph, flush cursor, and claims are restored from
+    /// the snapshot; the cold storage is supplied externally (e.g. a fresh
+    /// CompositeColdStorage after worker restart).
+    pub fn from_snapshot_with_cold(snapshot: &StorageSnapshot, cold: Box<dyn ColdStorage>) -> Self {
+        let graph = Arc::new(RwLock::new(snapshot.graph.clone()));
+        let hot = Box::new(PetgraphStorage::with_shared_graph(
+            Arc::clone(&graph),
+            &snapshot.project_id,
+        ));
+        let storage = DualStorage::new(hot, cold);
+
+        Self {
+            storage,
+            hot_graph: graph,
+            claims: ClaimsTracker::from_snapshot(snapshot.claims.clone()),
+            project_id: snapshot.project_id.clone(),
+            flush_cursor: snapshot.flush_cursor.clone(),
+        }
+    }
 }
 
 impl Default for DefaultBlackboard {
