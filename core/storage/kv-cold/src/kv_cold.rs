@@ -1,0 +1,673 @@
+// KvColdStorage — Platform-independent KV + Blob cold storage.
+//
+// Architecture:
+//   KV store holds recent Facts/Intents/Hints as JSON values, wrapped in a
+//   Timestamped envelope that records submission time. This allows
+//   flush_since to correctly filter by cursor (epoch-second timestamp)
+//   without relying on entity IDs for ordering.
+//
+//   Blob store holds JSON-lines snapshots produced by flush operations.
+//   read_state / scan_partition combine KV (recent) and BlobStore (flushed).
+//
+//   JSON lines format (no Parquet dependency) keeps the crate purely Rust
+//   with no C bindings. A future upgrade can add Parquet via arrow/parquet-wasm.
+
+use crate::{
+    BlobStore, KeyValueStore,
+    cursor_key, fact_key, fact_prefix, flush_blob_key, flush_blob_prefix,
+    hint_key, hint_prefix, intent_key, intent_prefix,
+};
+use nexus_model::{
+    BlackboardError, BoardState, CypherCapable, EvictCapable, Fact, FactCapable, FihHash,
+    FilterCapable, FlushCapable, FlushCursor, FlushResult, Hint, HintCapable, Intent,
+    IntentCapable, PartitionData, ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
+};
+use serde::{Deserialize, Serialize};
+use std::ops::Range;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+// ── Timestamped envelope ───────────────────────────────────────────────────
+
+/// Wraps a stored entity with a submission timestamp for cursor-based filtering.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Stamped<T> {
+    submitted_at: String,
+    data: T,
+}
+
+impl<T: Serialize> Stamped<T> {
+    fn new(data: T) -> Self {
+        Self {
+            submitted_at: timestamp_now(),
+            data,
+        }
+    }
+}
+
+// ── KvColdStorage ──────────────────────────────────────────────────────────
+
+/// Cold storage backend backed by a KeyValueStore + BlobStore pair.
+///
+/// Generic over K (KeyValueStore) and B (BlobStore), allowing the same
+/// KvColdStorage logic to run in tests (MockKv + MockBlob), CF Workers
+/// (worker::kv::Namespace + R2), or servers (sled + filesystem).
+///
+/// # Storage layout
+///
+/// ## KV keys
+/// - `{project_id}:fact:{fact_id}` → JSON Stamped<Fact>
+/// - `{project_id}:intent:{intent_id}` → JSON Stamped<Intent>
+/// - `{project_id}:hint:{hint_id}` → JSON Stamped<Hint>
+/// - `{project_id}:cursor` → JSON FlushCursor
+///
+/// ## Blob keys (produced by flush_since)
+/// - `{project_id}/flush/facts/{partition}/{ts}.jsonl`
+/// - `{project_id}/flush/intents/{partition}/{ts}.jsonl`
+/// - `{project_id}/flush/hints/{partition}/{ts}.jsonl`
+pub struct KvColdStorage<K: KeyValueStore, B: BlobStore> {
+    kv: K,
+    blob: B,
+    project_id: String,
+}
+
+impl<K: KeyValueStore, B: BlobStore> KvColdStorage<K, B> {
+    pub fn new(kv: K, blob: B, project_id: impl Into<String>) -> Self {
+        Self {
+            kv,
+            blob,
+            project_id: project_id.into(),
+        }
+    }
+
+    /// Access the underlying KV store.
+    pub fn kv(&self) -> &K {
+        &self.kv
+    }
+
+    /// Access the underlying Blob store.
+    pub fn blob(&self) -> &B {
+        &self.blob
+    }
+
+    // ── Internal helpers ────────────────────────────────────────────────────
+
+    fn project(&self) -> &str {
+        &self.project_id
+    }
+
+    /// Read all facts from KV, unwrapping from Stamped envelope.
+    fn read_facts(&self) -> Result<Vec<Fact>, String> {
+        let prefix = fact_prefix(self.project());
+        let keys = self.kv.list(&prefix)?;
+        let mut facts = Vec::with_capacity(keys.len());
+        for key in &keys {
+            if let Some(json) = self.kv.get(key)? {
+                if let Ok(stamped) = serde_json::from_str::<Stamped<Fact>>(&json) {
+                    facts.push(stamped.data);
+                }
+            }
+        }
+        facts.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+        Ok(facts)
+    }
+
+    /// Read all intents from KV, unwrapping from Stamped envelope.
+    fn read_intents(&self) -> Result<Vec<Intent>, String> {
+        let prefix = intent_prefix(self.project());
+        let keys = self.kv.list(&prefix)?;
+        let mut intents = Vec::with_capacity(keys.len());
+        for key in &keys {
+            if let Some(json) = self.kv.get(key)? {
+                if let Ok(stamped) = serde_json::from_str::<Stamped<Intent>>(&json) {
+                    intents.push(stamped.data);
+                }
+            }
+        }
+        intents.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+        Ok(intents)
+    }
+
+    /// Read all hints from KV, unwrapping from Stamped envelope.
+    fn read_hints(&self) -> Result<Vec<Hint>, String> {
+        let prefix = hint_prefix(self.project());
+        let keys = self.kv.list(&prefix)?;
+        let mut hints = Vec::with_capacity(keys.len());
+        for key in &keys {
+            if let Some(json) = self.kv.get(key)? {
+                if let Ok(stamped) = serde_json::from_str::<Stamped<Hint>>(&json) {
+                    hints.push(stamped.data);
+                }
+            }
+        }
+        hints.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+        Ok(hints)
+    }
+
+    /// Read all facts and their submission timestamps from KV.
+    fn read_facts_stamped(&self) -> Result<Vec<Stamped<Fact>>, String> {
+        let prefix = fact_prefix(self.project());
+        let keys = self.kv.list(&prefix)?;
+        let mut facts = Vec::with_capacity(keys.len());
+        for key in &keys {
+            if let Some(json) = self.kv.get(key)? {
+                if let Ok(stamped) = serde_json::from_str::<Stamped<Fact>>(&json) {
+                    facts.push(stamped);
+                }
+            }
+        }
+        Ok(facts)
+    }
+
+    /// Read all intents and their submission timestamps from KV.
+    fn read_intents_stamped(&self) -> Result<Vec<Stamped<Intent>>, String> {
+        let prefix = intent_prefix(self.project());
+        let keys = self.kv.list(&prefix)?;
+        let mut intents = Vec::with_capacity(keys.len());
+        for key in &keys {
+            if let Some(json) = self.kv.get(key)? {
+                if let Ok(stamped) = serde_json::from_str::<Stamped<Intent>>(&json) {
+                    intents.push(stamped);
+                }
+            }
+        }
+        Ok(intents)
+    }
+
+    /// Read all hints and their submission timestamps from KV.
+    fn read_hints_stamped(&self) -> Result<Vec<Stamped<Hint>>, String> {
+        let prefix = hint_prefix(self.project());
+        let keys = self.kv.list(&prefix)?;
+        let mut hints = Vec::with_capacity(keys.len());
+        for key in &keys {
+            if let Some(json) = self.kv.get(key)? {
+                if let Ok(stamped) = serde_json::from_str::<Stamped<Hint>>(&json) {
+                    hints.push(stamped);
+                }
+            }
+        }
+        Ok(hints)
+    }
+
+    // ── JSON lines deserialization ──────────────────────────────────────────
+
+    fn read_jsonl_lines<T>(bytes: &[u8]) -> Result<Vec<T>, String>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        let content = std::str::from_utf8(bytes).map_err(|e| e.to_string())?;
+        content
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|line| serde_json::from_str::<T>(line).map_err(|e| e.to_string()))
+            .collect()
+    }
+
+    /// Read all facts from flushed blobs for a given partition.
+    fn read_flushed_facts(&self, partition: &str) -> Result<Vec<Fact>, String> {
+        let prefix = flush_blob_prefix(self.project(), "facts", partition);
+        let blob_keys = self.blob.list(&prefix)?;
+        let mut all = Vec::new();
+        for key in &blob_keys {
+            if let Some(bytes) = self.blob.get(key)? {
+                if let Ok(items) = Self::read_jsonl_lines::<Fact>(&bytes) {
+                    all.extend(items);
+                }
+            }
+        }
+        Ok(all)
+    }
+
+    /// Read all intents from flushed blobs for a given partition.
+    fn read_flushed_intents(&self, partition: &str) -> Result<Vec<Intent>, String> {
+        let prefix = flush_blob_prefix(self.project(), "intents", partition);
+        let blob_keys = self.blob.list(&prefix)?;
+        let mut all = Vec::new();
+        for key in &blob_keys {
+            if let Some(bytes) = self.blob.get(key)? {
+                if let Ok(items) = Self::read_jsonl_lines::<Intent>(&bytes) {
+                    all.extend(items);
+                }
+            }
+        }
+        Ok(all)
+    }
+
+    /// Read all hints from flushed blobs for a given partition.
+    fn read_flushed_hints(&self, partition: &str) -> Result<Vec<Hint>, String> {
+        let prefix = flush_blob_prefix(self.project(), "hints", partition);
+        let blob_keys = self.blob.list(&prefix)?;
+        let mut all = Vec::new();
+        for key in &blob_keys {
+            if let Some(bytes) = self.blob.get(key)? {
+                if let Ok(items) = Self::read_jsonl_lines::<Hint>(&bytes) {
+                    all.extend(items);
+                }
+            }
+        }
+        Ok(all)
+    }
+}
+
+// ── StorageRead ───────────────────────────────────────────────────────────
+
+impl<K: KeyValueStore, B: BlobStore> StorageRead for KvColdStorage<K, B> {
+    fn project_id(&self) -> &str {
+        self.project()
+    }
+
+    fn read_state(&self) -> BoardState {
+        let facts = self.read_facts().unwrap_or_default();
+        let intents = self.read_intents().unwrap_or_default();
+        let hints = self.read_hints().unwrap_or_default();
+        BoardState {
+            facts,
+            intents,
+            hints,
+        }
+    }
+}
+
+// ── FactCapable ───────────────────────────────────────────────────────────
+
+impl<K: KeyValueStore, B: BlobStore> FactCapable for KvColdStorage<K, B> {
+    fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
+        let key = fact_key(self.project(), &fact.id.0);
+        let stamped = Stamped::new(fact.clone());
+        let json = serde_json::to_string(&stamped)
+            .map_err(|e| BlackboardError::Internal(format!("serialize fact: {e}")))?;
+        self.kv
+            .set(&key, &json)
+            .map_err(|e| BlackboardError::Internal(format!("kv set: {e}")))?;
+        Ok(fact.id.clone())
+    }
+}
+
+// ── IntentCapable ─────────────────────────────────────────────────────────
+
+impl<K: KeyValueStore, B: BlobStore> IntentCapable for KvColdStorage<K, B> {
+    fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+        let key = intent_key(self.project(), &intent.id.0);
+        let stamped = Stamped::new(intent.clone());
+        let json = serde_json::to_string(&stamped)
+            .map_err(|e| BlackboardError::Internal(format!("serialize intent: {e}")))?;
+        self.kv
+            .set(&key, &json)
+            .map_err(|e| BlackboardError::Internal(format!("kv set: {e}")))?;
+        Ok(intent.id.clone())
+    }
+
+    fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let key = intent_key(self.project(), intent_id);
+        let json = self
+            .kv
+            .get(&key)
+            .map_err(|e| BlackboardError::Internal(format!("kv get: {e}")))?;
+        match json {
+            Some(raw) => {
+                let mut stamped: Stamped<Intent> = serde_json::from_str(&raw)
+                    .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+                if stamped.data.worker.is_some() {
+                    return Err(BlackboardError::Conflict(format!(
+                        "Intent {intent_id} already claimed"
+                    )));
+                }
+                stamped.data.worker = Some(agent.to_string());
+                stamped.data.last_heartbeat_at = Some(timestamp_now());
+                let updated = serde_json::to_string(&stamped)
+                    .map_err(|e| BlackboardError::Internal(format!("serialize: {e}")))?;
+                self.kv
+                    .set(&key, &updated)
+                    .map_err(|e| BlackboardError::Internal(format!("kv set: {e}")))?;
+                Ok(())
+            }
+            None => Err(BlackboardError::NotFound(format!(
+                "Intent {intent_id} not found"
+            ))),
+        }
+    }
+
+    fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let key = intent_key(self.project(), intent_id);
+        let json = self
+            .kv
+            .get(&key)
+            .map_err(|e| BlackboardError::Internal(format!("kv get: {e}")))?;
+        match json {
+            Some(raw) => {
+                let mut stamped: Stamped<Intent> = serde_json::from_str(&raw)
+                    .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+                match &stamped.data.worker {
+                    Some(w) if w != agent => {
+                        return Err(BlackboardError::Conflict(format!(
+                            "Intent {intent_id} claimed by {w}, not {agent}"
+                        )));
+                    }
+                    None => {
+                        return Err(BlackboardError::Conflict(format!(
+                            "Intent {intent_id} is not claimed"
+                        )));
+                    }
+                    _ => {}
+                }
+                stamped.data.last_heartbeat_at = Some(timestamp_now());
+                let updated = serde_json::to_string(&stamped)
+                    .map_err(|e| BlackboardError::Internal(format!("serialize: {e}")))?;
+                self.kv
+                    .set(&key, &updated)
+                    .map_err(|e| BlackboardError::Internal(format!("kv set: {e}")))?;
+                Ok(())
+            }
+            None => Err(BlackboardError::NotFound(format!(
+                "Intent {intent_id} not found"
+            ))),
+        }
+    }
+
+    fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let key = intent_key(self.project(), intent_id);
+        let json = self
+            .kv
+            .get(&key)
+            .map_err(|e| BlackboardError::Internal(format!("kv get: {e}")))?;
+        match json {
+            Some(raw) => {
+                let mut stamped: Stamped<Intent> = serde_json::from_str(&raw)
+                    .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+                match &stamped.data.worker {
+                    Some(w) if w != agent => {
+                        return Err(BlackboardError::Conflict(format!(
+                            "Intent {intent_id} claimed by {w}, not {agent}"
+                        )));
+                    }
+                    None => {
+                        return Err(BlackboardError::Conflict(format!(
+                            "Intent {intent_id} is not claimed"
+                        )));
+                    }
+                    _ => {}
+                }
+                stamped.data.worker = None;
+                let updated = serde_json::to_string(&stamped)
+                    .map_err(|e| BlackboardError::Internal(format!("serialize: {e}")))?;
+                self.kv
+                    .set(&key, &updated)
+                    .map_err(|e| BlackboardError::Internal(format!("kv set: {e}")))?;
+                Ok(())
+            }
+            None => Err(BlackboardError::NotFound(format!(
+                "Intent {intent_id} not found"
+            ))),
+        }
+    }
+
+    fn conclude_intent(
+        &self,
+        intent_id: &str,
+        result: &serde_json::Value,
+    ) -> Result<Fact, BlackboardError> {
+        let key = intent_key(self.project(), intent_id);
+        let json = self
+            .kv
+            .get(&key)
+            .map_err(|e| BlackboardError::Internal(format!("kv get: {e}")))?;
+        match json {
+            Some(raw) => {
+                let stamped: Stamped<Intent> = serde_json::from_str(&raw)
+                    .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+                let fact = Fact {
+                    id: FihHash::new(
+                        &[intent_id, &serde_json::to_string(result).unwrap_or_default()],
+                        "concluded",
+                    ),
+                    origin: format!("intent:{intent_id}"),
+                    content: result.clone(),
+                    creator: stamped.data.creator.clone(),
+                };
+                self.kv.delete(&key).map_err(|e| {
+                    BlackboardError::Internal(format!("kv delete: {e}"))
+                })?;
+                self.submit_fact(&fact)?;
+                Ok(fact)
+            }
+            None => Err(BlackboardError::NotFound(format!(
+                "Intent {intent_id} not found"
+            ))),
+        }
+    }
+}
+
+// ── HintCapable ───────────────────────────────────────────────────────────
+
+impl<K: KeyValueStore, B: BlobStore> HintCapable for KvColdStorage<K, B> {
+    fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
+        let key = hint_key(self.project(), &hint.id.0);
+        let stamped = Stamped::new(hint.clone());
+        let json = serde_json::to_string(&stamped)
+            .map_err(|e| BlackboardError::Internal(format!("serialize hint: {e}")))?;
+        self.kv
+            .set(&key, &json)
+            .map_err(|e| BlackboardError::Internal(format!("kv set: {e}")))?;
+        Ok(())
+    }
+}
+
+// ── FilterCapable ─────────────────────────────────────────────────────────
+
+impl<K: KeyValueStore, B: BlobStore> FilterCapable for KvColdStorage<K, B> {
+    fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
+        let facts = self
+            .read_facts()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|f| {
+                if let Some(ids) = &filter.fact_ids {
+                    ids.contains(&f.id.0)
+                } else {
+                    true
+                }
+            })
+            .collect();
+
+        let intents = self
+            .read_intents()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|i| {
+                if let Some(ids) = &filter.intent_ids {
+                    ids.contains(&i.id.0)
+                } else {
+                    true
+                }
+            })
+            .collect();
+
+        let hints = self
+            .read_hints()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|h| {
+                if let Some(ids) = &filter.hint_ids {
+                    ids.contains(&h.id.0)
+                } else {
+                    true
+                }
+            })
+            .collect();
+
+        BoardState {
+            facts,
+            intents,
+            hints,
+        }
+    }
+}
+
+// ── ScanCapable ───────────────────────────────────────────────────────────
+
+impl<K: KeyValueStore, B: BlobStore> ScanCapable for KvColdStorage<K, B> {
+    fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
+        let kv_facts = self.read_facts()?;
+        let kv_intents = self.read_intents()?;
+        let kv_hints = self.read_hints()?;
+
+        let flushed_facts = self.read_flushed_facts(partition)?;
+        let flushed_intents = self.read_flushed_intents(partition)?;
+        let flushed_hints = self.read_flushed_hints(partition)?;
+
+        let mut all_facts: Vec<Fact> = kv_facts;
+        all_facts.extend(flushed_facts);
+        all_facts.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+        all_facts.dedup_by(|a, b| a.id.0 == b.id.0);
+
+        let mut all_intents: Vec<Intent> = kv_intents;
+        all_intents.extend(flushed_intents);
+        all_intents.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+        all_intents.dedup_by(|a, b| a.id.0 == b.id.0);
+
+        let mut all_hints: Vec<Hint> = kv_hints;
+        all_hints.extend(flushed_hints);
+        all_hints.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+        all_hints.dedup_by(|a, b| a.id.0 == b.id.0);
+
+        Ok(PartitionData {
+            partition: partition.to_string(),
+            facts: all_facts,
+            intents: all_intents,
+            hints: all_hints,
+        })
+    }
+}
+
+// ── EvictCapable ──────────────────────────────────────────────────────────
+
+impl<K: KeyValueStore, B: BlobStore> EvictCapable for KvColdStorage<K, B> {
+    fn approximate_size(&self) -> usize {
+        let kv_count = self.kv.list("").map(|k| k.len()).unwrap_or(0);
+        let blob_count = self.blob.list("").map(|k| k.len()).unwrap_or(0);
+        kv_count + blob_count
+    }
+
+    fn evict_before(&self, before: &str) -> Result<u64, String> {
+        let before_ts: u64 = before.parse().unwrap_or(u64::MAX);
+        let blob_keys = self.blob.list("")?;
+        let mut evicted = 0u64;
+        for key in &blob_keys {
+            // Key format: {project_id}/flush/{entity}/{partition}/{ts}.jsonl
+            if key.ends_with(".jsonl") {
+                if let Some(ts_str) = key.strip_suffix(".jsonl").and_then(|k| k.rsplit('/').next())
+                {
+                    if let Ok(ts) = ts_str.parse::<u64>() {
+                        if ts < before_ts {
+                            self.blob.delete(key)?;
+                            evicted += 1;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(evicted)
+    }
+}
+
+// ── TimeRangeCapable ───────────────────────────────────────────────────────
+
+impl<K: KeyValueStore, B: BlobStore> TimeRangeCapable for KvColdStorage<K, B> {
+    fn time_range(&self) -> Option<Range<String>> {
+        None
+    }
+}
+
+// ── FlushCapable ──────────────────────────────────────────────────────────
+
+impl<K: KeyValueStore, B: BlobStore> FlushCapable for KvColdStorage<K, B> {
+    fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
+        let since = &cursor.last_flushed_at;
+        let partition = &cursor.partition;
+        let now_ts = timestamp_now();
+
+        // Read stamped data and filter by submission timestamp.
+        let all_facts = self.read_facts_stamped()?;
+        let flushed_facts: Vec<Fact> = all_facts
+            .into_iter()
+            .filter(|s| since.is_empty() || s.submitted_at.as_str() >= since.as_str())
+            .map(|s| s.data)
+            .collect();
+
+        let all_intents = self.read_intents_stamped()?;
+        let flushed_intents: Vec<Intent> = all_intents
+            .into_iter()
+            .filter(|s| since.is_empty() || s.submitted_at.as_str() >= since.as_str())
+            .map(|s| s.data)
+            .collect();
+
+        let all_hints = self.read_hints_stamped()?;
+        let flushed_hints: Vec<Hint> = all_hints
+            .into_iter()
+            .filter(|s| since.is_empty() || s.submitted_at.as_str() >= since.as_str())
+            .map(|s| s.data)
+            .collect();
+
+        let records_flushed =
+            (flushed_facts.len() + flushed_intents.len() + flushed_hints.len()) as u64;
+
+        // Write filtered data as JSON lines to blobs.
+        if !flushed_facts.is_empty() {
+            let lines: Vec<String> = flushed_facts
+                .iter()
+                .filter_map(|f| serde_json::to_string(f).ok())
+                .collect();
+            let blob_key = flush_blob_key(self.project(), "facts", partition, &now_ts);
+            let bytes = lines.join("\n").into_bytes();
+            self.blob.put(&blob_key, &bytes)?;
+        }
+
+        if !flushed_intents.is_empty() {
+            let lines: Vec<String> = flushed_intents
+                .iter()
+                .filter_map(|i| serde_json::to_string(i).ok())
+                .collect();
+            let blob_key = flush_blob_key(self.project(), "intents", partition, &now_ts);
+            let bytes = lines.join("\n").into_bytes();
+            self.blob.put(&blob_key, &bytes)?;
+        }
+
+        if !flushed_hints.is_empty() {
+            let lines: Vec<String> = flushed_hints
+                .iter()
+                .filter_map(|h| serde_json::to_string(h).ok())
+                .collect();
+            let blob_key = flush_blob_key(self.project(), "hints", partition, &now_ts);
+            let bytes = lines.join("\n").into_bytes();
+            self.blob.put(&blob_key, &bytes)?;
+        }
+
+        let new_cursor = FlushCursor {
+            last_flushed_at: now_ts.clone(),
+            partition: partition.clone(),
+        };
+
+        // Persist cursor to KV.
+        let cursor_json =
+            serde_json::to_string(&new_cursor).map_err(|e| format!("serialize cursor: {e}"))?;
+        self.kv.set(&cursor_key(self.project()), &cursor_json)?;
+
+        Ok(FlushResult {
+            records_flushed,
+            new_cursor,
+        })
+    }
+}
+
+// ── CypherCapable ─────────────────────────────────────────────────────────
+
+impl<K: KeyValueStore, B: BlobStore> CypherCapable for KvColdStorage<K, B> {}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+fn timestamp_now() -> String {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos()
+        .to_string()
+}
