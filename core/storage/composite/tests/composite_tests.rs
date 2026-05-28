@@ -4,9 +4,10 @@ use nexus_model::{
     BlackboardError, EvictCapable, Fact, FactCapable, FilterCapable, FlushCapable, FlushCursor,
     Hint, HintCapable, Intent, IntentCapable, ScanCapable, StateFilter, StorageRead,
 };
-use nexus_storage_kv_cold::{
-    BlobStore, CompositeColdStorage, KeyValueStore, MockBlob, MockKv, MockObject, ObjectStore,
-};
+use nexus_storage_kv_cold::{BlobStore, CompositeColdStorage, KeyValueStore, ObjectStore};
+
+mod common;
+use common::{MockBlob, MockKv, MockObject};
 use std::sync::{Arc, Barrier};
 
 // ── Helpers ────────────────────────────────────────────────────────────────
