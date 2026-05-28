@@ -128,16 +128,19 @@ impl BlobStore for MockBlob {
     }
 }
 
-/// In-memory ObjectStore backed by Arc<RwLock<Option<String>>>.
+/// In-memory ObjectStore backed by Arc<RwLock<HashMap<String, String>>>.
+///
+/// Each key is an independent CAS namespace. Matches the Durable Object
+/// pattern where each intent_id becomes a DO instance.
 #[derive(Debug, Clone)]
 pub struct MockObject {
-    data: Arc<RwLock<Option<String>>>,
+    data: Arc<RwLock<HashMap<String, String>>>,
 }
 
 impl MockObject {
     pub fn new() -> Self {
         Self {
-            data: Arc::new(RwLock::new(None)),
+            data: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -149,21 +152,20 @@ impl Default for MockObject {
 }
 
 impl ObjectStore for MockObject {
-    fn get_state(&self) -> Result<Option<String>, String> {
-        let d = self.data.read().map_err(|e| e.to_string())?;
-        Ok(d.clone())
+    fn get_state(&self, key: &str) -> Result<Option<String>, String> {
+        let map = self.data.read().map_err(|e| e.to_string())?;
+        Ok(map.get(key).cloned())
     }
 
-    fn set_state(&self, value: &str) -> Result<(), String> {
-        let mut d = self.data.write().map_err(|e| e.to_string())?;
-        *d = Some(value.to_string());
-        Ok(())
-    }
-
-    fn compare_and_swap(&self, expected: &str, new: &str) -> Result<bool, String> {
-        let mut d = self.data.write().map_err(|e| e.to_string())?;
-        if d.as_deref() == Some(expected) {
-            *d = Some(new.to_string());
+    fn put_state(&self, key: &str, expected: &str, new: &str) -> Result<bool, String> {
+        let mut map = self.data.write().map_err(|e| e.to_string())?;
+        let current = map.get(key).map(|s| s.as_str()).unwrap_or("");
+        if current == expected {
+            if new.is_empty() {
+                map.remove(key);
+            } else {
+                map.insert(key.to_string(), new.to_string());
+            }
             Ok(true)
         } else {
             Ok(false)
