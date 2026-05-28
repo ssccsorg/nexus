@@ -396,6 +396,7 @@ dependencies = [
  "cyrs-plan",
  "cyrs-syntax",
  "nexus-model",
+ "nexus-storage-kv-cold",
  "nexus-storage-petgraph",
  "petgraph",
  "serde",
