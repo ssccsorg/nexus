@@ -6,7 +6,7 @@ members = [
     "process",
     "storage/sqlite",
     "storage/petgraph",
-    "storage/tiered",
+    "storage/composite",
 ]
 
 [workspace.package]
