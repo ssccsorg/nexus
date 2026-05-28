@@ -38,6 +38,10 @@ jobs:
             core
             ext
           cache-targets: true
+          # core + ext를 동일 캐시 키 아래에 저장.
+          # run-core.sh가 core/와 ext/를 오가며 cargo를 실행하므로,
+          # 두 workspace의 lock 파일 차이가 캐시 미스를 유발하지 않도록 함.
+          shared-key: "nexus-core"
       - name: Core checks
         run: ./run.sh --core
 
