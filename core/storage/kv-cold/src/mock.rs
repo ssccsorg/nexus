@@ -1,12 +1,12 @@
-// Mock implementations for testing KeyValueStore and BlobStore.
+// Mock implementations for testing KeyValueStore, BlobStore, and ObjectStore.
 
-use crate::{BlobStore, KeyValueStore};
+use crate::{BlobStore, KeyValueStore, ObjectStore};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 /// In-memory KeyValueStore backed by a HashMap.
 ///
-/// Thread-safe via Arc<RwLock<…>>. Used in unit tests and the research
+/// Thread-safe via Arc<RwLock<...>>. Used in unit tests and the research
 /// loop scenario where no external KV (CF Workers KV, Sled, etc.) is
 /// available.
 #[derive(Debug, Clone)]
@@ -69,7 +69,7 @@ impl KeyValueStore for MockKv {
 
 /// In-memory BlobStore backed by a HashMap<Vec<u8>>.
 ///
-/// Thread-safe via Arc<RwLock<…>>. Simulates R2 or S3 for testing.
+/// Thread-safe via Arc<RwLock<...>>. Simulates R2 or S3 for testing.
 #[derive(Debug, Clone)]
 pub struct MockBlob {
     data: Arc<RwLock<HashMap<String, Vec<u8>>>>,
@@ -125,5 +125,48 @@ impl BlobStore for MockBlob {
             .collect();
         keys.sort();
         Ok(keys)
+    }
+}
+
+/// In-memory ObjectStore backed by Arc<RwLock<Option<String>>>.
+#[derive(Debug, Clone)]
+pub struct MockObject {
+    data: Arc<RwLock<Option<String>>>,
+}
+
+impl MockObject {
+    pub fn new() -> Self {
+        Self {
+            data: Arc::new(RwLock::new(None)),
+        }
+    }
+}
+
+impl Default for MockObject {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ObjectStore for MockObject {
+    fn get_state(&self) -> Result<Option<String>, String> {
+        let d = self.data.read().map_err(|e| e.to_string())?;
+        Ok(d.clone())
+    }
+
+    fn set_state(&self, value: &str) -> Result<(), String> {
+        let mut d = self.data.write().map_err(|e| e.to_string())?;
+        *d = Some(value.to_string());
+        Ok(())
+    }
+
+    fn compare_and_swap(&self, expected: &str, new: &str) -> Result<bool, String> {
+        let mut d = self.data.write().map_err(|e| e.to_string())?;
+        if d.as_deref() == Some(expected) {
+            *d = Some(new.to_string());
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 }

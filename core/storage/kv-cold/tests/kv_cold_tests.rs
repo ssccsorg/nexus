@@ -1,10 +1,12 @@
-// Integration tests for KvColdStorage with MockKv + MockBlob.
+// Integration tests for TieredColdStorage with MockKv + MockBlob + MockObject.
 
 use nexus_model::{
     BlackboardError, EvictCapable, Fact, FactCapable, FilterCapable, FlushCapable, FlushCursor,
     Hint, HintCapable, Intent, IntentCapable, ScanCapable, StateFilter, StorageRead,
 };
-use nexus_storage_kv_cold::{BlobStore, KeyValueStore, KvColdStorage, MockBlob, MockKv};
+use nexus_storage_kv_cold::{
+    BlobStore, KeyValueStore, MockBlob, MockKv, MockObject, TieredColdStorage,
+};
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -39,12 +41,17 @@ fn test_hint(id: &str) -> Hint {
     }
 }
 
-fn storage() -> KvColdStorage<MockKv, MockBlob> {
-    KvColdStorage::new_with_system_clock(MockKv::new(), MockBlob::new(), "test-project")
+fn storage() -> TieredColdStorage<MockKv, MockBlob, MockObject> {
+    TieredColdStorage::new_with_system_clock(
+        MockKv::new(),
+        MockBlob::new(),
+        MockObject::new(),
+        "test-project",
+    )
 }
 
 /// Create storage pre-populated with `n` facts.
-fn storage_with_facts(n: usize) -> KvColdStorage<MockKv, MockBlob> {
+fn storage_with_facts(n: usize) -> TieredColdStorage<MockKv, MockBlob, MockObject> {
     let s = storage();
     for i in 0..n {
         s.submit_fact(&test_fact(&format!("f_{i}")))
@@ -54,7 +61,7 @@ fn storage_with_facts(n: usize) -> KvColdStorage<MockKv, MockBlob> {
 }
 
 /// Create storage pre-populated with `n` intents.
-fn storage_with_intents(n: usize) -> KvColdStorage<MockKv, MockBlob> {
+fn storage_with_intents(n: usize) -> TieredColdStorage<MockKv, MockBlob, MockObject> {
     let s = storage();
     for i in 0..n {
         s.submit_intent(&test_intent(&format!("int_{i}")))
@@ -417,7 +424,12 @@ fn test_evict_before_keeps_recent_blobs() {
 
 #[test]
 fn test_submit_flush_read_cycle() {
-    let s = KvColdStorage::new_with_system_clock(MockKv::new(), MockBlob::new(), "cycle-test");
+    let s = TieredColdStorage::new_with_system_clock(
+        MockKv::new(),
+        MockBlob::new(),
+        MockObject::new(),
+        "cycle-test",
+    );
 
     // Submit data
     s.submit_fact(&test_fact("f_x")).expect("submit fact");

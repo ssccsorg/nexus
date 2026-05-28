@@ -1,23 +1,24 @@
-// nexus-storage-kv-cold — Platform-independent KV + Blob cold storage for FIH.
+// nexus-storage-kv-cold — Platform-independent multi-tier cold storage for FIH.
 //
-// Provides KeyValueStore and BlobStore traits, plus KvColdStorage which
-// implements the full ColdStorage trait (FihPersistence + FilterCapable +
-// ScanCapable + TimeRangeCapable + FlushCapable + CypherCapable) using
-// any K: KeyValueStore + B: BlobStore pair.
+// Provides KeyValueStore, BlobStore, and ObjectStore traits, plus TieredColdStorage
+// which implements the full ColdStorage trait by orchestrating three tiers:
 //
-// This is the primary cold storage for WASM/CF Workers environments where
-// DuckDB (C bindings) cannot run. It also works for local development and
-// dedicated servers with alternative K/B implementations.
+//   Tier 1 (KV)     — fast single-key r/w, recent buffer, cursor persistence
+//   Tier 2 (Blob)   — JSON-lines archive, bulk scan, flush target (R2, S3)
+//   Tier 3 (Object) — CAS-based coordination, snapshot ownership (Durable Object, future)
+//
+// External bindings (rs-worker, CF Workers) inject concrete K/B/O implementations.
+// TieredColdStorage itself is fully platform-independent.
 
-pub mod kv_cold;
 pub mod mock;
+pub mod tiered;
 
 // Re-export traits and main type.
-pub use kv_cold::KvColdStorage;
-pub use mock::{MockBlob, MockKv};
+pub use mock::{MockBlob, MockKv, MockObject};
+pub use tiered::TieredColdStorage;
 
 // Now trait and SystemClock are defined directly in this module (see below).
-// kv_cold.rs accesses them via `use crate::{Now, SystemClock}`.
+// tiered.rs accesses them via `use crate::{Now, SystemClock}`.
 
 /// Simple key-value store abstraction.
 ///
@@ -55,12 +56,29 @@ pub trait BlobStore: Send + Sync {
     fn list(&self, prefix: &str) -> Result<Vec<String>, String>;
 }
 
+/// Atomic single-owner state for coordination.
+///
+/// Implementations: MockObject (test), Durable Object (CF Workers),
+/// Redis lock (server).
+///
+/// The core operation is `compare_and_swap` which enables atomic
+/// claim/release for Intents without a central coordinator.
+pub trait ObjectStore: Send + Sync {
+    /// Read current state.
+    fn get_state(&self) -> Result<Option<String>, String>;
+    /// Set state unconditionally.
+    fn set_state(&self, value: &str) -> Result<(), String>;
+    /// Atomically set state only if current value matches expected.
+    /// Returns true if the swap succeeded (value was updated).
+    fn compare_and_swap(&self, expected: &str, new: &str) -> Result<bool, String>;
+}
+
 // ── Now trait ─────────────────────────────────────────────────────────────
 
 /// Clock abstraction for platform-independent timestamp generation.
 ///
 /// Implementations: SystemClock (native), js_sys::Date (WASM).
-/// Without this trait, KvColdStorage would be hardcoded to SystemTime::now(),
+/// Without this trait, TieredColdStorage would be hardcoded to SystemTime::now(),
 /// which is incorrect for WASM targets and makes testing impossible.
 pub trait Now: Send + Sync {
     /// Return current time as a nanosecond-precision string.
