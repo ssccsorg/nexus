@@ -17,7 +17,7 @@ pub mod store_session;
 
 pub use composite::CompositeColdStorage;
 pub use iobuf::{IoBufferBlob, IoBufferKv, IoBufferObject};
-pub use session_server::SessionServer;
+pub use session_server::{SessionHandle, SessionServer};
 pub use store_session::IoBufferSession;
 
 // Now trait and SystemClock are defined directly in this module (see below).
