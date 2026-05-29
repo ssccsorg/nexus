@@ -116,6 +116,13 @@ impl IoBufferSession {
     // These duplicate SessionDrainKv/Blob/Object but do not require trait
     // import at the call site. Useful for test harnesses and VE server.
 
+    /// Access the underlying CompositeColdStorage for sync orchestration.
+    pub fn storage(
+        &self,
+    ) -> &CompositeColdStorage<IoBufferKv, IoBufferBlob, IoBufferObject, SystemClock> {
+        &self.storage
+    }
+
     pub fn drain_kv_puts(&self) -> Vec<(String, String)> {
         self.storage.kv().drain_dirty_puts()
     }
