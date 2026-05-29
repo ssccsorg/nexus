@@ -126,6 +126,11 @@ pub struct CompositeColdStorage<
     kv: K,
     blob: B,
     object: O,
+    /// Flush output channel — blob archives (no dirty semantics).
+    commit_blob: B,
+    /// Cursor state — the flush boundary. Consumer reads this to know
+    /// which data has been flushed and which is still in-memory.
+    commit_kv: K,
     clock: C,
     project_id: String,
 }
@@ -133,11 +138,21 @@ pub struct CompositeColdStorage<
 // ── Generic constructor (caller chooses the clock) ─────────────────────────
 
 impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> CompositeColdStorage<K, B, O, C> {
-    pub fn new(kv: K, blob: B, object: O, clock: C, project_id: impl Into<String>) -> Self {
+    pub fn new(
+        kv: K,
+        blob: B,
+        object: O,
+        commit_kv: K,
+        commit_blob: B,
+        clock: C,
+        project_id: impl Into<String>,
+    ) -> Self {
         Self {
             kv,
             blob,
             object,
+            commit_kv,
+            commit_blob,
             clock,
             project_id: project_id.into(),
         }
@@ -156,6 +171,31 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> CompositeColdStorag
     /// Access the underlying Object store.
     pub fn object(&self) -> &O {
         &self.object
+    }
+
+    /// Access the commit KV (cursor state).
+    pub fn commit_kv(&self) -> &K {
+        &self.commit_kv
+    }
+
+    /// Access the commit Blob (flush archive output).
+    pub fn commit_blob(&self) -> &B {
+        &self.commit_blob
+    }
+
+    // ── Cursor API ──────────────────────────────────────────────────────────
+
+    /// Read the current flush cursor from the commit channel.
+    /// Returns None if no flush has occurred yet.
+    pub fn read_cursor(&self) -> Result<Option<FlushCursor>, String> {
+        let key = cursor_key(self.project());
+        match self.commit_kv.get(&key)? {
+            Some(json) => {
+                let cursor: FlushCursor = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+                Ok(Some(cursor))
+            }
+            None => Ok(None),
+        }
     }
 
     // ── Internal helpers ────────────────────────────────────────────────────
@@ -292,12 +332,18 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> CompositeColdStorag
 
 // ── Convenience constructor (defaults to SystemClock) ──────────────────────
 
-impl<K: KeyValueStore, B: BlobStore, O: ObjectStore> CompositeColdStorage<K, B, O, SystemClock> {
+impl<K: KeyValueStore + Clone, B: BlobStore + Clone, O: ObjectStore>
+    CompositeColdStorage<K, B, O, SystemClock>
+{
     pub fn new_with_system_clock(kv: K, blob: B, object: O, project_id: impl Into<String>) -> Self {
+        let ck = kv.clone();
+        let cb = blob.clone();
         Self {
             kv,
             blob,
             object,
+            commit_kv: ck,
+            commit_blob: cb,
             clock: SystemClock,
             project_id: project_id.into(),
         }
@@ -805,19 +851,21 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> FlushCapable
 
         let records_flushed = (fact_lines.len() + intent_lines.len() + hint_lines.len()) as u64;
 
-        // Write JSON lines to blobs.
+        // Write JSON lines to blobs via commit channel (query-only store).
         if !fact_lines.is_empty() {
             let blob_key = flush_blob_key(self.project(), "facts", partition, &now_ts);
-            self.blob.put(&blob_key, fact_lines.join("\n").as_bytes())?;
+            self.commit_blob
+                .put(&blob_key, fact_lines.join("\n").as_bytes())?;
         }
         if !intent_lines.is_empty() {
             let blob_key = flush_blob_key(self.project(), "intents", partition, &now_ts);
-            self.blob
+            self.commit_blob
                 .put(&blob_key, intent_lines.join("\n").as_bytes())?;
         }
         if !hint_lines.is_empty() {
             let blob_key = flush_blob_key(self.project(), "hints", partition, &now_ts);
-            self.blob.put(&blob_key, hint_lines.join("\n").as_bytes())?;
+            self.commit_blob
+                .put(&blob_key, hint_lines.join("\n").as_bytes())?;
         }
 
         let new_cursor = FlushCursor {
@@ -825,10 +873,11 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> FlushCapable
             partition: partition.clone(),
         };
 
-        // Persist cursor to KV.
+        // Persist cursor via commit channel (query-only, no dirty semantics).
         let cursor_json =
             serde_json::to_string(&new_cursor).map_err(|e| format!("serialize cursor: {e}"))?;
-        self.kv.set(&cursor_key(self.project()), &cursor_json)?;
+        self.commit_kv
+            .set(&cursor_key(self.project()), &cursor_json)?;
 
         Ok(FlushResult {
             records_flushed,
