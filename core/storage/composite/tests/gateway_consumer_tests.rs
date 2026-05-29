@@ -4,28 +4,43 @@
 //   IoBufferSession → CompositeColdStorage → DefaultBlackboard
 //   → sync operations → drain dirty → flush
 
-use nexus_model::{
-    Blackboard, Fact, FactCapable, FihHash, FlushCapable, FlushCursor, Hint, HintCapable,
-    Intent, IntentCapable, SessionDrainBlob, SessionDrainKv, SessionDrainObject, SessionExecute,
-};
 use nexus_graph::create_blackboard_with_storage;
+use nexus_model::{
+    Blackboard, Fact, FactCapable, FihHash, FlushCapable, FlushCursor, Hint, HintCapable, Intent,
+    IntentCapable, SessionDrainBlob, SessionDrainKv, SessionDrainObject, SessionExecute,
+};
+use nexus_storage_kv_cold::IoBufferSession;
 use nexus_storage_petgraph::PetgraphStorage;
-use nexus_storage_kv_cold::{IoBufferSession};
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 fn test_fact(id: &str) -> Fact {
-    Fact { id: FihHash(id.into()), origin: "t".into(),
-           content: serde_json::json!({"v": id}), creator: "a".into() }
+    Fact {
+        id: FihHash(id.into()),
+        origin: "t".into(),
+        content: serde_json::json!({"v": id}),
+        creator: "a".into(),
+    }
 }
 fn test_intent(id: &str) -> Intent {
-    Intent { id: FihHash(id.into()), from_facts: vec![format!("{id}_ground")],
-             to_fact_id: None, description: format!("i {id}"), creator: "a".into(),
-             worker: None, last_heartbeat_at: None,
-             created_at: Some("0".into()), concluded_at: None }
+    Intent {
+        id: FihHash(id.into()),
+        from_facts: vec![format!("{id}_ground")],
+        to_fact_id: None,
+        description: format!("i {id}"),
+        creator: "a".into(),
+        worker: None,
+        last_heartbeat_at: None,
+        created_at: Some("0".into()),
+        concluded_at: None,
+    }
 }
 fn test_hint(id: &str) -> Hint {
-    Hint { id: FihHash(id.into()), content: format!("h {id}"), creator: "a".into() }
+    Hint {
+        id: FihHash(id.into()),
+        content: format!("h {id}"),
+        creator: "a".into(),
+    }
 }
 
 /// Build blackboard with PetgraphStorage (hot) + IoBufferSession (cold).
@@ -99,21 +114,32 @@ fn test_gw_conclude_delete_and_put() {
 fn test_gw_flush_dirty() {
     let (ss, mut bb) = make_bb();
     for i in 0..3 {
-        ss.storage().submit_fact(&test_fact(&format!("f{i}"))).unwrap();
+        ss.storage()
+            .submit_fact(&test_fact(&format!("f{i}")))
+            .unwrap();
     }
     let _ = ss.drain_kv_puts();
 
-    let c = FlushCursor { last_flushed_at: String::new(), partition: "p1".into() };
+    let c = FlushCursor {
+        last_flushed_at: String::new(),
+        partition: "p1".into(),
+    };
     bb.flush_since(&c).unwrap();
 
     assert!(!ss.drain_blob_puts().is_empty(), "flush produces blob");
-    assert!(ss.drain_kv_puts().iter().any(|(k,_)|k.contains("cursor")), "flush writes cursor");
+    assert!(
+        ss.drain_kv_puts().iter().any(|(k, _)| k.contains("cursor")),
+        "flush writes cursor"
+    );
 }
 
 #[test]
 fn test_gw_empty_flush_still_writes_cursor() {
     let (ss, mut bb) = make_bb();
-    let c = FlushCursor { last_flushed_at: String::new(), partition: "e".into() };
+    let c = FlushCursor {
+        last_flushed_at: String::new(),
+        partition: "e".into(),
+    };
     bb.flush_since(&c).unwrap();
     assert!(ss.drain_blob_puts().is_empty(), "no data → no blob");
     assert!(!ss.drain_kv_puts().is_empty(), "cursor always persisted");
@@ -156,12 +182,18 @@ fn test_gw_flush_after_multi_submit_dirty_channels() {
     }
     let _ = ss.drain_kv_puts();
 
-    let c = FlushCursor { last_flushed_at: String::new(), partition: "p1".into() };
+    let c = FlushCursor {
+        last_flushed_at: String::new(),
+        partition: "p1".into(),
+    };
     bb.flush_since(&c).unwrap();
 
     let blob = ss.drain_blob_puts();
     assert_eq!(blob.len(), 1, "one partition = one blob file");
-    assert!(blob[0].0.contains("flush/facts"), "blob key should be flush path");
+    assert!(
+        blob[0].0.contains("flush/facts"),
+        "blob key should be flush path"
+    );
 }
 
 // ─── Edge: claim intent that was concluded in same session ──────────────
