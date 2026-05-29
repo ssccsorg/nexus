@@ -920,7 +920,7 @@ dependencies = [
  "axum",
  "nexus-graph",
  "nexus-model",
- "nexus-storage-kv-cold",
+ "nexus-storage-composite",
  "nexus-storage-petgraph",
  "nexus-storage-sqlite",
  "reqwest",
@@ -958,7 +958,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "nexus-storage-kv-cold"
+name = "nexus-storage-composite"
 version = "0.1.0"
 dependencies = [
  "log",

@@ -19,5 +19,5 @@ uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 nexus-model = { path = "../../core/model" }
-nexus-storage-kv-cold = { path = "../../core/storage/composite" }
+nexus-storage-composite = { path = "../../core/storage/composite" }
 reqwest = { version = "0.12", features = ["json"] }

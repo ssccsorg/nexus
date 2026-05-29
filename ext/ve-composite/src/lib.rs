@@ -23,7 +23,7 @@ mod routes;
 use std::sync::Arc;
 
 use axum::Router;
-use nexus_storage_kv_cold::IoBufferSession;
+use nexus_storage_composite::IoBufferSession;
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
 

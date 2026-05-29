@@ -16,7 +16,7 @@ use nexus_graph::{
     create_blackboard_with_storage,
 };
 use nexus_model::FlushCursor;
-use nexus_storage_kv_cold::{BlobStore, CompositeColdStorage, KeyValueStore, ObjectStore};
+use nexus_storage_composite::{BlobStore, CompositeColdStorage, KeyValueStore, ObjectStore};
 use serde_json::json;
 
 // ── Inline mock implementations for integration tests ───────────────────────

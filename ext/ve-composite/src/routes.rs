@@ -8,7 +8,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
 use nexus_model::SessionExecute;
-use nexus_storage_kv_cold::{BlobStore, KeyValueStore, ObjectStore};
+use nexus_storage_composite::{BlobStore, KeyValueStore, ObjectStore};
 
 use crate::AppState;
 

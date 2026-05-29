@@ -1384,6 +1384,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexus-storage-composite"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "nexus-model",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nexus-storage-duckdb"
 version = "0.1.0"
 dependencies = [
@@ -1395,22 +1405,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "nexus-storage-kv-cold"
-version = "0.1.0"
-dependencies = [
- "log",
- "nexus-model",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "nexus-ve-composite"
 version = "0.1.0"
 dependencies = [
  "axum",
  "nexus-model",
- "nexus-storage-kv-cold",
+ "nexus-storage-composite",
  "reqwest",
  "serde",
  "serde_json",
