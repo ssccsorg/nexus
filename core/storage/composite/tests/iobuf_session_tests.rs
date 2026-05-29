@@ -538,3 +538,189 @@ fn test_evict_before_produces_blob_deletes() {
         "the old blob should be deleted"
     );
 }
+
+// ── Atomicity: conclude_intent delete + put must be drained together ──
+
+#[test]
+fn test_conclude_intent_delete_and_put_drained_together() {
+    // conclude_intent does kv.delete(intent) + submit_fact(fact).
+    // The consumer must drain both deletes AND puts and flush them
+    // in the correct order (delete first, then put, or vice versa).
+    //
+    // This test verifies that after conclude, both dirty channels
+    // have entries, and draining one does not affect the other.
+    let s = session();
+    let intent = test_intent("atomic");
+    let key = format!("test-project:intent:atomic");
+    let json = stamped_intent_json(&intent, "100");
+    s.hydrate_kv(vec![(key, json)]);
+
+    s.storage()
+        .conclude_intent("atomic", &serde_json::json!({}))
+        .unwrap();
+
+    let deletes = s.drain_kv_deletes();
+    let puts = s.drain_kv_puts();
+
+    assert!(!deletes.is_empty(), "conclude must produce deletes");
+    assert!(!puts.is_empty(), "conclude must produce puts");
+    assert!(
+        deletes.iter().any(|k| k.contains("atomic")),
+        "delete must reference the concluded intent"
+    );
+    // The put is the new fact created from conclude
+    // The concluded fact's JSON contains origin: "intent:atomic"
+    let new_fact_in_puts = puts.iter().any(|(_, v)| v.contains("intent:atomic"));
+    assert!(
+        new_fact_in_puts,
+        "put must contain the concluded fact (origin refers to intent)"
+    );
+}
+
+// ── Dirty isolation between two sequential operations on same key ───────
+
+#[test]
+fn test_dirty_tracks_sequential_same_key_overwrites() {
+    let s = session();
+
+    s.storage()
+        .submit_fact(&test_fact("overwritten"))
+        .unwrap();
+    s.storage()
+        .submit_fact(&test_fact("overwritten"))
+        .unwrap();
+
+    let puts = s.drain_kv_puts();
+    let overwritten_count = puts
+        .iter()
+        .filter(|(k, _)| k.contains("overwritten"))
+        .count();
+    assert!(
+        overwritten_count >= 1,
+        "overwritten key must appear in dirty puts at least once"
+    );
+    // Unique keys: dedup by HashSet should give exactly 1
+    let overwritten_unique = puts
+        .iter()
+        .filter(|(k, _)| k.contains("overwritten"))
+        .map(|(k, _)| k.clone())
+        .collect::<std::collections::HashSet<_>>()
+        .len();
+    assert_eq!(
+        overwritten_unique, 1,
+        "same key overwritten twice should produce exactly one dirty entry"
+    );
+}
+
+// ── Hydrate then modify same key: dirty should track only modification ──
+
+#[test]
+fn test_hydrate_then_modify_produces_clean_dirty() {
+    let s = session();
+
+    // Hydrate an existing fact
+    let fact = test_fact("editable");
+    let key = format!("test-project:fact:editable");
+    let json = stamped_fact_json(&fact, "100");
+    s.hydrate_kv(vec![(key.clone(), json.clone())]);
+
+    // Clear dirty (hydrate should not mark dirty)
+    let initial_dirty = s.drain_kv_puts();
+    assert!(initial_dirty.is_empty(), "hydrate should not produce dirty");
+
+    // Modify: submit a new version (same id, will be overwritten in KV)
+    let fact_v2 = Fact {
+        content: serde_json::json!("v2"),
+        ..fact
+    };
+    s.storage().submit_fact(&fact_v2).unwrap();
+
+    let puts = s.drain_kv_puts();
+    assert_eq!(puts.len(), 1, "one modify should produce one dirty entry");
+    assert!(
+        puts[0].1.contains("v2"),
+        "dirty entry should be the new version"
+    );
+}
+
+// ── Dual IoBufferSession for flush_delta ordering test ───────────────────
+
+#[test]
+fn test_flush_delta_drain_order_respected_across_channels() {
+    // Simulates CF Worker flush_delta: drain KV puts + deletes + blob puts
+    // in a deterministic order to avoid partial state.
+    let s = session();
+
+    // Submit fact + conclude intent (which produces both delete and put)
+    s.storage()
+        .submit_fact(&test_fact("keep_me"))
+        .unwrap();
+
+    let intent = test_intent("finish_me");
+    let ikey = format!("test-project:intent:finish_me");
+    s.hydrate_kv(vec![(ikey, stamped_intent_json(&intent, "100"))]);
+    s.storage()
+        .conclude_intent("finish_me", &serde_json::json!({}))
+        .unwrap();
+
+    // Drain all three channels
+    let kv_puts = s.drain_kv_puts();
+    let kv_deletes = s.drain_kv_deletes();
+    let obj_puts = s.drain_object_puts();
+    let blob_puts = s.drain_blob_puts();
+
+    assert!(kv_deletes.iter().any(|k| k.contains("finish_me")),
+            "deletes must include concluded intent");
+    assert!(kv_puts.iter().any(|(_, v)| v.contains("keep_me")),
+            "puts must include submitted fact");
+    assert!(kv_puts.iter().any(|(_, v)| v.contains("intent:finish_me")),
+            "puts must include concluded fact (origin=intent:finish_me)");
+    // Blob and Object should be untouched
+    assert!(blob_puts.is_empty(), "no blob operations in this scenario");
+    assert!(obj_puts.is_empty(), "no object operations in this scenario");
+}
+
+// ── Concurrent flush_delta from two sessions on same logical data ───────
+
+#[test]
+fn test_two_workers_independent_dirty_sets() {
+    // Worker A works on intent-1, Worker B works on intent-2.
+    // Their dirty sets should be completely disjoint.
+    let sa = IoBufferSession::new("test-project");
+    let sb = IoBufferSession::new("test-project");
+
+    let i1 = test_intent("i1");
+    let i2 = test_intent("i2");
+    let k1 = format!("test-project:intent:i1");
+    let k2 = format!("test-project:intent:i2");
+    let j1 = stamped_intent_json(&i1, "100");
+    let j2 = stamped_intent_json(&i2, "200");
+
+    sa.hydrate_kv(vec![(k1, j1)]);
+    sb.hydrate_kv(vec![(k2, j2)]);
+
+    sa.storage().claim_intent("i1", "worker-a").unwrap();
+    sb.storage().claim_intent("i2", "worker-b").unwrap();
+
+    let da = sa.drain_kv_puts();
+    let db = sb.drain_kv_puts();
+
+    // Worker A's dirty should only touch its own intent
+    assert!(
+        da.iter().all(|(_, v)| v.contains("worker-a")),
+        "worker-a dirty should only reference worker-a"
+    );
+    assert!(
+        !da.iter().any(|(_, v)| v.contains("worker-b")),
+        "worker-a dirty should NOT reference worker-b"
+    );
+    // Worker B analogous
+    assert!(
+        db.iter().all(|(_, v)| v.contains("worker-b")),
+        "worker-b dirty should only reference worker-b"
+    );
+    assert!(
+        !db.iter().any(|(_, v)| v.contains("worker-a")),
+        "worker-b dirty should NOT reference worker-a"
+    );
+}
