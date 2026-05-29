@@ -27,8 +27,5 @@ pub use legacy::StoredEvent;
 pub use null::NullStorage;
 pub use read::StorageRead;
 pub use scan::{PartitionData, ScanCapable};
-pub use session::{
-    SessionDrain, SessionDrainBlob, SessionDrainKv, SessionDrainObject, SessionExecute,
-    StoreSession,
-};
+pub use session::SessionExecute;
 pub use time_range::TimeRangeCapable;

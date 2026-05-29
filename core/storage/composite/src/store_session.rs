@@ -22,7 +22,7 @@
 // CompositeColdStorage itself is pure sync, never touches async code.
 // IoBufferSession is pure sync, never touches external I/O.
 
-use nexus_model::{SessionDrainBlob, SessionDrainKv, SessionDrainObject, SessionExecute};
+use nexus_model::SessionExecute;
 use serde::Serialize;
 
 use crate::composite::CompositeColdStorage;
@@ -111,36 +111,6 @@ impl IoBufferSession {
     pub fn object_buf(&self) -> &IoBufferObject {
         self.storage.object()
     }
-
-    // ── Convenience drain methods (delegate to IoBuffer* directly) ───────
-    // These duplicate SessionDrainKv/Blob/Object but do not require trait
-    // import at the call site. Useful for test harnesses and VE server.
-
-    /// Access the underlying CompositeColdStorage for sync orchestration.
-    pub fn storage(
-        &self,
-    ) -> &CompositeColdStorage<IoBufferKv, IoBufferBlob, IoBufferObject, SystemClock> {
-        &self.storage
-    }
-
-    pub fn drain_kv_puts(&self) -> Vec<(String, String)> {
-        self.storage.kv().drain_dirty_puts()
-    }
-    pub fn drain_kv_deletes(&self) -> Vec<String> {
-        self.storage.kv().drain_dirty_deletes()
-    }
-    pub fn drain_blob_puts(&self) -> Vec<(String, Vec<u8>)> {
-        self.storage.blob().drain_dirty_puts()
-    }
-    pub fn drain_blob_deletes(&self) -> Vec<String> {
-        self.storage.blob().drain_dirty_deletes()
-    }
-    pub fn drain_object_puts(&self) -> Vec<(String, String)> {
-        self.storage.object().drain_dirty_puts()
-    }
-    pub fn drain_object_deletes(&self) -> Vec<String> {
-        self.storage.object().drain_dirty_deletes()
-    }
 }
 
 // ── SessionExecute ───────────────────────────────────────────────────────
@@ -150,41 +120,5 @@ impl SessionExecute for IoBufferSession {
 
     fn storage(&self) -> &Self::Storage {
         &self.storage
-    }
-}
-
-// ── SessionDrainKv ───────────────────────────────────────────────────────
-
-impl SessionDrainKv for IoBufferSession {
-    fn drain_kv_puts(&self) -> Vec<(String, String)> {
-        self.storage.kv().drain_dirty_puts()
-    }
-
-    fn drain_kv_deletes(&self) -> Vec<String> {
-        self.storage.kv().drain_dirty_deletes()
-    }
-}
-
-// ── SessionDrainBlob ─────────────────────────────────────────────────────
-
-impl SessionDrainBlob for IoBufferSession {
-    fn drain_blob_puts(&self) -> Vec<(String, Vec<u8>)> {
-        self.storage.blob().drain_dirty_puts()
-    }
-
-    fn drain_blob_deletes(&self) -> Vec<String> {
-        self.storage.blob().drain_dirty_deletes()
-    }
-}
-
-// ── SessionDrainObject ───────────────────────────────────────────────────
-
-impl SessionDrainObject for IoBufferSession {
-    fn drain_object_puts(&self) -> Vec<(String, String)> {
-        self.storage.object().drain_dirty_puts()
-    }
-
-    fn drain_object_deletes(&self) -> Vec<String> {
-        self.storage.object().drain_dirty_deletes()
     }
 }
