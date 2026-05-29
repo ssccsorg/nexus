@@ -12,7 +12,6 @@ use nexus_model::{
     EvictCapable, Fact, FactCapable, FlushCapable, Hint, HintCapable, Intent, IntentCapable,
     ScanCapable, StorageRead,
 };
-use nexus_model::{SessionDrainBlob, SessionDrainKv, SessionDrainObject, SessionExecute};
 use nexus_storage_kv_cold::{IoBufferSession, KeyValueStore, SessionServer};
 
 // ── Helpers ──────────────────────────────────────────────────────────────

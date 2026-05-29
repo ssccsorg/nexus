@@ -5,10 +5,7 @@
 //   → sync operations → drain dirty → flush
 
 use nexus_graph::create_blackboard_with_storage;
-use nexus_model::{
-    Blackboard, Fact, FactCapable, FihHash, FlushCapable, FlushCursor, Hint, HintCapable, Intent,
-    IntentCapable, SessionDrainBlob, SessionDrainKv, SessionDrainObject, SessionExecute,
-};
+use nexus_model::{Blackboard, Fact, FihHash, FlushCapable, FlushCursor, Hint, Intent};
 use nexus_storage_kv_cold::IoBufferSession;
 use nexus_storage_petgraph::PetgraphStorage;
 
@@ -67,7 +64,8 @@ fn test_gw_submit_fact_dirty() {
 fn test_gw_submit_hint_dirty() {
     let (ss, mut bb) = make_bb();
     bb.submit_hint(&test_hint("h1")).unwrap();
-    assert!(!ss.drain_kv_puts().is_empty());
+    let kv = ss.drain_kv_puts();
+    assert!(!kv.is_empty());
 }
 
 // ─── Claim / double-claim / conclude ────────────────────────────────────
@@ -114,9 +112,7 @@ fn test_gw_conclude_delete_and_put() {
 fn test_gw_flush_dirty() {
     let (ss, mut bb) = make_bb();
     for i in 0..3 {
-        ss.storage()
-            .submit_fact(&test_fact(&format!("f{i}")))
-            .unwrap();
+        bb.submit_fact(&test_fact(&format!("f{i}"))).unwrap();
     }
     let _ = ss.drain_kv_puts();
 
@@ -135,7 +131,7 @@ fn test_gw_flush_dirty() {
 
 #[test]
 fn test_gw_empty_flush_still_writes_cursor() {
-    let (ss, mut bb) = make_bb();
+    let (ss, bb) = make_bb();
     let c = FlushCursor {
         last_flushed_at: String::new(),
         partition: "e".into(),
@@ -166,7 +162,7 @@ fn test_gw_full_lifecycle_dirty_all_channels() {
 
 #[test]
 fn test_gw_read_state_from_session() {
-    let (ss, mut bb) = make_bb();
+    let (_ss, mut bb) = make_bb();
     bb.submit_fact(&test_fact("pre")).unwrap();
     let s = Blackboard::read_state(&bb);
     assert_eq!(s.facts.len(), 1);
