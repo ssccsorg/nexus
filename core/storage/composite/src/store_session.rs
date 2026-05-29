@@ -33,6 +33,10 @@ use crate::{IoBufferBlob, IoBufferKv, IoBufferObject, SystemClock};
 /// The internal Stamped envelope that CompositeColdStorage uses.
 /// Reproduced here so async consumers can preload raw `Fact`/`Intent`/`Hint`
 /// objects without manually constructing JSON.
+///
+/// Currently unused in production code (tests use their own copy).
+/// Future consumers (rs-worker) will use this.
+#[allow(dead_code)]
 #[derive(Serialize)]
 struct Stamped<'a, T: Serialize> {
     submitted_at: &'a str,

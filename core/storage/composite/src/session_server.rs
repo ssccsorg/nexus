@@ -62,10 +62,7 @@ impl<S: StoreSession> SessionHandle<S> {
     ///
     /// Blocks the calling thread until the job completes and returns the result.
     /// On WASM, the caller must drive `process_one()` concurrently.
-    pub fn submit<T: Send + 'static>(
-        &self,
-        f: impl FnOnce(&S) -> T + Send + 'static,
-    ) -> T {
+    pub fn submit<T: Send + 'static>(&self, f: impl FnOnce(&S) -> T + Send + 'static) -> T {
         let (resp_tx, resp_rx) = mpsc::channel();
         self.tx
             .send(Box::new(move |session| {
@@ -82,10 +79,7 @@ impl<S: StoreSession> SessionServer<S> {
     /// Create a server wrapping an existing session, returning both server and handle.
     pub fn new(session: S) -> (Self, SessionHandle<S>) {
         let (tx, rx) = mpsc::channel::<Job<S>>();
-        (
-            Self { session, rx },
-            SessionHandle { tx },
-        )
+        (Self { session, rx }, SessionHandle { tx })
     }
 
     /// Create a server for WASM targets — returns only the server, no handle.

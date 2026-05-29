@@ -12,9 +12,7 @@ use nexus_model::{
     EvictCapable, Fact, FactCapable, FlushCapable, Hint, HintCapable, Intent, IntentCapable,
     ScanCapable, StorageRead,
 };
-use nexus_model::{
-    SessionDrainBlob, SessionDrainKv, SessionDrainObject, SessionExecute,
-};
+use nexus_model::{SessionDrainBlob, SessionDrainKv, SessionDrainObject, SessionExecute};
 use nexus_storage_kv_cold::{IoBufferSession, KeyValueStore, SessionServer};
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -331,9 +329,7 @@ fn test_flush_since_produces_blob_dirty() {
 
     // Confirm cursor key
     let cursor_key = "test-project:cursor";
-    let cursor_in_dirty = kv_puts
-        .iter()
-        .any(|(k, _)| k.contains(cursor_key));
+    let cursor_in_dirty = kv_puts.iter().any(|(k, _)| k.contains(cursor_key));
     assert!(
         cursor_in_dirty,
         "cursor key must be in KV dirty after flush"
@@ -348,12 +344,8 @@ fn test_hydrate_flush_read_cycle() {
     let s = session();
 
     // Phase 1: Submit data
-    s.storage()
-        .submit_fact(&test_fact("f1"))
-        .unwrap();
-    s.storage()
-        .submit_intent(&test_intent("i1"))
-        .unwrap();
+    s.storage().submit_fact(&test_fact("f1")).unwrap();
+    s.storage().submit_intent(&test_intent("i1")).unwrap();
     s.drain_kv_puts(); // clear submit dirty
 
     // Phase 2: Flush
@@ -370,7 +362,8 @@ fn test_hydrate_flush_read_cycle() {
     // In real CF Worker: list blobs from R2, get() each, hydrate
     let s2 = IoBufferSession::new("test-project");
     for (key, data) in &blob_dirty {
-        s2.blob_buf().hydrate_batch(vec![(key.clone(), data.clone())]);
+        s2.blob_buf()
+            .hydrate_batch(vec![(key.clone(), data.clone())]);
     }
 
     // Phase 4: Scan partition — should find flushed data
@@ -394,10 +387,7 @@ fn test_session_handle_submit_fact() {
             .submit_fact(&test_fact("via_handle"))
             .map(|_| true)
     });
-    assert!(
-        result.is_ok(),
-        "submitting fact via handle should work"
-    );
+    assert!(result.is_ok(), "submitting fact via handle should work");
 }
 
 #[test]
@@ -433,9 +423,7 @@ fn test_conclude_intent_produces_kv_delete_and_fact_submit_dirty() {
 
     // Conclude the intent
     let result = serde_json::json!({"outcome": "done"});
-    s.storage()
-        .conclude_intent("conclude_me", &result)
-        .unwrap();
+    s.storage().conclude_intent("conclude_me", &result).unwrap();
 
     // KV dirty should include both:
     //   - delete of the intent key
@@ -466,16 +454,12 @@ fn test_heartbeat_produces_dirty() {
     let key = format!("test-project:intent:beat");
     let json = stamped_intent_json(&intent, "100");
     s.hydrate_kv(vec![(key, json)]);
-    s.storage()
-        .claim_intent("beat", "worker-x")
-        .unwrap();
+    s.storage().claim_intent("beat", "worker-x").unwrap();
     let _ = s.drain_kv_puts();
     let _ = s.drain_object_puts();
 
     // Now heartbeat
-    s.storage()
-        .heartbeat("beat", "worker-x")
-        .unwrap();
+    s.storage().heartbeat("beat", "worker-x").unwrap();
 
     let kv_puts = s.drain_kv_puts();
     assert!(
@@ -492,16 +476,12 @@ fn test_release_intent_produces_dirty() {
     let key = format!("test-project:intent:releaseme");
     let json = stamped_intent_json(&intent, "100");
     s.hydrate_kv(vec![(key, json)]);
-    s.storage()
-        .claim_intent("releaseme", "worker-x")
-        .unwrap();
+    s.storage().claim_intent("releaseme", "worker-x").unwrap();
     let _ = s.drain_kv_puts();
     let _ = s.drain_object_puts();
 
     // Release
-    s.storage()
-        .release_intent("releaseme", "worker-x")
-        .unwrap();
+    s.storage().release_intent("releaseme", "worker-x").unwrap();
 
     let kv_puts = s.drain_kv_puts();
     assert!(
@@ -583,12 +563,8 @@ fn test_conclude_intent_delete_and_put_drained_together() {
 fn test_dirty_tracks_sequential_same_key_overwrites() {
     let s = session();
 
-    s.storage()
-        .submit_fact(&test_fact("overwritten"))
-        .unwrap();
-    s.storage()
-        .submit_fact(&test_fact("overwritten"))
-        .unwrap();
+    s.storage().submit_fact(&test_fact("overwritten")).unwrap();
+    s.storage().submit_fact(&test_fact("overwritten")).unwrap();
 
     let puts = s.drain_kv_puts();
     let overwritten_count = puts
@@ -652,9 +628,7 @@ fn test_flush_delta_drain_order_respected_across_channels() {
     let s = session();
 
     // Submit fact + conclude intent (which produces both delete and put)
-    s.storage()
-        .submit_fact(&test_fact("keep_me"))
-        .unwrap();
+    s.storage().submit_fact(&test_fact("keep_me")).unwrap();
 
     let intent = test_intent("finish_me");
     let ikey = format!("test-project:intent:finish_me");
@@ -669,12 +643,18 @@ fn test_flush_delta_drain_order_respected_across_channels() {
     let obj_puts = s.drain_object_puts();
     let blob_puts = s.drain_blob_puts();
 
-    assert!(kv_deletes.iter().any(|k| k.contains("finish_me")),
-            "deletes must include concluded intent");
-    assert!(kv_puts.iter().any(|(_, v)| v.contains("keep_me")),
-            "puts must include submitted fact");
-    assert!(kv_puts.iter().any(|(_, v)| v.contains("intent:finish_me")),
-            "puts must include concluded fact (origin=intent:finish_me)");
+    assert!(
+        kv_deletes.iter().any(|k| k.contains("finish_me")),
+        "deletes must include concluded intent"
+    );
+    assert!(
+        kv_puts.iter().any(|(_, v)| v.contains("keep_me")),
+        "puts must include submitted fact"
+    );
+    assert!(
+        kv_puts.iter().any(|(_, v)| v.contains("intent:finish_me")),
+        "puts must include concluded fact (origin=intent:finish_me)"
+    );
     // Blob and Object should be untouched
     assert!(blob_puts.is_empty(), "no blob operations in this scenario");
     assert!(obj_puts.is_empty(), "no object operations in this scenario");
