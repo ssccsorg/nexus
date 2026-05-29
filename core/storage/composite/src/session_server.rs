@@ -21,7 +21,7 @@
 
 use std::sync::mpsc;
 
-use nexus_model::StoreSession;
+use nexus_model::SessionExecute;
 
 /// A job submitted to the SessionServer queue.
 type Job<S> = Box<dyn FnOnce(&S) + Send>;
@@ -46,18 +46,18 @@ type Job<S> = Box<dyn FnOnce(&S) + Send>;
 /// // In the async task:
 /// server.process_one();  // or iterate in a loop
 /// ```
-pub struct SessionServer<S: StoreSession> {
+pub struct SessionServer<S: SessionExecute> {
     session: S,
     rx: mpsc::Receiver<Job<S>>,
 }
 
 /// A handle to submit jobs to a `SessionServer`. Clonable for multi-threaded access.
 #[derive(Clone)]
-pub struct SessionHandle<S: StoreSession> {
+pub struct SessionHandle<S: SessionExecute> {
     tx: mpsc::Sender<Job<S>>,
 }
 
-impl<S: StoreSession> SessionHandle<S> {
+impl<S: SessionExecute> SessionHandle<S> {
     /// Submit a closure to the server for immediate execution.
     ///
     /// Blocks the calling thread until the job completes and returns the result.
@@ -75,7 +75,7 @@ impl<S: StoreSession> SessionHandle<S> {
     }
 }
 
-impl<S: StoreSession> SessionServer<S> {
+impl<S: SessionExecute> SessionServer<S> {
     /// Create a server wrapping an existing session, returning both server and handle.
     pub fn new(session: S) -> (Self, SessionHandle<S>) {
         let (tx, rx) = mpsc::channel::<Job<S>>();
@@ -121,7 +121,7 @@ impl<S: StoreSession> SessionServer<S> {
 // ── Native-only: threaded spawn ──────────────────────────────────────────
 
 #[cfg(not(target_family = "wasm"))]
-impl<S: StoreSession + Send + 'static> SessionServer<S> {
+impl<S: SessionExecute + Send + 'static> SessionServer<S> {
     /// Spawn the server on a dedicated thread.
     ///
     /// Returns a `SessionHandle` for submitting jobs from any thread.
