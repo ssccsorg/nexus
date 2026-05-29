@@ -13,4 +13,6 @@ serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
+nexus-graph = { path = "../../graph" }
+nexus-storage-petgraph = { path = "../petgraph" }
 tempfile = "3"
