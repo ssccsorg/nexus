@@ -23,6 +23,9 @@ use std::sync::mpsc;
 
 use nexus_model::StoreSession;
 
+/// A job submitted to the SessionServer queue.
+type Job<S> = Box<dyn FnOnce(&S) + Send>;
+
 /// Owns a `StoreSession` and processes sync jobs sequentially.
 ///
 /// Generic over `S: StoreSession` — any session backend works
@@ -35,17 +38,15 @@ use nexus_model::StoreSession;
 /// is single-threaded but functional within one task).
 pub struct SessionServer<S: StoreSession> {
     session: S,
-    rx: mpsc::Receiver<Box<dyn FnOnce(&S) + Send>>,
+    rx: mpsc::Receiver<Job<S>>,
 }
 
 impl<S: StoreSession> SessionServer<S> {
     /// Create a server wrapping an existing session.
     ///
     /// Returns the server handle and a `Sender` for submitting jobs.
-    pub fn new(
-        session: S,
-    ) -> (Self, mpsc::Sender<Box<dyn FnOnce(&S) + Send>>) {
-        let (tx, rx) = mpsc::channel::<Box<dyn FnOnce(&S) + Send>>();
+    pub fn new(session: S) -> (Self, mpsc::Sender<Job<S>>) {
+        let (tx, rx) = mpsc::channel::<Job<S>>();
         (Self { session, rx }, tx)
     }
 
@@ -79,7 +80,7 @@ impl<S: StoreSession> SessionServer<S> {
     /// completes. Only call when `process_one()` is being driven on
     /// the same task or an external thread.
     pub fn submit_sync<T: Send + 'static>(
-        tx: &mpsc::Sender<Box<dyn FnOnce(&S) + Send>>,
+        tx: &mpsc::Sender<Job<S>>,
         f: impl FnOnce(&S) -> T + Send + 'static,
     ) -> T {
         let (resp_tx, resp_rx) = mpsc::channel();
@@ -88,7 +89,9 @@ impl<S: StoreSession> SessionServer<S> {
             let _ = resp_tx.send(result);
         }))
         .expect("SessionServer channel closed");
-        resp_rx.recv().expect("SessionServer response channel closed")
+        resp_rx
+            .recv()
+            .expect("SessionServer response channel closed")
     }
 
     // ── Access for dirty drain ───────────────────────────────────────────
@@ -111,8 +114,8 @@ impl<S: StoreSession + Send + 'static> SessionServer<S> {
     /// Spawn the server on a dedicated thread (native only).
     ///
     /// Returns the `Sender` for submitting jobs.
-    pub fn spawn(session: S) -> mpsc::Sender<Box<dyn FnOnce(&S) + Send>> {
-        let (tx, rx) = mpsc::channel::<Box<dyn FnOnce(&S) + Send>>();
+    pub fn spawn(session: S) -> mpsc::Sender<Job<S>> {
+        let (tx, rx) = mpsc::channel::<Job<S>>();
         std::thread::spawn(move || {
             while let Ok(job) = rx.recv() {
                 job(&session);
