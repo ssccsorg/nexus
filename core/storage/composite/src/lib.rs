@@ -1,4 +1,4 @@
-// nexus-storage-kv-cold — Platform-independent multi-tier cold storage for FIH.
+// nexus-storage-composite — Platform-independent multi-tier cold storage for FIH.
 //
 // Provides KeyValueStore, BlobStore, and ObjectStore traits, plus CompositeColdStorage
 // which implements the full ColdStorage trait by orchestrating three tiers:

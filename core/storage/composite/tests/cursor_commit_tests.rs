@@ -7,8 +7,8 @@
 //   4. Cursor replaces dirty tracking — flush boundary is determinable
 
 use nexus_model::{Fact, FihHash, FlushCapable, FlushCursor};
-use nexus_storage_kv_cold::{
-    BlobStore, CompositeColdStorage, IoBufferBlob, IoBufferKv, IoBufferObject, KeyValueStore,    
+use nexus_storage_composite::{
+    BlobStore, CompositeColdStorage, IoBufferBlob, IoBufferKv, IoBufferObject, KeyValueStore,
 };
 use std::sync::{Arc, Barrier};
 use std::thread;
