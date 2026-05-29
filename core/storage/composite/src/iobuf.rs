@@ -41,7 +41,10 @@ impl IoBufferKv {
     /// Hydrate the buffer from a key-value iterator (e.g. CF KV list response).
     /// Existing data is not cleared — call only once per StoreSession.
     pub fn hydrate_batch(&self, entries: impl IntoIterator<Item = (String, String)>) {
-        let mut map = self.data.write().expect("IoBufferKv hydrate: lock poisoned");
+        let mut map = self
+            .data
+            .write()
+            .expect("IoBufferKv hydrate: lock poisoned");
         for (k, v) in entries {
             map.insert(k, v);
         }
@@ -134,7 +137,10 @@ impl IoBufferBlob {
 
     /// Hydrate the buffer from a key-value iterator.
     pub fn hydrate_batch(&self, entries: impl IntoIterator<Item = (String, Vec<u8>)>) {
-        let mut map = self.data.write().expect("IoBufferBlob hydrate: lock poisoned");
+        let mut map = self
+            .data
+            .write()
+            .expect("IoBufferBlob hydrate: lock poisoned");
         for (k, v) in entries {
             map.insert(k, v);
         }
@@ -227,7 +233,10 @@ impl IoBufferObject {
 
     /// Hydrate the buffer from key-value pairs.
     pub fn hydrate_batch(&self, entries: impl IntoIterator<Item = (String, String)>) {
-        let mut map = self.data.write().expect("IoBufferObject hydrate: lock poisoned");
+        let mut map = self
+            .data
+            .write()
+            .expect("IoBufferObject hydrate: lock poisoned");
         for (k, v) in entries {
             map.insert(k, v);
         }
