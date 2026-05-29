@@ -7,8 +7,8 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
-use nexus_model::storage::session::{SessionDrainBlob, SessionDrainKv, SessionDrainObject, SessionExecute};
-use nexus_storage_kv_cold::{KeyValueStore, ObjectStore};
+use nexus_model::storage::session::SessionExecute;
+use nexus_storage_kv_cold::{BlobStore, KeyValueStore, ObjectStore};
 
 use crate::AppState;
 
@@ -131,23 +131,30 @@ pub async fn do_cas(
 
 // ─── Drain ──────────────────────────────────────────────────────────────
 
-macro_rules! drain_route {
-    ($name:ident, $chan:ident, $method:ident) => {
-        pub async fn $name(
-            State(s): State<Arc<AppState>>,
-            Path(_project): Path<String>,
-        ) -> impl IntoResponse {
-            let d = SessionDrain$chan::$method(&s.session);
-            Json(serde_json::json!({"drained": d}))
-        }
-    };
+pub async fn drain_kv_puts(State(s): State<Arc<AppState>>, Path(_project): Path<String>) -> impl IntoResponse {
+    let d: Vec<(String, String)> = s.session.drain_kv_puts();
+    Json(serde_json::json!({"drained": d}))
 }
-drain_route!(drain_kv_puts, Kv, drain_kv_puts);
-drain_route!(drain_kv_deletes, Kv, drain_kv_deletes);
-drain_route!(drain_blob_puts, Blob, drain_blob_puts);
-drain_route!(drain_blob_deletes, Blob, drain_blob_deletes);
-drain_route!(drain_object_puts, Object, drain_object_puts);
-drain_route!(drain_object_deletes, Object, drain_object_deletes);
+pub async fn drain_kv_deletes(State(s): State<Arc<AppState>>, Path(_project): Path<String>) -> impl IntoResponse {
+    let d: Vec<String> = s.session.drain_kv_deletes();
+    Json(serde_json::json!({"drained": d}))
+}
+pub async fn drain_blob_puts(State(s): State<Arc<AppState>>, Path(_project): Path<String>) -> impl IntoResponse {
+    let d: Vec<(String, Vec<u8>)> = s.session.drain_blob_puts();
+    Json(serde_json::json!({"drained": d}))
+}
+pub async fn drain_blob_deletes(State(s): State<Arc<AppState>>, Path(_project): Path<String>) -> impl IntoResponse {
+    let d: Vec<String> = s.session.drain_blob_deletes();
+    Json(serde_json::json!({"drained": d}))
+}
+pub async fn drain_object_puts(State(s): State<Arc<AppState>>, Path(_project): Path<String>) -> impl IntoResponse {
+    let d: Vec<(String, String)> = s.session.drain_object_puts();
+    Json(serde_json::json!({"drained": d}))
+}
+pub async fn drain_object_deletes(State(s): State<Arc<AppState>>, Path(_project): Path<String>) -> impl IntoResponse {
+    let d: Vec<String> = s.session.drain_object_deletes();
+    Json(serde_json::json!({"drained": d}))
+}
 
 // ─── Base64 ─────────────────────────────────────────────────────────────
 
