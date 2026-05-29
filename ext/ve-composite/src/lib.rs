@@ -47,12 +47,6 @@ pub async fn start_ve_with(session: IoBufferSession) -> (String, tokio::task::Jo
         .route("/r2/{project}/{key}",
             axum::routing::get(routes::r2_get).put(routes::r2_put).delete(routes::r2_delete))
         .route("/do/{project}/{key}/cas", axum::routing::post(routes::do_cas))
-        .route("/drain/{project}/kv-puts", axum::routing::get(routes::drain_kv_puts))
-        .route("/drain/{project}/kv-deletes", axum::routing::get(routes::drain_kv_deletes))
-        .route("/drain/{project}/blob-puts", axum::routing::get(routes::drain_blob_puts))
-        .route("/drain/{project}/blob-deletes", axum::routing::get(routes::drain_blob_deletes))
-        .route("/drain/{project}/object-puts", axum::routing::get(routes::drain_object_puts))
-        .route("/drain/{project}/object-deletes", axum::routing::get(routes::drain_object_deletes))
         .with_state(state)
         .layer(CorsLayer::permissive());
 

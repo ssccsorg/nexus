@@ -29,6 +29,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
+#[derive(Clone)]
 struct MockKv {
     data: Arc<RwLock<HashMap<String, String>>>,
 }
@@ -66,6 +67,7 @@ impl KeyValueStore for MockKv {
     }
 }
 
+#[derive(Clone)]
 struct MockBlob {
     data: Arc<RwLock<HashMap<String, Vec<u8>>>>,
 }
