@@ -111,6 +111,29 @@ impl IoBufferSession {
     pub fn object_buf(&self) -> &IoBufferObject {
         self.storage.object()
     }
+
+    // ── Convenience drain methods (delegate to IoBuffer* directly) ───────
+    // These duplicate SessionDrainKv/Blob/Object but do not require trait
+    // import at the call site. Useful for test harnesses and VE server.
+
+    pub fn drain_kv_puts(&self) -> Vec<(String, String)> {
+        self.storage.kv().drain_dirty_puts()
+    }
+    pub fn drain_kv_deletes(&self) -> Vec<String> {
+        self.storage.kv().drain_dirty_deletes()
+    }
+    pub fn drain_blob_puts(&self) -> Vec<(String, Vec<u8>)> {
+        self.storage.blob().drain_dirty_puts()
+    }
+    pub fn drain_blob_deletes(&self) -> Vec<String> {
+        self.storage.blob().drain_dirty_deletes()
+    }
+    pub fn drain_object_puts(&self) -> Vec<(String, String)> {
+        self.storage.object().drain_dirty_puts()
+    }
+    pub fn drain_object_deletes(&self) -> Vec<String> {
+        self.storage.object().drain_dirty_deletes()
+    }
 }
 
 // ── SessionExecute ───────────────────────────────────────────────────────
