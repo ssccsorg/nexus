@@ -1,23 +1,26 @@
-// IoBufferSession — concrete StoreSession backed by IoBufferKv/Blob/Object.
+// IoBufferSession — concrete session backed by IoBufferKv/Blob/Object.
 //
 // Owns an IoBuffer trio + CompositeColdStorage. Implements SessionExecute
-// and SessionDrain capability traits from nexus-model.
+// from nexus-model.
 //
 // Architecture:
 //
 //   CF KV / R2 / DO  (source of truth, async)
-//       ↓ hydrate_*       ↑ drain_dirty
+//       ↓ hydrate_*       ↑ cursor-driven flush
 //   IoBufferSession         │
-//   ├── IoBufferKv          │  ← dirty tracking
+//   ├── IoBufferKv          │  ← pure HashMap
 //   ├── IoBufferBlob        │
 //   ├── IoBufferObject      │
 //   └── CompositeColdStorage (sync) ← orchestration
+//       ├── kv, blob, object (write)
+//       ├── commit_kv (cursor state)
+//       └── commit_blob (flush archives)
 //
 // The consumer (CF Worker, blockchain validator, etc.):
 //   1. Creates an IoBufferSession
 //   2. Hydrates IoBuffer* from external source (async)
 //   3. Runs CompositeColdStorage sync operations via storage()
-//   4. Drains dirty data and flushes to external source (async)
+//   4. Reads cursor via read_cursor() to determine flush boundary
 //
 // CompositeColdStorage itself is pure sync, never touches async code.
 // IoBufferSession is pure sync, never touches external I/O.
@@ -43,11 +46,11 @@ struct Stamped<'a, T: Serialize> {
     data: &'a T,
 }
 
-/// Concrete StoreSession with IoBuffer* + CompositeColdStorage.
+/// Session backed by IoBuffer* + CompositeColdStorage.
 ///
-/// Implements `SessionExecute` (access to ColdStorage) and
-/// `SessionDrain*` (dirty tracking drain). The async bridge layer
-/// handles hydrate/flush; IoBufferSession provides the sync surface.
+/// Implements `SessionExecute` (access to ColdStorage).
+/// The async bridge layer handles hydrate/flush;
+/// IoBufferSession provides the sync surface.
 pub struct IoBufferSession {
     storage: CompositeColdStorage<IoBufferKv, IoBufferBlob, IoBufferObject, SystemClock>,
 }
