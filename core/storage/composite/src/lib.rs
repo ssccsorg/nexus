@@ -18,7 +18,7 @@ pub mod store_session;
 pub use composite::CompositeColdStorage;
 pub use iobuf::{IoBufferBlob, IoBufferKv, IoBufferObject};
 pub use session_server::SessionServer;
-pub use store_session::StoreSession;
+pub use store_session::IoBufferSession;
 
 // Now trait and SystemClock are defined directly in this module (see below).
 // composite.rs accesses them via `use crate::{Now, SystemClock}`.
