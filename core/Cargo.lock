@@ -430,7 +430,9 @@ name = "nexus-storage-kv-cold"
 version = "0.1.0"
 dependencies = [
  "log",
+ "nexus-graph",
  "nexus-model",
+ "nexus-storage-petgraph",
  "serde",
  "serde_json",
  "tempfile",

@@ -116,6 +116,7 @@ impl<T: Serialize> Stamped<T> {
 /// - `{project_id}/flush/facts/{partition}/{ts}.jsonl`
 /// - `{project_id}/flush/intents/{partition}/{ts}.jsonl`
 /// - `{project_id}/flush/hints/{partition}/{ts}.jsonl`
+#[derive(Clone)]
 pub struct CompositeColdStorage<
     K: KeyValueStore,
     B: BlobStore,
