@@ -25,8 +25,8 @@ pub use store_session::IoBufferSession;
 
 /// Simple key-value store abstraction.
 ///
-/// Implementations: MockKv (test), worker::kv::Namespace (CF Workers),
-/// sled (server), HashMap (embedded).
+/// Implementations: IoBufferKv (production, in-memory with dirty tracking),
+/// worker::kv::Namespace (CF Workers), sled (server), MockKv (test).
 pub trait KeyValueStore: Send + Sync {
     /// Get a value by key. Returns None if not found.
     fn get(&self, key: &str) -> Result<Option<String>, String>;
@@ -43,8 +43,8 @@ pub trait KeyValueStore: Send + Sync {
 
 /// Blob store for Parquet chunks and other binary data.
 ///
-/// Implementations: MockBlob (test), R2 bucket (CF Workers),
-/// local filesystem (server).
+/// Implementations: IoBufferBlob (production, in-memory with dirty tracking),
+/// R2 bucket (CF Workers), local filesystem (server), MockBlob (test).
 pub trait BlobStore: Send + Sync {
     /// Store binary data at the given key.
     fn put(&self, key: &str, data: &[u8]) -> Result<(), String>;
@@ -61,8 +61,8 @@ pub trait BlobStore: Send + Sync {
 
 /// Atomic CAS store for cross-worker coordination.
 ///
-/// Implementations: MockObject (test), Durable Object stub (CF Workers),
-/// Redis lock (server).
+/// Implementations: IoBufferObject (production, in-memory with dirty tracking),
+/// Durable Object stub (CF Workers), Redis lock (server), MockObject (test).
 ///
 /// Each key represents an independent CAS namespace. In CF Workers,
 /// `key` maps to a DO instance ID, making each Intent claim its own
