@@ -22,10 +22,7 @@
 // CompositeColdStorage itself is pure sync, never touches async code.
 // IoBufferSession is pure sync, never touches external I/O.
 
-use nexus_model::{
-    SessionDrainBlob, SessionDrainKv, SessionDrainObject,
-    SessionExecute,
-};
+use nexus_model::{SessionDrainBlob, SessionDrainKv, SessionDrainObject, SessionExecute};
 
 use crate::composite::CompositeColdStorage;
 use crate::{IoBufferBlob, IoBufferKv, IoBufferObject, SystemClock};
