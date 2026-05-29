@@ -4,7 +4,6 @@
 // StorageRead, FactCapable, etc.
 //
 //   SessionExecute — access the underlying ColdStorage for sync ops
-//   StoreSession   — aggregate placeholder for future extension
 //
 // Implementations: IoBufferSession (composite), future adapters.
 
