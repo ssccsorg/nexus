@@ -18,4 +18,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
+nexus-model = { path = "../../core/model" }
+nexus-storage-composite = { path = "../../core/storage/composite" }
 reqwest = { version = "0.12", features = ["json"] }

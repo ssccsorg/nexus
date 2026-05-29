@@ -16,7 +16,7 @@ use nexus_graph::{
     create_blackboard_with_storage,
 };
 use nexus_model::FlushCursor;
-use nexus_storage_kv_cold::{BlobStore, CompositeColdStorage, KeyValueStore, ObjectStore};
+use nexus_storage_composite::{BlobStore, CompositeColdStorage, KeyValueStore, ObjectStore};
 use serde_json::json;
 
 // ── Inline mock implementations for integration tests ───────────────────────
@@ -29,6 +29,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
+#[derive(Clone)]
 struct MockKv {
     data: Arc<RwLock<HashMap<String, String>>>,
 }
@@ -66,6 +67,7 @@ impl KeyValueStore for MockKv {
     }
 }
 
+#[derive(Clone)]
 struct MockBlob {
     data: Arc<RwLock<HashMap<String, Vec<u8>>>>,
 }
