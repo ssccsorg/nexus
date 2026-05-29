@@ -11,9 +11,14 @@
 // CompositeColdStorage itself is fully platform-independent.
 
 pub mod composite;
+pub mod iobuf;
+pub mod session_server;
+pub mod store_session;
 
-// Re-export traits and main type.
 pub use composite::CompositeColdStorage;
+pub use iobuf::{IoBufferBlob, IoBufferKv, IoBufferObject};
+pub use session_server::SessionServer;
+pub use store_session::StoreSession;
 
 // Now trait and SystemClock are defined directly in this module (see below).
 // composite.rs accesses them via `use crate::{Now, SystemClock}`.
