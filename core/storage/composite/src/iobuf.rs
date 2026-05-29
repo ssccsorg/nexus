@@ -18,6 +18,10 @@ use std::sync::{Arc, RwLock};
 ///
 /// Each `set`/`delete` marks the key as dirty. After `StoreSession::flush_delta`,
 /// the caller clears dirty sets. Thread-safe via `Arc<RwLock<...>>`.
+///
+/// **Lock ordering**: `data` must always be acquired before `dirty_puts` or
+/// `dirty_deletes`. This matches the order used in all trait impl methods
+/// (`set()`, `delete()`), avoiding the classic lock-ordering deadlock.
 #[derive(Debug, Clone)]
 pub struct IoBufferKv {
     data: Arc<RwLock<HashMap<String, String>>>,
@@ -37,16 +41,18 @@ impl IoBufferKv {
     /// Hydrate the buffer from a key-value iterator (e.g. CF KV list response).
     /// Existing data is not cleared — call only once per StoreSession.
     pub fn hydrate_batch(&self, entries: impl IntoIterator<Item = (String, String)>) {
-        let mut map = self.data.write().unwrap();
+        let mut map = self.data.write().expect("IoBufferKv hydrate: lock poisoned");
         for (k, v) in entries {
             map.insert(k, v);
         }
     }
 
     /// Drain and return all dirty puts (changed/added keys → value).
+    ///
+    /// Lock order: data first, then dirty_puts. Must match set().
     pub fn drain_dirty_puts(&self) -> Vec<(String, String)> {
-        let mut keys = self.dirty_puts.write().unwrap();
         let map = self.data.read().unwrap();
+        let mut keys = self.dirty_puts.write().unwrap();
         let result: Vec<_> = keys
             .drain()
             .filter_map(|k| map.get(&k).map(|v| (k, v.clone())))
@@ -128,16 +134,18 @@ impl IoBufferBlob {
 
     /// Hydrate the buffer from a key-value iterator.
     pub fn hydrate_batch(&self, entries: impl IntoIterator<Item = (String, Vec<u8>)>) {
-        let mut map = self.data.write().unwrap();
+        let mut map = self.data.write().expect("IoBufferBlob hydrate: lock poisoned");
         for (k, v) in entries {
             map.insert(k, v);
         }
     }
 
     /// Drain dirty puts: (key, data).
+    ///
+    /// Lock order: data first, then dirty_puts. Must match put().
     pub fn drain_dirty_puts(&self) -> Vec<(String, Vec<u8>)> {
-        let mut keys = self.dirty_puts.write().unwrap();
         let map = self.data.read().unwrap();
+        let mut keys = self.dirty_puts.write().unwrap();
         let result: Vec<_> = keys
             .drain()
             .filter_map(|k| map.get(&k).map(|v| (k, v.clone())))
@@ -219,16 +227,18 @@ impl IoBufferObject {
 
     /// Hydrate the buffer from key-value pairs.
     pub fn hydrate_batch(&self, entries: impl IntoIterator<Item = (String, String)>) {
-        let mut map = self.data.write().unwrap();
+        let mut map = self.data.write().expect("IoBufferObject hydrate: lock poisoned");
         for (k, v) in entries {
             map.insert(k, v);
         }
     }
 
     /// Drain dirty puts: CAS keys → values.
+    ///
+    /// Lock order: data first, then dirty_puts. Must match put_state().
     pub fn drain_dirty_puts(&self) -> Vec<(String, String)> {
-        let mut keys = self.dirty_puts.write().unwrap();
         let map = self.data.read().unwrap();
+        let mut keys = self.dirty_puts.write().unwrap();
         let result: Vec<_> = keys
             .drain()
             .filter_map(|k| map.get(&k).map(|v| (k, v.clone())))
