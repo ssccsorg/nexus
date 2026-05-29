@@ -1,50 +1,51 @@
-// SessionServer — serializes access to a single StoreSession via a request queue.
+// SessionServer — serializes access to a StoreSession via a request queue.
 //
-// In CF Workers, each request creates an async entry point. Multiple concurrent
-// requests must not interleave writes to the same IoBuffer* — CompositeColdStorage
-// orchestration (claim_intent CAS two-step, flush_since streaming, etc.) requires
-// exclusive access.
+// Multiple concurrent requests must not interleave writes to the same
+// IoBuffer* — CompositeColdStorage orchestration (claim_intent CAS two-step,
+// flush_since streaming, etc.) requires exclusive access.
 //
-// SessionServer owns the StoreSession. Requests are submitted via `submit()`
-// which returns a oneshot::Receiver. The server processes requests sequentially
-// on a dedicated thread (native) or within a single async task (WASM).
+// SessionServer owns the StoreSession. Requests are submitted as closures;
+// the server processes them sequentially on a dedicated thread (native) or
+// via manual `process_one()` drive (WASM).
 //
 // Architecture:
 //
 //   Request A (async) ──┐
-//   Request B (async) ──┤──→ queue ──→ SessionServer ──→ StoreSession (sync)
-//                        │                                    │
-//                        │                         CompositeColdStorage
-//                        │                                    │
-//                        │                    IoBufferKv/Blob/Object (sync)
+//   Request B (async) ──┤──→ queue ──→ SessionServer<S> ──→ S (sync)
+//                        │                                     │
+//                        │                          CompositeColdStorage
+//                        │                                     │
+//                        │                     IoBufferKv/Blob/Object (sync)
 //                        │
-//                        ←──── responses ─────────────────────┘
+//                        ←──── responses ──────────────────────┘
 
 use std::sync::mpsc;
 
-use crate::StoreSession;
+use nexus_model::StoreSession;
 
-/// Owns a StoreSession and processes sync jobs sequentially.
+/// Owns a `StoreSession` and processes sync jobs sequentially.
+///
+/// Generic over `S: StoreSession` — any session backend works
+/// (IoBufferSession, blockchain adapter, future implementations).
 ///
 /// For native targets: spawn a dedicated thread via `spawn()`.
 /// For WASM targets: drive manually with `process_one()` in the async task.
 ///
 /// `process_one()` and `run()` work on both targets (WASM `mpsc::channel`
 /// is single-threaded but functional within one task).
-pub struct SessionServer {
-    session: StoreSession,
-    rx: mpsc::Receiver<Box<dyn FnOnce(&StoreSession) + Send>>,
+pub struct SessionServer<S: StoreSession> {
+    session: S,
+    rx: mpsc::Receiver<Box<dyn FnOnce(&S) + Send>>,
 }
 
-impl SessionServer {
-    /// Create a server for the given project.
+impl<S: StoreSession> SessionServer<S> {
+    /// Create a server wrapping an existing session.
     ///
     /// Returns the server handle and a `Sender` for submitting jobs.
     pub fn new(
-        project_id: impl Into<String>,
-    ) -> (Self, mpsc::Sender<Box<dyn FnOnce(&StoreSession) + Send>>) {
-        let (tx, rx) = mpsc::channel::<Box<dyn FnOnce(&StoreSession) + Send>>();
-        let session = StoreSession::new(project_id);
+        session: S,
+    ) -> (Self, mpsc::Sender<Box<dyn FnOnce(&S) + Send>>) {
+        let (tx, rx) = mpsc::channel::<Box<dyn FnOnce(&S) + Send>>();
         (Self { session, rx }, tx)
     }
 
@@ -71,15 +72,15 @@ impl SessionServer {
 
     /// Submit a closure and block until it completes.
     ///
-    /// The closure `f` receives `&StoreSession`. Its return value is
-    /// sent back through an internal channel and returned here.
+    /// The closure `f` receives `&S` (the StoreSession). Its return value
+    /// is sent back through an internal channel and returned here.
     ///
     /// For WASM targets: this blocks the current task until the job
     /// completes. Only call when `process_one()` is being driven on
     /// the same task or an external thread.
     pub fn submit_sync<T: Send + 'static>(
-        tx: &mpsc::Sender<Box<dyn FnOnce(&StoreSession) + Send>>,
-        f: impl FnOnce(&StoreSession) -> T + Send + 'static,
+        tx: &mpsc::Sender<Box<dyn FnOnce(&S) + Send>>,
+        f: impl FnOnce(&S) -> T + Send + 'static,
     ) -> T {
         let (resp_tx, resp_rx) = mpsc::channel();
         tx.send(Box::new(move |session| {
@@ -93,12 +94,12 @@ impl SessionServer {
     // ── Access for dirty drain ───────────────────────────────────────────
 
     /// Access the StoreSession directly (only safe when no jobs are in flight).
-    pub fn session(&self) -> &StoreSession {
+    pub fn session(&self) -> &S {
         &self.session
     }
 
     /// Mutably access the StoreSession (only safe when no jobs are in flight).
-    pub fn session_mut(&mut self) -> &mut StoreSession {
+    pub fn session_mut(&mut self) -> &mut S {
         &mut self.session
     }
 }
@@ -106,15 +107,12 @@ impl SessionServer {
 // ── Native-only: threaded spawn ──────────────────────────────────────────
 
 #[cfg(not(target_family = "wasm"))]
-impl SessionServer {
+impl<S: StoreSession + Send + 'static> SessionServer<S> {
     /// Spawn the server on a dedicated thread (native only).
     ///
     /// Returns the `Sender` for submitting jobs.
-    pub fn spawn(
-        project_id: impl Into<String> + Send + 'static,
-    ) -> mpsc::Sender<Box<dyn FnOnce(&StoreSession) + Send>> {
-        let (tx, rx) = mpsc::channel::<Box<dyn FnOnce(&StoreSession) + Send>>();
-        let session = StoreSession::new(project_id);
+    pub fn spawn(session: S) -> mpsc::Sender<Box<dyn FnOnce(&S) + Send>> {
+        let (tx, rx) = mpsc::channel::<Box<dyn FnOnce(&S) + Send>>();
         std::thread::spawn(move || {
             while let Ok(job) = rx.recv() {
                 job(&session);
