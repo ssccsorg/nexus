@@ -919,6 +919,8 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "nexus-graph",
+ "nexus-model",
+ "nexus-storage-composite",
  "nexus-storage-petgraph",
  "nexus-storage-sqlite",
  "reqwest",
@@ -953,6 +955,16 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "nexus-storage-composite"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "nexus-model",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

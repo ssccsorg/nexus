@@ -1,4 +1,4 @@
-// nexus-storage-kv-cold — Platform-independent multi-tier cold storage for FIH.
+// nexus-storage-composite — Platform-independent multi-tier cold storage for FIH.
 //
 // Provides KeyValueStore, BlobStore, and ObjectStore traits, plus CompositeColdStorage
 // which implements the full ColdStorage trait by orchestrating three tiers:
@@ -11,17 +11,22 @@
 // CompositeColdStorage itself is fully platform-independent.
 
 pub mod composite;
+pub mod iobuf;
+pub mod session_server;
+pub mod store_session;
 
-// Re-export traits and main type.
 pub use composite::CompositeColdStorage;
+pub use iobuf::{IoBufferBlob, IoBufferKv, IoBufferObject};
+pub use session_server::{SessionHandle, SessionServer};
+pub use store_session::IoBufferSession;
 
 // Now trait and SystemClock are defined directly in this module (see below).
 // composite.rs accesses them via `use crate::{Now, SystemClock}`.
 
 /// Simple key-value store abstraction.
 ///
-/// Implementations: MockKv (test), worker::kv::Namespace (CF Workers),
-/// sled (server), HashMap (embedded).
+/// Implementations: IoBufferKv (production, in-memory HashMap),
+/// worker::kv::Namespace (CF Workers), sled (server), MockKv (test).
 pub trait KeyValueStore: Send + Sync {
     /// Get a value by key. Returns None if not found.
     fn get(&self, key: &str) -> Result<Option<String>, String>;
@@ -38,8 +43,8 @@ pub trait KeyValueStore: Send + Sync {
 
 /// Blob store for Parquet chunks and other binary data.
 ///
-/// Implementations: MockBlob (test), R2 bucket (CF Workers),
-/// local filesystem (server).
+/// Implementations: IoBufferBlob (production, in-memory HashMap),
+/// R2 bucket (CF Workers), local filesystem (server), MockBlob (test).
 pub trait BlobStore: Send + Sync {
     /// Store binary data at the given key.
     fn put(&self, key: &str, data: &[u8]) -> Result<(), String>;
@@ -56,8 +61,8 @@ pub trait BlobStore: Send + Sync {
 
 /// Atomic CAS store for cross-worker coordination.
 ///
-/// Implementations: MockObject (test), Durable Object stub (CF Workers),
-/// Redis lock (server).
+/// Implementations: IoBufferObject (production, in-memory HashMap),
+/// Durable Object stub (CF Workers), Redis lock (server), MockObject (test).
 ///
 /// Each key represents an independent CAS namespace. In CF Workers,
 /// `key` maps to a DO instance ID, making each Intent claim its own

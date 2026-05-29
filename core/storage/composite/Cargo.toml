@@ -1,7 +1,7 @@
-# Package name (nexus-storage-kv-cold) preserved for backward compatibility.
+# Package name (nexus-storage-composite) preserved for backward compatibility.
 # Directory name (composite/) reflects the 3-tier KV+Blob+Object architecture.
 [package]
-name = "nexus-storage-kv-cold"
+name = "nexus-storage-composite"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,4 +13,6 @@ serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
+nexus-graph = { path = "../../graph" }
+nexus-storage-petgraph = { path = "../petgraph" }
 tempfile = "3"

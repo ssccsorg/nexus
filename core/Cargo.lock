@@ -396,7 +396,7 @@ dependencies = [
  "cyrs-plan",
  "cyrs-syntax",
  "nexus-model",
- "nexus-storage-kv-cold",
+ "nexus-storage-composite",
  "nexus-storage-petgraph",
  "petgraph",
  "serde",
@@ -426,11 +426,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "nexus-storage-kv-cold"
+name = "nexus-storage-composite"
 version = "0.1.0"
 dependencies = [
  "log",
+ "nexus-graph",
  "nexus-model",
+ "nexus-storage-petgraph",
  "serde",
  "serde_json",
  "tempfile",

@@ -11,6 +11,7 @@ pub mod legacy;
 pub mod null;
 pub mod read;
 pub mod scan;
+pub mod session;
 pub mod time_range;
 
 pub use aggregate::{ColdStorage, FihPersistence, HotStorage};
@@ -26,4 +27,5 @@ pub use legacy::StoredEvent;
 pub use null::NullStorage;
 pub use read::StorageRead;
 pub use scan::{PartitionData, ScanCapable};
+pub use session::SessionExecute;
 pub use time_range::TimeRangeCapable;
