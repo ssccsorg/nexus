@@ -3,7 +3,11 @@
 # neXus
 ## Executive Summary
 
-neXus is a self‑evolving, modular and contract‑governed agentic research infrastructure that actively generates, validates, and learns from hypotheses or facts that span the SSCCS’s software‑hardware boundary. All coordinate indirectly through a shared graph of some simple recursive primitives.
+neXus is a self‑evolving, modular and contract‑governed agentic research infrastructure that actively generates, validates, and learns from hypotheses or facts that span the SSCCS’s software‑hardware boundary. All coordinate indirectly through a shared graph of simple recursive primitives.
+
+The system is an ultra‑thin, decentralized binary hub of just a few megabytes. Attach compact or enterprise‑scale storage to this core and capacity scales with completely linear incremental costs. The same Wasm bytecode ports without modification to any edge node, portable device, blockchain, or system container that supports a Wasm or bare‑metal runtime.
+
+Within this footprint, 100,000 autonomous agents can operate concurrently — designing silicon chips, researching within closed‑loop environments, and manufacturing the results. As this paradigm expands into robotics, it lays the structural foundation for an entirely automated, closed‑loop machine ecosystem.
 
 The design rests on a single observation: large language models are context‑conditioned Fact generators — non‑deterministic engines that produce tokens without inherent direction, consistency, or auditability. neXus does not attempt to make the model deterministic. It provides the deterministic skeleton within which model outputs acquire structure, traceability, and permanence. Where the model is analogous to a CPU — powerful but unsteered — neXus is the operating system: it defines where outputs reside, how they connect across processes, and under what constraints they execute.
 
