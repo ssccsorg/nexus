@@ -6,7 +6,7 @@
 // Architecture:
 //
 //   CF KV / R2 / DO  (source of truth, async)
-//       ↓ hydrate_batch     ↑ drain_dirty
+//       ↓ hydrate_*       ↑ drain_dirty
 //   IoBufferSession         │
 //   ├── IoBufferKv          │  ← dirty tracking
 //   ├── IoBufferBlob        │
@@ -23,9 +23,21 @@
 // IoBufferSession is pure sync, never touches external I/O.
 
 use nexus_model::{SessionDrainBlob, SessionDrainKv, SessionDrainObject, SessionExecute};
+use serde::Serialize;
 
 use crate::composite::CompositeColdStorage;
 use crate::{IoBufferBlob, IoBufferKv, IoBufferObject, SystemClock};
+
+// ── Stamped envelope helper for hydrate ──────────────────────────────────
+
+/// The internal Stamped envelope that CompositeColdStorage uses.
+/// Reproduced here so async consumers can preload raw `Fact`/`Intent`/`Hint`
+/// objects without manually constructing JSON.
+#[derive(Serialize)]
+struct Stamped<'a, T: Serialize> {
+    submitted_at: &'a str,
+    data: &'a T,
+}
 
 /// Concrete StoreSession with IoBuffer* + CompositeColdStorage.
 ///
@@ -40,7 +52,7 @@ impl IoBufferSession {
     /// Create a fresh session for the given project.
     ///
     /// All IoBuffer* instances start empty. The caller must call
-    /// `kv_buf().hydrate_batch(...)` etc. before executing storage operations.
+    /// `hydrate_*` methods before executing storage operations.
     pub fn new(project_id: impl Into<String>) -> Self {
         let kv = IoBufferKv::new();
         let blob = IoBufferBlob::new();
@@ -54,19 +66,44 @@ impl IoBufferSession {
         Self { storage }
     }
 
-    // ── Hydrate surface (called by async bridge before sync execution) ──
+    // ── High-level hydrate API ───────────────────────────────────────────
+    //
+    // These accept raw `Fact`/`Intent`/`Hint` objects and apply the required
+    // Stamped envelope internally. The consumer does not need to know about
+    // the internal JSON format.
+    //
+    // For low-level preload (e.g. from CF KV raw data), use kv_buf()
+    // directly with hydrate_batch().
 
-    /// Access the KV buffer for hydrate_batch.
+    /// Preload a batch of raw KV key-value pairs without the Stamped envelope.
+    /// The consumer is responsible for correct JSON format (raw data from CF KV).
+    pub fn hydrate_kv(&self, entries: impl IntoIterator<Item = (String, String)>) {
+        self.storage.kv().hydrate_batch(entries);
+    }
+
+    /// Preload a batch of raw Blob key-value pairs.
+    pub fn hydrate_blob(&self, entries: impl IntoIterator<Item = (String, Vec<u8>)>) {
+        self.storage.blob().hydrate_batch(entries);
+    }
+
+    /// Preload a batch of raw Object key-value pairs (CAS state).
+    pub fn hydrate_object(&self, entries: impl IntoIterator<Item = (String, String)>) {
+        self.storage.object().hydrate_batch(entries);
+    }
+
+    // ── Low-level buffer access ──────────────────────────────────────────
+
+    /// Access the KV buffer directly for low-level operations.
     pub fn kv_buf(&self) -> &IoBufferKv {
         self.storage.kv()
     }
 
-    /// Access the Blob buffer for hydrate_batch.
+    /// Access the Blob buffer directly for low-level operations.
     pub fn blob_buf(&self) -> &IoBufferBlob {
         self.storage.blob()
     }
 
-    /// Access the Object buffer for hydrate_batch.
+    /// Access the Object buffer directly for low-level operations.
     pub fn object_buf(&self) -> &IoBufferObject {
         self.storage.object()
     }

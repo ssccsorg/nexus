@@ -28,31 +28,74 @@ type Job<S> = Box<dyn FnOnce(&S) + Send>;
 
 /// Owns a `StoreSession` and processes sync jobs sequentially.
 ///
-/// Generic over `S: StoreSession` — any session backend works
-/// (IoBufferSession, blockchain adapter, future implementations).
+/// Generic over `S: StoreSession` — any session backend works.
 ///
-/// For native targets: spawn a dedicated thread via `spawn()`.
-/// For WASM targets: drive manually with `process_one()` in the async task.
+/// # Native usage
 ///
-/// `process_one()` and `run()` work on both targets (WASM `mpsc::channel`
-/// is single-threaded but functional within one task).
+/// ```ignore
+/// let (mut server, _tx) = SessionServer::new(session);
+/// std::thread::spawn(move || server.run());
+/// // or use SessionServer::spawn() for a single-call setup
+/// ```
+///
+/// # WASM usage
+///
+/// ```ignore
+/// let session = /* ... */;
+/// let server = SessionServer::for_wasm(session);
+/// // In the async task:
+/// server.process_one();  // or iterate in a loop
+/// ```
 pub struct SessionServer<S: StoreSession> {
     session: S,
     rx: mpsc::Receiver<Job<S>>,
 }
 
-impl<S: StoreSession> SessionServer<S> {
-    /// Create a server wrapping an existing session.
+/// A handle to submit jobs to a `SessionServer`. Clonable for multi-threaded access.
+#[derive(Clone)]
+pub struct SessionHandle<S: StoreSession> {
+    tx: mpsc::Sender<Job<S>>,
+}
+
+impl<S: StoreSession> SessionHandle<S> {
+    /// Submit a closure to the server for immediate execution.
     ///
-    /// Returns the server handle and a `Sender` for submitting jobs.
-    pub fn new(session: S) -> (Self, mpsc::Sender<Job<S>>) {
+    /// Blocks the calling thread until the job completes and returns the result.
+    /// On WASM, the caller must drive `process_one()` concurrently.
+    pub fn submit<T: Send + 'static>(
+        &self,
+        f: impl FnOnce(&S) -> T + Send + 'static,
+    ) -> T {
+        let (resp_tx, resp_rx) = mpsc::channel();
+        self.tx
+            .send(Box::new(move |session| {
+                let _ = resp_tx.send(f(session));
+            }))
+            .expect("SessionServer channel closed");
+        resp_rx
+            .recv()
+            .expect("SessionServer response channel closed")
+    }
+}
+
+impl<S: StoreSession> SessionServer<S> {
+    /// Create a server wrapping an existing session, returning both server and handle.
+    pub fn new(session: S) -> (Self, SessionHandle<S>) {
         let (tx, rx) = mpsc::channel::<Job<S>>();
-        (Self { session, rx }, tx)
+        (
+            Self { session, rx },
+            SessionHandle { tx },
+        )
     }
 
-    /// Process one job from the queue (blocking, for WASM manual drive).
-    ///
-    /// Returns `true` if a job was processed, `false` if the channel is closed.
+    /// Create a server for WASM targets — returns only the server, no handle.
+    /// Use `process_one()` manually within the async task.
+    pub fn for_wasm(session: S) -> Self {
+        let (_, rx) = mpsc::channel::<Job<S>>();
+        Self { session, rx }
+    }
+
+    /// Process one job from the queue (blocking). Returns `true` if a job ran.
     pub fn process_one(&mut self) -> bool {
         match self.rx.recv() {
             Ok(job) => {
@@ -63,45 +106,19 @@ impl<S: StoreSession> SessionServer<S> {
         }
     }
 
-    /// Block until all jobs are processed (channel closed).
-    ///
-    /// For native targets: prefer `spawn()` instead of blocking the main thread.
-    /// For WASM targets: use `process_one()` in a loop within the async task.
+    /// Run until the channel closes (all handles dropped).
     pub fn run(&mut self) {
         while self.process_one() {}
     }
 
-    /// Submit a closure and block until it completes.
-    ///
-    /// The closure `f` receives `&S` (the StoreSession). Its return value
-    /// is sent back through an internal channel and returned here.
-    ///
-    /// For WASM targets: this blocks the current task until the job
-    /// completes. Only call when `process_one()` is being driven on
-    /// the same task or an external thread.
-    pub fn submit_sync<T: Send + 'static>(
-        tx: &mpsc::Sender<Job<S>>,
-        f: impl FnOnce(&S) -> T + Send + 'static,
-    ) -> T {
-        let (resp_tx, resp_rx) = mpsc::channel();
-        tx.send(Box::new(move |session| {
-            let result = f(session);
-            let _ = resp_tx.send(result);
-        }))
-        .expect("SessionServer channel closed");
-        resp_rx
-            .recv()
-            .expect("SessionServer response channel closed")
-    }
+    // ── Access ───────────────────────────────────────────────────────────
 
-    // ── Access for dirty drain ───────────────────────────────────────────
-
-    /// Access the StoreSession directly (only safe when no jobs are in flight).
+    /// Access the session when no jobs are in flight.
     pub fn session(&self) -> &S {
         &self.session
     }
 
-    /// Mutably access the StoreSession (only safe when no jobs are in flight).
+    /// Mutable access to session when no jobs are in flight.
     pub fn session_mut(&mut self) -> &mut S {
         &mut self.session
     }
@@ -111,16 +128,16 @@ impl<S: StoreSession> SessionServer<S> {
 
 #[cfg(not(target_family = "wasm"))]
 impl<S: StoreSession + Send + 'static> SessionServer<S> {
-    /// Spawn the server on a dedicated thread (native only).
+    /// Spawn the server on a dedicated thread.
     ///
-    /// Returns the `Sender` for submitting jobs.
-    pub fn spawn(session: S) -> mpsc::Sender<Job<S>> {
+    /// Returns a `SessionHandle` for submitting jobs from any thread.
+    pub fn spawn(session: S) -> SessionHandle<S> {
         let (tx, rx) = mpsc::channel::<Job<S>>();
         std::thread::spawn(move || {
             while let Ok(job) = rx.recv() {
                 job(&session);
             }
         });
-        tx
+        SessionHandle { tx }
     }
 }
