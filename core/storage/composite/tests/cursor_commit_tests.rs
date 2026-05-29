@@ -6,10 +6,9 @@
 //   3. Parallel reads/writes do not race
 //   4. Cursor replaces dirty tracking — flush boundary is determinable
 
-use nexus_model::{Fact, FihHash, FlushCapable, FlushCursor, FlushResult, Intent};
+use nexus_model::{Fact, FihHash, FlushCapable, FlushCursor};
 use nexus_storage_kv_cold::{
-    BlobStore, CompositeColdStorage, IoBufferBlob, IoBufferKv, IoBufferObject, KeyValueStore,
-    ObjectStore,
+    BlobStore, CompositeColdStorage, IoBufferBlob, IoBufferKv, IoBufferObject, KeyValueStore,    
 };
 use std::sync::{Arc, Barrier};
 use std::thread;
