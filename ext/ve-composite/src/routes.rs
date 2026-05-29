@@ -7,6 +7,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
+use nexus_model::SessionExecute;
 use nexus_storage_kv_cold::{BlobStore, KeyValueStore, ObjectStore};
 
 use crate::AppState;
@@ -126,33 +127,6 @@ pub async fn do_cas(
         Ok(false) => (StatusCode::CONFLICT, Json(serde_json::json!({"status":"cas_conflict"}))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
     }
-}
-
-// ─── Drain ──────────────────────────────────────────────────────────────
-
-pub async fn drain_kv_puts(State(s): State<Arc<AppState>>, Path(_project): Path<String>) -> impl IntoResponse {
-    let d: Vec<(String, String)> = s.session.drain_kv_puts();
-    Json(serde_json::json!({"drained": d}))
-}
-pub async fn drain_kv_deletes(State(s): State<Arc<AppState>>, Path(_project): Path<String>) -> impl IntoResponse {
-    let d: Vec<String> = s.session.drain_kv_deletes();
-    Json(serde_json::json!({"drained": d}))
-}
-pub async fn drain_blob_puts(State(s): State<Arc<AppState>>, Path(_project): Path<String>) -> impl IntoResponse {
-    let d: Vec<(String, Vec<u8>)> = s.session.drain_blob_puts();
-    Json(serde_json::json!({"drained": d}))
-}
-pub async fn drain_blob_deletes(State(s): State<Arc<AppState>>, Path(_project): Path<String>) -> impl IntoResponse {
-    let d: Vec<String> = s.session.drain_blob_deletes();
-    Json(serde_json::json!({"drained": d}))
-}
-pub async fn drain_object_puts(State(s): State<Arc<AppState>>, Path(_project): Path<String>) -> impl IntoResponse {
-    let d: Vec<(String, String)> = s.session.drain_object_puts();
-    Json(serde_json::json!({"drained": d}))
-}
-pub async fn drain_object_deletes(State(s): State<Arc<AppState>>, Path(_project): Path<String>) -> impl IntoResponse {
-    let d: Vec<String> = s.session.drain_object_deletes();
-    Json(serde_json::json!({"drained": d}))
 }
 
 // ─── Base64 ─────────────────────────────────────────────────────────────
