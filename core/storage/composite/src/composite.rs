@@ -52,8 +52,8 @@ use crate::{BlobStore, MetaStore, ObjectStore, flush_blob_prefix};
 use crate::{Now, SystemClock};
 use log;
 use nexus_model::{
-    BoardState, CypherCapable, EvictCapable, FlushCapable, FlushCursor, FlushResult, PartitionData,
-    ScanCapable, StorageRead, TimeRangeCapable,
+    BoardState, ColdStorage, CypherCapable, EvictCapable, FlushCapable, FlushCursor, FlushResult,
+    PartitionData, ScanCapable, StorageRead, TimeRangeCapable,
 };
 use std::ops::Range;
 
@@ -264,13 +264,37 @@ impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> FlushCapable
         // that updates the cursor only. The caller (DualStorage or Worker)
         // writes Petgraph data to blob before calling flush_since.
         //
-        // If data was pre-written to blob, count it:
+        // If data was pre-written to blob, count the records (lines).
         let fact_prefix = flush_blob_prefix(self.project(), "facts", partition);
-        records_flushed += self.blob.list(&fact_prefix)?.len() as u64;
+        let fact_keys = self.blob.list(&fact_prefix)?;
+        for key in &fact_keys {
+            if let Ok(Some(data)) = self.blob.get(key) {
+                records_flushed += data.iter().filter(|&&b| b == b'\n').count() as u64 + 1;
+                if data.is_empty() || !data.contains(&b'\n') {
+                    records_flushed += 1;
+                }
+            }
+        }
         let intent_prefix = flush_blob_prefix(self.project(), "intents", partition);
-        records_flushed += self.blob.list(&intent_prefix)?.len() as u64;
+        let intent_keys = self.blob.list(&intent_prefix)?;
+        for key in &intent_keys {
+            if let Ok(Some(data)) = self.blob.get(key) {
+                records_flushed += data.iter().filter(|&&b| b == b'\n').count() as u64 + 1;
+                if data.is_empty() || !data.contains(&b'\n') {
+                    records_flushed += 1;
+                }
+            }
+        }
         let hint_prefix = flush_blob_prefix(self.project(), "hints", partition);
-        records_flushed += self.blob.list(&hint_prefix)?.len() as u64;
+        let hint_keys = self.blob.list(&hint_prefix)?;
+        for key in &hint_keys {
+            if let Ok(Some(data)) = self.blob.get(key) {
+                records_flushed += data.iter().filter(|&&b| b == b'\n').count() as u64 + 1;
+                if data.is_empty() || !data.contains(&b'\n') {
+                    records_flushed += 1;
+                }
+            }
+        }
 
         // Persist cursor via meta store.
         let new_cursor = FlushCursor {
@@ -363,6 +387,14 @@ impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> CypherCapable
 {
     // CompositeColdStorage does not support Cypher queries directly.
     // Graph queries are handled by PetgraphStorage (hot).
+}
+
+impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> ColdStorage
+    for CompositeColdStorage<B, O, M, C>
+{
+    fn write_blob(&self, key: &str, data: &[u8]) -> Result<(), String> {
+        self.blob.put(key, data)
+    }
 }
 
 // ── Snapshot persistence helper (for Worker restart) ────────────────────────

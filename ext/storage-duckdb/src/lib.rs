@@ -3,7 +3,7 @@
 pub mod cypher_sql;
 
 use nexus_model::{
-    BoardState, CypherCapable, EvictCapable, Fact, FihHash, FilterCapable, FlushCapable,
+    BoardState, ColdStorage, CypherCapable, EvictCapable, Fact, FihHash, FilterCapable, FlushCapable,
     FlushCursor, FlushResult, Hint, Intent, PartitionData, ScanCapable, StateFilter, StorageRead,
     TimeRangeCapable, cold_query::ColdQuery,
 };
@@ -535,5 +535,17 @@ impl EvictCapable for DuckDbStorage {
         // DuckDB manages its own Parquet lifecycle via the flush cursor.
         // Explicit eviction is delegated to the DuckDB engine.
         Ok(0)
+    }
+}
+
+impl ColdStorage for DuckDbStorage {
+    fn write_blob(&self, key: &str, data: &[u8]) -> Result<(), String> {
+        let path = format!("{}/{}", self.base_path, key.trim_start_matches('/'));
+        if let Some(parent) = std::path::Path::new(&path).parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("write_blob create_dir: {e}"))?;
+        }
+        std::fs::write(&path, data)
+            .map_err(|e| format!("write_blob write: {e}"))
     }
 }
