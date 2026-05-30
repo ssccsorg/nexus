@@ -446,7 +446,6 @@ dependencies = [
  "nexus-storage-petgraph",
  "postcard",
  "serde",
- "serde_json",
  "tempfile",
 ]
 

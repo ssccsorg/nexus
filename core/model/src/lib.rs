@@ -32,7 +32,6 @@
 //   Aggregate: FullDetection = GapDetection + ContradictionDetection + StateChangeDetection
 
 pub mod blackboard;
-pub mod cold_query;
 pub mod detection;
 pub mod error;
 pub mod fih;

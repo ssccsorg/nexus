@@ -119,21 +119,24 @@ impl DetectionCapable for StateChangeDetector {
         output
     }
 
-    fn snapshot_state(&self) -> Option<serde_json::Value> {
+    fn snapshot_state(&self) -> Option<nexus_model::Content> {
         self.checkpoint.as_ref().map(|cp| {
-            serde_json::json!({
+            nexus_model::Content::Text(serde_json::json!({
                 "fact_count": cp.fact_count,
                 "open_intent_count": cp.open_intent_count,
-            })
+            }).to_string())
         })
     }
 
-    fn restore_state(&mut self, state: serde_json::Value) {
-        let fc = state
+    fn restore_state(&mut self, state: nexus_model::Content) {
+        let json = state.as_str()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+            .unwrap_or(serde_json::Value::Null);
+        let fc = json
             .get("fact_count")
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as usize;
-        let oi = state
+        let oi = json
             .get("open_intent_count")
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as usize;

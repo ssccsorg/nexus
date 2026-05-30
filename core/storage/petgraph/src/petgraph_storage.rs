@@ -6,7 +6,7 @@
 
 use crate::weight::{EdgeWeight, NodeWeight};
 use nexus_model::{
-    BlackboardError, BoardState, Content, CypherCapable, DeltaSet, EvictCapable, Fact, FactCapable,
+    BlackboardError, BoardState, Content, DeltaSet, EvictCapable, Fact, FactCapable,
     FihHash, FilterCapable, Hint, HintCapable, HotStorage, Intent, IntentCapable, StateFilter,
     StorageRead, TimeRangeCapable,
 };
@@ -833,6 +833,3 @@ impl FilterCapable for PetgraphStorage {
     }
 }
 
-// ── CypherCapable ────────────────────────────────────────────────────────────
-
-impl CypherCapable for PetgraphStorage {}

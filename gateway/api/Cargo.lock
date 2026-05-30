@@ -979,10 +979,10 @@ name = "nexus-storage-composite"
 version = "0.1.0"
 dependencies = [
  "log",
+ "nexus-graph",
  "nexus-model",
  "postcard",
  "serde",
- "serde_json",
 ]
 
 [[package]]

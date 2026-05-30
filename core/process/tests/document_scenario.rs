@@ -44,7 +44,7 @@
 //   - Snapshots preserve all Facts, Intents, and claim state
 
 use nexus_graph::{
-    Blackboard, EvictCapable, Fact, FihHash, Intent, Snapshottable, StorageSnapshot,
+    Blackboard, Content, EvictCapable, Fact, FihHash, Intent, Snapshottable, StorageSnapshot,
     create_blackboard, create_blackboard_from_snapshot,
 };
 use nexus_process::scheduler::Scheduler;
@@ -59,12 +59,11 @@ fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) 
     Fact {
         id: FihHash(id.to_string()),
         origin: origin.to_string(),
-        content: serde_json::json!({
+        content: Content::Text(serde_json::to_string(&serde_json::json!({
             "claim": claim_text,
             "topic": topic,
             "position": position,
-        })
-        .into(),
+        })).unwrap_or_default()),
         creator: "ingester".into(),
     }
 }

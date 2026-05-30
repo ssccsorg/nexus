@@ -1,5 +1,3 @@
-use super::read::StorageRead;
-
 /// Storage backend that can execute Cypher query plans.
 ///
 /// `CypherCapable` marks a storage backend that accepts compiled Cypher
@@ -10,7 +8,7 @@ use super::read::StorageRead;
 /// `DualStorage` and `DefaultBlackboard` delegate to their cold backend.
 /// Backends without a concrete implementation fall through to the default
 /// error-returning method.
-pub trait CypherCapable: StorageRead {
+pub trait CypherCapable: nexus_model::StorageRead {
     /// Execute a compiled query plan against this storage backend.
     ///
     /// The `plan` is a JSON-serialized `ColdQuery` describing a tabular

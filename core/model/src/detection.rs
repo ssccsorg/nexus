@@ -19,7 +19,7 @@
 //   - Minimal implementations (only implement what you need)
 //   - Future: EmbeddingSimilarityDetection, TemporalAnomalyDetection, etc.
 
-use crate::fih::{BoardState, Fact};
+use crate::fih::{BoardState, Content, Fact};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -41,13 +41,13 @@ pub trait DetectionCapable {
 
     /// Export detector state for snapshot persistence.
     /// Default: None (stateless detector). Override to persist state.
-    fn snapshot_state(&self) -> Option<serde_json::Value> {
+    fn snapshot_state(&self) -> Option<Content> {
         None
     }
 
     /// Restore detector state from a previously saved snapshot.
     /// Default: no-op. Override to restore persisted state.
-    fn restore_state(&mut self, _state: serde_json::Value) {}
+    fn restore_state(&mut self, _state: Content) {}
 }
 
 /// Detects gaps between facts: orphaned concepts, cross-origin clusters,
@@ -71,7 +71,7 @@ pub struct DetectionCheckpoint {
 
 /// Serialized detector states, keyed by detector name.
 /// Stored in StorageSnapshot for cross-worker persistence.
-pub type TaskStates = HashMap<String, serde_json::Value>;
+pub type TaskStates = HashMap<String, Content>;
 
 /// Detects when the Blackboard state has changed sufficiently to warrant
 /// a new analysis cycle. Uses count-based checkpoints (Cairn pattern).

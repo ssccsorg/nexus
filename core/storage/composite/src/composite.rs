@@ -51,8 +51,9 @@
 use crate::{BlobStore, MetaStore, ObjectStore, flush_blob_prefix};
 use crate::{Now, SystemClock};
 use log;
+use nexus_graph::CypherCapable;
 use nexus_model::{
-    BoardState, ColdStorage, CypherCapable, EvictCapable, FlushCapable, FlushCursor, FlushResult,
+    BoardState, ColdStorage, EvictCapable, FlushCapable, FlushCursor, FlushResult,
     PartitionData, ScanCapable, StorageRead, TimeRangeCapable,
 };
 use postcard;
@@ -123,8 +124,9 @@ impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> CompositeColdStorage<B,
     pub fn read_cursor(&self) -> Result<Option<FlushCursor>, String> {
         let cursor_key = format!("{}:cursor", self.project());
         match self.meta.get(&cursor_key)? {
-            Some(json) => {
-                let cursor: FlushCursor = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+            Some(raw) => {
+                let cursor: FlushCursor =
+                    postcard::from_bytes(raw.as_bytes()).map_err(|e| e.to_string())?;
                 Ok(Some(cursor))
             }
             None => Ok(None),
@@ -269,10 +271,11 @@ impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> FlushCapable
             last_flushed_at: now_ts,
             partition: partition.clone(),
         };
-        let cursor_json =
-            serde_json::to_string(&new_cursor).map_err(|e| format!("serialize cursor: {e}"))?;
+        let cursor_bytes =
+            postcard::to_allocvec(&new_cursor).map_err(|e| format!("serialize cursor: {e}"))?;
         let cursor_key = format!("{}:cursor", self.project());
-        self.meta.set(&cursor_key, &cursor_json)?;
+        self.meta
+            .set(&cursor_key, &String::from_utf8_lossy(&cursor_bytes))?;
 
         Ok(FlushResult {
             records_flushed,
