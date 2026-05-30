@@ -8,19 +8,22 @@
 //   CF KV / R2 / DO  (source of truth, async)
 //       ↓ hydrate_*       ↑ cursor-driven flush
 //   IoBufferSession         │
-//   ├── IoBufferKv          │  ← pure HashMap
+//   ├── IoBufferKv          │  ← pure HashMap, track_dirty=true
 //   ├── IoBufferBlob        │
 //   ├── IoBufferObject      │
+//   ├── commit_kv (IoBufferKv, track_dirty=false)  ← CQRS commit channel
+//   ├── commit_blob (IoBufferBlob, track_dirty=false)
 //   └── CompositeColdStorage (sync) ← orchestration
 //       ├── kv, blob, object (write)
-//       ├── commit_kv (cursor state)
-//       └── commit_blob (flush archives)
+//       ├── commit_kv (cursor state — excluded from drain)
+//       └── commit_blob (flush archives — excluded from drain)
 //
 // The consumer (CF Worker, blockchain validator, etc.):
 //   1. Creates an IoBufferSession
 //   2. Hydrates IoBuffer* from external source (async)
 //   3. Runs CompositeColdStorage sync operations via storage()
 //   4. Reads cursor via read_cursor() to determine flush boundary
+//   5. Drains only IoBuffer* with track_dirty=true — commit channel excluded
 //
 // CompositeColdStorage itself is pure sync, never touches async code.
 // IoBufferSession is pure sync, never touches external I/O.
@@ -53,6 +56,10 @@ struct Stamped<'a, T: Serialize> {
 /// IoBufferSession provides the sync surface.
 pub struct IoBufferSession {
     storage: CompositeColdStorage<IoBufferKv, IoBufferBlob, IoBufferObject, SystemClock>,
+    /// Commit channel KV (cursor state). `track_dirty=false` — excluded from drain.
+    commit_kv: IoBufferKv,
+    /// Commit channel Blob (flush archives). `track_dirty=false` — excluded from drain.
+    commit_blob: IoBufferBlob,
 }
 
 impl IoBufferSession {
@@ -60,17 +67,54 @@ impl IoBufferSession {
     ///
     /// All IoBuffer* instances start empty. The caller must call
     /// `hydrate_*` methods before executing storage operations.
+    ///
+    /// === CQRS commit channel ===
+    ///
+    /// `commit_kv` and `commit_blob` are completely independent IoBuffer
+    /// instances (separate HashMap). Consumer drain reads `kv_buf()` and
+    /// `blob_buf()` exclusively, so commit channel data is naturally
+    /// excluded — no flag checks needed.
+    ///
+    /// Before this CQRS split, `flush_since()` wrote to `self.blob` and
+    /// `self.kv` (same instance), causing a self-referential dirty cycle:
+    /// flush output became flush input on the next cycle. Now,
+    /// `CompositeColdStorage` writes flush archives to `commit_blob` and
+    /// cursor to `commit_kv` — completely separate instances.
     pub fn new(project_id: impl Into<String>) -> Self {
         let kv = IoBufferKv::new();
         let blob = IoBufferBlob::new();
         let object = IoBufferObject::new();
-        let storage = CompositeColdStorage::new_with_system_clock(
+        let commit_kv = IoBufferKv::new();
+        let commit_blob = IoBufferBlob::new();
+        let storage = CompositeColdStorage::new(
             kv.clone(),
             blob.clone(),
             object.clone(),
+            commit_kv.clone(),
+            commit_blob.clone(),
+            SystemClock,
             project_id,
         );
-        Self { storage }
+        Self {
+            storage,
+            commit_kv,
+            commit_blob,
+        }
+    }
+
+    // ── CQRS accessors ──────────────────────────────────────────────────
+
+    /// Access the commit channel KV (cursor state).
+    /// This is a physically separate IoBufferKv instance from the general
+    /// buffer. Consumer drain calls `kv_buf()` which never sees this data.
+    pub fn commit_kv(&self) -> &IoBufferKv {
+        &self.commit_kv
+    }
+
+    /// Access the commit channel Blob (flush archives).
+    /// Physically separate from `blob_buf()` — excluded from drain naturally.
+    pub fn commit_blob(&self) -> &IoBufferBlob {
+        &self.commit_blob
     }
 
     // ── High-level hydrate API ───────────────────────────────────────────
