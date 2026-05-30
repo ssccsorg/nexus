@@ -12,13 +12,16 @@ use super::time_range::TimeRangeCapable;
 pub trait FihPersistence: FactCapable + IntentCapable + HintCapable {}
 impl<T: FactCapable + IntentCapable + HintCapable> FihPersistence for T {}
 
+/// Delta set of postcard-serialized entity blobs: (facts, intents, hints).
+pub type DeltaSet = (Vec<Vec<u8>>, Vec<Vec<u8>>, Vec<Vec<u8>>);
+
 /// Hot storage: full FIH + memory management + time range + Cypher + filter (petgraph).
 pub trait HotStorage:
     FihPersistence + FilterCapable + CypherCapable + EvictCapable + TimeRangeCapable
 {
     /// Read all entities submitted after a given cursor timestamp.
-    /// Returns (fact_lines, intent_lines, hint_lines) as serialized JSON strings.
-    fn read_delta_since(&self, _cursor_ts: &str) -> (Vec<String>, Vec<String>, Vec<String>) {
+    /// Returns (fact_bytes, intent_bytes, hint_bytes) as postcard-serialized blobs.
+    fn read_delta_since(&self, _cursor_ts: &str) -> DeltaSet {
         (Vec::new(), Vec::new(), Vec::new())
     }
 }

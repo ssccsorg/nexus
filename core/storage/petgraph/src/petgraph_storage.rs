@@ -6,13 +6,13 @@
 
 use crate::weight::{EdgeWeight, NodeWeight};
 use nexus_model::{
-    BlackboardError, BoardState, Content, CypherCapable, EvictCapable, Fact, FactCapable, FihHash,
-    FilterCapable, Hint, HintCapable, HotStorage, Intent, IntentCapable, StateFilter, StorageRead,
-    TimeRangeCapable,
+    BlackboardError, BoardState, Content, CypherCapable, DeltaSet, EvictCapable, Fact, FactCapable,
+    FihHash, FilterCapable, Hint, HintCapable, HotStorage, Intent, IntentCapable, StateFilter,
+    StorageRead, TimeRangeCapable,
 };
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
-use serde_json;
+use postcard;
 use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::{Arc, RwLock};
@@ -70,8 +70,8 @@ impl PetgraphStorage {
     }
 
     /// Read all nodes with submitted_at > cursor_timestamp.
-    /// Returns (facts, intents, hints) as JSON-lines strings.
-    pub fn read_delta_since(&self, cursor_ts: &str) -> (Vec<String>, Vec<String>, Vec<String>) {
+    /// Returns (facts, intents, hints) as postcard-serialized blobs.
+    pub fn read_delta_since(&self, cursor_ts: &str) -> DeltaSet {
         let since_ts: u128 = if cursor_ts.is_empty() {
             0
         } else {
@@ -97,7 +97,7 @@ impl PetgraphStorage {
             }
             match w.label.as_str() {
                 "Fact" => {
-                    if let Ok(line) = serde_json::to_string(&Fact {
+                    if let Ok(line) = postcard::to_allocvec(&Fact {
                         id: FihHash(w.name.clone()),
                         origin: w
                             .properties
@@ -129,7 +129,7 @@ impl PetgraphStorage {
                             Some(sn.name.clone())
                         })
                         .collect();
-                    if let Ok(line) = serde_json::to_string(&Intent {
+                    if let Ok(line) = postcard::to_allocvec(&Intent {
                         id: FihHash(w.name.clone()),
                         from_facts,
                         description: w
@@ -176,7 +176,7 @@ impl PetgraphStorage {
                     }
                 }
                 "Hint" => {
-                    if let Ok(line) = serde_json::to_string(&Hint {
+                    if let Ok(line) = postcard::to_allocvec(&Hint {
                         id: FihHash(w.name.clone()),
                         content: w
                             .properties
@@ -778,7 +778,7 @@ impl EvictCapable for PetgraphStorage {
 }
 
 impl HotStorage for PetgraphStorage {
-    fn read_delta_since(&self, cursor_ts: &str) -> (Vec<String>, Vec<String>, Vec<String>) {
+    fn read_delta_since(&self, cursor_ts: &str) -> (Vec<Vec<u8>>, Vec<Vec<u8>>, Vec<Vec<u8>>) {
         self.read_delta_since(cursor_ts)
     }
 }

@@ -55,6 +55,7 @@ use nexus_model::{
     BoardState, ColdStorage, CypherCapable, EvictCapable, FlushCapable, FlushCursor, FlushResult,
     PartitionData, ScanCapable, StorageRead, TimeRangeCapable,
 };
+use postcard;
 use std::ops::Range;
 
 // ── CompositeColdStorage ──────────────────────────────────────────────────────
@@ -72,7 +73,7 @@ use std::ops::Range;
 ///
 /// # Blob storage layout (produced by flush_since)
 ///
-/// - `{project_id}/flush/{entity}/{partition}/{ts}.jsonl`
+/// - `{project_id}/flush/{entity}/{partition}/{ts}_{i}.bin`
 ///
 /// # Meta storage layout
 ///
@@ -144,12 +145,8 @@ impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> CompositeColdStorage<B,
         for key in &keys {
             match self.blob.get(key) {
                 Ok(Some(data)) => {
-                    if let Ok(lines) = String::from_utf8(data) {
-                        for line in lines.lines() {
-                            if let Ok(fact) = serde_json::from_str::<nexus_model::Fact>(line) {
-                                facts.push(fact);
-                            }
-                        }
+                    if let Ok(fact) = postcard::from_bytes::<nexus_model::Fact>(&data) {
+                        facts.push(fact);
                     }
                 }
                 Ok(None) => {}
@@ -167,12 +164,8 @@ impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> CompositeColdStorage<B,
         for key in &keys {
             match self.blob.get(key) {
                 Ok(Some(data)) => {
-                    if let Ok(lines) = String::from_utf8(data) {
-                        for line in lines.lines() {
-                            if let Ok(intent) = serde_json::from_str::<nexus_model::Intent>(line) {
-                                intents.push(intent);
-                            }
-                        }
+                    if let Ok(intent) = postcard::from_bytes::<nexus_model::Intent>(&data) {
+                        intents.push(intent);
                     }
                 }
                 Ok(None) => {}
@@ -190,12 +183,8 @@ impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> CompositeColdStorage<B,
         for key in &keys {
             match self.blob.get(key) {
                 Ok(Some(data)) => {
-                    if let Ok(lines) = String::from_utf8(data) {
-                        for line in lines.lines() {
-                            if let Ok(hint) = serde_json::from_str::<nexus_model::Hint>(line) {
-                                hints.push(hint);
-                            }
-                        }
+                    if let Ok(hint) = postcard::from_bytes::<nexus_model::Hint>(&data) {
+                        hints.push(hint);
                     }
                 }
                 Ok(None) => {}
@@ -264,39 +253,16 @@ impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> FlushCapable
         // that updates the cursor only. The caller (DualStorage or Worker)
         // writes Petgraph data to blob before calling flush_since.
         //
-        // If data was pre-written to blob, count the records (lines).
-        // Each JSON-lines file has one record per line.
+        // If data was pre-written to blob, count the records (one per blob).
         let fact_prefix = flush_blob_prefix(self.project(), "facts", partition);
         let fact_keys = self.blob.list(&fact_prefix)?;
-        for key in &fact_keys {
-            if let Ok(Some(data)) = self.blob.get(key) {
-                // Non-empty file: count lines. Empty file: 0.
-                let lines = data.iter().filter(|&&b| b == b'\n').count() as u64;
-                if !data.is_empty() {
-                    records_flushed += lines + 1;
-                }
-            }
-        }
+        records_flushed += fact_keys.len() as u64;
         let intent_prefix = flush_blob_prefix(self.project(), "intents", partition);
         let intent_keys = self.blob.list(&intent_prefix)?;
-        for key in &intent_keys {
-            if let Ok(Some(data)) = self.blob.get(key) {
-                let lines = data.iter().filter(|&&b| b == b'\n').count() as u64;
-                if !data.is_empty() {
-                    records_flushed += lines + 1;
-                }
-            }
-        }
+        records_flushed += intent_keys.len() as u64;
         let hint_prefix = flush_blob_prefix(self.project(), "hints", partition);
         let hint_keys = self.blob.list(&hint_prefix)?;
-        for key in &hint_keys {
-            if let Ok(Some(data)) = self.blob.get(key) {
-                let lines = data.iter().filter(|&&b| b == b'\n').count() as u64;
-                if !data.is_empty() {
-                    records_flushed += lines + 1;
-                }
-            }
-        }
+        records_flushed += hint_keys.len() as u64;
 
         // Persist cursor via meta store.
         let new_cursor = FlushCursor {
@@ -357,11 +323,12 @@ impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> EvictCapable
         let blob_keys = self.blob.list(&format!("{}/", self.project()))?;
         let mut evicted = 0u64;
         for key in &blob_keys {
-            if key.ends_with(".jsonl")
-                && let Some(ts_str) = key
-                    .strip_suffix(".jsonl")
+            if key.ends_with(".bin")
+                && let Some(ts_prefix) = key
+                    .strip_suffix(".bin")
                     .and_then(|k| k.rsplit('/').next())
-                && let Ok(ts) = ts_str.parse::<u64>()
+                    .and_then(|s| s.split('_').next())
+                && let Ok(ts) = ts_prefix.parse::<u64>()
                 && ts < before_ts
             {
                 self.blob.delete(key)?;
