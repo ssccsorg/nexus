@@ -21,8 +21,13 @@ use blackboard::DefaultBlackboard;
 
 /// Create a default blackboard with in-memory petgraph hot storage
 /// and no cold backend. Equivalent to `DefaultBlackboard::new()`.
-pub fn create_blackboard()
--> impl Blackboard + CypherCapable + EvictCapable + FlushCapable + GraphRead + Snapshottable {
+pub fn create_blackboard() -> impl Blackboard
++ CypherCapable
++ EvictCapable
++ FlushCapable
++ GraphRead
++ ScanCapable
++ Snapshottable {
     DefaultBlackboard::new()
 }
 
@@ -30,7 +35,13 @@ pub fn create_blackboard()
 pub fn create_blackboard_with_storage(
     hot: PetgraphStorage,
     cold: Box<dyn ColdStorage>,
-) -> impl Blackboard + CypherCapable + EvictCapable + FlushCapable + GraphRead + Snapshottable {
+) -> impl Blackboard
++ CypherCapable
++ EvictCapable
++ FlushCapable
++ GraphRead
++ ScanCapable
++ Snapshottable {
     DefaultBlackboard::with_storage(hot, cold)
 }
 
@@ -38,7 +49,13 @@ pub fn create_blackboard_with_storage(
 /// Equivalent to `DefaultBlackboard::from_snapshot()`.
 pub fn create_blackboard_from_snapshot(
     snapshot: StorageSnapshot,
-) -> impl Blackboard + CypherCapable + EvictCapable + FlushCapable + GraphRead + Snapshottable {
+) -> impl Blackboard
++ CypherCapable
++ EvictCapable
++ FlushCapable
++ GraphRead
++ ScanCapable
++ Snapshottable {
     DefaultBlackboard::from_snapshot(snapshot)
 }
 
@@ -49,7 +66,13 @@ pub fn create_blackboard_from_snapshot(
 pub fn create_blackboard_from_snapshot_with_cold(
     snapshot: StorageSnapshot,
     cold: Box<dyn ColdStorage>,
-) -> impl Blackboard + CypherCapable + EvictCapable + FlushCapable + GraphRead + Snapshottable {
+) -> impl Blackboard
++ CypherCapable
++ EvictCapable
++ FlushCapable
++ GraphRead
++ ScanCapable
++ Snapshottable {
     DefaultBlackboard::from_snapshot_with_cold(&snapshot, cold)
 }
 
