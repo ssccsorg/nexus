@@ -126,10 +126,27 @@ pub async fn submit_fact(
 /// GET /fih/state
 pub async fn read_state(
     State(state): State<AppState>,
-) -> Json<nexus_graph::BoardState> {
+) -> Json<serde_json::Value> {
     let bb = state.blackboard.lock().unwrap();
-    let board_state = bb.read_state();
-    Json(board_state)
+    let bs = bb.read_state();
+    let raw = serde_json::to_value(bs).unwrap_or(serde_json::Value::Null);
+    Json(unwrap_content(raw))
+}
+
+/// Convert Content::Text values to plain JSON strings for the HTTP API.
+fn unwrap_content(v: serde_json::Value) -> serde_json::Value {
+    match v {
+        serde_json::Value::Object(m) if m.len() == 1 && m.contains_key("Text") => {
+            m.into_iter().next().map(|(_, v)| v).unwrap_or(serde_json::Value::Null)
+        }
+        serde_json::Value::Object(m) => {
+            serde_json::Value::Object(m.into_iter().map(|(k, v)| (k, unwrap_content(v))).collect())
+        }
+        serde_json::Value::Array(a) => {
+            serde_json::Value::Array(a.into_iter().map(unwrap_content).collect())
+        }
+        other => other,
+    }
 }
 
 /// POST /fih/intents
