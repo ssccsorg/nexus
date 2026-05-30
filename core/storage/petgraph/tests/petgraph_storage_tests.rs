@@ -16,7 +16,7 @@ fn fact(id: &str) -> Fact {
     Fact {
         id: FihHash(id.into()),
         origin: "test".into(),
-        content: serde_json::json!("data").into(),
+        content: "data".into(),
         creator: "tester".into(),
     }
 }

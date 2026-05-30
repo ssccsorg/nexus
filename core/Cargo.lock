@@ -458,7 +458,6 @@ dependencies = [
  "petgraph",
  "postcard",
  "serde",
- "serde_json",
  "tempfile",
 ]
 
