@@ -27,7 +27,18 @@ pub struct DualStorage {
 }
 
 impl DualStorage {
+    /// Create a new DualStorage pair.
+    ///
+    /// Panics if hot and cold have different project_ids.
+    /// project_id must be issued from a single source.
     pub fn new(hot: Box<dyn HotStorage>, cold: Box<dyn ColdStorage>) -> Self {
+        assert_eq!(
+            hot.project_id(),
+            cold.project_id(),
+            "DualStorage: hot and cold must share the same project_id (hot={}, cold={})",
+            hot.project_id(),
+            cold.project_id()
+        );
         Self { hot, cold }
     }
 

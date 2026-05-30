@@ -265,13 +265,15 @@ impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> FlushCapable
         // writes Petgraph data to blob before calling flush_since.
         //
         // If data was pre-written to blob, count the records (lines).
+        // Each JSON-lines file has one record per line.
         let fact_prefix = flush_blob_prefix(self.project(), "facts", partition);
         let fact_keys = self.blob.list(&fact_prefix)?;
         for key in &fact_keys {
             if let Ok(Some(data)) = self.blob.get(key) {
-                records_flushed += data.iter().filter(|&&b| b == b'\n').count() as u64 + 1;
-                if data.is_empty() || !data.contains(&b'\n') {
-                    records_flushed += 1;
+                // Non-empty file: count lines. Empty file: 0.
+                let lines = data.iter().filter(|&&b| b == b'\n').count() as u64;
+                if !data.is_empty() {
+                    records_flushed += lines + 1;
                 }
             }
         }
@@ -279,9 +281,9 @@ impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> FlushCapable
         let intent_keys = self.blob.list(&intent_prefix)?;
         for key in &intent_keys {
             if let Ok(Some(data)) = self.blob.get(key) {
-                records_flushed += data.iter().filter(|&&b| b == b'\n').count() as u64 + 1;
-                if data.is_empty() || !data.contains(&b'\n') {
-                    records_flushed += 1;
+                let lines = data.iter().filter(|&&b| b == b'\n').count() as u64;
+                if !data.is_empty() {
+                    records_flushed += lines + 1;
                 }
             }
         }
@@ -289,9 +291,9 @@ impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> FlushCapable
         let hint_keys = self.blob.list(&hint_prefix)?;
         for key in &hint_keys {
             if let Ok(Some(data)) = self.blob.get(key) {
-                records_flushed += data.iter().filter(|&&b| b == b'\n').count() as u64 + 1;
-                if data.is_empty() || !data.contains(&b'\n') {
-                    records_flushed += 1;
+                let lines = data.iter().filter(|&&b| b == b'\n').count() as u64;
+                if !data.is_empty() {
+                    records_flushed += lines + 1;
                 }
             }
         }
