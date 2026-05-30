@@ -15,7 +15,7 @@ use std::collections::HashMap;
 
 use super::plan::*;
 
-use nexus_model::CypherCapable;
+use nexus_model::{Content, CypherCapable};
 use nexus_storage_petgraph::GraphRead;
 
 use crate::Record;
@@ -379,6 +379,7 @@ fn evaluate_expr<G: GraphRead>(
                 if let Some(w) = graph.node_weight(ni) {
                     w.properties
                         .get(prop.as_str())
+                        .and_then(|c| c.as_str())
                         .and_then(|s| serde_json::from_str(s).ok())
                         .unwrap_or(serde_json::Value::Null)
                 } else {
@@ -628,8 +629,13 @@ fn execute_internal<G: GraphRead>(graph: &G, plan: &PlanIR) -> Result<Vec<Record
                                 fields.insert(var.clone(), serde_json::Value::String(var.clone()));
                                 if let Some(w) = graph.node_weight(idx) {
                                     for (k, v) in &w.properties {
-                                        let parsed = serde_json::from_str(v)
-                                            .unwrap_or(serde_json::Value::String(v.clone()));
+                                        let parsed = match v {
+                                            Content::Text(s) => serde_json::from_str(s)
+                                                .unwrap_or(serde_json::Value::String(s.clone())),
+                                            Content::Blob(b) => serde_json::Value::String(
+                                                String::from_utf8_lossy(b).into_owned(),
+                                            ),
+                                        };
                                         fields.insert(k.clone(), parsed);
                                     }
                                 }
@@ -697,14 +703,12 @@ fn apply_where<G: GraphRead>(graph: &G, nodes: &[NodeIndex], wc: &WhereClause) -
                 if let Some(weight) = graph.node_weight(idx) {
                     let key = cmp.field.property.as_deref().unwrap_or("");
                     let field_val = weight.properties.get(key);
-                    match (field_val, &cmp.value) {
-                        (Some(s), CompareValue::Str(v)) => {
-                            match cmp.op {
-                                CompareOp::Eq => s == v,
-                                CompareOp::Ne => s != v,
-                                _ => true,
-                            }
-                        }
+                    match (field_val.and_then(|c| c.as_str()), &cmp.value) {
+                        (Some(s), CompareValue::Str(v)) => match cmp.op {
+                            CompareOp::Eq => s == v,
+                            CompareOp::Ne => s != v,
+                            _ => true,
+                        },
                         (Some(s), CompareValue::Int(v)) => {
                             let val = s.parse::<i64>().unwrap_or(0);
                             match cmp.op {

@@ -11,8 +11,7 @@ use nexus_model::{
     IntentCapable, NullStorage, PartitionData, ScanCapable, StorageRead,
 };
 use nexus_storage_petgraph::{
-    EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Snapshottable,
-    StorageSnapshot,
+    EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Snapshottable, StorageSnapshot,
 };
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
@@ -431,11 +430,7 @@ impl Blackboard for DefaultBlackboard {
         self.storage.release_intent(intent_id, agent)
     }
 
-    fn conclude_intent(
-        &mut self,
-        intent_id: &str,
-        result: &str,
-    ) -> Result<Fact, BlackboardError> {
+    fn conclude_intent(&mut self, intent_id: &str, result: &str) -> Result<Fact, BlackboardError> {
         self.claims.remove(intent_id);
         self.storage.conclude_intent(intent_id, result)
     }
@@ -466,18 +461,18 @@ mod tests {
     }
 
     fn bb_with_facts(count: usize) -> DefaultBlackboard {
-            let mut bb = DefaultBlackboard::new();
-            for i in 0..count {
-                bb.submit_fact(&Fact {
-                    id: FihHash(format!("f_{}", i)),
-                    origin: "test".into(),
-                    content: format!("data_{}", i).into(),
-                    creator: "tester".into(),
-                })
-                .unwrap();
-            }
-            bb
+        let mut bb = DefaultBlackboard::new();
+        for i in 0..count {
+            bb.submit_fact(&Fact {
+                id: FihHash(format!("f_{}", i)),
+                origin: "test".into(),
+                content: format!("data_{}", i).into(),
+                creator: "tester".into(),
+            })
+            .unwrap();
         }
+        bb
+    }
 
     #[test]
     fn test_fresh_blackboard_has_empty_cursor() {

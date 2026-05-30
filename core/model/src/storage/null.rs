@@ -56,11 +56,7 @@ impl IntentCapable for NullStorage {
     fn release_intent(&self, _id: &str, _agent: &str) -> Result<(), BlackboardError> {
         Ok(())
     }
-    fn conclude_intent(
-        &self,
-        _id: &str,
-        _result: &str,
-    ) -> Result<Fact, BlackboardError> {
+    fn conclude_intent(&self, _id: &str, _result: &str) -> Result<Fact, BlackboardError> {
         Ok(Fact {
             id: FihHash("null".into()),
             origin: String::new(),

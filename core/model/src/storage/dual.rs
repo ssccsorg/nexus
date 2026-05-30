@@ -88,11 +88,7 @@ impl IntentCapable for DualStorage {
         self.hot.release_intent(intent_id, agent)
     }
 
-    fn conclude_intent(
-        &self,
-        intent_id: &str,
-        result: &str,
-    ) -> Result<Fact, BlackboardError> {
+    fn conclude_intent(&self, intent_id: &str, result: &str) -> Result<Fact, BlackboardError> {
         self.hot.conclude_intent(intent_id, result)
     }
 }

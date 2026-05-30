@@ -141,8 +141,14 @@ fn flow_agent_creates_intent_from_detector_fact() {
         .heartbeat(&iid.0, "agent-alpha")
         .expect("heartbeat");
 
-    let new_fact = sched.bb.conclude_intent(&iid.0, "synthesis complete").expect("conclude");
-    assert_eq!(new_fact.content, Content::Text("synthesis complete".to_string()));
+    let new_fact = sched
+        .bb
+        .conclude_intent(&iid.0, "synthesis complete")
+        .expect("conclude");
+    assert_eq!(
+        new_fact.content,
+        Content::Text("synthesis complete".to_string())
+    );
 
     let state = Blackboard::read_state(&sched.bb);
     assert!(
@@ -194,10 +200,7 @@ fn flow_eviction() {
     };
     let iid = sched.bb.submit_intent(&intent).expect("submit");
     sched.bb.claim_intent(&iid.0, "evictor").expect("claim");
-    sched
-        .bb
-        .conclude_intent(&iid.0, "done")
-        .expect("conclude");
+    sched.bb.conclude_intent(&iid.0, "done").expect("conclude");
 
     EvictCapable::evict_before(&sched.bb, "9999999999").expect("evict");
     let state = Blackboard::read_state(&sched.bb);

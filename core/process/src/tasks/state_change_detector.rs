@@ -153,7 +153,9 @@ mod tests {
         Fact {
             id: FihHash(id.to_string()),
             origin: origin.to_string(),
-            content: serde_json::to_string(&serde_json::json!({"topic": "test"})).unwrap().into(),
+            content: serde_json::to_string(&serde_json::json!({"topic": "test"}))
+                .unwrap()
+                .into(),
             creator: "test".into(),
         }
     }
@@ -185,11 +187,9 @@ mod tests {
         });
         assert_eq!(o.facts.len(), 1);
         assert!(
-            serde_json::from_str::<serde_json::Value>(
-                o.facts[0].content.as_str().unwrap_or("")
-            )
-            .unwrap_or(serde_json::Value::Null)["type"]
-            .as_str()
+            serde_json::from_str::<serde_json::Value>(o.facts[0].content.as_str().unwrap_or(""))
+                .unwrap_or(serde_json::Value::Null)["type"]
+                .as_str()
                 == Some("state_change")
         );
     }

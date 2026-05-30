@@ -193,9 +193,6 @@ fn test_conclude_after_release() {
         .unwrap()
         .release_intent("i_car", "agent-a")
         .unwrap();
-    let result = bb
-        .lock()
-        .unwrap()
-        .conclude_intent("i_car", "done");
+    let result = bb.lock().unwrap().conclude_intent("i_car", "done");
     assert!(result.is_ok(), "conclude after release succeeds");
 }
