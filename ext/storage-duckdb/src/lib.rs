@@ -181,7 +181,8 @@ impl DuckDbStorage {
                 id: FihHash(id),
                 origin,
                 content: serde_json::from_str(&content_str)
-                    .unwrap_or(serde_json::Value::String(content_str)),
+                    .unwrap_or(serde_json::Value::String(content_str))
+                    .into(),
                 creator,
             })
         }) {

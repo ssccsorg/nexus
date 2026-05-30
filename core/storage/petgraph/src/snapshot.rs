@@ -1,6 +1,6 @@
 // nexus-storage-petgraph — Serializable snapshot for R2/blob persistence.
 //
-// Format: bincode (binary, serde-based).
+// Format: postcard (compact binary, serde-based, no_std compatible).
 // Version: top-level `version` field enables forward migration.
 
 use crate::weight::{EdgeWeight, NodeWeight};
@@ -12,7 +12,7 @@ use std::collections::HashMap;
 ///
 /// A worker saves its partition via `to_snapshot()` and restores it
 /// via `from_snapshot()` on the next invocation. No external database
-/// is required — just a blob store and bincode.
+/// is required — just a blob store and postcard.
 ///
 /// Contains:
 /// - `graph`: the full petgraph structure (nodes + edges + properties)
@@ -41,15 +41,15 @@ fn default_version() -> u32 {
 }
 
 impl StorageSnapshot {
-    /// Serialize to bincode bytes.
+    /// Serialize to postcard bytes.
     pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
-        bincode::serialize(self).map_err(|e| format!("bincode serialize: {e}"))
+        postcard::to_allocvec(self).map_err(|e| format!("postcard serialize: {e}"))
     }
 
-    /// Deserialize from bincode bytes.
+    /// Deserialize from postcard bytes.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         let snap: Self =
-            bincode::deserialize(bytes).map_err(|e| format!("bincode deserialize: {e}"))?;
+            postcard::from_bytes(bytes).map_err(|e| format!("postcard deserialize: {e}"))?;
         match snap.version {
             1 => Ok(snap),
             v => Err(format!("unsupported snapshot version: {v}")),

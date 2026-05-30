@@ -32,13 +32,86 @@ impl FihHash {
     }
 }
 
+// ── Content ───────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Content {
+    Text(String),
+    JsonString(String),
+    Blob(Vec<u8>),
+}
+
+impl Content {
+    pub fn from_json_value(v: &serde_json::Value) -> Self {
+        match v {
+            serde_json::Value::String(s) => Content::Text(s.clone()),
+            _ => Content::JsonString(serde_json::to_string(v).unwrap_or_default()),
+        }
+    }
+
+    pub fn as_json_value(&self) -> serde_json::Value {
+        match self {
+            Content::Text(s) | Content::JsonString(s) => {
+                serde_json::from_str(s).unwrap_or_else(|_| serde_json::Value::String(s.clone()))
+            }
+            Content::Blob(_) => serde_json::Value::Null,
+        }
+    }
+
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            Content::Text(s) | Content::JsonString(s) => Some(s.as_str()),
+            Content::Blob(_) => None,
+        }
+    }
+}
+
+impl std::fmt::Display for Content {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Content::Text(s) | Content::JsonString(s) => write!(f, "{s}"),
+            Content::Blob(b) => write!(f, "<blob: {} bytes>", b.len()),
+        }
+    }
+}
+
+impl From<String> for Content {
+    fn from(s: String) -> Self {
+        Content::Text(s)
+    }
+}
+
+impl From<&str> for Content {
+    fn from(s: &str) -> Self {
+        Content::Text(s.to_string())
+    }
+}
+
+impl From<serde_json::Value> for Content {
+    fn from(v: serde_json::Value) -> Self {
+        match v {
+            serde_json::Value::String(s) => Content::Text(s),
+            _ => Content::JsonString(serde_json::to_string(&v).unwrap_or_default()),
+        }
+    }
+}
+
+impl PartialEq<&str> for Content {
+    fn eq(&self, other: &&str) -> bool {
+        match self {
+            Content::Text(s) | Content::JsonString(s) => s == *other,
+            Content::Blob(_) => false,
+        }
+    }
+}
+
 // ── FIH Primitives ───────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Fact {
     pub id: FihHash,
     pub origin: String,
-    pub content: serde_json::Value,
+    pub content: Content,
     pub creator: String,
 }
 

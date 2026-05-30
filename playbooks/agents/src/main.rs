@@ -29,7 +29,7 @@ fn main() {
             "accuracy": 0.92,
             "dataset": "ogbn-arxiv",
             "layers": 3
-        }),
+        }).into(),
         creator: "agent-a".into(),
     }).unwrap();
     let f2 = bb.submit_fact(&Fact {
@@ -38,7 +38,7 @@ fn main() {
         content: serde_json::json!({
             "finding": "Message-passing GNNs oversmooth beyond 6 layers",
             "threshold": 6
-        }),
+        }).into(),
         creator: "agent-b".into(),
     }).unwrap();
     println!("   Fact 1: {}", f1);

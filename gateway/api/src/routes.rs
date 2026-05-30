@@ -110,7 +110,7 @@ pub async fn submit_fact(
     let fact = Fact {
         id: FihHash(id.clone()),
         origin: req.origin,
-        content: req.content,
+        content: req.content.into(),
         creator: req.creator,
     };
     let hash = {

@@ -100,14 +100,14 @@ impl DetectionCapable for GapDetector {
                         "origin": origin,
                         "orphan_count": facts.len(),
                         "fact_ids": facts.iter().map(|f| &f.id.0).collect::<Vec<_>>(),
-                    }),
+                    }).into(),
                     creator: "gap-detector".into(),
                 });
             }
         }
 
         // Level 2: Topic-based cross-origin grouping
-        let mut by_topic: HashMap<&str, HashMap<&str, Vec<&Fact>>> = HashMap::new();
+        let mut by_topic: HashMap<String, HashMap<&str, Vec<&Fact>>> = HashMap::new();
         for f in &orphaned {
             if let Some(topic) = topic_of(f) {
                 by_topic
@@ -146,7 +146,7 @@ impl DetectionCapable for GapDetector {
                             "origin_b": ob_s,
                             "count_a": origins[oa].len(),
                             "count_b": origins[ob].len(),
-                        }),
+                        }).into(),
                         creator: "gap-detector".into(),
                     });
                 }

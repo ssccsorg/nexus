@@ -6,9 +6,9 @@
 
 use crate::weight::{EdgeWeight, NodeWeight};
 use nexus_model::{
-    BlackboardError, BoardState, CypherCapable, EvictCapable, Fact, FactCapable, FihHash,
-    FilterCapable, Hint, HintCapable, HotStorage, Intent, IntentCapable, StateFilter, StorageRead,
-    TimeRangeCapable,
+    BlackboardError, BoardState, Content, CypherCapable, EvictCapable, Fact, FactCapable,
+    FihHash, FilterCapable, Hint, HintCapable, HotStorage, Intent, IntentCapable, StateFilter,
+    StorageRead, TimeRangeCapable,
 };
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
@@ -107,8 +107,15 @@ impl PetgraphStorage {
                         content: w
                             .properties
                             .get("content")
-                            .cloned()
-                            .unwrap_or(serde_json::Value::Null),
+                            .and_then(|v| v.as_str())
+                            .map(|s| {
+                                if serde_json::from_str::<serde_json::Value>(s).is_ok() {
+                                    Content::JsonString(s.to_string())
+                                } else {
+                                    Content::Text(s.to_string())
+                                }
+                            })
+                            .unwrap_or(Content::Text(String::new())),
                         creator: w
                             .properties
                             .get("creator")
@@ -229,8 +236,15 @@ impl StorageRead for PetgraphStorage {
                             content: w
                                 .properties
                                 .get("content")
-                                .cloned()
-                                .unwrap_or(serde_json::Value::Null),
+                                .and_then(|v| v.as_str())
+                                .map(|s| {
+                                    if serde_json::from_str::<serde_json::Value>(s).is_ok() {
+                                        Content::JsonString(s.to_string())
+                                    } else {
+                                        Content::Text(s.to_string())
+                                    }
+                                })
+                                .unwrap_or(Content::Text(String::new())),
                             creator: w
                                 .properties
                                 .get("creator")
@@ -337,13 +351,20 @@ impl FactCapable for PetgraphStorage {
             .unwrap_or_default()
             .as_nanos()
             .to_string();
+        let content_val = match &fact.content {
+            Content::Text(s) => serde_json::Value::String(s.clone()),
+            Content::JsonString(s) => serde_json::Value::String(s.clone()),
+            Content::Blob(b) => serde_json::Value::String(
+                String::from_utf8_lossy(b).into_owned(),
+            ),
+        };
         g.add_node(NodeWeight {
             name: fact.id.0.clone(),
             label: "Fact".into(),
             properties: {
                 let mut m = HashMap::new();
                 m.insert("origin".into(), fact.origin.clone().into());
-                m.insert("content".into(), fact.content.clone());
+                m.insert("content".into(), content_val);
                 m.insert("creator".into(), fact.creator.clone().into());
                 m.insert("submitted_at".into(), now.into());
                 m
@@ -577,11 +598,24 @@ impl IntentCapable for PetgraphStorage {
             w.properties.remove("worker");
         }
 
+        let (content_val, content_for_fact) = match result {
+            serde_json::Value::String(s) => {
+                (serde_json::Value::String(s.clone()), Content::Text(s.clone()))
+            }
+            other => {
+                let json_str =
+                    serde_json::to_string(other).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+                (
+                    serde_json::Value::String(json_str.clone()),
+                    Content::JsonString(json_str),
+                )
+            }
+        };
         let new_fact_id = format!("f_concl_{}", intent_id);
         let new_fact = Fact {
             id: FihHash(new_fact_id.clone()),
             origin: format!("conclusion:{}", intent_id),
-            content: result.clone(),
+            content: content_for_fact,
             creator: worker,
         };
 
@@ -591,7 +625,7 @@ impl IntentCapable for PetgraphStorage {
             properties: {
                 let mut m = HashMap::new();
                 m.insert("origin".into(), new_fact.origin.clone().into());
-                m.insert("content".into(), new_fact.content.clone());
+                m.insert("content".into(), content_val);
                 m.insert("creator".into(), new_fact.creator.clone().into());
                 let now_ns = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)

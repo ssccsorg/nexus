@@ -468,7 +468,7 @@ mod tests {
             bb.submit_fact(&Fact {
                 id: FihHash(format!("f_{}", i)),
                 origin: "test".into(),
-                content: serde_json::json!(format!("data_{}", i)),
+                content: serde_json::json!(format!("data_{}", i)).into(),
                 creator: "tester".into(),
             })
             .unwrap();
@@ -577,7 +577,7 @@ mod tests {
         bb.submit_fact(&Fact {
             id: FihHash("f_extra".into()),
             origin: "test".into(),
-            content: serde_json::json!("extra"),
+            content: serde_json::json!("extra").into(),
             creator: "tester".into(),
         })
         .unwrap();
@@ -613,7 +613,7 @@ mod tests {
             bb.submit_fact(&Fact {
                 id: FihHash(format!("f_cycle_{}", i)),
                 origin: "test".into(),
-                content: serde_json::json!(format!("cycle_{}", i)),
+                content: serde_json::json!(format!("cycle_{}", i)).into(),
                 creator: "tester".into(),
             })
             .unwrap();
@@ -650,14 +650,14 @@ mod tests {
         bb.submit_fact(&Fact {
             id: FihHash("f_snap_1".into()),
             origin: "snap-test".into(),
-            content: serde_json::json!("snapshot data"),
+            content: serde_json::json!("snapshot data").into(),
             creator: "tester".into(),
         })
         .unwrap();
         bb.submit_fact(&Fact {
             id: FihHash("f_snap_2".into()),
             origin: "snap-test".into(),
-            content: serde_json::json!("more data"),
+            content: serde_json::json!("more data").into(),
             creator: "tester".into(),
         })
         .unwrap();

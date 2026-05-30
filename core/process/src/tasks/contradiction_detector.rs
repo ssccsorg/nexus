@@ -41,7 +41,7 @@ impl DetectionCapable for ContradictionDetector {
 
     fn orient(&mut self, state: &BoardState) -> DetectionOutput {
         // Only analyze document-source facts (skip detector output)
-        let mut by_topic: HashMap<&str, HashMap<&str, Vec<&Fact>>> = HashMap::new();
+        let mut by_topic: HashMap<String, HashMap<String, Vec<&Fact>>> = HashMap::new();
         for fact in &state.facts {
             if fact.origin == "contradiction-detector"
                 || fact.origin == "gap-detector"
@@ -63,7 +63,7 @@ impl DetectionCapable for ContradictionDetector {
         let mut output = DetectionOutput::default();
 
         for (topic, positions) in &by_topic {
-            let pos_keys: Vec<&&str> = positions.keys().collect();
+            let pos_keys: Vec<&String> = positions.keys().collect();
             if pos_keys.len() < 2 {
                 continue;
             }
@@ -72,20 +72,20 @@ impl DetectionCapable for ContradictionDetector {
                     let pos_a = pos_keys[i];
                     let pos_b = pos_keys[j];
                     let (pa, pb) = if pos_a < pos_b {
-                        (*pos_a, *pos_b)
+                        (pos_a, pos_b)
                     } else {
-                        (*pos_b, *pos_a)
+                        (pos_b, pos_a)
                     };
-                    let key = (topic.to_string(), pa.to_string(), pb.to_string());
+                    let key = (topic.clone(), pa.clone(), pb.clone());
                     if self.seen.contains(&key) {
                         continue;
                     }
                     self.seen.insert(key.clone());
 
                     let origins_a: Vec<&str> =
-                        positions[pos_a].iter().map(|f| f.origin.as_str()).collect();
+                        positions[pa.as_str()].iter().map(|f| f.origin.as_str()).collect();
                     let origins_b: Vec<&str> =
-                        positions[pos_b].iter().map(|f| f.origin.as_str()).collect();
+                        positions[pb.as_str()].iter().map(|f| f.origin.as_str()).collect();
 
                     output.facts.push(Fact {
                         id: FihHash::new(&[topic, pa, pb], "contradiction"),
@@ -97,7 +97,7 @@ impl DetectionCapable for ContradictionDetector {
                             "position_b": pb,
                             "origins_a": origins_a,
                             "origins_b": origins_b,
-                        }),
+                        }).into(),
                         creator: "contradiction-detector".into(),
                     });
                 }

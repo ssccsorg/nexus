@@ -105,7 +105,7 @@ impl DetectionCapable for StateChangeDetector {
                 "curr_fact_count": current_facts,
                 "prev_open_intents": checkpoint.open_intent_count,
                 "curr_open_intents": current_open,
-            }),
+            }).into(),
             creator: "state-change-detector".into(),
         });
 
@@ -151,7 +151,7 @@ mod tests {
         Fact {
             id: FihHash(id.to_string()),
             origin: origin.to_string(),
-            content: serde_json::json!({"topic": "test"}),
+            content: serde_json::json!({"topic": "test"}).into(),
             creator: "test".into(),
         }
     }
@@ -182,7 +182,7 @@ mod tests {
             hints: vec![],
         });
         assert_eq!(o.facts.len(), 1);
-        assert!(o.facts[0].content["type"].as_str() == Some("state_change"));
+        assert!(o.facts[0].content.as_json_value()["type"].as_str() == Some("state_change"));
     }
 
     #[test]

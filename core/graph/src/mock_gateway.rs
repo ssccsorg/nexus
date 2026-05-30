@@ -76,7 +76,7 @@ mod tests {
         let fact = Fact {
             id: FihHash("f_mock_001".into()),
             origin: "mock-test".into(),
-            content: serde_json::Value::String("Mock gateway test".into()),
+            content: "Mock gateway test".into(),
             creator: "tester".into(),
         };
         let hash = gw.submit_fact(&fact).unwrap();
