@@ -16,10 +16,11 @@ impl<T: FactCapable + IntentCapable + HintCapable> FihPersistence for T {}
 pub trait HotStorage:
     FihPersistence + FilterCapable + CypherCapable + EvictCapable + TimeRangeCapable
 {
-}
-impl<T: FihPersistence + FilterCapable + CypherCapable + EvictCapable + TimeRangeCapable> HotStorage
-    for T
-{
+    /// Read all entities submitted after a given cursor timestamp.
+    /// Returns (fact_lines, intent_lines, hint_lines) as serialized JSON strings.
+    fn read_delta_since(&self, _cursor_ts: &str) -> (Vec<String>, Vec<String>, Vec<String>) {
+        (Vec::new(), Vec::new(), Vec::new())
+    }
 }
 
 /// Cold storage: durable persistence — scan, flush, evict, time range, Cypher query.

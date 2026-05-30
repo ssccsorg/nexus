@@ -186,9 +186,8 @@ impl TimeRangeCapable for DualStorage {
 
 impl FlushCapable for DualStorage {
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
-        // Read hot (Petgraph) state and serialize to JSON-lines blob.
+        // Read only delta (entities submitted after cursor) from hot storage.
         let partition = &cursor.partition;
-        let state = self.hot.read_state();
         let project_id = self.hot.project_id();
         let now_ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -196,40 +195,40 @@ impl FlushCapable for DualStorage {
             .as_nanos()
             .to_string();
 
-        if !state.facts.is_empty() {
-            let lines: Vec<String> = state
-                .facts
-                .iter()
-                .filter_map(|f| serde_json::to_string(f).ok())
-                .collect();
+        let (fact_lines, intent_lines, hint_lines) =
+            self.hot.read_delta_since(&cursor.last_flushed_at);
+        let records_flushed = (fact_lines.len() + intent_lines.len() + hint_lines.len()) as u64;
+
+        if !fact_lines.is_empty() {
             let blob_key = format!("{project_id}/flush/facts/{partition}/{now_ts}.jsonl");
             self.cold
-                .write_blob(&blob_key, lines.join("\n").as_bytes())?;
+                .write_blob(&blob_key, fact_lines.join("\n").as_bytes())?;
         }
-        if !state.intents.is_empty() {
-            let lines: Vec<String> = state
-                .intents
-                .iter()
-                .filter_map(|i| serde_json::to_string(i).ok())
-                .collect();
+        if !intent_lines.is_empty() {
             let blob_key = format!("{project_id}/flush/intents/{partition}/{now_ts}.jsonl");
             self.cold
-                .write_blob(&blob_key, lines.join("\n").as_bytes())?;
+                .write_blob(&blob_key, intent_lines.join("\n").as_bytes())?;
         }
-        if !state.hints.is_empty() {
-            let lines: Vec<String> = state
-                .hints
-                .iter()
-                .filter_map(|h| serde_json::to_string(h).ok())
-                .collect();
+        if !hint_lines.is_empty() {
             let blob_key = format!("{project_id}/flush/hints/{partition}/{now_ts}.jsonl");
             self.cold
-                .write_blob(&blob_key, lines.join("\n").as_bytes())?;
+                .write_blob(&blob_key, hint_lines.join("\n").as_bytes())?;
         }
 
-        // Delegate cursor persistence to cold storage.
-        // (Records are already in blob, cold's flush_since counts them.)
-        self.cold.flush_since(cursor)
+        // Advance cursor and persist to cold blob as a simple JSON file.
+        let new_cursor = FlushCursor {
+            last_flushed_at: now_ts,
+            partition: partition.clone(),
+        };
+        let cursor_json =
+            serde_json::to_string(&new_cursor).map_err(|e| format!("serialize cursor: {e}"))?;
+        let cursor_key = format!("{project_id}/cursor.json");
+        self.cold.write_blob(&cursor_key, cursor_json.as_bytes())?;
+
+        Ok(FlushResult {
+            records_flushed,
+            new_cursor,
+        })
     }
 }
 
@@ -238,5 +237,11 @@ impl FlushCapable for DualStorage {
 impl CypherCapable for DualStorage {
     fn query_plan(&self, plan: &serde_json::Value) -> Result<serde_json::Value, String> {
         self.hot.query_plan(plan)
+    }
+}
+
+impl HotStorage for DualStorage {
+    fn read_delta_since(&self, cursor_ts: &str) -> (Vec<String>, Vec<String>, Vec<String>) {
+        self.hot.read_delta_since(cursor_ts)
     }
 }

@@ -7,7 +7,7 @@
 use crate::weight::{EdgeWeight, NodeWeight};
 use nexus_model::{
     BlackboardError, BoardState, CypherCapable, EvictCapable, Fact, FactCapable, FihHash,
-    FilterCapable, Hint, HintCapable, Intent, IntentCapable, StateFilter, StorageRead,
+    FilterCapable, Hint, HintCapable, HotStorage, Intent, IntentCapable, StateFilter, StorageRead,
     TimeRangeCapable,
 };
 use petgraph::graph::NodeIndex;
@@ -66,6 +66,134 @@ impl PetgraphStorage {
 
     pub fn flush(&self) -> Result<(), String> {
         Ok(())
+    }
+
+    /// Read all nodes with submitted_at > cursor_timestamp.
+    /// Returns (facts, intents, hints) as JSON-lines strings.
+    pub fn read_delta_since(&self, cursor_ts: &str) -> (Vec<String>, Vec<String>, Vec<String>) {
+        let since_ts: u128 = if cursor_ts.is_empty() {
+            0
+        } else {
+            cursor_ts.parse().unwrap_or(0)
+        };
+        let g = self.graph.read().unwrap();
+        let mut facts = Vec::new();
+        let mut intents = Vec::new();
+        let mut hints = Vec::new();
+
+        for idx in g.node_indices() {
+            let Some(w) = g.node_weight(idx) else {
+                continue;
+            };
+            let ts_str = w
+                .properties
+                .get("submitted_at")
+                .and_then(|v| v.as_str())
+                .unwrap_or("0");
+            let ts: u128 = ts_str.parse().unwrap_or(0);
+            if ts <= since_ts {
+                continue;
+            }
+            match w.label.as_str() {
+                "Fact" => {
+                    if let Ok(line) = serde_json::to_string(&Fact {
+                        id: FihHash(w.name.clone()),
+                        origin: w
+                            .properties
+                            .get("origin")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .into(),
+                        content: w
+                            .properties
+                            .get("content")
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null),
+                        creator: w
+                            .properties
+                            .get("creator")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .into(),
+                    }) {
+                        facts.push(line);
+                    }
+                }
+                "Intent" => {
+                    let from_facts: Vec<String> = g
+                        .edges_directed(idx, petgraph::Direction::Incoming)
+                        .filter_map(|e| {
+                            let sn = g.node_weight(e.source())?;
+                            Some(sn.name.clone())
+                        })
+                        .collect();
+                    if let Ok(line) = serde_json::to_string(&Intent {
+                        id: FihHash(w.name.clone()),
+                        from_facts,
+                        description: w
+                            .properties
+                            .get("description")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .into(),
+                        creator: w
+                            .properties
+                            .get("creator")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .into(),
+                        worker: w
+                            .properties
+                            .get("worker")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                        to_fact_id: {
+                            g.edges_directed(idx, petgraph::Direction::Outgoing)
+                                .find(|e| {
+                                    g.node_weight(e.target()).is_some_and(|n| {
+                                        n.label == "Fact" && n.name.starts_with("f_concl_")
+                                    })
+                                })
+                                .and_then(|e| g.node_weight(e.target()).map(|n| n.name.clone()))
+                        },
+                        last_heartbeat_at: w
+                            .properties
+                            .get("last_heartbeat_at")
+                            .and_then(|v| v.as_i64())
+                            .map(|ts| ts.to_string()),
+                        created_at: w
+                            .properties
+                            .get("created_at")
+                            .and_then(|v| v.as_i64())
+                            .map(|ts| ts.to_string()),
+                        concluded_at: None,
+                    }) {
+                        intents.push(line);
+                    }
+                }
+                "Hint" => {
+                    if let Ok(line) = serde_json::to_string(&Hint {
+                        id: FihHash(w.name.clone()),
+                        content: w
+                            .properties
+                            .get("content")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .into(),
+                        creator: w
+                            .properties
+                            .get("creator")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .into(),
+                    }) {
+                        hints.push(line);
+                    }
+                }
+                _ => {}
+            }
+        }
+        (facts, intents, hints)
     }
 }
 
@@ -204,6 +332,11 @@ impl StorageRead for PetgraphStorage {
 impl FactCapable for PetgraphStorage {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         let mut g = self.graph.write().unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+            .to_string();
         g.add_node(NodeWeight {
             name: fact.id.0.clone(),
             label: "Fact".into(),
@@ -212,6 +345,7 @@ impl FactCapable for PetgraphStorage {
                 m.insert("origin".into(), fact.origin.clone().into());
                 m.insert("content".into(), fact.content.clone());
                 m.insert("creator".into(), fact.creator.clone().into());
+                m.insert("submitted_at".into(), now.into());
                 m
             },
         });
@@ -229,6 +363,12 @@ impl HintCapable for PetgraphStorage {
                 let mut m = HashMap::new();
                 m.insert("content".into(), hint.content.clone().into());
                 m.insert("creator".into(), hint.creator.clone().into());
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos()
+                    .to_string();
+                m.insert("submitted_at".into(), now.into());
                 m
             },
         });
@@ -261,6 +401,12 @@ impl IntentCapable for PetgraphStorage {
                     .unwrap_or_default()
                     .as_secs() as i64;
                 m.insert("created_at".into(), serde_json::json!(now));
+                let now_ns = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos()
+                    .to_string();
+                m.insert("submitted_at".into(), now_ns.into());
                 m
             },
         });
@@ -617,7 +763,11 @@ impl EvictCapable for PetgraphStorage {
     }
 }
 
-// ── FilterCapable ───────────────────────────────────────────────────────────
+impl HotStorage for PetgraphStorage {
+    fn read_delta_since(&self, cursor_ts: &str) -> (Vec<String>, Vec<String>, Vec<String>) {
+        self.read_delta_since(cursor_ts)
+    }
+}
 
 impl FilterCapable for PetgraphStorage {
     fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
