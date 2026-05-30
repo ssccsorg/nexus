@@ -12,29 +12,26 @@ use super::time_range::TimeRangeCapable;
 pub trait FihPersistence: FactCapable + IntentCapable + HintCapable {}
 impl<T: FactCapable + IntentCapable + HintCapable> FihPersistence for T {}
 
-/// Hot storage: full FIH + memory management + time range (petgraph).
-pub trait HotStorage: FihPersistence + EvictCapable + TimeRangeCapable {}
-impl<T: FihPersistence + EvictCapable + TimeRangeCapable> HotStorage for T {}
-
-/// Cold storage: full FIH + filtered reads + scan + time range + flush + Cypher query + eviction.
-pub trait ColdStorage:
-    FihPersistence
-    + FilterCapable
-    + ScanCapable
-    + TimeRangeCapable
-    + FlushCapable
-    + CypherCapable
-    + EvictCapable
+/// Hot storage: full FIH + memory management + time range + Cypher + filter (petgraph).
+pub trait HotStorage:
+    FihPersistence + FilterCapable + CypherCapable + EvictCapable + TimeRangeCapable
 {
 }
-impl<
-    T: FihPersistence
-        + FilterCapable
-        + ScanCapable
-        + TimeRangeCapable
-        + FlushCapable
-        + CypherCapable
-        + EvictCapable,
-> ColdStorage for T
+impl<T: FihPersistence + FilterCapable + CypherCapable + EvictCapable + TimeRangeCapable> HotStorage
+    for T
+{
+}
+
+/// Cold storage: durable persistence — scan, flush, evict, time range, Cypher query.
+///
+/// Does NOT include FihPersistence or StorageRead — graph CRUD is handled by
+/// HotStorage (Petgraph). ColdStorage only manages blob archives, CAS coordination,
+/// and metadata (cursor, snapshot pointers).
+pub trait ColdStorage:
+    ScanCapable + TimeRangeCapable + FlushCapable + CypherCapable + EvictCapable
+{
+}
+impl<T: ScanCapable + TimeRangeCapable + FlushCapable + CypherCapable + EvictCapable> ColdStorage
+    for T
 {
 }

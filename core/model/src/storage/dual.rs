@@ -16,9 +16,9 @@ use std::ops::Range;
 
 /// Composes a Hot + Cold storage pair.
 ///
-/// - Writes go to both hot and cold (dual-write for durability).
+/// - Writes go ONLY to hot (Petgraph). Cold does NOT store graph data.
 /// - Reads go to hot (early return, edge computing fast path).
-/// - Flush/evict delegate to the appropriate layer.
+/// - Flush/evict delegate to cold for durable persistence.
 pub struct DualStorage {
     hot: Box<dyn HotStorage>,
     cold: Box<dyn ColdStorage>,
@@ -50,39 +50,29 @@ impl StorageRead for DualStorage {
     }
 }
 
-// ── FIH writes: delegate to both hot + cold ──
+// ── FIH writes: delegate to hot ONLY (cold no longer stores graph data) ──
 
 impl FactCapable for DualStorage {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
-        let hash = self.hot.submit_fact(fact)?;
-        let _ = self.cold.submit_fact(fact);
-        Ok(hash)
+        self.hot.submit_fact(fact)
     }
 }
 
 impl IntentCapable for DualStorage {
     fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
-        let hash = self.hot.submit_intent(intent)?;
-        let _ = self.cold.submit_intent(intent);
-        Ok(hash)
+        self.hot.submit_intent(intent)
     }
 
     fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        self.hot.claim_intent(intent_id, agent)?;
-        let _ = self.cold.claim_intent(intent_id, agent);
-        Ok(())
+        self.hot.claim_intent(intent_id, agent)
     }
 
     fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        self.hot.heartbeat(intent_id, agent)?;
-        let _ = self.cold.heartbeat(intent_id, agent);
-        Ok(())
+        self.hot.heartbeat(intent_id, agent)
     }
 
     fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        self.hot.release_intent(intent_id, agent)?;
-        let _ = self.cold.release_intent(intent_id, agent);
-        Ok(())
+        self.hot.release_intent(intent_id, agent)
     }
 
     fn conclude_intent(
@@ -90,25 +80,21 @@ impl IntentCapable for DualStorage {
         intent_id: &str,
         result: &serde_json::Value,
     ) -> Result<Fact, BlackboardError> {
-        let fact = self.hot.conclude_intent(intent_id, result)?;
-        let _ = self.cold.conclude_intent(intent_id, result);
-        Ok(fact)
+        self.hot.conclude_intent(intent_id, result)
     }
 }
 
 impl HintCapable for DualStorage {
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
-        self.hot.submit_hint(hint)?;
-        let _ = self.cold.submit_hint(hint);
-        Ok(())
+        self.hot.submit_hint(hint)
     }
 }
 
-// ── Filtered reads: delegate to cold (hot typically doesn't support filtering) ──
+// ── Filtered reads: delegate to hot (Petgraph implements FilterCapable) ──
 
 impl FilterCapable for DualStorage {
     fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
-        self.cold.read_state_filtered(filter)
+        self.hot.read_state_filtered(filter)
     }
 }
 
@@ -132,7 +118,7 @@ impl EvictCapable for DualStorage {
     }
 }
 
-// ── Partition scan: delegate to cold ──
+// ── Partition scan: delegate to cold (blob archive) ──
 
 impl ScanCapable for DualStorage {
     fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
@@ -167,10 +153,11 @@ impl FlushCapable for DualStorage {
     }
 }
 
-// ── Cypher query: delegate to cold ──
+// ── Cypher query: delegate to hot (Petgraph implements CypherCapable) ──
 
 impl CypherCapable for DualStorage {
     fn query_plan(&self, plan: &serde_json::Value) -> Result<serde_json::Value, String> {
-        self.cold.query_plan(plan)
+        // Hot (Petgraph) handles Cypher queries. Cold no longer stores graph data.
+        self.hot.query_plan(plan)
     }
 }

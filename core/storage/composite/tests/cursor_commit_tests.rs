@@ -1,54 +1,25 @@
-// CQRS commit channel + cursor tests.
+// Cursor + meta store tests.
 //
 // Validates:
-//   1. flush_since writes to commit_blob/commit_kv, NOT to kv/blob
-//   2. read_cursor returns the flush boundary
+//   1. read_cursor returns the flush boundary from meta store
+//   2. flush_since updates cursor in meta store
 //   3. Parallel reads/writes do not race
-//   4. Cursor replaces dirty tracking — flush boundary is determinable
+//   4. MetaStore (KV) stores cursor and snapshot pointers
 
-use nexus_model::{Fact, FihHash, FlushCapable, FlushCursor, ScanCapable};
+use nexus_model::{FlushCapable, FlushCursor};
 use nexus_storage_composite::{
-    BlobStore, CompositeColdStorage, IoBufferBlob, IoBufferKv, IoBufferObject, KeyValueStore,
-    SystemClock,
+    CompositeColdStorage, IoBufferBlob, IoBufferObject, IoBufferSessionMeta, MetaStore,
 };
-use std::sync::{Arc, Barrier};
+use std::sync::Arc;
 use std::thread;
 
-fn test_fact(id: &str, _ts: &str) -> Fact {
-    Fact {
-        id: FihHash(id.into()),
-        origin: "t".into(),
-        content: serde_json::json!({"v": id}),
-        creator: "a".into(),
-    }
-}
-
-fn storage() -> CompositeColdStorage<IoBufferKv, IoBufferBlob, IoBufferObject> {
-    // CQRS commit channel: commit_kv and commit_blob are physically separate
-    // IoBuffer instances (independent HashMap). Consumer drain reads kv() and
-    // blob() exclusively, so commit channel data is naturally excluded.
-    CompositeColdStorage::new(
-        IoBufferKv::new(),
+fn storage() -> CompositeColdStorage<IoBufferBlob, IoBufferObject, IoBufferSessionMeta> {
+    CompositeColdStorage::new_with_system_clock(
         IoBufferBlob::new(),
         IoBufferObject::new(),
-        IoBufferKv::new(),   // commit_kv — separate HashMap instance
-        IoBufferBlob::new(), // commit_blob — separate HashMap instance
-        SystemClock,
+        IoBufferSessionMeta::new(),
         "cqrs-test",
     )
-}
-
-fn stamp(fact: &Fact, ts: &str) -> String {
-    #[derive(serde::Serialize)]
-    struct S<'a, T> {
-        submitted_at: &'a str,
-        data: &'a T,
-    }
-    serde_json::to_string(&S {
-        submitted_at: ts,
-        data: fact,
-    })
-    .unwrap()
 }
 
 #[test]
@@ -59,22 +30,17 @@ fn test_cursor_starts_empty() {
 }
 
 #[test]
-fn test_flush_updates_cursor_on_commit_kv() {
+fn test_flush_updates_cursor() {
     let s = storage();
 
-    // Submit data
-    s.kv()
-        .set("cqrs-test:fact:f1", &stamp(&test_fact("f1", "100"), "100"))
-        .unwrap();
-
+    // Flush with empty cursor (full flush)
     let cursor = FlushCursor {
         last_flushed_at: String::new(),
         partition: "p".into(),
     };
     let result = s.flush_since(&cursor).unwrap();
-    assert!(result.records_flushed > 0, "should flush at least one fact");
 
-    // Cursor should now be set on commit_kv
+    // Cursor should now be set in meta store
     let new_cursor = s
         .read_cursor()
         .unwrap()
@@ -83,189 +49,8 @@ fn test_flush_updates_cursor_on_commit_kv() {
 }
 
 #[test]
-fn test_flush_writes_to_commit_blob() {
-    let s = storage();
-
-    s.kv()
-        .set("cqrs-test:fact:f1", &stamp(&test_fact("f1", "100"), "100"))
-        .unwrap();
-
-    let cursor = FlushCursor {
-        last_flushed_at: String::new(),
-        partition: "p".into(),
-    };
-    s.flush_since(&cursor).unwrap();
-
-    // commit_blob should have data (flush wrote to it)
-    let commit_blobs = s.commit_blob().list("cqrs-test/").unwrap();
-    assert!(
-        !commit_blobs.is_empty(),
-        "commit blob should have flush output"
-    );
-}
-
-#[test]
 fn test_cursor_tracks_flush_boundary() {
     let s = storage();
-
-    // Phase 1: submit data with ts=100
-    s.kv()
-        .set(
-            "cqrs-test:fact:old",
-            &stamp(&test_fact("old", "100"), "100"),
-        )
-        .unwrap();
-    s.flush_since(&FlushCursor {
-        last_flushed_at: String::new(),
-        partition: "p".into(),
-    })
-    .unwrap();
-    let cursor1 = s.read_cursor().unwrap().unwrap().last_flushed_at.clone();
-
-    // Phase 2: submit new data with ts=200
-    s.kv()
-        .set(
-            "cqrs-test:fact:new",
-            &stamp(&test_fact("new", "200"), "200"),
-        )
-        .unwrap();
-    s.flush_since(&FlushCursor {
-        last_flushed_at: cursor1.clone(),
-        partition: "p".into(),
-    })
-    .unwrap();
-    let cursor2 = s.read_cursor().unwrap().unwrap().last_flushed_at;
-
-    assert!(cursor2 > cursor1, "cursor should advance after each flush");
-    assert_ne!(cursor1, cursor2, "cursors should be different");
-}
-
-#[test]
-fn test_concurrent_writes_then_flush() {
-    let s = Arc::new(storage());
-    let barrier = Arc::new(Barrier::new(4));
-    let threads: Vec<_> = (0..4)
-        .map(|i| {
-            let s = Arc::clone(&s);
-            let b = Arc::clone(&barrier);
-            thread::spawn(move || {
-                b.wait();
-                for j in 0..10 {
-                    let id = format!("w{i}_{j}");
-                    let key = format!("cqrs-test:fact:{id}");
-                    s.kv()
-                        .set(&key, &stamp(&test_fact(&id, "100"), "100"))
-                        .unwrap();
-                }
-            })
-        })
-        .collect();
-
-    for t in threads {
-        t.join().unwrap();
-    }
-
-    // All writes should have gone to main kv
-    let keys = s.kv().list("cqrs-test:fact:").unwrap();
-    assert_eq!(keys.len(), 40, "40 facts should have been written");
-
-    // Flush should work on all 40
-    let cursor = FlushCursor {
-        last_flushed_at: String::new(),
-        partition: "p".into(),
-    };
-    let result = s.flush_since(&cursor).unwrap();
-    assert_eq!(result.records_flushed, 40);
-}
-
-#[test]
-fn test_concurrent_read_during_write() {
-    let s = Arc::new(storage());
-
-    // Pre-populate
-    for i in 0..10 {
-        s.kv()
-            .set(
-                &format!("cqrs-test:fact:f{i}"),
-                &stamp(&test_fact(&format!("f{i}"), "100"), "100"),
-            )
-            .unwrap();
-    }
-
-    // Writer thread
-    let sw = Arc::clone(&s);
-    let writer = thread::spawn(move || {
-        for i in 10..20 {
-            sw.kv()
-                .set(
-                    &format!("cqrs-test:fact:f{i}"),
-                    &stamp(&test_fact(&format!("f{i}"), "200"), "200"),
-                )
-                .unwrap();
-        }
-    });
-
-    // Reader thread
-    let sr = Arc::clone(&s);
-    let reader = thread::spawn(move || {
-        let mut count = 0;
-        for _ in 0..100 {
-            count = sr.kv().list("cqrs-test:fact:").unwrap().len();
-        }
-        count
-    });
-
-    writer.join().unwrap();
-    let final_count = reader.join().unwrap();
-
-    // At least 10 (pre-populated), at most 20 (all writes visible)
-    assert!(
-        final_count >= 10,
-        "reader should see at least pre-populated data"
-    );
-    assert!(final_count <= 20, "reader should see at most all data");
-}
-
-#[test]
-fn test_flush_then_read_cursor_via_commit_kv() {
-    let s = storage();
-
-    // Submit and flush
-    for i in 0..5 {
-        s.kv()
-            .set(
-                &format!("cqrs-test:fact:f{i}"),
-                &stamp(&test_fact(&format!("f{i}"), "100"), "100"),
-            )
-            .unwrap();
-    }
-
-    let cursor = FlushCursor {
-        last_flushed_at: String::new(),
-        partition: "p".into(),
-    };
-    let result = s.flush_since(&cursor).unwrap();
-    let new_cursor_ts = result.new_cursor.last_flushed_at.clone();
-
-    // Read cursor via commit_kv
-    let saved = s.read_cursor().unwrap().expect("cursor should be saved");
-    assert_eq!(
-        saved.last_flushed_at, new_cursor_ts,
-        "commit_kv cursor should match flush result"
-    );
-}
-
-#[test]
-fn test_incremental_flush_respects_cursor() {
-    let s = storage();
-
-    // First batch
-    s.kv()
-        .set("cqrs-test:fact:a", &stamp(&test_fact("a", "100"), "100"))
-        .unwrap();
-    s.kv()
-        .set("cqrs-test:fact:b", &stamp(&test_fact("b", "100"), "100"))
-        .unwrap();
 
     let r1 = s
         .flush_since(&FlushCursor {
@@ -273,29 +58,81 @@ fn test_incremental_flush_respects_cursor() {
             partition: "p".into(),
         })
         .unwrap();
-    assert_eq!(r1.records_flushed, 2, "first flush: 2 facts");
+    let cursor1 = s.read_cursor().unwrap().unwrap();
+    assert_eq!(cursor1.last_flushed_at, r1.new_cursor.last_flushed_at);
+
+    // Second flush advances cursor
+    let r2 = s
+        .flush_since(&FlushCursor {
+            last_flushed_at: cursor1.last_flushed_at.clone(),
+            partition: "p".into(),
+        })
+        .unwrap();
+    let cursor2 = s.read_cursor().unwrap().unwrap();
+
     assert!(
-        !r1.new_cursor.last_flushed_at.is_empty(),
-        "cursor should be set"
+        cursor2.last_flushed_at > cursor1.last_flushed_at,
+        "cursor should advance after each flush"
+    );
+    assert!(
+        cursor2.last_flushed_at != cursor1.last_flushed_at,
+        "cursors should be different"
+    );
+}
+
+#[test]
+fn test_concurrent_read_during_flush() {
+    let s = Arc::new(storage());
+
+    // Writer thread
+    let sw = Arc::clone(&s);
+    let writer = thread::spawn(move || {
+        for _ in 0..5 {
+            let _ = sw.flush_since(&FlushCursor {
+                last_flushed_at: String::new(),
+                partition: "p".into(),
+            });
+        }
+    });
+
+    // Reader thread
+    let sr = Arc::clone(&s);
+    let reader = thread::spawn(move || {
+        for _ in 0..50 {
+            let _ = sr.read_cursor();
+        }
+    });
+
+    writer.join().unwrap();
+    reader.join().unwrap();
+}
+
+#[test]
+fn test_incremental_flush_respects_cursor() {
+    let s = storage();
+
+    let r1 = s
+        .flush_since(&FlushCursor {
+            last_flushed_at: String::new(),
+            partition: "p".into(),
+        })
+        .unwrap();
+    assert_eq!(
+        r1.records_flushed, 0,
+        "first flush on empty storage: 0 records"
     );
     let c1 = r1.new_cursor.last_flushed_at.clone();
 
-    // Second batch — same timestamp, should be excluded by cursor
-    s.kv()
-        .set("cqrs-test:fact:c", &stamp(&test_fact("c", "100"), "100"))
-        .unwrap();
+    // Second flush with same cursor should also be 0 (no new data)
     let r2 = s
         .flush_since(&FlushCursor {
             last_flushed_at: c1.clone(),
             partition: "p".into(),
         })
         .unwrap();
-    assert_eq!(
-        r2.records_flushed, 0,
-        "second flush: timestamp not newer than cursor"
-    );
+    assert_eq!(r2.records_flushed, 0, "second flush: 0 records");
 
-    // cursor was updated (flush_since always writes new cursor, even with 0 records)
+    // cursor was updated (flush_since always writes new cursor)
     let saved = s.read_cursor().unwrap().unwrap();
     assert!(
         !saved.last_flushed_at.is_empty(),
@@ -303,105 +140,22 @@ fn test_incremental_flush_respects_cursor() {
     );
 }
 
-// ── CQRS-specific tests ─────────────────────────────────────────────────
-
 #[test]
-fn test_commit_channel_writes_not_in_main_blob() {
-    // flush_since writes to commit_blob, NOT to main blob.
-    // Verify that main blob (blob()) does NOT contain flush output.
-    let s = storage();
+fn test_meta_store_get_set() {
+    // Verify that the meta store (IoBufferSessionMeta) works correctly
+    // for storing cursor and snapshot pointer values.
+    let meta = IoBufferSessionMeta::new();
 
-    s.kv()
-        .set("cqrs-test:fact:f1", &stamp(&test_fact("f1", "100"), "100"))
-        .unwrap();
+    meta.set("cursor", "20260530_123456").unwrap();
+    assert_eq!(meta.get("cursor").unwrap(), Some("20260530_123456".into()));
 
-    let cursor = FlushCursor {
-        last_flushed_at: String::new(),
-        partition: "p".into(),
-    };
-    s.flush_since(&cursor).unwrap();
-
-    // Main blob should have NO flush data
-    let main_blobs = s.blob().list("cqrs-test/").unwrap();
-    assert!(
-        main_blobs.is_empty(),
-        "main blob must not contain flush output: {:?}",
-        main_blobs
-    );
-
-    // Commit blob should contain flush data
-    let commit_blobs = s.commit_blob().list("cqrs-test/").unwrap();
-    assert!(
-        !commit_blobs.is_empty(),
-        "commit blob must contain flush output"
-    );
-}
-
-#[test]
-fn test_commit_channel_writes_not_in_main_kv() {
-    // flush_since writes cursor to commit_kv, NOT to main kv.
-    // Verify that main kv's cursor key is NOT present.
-    let s = storage();
-
-    s.kv()
-        .set("cqrs-test:fact:f1", &stamp(&test_fact("f1", "100"), "100"))
-        .unwrap();
-
-    let cursor = FlushCursor {
-        last_flushed_at: String::new(),
-        partition: "p".into(),
-    };
-    s.flush_since(&cursor).unwrap();
-
-    // Main kv should NOT have cursor key
-    let cursor_key = "cqrs-test:cursor";
-    let main_cursor = s.kv().get(cursor_key).unwrap();
-    assert!(main_cursor.is_none(), "main kv must not contain cursor key");
-
-    // Commit kv should have cursor key
-    let commit_cursor = s.commit_kv().get(cursor_key).unwrap();
-    assert!(commit_cursor.is_some(), "commit kv must contain cursor key");
-}
-
-#[test]
-fn test_commit_channel_data_not_in_scan_partition() {
-    // scan_partition merges KV (recent) + Blob (flushed).
-    // Commit channel data must not appear in scan results,
-    // since scan reads from main kv and main blob only.
-    let s = storage();
-
-    // Submit and flush a fact
-    s.kv()
-        .set("cqrs-test:fact:f1", &stamp(&test_fact("f1", "100"), "100"))
-        .unwrap();
-
-    // Before flush: fact is in scan
-    let data_before = s.scan_partition("p").unwrap();
+    meta.set("snapshot_ts", "20260530_120000").unwrap();
     assert_eq!(
-        data_before.facts.len(),
-        1,
-        "fact visible in scan before flush"
+        meta.get("snapshot_ts").unwrap(),
+        Some("20260530_120000".into())
     );
 
-    let cursor = FlushCursor {
-        last_flushed_at: String::new(),
-        partition: "p".into(),
-    };
-    s.flush_since(&cursor).unwrap();
-
-    // After flush: fact still in scan (flush copies to commit, does NOT remove from main)
-    let data_after = s.scan_partition("p").unwrap();
-    assert_eq!(
-        data_after.facts.len(),
-        1,
-        "fact still visible in scan after flush"
-    );
-
-    // The commit channel data count should be non-zero
-    let commit_blob_keys = s.commit_blob().list("cqrs-test/").unwrap();
-    let n_commit_blobs = commit_blob_keys.len();
-    assert!(
-        n_commit_blobs > 0,
-        "commit channel must contain flushed data"
-    );
+    // Overwrite
+    meta.set("cursor", "20260530_123457").unwrap();
+    assert_eq!(meta.get("cursor").unwrap(), Some("20260530_123457".into()));
 }

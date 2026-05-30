@@ -16,7 +16,7 @@ use nexus_graph::{
     create_blackboard_with_storage,
 };
 use nexus_model::FlushCursor;
-use nexus_storage_composite::{BlobStore, CompositeColdStorage, KeyValueStore, ObjectStore};
+use nexus_storage_composite::{BlobStore, CompositeColdStorage, MetaStore, ObjectStore};
 use serde_json::json;
 
 // ── Inline mock implementations for integration tests ───────────────────────
@@ -40,7 +40,7 @@ impl MockKv {
         }
     }
 }
-impl KeyValueStore for MockKv {
+impl MetaStore for MockKv {
     fn get(&self, key: &str) -> Result<Option<String>, String> {
         Ok(self.data.read().unwrap().get(key).cloned())
     }
@@ -50,20 +50,6 @@ impl KeyValueStore for MockKv {
             .unwrap()
             .insert(key.to_string(), value.to_string());
         Ok(())
-    }
-    fn delete(&self, key: &str) -> Result<(), String> {
-        self.data.write().unwrap().remove(key);
-        Ok(())
-    }
-    fn list(&self, prefix: &str) -> Result<Vec<String>, String> {
-        let map = self.data.read().unwrap();
-        let mut keys: Vec<_> = map
-            .keys()
-            .filter(|k| k.starts_with(prefix))
-            .cloned()
-            .collect();
-        keys.sort();
-        Ok(keys)
     }
 }
 
@@ -137,11 +123,11 @@ impl ObjectStore for MockObject {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-fn make_composite_cold() -> CompositeColdStorage<MockKv, MockBlob, MockObject> {
+fn make_composite_cold() -> CompositeColdStorage<MockBlob, MockObject, MockKv> {
     CompositeColdStorage::new_with_system_clock(
-        MockKv::new(),
         MockBlob::new(),
         MockObject::new(),
+        MockKv::new(),
         "integration-test",
     )
 }
