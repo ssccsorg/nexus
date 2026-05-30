@@ -76,14 +76,14 @@ pub fn create_blackboard_from_snapshot_with_cold(
     DefaultBlackboard::from_snapshot_with_cold(&snapshot, cold)
 }
 
+pub use crate::query::cypher::capable::CypherCapable;
 pub use blackboard::Record;
 pub use nexus_model::{
-    Blackboard, BlackboardError, BoardState, ColdStorage, Content, DualStorage,
-    EvictCapable, Fact, FactCapable, FihHash, FihPersistence, FilterCapable, FlushCapable, Hint,
-    HintCapable, HotStorage, Intent, IntentCapable, NullStorage, ScanCapable, StateFilter,
-    StorageRead, TimeRangeCapable,
+    Blackboard, BlackboardError, BoardState, ColdStorage, Content, DualStorage, EvictCapable, Fact,
+    FactCapable, FihHash, FihPersistence, FilterCapable, FlushCapable, Hint, HintCapable,
+    HotStorage, Intent, IntentCapable, NullStorage, ScanCapable, StateFilter, StorageRead,
+    TimeRangeCapable,
 };
-pub use crate::query::cypher::capable::CypherCapable;
 pub use nexus_storage_petgraph::{
     EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Snapshottable, StorageSnapshot,
 };

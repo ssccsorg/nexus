@@ -23,12 +23,15 @@ fn scenario_intermittent_sensor_agent() {
         gw.submit_fact(&Fact {
             id: FihHash("f_temp_001".into()),
             origin: "sensor-alpha".into(),
-            content: Content::Text(serde_json::to_string(&serde_json::json!({
-                "type": "temperature",
-                "value": 42.5,
-                "unit": "C",
-                "sector": 7
-            })).unwrap_or_default()),
+            content: Content::Text(
+                serde_json::to_string(&serde_json::json!({
+                    "type": "temperature",
+                    "value": 42.5,
+                    "unit": "C",
+                    "sector": 7
+                }))
+                .unwrap_or_default(),
+            ),
             creator: "drone-a".into(),
         })
         .unwrap();
@@ -46,12 +49,15 @@ fn scenario_intermittent_sensor_agent() {
         gw.submit_fact(&Fact {
             id: FihHash("f_temp_002".into()),
             origin: "sensor-alpha".into(),
-            content: Content::Text(serde_json::to_string(&serde_json::json!({
-                "type": "temperature",
-                "value": 43.1,
-                "unit": "C",
-                "sector": 7
-            })).unwrap_or_default()),
+            content: Content::Text(
+                serde_json::to_string(&serde_json::json!({
+                    "type": "temperature",
+                    "value": 43.1,
+                    "unit": "C",
+                    "sector": 7
+                }))
+                .unwrap_or_default(),
+            ),
             creator: "drone-a".into(),
         })
         .unwrap();
@@ -145,9 +151,7 @@ fn scenario_browser_agent() {
     gw.submit_fact(&Fact {
         id: FihHash("f_background".into()),
         origin: "system".into(),
-        content: Content::Text(
-            "Server load exceeds 85% for 3 consecutive hours".into(),
-        ),
+        content: Content::Text("Server load exceeds 85% for 3 consecutive hours".into()),
         creator: "monitor".into(),
     })
     .unwrap();
@@ -217,11 +221,14 @@ fn scenario_multi_language_agents() {
         gw.submit_fact(&Fact {
             id: FihHash("f_rs_001".into()),
             origin: "rust-analyzer".into(),
-            content: Content::Text(serde_json::to_string(&serde_json::json!({
-                "module": "inference",
-                "latency_p50_ms": 42,
-                "latency_p99_ms": 187
-            })).unwrap_or_default()),
+            content: Content::Text(
+                serde_json::to_string(&serde_json::json!({
+                    "module": "inference",
+                    "latency_p50_ms": 42,
+                    "latency_p99_ms": 187
+                }))
+                .unwrap_or_default(),
+            ),
             creator: "rs-agent".into(),
         })
         .unwrap();

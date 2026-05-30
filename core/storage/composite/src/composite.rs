@@ -53,8 +53,8 @@ use crate::{Now, SystemClock};
 use log;
 use nexus_graph::CypherCapable;
 use nexus_model::{
-    BoardState, ColdStorage, EvictCapable, FlushCapable, FlushCursor, FlushResult,
-    PartitionData, ScanCapable, StorageRead, TimeRangeCapable,
+    BoardState, ColdStorage, EvictCapable, FlushCapable, FlushCursor, FlushResult, PartitionData,
+    ScanCapable, StorageRead, TimeRangeCapable,
 };
 use postcard;
 use std::ops::Range;

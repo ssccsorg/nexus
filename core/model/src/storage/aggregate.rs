@@ -15,9 +15,7 @@ impl<T: FactCapable + IntentCapable + HintCapable> FihPersistence for T {}
 pub type DeltaSet = (Vec<Vec<u8>>, Vec<Vec<u8>>, Vec<Vec<u8>>);
 
 /// Hot storage: full FIH + memory management + time range + filter (petgraph).
-pub trait HotStorage:
-    FihPersistence + FilterCapable + EvictCapable + TimeRangeCapable
-{
+pub trait HotStorage: FihPersistence + FilterCapable + EvictCapable + TimeRangeCapable {
     /// Read all entities submitted after a given cursor timestamp.
     /// Returns (fact_bytes, intent_bytes, hint_bytes) as postcard-serialized blobs.
     fn read_delta_since(&self, _cursor_ts: &str) -> DeltaSet {
@@ -33,9 +31,7 @@ pub trait HotStorage:
 ///
 /// Provides write_blob() so DualStorage flush coordinator can write hot data
 /// to cold blob before advancing the cursor.
-pub trait ColdStorage:
-    ScanCapable + TimeRangeCapable + FlushCapable + EvictCapable
-{
+pub trait ColdStorage: ScanCapable + TimeRangeCapable + FlushCapable + EvictCapable {
     /// Write raw bytes to a blob key. Used by the flush coordinator.
     fn write_blob(&self, key: &str, data: &[u8]) -> Result<(), String>;
 }

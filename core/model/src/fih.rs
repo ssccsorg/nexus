@@ -70,7 +70,6 @@ impl From<&str> for Content {
     }
 }
 
-
 impl PartialEq<&str> for Content {
     fn eq(&self, other: &&str) -> bool {
         match self {
