@@ -23,8 +23,39 @@
 // Physical isolation is simpler, equally safe, and doesn't require every
 // drain implementation to check a flag.
 
-use crate::{BlobStore, KeyValueStore, ObjectStore};
+use crate::{BlobStore, MetaStore, ObjectStore};
 use std::collections::HashMap;
+
+// ── IoBufferSessionMeta ──────────────────────────────────────────────────
+
+/// In-memory MetaStore for IoBufferSession.
+/// Stores cursor position and snapshot pointers.
+/// `IoBufferSessionMeta` is a newtype over `IoBufferKv` providing the `MetaStore`
+/// trait implementation. It ensures type-level separation from general Kv usage.
+#[derive(Debug, Clone)]
+pub struct IoBufferSessionMeta(IoBufferKv);
+
+impl IoBufferSessionMeta {
+    pub fn new() -> Self {
+        Self(IoBufferKv::new())
+    }
+}
+
+impl Default for IoBufferSessionMeta {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MetaStore for IoBufferSessionMeta {
+    fn get(&self, key: &str) -> Result<Option<String>, String> {
+        self.0.get(key)
+    }
+    fn set(&self, key: &str, value: &str) -> Result<(), String> {
+        self.0.set(key, value)
+    }
+}
+
 use std::sync::{Arc, RwLock};
 
 // ── IoBufferKv ──────────────────────────────────────────────────────────
@@ -60,7 +91,7 @@ impl Default for IoBufferKv {
     }
 }
 
-impl KeyValueStore for IoBufferKv {
+impl MetaStore for IoBufferKv {
     fn get(&self, key: &str) -> Result<Option<String>, String> {
         let map = self.data.read().map_err(|e| e.to_string())?;
         Ok(map.get(key).cloned())
@@ -70,23 +101,6 @@ impl KeyValueStore for IoBufferKv {
         let mut map = self.data.write().map_err(|e| e.to_string())?;
         map.insert(key.to_string(), value.to_string());
         Ok(())
-    }
-
-    fn delete(&self, key: &str) -> Result<(), String> {
-        let mut map = self.data.write().map_err(|e| e.to_string())?;
-        map.remove(key);
-        Ok(())
-    }
-
-    fn list(&self, prefix: &str) -> Result<Vec<String>, String> {
-        let map = self.data.read().map_err(|e| e.to_string())?;
-        let mut keys: Vec<String> = map
-            .keys()
-            .filter(|k| k.starts_with(prefix))
-            .cloned()
-            .collect();
-        keys.sort();
-        Ok(keys)
     }
 }
 

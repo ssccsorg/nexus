@@ -2,12 +2,13 @@
 //
 // Wraps petgraph::Graph in Arc<RwLock<>> for thread-safe shared access.
 // Implements StorageRead, FactCapable, HintCapable, IntentCapable,
-// TimeRangeCapable, and EvictCapable.
+// TimeRangeCapable, EvictCapable, FilterCapable, and CypherCapable.
 
 use crate::weight::{EdgeWeight, NodeWeight};
 use nexus_model::{
-    BlackboardError, BoardState, EvictCapable, Fact, FactCapable, FihHash, Hint, HintCapable,
-    Intent, IntentCapable, StorageRead, TimeRangeCapable,
+    BlackboardError, BoardState, CypherCapable, EvictCapable, Fact, FactCapable, FihHash,
+    FilterCapable, Hint, HintCapable, Intent, IntentCapable, StateFilter, StorageRead,
+    TimeRangeCapable,
 };
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
@@ -615,3 +616,59 @@ impl EvictCapable for PetgraphStorage {
         Ok(removed)
     }
 }
+
+// ── FilterCapable ───────────────────────────────────────────────────────────
+
+impl FilterCapable for PetgraphStorage {
+    fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
+        let mut state = self.read_state();
+
+        if let Some(ids) = &filter.fact_ids {
+            state.facts.retain(|f| ids.contains(&f.id.0));
+        }
+        if let Some(ids) = &filter.intent_ids {
+            state.intents.retain(|i| ids.contains(&i.id.0));
+        }
+        if let Some(ids) = &filter.hint_ids {
+            state.hints.retain(|h| ids.contains(&h.id.0));
+        }
+
+        if let Some(since_str) = &filter.since
+            && let Ok(since_ts) = since_str.parse::<u128>()
+        {
+            state.intents.retain(|i| {
+                i.created_at
+                    .as_ref()
+                    .and_then(|c| c.parse::<u128>().ok())
+                    .is_none_or(|ts| ts >= since_ts)
+            });
+        }
+        if let Some(until_str) = &filter.until
+            && let Ok(until_ts) = until_str.parse::<u128>()
+        {
+            state.intents.retain(|i| {
+                i.created_at
+                    .as_ref()
+                    .and_then(|c| c.parse::<u128>().ok())
+                    .is_none_or(|ts| ts <= until_ts)
+            });
+        }
+
+        let offset = filter.offset.unwrap_or(0);
+        if let Some(limit) = filter.limit {
+            state.facts = state.facts.into_iter().skip(offset).take(limit).collect();
+            state.intents = state.intents.into_iter().skip(offset).take(limit).collect();
+            state.hints = state.hints.into_iter().skip(offset).take(limit).collect();
+        } else if offset > 0 {
+            state.facts = state.facts.into_iter().skip(offset).collect();
+            state.intents = state.intents.into_iter().skip(offset).collect();
+            state.hints = state.hints.into_iter().skip(offset).collect();
+        }
+
+        state
+    }
+}
+
+// ── CypherCapable ────────────────────────────────────────────────────────────
+
+impl CypherCapable for PetgraphStorage {}

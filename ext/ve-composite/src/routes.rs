@@ -8,7 +8,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
 use nexus_model::SessionExecute;
-use nexus_storage_composite::{BlobStore, KeyValueStore, ObjectStore};
+use nexus_storage_composite::{BlobStore, MetaStore, ObjectStore};
 
 use crate::AppState;
 
@@ -16,56 +16,27 @@ macro_rules! stor {
     ($s:expr) => { $s.session.storage() };
 }
 
-// ─── KV ─────────────────────────────────────────────────────────────────
+// ─── Meta (KV — cursor, snapshot pointers) ─────────────────────────────
 
-pub async fn kv_get(
+pub async fn meta_get(
     State(s): State<Arc<AppState>>,
-    Path((project, key)): Path<(String, String)>,
+    Path((_project, key)): Path<(String, String)>,
 ) -> impl IntoResponse {
-    let fk = format!("{project}:{key}");
-    match stor!(s).kv().get(&fk) {
+    match stor!(s).meta().get(&key) {
         Ok(Some(v)) => Json(serde_json::json!({"value": v})).into_response(),
         Ok(None) => (StatusCode::NOT_FOUND, Json(serde_json::json!({"error":"not found"}))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
     }
 }
 
-pub async fn kv_put(
+pub async fn meta_set(
     State(s): State<Arc<AppState>>,
-    Path((project, key)): Path<(String, String)>,
+    Path((_project, key)): Path<(String, String)>,
     Json(body): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    let fk = format!("{project}:{key}");
     let val = body["value"].as_str().unwrap_or("");
-    match stor!(s).kv().set(&fk, val) {
+    match stor!(s).meta().set(&key, val) {
         Ok(()) => Json(serde_json::json!({"status":"ok"})).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
-    }
-}
-
-pub async fn kv_delete(
-    State(s): State<Arc<AppState>>,
-    Path((project, key)): Path<(String, String)>,
-) -> impl IntoResponse {
-    let fk = format!("{project}:{key}");
-    match stor!(s).kv().delete(&fk) {
-        Ok(()) => Json(serde_json::json!({"status":"deleted"})).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
-    }
-}
-
-pub async fn kv_list(
-    State(s): State<Arc<AppState>>,
-    Path(project): Path<String>,
-    Query(params): Query<std::collections::HashMap<String, String>>,
-) -> impl IntoResponse {
-    let prefix = params.get("prefix").cloned().unwrap_or_default();
-    let fk = format!("{project}:{prefix}");
-    match stor!(s).kv().list(&fk) {
-        Ok(keys) => {
-            let strip: Vec<String> = keys.iter().map(|k| k.strip_prefix(&format!("{project}:")).unwrap_or(k).to_string()).collect();
-            Json(serde_json::json!({"keys": strip})).into_response()
-        }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
     }
 }
