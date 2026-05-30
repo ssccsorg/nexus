@@ -23,7 +23,7 @@ A Hypothesis is a subtype of Intent. A Hypothesis Intent proposes a testable cla
 
 ## Architecture Overview
 
-Every participant in the neXus ecosystem — verification engines, editor interfaces, synthesis tools, and any future peer — uses the same F-I-H interface to read from and write to the Blackboard. There is no privileged layer of “orchestrators” or “agents” above the primitives. Every peer is equal: the difference is only in which block types each peer primarily reads (Intents vs. Facts vs. Hints) and what it writes back. A peer is defined by its role, not by its position in a hierarchy.
+Every participant in the neXus ecosystem — verification engines, editor interfaces, synthesis tools, and any future peer — uses the same FIH interface to read from and write to the Blackboard. There is no privileged layer of “orchestrators” or “agents” above the primitives. Every peer is equal: the difference is only in which block types each peer primarily reads (Intents vs. Facts vs. Hints) and what it writes back. A peer is defined by its role, not by its position in a hierarchy.
 
 ![](https://docs.ssccs.org/projects/nexus/index_files/figure-html/fig-recursive-blackboard-output-1.svg)
 
@@ -66,7 +66,7 @@ The storage backend itself is abstracted behind a minimal interface: operations 
 
 ## Layer 3: Agentic Research Loop
 
-The term “agent” does not denote a privileged layer above the primitives. Every participant — verification engines, editor interfaces, synthesis tools — is a neXus peer that reads and writes F-I-H blocks through the same Blackboard interface. An “agent” is any peer engaged in an Intent lifecycle; the label describes a role, not a hierarchy. Agents coordinate through the Blackboard via Stigmergy: agents leave traces in a shared space, other agents perceive those traces and adapt. No module calls another module directly. The same FIH (Fact / Intent / Hint) interface that works at every scale: ecosystem, project, experiment, agent, primitive: governs all interaction.
+The term “agent” does not denote a privileged layer above the primitives. Every participant — verification engines, editor interfaces, synthesis tools — is a neXus peer that reads and writes FIH blocks through the same Blackboard interface. An “agent” is any peer engaged in an Intent lifecycle; the label describes a role, not a hierarchy. Agents coordinate through the Blackboard via Stigmergy: agents leave traces in a shared space, other agents perceive those traces and adapt. No module calls another module directly. The same FIH (Fact / Intent / Hint) interface that works at every scale: ecosystem, project, experiment, agent, primitive: governs all interaction.
 
 - Blackboard (shared graph): stores Facts (validated results), Intents (exploration directions), and Hints (governance rules). The only interface between modules.
 - Stigmergy coordination: agents read from and write to the Blackboard. Detectors: gap analysers, contradiction finders, state‑change monitors: observe patterns in the Fact graph and record their findings as new Facts. Agents perceive these detector Facts and decide which to act on by creating Intents. No pipeline dependency chain. The detectors themselves follow a proven stigmergic pattern: simple, count‑based heuristics applied every OODA tick, with content‑addressed Fact IDs ensuring that repeated observation of the same pattern produces the same Fact: idempotent, harmless, and requiring no state beyond the Blackboard itself.
