@@ -43,7 +43,12 @@ fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) 
     Fact {
         id: FihHash(id.to_string()),
         origin: origin.to_string(),
-        content: Content::Text(serde_json::to_string(&serde_json::json!({ "claim": claim_text, "topic": topic, "position": position })).unwrap_or_default()),
+        content: Content::Text(
+            serde_json::to_string(
+                &serde_json::json!({ "claim": claim_text, "topic": topic, "position": position }),
+            )
+            .unwrap_or_default(),
+        ),
         creator: "ingester".into(),
     }
 }

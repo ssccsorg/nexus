@@ -8,7 +8,7 @@ use nexus_model::{
     FlushCursor, FlushResult, Hint, Intent, PartitionData, ScanCapable, StateFilter, StorageRead,
     TimeRangeCapable,
 };
-use nexus_graph::cold_query::ColdQuery;
+use nexus_graph::query::cypher::cold_query::ColdQuery;
 use std::fs;
 use std::ops::Range;
 use std::sync::Mutex;

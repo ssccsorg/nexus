@@ -6,9 +6,9 @@
 
 use crate::weight::{EdgeWeight, NodeWeight};
 use nexus_model::{
-    BlackboardError, BoardState, Content, DeltaSet, EvictCapable, Fact, FactCapable,
-    FihHash, FilterCapable, Hint, HintCapable, HotStorage, Intent, IntentCapable, StateFilter,
-    StorageRead, TimeRangeCapable,
+    BlackboardError, BoardState, Content, DeltaSet, EvictCapable, Fact, FactCapable, FihHash,
+    FilterCapable, Hint, HintCapable, HotStorage, Intent, IntentCapable, StateFilter, StorageRead,
+    TimeRangeCapable,
 };
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
@@ -832,4 +832,3 @@ impl FilterCapable for PetgraphStorage {
         state
     }
 }
-

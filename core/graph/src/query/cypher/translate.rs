@@ -15,8 +15,8 @@ use std::collections::HashMap;
 
 use super::plan::*;
 
-use nexus_model::Content;
 use super::capable::CypherCapable;
+use nexus_model::Content;
 use nexus_storage_petgraph::GraphRead;
 
 use crate::Record;

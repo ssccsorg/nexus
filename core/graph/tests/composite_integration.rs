@@ -11,8 +11,8 @@
 // DualStorage, matching the same trait contracts as DuckDbStorage.
 
 use nexus_graph::{
-    Blackboard, ColdStorage, Content, CypherCapable, EvictCapable, Fact, FihHash, FlushCapable, GraphRead,
-    PetgraphStorage, ScanCapable, Snapshottable, create_blackboard_from_snapshot,
+    Blackboard, ColdStorage, Content, CypherCapable, EvictCapable, Fact, FihHash, FlushCapable,
+    GraphRead, PetgraphStorage, ScanCapable, Snapshottable, create_blackboard_from_snapshot,
     create_blackboard_with_storage,
 };
 use nexus_model::{DualStorage, FlushCursor};

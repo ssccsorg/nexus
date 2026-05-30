@@ -4,13 +4,13 @@
 // access and Cypher queries) with a cold storage backend for durability.
 // Storage is swappable via DualStorage.
 
+use crate::query::cypher::capable::CypherCapable;
 use crate::query::cypher::{Plan, TranslateError, execute_with_cold};
 use nexus_model::{
-    Blackboard, BlackboardError, BoardState, ColdStorage, DualStorage, EvictCapable,
-    Fact, FactCapable, FihHash, FlushCapable, FlushCursor, FlushResult, Hint, HintCapable, Intent,
+    Blackboard, BlackboardError, BoardState, ColdStorage, DualStorage, EvictCapable, Fact,
+    FactCapable, FihHash, FlushCapable, FlushCursor, FlushResult, Hint, HintCapable, Intent,
     IntentCapable, NullStorage, PartitionData, ScanCapable, StorageRead,
 };
-use crate::query::cypher::capable::CypherCapable;
 use nexus_storage_petgraph::{
     EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Snapshottable, StorageSnapshot,
 };
