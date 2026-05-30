@@ -159,7 +159,7 @@ fn execute_with_cold_eligible_with_populated_graph() {
         label: "Fact".into(),
         properties: std::collections::HashMap::from([(
             "origin".into(),
-            serde_json::Value::String("test-source".into()),
+            "\"test-source\"".into(),
         )]),
     });
     let plan = Plan::from_internal("MATCH (f:Fact) RETURN f").unwrap();

@@ -71,10 +71,11 @@ fn ingest_document(bb: &mut impl Blackboard, chunks: &[MdDocumentChunk]) {
         let fact = Fact {
             id,
             origin: chunk.source.clone(),
-            content: serde_json::json!({
+            content: serde_json::to_string(&serde_json::json!({
                 "section": chunk.section,
                 "content": chunk.content,
-            })
+            }))
+            .unwrap()
             .into(),
             creator: "ingestion-agent".into(),
         };
@@ -269,9 +270,10 @@ fn scenario_full_research_loop() {
         .facts
         .iter()
         .filter(|f| {
-            f.content
-                .as_json_value()
-                .get("section")
+            let cv: serde_json::Value =
+                serde_json::from_str(f.content.as_str().unwrap_or(""))
+                    .unwrap_or(serde_json::Value::Null);
+            cv.get("section")
                 .and_then(|v| v.as_str())
                 == Some("Future Directions")
         })
@@ -384,11 +386,11 @@ fn scenario_full_research_loop() {
     let conclusion_fact = bb
         .conclude_intent(
             "i_hybrid_synthesis",
-            &serde_json::json!({
+            &serde_json::to_string(&serde_json::json!({
                 "finding": "Hybrid GNN-Transformer architectures simultaneously address both limitations. GNN message passing (limited to 6 layers before oversmoothing) is replaced by graph pooling into a reduced set of super-nodes, which are then processed by a linear-complexity transformer (Performer-style). This achieves 93% accuracy on ZINC-250k, surpassing both pure GNN (92%) and pure transformer approaches. The hybrid architecture shows 3.2x faster convergence than transformer-only and 1.5x better long-range dependency capture than GNN-only.",
                 "implication": "The GNN and Transformer communities should converge on hybrid architectures as the default paradigm for molecular property prediction. Pure architectures remain valuable for specific sub-problems.",
                 "confidence": 0.87,
-            }),
+            })).unwrap(),
         )
         .expect("conclude should succeed");
 
@@ -401,7 +403,9 @@ fn scenario_full_research_loop() {
     );
 
     // The conclusion fact has content we set
-    let json_val = conclusion_fact.content.as_json_value();
+    let json_val: serde_json::Value =
+        serde_json::from_str(conclusion_fact.content.as_str().unwrap_or(""))
+            .unwrap_or(serde_json::Value::Null);
     let conclusion_content = json_val
         .as_object()
         .expect("conclusion content is an object");

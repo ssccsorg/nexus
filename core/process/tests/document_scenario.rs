@@ -317,8 +317,10 @@ fn count_detector_facts(state: &nexus_graph::BoardState, detector: &str, fact_ty
         .iter()
         .filter(|f| f.creator == detector)
         .filter(|f| {
-            f.content
-                .as_json_value()
+            let content_val: serde_json::Value =
+                serde_json::from_str(f.content.as_str().unwrap_or(""))
+                    .unwrap_or(serde_json::Value::Null);
+            content_val
                 .get("type")
                 .and_then(|v| v.as_str())
                 == Some(fact_type)
@@ -349,7 +351,9 @@ fn agent_resolve_contradictions(
         if fact.creator != "contradiction-detector" {
             continue;
         }
-        let content_json = fact.content.as_json_value();
+        let content_json: serde_json::Value =
+            serde_json::from_str(fact.content.as_str().unwrap_or(""))
+                .unwrap_or(serde_json::Value::Null);
         let Some(t) = content_json.get("topic").and_then(|v| v.as_str()) else {
             continue;
         };
@@ -374,10 +378,10 @@ fn agent_resolve_contradictions(
             .bb
             .conclude_intent(
                 &iid.0,
-                &serde_json::json!({
+                &serde_json::to_string(&serde_json::json!({
                     "resolution": conclusion,
                     "agent": agent_name,
-                }),
+                })).unwrap(),
             )
             .expect("conclude");
     }

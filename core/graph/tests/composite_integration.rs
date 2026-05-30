@@ -318,9 +318,8 @@ fn test_multi_entity_persistence_through_dual_storage() {
         "intent exists"
     );
 
-    let result = json!({"concluded": true});
     let concluded_fact =
-        <_ as Blackboard>::conclude_intent(&mut guard, "i_persist", &result).unwrap();
+        <_ as Blackboard>::conclude_intent(&mut guard, "i_persist", "concluded").unwrap();
 
     let state = <_ as Blackboard>::read_state(&guard);
     assert!(

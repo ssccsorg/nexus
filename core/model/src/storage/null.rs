@@ -59,12 +59,12 @@ impl IntentCapable for NullStorage {
     fn conclude_intent(
         &self,
         _id: &str,
-        _result: &serde_json::Value,
+        _result: &str,
     ) -> Result<Fact, BlackboardError> {
         Ok(Fact {
             id: FihHash("null".into()),
             origin: String::new(),
-            content: Content::JsonString("null".into()),
+            content: Content::Text("null".into()),
             creator: String::new(),
         })
     }

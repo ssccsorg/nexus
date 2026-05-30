@@ -123,12 +123,11 @@ fn test_full_agent_collaboration_flow() {
 
     // ── Phase 4: Agent-B concludes the Intent ─────────────────────────
 
-    let result = "Shallow GNN (3 layers) achieves 94% accuracy vs 89% for deep (10 layers)";
     let new_fact = bb
-        .conclude_intent("i001", &result.into())
+        .conclude_intent("i001", "Shallow GNN (3 layers) achieves 94% accuracy vs 89% for deep (10 layers)")
         .expect("conclude should succeed");
 
-    assert_eq!(new_fact.content, result);
+    assert_eq!(new_fact.content.to_string(), "Shallow GNN (3 layers) achieves 94% accuracy vs 89% for deep (10 layers)");
     println!("  Phase 4: Concluded → new Fact");
 
     // ── Phase 5: Verify final state ───────────────────────────────────
@@ -175,7 +174,7 @@ fn test_petgraph_time_range() {
     bb.submit_fact(&Fact {
         id: FihHash("f_001".into()),
         origin: "test".into(),
-        content: serde_json::json!("data").into(),
+        content: serde_json::json!("data").to_string().into(),
         creator: "tester".into(),
     })
     .unwrap();

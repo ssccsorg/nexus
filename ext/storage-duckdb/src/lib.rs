@@ -180,9 +180,11 @@ impl DuckDbStorage {
             Ok(Fact {
                 id: FihHash(id),
                 origin,
-                content: serde_json::from_str(&content_str)
-                    .unwrap_or(serde_json::Value::String(content_str))
-                    .into(),
+                content: {
+                    let v: serde_json::Value = serde_json::from_str(&content_str)
+                        .unwrap_or(serde_json::Value::String(content_str));
+                    serde_json::to_string(&v).unwrap_or_default().into()
+                },
                 creator,
             })
         }) {

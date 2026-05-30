@@ -141,17 +141,15 @@ fn flow_agent_creates_intent_from_detector_fact() {
         .heartbeat(&iid.0, "agent-alpha")
         .expect("heartbeat");
 
-    let result = serde_json::json!("synthesis complete");
-    let new_fact = sched.bb.conclude_intent(&iid.0, &result).expect("conclude");
-    assert_eq!(new_fact.content, Content::from(result.clone()));
+    let new_fact = sched.bb.conclude_intent(&iid.0, "synthesis complete").expect("conclude");
+    assert_eq!(new_fact.content, Content::Text("synthesis complete".to_string()));
 
     let state = Blackboard::read_state(&sched.bb);
-    let result_value = serde_json::json!("synthesis complete");
     assert!(
         state
             .facts
             .iter()
-            .any(|f| f.content.as_json_value() == result_value),
+            .any(|f| f.content == "synthesis complete"),
         "conclusion fact exists"
     );
     assert!(
@@ -198,7 +196,7 @@ fn flow_eviction() {
     sched.bb.claim_intent(&iid.0, "evictor").expect("claim");
     sched
         .bb
-        .conclude_intent(&iid.0, &serde_json::json!("done"))
+        .conclude_intent(&iid.0, "done")
         .expect("conclude");
 
     EvictCapable::evict_before(&sched.bb, "9999999999").expect("evict");
@@ -295,7 +293,7 @@ fn flow_cross_worker_snapshot() {
     bb_b.submit_fact(&Fact {
         id: FihHash("f_worker_b_001".into()),
         origin: "worker-b".into(),
-        content: serde_json::json!("Worker B discovery").into(),
+        content: serde_json::json!("Worker B discovery").to_string().into(),
         creator: "worker-b".into(),
     })
     .unwrap();
@@ -313,7 +311,7 @@ fn flow_cross_worker_snapshot() {
     };
     let iid = bb_b.submit_intent(&intent).expect("submit");
     bb_b.claim_intent(&iid.0, "worker-b").expect("claim");
-    bb_b.conclude_intent(&iid.0, &serde_json::json!("confirmed by Worker B"))
+    bb_b.conclude_intent(&iid.0, "confirmed by Worker B")
         .expect("conclude");
 
     let state = Blackboard::read_state(&bb_b);

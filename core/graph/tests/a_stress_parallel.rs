@@ -150,7 +150,7 @@ impl ParallelAnt {
                 match self.claimed.take() {
                     Some(id) => {
                         let result = format!("result of {id} by {}", self.name);
-                        match bb.conclude_intent(&id, &result.into()) {
+                        match bb.conclude_intent(&id, &result) {
                             Ok(_fact) => {
                                 format!("{:<16} conclude {id}", self.name,)
                             }

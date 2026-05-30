@@ -11,7 +11,7 @@ use nexus_model::{
     IntentCapable, NullStorage, PartitionData, ScanCapable, StorageRead,
 };
 use nexus_storage_petgraph::{
-    EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Record, Snapshottable,
+    EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Snapshottable,
     StorageSnapshot,
 };
 use petgraph::graph::{EdgeIndex, NodeIndex};
@@ -19,6 +19,9 @@ use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+
+/// A single query result row from Cypher.
+pub type Record = std::collections::HashMap<String, serde_json::Value>;
 
 /// Tracks intent claims — which agent has claimed which intent.
 ///
@@ -431,7 +434,7 @@ impl Blackboard for DefaultBlackboard {
     fn conclude_intent(
         &mut self,
         intent_id: &str,
-        result: &serde_json::Value,
+        result: &str,
     ) -> Result<Fact, BlackboardError> {
         self.claims.remove(intent_id);
         self.storage.conclude_intent(intent_id, result)
@@ -463,18 +466,18 @@ mod tests {
     }
 
     fn bb_with_facts(count: usize) -> DefaultBlackboard {
-        let mut bb = DefaultBlackboard::new();
-        for i in 0..count {
-            bb.submit_fact(&Fact {
-                id: FihHash(format!("f_{}", i)),
-                origin: "test".into(),
-                content: serde_json::json!(format!("data_{}", i)).into(),
-                creator: "tester".into(),
-            })
-            .unwrap();
+            let mut bb = DefaultBlackboard::new();
+            for i in 0..count {
+                bb.submit_fact(&Fact {
+                    id: FihHash(format!("f_{}", i)),
+                    origin: "test".into(),
+                    content: format!("data_{}", i).into(),
+                    creator: "tester".into(),
+                })
+                .unwrap();
+            }
+            bb
         }
-        bb
-    }
 
     #[test]
     fn test_fresh_blackboard_has_empty_cursor() {
@@ -577,7 +580,7 @@ mod tests {
         bb.submit_fact(&Fact {
             id: FihHash("f_extra".into()),
             origin: "test".into(),
-            content: serde_json::json!("extra").into(),
+            content: "extra".into(),
             creator: "tester".into(),
         })
         .unwrap();
@@ -613,7 +616,7 @@ mod tests {
             bb.submit_fact(&Fact {
                 id: FihHash(format!("f_cycle_{}", i)),
                 origin: "test".into(),
-                content: serde_json::json!(format!("cycle_{}", i)).into(),
+                content: format!("cycle_{}", i).into(),
                 creator: "tester".into(),
             })
             .unwrap();
@@ -650,14 +653,14 @@ mod tests {
         bb.submit_fact(&Fact {
             id: FihHash("f_snap_1".into()),
             origin: "snap-test".into(),
-            content: serde_json::json!("snapshot data").into(),
+            content: "snapshot data".into(),
             creator: "tester".into(),
         })
         .unwrap();
         bb.submit_fact(&Fact {
             id: FihHash("f_snap_2".into()),
             origin: "snap-test".into(),
-            content: serde_json::json!("more data").into(),
+            content: "more data".into(),
             creator: "tester".into(),
         })
         .unwrap();

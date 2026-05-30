@@ -162,13 +162,13 @@ fn test_conclude_intent_creates_fact() {
     s.submit_intent(&intent).unwrap();
     s.claim_intent("i_concl", "agent-x").unwrap();
     let result = s
-        .conclude_intent("i_concl", &serde_json::json!("result data"))
+        .conclude_intent("i_concl", "result data")
         .unwrap();
 
     assert_eq!(result.creator, "agent-x");
     assert_eq!(
         result.content,
-        Content::from(serde_json::json!("result data"))
+        Content::Text("result data".to_string())
     );
 
     let state = s.read_state();
@@ -200,7 +200,7 @@ fn test_evict_before_removes_old_concluded_intents() {
     };
     s.submit_intent(&intent).unwrap();
     s.claim_intent("i_old", "agent-x").unwrap();
-    s.conclude_intent("i_old", &serde_json::json!("done"))
+    s.conclude_intent("i_old", "done")
         .unwrap();
 
     // evict_before with far future timestamp — should evict the old concluded intent

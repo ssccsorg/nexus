@@ -82,7 +82,9 @@ impl DetectionCapable for NewDocumentAnalyzer {
                 continue;
             };
 
-            let content_val = fact.content.as_json_value();
+            let content_val: serde_json::Value =
+                serde_json::from_str(fact.content.as_str().unwrap_or(""))
+                    .unwrap_or(serde_json::Value::Null);
             let claim_text = content_val
                 .get("claim")
                 .and_then(|v| v.as_str())
@@ -113,14 +115,15 @@ impl DetectionCapable for NewDocumentAnalyzer {
             output.facts.push(Fact {
                 id: FihHash::new(&[tid, factor], "doc-analysis"),
                 origin: "new-document-analyzer".into(),
-                content: serde_json::json!({
+                content: serde_json::to_string(&serde_json::json!({
                     "type": "doc_analysis",
                     "factor": factor,
                     "topic": topic,
                     "claim": claim_text,
                     "source": fact.origin,
                     "detail": detail,
-                })
+                }))
+                .unwrap()
                 .into(),
                 creator: "new-document-analyzer".into(),
             });

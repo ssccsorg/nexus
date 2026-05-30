@@ -94,13 +94,14 @@ impl DetectionCapable for GapDetector {
                 output.facts.push(Fact {
                     id: FihHash::new(&[origin, "gap"], "fact"),
                     origin: "gap-detector".into(),
-                    content: serde_json::json!({
+                    content: serde_json::to_string(&serde_json::json!({
                         "type": "gap",
                         "subtype": "origin-orphan",
                         "origin": origin,
                         "orphan_count": facts.len(),
                         "fact_ids": facts.iter().map(|f| &f.id.0).collect::<Vec<_>>(),
-                    })
+                    }))
+                    .unwrap()
                     .into(),
                     creator: "gap-detector".into(),
                 });
@@ -139,7 +140,7 @@ impl DetectionCapable for GapDetector {
                     output.facts.push(Fact {
                         id: FihHash::new(&[topic, oa_s, ob_s], "cross-gap"),
                         origin: "gap-detector".into(),
-                        content: serde_json::json!({
+                        content: serde_json::to_string(&serde_json::json!({
                             "type": "gap",
                             "subtype": "cross-origin",
                             "topic": topic,
@@ -147,7 +148,8 @@ impl DetectionCapable for GapDetector {
                             "origin_b": ob_s,
                             "count_a": origins[oa].len(),
                             "count_b": origins[ob].len(),
-                        })
+                        }))
+                        .unwrap()
                         .into(),
                         creator: "gap-detector".into(),
                     });

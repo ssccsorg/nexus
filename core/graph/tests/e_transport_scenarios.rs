@@ -123,7 +123,7 @@ fn scenario_satellite_burst_agent() {
 
     gw.conclude_intent(
         "i_sat_analysis",
-        &"Band-x SNR dropped 0.3dB between samples: atmospheric interference hypothesis.".into(),
+        "Band-x SNR dropped 0.3dB between samples: atmospheric interference hypothesis.",
     )
     .unwrap();
 
@@ -174,7 +174,7 @@ fn scenario_browser_agent() {
     gw.claim_intent("i_investigate", "analysis-agent").unwrap();
     gw.conclude_intent(
         "i_investigate",
-        &"Root cause: memory leak in cache layer (redis eviction storm). Mitigation: increase maxmemory by 2GB, patch due next sprint.".into(),
+        "Root cause: memory leak in cache layer (redis eviction storm). Mitigation: increase maxmemory by 2GB, patch due next sprint.",
     )
     .unwrap();
 
@@ -263,7 +263,7 @@ fn scenario_multi_language_agents() {
         gw
             .conclude_intent(
                 "i_cross_lang",
-                &"Pipeline throughput (15K records) correlates with p99 latency (187ms). Bottleneck: data serialization in Python stage.".into(),
+                "Pipeline throughput (15K records) correlates with p99 latency (187ms). Bottleneck: data serialization in Python stage.",
             )
             .unwrap();
     }
@@ -331,7 +331,7 @@ fn scenario_conflicting_claims() {
     assert!(hb_result.is_err(), "non-owner heartbeat must fail");
 
     // Agent-1 concludes successfully
-    gw.conclude_intent("i_conflict", &"Agent-1 resolved the conflict".into())
+    gw.conclude_intent("i_conflict", "Agent-1 resolved the conflict")
         .unwrap();
 
     println!("  ✓ Conflicting claims: 2 agents race, exactly 1 wins, conflict detection via JSON");
