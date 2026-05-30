@@ -6,9 +6,9 @@
 
 use crate::weight::{EdgeWeight, NodeWeight};
 use nexus_model::{
-    BlackboardError, BoardState, Content, CypherCapable, EvictCapable, Fact, FactCapable,
-    FihHash, FilterCapable, Hint, HintCapable, HotStorage, Intent, IntentCapable, StateFilter,
-    StorageRead, TimeRangeCapable,
+    BlackboardError, BoardState, Content, CypherCapable, EvictCapable, Fact, FactCapable, FihHash,
+    FilterCapable, Hint, HintCapable, HotStorage, Intent, IntentCapable, StateFilter, StorageRead,
+    TimeRangeCapable,
 };
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
@@ -354,9 +354,7 @@ impl FactCapable for PetgraphStorage {
         let content_val = match &fact.content {
             Content::Text(s) => serde_json::Value::String(s.clone()),
             Content::JsonString(s) => serde_json::Value::String(s.clone()),
-            Content::Blob(b) => serde_json::Value::String(
-                String::from_utf8_lossy(b).into_owned(),
-            ),
+            Content::Blob(b) => serde_json::Value::String(String::from_utf8_lossy(b).into_owned()),
         };
         g.add_node(NodeWeight {
             name: fact.id.0.clone(),
@@ -599,12 +597,13 @@ impl IntentCapable for PetgraphStorage {
         }
 
         let (content_val, content_for_fact) = match result {
-            serde_json::Value::String(s) => {
-                (serde_json::Value::String(s.clone()), Content::Text(s.clone()))
-            }
+            serde_json::Value::String(s) => (
+                serde_json::Value::String(s.clone()),
+                Content::Text(s.clone()),
+            ),
             other => {
-                let json_str =
-                    serde_json::to_string(other).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+                let json_str = serde_json::to_string(other)
+                    .map_err(|e| BlackboardError::Internal(e.to_string()))?;
                 (
                     serde_json::Value::String(json_str.clone()),
                     Content::JsonString(json_str),

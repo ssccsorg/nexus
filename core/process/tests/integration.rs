@@ -22,8 +22,8 @@
 // This separation is the core FIH semantics enforcement.
 
 use nexus_graph::{
-    Blackboard, EvictCapable, Fact, FihHash, Intent, Snapshottable,
-    StorageSnapshot, create_blackboard, create_blackboard_from_snapshot,
+    Blackboard, EvictCapable, Fact, FihHash, Intent, Snapshottable, StorageSnapshot,
+    create_blackboard, create_blackboard_from_snapshot,
 };
 use nexus_model::Content;
 use nexus_process::scheduler::Scheduler;
@@ -148,7 +148,10 @@ fn flow_agent_creates_intent_from_detector_fact() {
     let state = Blackboard::read_state(&sched.bb);
     let result_value = serde_json::json!("synthesis complete");
     assert!(
-        state.facts.iter().any(|f| f.content.as_json_value() == result_value),
+        state
+            .facts
+            .iter()
+            .any(|f| f.content.as_json_value() == result_value),
         "conclusion fact exists"
     );
     assert!(

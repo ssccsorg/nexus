@@ -100,7 +100,8 @@ impl DetectionCapable for GapDetector {
                         "origin": origin,
                         "orphan_count": facts.len(),
                         "fact_ids": facts.iter().map(|f| &f.id.0).collect::<Vec<_>>(),
-                    }).into(),
+                    })
+                    .into(),
                     creator: "gap-detector".into(),
                 });
             }
@@ -146,7 +147,8 @@ impl DetectionCapable for GapDetector {
                             "origin_b": ob_s,
                             "count_a": origins[oa].len(),
                             "count_b": origins[ob].len(),
-                        }).into(),
+                        })
+                        .into(),
                         creator: "gap-detector".into(),
                     });
                 }

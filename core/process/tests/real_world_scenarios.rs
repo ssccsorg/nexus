@@ -43,7 +43,8 @@ fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) 
     Fact {
         id: FihHash(id.to_string()),
         origin: origin.to_string(),
-        content: serde_json::json!({ "claim": claim_text, "topic": topic, "position": position }).into(),
+        content: serde_json::json!({ "claim": claim_text, "topic": topic, "position": position })
+            .into(),
         creator: "ingester".into(),
     }
 }
@@ -56,7 +57,13 @@ fn count_by_type(state: &nexus_graph::BoardState, fact_type: &str) -> usize {
     state
         .facts
         .iter()
-        .filter(|f| f.content.as_json_value().get("type").and_then(|v| v.as_str()) == Some(fact_type))
+        .filter(|f| {
+            f.content
+                .as_json_value()
+                .get("type")
+                .and_then(|v| v.as_str())
+                == Some(fact_type)
+        })
         .count()
 }
 
@@ -202,7 +209,13 @@ fn scenario_cross_domain_discovery() {
         .facts
         .iter()
         .filter(|f| f.creator == "contradiction-detector")
-        .any(|f| f.content.as_json_value().get("topic").and_then(|v| v.as_str()) == Some("data-movement"));
+        .any(|f| {
+            f.content
+                .as_json_value()
+                .get("topic")
+                .and_then(|v| v.as_str())
+                == Some("data-movement")
+        });
     assert!(
         has_data_movement_contradiction,
         "data-movement contradiction: zero-movement (manifesto) vs structured-dataflow (spatz)"
@@ -372,15 +385,33 @@ fn scenario_peer_review_challenge() {
         .collect();
     let supports = nda_facts
         .iter()
-        .filter(|f| f.content.as_json_value().get("factor").and_then(|v| v.as_str()) == Some("+factor"))
+        .filter(|f| {
+            f.content
+                .as_json_value()
+                .get("factor")
+                .and_then(|v| v.as_str())
+                == Some("+factor")
+        })
         .count();
     let challenges = nda_facts
         .iter()
-        .filter(|f| f.content.as_json_value().get("factor").and_then(|v| v.as_str()) == Some("-factor"))
+        .filter(|f| {
+            f.content
+                .as_json_value()
+                .get("factor")
+                .and_then(|v| v.as_str())
+                == Some("-factor")
+        })
         .count();
     let gaps = nda_facts
         .iter()
-        .filter(|f| f.content.as_json_value().get("factor").and_then(|v| v.as_str()) == Some("gap"))
+        .filter(|f| {
+            f.content
+                .as_json_value()
+                .get("factor")
+                .and_then(|v| v.as_str())
+                == Some("gap")
+        })
         .count();
 
     assert!(
@@ -410,7 +441,11 @@ fn scenario_peer_review_challenge() {
     // Agent: synthesize peer review conclusion
     let contradiction_fact = r2.state.facts.iter().find(|f| {
         f.creator == "contradiction-detector"
-            && f.content.as_json_value().get("topic").and_then(|v| v.as_str()) == Some("computation-ontology")
+            && f.content
+                .as_json_value()
+                .get("topic")
+                .and_then(|v| v.as_str())
+                == Some("computation-ontology")
     });
     if let Some(cf) = contradiction_fact {
         let intent = Intent {
@@ -679,17 +714,35 @@ fn scenario_multi_agent_collaboration() {
     let alpha_conclusions = state
         .facts
         .iter()
-        .filter(|f| f.content.as_json_value().get("agent").and_then(|v| v.as_str()) == Some("alpha"))
+        .filter(|f| {
+            f.content
+                .as_json_value()
+                .get("agent")
+                .and_then(|v| v.as_str())
+                == Some("alpha")
+        })
         .count();
     let beta_conclusions = state
         .facts
         .iter()
-        .filter(|f| f.content.as_json_value().get("agent").and_then(|v| v.as_str()) == Some("beta"))
+        .filter(|f| {
+            f.content
+                .as_json_value()
+                .get("agent")
+                .and_then(|v| v.as_str())
+                == Some("beta")
+        })
         .count();
     let gamma_conclusions = state
         .facts
         .iter()
-        .filter(|f| f.content.as_json_value().get("agent").and_then(|v| v.as_str()) == Some("gamma"))
+        .filter(|f| {
+            f.content
+                .as_json_value()
+                .get("agent")
+                .and_then(|v| v.as_str())
+                == Some("gamma")
+        })
         .count();
 
     assert!(alpha_conclusions > 0, "Agent Alpha (hardware) contributed");
@@ -804,7 +857,11 @@ fn scenario_document_revision() {
         .iter()
         .filter(|f| {
             f.creator == "new-document-analyzer"
-                && f.content.as_json_value().get("factor").and_then(|v| v.as_str()) == Some("-factor")
+                && f.content
+                    .as_json_value()
+                    .get("factor")
+                    .and_then(|v| v.as_str())
+                    == Some("-factor")
         })
         .collect();
 

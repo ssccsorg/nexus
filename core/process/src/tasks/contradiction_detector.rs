@@ -82,10 +82,14 @@ impl DetectionCapable for ContradictionDetector {
                     }
                     self.seen.insert(key.clone());
 
-                    let origins_a: Vec<&str> =
-                        positions[pa.as_str()].iter().map(|f| f.origin.as_str()).collect();
-                    let origins_b: Vec<&str> =
-                        positions[pb.as_str()].iter().map(|f| f.origin.as_str()).collect();
+                    let origins_a: Vec<&str> = positions[pa.as_str()]
+                        .iter()
+                        .map(|f| f.origin.as_str())
+                        .collect();
+                    let origins_b: Vec<&str> = positions[pb.as_str()]
+                        .iter()
+                        .map(|f| f.origin.as_str())
+                        .collect();
 
                     output.facts.push(Fact {
                         id: FihHash::new(&[topic, pa, pb], "contradiction"),
@@ -97,7 +101,8 @@ impl DetectionCapable for ContradictionDetector {
                             "position_b": pb,
                             "origins_a": origins_a,
                             "origins_b": origins_b,
-                        }).into(),
+                        })
+                        .into(),
                         creator: "contradiction-detector".into(),
                     });
                 }

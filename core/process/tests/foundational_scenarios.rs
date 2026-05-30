@@ -26,7 +26,8 @@ fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) 
     Fact {
         id: FihHash(id.to_string()),
         origin: origin.to_string(),
-        content: serde_json::json!({ "claim": claim_text, "topic": topic, "position": position }).into(),
+        content: serde_json::json!({ "claim": claim_text, "topic": topic, "position": position })
+            .into(),
         creator: "ingester".into(),
     }
 }
@@ -275,7 +276,13 @@ fn scenario_foundational_consistency_audit() {
     let contradictions = facts_by_creator(&state, "contradiction-detector");
     let field_tensions: Vec<_> = contradictions
         .iter()
-        .filter(|f| f.content.as_json_value().get("topic").and_then(|v| v.as_str()) == Some("field-definition"))
+        .filter(|f| {
+            f.content
+                .as_json_value()
+                .get("topic")
+                .and_then(|v| v.as_str())
+                == Some("field-definition")
+        })
         .collect();
     assert!(
         !field_tensions.is_empty(),
@@ -286,7 +293,13 @@ fn scenario_foundational_consistency_audit() {
     // "segment-definition": pure-coordinate (manifesto) vs formal-tuple (whitepaper §2)
     let segment_tensions: Vec<_> = contradictions
         .iter()
-        .filter(|f| f.content.as_json_value().get("topic").and_then(|v| v.as_str()) == Some("segment-definition"))
+        .filter(|f| {
+            f.content
+                .as_json_value()
+                .get("topic")
+                .and_then(|v| v.as_str())
+                == Some("segment-definition")
+        })
         .collect();
     assert!(
         !segment_tensions.is_empty(),
@@ -419,7 +432,13 @@ fn scenario_formal_revision_of_philosophy() {
     let nda_facts = facts_by_creator(&state2, "new-document-analyzer");
     let challenges = nda_facts
         .iter()
-        .filter(|f| f.content.as_json_value().get("factor").and_then(|v| v.as_str()) == Some("-factor"))
+        .filter(|f| {
+            f.content
+                .as_json_value()
+                .get("factor")
+                .and_then(|v| v.as_str())
+                == Some("-factor")
+        })
         .count();
     assert!(
         challenges >= 2,
@@ -430,7 +449,11 @@ fn scenario_formal_revision_of_philosophy() {
     // Agent: resolve the field-definition tension
     let field_contradiction = state2.facts.iter().find(|f| {
         f.creator == "contradiction-detector"
-            && f.content.as_json_value().get("topic").and_then(|v| v.as_str()) == Some("field-definition")
+            && f.content
+                .as_json_value()
+                .get("topic")
+                .and_then(|v| v.as_str())
+                == Some("field-definition")
     });
     if let Some(cf) = field_contradiction {
         let intent = Intent {
@@ -561,11 +584,23 @@ fn scenario_theory_practice_gap() {
     // Guide challenges theory: same topics, different positions → -factors
     let challenges = nda
         .iter()
-        .filter(|f| f.content.as_json_value().get("factor").and_then(|v| v.as_str()) == Some("-factor"))
+        .filter(|f| {
+            f.content
+                .as_json_value()
+                .get("factor")
+                .and_then(|v| v.as_str())
+                == Some("-factor")
+        })
         .count();
     let gaps = nda
         .iter()
-        .filter(|f| f.content.as_json_value().get("factor").and_then(|v| v.as_str()) == Some("gap"))
+        .filter(|f| {
+            f.content
+                .as_json_value()
+                .get("factor")
+                .and_then(|v| v.as_str())
+                == Some("gap")
+        })
         .count();
 
     assert!(
@@ -697,7 +732,13 @@ fn scenario_epistemology_as_bridge() {
     let nda = facts_by_creator(&state2, "new-document-analyzer");
     let challenges = nda
         .iter()
-        .filter(|f| f.content.as_json_value().get("factor").and_then(|v| v.as_str()) == Some("-factor"))
+        .filter(|f| {
+            f.content
+                .as_json_value()
+                .get("factor")
+                .and_then(|v| v.as_str())
+                == Some("-factor")
+        })
         .count();
     assert!(
         challenges > 0,

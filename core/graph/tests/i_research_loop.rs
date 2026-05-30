@@ -74,7 +74,8 @@ fn ingest_document(bb: &mut impl Blackboard, chunks: &[MdDocumentChunk]) {
             content: serde_json::json!({
                 "section": chunk.section,
                 "content": chunk.content,
-            }).into(),
+            })
+            .into(),
             creator: "ingestion-agent".into(),
         };
         bb.submit_fact(&fact).unwrap();
@@ -267,7 +268,13 @@ fn scenario_full_research_loop() {
     let future_facts: Vec<&Fact> = state
         .facts
         .iter()
-        .filter(|f| f.content.as_json_value().get("section").and_then(|v| v.as_str()) == Some("Future Directions"))
+        .filter(|f| {
+            f.content
+                .as_json_value()
+                .get("section")
+                .and_then(|v| v.as_str())
+                == Some("Future Directions")
+        })
         .collect();
     assert_eq!(future_facts.len(), 3, "3 Future Directions sections exist");
 
