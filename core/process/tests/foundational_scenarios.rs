@@ -26,7 +26,8 @@ fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) 
     Fact {
         id: FihHash(id.to_string()),
         origin: origin.to_string(),
-        content: serde_json::json!({ "claim": claim_text, "topic": topic, "position": position })
+        content: serde_json::to_string(&serde_json::json!({ "claim": claim_text, "topic": topic, "position": position }))
+            .unwrap_or_default()
             .into(),
         creator: "ingester".into(),
     }
@@ -277,9 +278,10 @@ fn scenario_foundational_consistency_audit() {
     let field_tensions: Vec<_> = contradictions
         .iter()
         .filter(|f| {
-            f.content
-                .as_json_value()
-                .get("topic")
+            let cv: serde_json::Value =
+                serde_json::from_str(f.content.as_str().unwrap_or(""))
+                    .unwrap_or(serde_json::Value::Null);
+            cv.get("topic")
                 .and_then(|v| v.as_str())
                 == Some("field-definition")
         })
@@ -294,9 +296,10 @@ fn scenario_foundational_consistency_audit() {
     let segment_tensions: Vec<_> = contradictions
         .iter()
         .filter(|f| {
-            f.content
-                .as_json_value()
-                .get("topic")
+            let cv: serde_json::Value =
+                serde_json::from_str(f.content.as_str().unwrap_or(""))
+                    .unwrap_or(serde_json::Value::Null);
+            cv.get("topic")
                 .and_then(|v| v.as_str())
                 == Some("segment-definition")
         })
@@ -433,9 +436,10 @@ fn scenario_formal_revision_of_philosophy() {
     let challenges = nda_facts
         .iter()
         .filter(|f| {
-            f.content
-                .as_json_value()
-                .get("factor")
+            let cv: serde_json::Value =
+                serde_json::from_str(f.content.as_str().unwrap_or(""))
+                    .unwrap_or(serde_json::Value::Null);
+            cv.get("factor")
                 .and_then(|v| v.as_str())
                 == Some("-factor")
         })
@@ -449,11 +453,14 @@ fn scenario_formal_revision_of_philosophy() {
     // Agent: resolve the field-definition tension
     let field_contradiction = state2.facts.iter().find(|f| {
         f.creator == "contradiction-detector"
-            && f.content
-                .as_json_value()
-                .get("topic")
-                .and_then(|v| v.as_str())
-                == Some("field-definition")
+            && {
+                let cv: serde_json::Value =
+                    serde_json::from_str(f.content.as_str().unwrap_or(""))
+                        .unwrap_or(serde_json::Value::Null);
+                cv.get("topic")
+                    .and_then(|v| v.as_str())
+                    == Some("field-definition")
+            }
     });
     if let Some(cf) = field_contradiction {
         let intent = Intent {
@@ -472,9 +479,9 @@ fn scenario_formal_revision_of_philosophy() {
             .bb
             .claim_intent(&iid.0, "formal-reviewer")
             .expect("claim");
-        sched.bb.conclude_intent(&iid.0, &serde_json::json!({
+        sched.bb.conclude_intent(&iid.0, &serde_json::to_string(&serde_json::json!({
             "synthesis": "Manifesto declares what Field IS (admissibility conditions). Epistemology explains what Field DOES (bounds observation). Whitepaper §2 defines Field formally as (C,T). All three are consistent layers of the same concept."
-        })).expect("conclude");
+        })).unwrap()).expect("conclude");
     }
 
     let final_state = Blackboard::read_state(&sched.bb);
@@ -582,26 +589,16 @@ fn scenario_theory_practice_gap() {
     // NDA: guide should both support (+factor) and extend (gap) the theory
     let nda = facts_by_creator(&state, "new-document-analyzer");
     // Guide challenges theory: same topics, different positions → -factors
-    let challenges = nda
-        .iter()
-        .filter(|f| {
-            f.content
-                .as_json_value()
-                .get("factor")
-                .and_then(|v| v.as_str())
-                == Some("-factor")
-        })
-        .count();
-    let gaps = nda
-        .iter()
-        .filter(|f| {
-            f.content
-                .as_json_value()
-                .get("factor")
-                .and_then(|v| v.as_str())
-                == Some("gap")
-        })
-        .count();
+    let content_val_of = |f: &&Fact| -> serde_json::Value {
+        serde_json::from_str(f.content.as_str().unwrap_or(""))
+            .unwrap_or(serde_json::Value::Null)
+    };
+    let factor_of = |f: &&Fact| -> Option<String> {
+        content_val_of(f).get("factor")?.as_str().map(|s| s.to_string())
+    };
+
+    let challenges = nda.iter().filter(|f| factor_of(f).as_deref() == Some("-factor")).count();
+    let gaps = nda.iter().filter(|f| factor_of(f).as_deref() == Some("gap")).count();
 
     assert!(
         challenges > 0,
@@ -730,16 +727,14 @@ fn scenario_epistemology_as_bridge() {
     // Epistemology bridges by introducing mediating positions.
     // Same topics, different positions → -factors (constructive challenges)
     let nda = facts_by_creator(&state2, "new-document-analyzer");
-    let challenges = nda
-        .iter()
-        .filter(|f| {
-            f.content
-                .as_json_value()
-                .get("factor")
-                .and_then(|v| v.as_str())
-                == Some("-factor")
-        })
-        .count();
+    let content_val_of = |f: &&Fact| -> serde_json::Value {
+        serde_json::from_str(f.content.as_str().unwrap_or(""))
+            .unwrap_or(serde_json::Value::Null)
+    };
+    let factor_of = |f: &&Fact| -> Option<String> {
+        content_val_of(f).get("factor")?.as_str().map(|s| s.to_string())
+    };
+    let challenges = nda.iter().filter(|f| factor_of(f).as_deref() == Some("-factor")).count();
     assert!(
         challenges > 0,
         "Epistemology challenges existing positions: {} -factors",

@@ -11,6 +11,6 @@ pub trait IntentCapable: StorageRead {
     fn conclude_intent(
         &self,
         intent_id: &str,
-        result: &serde_json::Value,
+        result: &str,
     ) -> Result<Fact, BlackboardError>;
 }

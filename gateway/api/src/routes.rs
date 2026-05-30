@@ -8,7 +8,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use nexus_graph::{BlackboardError, Fact, FihHash, Hint, Intent};
+use nexus_graph::{BlackboardError, Content, Fact, FihHash, Hint, Intent};
 use serde::{Deserialize, Serialize};
 
 use crate::state::AppState;
@@ -110,7 +110,10 @@ pub async fn submit_fact(
     let fact = Fact {
         id: FihHash(id.clone()),
         origin: req.origin,
-        content: req.content.into(),
+        content: match &req.content {
+            serde_json::Value::String(s) => Content::Text(s.clone()),
+            other => Content::Text(serde_json::to_string(other).unwrap_or_default()),
+        },
         creator: req.creator,
     };
     let hash = {
@@ -201,8 +204,12 @@ pub async fn conclude_intent(
     Json(req): Json<ConcludeRequest>,
 ) -> Result<Json<ConcludeResponse>, (StatusCode, Json<ApiError>)> {
     let mut bb = state.blackboard.lock().unwrap();
+    let result_str = match &req.result {
+        serde_json::Value::String(s) => s.clone(),
+        other => serde_json::to_string(other).unwrap_or_default(),
+    };
     let fact = bb
-        .conclude_intent(&intent_id, &req.result)
+        .conclude_intent(&intent_id, &result_str)
         .map_err(err_response)?;
     Ok(Json(ConcludeResponse {
         fact,

@@ -91,7 +91,7 @@ impl IntentCapable for DualStorage {
     fn conclude_intent(
         &self,
         intent_id: &str,
-        result: &serde_json::Value,
+        result: &str,
     ) -> Result<Fact, BlackboardError> {
         self.hot.conclude_intent(intent_id, result)
     }

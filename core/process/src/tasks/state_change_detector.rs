@@ -98,14 +98,15 @@ impl DetectionCapable for StateChangeDetector {
         output.facts.push(Fact {
             id: FihHash::new(&[&triggers.join(",")], "state-change"),
             origin: "state-change-detector".into(),
-            content: serde_json::json!({
+            content: serde_json::to_string(&serde_json::json!({
                 "type": "state_change",
                 "triggers": triggers,
                 "prev_fact_count": checkpoint.fact_count,
                 "curr_fact_count": current_facts,
                 "prev_open_intents": checkpoint.open_intent_count,
                 "curr_open_intents": current_open,
-            })
+            }))
+            .unwrap()
             .into(),
             creator: "state-change-detector".into(),
         });
@@ -152,7 +153,7 @@ mod tests {
         Fact {
             id: FihHash(id.to_string()),
             origin: origin.to_string(),
-            content: serde_json::json!({"topic": "test"}).into(),
+            content: serde_json::to_string(&serde_json::json!({"topic": "test"})).unwrap().into(),
             creator: "test".into(),
         }
     }
@@ -183,7 +184,14 @@ mod tests {
             hints: vec![],
         });
         assert_eq!(o.facts.len(), 1);
-        assert!(o.facts[0].content.as_json_value()["type"].as_str() == Some("state_change"));
+        assert!(
+            serde_json::from_str::<serde_json::Value>(
+                o.facts[0].content.as_str().unwrap_or("")
+            )
+            .unwrap_or(serde_json::Value::Null)["type"]
+            .as_str()
+                == Some("state_change")
+        );
     }
 
     #[test]

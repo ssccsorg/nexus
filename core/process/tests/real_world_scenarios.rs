@@ -53,13 +53,17 @@ fn count_by_creator(state: &nexus_graph::BoardState, creator: &str) -> usize {
     state.facts.iter().filter(|f| f.creator == creator).count()
 }
 
+fn content_val_of(f: &Fact) -> serde_json::Value {
+    serde_json::from_str(f.content.as_str().unwrap_or(""))
+        .unwrap_or(serde_json::Value::Null)
+}
+
 fn count_by_type(state: &nexus_graph::BoardState, fact_type: &str) -> usize {
     state
         .facts
         .iter()
         .filter(|f| {
-            f.content
-                .as_json_value()
+            content_val_of(f)
                 .get("type")
                 .and_then(|v| v.as_str())
                 == Some(fact_type)
@@ -210,8 +214,7 @@ fn scenario_cross_domain_discovery() {
         .iter()
         .filter(|f| f.creator == "contradiction-detector")
         .any(|f| {
-            f.content
-                .as_json_value()
+            content_val_of(f)
                 .get("topic")
                 .and_then(|v| v.as_str())
                 == Some("data-movement")
@@ -234,8 +237,7 @@ fn scenario_cross_domain_discovery() {
             from_facts: vec![cf.id.0.clone()],
             description: format!(
                 "Resolve: {}",
-                cf.content
-                    .as_json_value()
+                content_val_of(cf)
                     .get("topic")
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
@@ -252,9 +254,9 @@ fn scenario_cross_domain_discovery() {
             .bb
             .claim_intent(&iid.0, "research-agent")
             .expect("claim");
-        sched.bb.conclude_intent(&iid.0, &serde_json::json!({
+        sched.bb.conclude_intent(&iid.0, &serde_json::to_string(&serde_json::json!({
             "resolution": "Data movement is zero for input Segments; projection results move as structured dataflow bounded by Spatz balance condition"
-        })).expect("conclude");
+        })).unwrap()).expect("conclude");
     }
 
     let state = Blackboard::read_state(&sched.bb);
@@ -383,36 +385,12 @@ fn scenario_peer_review_challenge() {
         .iter()
         .filter(|f| f.creator == "new-document-analyzer")
         .collect();
-    let supports = nda_facts
-        .iter()
-        .filter(|f| {
-            f.content
-                .as_json_value()
-                .get("factor")
-                .and_then(|v| v.as_str())
-                == Some("+factor")
-        })
-        .count();
-    let challenges = nda_facts
-        .iter()
-        .filter(|f| {
-            f.content
-                .as_json_value()
-                .get("factor")
-                .and_then(|v| v.as_str())
-                == Some("-factor")
-        })
-        .count();
-    let gaps = nda_facts
-        .iter()
-        .filter(|f| {
-            f.content
-                .as_json_value()
-                .get("factor")
-                .and_then(|v| v.as_str())
-                == Some("gap")
-        })
-        .count();
+    let factor_of = |f: &&Fact| -> Option<String> {
+        content_val_of(f).get("factor")?.as_str().map(|s| s.to_string())
+    };
+    let supports = nda_facts.iter().filter(|f| factor_of(f).as_deref() == Some("+factor")).count();
+    let challenges = nda_facts.iter().filter(|f| factor_of(f).as_deref() == Some("-factor")).count();
+    let gaps = nda_facts.iter().filter(|f| factor_of(f).as_deref() == Some("gap")).count();
 
     assert!(
         supports > 0,
@@ -441,8 +419,7 @@ fn scenario_peer_review_challenge() {
     // Agent: synthesize peer review conclusion
     let contradiction_fact = r2.state.facts.iter().find(|f| {
         f.creator == "contradiction-detector"
-            && f.content
-                .as_json_value()
+            && content_val_of(f)
                 .get("topic")
                 .and_then(|v| v.as_str())
                 == Some("computation-ontology")
@@ -461,9 +438,9 @@ fn scenario_peer_review_challenge() {
         };
         let iid = sched.bb.submit_intent(&intent).expect("submit");
         sched.bb.claim_intent(&iid.0, "reviewer").expect("claim");
-        sched.bb.conclude_intent(&iid.0, &serde_json::json!({
+        sched.bb.conclude_intent(&iid.0, &serde_json::to_string(&serde_json::json!({
             "verdict": "Rust is the practical stepping stone; SSCCS manifesto describes the destination. Both are correct in their domains"
-        })).expect("conclude");
+        })).unwrap()).expect("conclude");
     }
 
     let state = Blackboard::read_state(&sched.bb);
@@ -540,7 +517,7 @@ fn scenario_incremental_knowledge_growth() {
         }
 
         for cf in &unresolved {
-            let content_json = cf.content.as_json_value();
+            let content_json = content_val_of(cf);
             let topic = content_json
                 .get("topic")
                 .and_then(|v| v.as_str())
@@ -562,10 +539,10 @@ fn scenario_incremental_knowledge_growth() {
                 .bb
                 .conclude_intent(
                     &iid.0,
-                    &serde_json::json!({
+                    &serde_json::to_string(&serde_json::json!({
                         "resolution": format!("Resolved {} in iteration {}", topic, iteration),
                         "iteration": iteration,
-                    }),
+                    })).unwrap_or_default(),
                 )
                 .expect("conclude");
         }
@@ -638,11 +615,11 @@ fn scenario_multi_agent_collaboration() {
             .bb
             .conclude_intent(
                 &iid.0,
-                &serde_json::json!({
+                &serde_json::to_string(&serde_json::json!({
                     "analysis": "Spatz balance condition validates SSCCS structural model",
                     "domain": "hardware",
                     "agent": "alpha",
-                }),
+                })).unwrap_or_default(),
             )
             .expect("conclude");
     }
@@ -672,11 +649,11 @@ fn scenario_multi_agent_collaboration() {
             .bb
             .conclude_intent(
                 &iid.0,
-                &serde_json::json!({
+                &serde_json::to_string(&serde_json::json!({
                     "analysis": "MLIR Transform Dialect aligns with SSCCS Field composition",
                     "domain": "compiler",
                     "agent": "beta",
-                }),
+                })).unwrap_or_default(),
             )
             .expect("conclude");
     }
@@ -702,11 +679,11 @@ fn scenario_multi_agent_collaboration() {
         };
         let iid = sched.bb.submit_intent(&intent).expect("submit");
         sched.bb.claim_intent(&iid.0, "agent-gamma").expect("claim");
-        sched.bb.conclude_intent(&iid.0, &serde_json::json!({
+        sched.bb.conclude_intent(&iid.0, &serde_json::to_string(&serde_json::json!({
             "synthesis": "SSCCS theory + Spatz measurement + MLIR implementation are complementary layers",
             "domain": "philosophy",
             "agent": "gamma",
-        })).expect("conclude");
+        })).unwrap()).expect("conclude");
     }
 
     let state = Blackboard::read_state(&sched.bb);
@@ -715,8 +692,7 @@ fn scenario_multi_agent_collaboration() {
         .facts
         .iter()
         .filter(|f| {
-            f.content
-                .as_json_value()
+            content_val_of(f)
                 .get("agent")
                 .and_then(|v| v.as_str())
                 == Some("alpha")
@@ -726,8 +702,7 @@ fn scenario_multi_agent_collaboration() {
         .facts
         .iter()
         .filter(|f| {
-            f.content
-                .as_json_value()
+            content_val_of(f)
                 .get("agent")
                 .and_then(|v| v.as_str())
                 == Some("beta")
@@ -737,8 +712,7 @@ fn scenario_multi_agent_collaboration() {
         .facts
         .iter()
         .filter(|f| {
-            f.content
-                .as_json_value()
+            content_val_of(f)
                 .get("agent")
                 .and_then(|v| v.as_str())
                 == Some("gamma")
@@ -857,8 +831,7 @@ fn scenario_document_revision() {
         .iter()
         .filter(|f| {
             f.creator == "new-document-analyzer"
-                && f.content
-                    .as_json_value()
+                && content_val_of(f)
                     .get("factor")
                     .and_then(|v| v.as_str())
                     == Some("-factor")

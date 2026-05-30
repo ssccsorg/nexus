@@ -50,7 +50,7 @@ fn scenario_contradiction_detection() {
 
     // Agent-C claims, works, concludes
     bb.claim_intent("i_reconcile", "agent-c").unwrap();
-    bb.conclude_intent("i_reconcile", &"Skip connections delay oversmoothing to 50+ layers; normalization alone is insufficient. Contradiction resolved.".into()).unwrap();
+    bb.conclude_intent("i_reconcile", "Skip connections delay oversmoothing to 50+ layers; normalization alone is insufficient. Contradiction resolved.").unwrap();
 
     let state = bb.read_state();
     assert_eq!(state.facts.len(), 3, "2 original + 1 concluded");
@@ -129,7 +129,7 @@ fn scenario_peer_review() {
     // Editor concludes incorporating feedback
     let result = bb.conclude_intent(
         "i_hypothesis",
-        &"Hypothesis accepted with revisions: surface code QEC at distance-3 achieves 0.1% threshold (confirmed). Distance-5 requires 0.05%.".into(),
+        "Hypothesis accepted with revisions: surface code QEC at distance-3 achieves 0.1% threshold (confirmed). Distance-5 requires 0.05%.",
     ).unwrap();
     assert!(
         result
@@ -335,7 +335,7 @@ fn scenario_emergency_response() {
     let outcome = bb
         .conclude_intent(
             "i_respond_fire",
-            &"Sector 7 evacuated, fire suppressed in 3min, power isolated. No casualties.".into(),
+            "Sector 7 evacuated, fire suppressed in 3min, power isolated. No casualties.",
         )
         .unwrap();
     assert!(outcome.content.as_str().unwrap_or("").contains("evacuated"));
@@ -392,7 +392,7 @@ fn scenario_bug_fix_pipeline() {
     // Developer claims triage, concludes with analysis
     bb.claim_intent("i_triage", "dev-alice").unwrap();
     let analysis = bb.conclude_intent("i_triage",
-        &"Root cause: amount field uses uint32 (max $42,949.67). Amounts > $10K approach limit with tax/shipping. Fix: migrate to uint64. Estimated effort: 2h.".into()
+        "Root cause: amount field uses uint32 (max $42,949.67). Amounts > $10K approach limit with tax/shipping. Fix: migrate to uint64. Estimated effort: 2h."
     ).unwrap();
     assert!(analysis.content.as_str().unwrap_or("").contains("uint32"));
 
@@ -414,7 +414,7 @@ fn scenario_bug_fix_pipeline() {
     // Developer claims and implements the fix
     bb.claim_intent("i_fix_1337", "dev-alice").unwrap();
     bb.conclude_intent("i_fix_1337",
-        &"Fix deployed: uint32→uint64 migration complete. Tested with $99,999.99 transaction (PASS). PR #2137 merged.".into()
+        "Fix deployed: uint32→uint64 migration complete. Tested with $99,999.99 transaction (PASS). PR #2137 merged."
     ).unwrap();
 
     // Reviewer submits a review Intent to validate
@@ -431,7 +431,7 @@ fn scenario_bug_fix_pipeline() {
     }).unwrap();
     bb.claim_intent("i_review_1337", "reviewer-bob").unwrap();
     let verdict = bb.conclude_intent("i_review_1337",
-        &"REVIEW PASSED: edge cases handled. uint64 max ($184M) sufficient. Negative inputs rejected by schema validation.".into()
+        "REVIEW PASSED: edge cases handled. uint64 max ($184M) sufficient. Negative inputs rejected by schema validation."
     ).unwrap();
     assert!(verdict.content.as_str().unwrap_or("").contains("PASSED"));
 
@@ -515,7 +515,7 @@ fn scenario_ci_failure_investigation() {
     }).unwrap();
     bb.claim_intent("i_root_cause", "agent-d").unwrap();
     let diagnosis = bb.conclude_intent("i_root_cause",
-        &"Root cause confirmed: proto-rs v2.4.0 alignment change. Fix: pin proto-rs to v2.3.9 in Cargo.toml, or add #[repr(C)] to generated code. Pinning is 5min fix.".into()
+        "Root cause confirmed: proto-rs v2.4.0 alignment change. Fix: pin proto-rs to v2.3.9 in Cargo.toml, or add #[repr(C)] to generated code. Pinning is 5min fix."
     ).unwrap();
     assert!(
         diagnosis
@@ -567,7 +567,7 @@ fn scenario_supply_chain_incident() {
     .unwrap();
     bb.claim_intent("i_assess", "sec-lead").unwrap();
     let impact = bb.conclude_intent("i_assess",
-        &"Impact: 12 microservices use openssl-sys. 8 are edge-facing (critical). 4 are internal (medium). All need patching.".into()
+        "Impact: 12 microservices use openssl-sys. 8 are edge-facing (critical). 4 are internal (medium). All need patching."
     ).unwrap();
     assert!(
         impact
@@ -592,7 +592,7 @@ fn scenario_supply_chain_incident() {
     .unwrap();
     bb.claim_intent("i_mitigate", "sre-lead").unwrap();
     let patch = bb.conclude_intent("i_mitigate",
-        &"Patch: openssl-sys bumped to 0.9.101 in all 12 services. 8 edge services patched via rolling update (zero downtime). 4 internal services updated. No regressions.".into()
+        "Patch: openssl-sys bumped to 0.9.101 in all 12 services. 8 edge services patched via rolling update (zero downtime). 4 internal services updated. No regressions."
     ).unwrap();
     assert!(
         patch
@@ -617,7 +617,7 @@ fn scenario_supply_chain_incident() {
     .unwrap();
     bb.claim_intent("i_comms", "comms-lead").unwrap();
     let advisory = bb.conclude_intent("i_comms",
-        &"Advisory published: CVE-2026-4413 patched within 4h of disclosure. No customer impact. Post-mortem scheduled.".into()
+        "Advisory published: CVE-2026-4413 patched within 4h of disclosure. No customer impact. Post-mortem scheduled."
     ).unwrap();
     assert!(advisory.content.as_str().unwrap_or("").contains("4h"));
 
@@ -740,7 +740,7 @@ fn scenario_ssccs_primitive_discovery() {
     let segment_def = bb
         .conclude_intent(
             "i_formalize_segment",
-            &"SEGMENT FORMALIZED: A Segment is a triple (M, D, B) where:
+            "SEGMENT FORMALIZED: A Segment is a triple (M, D, B) where:
   M: memory access region (contiguous address range, stride pattern)
   D: def-use chain cluster (SSA value window, data flow subgraph)
   B: structural boundary (loop entry/exit, CFG natural loop)
@@ -752,8 +752,7 @@ Properties:
   - Universal: present in LLVM IR, MLIR, CFG, and downstream to machine code
 
 Implication: The Segment is a computational primitive — an atom of computation
-that the von Neumann architecture can be redesigned around."
-                .into(),
+that the von Neumann architecture can be redesigned around.",
         )
         .unwrap();
     assert!(
@@ -791,7 +790,7 @@ that the von Neumann architecture can be redesigned around."
     }).unwrap();
     bb.claim_intent("i_validate_segment", "agent-a").unwrap();
     let validation = bb.conclude_intent("i_validate_segment",
-        &"VALIDATION PASSED: Segment model predicts stride-1 (73% = innermost loops), stride-4/8 (18% = struct field access across Segment boundaries), gather/scatter (9% = cross-Segment irregular access). The 73/18/9 distribution is a natural consequence of hierarchical Segment composition.".into()
+        "VALIDATION PASSED: Segment model predicts stride-1 (73% = innermost loops), stride-4/8 (18% = struct field access across Segment boundaries), gather/scatter (9% = cross-Segment irregular access). The 73/18/9 distribution is a natural consequence of hierarchical Segment composition."
     ).unwrap();
     assert!(validation.content.as_str().unwrap_or("").contains("PASSED"));
 
@@ -811,13 +810,12 @@ that the von Neumann architecture can be redesigned around."
     let scheme_def = bb
         .conclude_intent(
             "i_scheme_definition",
-            &"SCHEME FORMALIZED: Scheme(S₁, S₂, T) where:
+            "SCHEME FORMALIZED: Scheme(S₁, S₂, T) where:
   - S₁, S₂ are Segments
   - T ∈ {map, reduce, shuffle, broadcast, fuse, split}
   - A Scheme preserves the Segment properties (self-contained, compositional)
 
-This completes the first two layers of the SSCCS ontology: Segment + Scheme."
-                .into(),
+This completes the first two layers of the SSCCS ontology: Segment + Scheme.",
         )
         .unwrap();
     assert!(

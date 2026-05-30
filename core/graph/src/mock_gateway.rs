@@ -54,7 +54,7 @@ impl<B: Blackboard> Blackboard for MockGateway<B> {
     fn conclude_intent(
         &mut self,
         intent_id: &str,
-        result: &serde_json::Value,
+        result: &str,
     ) -> Result<Fact, BlackboardError> {
         self.inner.conclude_intent(intent_id, result)
     }

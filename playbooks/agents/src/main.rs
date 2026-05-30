@@ -24,21 +24,21 @@ fn main() {
     let f1 = bb.submit_fact(&Fact {
         id: FihHash::new(&["gnn-accuracy"], "fact"),
         origin: "arxiv_2401".into(),
-        content: serde_json::json!({
+        content: serde_json::to_string(&serde_json::json!({
             "model": "GNN",
             "accuracy": 0.92,
             "dataset": "ogbn-arxiv",
             "layers": 3
-        }).into(),
+        })).unwrap().into(),
         creator: "agent-a".into(),
     }).unwrap();
     let f2 = bb.submit_fact(&Fact {
         id: FihHash::new(&["gnn-oversmoothing"], "fact"),
         origin: "neurips_2023".into(),
-        content: serde_json::json!({
+        content: serde_json::to_string(&serde_json::json!({
             "finding": "Message-passing GNNs oversmooth beyond 6 layers",
             "threshold": 6
-        }).into(),
+        })).unwrap().into(),
         creator: "agent-b".into(),
     }).unwrap();
     println!("   Fact 1: {}", f1);
@@ -76,11 +76,11 @@ fn main() {
     let new_fact = bb
         .conclude_intent(
             &intent_id.0,
-            &serde_json::json!({
+            &serde_json::to_string(&serde_json::json!({
                 "result": "Shallow GNN (3 layers): 94% accuracy. Deep GNN (10 layers): 89%.",
                 "winner": "shallow",
                 "delta": 0.05
-            }),
+            })).unwrap(),
         )
         .unwrap();
     println!("   New fact: {} = {}", new_fact.id, new_fact.content);
