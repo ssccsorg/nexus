@@ -232,6 +232,7 @@ impl DefaultBlackboard {
             project_id: self.project_id.clone(),
             task_states: std::collections::HashMap::new(),
             flush_cursor: self.flush_cursor.clone(),
+            version: 1,
         }
     }
 
@@ -542,6 +543,7 @@ mod tests {
             project_id: "legacy".into(),
             task_states: std::collections::HashMap::new(),
             flush_cursor: FlushCursor::default(),
+            version: 1,
         };
         let json = serde_json::to_vec(&snapshot).unwrap();
         let mut v: serde_json::Value = serde_json::from_slice(&json).unwrap();
