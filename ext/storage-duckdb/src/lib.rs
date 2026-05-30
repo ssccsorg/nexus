@@ -2,11 +2,13 @@
 
 pub mod cypher_sql;
 
+use nexus_graph::CypherCapable;
 use nexus_model::{
-    BoardState, ColdStorage, Content, CypherCapable, EvictCapable, Fact, FihHash, FilterCapable, FlushCapable,
+    BoardState, ColdStorage, Content, EvictCapable, Fact, FihHash, FilterCapable, FlushCapable,
     FlushCursor, FlushResult, Hint, Intent, PartitionData, ScanCapable, StateFilter, StorageRead,
-    TimeRangeCapable, cold_query::ColdQuery,
+    TimeRangeCapable,
 };
+use nexus_graph::cold_query::ColdQuery;
 use std::fs;
 use std::ops::Range;
 use std::sync::Mutex;

@@ -7,7 +7,7 @@
 // directly.
 
 use nexus_graph::mock_gateway::MockGateway;
-use nexus_graph::{Blackboard, Fact, FihHash, Intent, create_blackboard};
+use nexus_graph::{Blackboard, Content, Fact, FihHash, Intent, create_blackboard};
 
 /// Contradiction Detection — via MockGateway (JSON transport boundary).
 ///
@@ -25,10 +25,9 @@ fn scenario_contradiction_detection_via_gateway() {
     gw.submit_fact(&Fact {
         id: FihHash("f_gnn_deep".into()),
         origin: "paper_iclr_2024".into(),
-        content: serde_json::Value::String(
+        content: Content::Text(
             "Residual GNNs maintain accuracy at 50 layers with skip connections".into(),
-        )
-        .into(),
+        ),
         creator: "agent-a".into(),
     })
     .unwrap();
@@ -37,10 +36,9 @@ fn scenario_contradiction_detection_via_gateway() {
     gw.submit_fact(&Fact {
         id: FihHash("f_gnn_shallow".into()),
         origin: "paper_neurips_2023".into(),
-        content: serde_json::Value::String(
+        content: Content::Text(
             "Message-passing GNNs oversmooth beyond 6 layers without normalization".into(),
-        )
-        .into(),
+        ),
         creator: "agent-b".into(),
     })
     .unwrap();

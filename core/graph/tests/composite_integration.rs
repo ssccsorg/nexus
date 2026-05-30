@@ -11,7 +11,7 @@
 // DualStorage, matching the same trait contracts as DuckDbStorage.
 
 use nexus_graph::{
-    Blackboard, ColdStorage, CypherCapable, EvictCapable, Fact, FihHash, FlushCapable, GraphRead,
+    Blackboard, ColdStorage, Content, CypherCapable, EvictCapable, Fact, FihHash, FlushCapable, GraphRead,
     PetgraphStorage, ScanCapable, Snapshottable, create_blackboard_from_snapshot,
     create_blackboard_with_storage,
 };
@@ -148,7 +148,7 @@ fn fact(id: &str) -> Fact {
     Fact {
         id: FihHash(id.to_string()),
         origin: "integration".into(),
-        content: json!({"key": id}).into(),
+        content: Content::Text(json!({"key": id}).to_string()),
         creator: "tester".into(),
     }
 }

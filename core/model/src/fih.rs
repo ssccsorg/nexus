@@ -70,14 +70,6 @@ impl From<&str> for Content {
     }
 }
 
-impl From<serde_json::Value> for Content {
-    fn from(v: serde_json::Value) -> Self {
-        match v {
-            serde_json::Value::String(s) => Content::Text(s),
-            other => Content::Text(serde_json::to_string(&other).unwrap_or_default()),
-        }
-    }
-}
 
 impl PartialEq<&str> for Content {
     fn eq(&self, other: &&str) -> bool {

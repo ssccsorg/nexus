@@ -4,7 +4,7 @@
 // all communicating through the FIH protocol via MockGateway's JSON boundary.
 
 use nexus_graph::mock_gateway::MockGateway;
-use nexus_graph::{Blackboard, BlackboardError, Fact, FihHash, Intent, create_blackboard};
+use nexus_graph::{Blackboard, BlackboardError, Content, Fact, FihHash, Intent, create_blackboard};
 
 // ── Scenario: Intermittent agent (Bluetooth / short-range radio) ─────────
 //
@@ -23,13 +23,12 @@ fn scenario_intermittent_sensor_agent() {
         gw.submit_fact(&Fact {
             id: FihHash("f_temp_001".into()),
             origin: "sensor-alpha".into(),
-            content: serde_json::json!({
+            content: Content::Text(serde_json::to_string(&serde_json::json!({
                 "type": "temperature",
                 "value": 42.5,
                 "unit": "C",
                 "sector": 7
-            })
-            .into(),
+            })).unwrap_or_default()),
             creator: "drone-a".into(),
         })
         .unwrap();
@@ -47,13 +46,12 @@ fn scenario_intermittent_sensor_agent() {
         gw.submit_fact(&Fact {
             id: FihHash("f_temp_002".into()),
             origin: "sensor-alpha".into(),
-            content: serde_json::json!({
+            content: Content::Text(serde_json::to_string(&serde_json::json!({
                 "type": "temperature",
                 "value": 43.1,
                 "unit": "C",
                 "sector": 7
-            })
-            .into(),
+            })).unwrap_or_default()),
             creator: "drone-a".into(),
         })
         .unwrap();
@@ -96,7 +94,7 @@ fn scenario_satellite_burst_agent() {
         gw.submit_fact(&Fact {
             id: FihHash(id.to_string()),
             origin: origin.to_string(),
-            content: content.clone().into(),
+            content: Content::Text(content.to_string()),
             creator: "sat-1".into(),
         })
         .unwrap();
@@ -147,10 +145,9 @@ fn scenario_browser_agent() {
     gw.submit_fact(&Fact {
         id: FihHash("f_background".into()),
         origin: "system".into(),
-        content: serde_json::Value::String(
+        content: Content::Text(
             "Server load exceeds 85% for 3 consecutive hours".into(),
-        )
-        .into(),
+        ),
         creator: "monitor".into(),
     })
     .unwrap();
@@ -208,7 +205,7 @@ fn scenario_multi_language_agents() {
         gw.submit_fact(&Fact {
             id: FihHash("f_py_001".into()),
             origin: "python-etl".into(),
-            content: serde_json::Value::String("Data pipeline processed 15K records".into()).into(),
+            content: Content::Text("Data pipeline processed 15K records".into()),
             creator: "py-agent".into(),
         })
         .unwrap();
@@ -220,12 +217,11 @@ fn scenario_multi_language_agents() {
         gw.submit_fact(&Fact {
             id: FihHash("f_rs_001".into()),
             origin: "rust-analyzer".into(),
-            content: serde_json::json!({
+            content: Content::Text(serde_json::to_string(&serde_json::json!({
                 "module": "inference",
                 "latency_p50_ms": 42,
                 "latency_p99_ms": 187
-            })
-            .into(),
+            })).unwrap_or_default()),
             creator: "rs-agent".into(),
         })
         .unwrap();
@@ -294,7 +290,7 @@ fn scenario_conflicting_claims() {
     gw.submit_fact(&Fact {
         id: FihHash("f_conflict".into()),
         origin: "test".into(),
-        content: serde_json::Value::String("Conflict test ground truth".into()).into(),
+        content: Content::Text("Conflict test ground truth".into()),
         creator: "system".into(),
     })
     .unwrap();

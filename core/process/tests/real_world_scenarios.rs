@@ -28,7 +28,7 @@
 //      — knowledge evolution tracked through detector observations
 
 use nexus_graph::{
-    Blackboard, EvictCapable, Fact, FihHash, Intent, Snapshottable, StorageSnapshot,
+    Blackboard, Content, EvictCapable, Fact, FihHash, Intent, Snapshottable, StorageSnapshot,
     create_blackboard, create_blackboard_from_snapshot,
 };
 use nexus_process::scheduler::Scheduler;
@@ -43,8 +43,7 @@ fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) 
     Fact {
         id: FihHash(id.to_string()),
         origin: origin.to_string(),
-        content: serde_json::json!({ "claim": claim_text, "topic": topic, "position": position })
-            .into(),
+        content: Content::Text(serde_json::to_string(&serde_json::json!({ "claim": claim_text, "topic": topic, "position": position })).unwrap_or_default()),
         creator: "ingester".into(),
     }
 }

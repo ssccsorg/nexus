@@ -15,7 +15,8 @@ use std::collections::HashMap;
 
 use super::plan::*;
 
-use nexus_model::{Content, CypherCapable};
+use nexus_model::Content;
+use super::capable::CypherCapable;
 use nexus_storage_petgraph::GraphRead;
 
 use crate::Record;
@@ -42,7 +43,7 @@ pub fn execute<G: GraphRead>(graph: &G, plan: &Plan) -> Result<Vec<Record>, Tran
 ///
 /// This is the preferred entry point for production use, where `DualStorage`
 /// or a `DuckDbStorage` instance is available as the cold backend.
-pub fn execute_with_cold<G: GraphRead, C: CypherCapable>(
+pub fn execute_with_cold<G: GraphRead, C: CypherCapable + ?Sized>(
     graph: &G,
     cold: &C,
     plan: &Plan,

@@ -1,7 +1,6 @@
 // DualStorage — composes a Hot (Petgraph) + Cold (Composite) storage pair.
 
 use super::aggregate::{ColdStorage, DeltaSet, HotStorage};
-use super::cypher::CypherCapable;
 use super::evict::EvictCapable;
 use super::fact::FactCapable;
 use super::filter::{FilterCapable, StateFilter};
@@ -219,8 +218,10 @@ impl FlushCapable for DualStorage {
             last_flushed_at: now_ts,
             partition: partition.clone(),
         };
-        let cursor_json =
-            serde_json::to_string(&new_cursor).map_err(|e| format!("serialize cursor: {e}"))?;
+        let cursor_json = format!(
+            "{{\"last_flushed_at\":\"{}\",\"partition\":\"{}\"}}",
+            new_cursor.last_flushed_at, new_cursor.partition
+        );
         let cursor_key = format!("{project_id}/cursor.json");
         self.cold.write_blob(&cursor_key, cursor_json.as_bytes())?;
 
@@ -228,14 +229,6 @@ impl FlushCapable for DualStorage {
             records_flushed,
             new_cursor,
         })
-    }
-}
-
-// ── Cypher query: delegate to hot (Petgraph implements CypherCapable) ──
-
-impl CypherCapable for DualStorage {
-    fn query_plan(&self, plan: &serde_json::Value) -> Result<serde_json::Value, String> {
-        self.hot.query_plan(plan)
     }
 }
 

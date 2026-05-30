@@ -1,5 +1,6 @@
+use nexus_graph::CypherCapable;
 use nexus_model::{
-    Content, CypherCapable, FilterCapable, ScanCapable, StateFilter, StorageRead,
+    Content, FilterCapable, ScanCapable, StateFilter, StorageRead,
     TimeRangeCapable,
 };
 use nexus_storage_duckdb::DuckDbStorage;

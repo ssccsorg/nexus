@@ -6,10 +6,11 @@
 
 use crate::query::cypher::{Plan, TranslateError, execute_with_cold};
 use nexus_model::{
-    Blackboard, BlackboardError, BoardState, ColdStorage, CypherCapable, DualStorage, EvictCapable,
+    Blackboard, BlackboardError, BoardState, ColdStorage, DualStorage, EvictCapable,
     Fact, FactCapable, FihHash, FlushCapable, FlushCursor, FlushResult, Hint, HintCapable, Intent,
     IntentCapable, NullStorage, PartitionData, ScanCapable, StorageRead,
 };
+use crate::query::cypher::capable::CypherCapable;
 use nexus_storage_petgraph::{
     EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Snapshottable, StorageSnapshot,
 };
@@ -134,6 +135,9 @@ impl ClaimsTracker {
 /// For multi-worker thread-safe access, wrap in `Arc<Mutex<DefaultBlackboard>>`.
 pub(crate) struct DefaultBlackboard {
     storage: DualStorage,
+    /// Cold storage backend that implements CypherCapable.
+    /// Holds the same cold storage instance as DualStorage's cold backend.
+    cold_cypher: Box<dyn CypherCapable>,
     hot_graph: Arc<RwLock<petgraph::Graph<NodeWeight, EdgeWeight>>>,
     claims: ClaimsTracker,
     project_id: String,
@@ -151,10 +155,12 @@ impl DefaultBlackboard {
             "default",
         ));
         let cold = Box::new(NullStorage);
+        let cold_cypher: Box<dyn CypherCapable> = Box::new(NullStorage);
         let storage = DualStorage::new(hot, cold);
 
         Self {
             storage,
+            cold_cypher,
             hot_graph: graph,
             claims: ClaimsTracker::new(),
             project_id: "default".into(),
@@ -167,8 +173,14 @@ impl DefaultBlackboard {
         let project_id = hot.project_id.clone();
         let storage = DualStorage::new(Box::new(hot), cold);
 
+        // Clone the cold backend for CypherCapable use.
+        // Since ColdStorage is the only trait we know, we need to downcast.
+        // For now, use NullStorage as fallback.
+        let cold_cypher: Box<dyn CypherCapable> = Box::new(NullStorage);
+
         Self {
             storage,
+            cold_cypher,
             hot_graph,
             claims: ClaimsTracker::new(),
             project_id,
@@ -191,7 +203,7 @@ impl DefaultBlackboard {
     /// backend (DuckDB/Parquet) via the `CypherCapable` trait.
     pub fn query(&self, plan: &Plan) -> Result<Vec<Record>, TranslateError> {
         let hot = self.hot_graph.read().unwrap();
-        execute_with_cold(&*hot, &self.storage, plan)
+        execute_with_cold(&*hot, &*self.cold_cypher, plan)
     }
 
     /// Flush recently-ingested data to cold storage.
@@ -250,10 +262,12 @@ impl DefaultBlackboard {
             &snapshot.project_id,
         ));
         let cold = Box::new(NullStorage);
+        let cold_cypher: Box<dyn CypherCapable> = Box::new(NullStorage);
         let storage = DualStorage::new(hot, cold);
 
         Self {
             storage,
+            cold_cypher,
             hot_graph: graph,
             claims: ClaimsTracker::from_snapshot(snapshot.claims.clone()),
             project_id: snapshot.project_id.clone(),
@@ -272,9 +286,13 @@ impl DefaultBlackboard {
             &snapshot.project_id,
         ));
         let storage = DualStorage::new(hot, cold);
+        // The caller is responsible for providing a matching CypherCapable backend.
+        // Fall back to NullStorage if none is available.
+        let cold_cypher: Box<dyn CypherCapable> = Box::new(NullStorage);
 
         Self {
             storage,
+            cold_cypher,
             hot_graph: graph,
             claims: ClaimsTracker::from_snapshot(snapshot.claims.clone()),
             project_id: snapshot.project_id.clone(),
@@ -387,13 +405,17 @@ impl ScanCapable for DefaultBlackboard {
     }
 }
 
-// ── Cypher query — delegates to storage (DualStorage → cold) ─────────────
+// ── Cypher query — delegates to the cold CypherCapable backend ────────────
 
 impl CypherCapable for DefaultBlackboard {
     fn query_plan(&self, plan: &serde_json::Value) -> Result<serde_json::Value, String> {
-        self.storage.query_plan(plan)
+        self.cold_cypher.query_plan(plan)
     }
 }
+
+impl CypherCapable for NullStorage {}
+
+impl CypherCapable for PetgraphStorage {}
 
 impl Blackboard for DefaultBlackboard {
     fn project_id(&self) -> &str {

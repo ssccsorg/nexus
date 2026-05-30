@@ -2,7 +2,6 @@ use std::ops::Range;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::aggregate::{ColdStorage, DeltaSet, HotStorage};
-use super::cypher::CypherCapable;
 use super::evict::EvictCapable;
 use super::fact::FactCapable;
 use super::filter::{FilterCapable, StateFilter};
@@ -118,8 +117,6 @@ impl FlushCapable for NullStorage {
         })
     }
 }
-
-impl CypherCapable for NullStorage {}
 
 impl HotStorage for NullStorage {
     fn read_delta_since(&self, _cursor_ts: &str) -> DeltaSet {
