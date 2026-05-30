@@ -22,9 +22,10 @@
 // This separation is the core FIH semantics enforcement.
 
 use nexus_graph::{
-    Blackboard, EvictCapable, Fact, FihHash, Intent, Snapshottable, StorageSnapshot,
-    create_blackboard, create_blackboard_from_snapshot,
+    Blackboard, EvictCapable, Fact, FihHash, Intent, Snapshottable,
+    StorageSnapshot, create_blackboard, create_blackboard_from_snapshot,
 };
+use nexus_model::Content;
 use nexus_process::scheduler::Scheduler;
 use nexus_process::tasks::gap_detector::GapDetector;
 
@@ -142,11 +143,12 @@ fn flow_agent_creates_intent_from_detector_fact() {
 
     let result = serde_json::json!("synthesis complete");
     let new_fact = sched.bb.conclude_intent(&iid.0, &result).expect("conclude");
-    assert_eq!(new_fact.content, result);
+    assert_eq!(new_fact.content, Content::from(result.clone()));
 
     let state = Blackboard::read_state(&sched.bb);
+    let result_value = serde_json::json!("synthesis complete");
     assert!(
-        state.facts.iter().any(|f| f.content == result),
+        state.facts.iter().any(|f| f.content.as_json_value() == result_value),
         "conclusion fact exists"
     );
     assert!(
@@ -290,7 +292,7 @@ fn flow_cross_worker_snapshot() {
     bb_b.submit_fact(&Fact {
         id: FihHash("f_worker_b_001".into()),
         origin: "worker-b".into(),
-        content: serde_json::json!("Worker B discovery"),
+        content: serde_json::json!("Worker B discovery").into(),
         creator: "worker-b".into(),
     })
     .unwrap();

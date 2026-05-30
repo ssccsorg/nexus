@@ -175,7 +175,7 @@ fn test_petgraph_time_range() {
     bb.submit_fact(&Fact {
         id: FihHash("f_001".into()),
         origin: "test".into(),
-        content: serde_json::json!("data"),
+        content: serde_json::json!("data").into(),
         creator: "tester".into(),
     })
     .unwrap();

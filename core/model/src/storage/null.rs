@@ -13,7 +13,7 @@ use super::read::StorageRead;
 use super::scan::{PartitionData, ScanCapable};
 use super::time_range::TimeRangeCapable;
 use crate::error::BlackboardError;
-use crate::fih::{BoardState, Fact, FihHash, Hint, Intent};
+use crate::fih::{BoardState, Content, Fact, FihHash, Hint, Intent};
 
 pub struct NullStorage;
 
@@ -64,7 +64,7 @@ impl IntentCapable for NullStorage {
         Ok(Fact {
             id: FihHash("null".into()),
             origin: String::new(),
-            content: serde_json::Value::Null,
+            content: Content::JsonString("null".into()),
             creator: String::new(),
         })
     }

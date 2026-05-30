@@ -63,7 +63,7 @@ fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) 
             "claim": claim_text,
             "topic": topic,
             "position": position,
-        }),
+        }).into(),
         creator: "ingester".into(),
     }
 }
@@ -315,7 +315,7 @@ fn count_detector_facts(state: &nexus_graph::BoardState, detector: &str, fact_ty
         .facts
         .iter()
         .filter(|f| f.creator == detector)
-        .filter(|f| f.content.get("type").and_then(|v| v.as_str()) == Some(fact_type))
+        .filter(|f| f.content.as_json_value().get("type").and_then(|v| v.as_str()) == Some(fact_type))
         .count()
 }
 
@@ -342,7 +342,8 @@ fn agent_resolve_contradictions(
         if fact.creator != "contradiction-detector" {
             continue;
         }
-        let Some(t) = fact.content.get("topic").and_then(|v| v.as_str()) else {
+        let content_json = fact.content.as_json_value();
+        let Some(t) = content_json.get("topic").and_then(|v| v.as_str()) else {
             continue;
         };
         if !t.contains(topic_filter) {

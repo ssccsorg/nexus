@@ -3,7 +3,7 @@
 // Covers GraphRead/GraphWrite trait implementations, EvictCapable,
 // and storage-level FIH operations directly (not via DefaultBlackboard).
 
-use nexus_model::{EvictCapable, Fact, FactCapable, FihHash, Hint, HintCapable, StorageRead};
+use nexus_model::{Content, EvictCapable, Fact, FactCapable, FihHash, Hint, HintCapable, StorageRead};
 use nexus_storage_petgraph::PetgraphStorage;
 
 fn storage() -> PetgraphStorage {
@@ -14,7 +14,7 @@ fn fact(id: &str) -> Fact {
     Fact {
         id: FihHash(id.into()),
         origin: "test".into(),
-        content: serde_json::json!("data"),
+        content: serde_json::json!("data").into(),
         creator: "tester".into(),
     }
 }
@@ -164,7 +164,7 @@ fn test_conclude_intent_creates_fact() {
         .unwrap();
 
     assert_eq!(result.creator, "agent-x");
-    assert_eq!(result.content, serde_json::json!("result data"));
+    assert_eq!(result.content, Content::from(serde_json::json!("result data")));
 
     let state = s.read_state();
     assert_eq!(state.facts.len(), 2, "original + concluded fact");

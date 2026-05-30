@@ -110,7 +110,10 @@ fn test_flush_persists_data_to_blob() {
         )
         .expect("put blob");
 
-    let cursor = FlushCursor::default();
+    let cursor = FlushCursor {
+        partition: "default".into(),
+        ..FlushCursor::default()
+    };
     let result = s.flush_since(&cursor).expect("flush");
     assert!(result.records_flushed > 0, "blob data counted in flush");
 
@@ -140,7 +143,7 @@ fn test_scan_partition_with_data() {
     s.blob()
         .put(
             "test-project/flush/facts/default/100.jsonl",
-            br#"{"id":"f1","origin":"t","content":{"v":1},"creator":"a"}"#,
+            br#"{"id":"f1","origin":"t","content":{"Text":"hello"},"creator":"a"}"#,
         )
         .expect("put blob");
 

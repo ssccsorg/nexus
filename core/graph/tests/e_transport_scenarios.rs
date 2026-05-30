@@ -28,7 +28,7 @@ fn scenario_intermittent_sensor_agent() {
                 "value": 42.5,
                 "unit": "C",
                 "sector": 7
-            }),
+            }).into(),
             creator: "drone-a".into(),
         })
         .unwrap();
@@ -51,7 +51,7 @@ fn scenario_intermittent_sensor_agent() {
                 "value": 43.1,
                 "unit": "C",
                 "sector": 7
-            }),
+            }).into(),
             creator: "drone-a".into(),
         })
         .unwrap();
@@ -94,7 +94,7 @@ fn scenario_satellite_burst_agent() {
         gw.submit_fact(&Fact {
             id: FihHash(id.to_string()),
             origin: origin.to_string(),
-            content: content.clone(),
+            content: content.clone().into(),
             creator: "sat-1".into(),
         })
         .unwrap();
@@ -147,7 +147,7 @@ fn scenario_browser_agent() {
         origin: "system".into(),
         content: serde_json::Value::String(
             "Server load exceeds 85% for 3 consecutive hours".into(),
-        ),
+        ).into(),
         creator: "monitor".into(),
     })
     .unwrap();
@@ -205,7 +205,7 @@ fn scenario_multi_language_agents() {
         gw.submit_fact(&Fact {
             id: FihHash("f_py_001".into()),
             origin: "python-etl".into(),
-            content: serde_json::Value::String("Data pipeline processed 15K records".into()),
+            content: serde_json::Value::String("Data pipeline processed 15K records".into()).into(),
             creator: "py-agent".into(),
         })
         .unwrap();
@@ -221,7 +221,7 @@ fn scenario_multi_language_agents() {
                 "module": "inference",
                 "latency_p50_ms": 42,
                 "latency_p99_ms": 187
-            }),
+            }).into(),
             creator: "rs-agent".into(),
         })
         .unwrap();
@@ -290,7 +290,7 @@ fn scenario_conflicting_claims() {
     gw.submit_fact(&Fact {
         id: FihHash("f_conflict".into()),
         origin: "test".into(),
-        content: serde_json::Value::String("Conflict test ground truth".into()),
+        content: serde_json::Value::String("Conflict test ground truth".into()).into(),
         creator: "system".into(),
     })
     .unwrap();

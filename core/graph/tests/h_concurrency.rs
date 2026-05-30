@@ -22,7 +22,7 @@ fn fact(id: &str) -> Fact {
     Fact {
         id: FihHash(id.into()),
         origin: "test".into(),
-        content: serde_json::json!("data"),
+        content: serde_json::json!("data").into(),
         creator: "tester".into(),
     }
 }
@@ -196,6 +196,6 @@ fn test_conclude_after_release() {
     let result = bb
         .lock()
         .unwrap()
-        .conclude_intent("i_car", &serde_json::json!("done"));
+        .conclude_intent("i_car", &serde_json::json!("done").into());
     assert!(result.is_ok(), "conclude after release succeeds");
 }
