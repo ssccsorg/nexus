@@ -1,6 +1,6 @@
 // DualStorage — composes a Hot (Petgraph) + Cold (Composite) storage pair.
 
-use super::aggregate::{ColdStorage, HotStorage};
+use super::aggregate::{ColdStorage, DeltaSet, HotStorage};
 use super::cypher::CypherCapable;
 use super::evict::EvictCapable;
 use super::fact::FactCapable;
@@ -191,24 +191,27 @@ impl FlushCapable for DualStorage {
             .as_nanos()
             .to_string();
 
-        let (fact_lines, intent_lines, hint_lines) =
+        let (fact_bytes, intent_bytes, hint_bytes): DeltaSet =
             self.hot.read_delta_since(&cursor.last_flushed_at);
-        let records_flushed = (fact_lines.len() + intent_lines.len() + hint_lines.len()) as u64;
+        let records_flushed = (fact_bytes.len() + intent_bytes.len() + hint_bytes.len()) as u64;
 
-        if !fact_lines.is_empty() {
-            let blob_key = format!("{project_id}/flush/facts/{partition}/{now_ts}.jsonl");
-            self.cold
-                .write_blob(&blob_key, fact_lines.join("\n").as_bytes())?;
+        if !fact_bytes.is_empty() {
+            for (i, bytes) in fact_bytes.iter().enumerate() {
+                let blob_key = format!("{project_id}/flush/facts/{partition}/{now_ts}_{i}.bin");
+                self.cold.write_blob(&blob_key, bytes)?;
+            }
         }
-        if !intent_lines.is_empty() {
-            let blob_key = format!("{project_id}/flush/intents/{partition}/{now_ts}.jsonl");
-            self.cold
-                .write_blob(&blob_key, intent_lines.join("\n").as_bytes())?;
+        if !intent_bytes.is_empty() {
+            for (i, bytes) in intent_bytes.iter().enumerate() {
+                let blob_key = format!("{project_id}/flush/intents/{partition}/{now_ts}_{i}.bin");
+                self.cold.write_blob(&blob_key, bytes)?;
+            }
         }
-        if !hint_lines.is_empty() {
-            let blob_key = format!("{project_id}/flush/hints/{partition}/{now_ts}.jsonl");
-            self.cold
-                .write_blob(&blob_key, hint_lines.join("\n").as_bytes())?;
+        if !hint_bytes.is_empty() {
+            for (i, bytes) in hint_bytes.iter().enumerate() {
+                let blob_key = format!("{project_id}/flush/hints/{partition}/{now_ts}_{i}.bin");
+                self.cold.write_blob(&blob_key, bytes)?;
+            }
         }
 
         // Advance cursor and persist to cold blob as a simple JSON file.
@@ -237,7 +240,7 @@ impl CypherCapable for DualStorage {
 }
 
 impl HotStorage for DualStorage {
-    fn read_delta_since(&self, cursor_ts: &str) -> (Vec<String>, Vec<String>, Vec<String>) {
+    fn read_delta_since(&self, cursor_ts: &str) -> (Vec<Vec<u8>>, Vec<Vec<u8>>, Vec<Vec<u8>>) {
         self.hot.read_delta_since(cursor_ts)
     }
 }

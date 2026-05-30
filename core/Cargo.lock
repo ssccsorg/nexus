@@ -444,6 +444,7 @@ dependencies = [
  "nexus-graph",
  "nexus-model",
  "nexus-storage-petgraph",
+ "postcard",
  "serde",
  "serde_json",
  "tempfile",

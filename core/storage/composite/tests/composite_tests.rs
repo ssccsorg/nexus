@@ -11,7 +11,7 @@
 //   - StorageRead (minimal, returns empty state)
 //   - MetaStore (cursor position, snapshot pointers)
 
-use nexus_model::{EvictCapable, FlushCapable, FlushCursor, ScanCapable, StorageRead};
+use nexus_model::{Content, EvictCapable, FlushCapable, FlushCursor, ScanCapable, StorageRead};
 use nexus_storage_composite::{BlobStore, CompositeColdStorage, MetaStore};
 
 mod common;
@@ -103,11 +103,15 @@ fn test_flush_with_partition() {
 fn test_flush_persists_data_to_blob() {
     // Manually write data to blob, then flush should count it.
     let s = storage();
+    let fact = nexus_model::Fact {
+        id: nexus_model::FihHash("f1".into()),
+        origin: "t".into(),
+        content: Content::Text("hello".into()),
+        creator: "a".into(),
+    };
+    let bytes = postcard::to_allocvec(&fact).unwrap();
     s.blob()
-        .put(
-            "test-project/flush/facts/default/100.jsonl",
-            b"{\"test\":1}",
-        )
+        .put("test-project/flush/facts/default/100_0.bin", &bytes)
         .expect("put blob");
 
     let cursor = FlushCursor {
@@ -140,11 +144,15 @@ fn test_scan_partition_empty() {
 #[test]
 fn test_scan_partition_with_data() {
     let s = storage();
+    let fact = nexus_model::Fact {
+        id: nexus_model::FihHash("f1".into()),
+        origin: "t".into(),
+        content: Content::Text("hello".into()),
+        creator: "a".into(),
+    };
+    let bytes = postcard::to_allocvec(&fact).unwrap();
     s.blob()
-        .put(
-            "test-project/flush/facts/default/100.jsonl",
-            br#"{"id":"f1","origin":"t","content":{"Text":"hello"},"creator":"a"}"#,
-        )
+        .put("test-project/flush/facts/default/100_0.bin", &bytes)
         .expect("put blob");
 
     let data = s.scan_partition("default").expect("scan");
@@ -159,7 +167,7 @@ fn test_approximate_size_increases_with_data() {
     let s = storage();
     let empty_size = s.approximate_size();
     s.blob()
-        .put("test-project/flush/facts/default/100.jsonl", b"data")
+        .put("test-project/flush/facts/default/100_0.bin", b"data")
         .expect("put blob");
     let filled_size = s.approximate_size();
     assert!(filled_size > empty_size, "size grows with data");
@@ -169,7 +177,7 @@ fn test_approximate_size_increases_with_data() {
 fn test_evict_before_removes_old_blobs() {
     let s = storage();
     s.blob()
-        .put("test-project/flush/facts/default/100.jsonl", b"data")
+        .put("test-project/flush/facts/default/100_0.bin", b"data")
         .expect("put blob");
     let count_before = s.blob().list("test-project/").unwrap().len();
 
@@ -184,7 +192,7 @@ fn test_evict_before_removes_old_blobs() {
 fn test_evict_before_keeps_recent_blobs() {
     let s = storage();
     s.blob()
-        .put("test-project/flush/facts/default/100.jsonl", b"data")
+        .put("test-project/flush/facts/default/100_0.bin", b"data")
         .expect("put blob");
 
     // Evict with timestamp 0 — should keep everything
