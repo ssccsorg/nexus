@@ -28,7 +28,8 @@ fn scenario_intermittent_sensor_agent() {
                 "value": 42.5,
                 "unit": "C",
                 "sector": 7
-            }).into(),
+            })
+            .into(),
             creator: "drone-a".into(),
         })
         .unwrap();
@@ -51,7 +52,8 @@ fn scenario_intermittent_sensor_agent() {
                 "value": 43.1,
                 "unit": "C",
                 "sector": 7
-            }).into(),
+            })
+            .into(),
             creator: "drone-a".into(),
         })
         .unwrap();
@@ -147,7 +149,8 @@ fn scenario_browser_agent() {
         origin: "system".into(),
         content: serde_json::Value::String(
             "Server load exceeds 85% for 3 consecutive hours".into(),
-        ).into(),
+        )
+        .into(),
         creator: "monitor".into(),
     })
     .unwrap();
@@ -221,7 +224,8 @@ fn scenario_multi_language_agents() {
                 "module": "inference",
                 "latency_p50_ms": 42,
                 "latency_p99_ms": 187
-            }).into(),
+            })
+            .into(),
             creator: "rs-agent".into(),
         })
         .unwrap();

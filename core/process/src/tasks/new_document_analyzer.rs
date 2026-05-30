@@ -88,26 +88,27 @@ impl DetectionCapable for NewDocumentAnalyzer {
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
 
-            let (factor, detail) = if let Some(existing_pos_set) = existing_positions.get(topic.as_str()) {
-                if existing_pos_set.contains(&position) {
-                    (
-                        "+factor",
-                        format!("supports existing position [{}]", position),
-                    )
+            let (factor, detail) =
+                if let Some(existing_pos_set) = existing_positions.get(topic.as_str()) {
+                    if existing_pos_set.contains(&position) {
+                        (
+                            "+factor",
+                            format!("supports existing position [{}]", position),
+                        )
+                    } else {
+                        let existing: Vec<String> = existing_pos_set.iter().cloned().collect();
+                        (
+                            "-factor",
+                            format!(
+                                "claims [{}], but existing holds [{}]",
+                                position,
+                                existing.join(", ")
+                            ),
+                        )
+                    }
                 } else {
-                    let existing: Vec<String> = existing_pos_set.iter().cloned().collect();
-                    (
-                        "-factor",
-                        format!(
-                            "claims [{}], but existing holds [{}]",
-                            position,
-                            existing.join(", ")
-                        ),
-                    )
-                }
-            } else {
-                ("gap", format!("new topic '{}'", topic))
-            };
+                    ("gap", format!("new topic '{}'", topic))
+                };
 
             output.facts.push(Fact {
                 id: FihHash::new(&[tid, factor], "doc-analysis"),
@@ -119,7 +120,8 @@ impl DetectionCapable for NewDocumentAnalyzer {
                     "claim": claim_text,
                     "source": fact.origin,
                     "detail": detail,
-                }).into(),
+                })
+                .into(),
                 creator: "new-document-analyzer".into(),
             });
 

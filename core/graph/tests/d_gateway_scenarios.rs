@@ -27,7 +27,8 @@ fn scenario_contradiction_detection_via_gateway() {
         origin: "paper_iclr_2024".into(),
         content: serde_json::Value::String(
             "Residual GNNs maintain accuracy at 50 layers with skip connections".into(),
-        ).into(),
+        )
+        .into(),
         creator: "agent-a".into(),
     })
     .unwrap();
@@ -38,7 +39,8 @@ fn scenario_contradiction_detection_via_gateway() {
         origin: "paper_neurips_2023".into(),
         content: serde_json::Value::String(
             "Message-passing GNNs oversmooth beyond 6 layers without normalization".into(),
-        ).into(),
+        )
+        .into(),
         creator: "agent-b".into(),
     })
     .unwrap();

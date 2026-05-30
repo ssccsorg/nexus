@@ -63,7 +63,8 @@ fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) 
             "claim": claim_text,
             "topic": topic,
             "position": position,
-        }).into(),
+        })
+        .into(),
         creator: "ingester".into(),
     }
 }
@@ -315,7 +316,13 @@ fn count_detector_facts(state: &nexus_graph::BoardState, detector: &str, fact_ty
         .facts
         .iter()
         .filter(|f| f.creator == detector)
-        .filter(|f| f.content.as_json_value().get("type").and_then(|v| v.as_str()) == Some(fact_type))
+        .filter(|f| {
+            f.content
+                .as_json_value()
+                .get("type")
+                .and_then(|v| v.as_str())
+                == Some(fact_type)
+        })
         .count()
 }
 

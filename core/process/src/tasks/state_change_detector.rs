@@ -105,7 +105,8 @@ impl DetectionCapable for StateChangeDetector {
                 "curr_fact_count": current_facts,
                 "prev_open_intents": checkpoint.open_intent_count,
                 "curr_open_intents": current_open,
-            }).into(),
+            })
+            .into(),
             creator: "state-change-detector".into(),
         });
 
