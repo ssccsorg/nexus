@@ -7,8 +7,8 @@
 // Project-scoped via project_id.
 
 use nexus_model::{
-    BlackboardError, BoardState, CypherCapable, EvictCapable, Fact, FactCapable, FihHash,
-    FilterCapable, FlushCapable, FlushCursor, FlushResult, Hint, HintCapable, Intent,
+    BlackboardError, BoardState, ColdStorage, CypherCapable, EvictCapable, Fact, FactCapable,
+    FihHash, FilterCapable, FlushCapable, FlushCursor, FlushResult, Hint, HintCapable, Intent,
     IntentCapable, PartitionData, ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
 };
 use rusqlite::{Connection, params};
@@ -738,6 +738,14 @@ impl FlushCapable for SqlNormalizedStorage {
 }
 
 impl CypherCapable for SqlNormalizedStorage {}
+
+impl ColdStorage for SqlNormalizedStorage {
+    fn write_blob(&self, _key: &str, _data: &[u8]) -> Result<(), String> {
+        // SqlNormalizedStorage does not use blob storage.
+        // write_blob is a no-op.
+        Ok(())
+    }
+}
 
 impl EvictCapable for SqlNormalizedStorage {
     fn approximate_size(&self) -> usize {

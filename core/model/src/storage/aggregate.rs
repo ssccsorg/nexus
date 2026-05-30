@@ -27,11 +27,12 @@ impl<T: FihPersistence + FilterCapable + CypherCapable + EvictCapable + TimeRang
 /// Does NOT include FihPersistence or StorageRead — graph CRUD is handled by
 /// HotStorage (Petgraph). ColdStorage only manages blob archives, CAS coordination,
 /// and metadata (cursor, snapshot pointers).
+///
+/// Provides write_blob() so DualStorage flush coordinator can write hot data
+/// to cold blob before advancing the cursor.
 pub trait ColdStorage:
     ScanCapable + TimeRangeCapable + FlushCapable + CypherCapable + EvictCapable
 {
-}
-impl<T: ScanCapable + TimeRangeCapable + FlushCapable + CypherCapable + EvictCapable> ColdStorage
-    for T
-{
+    /// Write raw bytes to a blob key. Used by the flush coordinator.
+    fn write_blob(&self, key: &str, data: &[u8]) -> Result<(), String>;
 }

@@ -1,6 +1,7 @@
 use std::ops::Range;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use super::aggregate::ColdStorage;
 use super::cypher::CypherCapable;
 use super::evict::EvictCapable;
 use super::fact::FactCapable;
@@ -123,6 +124,12 @@ impl FlushCapable for NullStorage {
 }
 
 impl CypherCapable for NullStorage {}
+
+impl ColdStorage for NullStorage {
+    fn write_blob(&self, _key: &str, _data: &[u8]) -> Result<(), String> {
+        Ok(())
+    }
+}
 
 impl TimeRangeCapable for NullStorage {
     fn time_range(&self) -> Option<Range<String>> {

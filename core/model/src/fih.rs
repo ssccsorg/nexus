@@ -3,7 +3,7 @@ use sha2::{Digest, Sha256};
 
 // ── Content-addressable identifier ───────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct FihHash(pub String);
 

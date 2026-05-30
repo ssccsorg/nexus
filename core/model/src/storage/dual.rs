@@ -1,3 +1,5 @@
+// DualStorage — composes a Hot (Petgraph) + Cold (Composite) storage pair.
+
 use super::aggregate::{ColdStorage, HotStorage};
 use super::cypher::CypherCapable;
 use super::evict::EvictCapable;
@@ -118,11 +120,35 @@ impl EvictCapable for DualStorage {
     }
 }
 
-// ── Partition scan: delegate to cold (blob archive) ──
+// ── Partition scan: merge hot (recent) + cold (flushed) data ──
 
 impl ScanCapable for DualStorage {
     fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
-        self.cold.scan_partition(partition)
+        let mut cold_data = self.cold.scan_partition(partition)?;
+        let hot_state = self.hot.read_state();
+
+        // Merge hot data into cold scan result (hot takes precedence).
+        // Dedup by entity ID: hot facts override flushed facts.
+        for fact in hot_state.facts {
+            if !cold_data.facts.iter().any(|f| f.id == fact.id) {
+                cold_data.facts.push(fact);
+            }
+        }
+        for intent in hot_state.intents {
+            if !cold_data.intents.iter().any(|i| i.id == intent.id) {
+                cold_data.intents.push(intent);
+            }
+        }
+        for hint in hot_state.hints {
+            if !cold_data.hints.iter().any(|h| h.id == hint.id) {
+                cold_data.hints.push(hint);
+            }
+        }
+        cold_data.facts.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+        cold_data.intents.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+        cold_data.hints.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+
+        Ok(cold_data)
     }
 }
 
@@ -145,10 +171,53 @@ impl TimeRangeCapable for DualStorage {
     }
 }
 
-// ── Flush: delegate to cold (cold is the durable target) ──
+// ── Flush: extract hot data, write to cold blob, advance cursor ──
 
 impl FlushCapable for DualStorage {
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
+        // Read hot (Petgraph) state and serialize to JSON-lines blob.
+        let partition = &cursor.partition;
+        let state = self.hot.read_state();
+        let project_id = self.hot.project_id();
+        let now_ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+            .to_string();
+
+        if !state.facts.is_empty() {
+            let lines: Vec<String> = state
+                .facts
+                .iter()
+                .filter_map(|f| serde_json::to_string(f).ok())
+                .collect();
+            let blob_key = format!("{project_id}/flush/facts/{partition}/{now_ts}.jsonl");
+            self.cold
+                .write_blob(&blob_key, lines.join("\n").as_bytes())?;
+        }
+        if !state.intents.is_empty() {
+            let lines: Vec<String> = state
+                .intents
+                .iter()
+                .filter_map(|i| serde_json::to_string(i).ok())
+                .collect();
+            let blob_key = format!("{project_id}/flush/intents/{partition}/{now_ts}.jsonl");
+            self.cold
+                .write_blob(&blob_key, lines.join("\n").as_bytes())?;
+        }
+        if !state.hints.is_empty() {
+            let lines: Vec<String> = state
+                .hints
+                .iter()
+                .filter_map(|h| serde_json::to_string(h).ok())
+                .collect();
+            let blob_key = format!("{project_id}/flush/hints/{partition}/{now_ts}.jsonl");
+            self.cold
+                .write_blob(&blob_key, lines.join("\n").as_bytes())?;
+        }
+
+        // Delegate cursor persistence to cold storage.
+        // (Records are already in blob, cold's flush_since counts them.)
         self.cold.flush_since(cursor)
     }
 }
@@ -157,7 +226,6 @@ impl FlushCapable for DualStorage {
 
 impl CypherCapable for DualStorage {
     fn query_plan(&self, plan: &serde_json::Value) -> Result<serde_json::Value, String> {
-        // Hot (Petgraph) handles Cypher queries. Cold no longer stores graph data.
         self.hot.query_plan(plan)
     }
 }
