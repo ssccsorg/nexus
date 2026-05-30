@@ -6,6 +6,22 @@
 // These are NOT test mocks. They are production components that act as
 // the working copy between the async CF bindings layer and the sync
 // CompositeColdStorage. The async bridge handles hydrate/drain externally.
+//
+// === CQRS commit channel ===
+//
+// CQRS separation is achieved by physical instance isolation, NOT by a
+// `track_dirty` flag. `IoBufferSession` owns two pairs:
+//
+//   kv / blob                  — general read/write (tracked for drain)
+//   commit_kv / commit_blob    — flush output only (separate HashMap)
+//
+// Consumer drain calls `kv_buf().list()` and `blob_buf().list()`, which
+// naturally exclude commit channel data because commit_kv and commit_blob
+// are completely independent HashMap instances. No flag is needed.
+//
+// This differs from the original design which had a `track_dirty` field.
+// Physical isolation is simpler, equally safe, and doesn't require every
+// drain implementation to check a flag.
 
 use crate::{BlobStore, KeyValueStore, ObjectStore};
 use std::collections::HashMap;
@@ -14,6 +30,9 @@ use std::sync::{Arc, RwLock};
 // ── IoBufferKv ──────────────────────────────────────────────────────────
 
 /// In-memory key-value store. Thread-safe via `Arc<RwLock<...>>`.
+///
+/// Pure HashMap storage. Physical instance isolation provides CQRS separation:
+/// general buffers and commit-channel buffers are independent HashMap instances.
 #[derive(Debug, Clone)]
 pub struct IoBufferKv {
     data: Arc<RwLock<HashMap<String, String>>>,
@@ -26,7 +45,7 @@ impl IoBufferKv {
         }
     }
 
-    /// Bulk-load entries without dirty tracking (pre-hydration).
+    /// Bulk-load entries (pre-hydration).
     pub fn hydrate_batch(&self, entries: impl IntoIterator<Item = (String, String)>) {
         let mut map = self.data.write().unwrap();
         for (k, v) in entries {
@@ -74,6 +93,8 @@ impl KeyValueStore for IoBufferKv {
 // ── IoBufferBlob ────────────────────────────────────────────────────────
 
 /// In-memory blob store. Thread-safe via `Arc<RwLock<...>>`.
+///
+/// Pure HashMap storage. Physical instance isolation provides CQRS separation.
 #[derive(Debug, Clone)]
 pub struct IoBufferBlob {
     data: Arc<RwLock<HashMap<String, Vec<u8>>>>,
@@ -86,7 +107,7 @@ impl IoBufferBlob {
         }
     }
 
-    /// Bulk-load entries without dirty tracking (pre-hydration).
+    /// Bulk-load entries (pre-hydration).
     pub fn hydrate_batch(&self, entries: impl IntoIterator<Item = (String, Vec<u8>)>) {
         let mut map = self.data.write().unwrap();
         for (k, v) in entries {
@@ -134,6 +155,9 @@ impl BlobStore for IoBufferBlob {
 // ── IoBufferObject ──────────────────────────────────────────────────────
 
 /// In-memory CAS store. Each key is an independent CAS namespace.
+///
+/// ObjectStore does not participate in CQRS commit channel separation —
+/// CAS operations are inherently isolated and never bulk-drained.
 #[derive(Debug, Clone)]
 pub struct IoBufferObject {
     data: Arc<RwLock<HashMap<String, String>>>,

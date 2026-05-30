@@ -6,9 +6,10 @@
 //   3. Parallel reads/writes do not race
 //   4. Cursor replaces dirty tracking — flush boundary is determinable
 
-use nexus_model::{Fact, FihHash, FlushCapable, FlushCursor};
+use nexus_model::{Fact, FihHash, FlushCapable, FlushCursor, ScanCapable};
 use nexus_storage_composite::{
     BlobStore, CompositeColdStorage, IoBufferBlob, IoBufferKv, IoBufferObject, KeyValueStore,
+    SystemClock,
 };
 use std::sync::{Arc, Barrier};
 use std::thread;
@@ -23,10 +24,16 @@ fn test_fact(id: &str, _ts: &str) -> Fact {
 }
 
 fn storage() -> CompositeColdStorage<IoBufferKv, IoBufferBlob, IoBufferObject> {
-    CompositeColdStorage::new_with_system_clock(
+    // CQRS commit channel: commit_kv and commit_blob are physically separate
+    // IoBuffer instances (independent HashMap). Consumer drain reads kv() and
+    // blob() exclusively, so commit channel data is naturally excluded.
+    CompositeColdStorage::new(
         IoBufferKv::new(),
         IoBufferBlob::new(),
         IoBufferObject::new(),
+        IoBufferKv::new(),   // commit_kv — separate HashMap instance
+        IoBufferBlob::new(), // commit_blob — separate HashMap instance
+        SystemClock,
         "cqrs-test",
     )
 }
@@ -293,5 +300,108 @@ fn test_incremental_flush_respects_cursor() {
     assert!(
         !saved.last_flushed_at.is_empty(),
         "cursor should exist after flush"
+    );
+}
+
+// ── CQRS-specific tests ─────────────────────────────────────────────────
+
+#[test]
+fn test_commit_channel_writes_not_in_main_blob() {
+    // flush_since writes to commit_blob, NOT to main blob.
+    // Verify that main blob (blob()) does NOT contain flush output.
+    let s = storage();
+
+    s.kv()
+        .set("cqrs-test:fact:f1", &stamp(&test_fact("f1", "100"), "100"))
+        .unwrap();
+
+    let cursor = FlushCursor {
+        last_flushed_at: String::new(),
+        partition: "p".into(),
+    };
+    s.flush_since(&cursor).unwrap();
+
+    // Main blob should have NO flush data
+    let main_blobs = s.blob().list("cqrs-test/").unwrap();
+    assert!(
+        main_blobs.is_empty(),
+        "main blob must not contain flush output: {:?}",
+        main_blobs
+    );
+
+    // Commit blob should contain flush data
+    let commit_blobs = s.commit_blob().list("cqrs-test/").unwrap();
+    assert!(
+        !commit_blobs.is_empty(),
+        "commit blob must contain flush output"
+    );
+}
+
+#[test]
+fn test_commit_channel_writes_not_in_main_kv() {
+    // flush_since writes cursor to commit_kv, NOT to main kv.
+    // Verify that main kv's cursor key is NOT present.
+    let s = storage();
+
+    s.kv()
+        .set("cqrs-test:fact:f1", &stamp(&test_fact("f1", "100"), "100"))
+        .unwrap();
+
+    let cursor = FlushCursor {
+        last_flushed_at: String::new(),
+        partition: "p".into(),
+    };
+    s.flush_since(&cursor).unwrap();
+
+    // Main kv should NOT have cursor key
+    let cursor_key = "cqrs-test:cursor";
+    let main_cursor = s.kv().get(cursor_key).unwrap();
+    assert!(main_cursor.is_none(), "main kv must not contain cursor key");
+
+    // Commit kv should have cursor key
+    let commit_cursor = s.commit_kv().get(cursor_key).unwrap();
+    assert!(commit_cursor.is_some(), "commit kv must contain cursor key");
+}
+
+#[test]
+fn test_commit_channel_data_not_in_scan_partition() {
+    // scan_partition merges KV (recent) + Blob (flushed).
+    // Commit channel data must not appear in scan results,
+    // since scan reads from main kv and main blob only.
+    let s = storage();
+
+    // Submit and flush a fact
+    s.kv()
+        .set("cqrs-test:fact:f1", &stamp(&test_fact("f1", "100"), "100"))
+        .unwrap();
+
+    // Before flush: fact is in scan
+    let data_before = s.scan_partition("p").unwrap();
+    assert_eq!(
+        data_before.facts.len(),
+        1,
+        "fact visible in scan before flush"
+    );
+
+    let cursor = FlushCursor {
+        last_flushed_at: String::new(),
+        partition: "p".into(),
+    };
+    s.flush_since(&cursor).unwrap();
+
+    // After flush: fact still in scan (flush copies to commit, does NOT remove from main)
+    let data_after = s.scan_partition("p").unwrap();
+    assert_eq!(
+        data_after.facts.len(),
+        1,
+        "fact still visible in scan after flush"
+    );
+
+    // The commit channel data count should be non-zero
+    let commit_blob_keys = s.commit_blob().list("cqrs-test/").unwrap();
+    let n_commit_blobs = commit_blob_keys.len();
+    assert!(
+        n_commit_blobs > 0,
+        "commit channel must contain flushed data"
     );
 }
