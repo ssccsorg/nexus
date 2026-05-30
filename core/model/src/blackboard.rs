@@ -14,11 +14,7 @@ pub trait Blackboard {
     fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
     fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
     fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
-    fn conclude_intent(
-        &mut self,
-        intent_id: &str,
-        result: &str,
-    ) -> Result<Fact, BlackboardError>;
+    fn conclude_intent(&mut self, intent_id: &str, result: &str) -> Result<Fact, BlackboardError>;
     fn read_state(&self) -> BoardState;
 }
 
@@ -44,11 +40,7 @@ impl<T: Blackboard> Blackboard for &mut T {
     fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         (**self).release_intent(intent_id, agent)
     }
-    fn conclude_intent(
-        &mut self,
-        intent_id: &str,
-        result: &str,
-    ) -> Result<Fact, BlackboardError> {
+    fn conclude_intent(&mut self, intent_id: &str, result: &str) -> Result<Fact, BlackboardError> {
         (**self).conclude_intent(intent_id, result)
     }
     fn read_state(&self) -> BoardState {

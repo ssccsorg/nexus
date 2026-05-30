@@ -76,14 +76,13 @@ pub fn create_blackboard_from_snapshot_with_cold(
     DefaultBlackboard::from_snapshot_with_cold(&snapshot, cold)
 }
 
+pub use blackboard::Record;
 pub use nexus_model::{
     Blackboard, BlackboardError, BoardState, ColdStorage, Content, CypherCapable, DualStorage,
     EvictCapable, Fact, FactCapable, FihHash, FihPersistence, FilterCapable, FlushCapable, Hint,
     HintCapable, HotStorage, Intent, IntentCapable, NullStorage, ScanCapable, StateFilter,
     StorageRead, TimeRangeCapable,
 };
-pub use blackboard::Record;
 pub use nexus_storage_petgraph::{
-    EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Snapshottable,
-    StorageSnapshot,
+    EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Snapshottable, StorageSnapshot,
 };

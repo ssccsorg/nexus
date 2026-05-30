@@ -320,10 +320,7 @@ fn count_detector_facts(state: &nexus_graph::BoardState, detector: &str, fact_ty
             let content_val: serde_json::Value =
                 serde_json::from_str(f.content.as_str().unwrap_or(""))
                     .unwrap_or(serde_json::Value::Null);
-            content_val
-                .get("type")
-                .and_then(|v| v.as_str())
-                == Some(fact_type)
+            content_val.get("type").and_then(|v| v.as_str()) == Some(fact_type)
         })
         .count()
 }
@@ -381,7 +378,8 @@ fn agent_resolve_contradictions(
                 &serde_json::to_string(&serde_json::json!({
                     "resolution": conclusion,
                     "agent": agent_name,
-                })).unwrap(),
+                }))
+                .unwrap(),
             )
             .expect("conclude");
     }

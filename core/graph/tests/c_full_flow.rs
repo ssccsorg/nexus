@@ -124,10 +124,16 @@ fn test_full_agent_collaboration_flow() {
     // ── Phase 4: Agent-B concludes the Intent ─────────────────────────
 
     let new_fact = bb
-        .conclude_intent("i001", "Shallow GNN (3 layers) achieves 94% accuracy vs 89% for deep (10 layers)")
+        .conclude_intent(
+            "i001",
+            "Shallow GNN (3 layers) achieves 94% accuracy vs 89% for deep (10 layers)",
+        )
         .expect("conclude should succeed");
 
-    assert_eq!(new_fact.content.to_string(), "Shallow GNN (3 layers) achieves 94% accuracy vs 89% for deep (10 layers)");
+    assert_eq!(
+        new_fact.content.to_string(),
+        "Shallow GNN (3 layers) achieves 94% accuracy vs 89% for deep (10 layers)"
+    );
     println!("  Phase 4: Concluded → new Fact");
 
     // ── Phase 5: Verify final state ───────────────────────────────────

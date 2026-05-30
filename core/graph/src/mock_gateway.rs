@@ -51,11 +51,7 @@ impl<B: Blackboard> Blackboard for MockGateway<B> {
         self.inner.release_intent(intent_id, agent)
     }
 
-    fn conclude_intent(
-        &mut self,
-        intent_id: &str,
-        result: &str,
-    ) -> Result<Fact, BlackboardError> {
+    fn conclude_intent(&mut self, intent_id: &str, result: &str) -> Result<Fact, BlackboardError> {
         self.inner.conclude_intent(intent_id, result)
     }
 

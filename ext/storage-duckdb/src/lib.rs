@@ -3,7 +3,7 @@
 pub mod cypher_sql;
 
 use nexus_model::{
-    BoardState, ColdStorage, CypherCapable, EvictCapable, Fact, FihHash, FilterCapable, FlushCapable,
+    BoardState, ColdStorage, Content, CypherCapable, EvictCapable, Fact, FihHash, FilterCapable, FlushCapable,
     FlushCursor, FlushResult, Hint, Intent, PartitionData, ScanCapable, StateFilter, StorageRead,
     TimeRangeCapable, cold_query::ColdQuery,
 };
@@ -180,10 +180,12 @@ impl DuckDbStorage {
             Ok(Fact {
                 id: FihHash(id),
                 origin,
-                content: {
-                    let v: serde_json::Value = serde_json::from_str(&content_str)
-                        .unwrap_or(serde_json::Value::String(content_str));
-                    serde_json::to_string(&v).unwrap_or_default().into()
+                content: match serde_json::from_str::<serde_json::Value>(&content_str) {
+                    Ok(v) => match v {
+                        serde_json::Value::String(s) => Content::Text(s),
+                        other => Content::Text(serde_json::to_string(&other).unwrap_or_default()),
+                    },
+                    Err(_) => Content::Text(content_str),
                 },
                 creator,
             })

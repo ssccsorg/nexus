@@ -157,10 +157,7 @@ fn execute_with_cold_eligible_with_populated_graph() {
     graph.add_node(NodeWeight {
         name: "f_test".into(),
         label: "Fact".into(),
-        properties: std::collections::HashMap::from([(
-            "origin".into(),
-            "\"test-source\"".into(),
-        )]),
+        properties: std::collections::HashMap::from([("origin".into(), "\"test-source\"".into())]),
     });
     let plan = Plan::from_internal("MATCH (f:Fact) RETURN f").unwrap();
     let cold = nexus_model::NullStorage;

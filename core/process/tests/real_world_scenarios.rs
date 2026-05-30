@@ -54,20 +54,14 @@ fn count_by_creator(state: &nexus_graph::BoardState, creator: &str) -> usize {
 }
 
 fn content_val_of(f: &Fact) -> serde_json::Value {
-    serde_json::from_str(f.content.as_str().unwrap_or(""))
-        .unwrap_or(serde_json::Value::Null)
+    serde_json::from_str(f.content.as_str().unwrap_or("")).unwrap_or(serde_json::Value::Null)
 }
 
 fn count_by_type(state: &nexus_graph::BoardState, fact_type: &str) -> usize {
     state
         .facts
         .iter()
-        .filter(|f| {
-            content_val_of(f)
-                .get("type")
-                .and_then(|v| v.as_str())
-                == Some(fact_type)
-        })
+        .filter(|f| content_val_of(f).get("type").and_then(|v| v.as_str()) == Some(fact_type))
         .count()
 }
 
@@ -213,12 +207,7 @@ fn scenario_cross_domain_discovery() {
         .facts
         .iter()
         .filter(|f| f.creator == "contradiction-detector")
-        .any(|f| {
-            content_val_of(f)
-                .get("topic")
-                .and_then(|v| v.as_str())
-                == Some("data-movement")
-        });
+        .any(|f| content_val_of(f).get("topic").and_then(|v| v.as_str()) == Some("data-movement"));
     assert!(
         has_data_movement_contradiction,
         "data-movement contradiction: zero-movement (manifesto) vs structured-dataflow (spatz)"
@@ -386,11 +375,23 @@ fn scenario_peer_review_challenge() {
         .filter(|f| f.creator == "new-document-analyzer")
         .collect();
     let factor_of = |f: &&Fact| -> Option<String> {
-        content_val_of(f).get("factor")?.as_str().map(|s| s.to_string())
+        content_val_of(f)
+            .get("factor")?
+            .as_str()
+            .map(|s| s.to_string())
     };
-    let supports = nda_facts.iter().filter(|f| factor_of(f).as_deref() == Some("+factor")).count();
-    let challenges = nda_facts.iter().filter(|f| factor_of(f).as_deref() == Some("-factor")).count();
-    let gaps = nda_facts.iter().filter(|f| factor_of(f).as_deref() == Some("gap")).count();
+    let supports = nda_facts
+        .iter()
+        .filter(|f| factor_of(f).as_deref() == Some("+factor"))
+        .count();
+    let challenges = nda_facts
+        .iter()
+        .filter(|f| factor_of(f).as_deref() == Some("-factor"))
+        .count();
+    let gaps = nda_facts
+        .iter()
+        .filter(|f| factor_of(f).as_deref() == Some("gap"))
+        .count();
 
     assert!(
         supports > 0,
@@ -419,9 +420,7 @@ fn scenario_peer_review_challenge() {
     // Agent: synthesize peer review conclusion
     let contradiction_fact = r2.state.facts.iter().find(|f| {
         f.creator == "contradiction-detector"
-            && content_val_of(f)
-                .get("topic")
-                .and_then(|v| v.as_str())
+            && content_val_of(f).get("topic").and_then(|v| v.as_str())
                 == Some("computation-ontology")
     });
     if let Some(cf) = contradiction_fact {
@@ -542,7 +541,8 @@ fn scenario_incremental_knowledge_growth() {
                     &serde_json::to_string(&serde_json::json!({
                         "resolution": format!("Resolved {} in iteration {}", topic, iteration),
                         "iteration": iteration,
-                    })).unwrap_or_default(),
+                    }))
+                    .unwrap_or_default(),
                 )
                 .expect("conclude");
         }
@@ -619,7 +619,8 @@ fn scenario_multi_agent_collaboration() {
                     "analysis": "Spatz balance condition validates SSCCS structural model",
                     "domain": "hardware",
                     "agent": "alpha",
-                })).unwrap_or_default(),
+                }))
+                .unwrap_or_default(),
             )
             .expect("conclude");
     }
@@ -653,7 +654,8 @@ fn scenario_multi_agent_collaboration() {
                     "analysis": "MLIR Transform Dialect aligns with SSCCS Field composition",
                     "domain": "compiler",
                     "agent": "beta",
-                })).unwrap_or_default(),
+                }))
+                .unwrap_or_default(),
             )
             .expect("conclude");
     }
@@ -691,32 +693,17 @@ fn scenario_multi_agent_collaboration() {
     let alpha_conclusions = state
         .facts
         .iter()
-        .filter(|f| {
-            content_val_of(f)
-                .get("agent")
-                .and_then(|v| v.as_str())
-                == Some("alpha")
-        })
+        .filter(|f| content_val_of(f).get("agent").and_then(|v| v.as_str()) == Some("alpha"))
         .count();
     let beta_conclusions = state
         .facts
         .iter()
-        .filter(|f| {
-            content_val_of(f)
-                .get("agent")
-                .and_then(|v| v.as_str())
-                == Some("beta")
-        })
+        .filter(|f| content_val_of(f).get("agent").and_then(|v| v.as_str()) == Some("beta"))
         .count();
     let gamma_conclusions = state
         .facts
         .iter()
-        .filter(|f| {
-            content_val_of(f)
-                .get("agent")
-                .and_then(|v| v.as_str())
-                == Some("gamma")
-        })
+        .filter(|f| content_val_of(f).get("agent").and_then(|v| v.as_str()) == Some("gamma"))
         .count();
 
     assert!(alpha_conclusions > 0, "Agent Alpha (hardware) contributed");
@@ -831,10 +818,7 @@ fn scenario_document_revision() {
         .iter()
         .filter(|f| {
             f.creator == "new-document-analyzer"
-                && content_val_of(f)
-                    .get("factor")
-                    .and_then(|v| v.as_str())
-                    == Some("-factor")
+                && content_val_of(f).get("factor").and_then(|v| v.as_str()) == Some("-factor")
         })
         .collect();
 

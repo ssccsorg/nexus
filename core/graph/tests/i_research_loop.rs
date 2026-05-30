@@ -270,12 +270,9 @@ fn scenario_full_research_loop() {
         .facts
         .iter()
         .filter(|f| {
-            let cv: serde_json::Value =
-                serde_json::from_str(f.content.as_str().unwrap_or(""))
-                    .unwrap_or(serde_json::Value::Null);
-            cv.get("section")
-                .and_then(|v| v.as_str())
-                == Some("Future Directions")
+            let cv: serde_json::Value = serde_json::from_str(f.content.as_str().unwrap_or(""))
+                .unwrap_or(serde_json::Value::Null);
+            cv.get("section").and_then(|v| v.as_str()) == Some("Future Directions")
         })
         .collect();
     assert_eq!(future_facts.len(), 3, "3 Future Directions sections exist");
