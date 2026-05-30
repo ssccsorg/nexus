@@ -1,6 +1,6 @@
 // nexus-model — Blackboard trait, capability-based Storage traits, and FIH primitives.
 //
-// Pure interfaces, no storage backend. Both nexus-graph and nexus-storage-sqlite
+// Pure interfaces, no storage backend. Both nexus-graph and nexus-storage-composite
 // depend on this crate only.
 //
 // # Capability-based trait design

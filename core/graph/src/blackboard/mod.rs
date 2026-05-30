@@ -8,7 +8,7 @@ use crate::query::cypher::{Plan, TranslateError, execute_with_cold};
 use nexus_model::{
     Blackboard, BlackboardError, BoardState, ColdStorage, CypherCapable, DualStorage, EvictCapable,
     Fact, FactCapable, FihHash, FlushCapable, FlushCursor, FlushResult, Hint, HintCapable, Intent,
-    IntentCapable, NullStorage, StorageRead,
+    IntentCapable, NullStorage, PartitionData, ScanCapable, StorageRead,
 };
 use nexus_storage_petgraph::{
     EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Record, Snapshottable,
@@ -198,9 +198,9 @@ impl DefaultBlackboard {
     /// `flush_since`, and persists the updated cursor for incremental
     /// export on the next call.
     ///
-    /// The cold backend determines what "flush" means:
+    /// cold backend determines what "flush" means:
     /// - `NullStorage`: no-op (no cold storage configured)
-    /// - `SqlNormalizedStorage`: no-op (dual-write keeps SQLite in sync)
+    /// - `CompositeColdStorage`: writes hot delta to blob, advances cursor
     /// - `DuckDbStorage`: exports hot data newer than cursor to Parquet files
     /// - Future backends: their own incremental export semantics
     pub fn flush(&mut self) -> Result<(), String> {
@@ -375,6 +375,12 @@ impl EvictCapable for DefaultBlackboard {
 impl FlushCapable for DefaultBlackboard {
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
         self.storage.flush_since(cursor)
+    }
+}
+
+impl ScanCapable for DefaultBlackboard {
+    fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
+        self.storage.scan_partition(partition)
     }
 }
 
