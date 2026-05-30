@@ -593,6 +593,12 @@ impl IntentCapable for PetgraphStorage {
                 m.insert("origin".into(), new_fact.origin.clone().into());
                 m.insert("content".into(), new_fact.content.clone());
                 m.insert("creator".into(), new_fact.creator.clone().into());
+                let now_ns = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos()
+                    .to_string();
+                m.insert("submitted_at".into(), now_ns.into());
                 m
             },
         });
