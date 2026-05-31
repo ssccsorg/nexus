@@ -51,11 +51,7 @@ impl<B: Blackboard> Blackboard for MockGateway<B> {
         self.inner.release_intent(intent_id, agent)
     }
 
-    fn conclude_intent(
-        &mut self,
-        intent_id: &str,
-        result: &serde_json::Value,
-    ) -> Result<Fact, BlackboardError> {
+    fn conclude_intent(&mut self, intent_id: &str, result: &str) -> Result<Fact, BlackboardError> {
         self.inner.conclude_intent(intent_id, result)
     }
 
@@ -76,7 +72,7 @@ mod tests {
         let fact = Fact {
             id: FihHash("f_mock_001".into()),
             origin: "mock-test".into(),
-            content: serde_json::Value::String("Mock gateway test".into()),
+            content: "Mock gateway test".into(),
             creator: "tester".into(),
         };
         let hash = gw.submit_fact(&fact).unwrap();

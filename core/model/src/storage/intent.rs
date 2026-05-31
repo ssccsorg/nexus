@@ -8,9 +8,5 @@ pub trait IntentCapable: StorageRead {
     fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
     fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
     fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
-    fn conclude_intent(
-        &self,
-        intent_id: &str,
-        result: &serde_json::Value,
-    ) -> Result<Fact, BlackboardError>;
+    fn conclude_intent(&self, intent_id: &str, result: &str) -> Result<Fact, BlackboardError>;
 }

@@ -1,166 +1,105 @@
 // CompositeColdStorage — platform-independent cold storage backed by a
-// KeyValueStore (KV) + BlobStore (blob) + ObjectStore (object) trio.
+// BlobStore (blob) + ObjectStore (object) + MetaStore (meta) trio.
 //
-// # Three-tier architecture
+// # Storage architecture
 //
-// External bindings (rs-worker, CF Workers WASM bindings) inject concrete
-// K/B/O implementations. CompositeColdStorage itself is fully platform-independent
+// CompositeColdStorage is the durable persistence layer. It does NOT handle
+// in-memory graph operations (FactCapable, IntentCapable, HintCapable) —
+// those are delegated to PetgraphStorage (hot storage). Instead, it provides:
+//
+//   - Blob (R2, S3): Petgraph snapshot archive + flush output
+//   - Object (DO): CAS-based claim coordination
+//   - Meta (KV): Cursor position, snapshot pointers, delta metadata
+//
+// External bindings (rs-worker, CF Workers WASM) inject concrete B/O/M
+// implementations. CompositeColdStorage itself is fully platform-independent
 // and contains no Cloudflare-specific code.
 //
 // ```
-//                 ┌──────────────────────────────────────────┐
-//                 │          ColdStorage trait                │
-//                 │  (FihPersistence + Filter + Scan + Flush) │
-//                 └──────────────────┬───────────────────────┘
-//                                    │
-//                 ┌──────────────────┴───────────────────────┐
-//                 │        CompositeColdStorage<K, B, O, C>     │
-//                 │                                          │
-//                 │  ┌─────────┐  ┌─────────┐  ┌──────────┐ │
-//                 │  │ Tier 1  │  │ Tier 2  │  │ Tier 3   │ │
-//                 │  │ KV      │  │ Blob    │  │ Object   │ │
-//                 │  │ recent  │  │ archive │  │ coord.   │ │
-//                 │  └────┬────┘  └────┬────┘  └────┬─────┘ │
-//                 └───────┼───────────┼──────────────┼──────┘
-//                         │           │              │
-//                    Workers KV    R2 bucket    Durable Object
-//                    Sled          filesystem    Redis lock
-//                    MockKv        MockBlob      MockObject
+//                 ┌──────────────────────────────────────────────┐
+//                 │          ColdStorage trait                    │
+//                 │  (ScanCapable + EvictCapable + TimeRangeCapable │
+//                 │   + CypherCapable + FlushCapable)             │
+//                 └─────────────────────┬────────────────────────┘
+//                                       │
+//                 ┌─────────────────────┴────────────────────────┐
+//                 │        CompositeColdStorage<B, O, M, C>      │
+//                 │                                              │
+//                 │  ┌──────────┐  ┌──────────┐  ┌────────────┐ │
+//                 │  │ Blob     │  │ Object   │  │ Meta       │ │
+//                 │  │ archive  │  │ coord.   │  │ cursor/delta│ │
+//                 │  └────┬─────┘  └────┬─────┘  └─────┬──────┘ │
+//                 └───────┼──────────────┼────────────────┼──────┘
+//                         │              │                 │
+//                     R2 bucket     Durable Object    Workers KV
+//                     filesystem     Redis lock        sled
+//                     MockBlob       MockObject        MockKv
 // ```
 //
 // # Tier roles
 //
 // | Tier | Store | Role | Write | Read |
 // |------|-------|------|-------|------|
-// | 1 | KV | Recent buffer, cursor persistence | `submit_fact`/`claim_intent` | `get(key)`, `list(prefix)` |
-// | 2 | Blob | JSON-lines archive, flush target | `flush_since` | bulk `scan_partition` |
-// | 3 | Object | CAS-based claim coordination, snapshot ownership | `compare_and_swap` | `get_state` |
+// | 1 | Blob | Petgraph snapshot archive + flush output | `flush_since` | bulk `scan_partition` |
+// | 2 | Object | CAS-based claim coordination | `compare_and_swap` | `get_state` |
+// | 3 | Meta | Cursor position, snapshot pointers | `set(key, value)` | `get(key)` |
 //
-// # Data flow
-//
-// 1. **Ingest**: `submit_fact` writes to KV only (Tier 1). Fast single-key write.
-// 2. **Flush**: `flush_since` reads recent data from KV (by submission timestamp),
-//    serializes to JSON-lines, writes to Blob (Tier 2). Cursor persisted in KV.
-// 3. **Archive**: `evict_before` removes old Blob entries from Tier 2.
-// 4. **Coordinate**: `claim_intent`/`heartbeat`/`release_intent` use KV data +
-//    optional CAS via Object (Tier 3) for cross-worker conflict resolution.
-// 5. **Read**: `read_state` reads KV only (recent). `scan_partition` merges
-//    KV (recent) + Blob (flushed) with dedup by entity ID.
-//
-// # KV storage layout
-//
-// - `{project_id}:fact:{fact_id}` → JSON `Stamped<Fact>`
-// - `{project_id}:intent:{intent_id}` → JSON `Stamped<Intent>`
-// - `{project_id}:hint:{hint_id}` → JSON `Stamped<Hint>`
-// - `{project_id}:cursor` → JSON `FlushCursor`
-//
-// # Blob storage layout (produced by flush_since)
-//
-// - `{project_id}/flush/facts/{partition}/{ts}.jsonl`
-// - `{project_id}/flush/intents/{partition}/{ts}.jsonl`
-// - `{project_id}/flush/hints/{partition}/{ts}.jsonl`
-//
-// JSON lines format (no Parquet dependency) keeps the crate purely Rust
-// with no C bindings. A future upgrade can add Parquet via arrow/parquet-wasm.
+// Graph CRUD (FactCapable, IntentCapable, HintCapable, StorageRead) is
+// handled by PetgraphStorage (hot storage), NOT by CompositeColdStorage.
+// CompositeColdStorage only manages durable persistence.
 
-use crate::{
-    BlobStore, KeyValueStore, ObjectStore, cursor_key, fact_key, fact_prefix, flush_blob_key,
-    flush_blob_prefix, hint_key, hint_prefix, intent_key, intent_prefix,
-};
+use crate::{BlobStore, MetaStore, ObjectStore, flush_blob_prefix};
 use crate::{Now, SystemClock};
 use log;
+use nexus_graph::CypherCapable;
 use nexus_model::{
-    BlackboardError, BoardState, CypherCapable, EvictCapable, Fact, FactCapable, FihHash,
-    FilterCapable, FlushCapable, FlushCursor, FlushResult, Hint, HintCapable, Intent,
-    IntentCapable, PartitionData, ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
+    BoardState, ColdStorage, EvictCapable, FlushCapable, FlushCursor, FlushResult, PartitionData,
+    ScanCapable, StorageRead, TimeRangeCapable,
 };
-use serde::{Deserialize, Serialize};
+use postcard;
 use std::ops::Range;
-
-// ── Timestamped envelope ───────────────────────────────────────────────────
-
-/// Wraps a stored entity with a submission timestamp for cursor-based filtering.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct Stamped<T> {
-    submitted_at: String,
-    data: T,
-}
-
-impl<T: Serialize> Stamped<T> {
-    fn new(data: T, now: String) -> Self {
-        Self {
-            submitted_at: now,
-            data,
-        }
-    }
-}
 
 // ── CompositeColdStorage ──────────────────────────────────────────────────────
 
-/// Cold storage backend backed by a KeyValueStore + BlobStore + ObjectStore trio.
+/// Cold storage backend backed by a BlobStore + ObjectStore + MetaStore trio.
 ///
-/// Generic over K (KeyValueStore), B (BlobStore), and O (ObjectStore), allowing
-/// the same CompositeColdStorage logic to run in tests (MockKv + MockBlob +
-/// MockObject), CF Workers (worker::kv::Namespace + R2 + Durable Object), or
-/// servers (sled + filesystem + Redis lock).
+/// Generic over B (BlobStore), O (ObjectStore), and M (MetaStore), allowing
+/// the same CompositeColdStorage logic to run in tests (MockBlob + MockObject +
+/// MockKv as MetaStore), CF Workers (R2 + Durable Object + KV as MetaStore),
+/// or servers (filesystem + Redis lock + sled as MetaStore).
 ///
-/// # Storage layout
+/// This does NOT implement `FactCapable`, `IntentCapable`, `HintCapable`, or
+/// `StorageRead` — those are handled by PetgraphStorage (hot). This is purely
+/// the durable persistence layer.
 ///
-/// ## KV keys
-/// - `{project_id}:fact:{fact_id}` → JSON Stamped<Fact>
-/// - `{project_id}:intent:{intent_id}` → JSON Stamped<Intent>
-/// - `{project_id}:hint:{hint_id}` → JSON Stamped<Hint>
-/// - `{project_id}:cursor` → JSON FlushCursor
+/// # Blob storage layout (produced by flush_since)
 ///
-/// ## Blob keys (produced by flush_since)
-/// - `{project_id}/flush/facts/{partition}/{ts}.jsonl`
-/// - `{project_id}/flush/intents/{partition}/{ts}.jsonl`
-/// - `{project_id}/flush/hints/{partition}/{ts}.jsonl`
+/// - `{project_id}/flush/{entity}/{partition}/{ts}_{i}.bin`
+///
+/// # Meta storage layout
+///
+/// - `cursor` → JSON FlushCursor
+/// - `snapshot_ts` → timestamp string
 #[derive(Clone)]
-pub struct CompositeColdStorage<
-    K: KeyValueStore,
-    B: BlobStore,
-    O: ObjectStore,
-    C: Now = SystemClock,
-> {
-    kv: K,
+pub struct CompositeColdStorage<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now = SystemClock> {
     blob: B,
     object: O,
-    /// Flush output channel — blob archives (no dirty semantics).
-    commit_blob: B,
-    /// Cursor state — the flush boundary. Consumer reads this to know
-    /// which data has been flushed and which is still in-memory.
-    commit_kv: K,
+    meta: M,
     clock: C,
     project_id: String,
 }
 
-// ── Generic constructor (caller chooses the clock) ─────────────────────────
+// ── Constructor ─────────────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> CompositeColdStorage<K, B, O, C> {
-    pub fn new(
-        kv: K,
-        blob: B,
-        object: O,
-        commit_kv: K,
-        commit_blob: B,
-        clock: C,
-        project_id: impl Into<String>,
-    ) -> Self {
+impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> CompositeColdStorage<B, O, M, C> {
+    pub fn new(blob: B, object: O, meta: M, clock: C, project_id: impl Into<String>) -> Self {
         Self {
-            kv,
             blob,
             object,
-            commit_kv,
-            commit_blob,
+            meta,
             clock,
             project_id: project_id.into(),
         }
-    }
-
-    /// Access the underlying KV store.
-    pub fn kv(&self) -> &K {
-        &self.kv
     }
 
     /// Access the underlying Blob store.
@@ -173,590 +112,226 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> CompositeColdStorag
         &self.object
     }
 
-    /// Access the commit KV (cursor state).
-    pub fn commit_kv(&self) -> &K {
-        &self.commit_kv
-    }
-
-    /// Access the commit Blob (flush archive output).
-    pub fn commit_blob(&self) -> &B {
-        &self.commit_blob
+    /// Access the underlying Meta store (cursor, snapshot pointers).
+    pub fn meta(&self) -> &M {
+        &self.meta
     }
 
     // ── Cursor API ──────────────────────────────────────────────────────────
 
-    /// Read the current flush cursor from the commit channel.
+    /// Read the current flush cursor from the meta store.
     /// Returns None if no flush has occurred yet.
     pub fn read_cursor(&self) -> Result<Option<FlushCursor>, String> {
-        let key = cursor_key(self.project());
-        match self.commit_kv.get(&key)? {
-            Some(json) => {
-                let cursor: FlushCursor = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+        let cursor_key = format!("{}:cursor", self.project());
+        match self.meta.get(&cursor_key)? {
+            Some(raw) => {
+                let cursor: FlushCursor =
+                    postcard::from_bytes(raw.as_bytes()).map_err(|e| e.to_string())?;
                 Ok(Some(cursor))
             }
             None => Ok(None),
         }
     }
 
-    // ── Internal helpers ────────────────────────────────────────────────────
-
+    /// Project identifier for key scoping.
     fn project(&self) -> &str {
         &self.project_id
     }
 
-    /// Read all facts from KV, unwrapping from Stamped envelope.
-    fn read_facts(&self) -> Result<Vec<Fact>, String> {
-        let prefix = fact_prefix(self.project());
-        let keys = self.kv.list(&prefix)?;
-        let mut facts = Vec::with_capacity(keys.len());
+    // ── Flushed data readers ───────────────────────────────────────────────-
+
+    fn read_flushed_facts(&self, partition: &str) -> Result<Vec<nexus_model::Fact>, String> {
+        let prefix = flush_blob_prefix(self.project(), "facts", partition);
+        let keys = self.blob.list(&prefix)?;
+        let mut facts = Vec::new();
         for key in &keys {
-            if let Some(json) = self.kv.get(key)?
-                && let Ok(stamped) = serde_json::from_str::<Stamped<Fact>>(&json)
-            {
-                facts.push(stamped.data);
+            match self.blob.get(key) {
+                Ok(Some(data)) => {
+                    if let Ok(fact) = postcard::from_bytes::<nexus_model::Fact>(&data) {
+                        facts.push(fact);
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => log::warn!("read_flushed_facts: blob {key}: {e}"),
             }
         }
         facts.sort_by(|a, b| a.id.0.cmp(&b.id.0));
         Ok(facts)
     }
 
-    /// Read all intents from KV, unwrapping from Stamped envelope.
-    fn read_intents(&self) -> Result<Vec<Intent>, String> {
-        let prefix = intent_prefix(self.project());
-        let keys = self.kv.list(&prefix)?;
-        let mut intents = Vec::with_capacity(keys.len());
+    fn read_flushed_intents(&self, partition: &str) -> Result<Vec<nexus_model::Intent>, String> {
+        let prefix = flush_blob_prefix(self.project(), "intents", partition);
+        let keys = self.blob.list(&prefix)?;
+        let mut intents = Vec::new();
         for key in &keys {
-            if let Some(json) = self.kv.get(key)?
-                && let Ok(stamped) = serde_json::from_str::<Stamped<Intent>>(&json)
-            {
-                intents.push(stamped.data);
+            match self.blob.get(key) {
+                Ok(Some(data)) => {
+                    if let Ok(intent) = postcard::from_bytes::<nexus_model::Intent>(&data) {
+                        intents.push(intent);
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => log::warn!("read_flushed_intents: blob {key}: {e}"),
             }
         }
         intents.sort_by(|a, b| a.id.0.cmp(&b.id.0));
         Ok(intents)
     }
 
-    /// Read all hints from KV, unwrapping from Stamped envelope.
-    fn read_hints(&self) -> Result<Vec<Hint>, String> {
-        let prefix = hint_prefix(self.project());
-        let keys = self.kv.list(&prefix)?;
-        let mut hints = Vec::with_capacity(keys.len());
+    fn read_flushed_hints(&self, partition: &str) -> Result<Vec<nexus_model::Hint>, String> {
+        let prefix = flush_blob_prefix(self.project(), "hints", partition);
+        let keys = self.blob.list(&prefix)?;
+        let mut hints = Vec::new();
         for key in &keys {
-            if let Some(json) = self.kv.get(key)?
-                && let Ok(stamped) = serde_json::from_str::<Stamped<Hint>>(&json)
-            {
-                hints.push(stamped.data);
+            match self.blob.get(key) {
+                Ok(Some(data)) => {
+                    if let Ok(hint) = postcard::from_bytes::<nexus_model::Hint>(&data) {
+                        hints.push(hint);
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => log::warn!("read_flushed_hints: blob {key}: {e}"),
             }
         }
         hints.sort_by(|a, b| a.id.0.cmp(&b.id.0));
         Ok(hints)
     }
-
-    // ── JSON lines deserialization ──────────────────────────────────────────
-
-    fn read_jsonl_lines<T>(bytes: &[u8]) -> Result<Vec<T>, String>
-    where
-        T: serde::de::DeserializeOwned,
-    {
-        let content = std::str::from_utf8(bytes).map_err(|e| e.to_string())?;
-        content
-            .lines()
-            .filter(|l| !l.trim().is_empty())
-            .map(|line| serde_json::from_str::<T>(line).map_err(|e| e.to_string()))
-            .collect()
-    }
-
-    /// Read all facts from flushed blobs for a given partition.
-    fn read_flushed_facts(&self, partition: &str) -> Result<Vec<Fact>, String> {
-        let prefix = flush_blob_prefix(self.project(), "facts", partition);
-        let blob_keys = self.blob.list(&prefix)?;
-        let mut all = Vec::new();
-        for key in &blob_keys {
-            if let Some(bytes) = self.blob.get(key)? {
-                match Self::read_jsonl_lines::<Fact>(&bytes) {
-                    Ok(items) => all.extend(items),
-                    Err(e) => log::warn!(
-                        "CompositeColdStorage[{}] skipping partial blob {}: {}",
-                        self.project(),
-                        key,
-                        e
-                    ),
-                }
-            }
-        }
-        Ok(all)
-    }
-
-    /// Read all intents from flushed blobs for a given partition.
-    fn read_flushed_intents(&self, partition: &str) -> Result<Vec<Intent>, String> {
-        let prefix = flush_blob_prefix(self.project(), "intents", partition);
-        let blob_keys = self.blob.list(&prefix)?;
-        let mut all = Vec::new();
-        for key in &blob_keys {
-            if let Some(bytes) = self.blob.get(key)? {
-                match Self::read_jsonl_lines::<Intent>(&bytes) {
-                    Ok(items) => all.extend(items),
-                    Err(e) => log::warn!(
-                        "CompositeColdStorage[{}] skipping partial blob {}: {}",
-                        self.project(),
-                        key,
-                        e
-                    ),
-                }
-            }
-        }
-        Ok(all)
-    }
-
-    /// Read all hints from flushed blobs for a given partition.
-    fn read_flushed_hints(&self, partition: &str) -> Result<Vec<Hint>, String> {
-        let prefix = flush_blob_prefix(self.project(), "hints", partition);
-        let blob_keys = self.blob.list(&prefix)?;
-        let mut all = Vec::new();
-        for key in &blob_keys {
-            if let Some(bytes) = self.blob.get(key)? {
-                match Self::read_jsonl_lines::<Hint>(&bytes) {
-                    Ok(items) => all.extend(items),
-                    Err(e) => log::warn!(
-                        "CompositeColdStorage[{}] skipping partial blob {}: {}",
-                        self.project(),
-                        key,
-                        e
-                    ),
-                }
-            }
-        }
-        Ok(all)
-    }
 }
 
-// ── Convenience constructor (defaults to SystemClock) ──────────────────────
+// ── SystemClock convenience constructor ─────────────────────────────────────
 
-impl<K: KeyValueStore + Clone, B: BlobStore + Clone, O: ObjectStore>
-    CompositeColdStorage<K, B, O, SystemClock>
+impl<B: BlobStore + Clone, O: ObjectStore, M: MetaStore + Clone>
+    CompositeColdStorage<B, O, M, SystemClock>
 {
-    pub fn new_with_system_clock(kv: K, blob: B, object: O, project_id: impl Into<String>) -> Self {
-        let ck = kv.clone();
-        let cb = blob.clone();
+    pub fn new_with_system_clock(
+        blob: B,
+        object: O,
+        meta: M,
+        project_id: impl Into<String>,
+    ) -> Self {
         Self {
-            kv,
             blob,
             object,
-            commit_kv: ck,
-            commit_blob: cb,
+            meta,
             clock: SystemClock,
             project_id: project_id.into(),
         }
     }
 }
 
-// ── StorageRead ───────────────────────────────────────────────────────────
-
-impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> StorageRead
-    for CompositeColdStorage<K, B, O, C>
+impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> StorageRead
+    for CompositeColdStorage<B, O, M, C>
 {
     fn project_id(&self) -> &str {
         self.project()
     }
 
     fn read_state(&self) -> BoardState {
-        let facts = match self.read_facts() {
-            Ok(f) => f,
-            Err(e) => {
-                log::warn!(
-                    "CompositeColdStorage[{}] read_facts failed: {}",
-                    self.project(),
-                    e
-                );
-                Vec::new()
-            }
-        };
-        let intents = match self.read_intents() {
-            Ok(i) => i,
-            Err(e) => {
-                log::warn!(
-                    "CompositeColdStorage[{}] read_intents failed: {}",
-                    self.project(),
-                    e
-                );
-                Vec::new()
-            }
-        };
-        let hints = match self.read_hints() {
-            Ok(h) => h,
-            Err(e) => {
-                log::warn!(
-                    "CompositeColdStorage[{}] read_hints failed: {}",
-                    self.project(),
-                    e
-                );
-                Vec::new()
-            }
-        };
+        // CompositeColdStorage no longer stores graph data.
+        // StorageRead is implemented only to satisfy trait bounds on
+        // FlushCapable, ScanCapable, etc. Return empty state — the
+        // actual graph state is managed by PetgraphStorage (hot).
         BoardState {
-            facts,
-            intents,
-            hints,
+            facts: Vec::new(),
+            intents: Vec::new(),
+            hints: Vec::new(),
         }
     }
 }
 
-// ── FactCapable ───────────────────────────────────────────────────────────
+// ── FlushCapable ──────────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> FactCapable
-    for CompositeColdStorage<K, B, O, C>
+impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> FlushCapable
+    for CompositeColdStorage<B, O, M, C>
 {
-    fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
-        let key = fact_key(self.project(), &fact.id.0);
-        let stamped = Stamped::new(fact.clone(), self.clock.now_nanos());
-        let json = serde_json::to_string(&stamped)
-            .map_err(|e| BlackboardError::Internal(format!("serialize fact: {e}")))?;
-        self.kv
-            .set(&key, &json)
-            .map_err(|e| BlackboardError::Internal(format!("kv set: {e}")))?;
-        Ok(fact.id.clone())
-    }
-}
+    fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
+        let partition = &cursor.partition;
+        let now_ts = self.clock.now_nanos();
 
-// ── IntentCapable ─────────────────────────────────────────────────────────
+        let mut records_flushed = 0u64;
 
-impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> IntentCapable
-    for CompositeColdStorage<K, B, O, C>
-{
-    fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
-        let key = intent_key(self.project(), &intent.id.0);
-        let stamped = Stamped::new(intent.clone(), self.clock.now_nanos());
-        let json = serde_json::to_string(&stamped)
-            .map_err(|e| BlackboardError::Internal(format!("serialize intent: {e}")))?;
-        self.kv
-            .set(&key, &json)
-            .map_err(|e| BlackboardError::Internal(format!("kv set: {e}")))?;
-        Ok(intent.id.clone())
-    }
+        // Flush all available blob entries (data already written by caller).
+        // CompositeColdStorage does NOT own graph data — flush is a no-op
+        // that updates the cursor only. The caller (DualStorage or Worker)
+        // writes Petgraph data to blob before calling flush_since.
+        //
+        // If data was pre-written to blob, count the records (one per blob).
+        let fact_prefix = flush_blob_prefix(self.project(), "facts", partition);
+        let fact_keys = self.blob.list(&fact_prefix)?;
+        records_flushed += fact_keys.len() as u64;
+        let intent_prefix = flush_blob_prefix(self.project(), "intents", partition);
+        let intent_keys = self.blob.list(&intent_prefix)?;
+        records_flushed += intent_keys.len() as u64;
+        let hint_prefix = flush_blob_prefix(self.project(), "hints", partition);
+        let hint_keys = self.blob.list(&hint_prefix)?;
+        records_flushed += hint_keys.len() as u64;
 
-    /// Claim an intent for an agent.
-    ///
-    /// Uses a two-step protocol for cross-worker safety:
-    ///   1. `object.cas(key, "", agent)` — atomic CAS gate.
-    ///      Only one worker succeeds; others get Conflict.
-    ///   2. Update KV with worker and heartbeat for data consistency.
-    ///
-    /// If KV entry is missing despite CAS success (concurrent conclude),
-    /// the CAS is rolled back and NotFound is returned.
-    fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let key = intent_key(self.project(), intent_id);
+        // Persist cursor via meta store.
+        let new_cursor = FlushCursor {
+            last_flushed_at: now_ts,
+            partition: partition.clone(),
+        };
+        let cursor_bytes =
+            postcard::to_allocvec(&new_cursor).map_err(|e| format!("serialize cursor: {e}"))?;
+        let cursor_key = format!("{}:cursor", self.project());
+        self.meta
+            .set(&cursor_key, &String::from_utf8_lossy(&cursor_bytes))?;
 
-        // Atomic CAS gate: only one worker can claim this intent.
-        // The ObjectStore key matches the KV intent key, creating a per-intent
-        // namespace. In CF Workers this becomes a Durable Object per intent.
-        // Sentinel empty string = unclaimed; agent name = claimed.
-        let claimed = self
-            .object
-            .put_state(&key, "", agent)
-            .map_err(|e| BlackboardError::Internal(format!("object cas: {e}")))?;
-        if !claimed {
-            return Err(BlackboardError::Conflict(format!(
-                "Intent {intent_id} already claimed by another worker"
-            )));
-        }
-
-        // CAS succeeded: update KV for data consistency.
-        let json = self
-            .kv
-            .get(&key)
-            .map_err(|e| BlackboardError::Internal(format!("kv get: {e}")))?;
-        match json {
-            Some(raw) => {
-                let mut stamped: Stamped<Intent> = serde_json::from_str(&raw)
-                    .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-                stamped.data.worker = Some(agent.to_string());
-                stamped.data.last_heartbeat_at = Some(self.clock.now_nanos());
-                let updated = serde_json::to_string(&stamped)
-                    .map_err(|e| BlackboardError::Internal(format!("serialize: {e}")))?;
-                self.kv
-                    .set(&key, &updated)
-                    .map_err(|e| BlackboardError::Internal(format!("kv set: {e}")))?;
-                Ok(())
-            }
-            None => {
-                // CAS won but KV entry was deleted concurrently (conclude).
-                // Release CAS and return NotFound.
-                let _ = self.object.put_state(&key, agent, "");
-                Err(BlackboardError::NotFound(format!(
-                    "Intent {intent_id} not found"
-                )))
-            }
-        }
-    }
-
-    fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let key = intent_key(self.project(), intent_id);
-        let json = self
-            .kv
-            .get(&key)
-            .map_err(|e| BlackboardError::Internal(format!("kv get: {e}")))?;
-        match json {
-            Some(raw) => {
-                let mut stamped: Stamped<Intent> = serde_json::from_str(&raw)
-                    .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-                match &stamped.data.worker {
-                    Some(w) if w != agent => {
-                        return Err(BlackboardError::Conflict(format!(
-                            "Intent {intent_id} claimed by {w}, not {agent}"
-                        )));
-                    }
-                    None => {
-                        return Err(BlackboardError::Conflict(format!(
-                            "Intent {intent_id} is not claimed"
-                        )));
-                    }
-                    _ => {}
-                }
-                stamped.data.last_heartbeat_at = Some(self.clock.now_nanos());
-                let updated = serde_json::to_string(&stamped)
-                    .map_err(|e| BlackboardError::Internal(format!("serialize: {e}")))?;
-                self.kv
-                    .set(&key, &updated)
-                    .map_err(|e| BlackboardError::Internal(format!("kv set: {e}")))?;
-                Ok(())
-            }
-            None => Err(BlackboardError::NotFound(format!(
-                "Intent {intent_id} not found"
-            ))),
-        }
-    }
-
-    fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let key = intent_key(self.project(), intent_id);
-        let json = self
-            .kv
-            .get(&key)
-            .map_err(|e| BlackboardError::Internal(format!("kv get: {e}")))?;
-        match json {
-            Some(raw) => {
-                let mut stamped: Stamped<Intent> = serde_json::from_str(&raw)
-                    .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-                match &stamped.data.worker {
-                    Some(w) if w != agent => {
-                        return Err(BlackboardError::Conflict(format!(
-                            "Intent {intent_id} claimed by {w}, not {agent}"
-                        )));
-                    }
-                    None => {
-                        return Err(BlackboardError::Conflict(format!(
-                            "Intent {intent_id} is not claimed"
-                        )));
-                    }
-                    _ => {}
-                }
-                stamped.data.worker = None;
-                let updated = serde_json::to_string(&stamped)
-                    .map_err(|e| BlackboardError::Internal(format!("serialize: {e}")))?;
-                self.kv
-                    .set(&key, &updated)
-                    .map_err(|e| BlackboardError::Internal(format!("kv set: {e}")))?;
-                Ok(())
-            }
-            None => Err(BlackboardError::NotFound(format!(
-                "Intent {intent_id} not found"
-            ))),
-        }
-    }
-
-    fn conclude_intent(
-        &self,
-        intent_id: &str,
-        result: &serde_json::Value,
-    ) -> Result<Fact, BlackboardError> {
-        let key = intent_key(self.project(), intent_id);
-        let json = self
-            .kv
-            .get(&key)
-            .map_err(|e| BlackboardError::Internal(format!("kv get: {e}")))?;
-        match json {
-            Some(raw) => {
-                let stamped: Stamped<Intent> = serde_json::from_str(&raw)
-                    .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-                let fact = Fact {
-                    id: FihHash::new(
-                        &[
-                            intent_id,
-                            &serde_json::to_string(result).unwrap_or_default(),
-                        ],
-                        "concluded",
-                    ),
-                    origin: format!("intent:{intent_id}"),
-                    content: result.clone(),
-                    creator: stamped.data.creator.clone(),
-                };
-                self.kv
-                    .delete(&key)
-                    .map_err(|e| BlackboardError::Internal(format!("kv delete: {e}")))?;
-                self.submit_fact(&fact)?;
-                Ok(fact)
-            }
-            None => Err(BlackboardError::NotFound(format!(
-                "Intent {intent_id} not found"
-            ))),
-        }
-    }
-}
-
-// ── HintCapable ───────────────────────────────────────────────────────────
-
-impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> HintCapable
-    for CompositeColdStorage<K, B, O, C>
-{
-    fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
-        let key = hint_key(self.project(), &hint.id.0);
-        let stamped = Stamped::new(hint.clone(), self.clock.now_nanos());
-        let json = serde_json::to_string(&stamped)
-            .map_err(|e| BlackboardError::Internal(format!("serialize hint: {e}")))?;
-        self.kv
-            .set(&key, &json)
-            .map_err(|e| BlackboardError::Internal(format!("kv set: {e}")))?;
-        Ok(())
-    }
-}
-
-// ── FilterCapable ─────────────────────────────────────────────────────────
-
-impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> FilterCapable
-    for CompositeColdStorage<K, B, O, C>
-{
-    fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
-        let mut facts: Vec<Fact> = self.read_facts().unwrap_or_default();
-        let mut intents: Vec<Intent> = self.read_intents().unwrap_or_default();
-        let mut hints: Vec<Hint> = self.read_hints().unwrap_or_default();
-
-        // Filter by IDs
-        if let Some(ids) = &filter.fact_ids {
-            facts.retain(|f| ids.contains(&f.id.0));
-        }
-        if let Some(ids) = &filter.intent_ids {
-            intents.retain(|i| ids.contains(&i.id.0));
-        }
-        if let Some(ids) = &filter.hint_ids {
-            hints.retain(|h| ids.contains(&h.id.0));
-        }
-
-        // Filter by time range (Intents have created_at; Facts and Hints don't).
-        // Parse timestamps as u128 for numeric comparison; string comparison
-        // (e.g. "9" > "100") is incorrect for variable-length numeric encodings.
-        if let Some(since_str) = &filter.since
-            && let Ok(since_ts) = since_str.parse::<u128>()
-        {
-            intents.retain(|i| {
-                i.created_at
-                    .as_ref()
-                    .and_then(|c| c.parse::<u128>().ok())
-                    .is_none_or(|ts| ts >= since_ts)
-            });
-        }
-        if let Some(until_str) = &filter.until
-            && let Ok(until_ts) = until_str.parse::<u128>()
-        {
-            intents.retain(|i| {
-                i.created_at
-                    .as_ref()
-                    .and_then(|c| c.parse::<u128>().ok())
-                    .is_none_or(|ts| ts <= until_ts)
-            });
-        }
-
-        // Apply offset + limit
-        let offset = filter.offset.unwrap_or(0);
-        if let Some(limit) = filter.limit {
-            facts = facts.into_iter().skip(offset).take(limit).collect();
-            intents = intents.into_iter().skip(offset).take(limit).collect();
-            hints = hints.into_iter().skip(offset).take(limit).collect();
-        } else if offset > 0 {
-            facts = facts.into_iter().skip(offset).collect();
-            intents = intents.into_iter().skip(offset).collect();
-            hints = hints.into_iter().skip(offset).collect();
-        }
-
-        BoardState {
-            facts,
-            intents,
-            hints,
-        }
+        Ok(FlushResult {
+            records_flushed,
+            new_cursor,
+        })
     }
 }
 
 // ── ScanCapable ───────────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> ScanCapable
-    for CompositeColdStorage<K, B, O, C>
+impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> ScanCapable
+    for CompositeColdStorage<B, O, M, C>
 {
     fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
-        let kv_facts = self.read_facts()?;
-        let kv_intents = self.read_intents()?;
-        let kv_hints = self.read_hints()?;
-
-        let flushed_facts = self.read_flushed_facts(partition)?;
-        let flushed_intents = self.read_flushed_intents(partition)?;
-        let flushed_hints = self.read_flushed_hints(partition)?;
-
-        let mut all_facts: Vec<Fact> = kv_facts;
-        all_facts.extend(flushed_facts);
-        all_facts.sort_by(|a, b| a.id.0.cmp(&b.id.0));
-        all_facts.dedup_by(|a, b| a.id.0 == b.id.0);
-
-        let mut all_intents: Vec<Intent> = kv_intents;
-        all_intents.extend(flushed_intents);
-        all_intents.sort_by(|a, b| a.id.0.cmp(&b.id.0));
-        all_intents.dedup_by(|a, b| a.id.0 == b.id.0);
-
-        let mut all_hints: Vec<Hint> = kv_hints;
-        all_hints.extend(flushed_hints);
-        all_hints.sort_by(|a, b| a.id.0.cmp(&b.id.0));
-        all_hints.dedup_by(|a, b| a.id.0 == b.id.0);
+        // CompositeColdStorage only reads flushed data from blob.
+        // Recent data is in Petgraph (hot), not here.
+        // scan_partition merges flushed blobs — caller is responsible
+        // for merging with hot data.
+        let facts = self.read_flushed_facts(partition)?;
+        let intents = self.read_flushed_intents(partition)?;
+        let hints = self.read_flushed_hints(partition)?;
 
         Ok(PartitionData {
             partition: partition.to_string(),
-            facts: all_facts,
-            intents: all_intents,
-            hints: all_hints,
+            facts,
+            intents,
+            hints,
         })
     }
 }
 
 // ── EvictCapable ──────────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> EvictCapable
-    for CompositeColdStorage<K, B, O, C>
+impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> EvictCapable
+    for CompositeColdStorage<B, O, M, C>
 {
     fn approximate_size(&self) -> usize {
-        // Scope to this project's keys: KV uses {project_id}: prefix, blob
-        // uses {project_id}/ prefix. Without scoping, list("") returns all
-        // keys across all projects sharing the same underlying store.
-        let kv_count = self
-            .kv
-            .list(&format!("{}:", self.project()))
-            .map(|k| k.len())
-            .unwrap_or(0);
-        let blob_count = self
-            .blob
+        self.blob
             .list(&format!("{}/", self.project()))
             .map(|k| k.len())
-            .unwrap_or(0);
-        kv_count + blob_count
+            .unwrap_or(0)
     }
 
     fn evict_before(&self, before: &str) -> Result<u64, String> {
         let before_ts: u64 = before
             .parse()
-            .map_err(|e| format!("invalid eviction timestamp '{}': {}", before, e))?;
+            .map_err(|e| format!("invalid eviction timestamp '{before}': {e}"))?;
         let blob_keys = self.blob.list(&format!("{}/", self.project()))?;
         let mut evicted = 0u64;
         for key in &blob_keys {
-            // Key format: {project_id}/flush/{entity}/{partition}/{ts}.jsonl
-            if key.ends_with(".jsonl")
-                && let Some(ts_str) = key
-                    .strip_suffix(".jsonl")
+            if key.ends_with(".bin")
+                && let Some(ts_prefix) = key
+                    .strip_suffix(".bin")
                     .and_then(|k| k.rsplit('/').next())
-                && let Ok(ts) = ts_str.parse::<u64>()
+                    .and_then(|s| s.split('_').next())
+                && let Ok(ts) = ts_prefix.parse::<u64>()
                 && ts < before_ts
             {
                 self.blob.delete(key)?;
@@ -769,126 +344,64 @@ impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> EvictCapable
 
 // ── TimeRangeCapable ───────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> TimeRangeCapable
-    for CompositeColdStorage<K, B, O, C>
+impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> TimeRangeCapable
+    for CompositeColdStorage<B, O, M, C>
 {
     fn time_range(&self) -> Option<Range<String>> {
         None
     }
 }
 
-// ── FlushCapable ──────────────────────────────────────────────────────────
+// ── CypherCapable ─────────────────────────────────────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> FlushCapable
-    for CompositeColdStorage<K, B, O, C>
+impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> CypherCapable
+    for CompositeColdStorage<B, O, M, C>
 {
-    fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
-        // Parse the cursor timestamp as u128 for numeric comparison.
-        // String-based comparison (e.g. "9" > "100") is incorrect for
-        // variable-length numeric encodings.
-        let since_ts: u128 = if cursor.last_flushed_at.is_empty() {
-            0
-        } else {
-            cursor
-                .last_flushed_at
-                .parse()
-                .map_err(|e| format!("invalid cursor timestamp: {e}"))?
-        };
-        let partition = &cursor.partition;
-        let now_ts = self.clock.now_nanos();
+    // CompositeColdStorage does not support Cypher queries directly.
+    // Graph queries are handled by PetgraphStorage (hot).
+}
 
-        // Streaming flush: iterate KV keys one by one, filter by cursor,
-        // write matching entries immediately to blob. Never loads all data
-        // into memory at once — critical for WASM where heap is limited.
-        let fact_prefix = fact_prefix(self.project());
-        let fact_keys = self.kv.list(&fact_prefix)?;
-
-        let mut fact_lines: Vec<String> = Vec::new();
-        for key in &fact_keys {
-            if let Some(json) = self.kv.get(key)?
-                && let Ok(stamped) = serde_json::from_str::<Stamped<Fact>>(&json)
-            {
-                let ts: u128 = stamped.submitted_at.parse().unwrap_or(0);
-                if ts > since_ts
-                    && let Ok(line) = serde_json::to_string(&stamped.data)
-                {
-                    fact_lines.push(line);
-                }
-            }
-        }
-
-        let intent_prefix = intent_prefix(self.project());
-        let intent_keys = self.kv.list(&intent_prefix)?;
-        let mut intent_lines: Vec<String> = Vec::new();
-        for key in &intent_keys {
-            if let Some(json) = self.kv.get(key)?
-                && let Ok(stamped) = serde_json::from_str::<Stamped<Intent>>(&json)
-            {
-                let ts: u128 = stamped.submitted_at.parse().unwrap_or(0);
-                if ts > since_ts
-                    && let Ok(line) = serde_json::to_string(&stamped.data)
-                {
-                    intent_lines.push(line);
-                }
-            }
-        }
-
-        let hint_prefix = hint_prefix(self.project());
-        let hint_keys = self.kv.list(&hint_prefix)?;
-        let mut hint_lines: Vec<String> = Vec::new();
-        for key in &hint_keys {
-            if let Some(json) = self.kv.get(key)?
-                && let Ok(stamped) = serde_json::from_str::<Stamped<Hint>>(&json)
-            {
-                let ts: u128 = stamped.submitted_at.parse().unwrap_or(0);
-                if ts > since_ts
-                    && let Ok(line) = serde_json::to_string(&stamped.data)
-                {
-                    hint_lines.push(line);
-                }
-            }
-        }
-
-        let records_flushed = (fact_lines.len() + intent_lines.len() + hint_lines.len()) as u64;
-
-        // Write JSON lines to blobs via commit channel (query-only store).
-        if !fact_lines.is_empty() {
-            let blob_key = flush_blob_key(self.project(), "facts", partition, &now_ts);
-            self.commit_blob
-                .put(&blob_key, fact_lines.join("\n").as_bytes())?;
-        }
-        if !intent_lines.is_empty() {
-            let blob_key = flush_blob_key(self.project(), "intents", partition, &now_ts);
-            self.commit_blob
-                .put(&blob_key, intent_lines.join("\n").as_bytes())?;
-        }
-        if !hint_lines.is_empty() {
-            let blob_key = flush_blob_key(self.project(), "hints", partition, &now_ts);
-            self.commit_blob
-                .put(&blob_key, hint_lines.join("\n").as_bytes())?;
-        }
-
-        let new_cursor = FlushCursor {
-            last_flushed_at: now_ts.clone(),
-            partition: partition.clone(),
-        };
-
-        // Persist cursor via commit channel (query-only, no dirty semantics).
-        let cursor_json =
-            serde_json::to_string(&new_cursor).map_err(|e| format!("serialize cursor: {e}"))?;
-        self.commit_kv
-            .set(&cursor_key(self.project()), &cursor_json)?;
-
-        Ok(FlushResult {
-            records_flushed,
-            new_cursor,
-        })
+impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> ColdStorage
+    for CompositeColdStorage<B, O, M, C>
+{
+    fn write_blob(&self, key: &str, data: &[u8]) -> Result<(), String> {
+        self.blob.put(key, data)
     }
 }
 
-// ── CypherCapable ─────────────────────────────────────────────────────────
+// ── Snapshot persistence helper (for Worker restart) ────────────────────────
 
-impl<K: KeyValueStore, B: BlobStore, O: ObjectStore, C: Now> CypherCapable
-    for CompositeColdStorage<K, B, O, C>
-{
+/// Flush petgraph snapshot to blob storage.
+/// Called by the Worker after periodic snapshot creation.
+pub fn flush_snapshot_to_blob<B: BlobStore>(
+    blob: &B,
+    project_id: &str,
+    snapshot_bytes: &[u8],
+    ts: &str,
+) -> Result<(), String> {
+    let key = format!("{project_id}/snapshot/{ts}.bin");
+    blob.put(&key, snapshot_bytes)
+}
+
+/// Load the latest snapshot from blob storage.
+/// Returns (timestamp, bytes) if any snapshot exists.
+pub fn load_latest_snapshot<B: BlobStore>(
+    blob: &B,
+    project_id: &str,
+) -> Result<Option<(String, Vec<u8>)>, String> {
+    let prefix = format!("{project_id}/snapshot/");
+    let mut keys = blob.list(&prefix)?;
+    keys.sort();
+    // Last key is the latest snapshot
+    if let Some(latest) = keys.last()
+        && let Some(data) = blob.get(latest)?
+    {
+        let ts = latest
+            .strip_prefix(&prefix)
+            .and_then(|s| s.strip_suffix(".bin"))
+            .unwrap_or("")
+            .to_string();
+        return Ok(Some((ts, data)));
+    }
+    Ok(None)
 }

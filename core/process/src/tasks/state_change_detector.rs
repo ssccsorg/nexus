@@ -98,14 +98,16 @@ impl DetectionCapable for StateChangeDetector {
         output.facts.push(Fact {
             id: FihHash::new(&[&triggers.join(",")], "state-change"),
             origin: "state-change-detector".into(),
-            content: serde_json::json!({
+            content: serde_json::to_string(&serde_json::json!({
                 "type": "state_change",
                 "triggers": triggers,
                 "prev_fact_count": checkpoint.fact_count,
                 "curr_fact_count": current_facts,
                 "prev_open_intents": checkpoint.open_intent_count,
                 "curr_open_intents": current_open,
-            }),
+            }))
+            .unwrap()
+            .into(),
             creator: "state-change-detector".into(),
         });
 
@@ -117,21 +119,25 @@ impl DetectionCapable for StateChangeDetector {
         output
     }
 
-    fn snapshot_state(&self) -> Option<serde_json::Value> {
+    fn snapshot_state(&self) -> Option<nexus_model::Content> {
         self.checkpoint.as_ref().map(|cp| {
-            serde_json::json!({
-                "fact_count": cp.fact_count,
-                "open_intent_count": cp.open_intent_count,
-            })
+            nexus_model::Content::from(
+                serde_json::json!({
+                    "fact_count": cp.fact_count,
+                    "open_intent_count": cp.open_intent_count,
+                })
+                .to_string(),
+            )
         })
     }
 
-    fn restore_state(&mut self, state: serde_json::Value) {
-        let fc = state
-            .get("fact_count")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as usize;
-        let oi = state
+    fn restore_state(&mut self, state: nexus_model::Content) {
+        let json = state
+            .as_str()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+            .unwrap_or(serde_json::Value::Null);
+        let fc = json.get("fact_count").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+        let oi = json
             .get("open_intent_count")
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as usize;
@@ -151,7 +157,9 @@ mod tests {
         Fact {
             id: FihHash(id.to_string()),
             origin: origin.to_string(),
-            content: serde_json::json!({"topic": "test"}),
+            content: serde_json::to_string(&serde_json::json!({"topic": "test"}))
+                .unwrap()
+                .into(),
             creator: "test".into(),
         }
     }
@@ -182,7 +190,12 @@ mod tests {
             hints: vec![],
         });
         assert_eq!(o.facts.len(), 1);
-        assert!(o.facts[0].content["type"].as_str() == Some("state_change"));
+        assert!(
+            serde_json::from_str::<serde_json::Value>(o.facts[0].content.as_str().unwrap_or(""))
+                .unwrap_or(serde_json::Value::Null)["type"]
+                .as_str()
+                == Some("state_change")
+        );
     }
 
     #[test]

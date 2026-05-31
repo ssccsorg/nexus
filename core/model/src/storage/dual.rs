@@ -1,5 +1,6 @@
-use super::aggregate::{ColdStorage, HotStorage};
-use super::cypher::CypherCapable;
+// DualStorage — composes a Hot (Petgraph) + Cold (Composite) storage pair.
+
+use super::aggregate::{ColdStorage, DeltaSet, HotStorage};
 use super::evict::EvictCapable;
 use super::fact::FactCapable;
 use super::filter::{FilterCapable, StateFilter};
@@ -16,16 +17,27 @@ use std::ops::Range;
 
 /// Composes a Hot + Cold storage pair.
 ///
-/// - Writes go to both hot and cold (dual-write for durability).
+/// - Writes go ONLY to hot (Petgraph). Cold does NOT store graph data.
 /// - Reads go to hot (early return, edge computing fast path).
-/// - Flush/evict delegate to the appropriate layer.
+/// - Flush/evict delegate to cold for durable persistence.
 pub struct DualStorage {
     hot: Box<dyn HotStorage>,
     cold: Box<dyn ColdStorage>,
 }
 
 impl DualStorage {
+    /// Create a new DualStorage pair.
+    ///
+    /// Panics if hot and cold have different project_ids.
+    /// project_id must be issued from a single source.
     pub fn new(hot: Box<dyn HotStorage>, cold: Box<dyn ColdStorage>) -> Self {
+        assert_eq!(
+            hot.project_id(),
+            cold.project_id(),
+            "DualStorage: hot and cold must share the same project_id (hot={}, cold={})",
+            hot.project_id(),
+            cold.project_id()
+        );
         Self { hot, cold }
     }
 
@@ -50,65 +62,47 @@ impl StorageRead for DualStorage {
     }
 }
 
-// ── FIH writes: delegate to both hot + cold ──
+// ── FIH writes: delegate to hot ONLY (cold no longer stores graph data) ──
 
 impl FactCapable for DualStorage {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
-        let hash = self.hot.submit_fact(fact)?;
-        let _ = self.cold.submit_fact(fact);
-        Ok(hash)
+        self.hot.submit_fact(fact)
     }
 }
 
 impl IntentCapable for DualStorage {
     fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
-        let hash = self.hot.submit_intent(intent)?;
-        let _ = self.cold.submit_intent(intent);
-        Ok(hash)
+        self.hot.submit_intent(intent)
     }
 
     fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        self.hot.claim_intent(intent_id, agent)?;
-        let _ = self.cold.claim_intent(intent_id, agent);
-        Ok(())
+        self.hot.claim_intent(intent_id, agent)
     }
 
     fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        self.hot.heartbeat(intent_id, agent)?;
-        let _ = self.cold.heartbeat(intent_id, agent);
-        Ok(())
+        self.hot.heartbeat(intent_id, agent)
     }
 
     fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        self.hot.release_intent(intent_id, agent)?;
-        let _ = self.cold.release_intent(intent_id, agent);
-        Ok(())
+        self.hot.release_intent(intent_id, agent)
     }
 
-    fn conclude_intent(
-        &self,
-        intent_id: &str,
-        result: &serde_json::Value,
-    ) -> Result<Fact, BlackboardError> {
-        let fact = self.hot.conclude_intent(intent_id, result)?;
-        let _ = self.cold.conclude_intent(intent_id, result);
-        Ok(fact)
+    fn conclude_intent(&self, intent_id: &str, result: &str) -> Result<Fact, BlackboardError> {
+        self.hot.conclude_intent(intent_id, result)
     }
 }
 
 impl HintCapable for DualStorage {
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
-        self.hot.submit_hint(hint)?;
-        let _ = self.cold.submit_hint(hint);
-        Ok(())
+        self.hot.submit_hint(hint)
     }
 }
 
-// ── Filtered reads: delegate to cold (hot typically doesn't support filtering) ──
+// ── Filtered reads: delegate to hot (Petgraph implements FilterCapable) ──
 
 impl FilterCapable for DualStorage {
     fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
-        self.cold.read_state_filtered(filter)
+        self.hot.read_state_filtered(filter)
     }
 }
 
@@ -132,11 +126,35 @@ impl EvictCapable for DualStorage {
     }
 }
 
-// ── Partition scan: delegate to cold ──
+// ── Partition scan: merge hot (recent) + cold (flushed) data ──
 
 impl ScanCapable for DualStorage {
     fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
-        self.cold.scan_partition(partition)
+        let mut cold_data = self.cold.scan_partition(partition)?;
+        let hot_state = self.hot.read_state();
+
+        // Merge hot data into cold scan result (hot takes precedence).
+        // Dedup by entity ID: hot facts override flushed facts.
+        for fact in hot_state.facts {
+            if !cold_data.facts.iter().any(|f| f.id == fact.id) {
+                cold_data.facts.push(fact);
+            }
+        }
+        for intent in hot_state.intents {
+            if !cold_data.intents.iter().any(|i| i.id == intent.id) {
+                cold_data.intents.push(intent);
+            }
+        }
+        for hint in hot_state.hints {
+            if !cold_data.hints.iter().any(|h| h.id == hint.id) {
+                cold_data.hints.push(hint);
+            }
+        }
+        cold_data.facts.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+        cold_data.intents.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+        cold_data.hints.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+
+        Ok(cold_data)
     }
 }
 
@@ -159,18 +177,63 @@ impl TimeRangeCapable for DualStorage {
     }
 }
 
-// ── Flush: delegate to cold (cold is the durable target) ──
+// ── Flush: extract hot data, write to cold blob, advance cursor ──
 
 impl FlushCapable for DualStorage {
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
-        self.cold.flush_since(cursor)
+        // Read only delta (entities submitted after cursor) from hot storage.
+        let partition = &cursor.partition;
+        let project_id = self.hot.project_id();
+        let now_ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+            .to_string();
+
+        let (fact_bytes, intent_bytes, hint_bytes): DeltaSet =
+            self.hot.read_delta_since(&cursor.last_flushed_at);
+        let records_flushed = (fact_bytes.len() + intent_bytes.len() + hint_bytes.len()) as u64;
+
+        if !fact_bytes.is_empty() {
+            for (i, bytes) in fact_bytes.iter().enumerate() {
+                let blob_key = format!("{project_id}/flush/facts/{partition}/{now_ts}_{i}.bin");
+                self.cold.write_blob(&blob_key, bytes)?;
+            }
+        }
+        if !intent_bytes.is_empty() {
+            for (i, bytes) in intent_bytes.iter().enumerate() {
+                let blob_key = format!("{project_id}/flush/intents/{partition}/{now_ts}_{i}.bin");
+                self.cold.write_blob(&blob_key, bytes)?;
+            }
+        }
+        if !hint_bytes.is_empty() {
+            for (i, bytes) in hint_bytes.iter().enumerate() {
+                let blob_key = format!("{project_id}/flush/hints/{partition}/{now_ts}_{i}.bin");
+                self.cold.write_blob(&blob_key, bytes)?;
+            }
+        }
+
+        // Advance cursor and persist to cold blob as a simple JSON file.
+        let new_cursor = FlushCursor {
+            last_flushed_at: now_ts,
+            partition: partition.clone(),
+        };
+        let cursor_json = format!(
+            "{{\"last_flushed_at\":\"{}\",\"partition\":\"{}\"}}",
+            new_cursor.last_flushed_at, new_cursor.partition
+        );
+        let cursor_key = format!("{project_id}/cursor.json");
+        self.cold.write_blob(&cursor_key, cursor_json.as_bytes())?;
+
+        Ok(FlushResult {
+            records_flushed,
+            new_cursor,
+        })
     }
 }
 
-// ── Cypher query: delegate to cold ──
-
-impl CypherCapable for DualStorage {
-    fn query_plan(&self, plan: &serde_json::Value) -> Result<serde_json::Value, String> {
-        self.cold.query_plan(plan)
+impl HotStorage for DualStorage {
+    fn read_delta_since(&self, cursor_ts: &str) -> (Vec<Vec<u8>>, Vec<Vec<u8>>, Vec<Vec<u8>>) {
+        self.hot.read_delta_since(cursor_ts)
     }
 }

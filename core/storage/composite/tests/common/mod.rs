@@ -1,6 +1,6 @@
 // Mock implementations for testing KeyValueStore, BlobStore, and ObjectStore.
 
-use crate::{BlobStore, KeyValueStore, ObjectStore};
+use nexus_storage_composite::{BlobStore, MetaStore, ObjectStore};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
@@ -28,7 +28,7 @@ impl Default for MockKv {
     }
 }
 
-impl KeyValueStore for MockKv {
+impl MetaStore for MockKv {
     fn get(&self, key: &str) -> Result<Option<String>, String> {
         let map = self.data.read().map_err(|e| e.to_string())?;
         Ok(map.get(key).cloned())
@@ -38,23 +38,6 @@ impl KeyValueStore for MockKv {
         let mut map = self.data.write().map_err(|e| e.to_string())?;
         map.insert(key.to_string(), value.to_string());
         Ok(())
-    }
-
-    fn delete(&self, key: &str) -> Result<(), String> {
-        let mut map = self.data.write().map_err(|e| e.to_string())?;
-        map.remove(key);
-        Ok(())
-    }
-
-    fn list(&self, prefix: &str) -> Result<Vec<String>, String> {
-        let map = self.data.read().map_err(|e| e.to_string())?;
-        let mut keys: Vec<String> = map
-            .keys()
-            .filter(|k| k.starts_with(prefix))
-            .cloned()
-            .collect();
-        keys.sort();
-        Ok(keys)
     }
 }
 

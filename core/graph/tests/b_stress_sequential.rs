@@ -111,7 +111,7 @@ impl Ant {
             6 if self.claimed.is_some() => {
                 let id = self.claimed.take().unwrap();
                 let result = format!("result of {id} by {}", self.name);
-                match bb.conclude_intent(&id, &result.into()) {
+                match bb.conclude_intent(&id, &result) {
                     Ok(_fact) => {
                         format!("{:<12} conclude {id} → fact", self.name,)
                     }

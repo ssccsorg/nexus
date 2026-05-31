@@ -60,7 +60,12 @@ async fn test_submit_and_read_fact() {
     let facts = state["facts"].as_array().unwrap();
     assert_eq!(facts.len(), 1, "should have 1 fact");
     assert_eq!(facts[0]["id"], "f_test_001");
-    assert_eq!(facts[0]["content"], "Gateway API test fact");
+    assert_eq!(facts[0]["content"]["mime_type"], "text/plain");
+    let expected: Vec<u8> = b"Gateway API test fact".to_vec();
+    assert_eq!(
+        facts[0]["content"]["data"].as_array().unwrap(),
+        &expected.into_iter().map(serde_json::Value::from).collect::<Vec<_>>()
+    );
 }
 
 #[tokio::test]
@@ -126,9 +131,13 @@ async fn test_intent_lifecycle_over_http() {
         .unwrap();
     assert_eq!(resp.status(), 200);
     let conclude: serde_json::Value = resp.json().await.unwrap();
-    assert!(conclude["fact"]["content"]
-        .to_string()
-        .contains("Lifecycle verified"));
+    let concluded_content = conclude["fact"]["content"]["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_u64().unwrap() as u8)
+        .collect::<Vec<_>>();
+    assert!(String::from_utf8_lossy(&concluded_content).contains("Lifecycle verified"));
 
     let resp = client
         .get(format!("{base}/state"))

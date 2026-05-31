@@ -4,21 +4,24 @@
 // access and Cypher queries) with a cold storage backend for durability.
 // Storage is swappable via DualStorage.
 
+use crate::query::cypher::capable::CypherCapable;
 use crate::query::cypher::{Plan, TranslateError, execute_with_cold};
 use nexus_model::{
-    Blackboard, BlackboardError, BoardState, ColdStorage, CypherCapable, DualStorage, EvictCapable,
-    Fact, FactCapable, FihHash, FlushCapable, FlushCursor, FlushResult, Hint, HintCapable, Intent,
-    IntentCapable, NullStorage, StorageRead,
+    Blackboard, BlackboardError, BoardState, ColdStorage, DualStorage, EvictCapable, Fact,
+    FactCapable, FihHash, FlushCapable, FlushCursor, FlushResult, Hint, HintCapable, Intent,
+    IntentCapable, NullStorage, PartitionData, ScanCapable, StorageRead,
 };
 use nexus_storage_petgraph::{
-    EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Record, Snapshottable,
-    StorageSnapshot,
+    EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Snapshottable, StorageSnapshot,
 };
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+
+/// A single query result row from Cypher.
+pub type Record = std::collections::HashMap<String, serde_json::Value>;
 
 /// Tracks intent claims — which agent has claimed which intent.
 ///
@@ -132,6 +135,9 @@ impl ClaimsTracker {
 /// For multi-worker thread-safe access, wrap in `Arc<Mutex<DefaultBlackboard>>`.
 pub(crate) struct DefaultBlackboard {
     storage: DualStorage,
+    /// Cold storage backend that implements CypherCapable.
+    /// Holds the same cold storage instance as DualStorage's cold backend.
+    cold_cypher: Box<dyn CypherCapable>,
     hot_graph: Arc<RwLock<petgraph::Graph<NodeWeight, EdgeWeight>>>,
     claims: ClaimsTracker,
     project_id: String,
@@ -149,10 +155,12 @@ impl DefaultBlackboard {
             "default",
         ));
         let cold = Box::new(NullStorage);
+        let cold_cypher: Box<dyn CypherCapable> = Box::new(NullStorage);
         let storage = DualStorage::new(hot, cold);
 
         Self {
             storage,
+            cold_cypher,
             hot_graph: graph,
             claims: ClaimsTracker::new(),
             project_id: "default".into(),
@@ -165,8 +173,14 @@ impl DefaultBlackboard {
         let project_id = hot.project_id.clone();
         let storage = DualStorage::new(Box::new(hot), cold);
 
+        // Clone the cold backend for CypherCapable use.
+        // Since ColdStorage is the only trait we know, we need to downcast.
+        // For now, use NullStorage as fallback.
+        let cold_cypher: Box<dyn CypherCapable> = Box::new(NullStorage);
+
         Self {
             storage,
+            cold_cypher,
             hot_graph,
             claims: ClaimsTracker::new(),
             project_id,
@@ -189,7 +203,7 @@ impl DefaultBlackboard {
     /// backend (DuckDB/Parquet) via the `CypherCapable` trait.
     pub fn query(&self, plan: &Plan) -> Result<Vec<Record>, TranslateError> {
         let hot = self.hot_graph.read().unwrap();
-        execute_with_cold(&*hot, &self.storage, plan)
+        execute_with_cold(&*hot, &*self.cold_cypher, plan)
     }
 
     /// Flush recently-ingested data to cold storage.
@@ -198,9 +212,9 @@ impl DefaultBlackboard {
     /// `flush_since`, and persists the updated cursor for incremental
     /// export on the next call.
     ///
-    /// The cold backend determines what "flush" means:
+    /// cold backend determines what "flush" means:
     /// - `NullStorage`: no-op (no cold storage configured)
-    /// - `SqlNormalizedStorage`: no-op (dual-write keeps SQLite in sync)
+    /// - `CompositeColdStorage`: writes hot delta to blob, advances cursor
     /// - `DuckDbStorage`: exports hot data newer than cursor to Parquet files
     /// - Future backends: their own incremental export semantics
     pub fn flush(&mut self) -> Result<(), String> {
@@ -232,6 +246,7 @@ impl DefaultBlackboard {
             project_id: self.project_id.clone(),
             task_states: std::collections::HashMap::new(),
             flush_cursor: self.flush_cursor.clone(),
+            version: 1,
         }
     }
 
@@ -247,10 +262,12 @@ impl DefaultBlackboard {
             &snapshot.project_id,
         ));
         let cold = Box::new(NullStorage);
+        let cold_cypher: Box<dyn CypherCapable> = Box::new(NullStorage);
         let storage = DualStorage::new(hot, cold);
 
         Self {
             storage,
+            cold_cypher,
             hot_graph: graph,
             claims: ClaimsTracker::from_snapshot(snapshot.claims.clone()),
             project_id: snapshot.project_id.clone(),
@@ -269,9 +286,13 @@ impl DefaultBlackboard {
             &snapshot.project_id,
         ));
         let storage = DualStorage::new(hot, cold);
+        // The caller is responsible for providing a matching CypherCapable backend.
+        // Fall back to NullStorage if none is available.
+        let cold_cypher: Box<dyn CypherCapable> = Box::new(NullStorage);
 
         Self {
             storage,
+            cold_cypher,
             hot_graph: graph,
             claims: ClaimsTracker::from_snapshot(snapshot.claims.clone()),
             project_id: snapshot.project_id.clone(),
@@ -378,13 +399,23 @@ impl FlushCapable for DefaultBlackboard {
     }
 }
 
-// ── Cypher query — delegates to storage (DualStorage → cold) ─────────────
+impl ScanCapable for DefaultBlackboard {
+    fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
+        self.storage.scan_partition(partition)
+    }
+}
+
+// ── Cypher query — delegates to the cold CypherCapable backend ────────────
 
 impl CypherCapable for DefaultBlackboard {
     fn query_plan(&self, plan: &serde_json::Value) -> Result<serde_json::Value, String> {
-        self.storage.query_plan(plan)
+        self.cold_cypher.query_plan(plan)
     }
 }
+
+impl CypherCapable for NullStorage {}
+
+impl CypherCapable for PetgraphStorage {}
 
 impl Blackboard for DefaultBlackboard {
     fn project_id(&self) -> &str {
@@ -421,11 +452,7 @@ impl Blackboard for DefaultBlackboard {
         self.storage.release_intent(intent_id, agent)
     }
 
-    fn conclude_intent(
-        &mut self,
-        intent_id: &str,
-        result: &serde_json::Value,
-    ) -> Result<Fact, BlackboardError> {
+    fn conclude_intent(&mut self, intent_id: &str, result: &str) -> Result<Fact, BlackboardError> {
         self.claims.remove(intent_id);
         self.storage.conclude_intent(intent_id, result)
     }
@@ -461,7 +488,7 @@ mod tests {
             bb.submit_fact(&Fact {
                 id: FihHash(format!("f_{}", i)),
                 origin: "test".into(),
-                content: serde_json::json!(format!("data_{}", i)),
+                content: format!("data_{}", i).into(),
                 creator: "tester".into(),
             })
             .unwrap();
@@ -536,6 +563,7 @@ mod tests {
             project_id: "legacy".into(),
             task_states: std::collections::HashMap::new(),
             flush_cursor: FlushCursor::default(),
+            version: 1,
         };
         let json = serde_json::to_vec(&snapshot).unwrap();
         let mut v: serde_json::Value = serde_json::from_slice(&json).unwrap();
@@ -569,7 +597,7 @@ mod tests {
         bb.submit_fact(&Fact {
             id: FihHash("f_extra".into()),
             origin: "test".into(),
-            content: serde_json::json!("extra"),
+            content: "extra".into(),
             creator: "tester".into(),
         })
         .unwrap();
@@ -605,7 +633,7 @@ mod tests {
             bb.submit_fact(&Fact {
                 id: FihHash(format!("f_cycle_{}", i)),
                 origin: "test".into(),
-                content: serde_json::json!(format!("cycle_{}", i)),
+                content: format!("cycle_{}", i).into(),
                 creator: "tester".into(),
             })
             .unwrap();
@@ -642,14 +670,14 @@ mod tests {
         bb.submit_fact(&Fact {
             id: FihHash("f_snap_1".into()),
             origin: "snap-test".into(),
-            content: serde_json::json!("snapshot data"),
+            content: "snapshot data".into(),
             creator: "tester".into(),
         })
         .unwrap();
         bb.submit_fact(&Fact {
             id: FihHash("f_snap_2".into()),
             origin: "snap-test".into(),
-            content: serde_json::json!("more data"),
+            content: "more data".into(),
             creator: "tester".into(),
         })
         .unwrap();

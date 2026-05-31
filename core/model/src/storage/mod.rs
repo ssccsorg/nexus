@@ -1,5 +1,4 @@
 pub mod aggregate;
-pub mod cypher;
 pub mod dual;
 pub mod evict;
 pub mod fact;
@@ -14,8 +13,7 @@ pub mod scan;
 pub mod session;
 pub mod time_range;
 
-pub use aggregate::{ColdStorage, FihPersistence, HotStorage};
-pub use cypher::CypherCapable;
+pub use aggregate::{ColdStorage, DeltaSet, FihPersistence, HotStorage};
 pub use dual::DualStorage;
 pub use evict::EvictCapable;
 pub use fact::FactCapable;

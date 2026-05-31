@@ -1,6 +1,6 @@
 // VECompositeStorage — Virtual Emulation of CF Workers KV/R2/DO.
 //
-// A CI test harness that exposes KeyValueStore, BlobStore, ObjectStore
+// A CI test harness that exposes MetaStore, BlobStore, ObjectStore
 // semantics over HTTP, simulating the Cloudflare Workers async I/O boundary.
 //
 // Not for WASM deployment. For local and CI testing only.
@@ -10,13 +10,11 @@
 //   HTTP Client (integration test)
 //     ↓ async HTTP
 //   VECompositeStorage Server
-//     ├── /kv/{project}/{key}   GET/PUT/DELETE  (CF KV)
-//     ├── /kv/{project}         GET?prefix=     (CF KV list)
+//     ├── /meta/{key}      GET/PUT  (meta store — cursor, snapshot pointers)
 //     ├── /r2/{project}/{key}   PUT/GET/DELETE  (R2)
 //     └── /do/{project}/{key}/cas POST          (DO CAS)
 //
-// Every request goes through IoBufferSession, so dirty tracking is verified
-// at the HTTP boundary.
+// Every request goes through IoBufferSession.
 
 mod routes;
 
@@ -41,9 +39,8 @@ pub async fn start_ve_with(session: IoBufferSession) -> (String, tokio::task::Jo
     let state = Arc::new(AppState { session });
 
     let app = Router::new()
-        .route("/kv/{project}/{key}",
-            axum::routing::get(routes::kv_get).put(routes::kv_put).delete(routes::kv_delete))
-        .route("/kv/{project}", axum::routing::get(routes::kv_list))
+        .route("/meta/{key}",
+            axum::routing::get(routes::meta_get).put(routes::meta_set))
         .route("/r2/{project}/{key}",
             axum::routing::get(routes::r2_get).put(routes::r2_put).delete(routes::r2_delete))
         .route("/do/{project}/{key}/cas", axum::routing::post(routes::do_cas))

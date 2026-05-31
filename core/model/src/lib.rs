@@ -1,6 +1,6 @@
 // nexus-model — Blackboard trait, capability-based Storage traits, and FIH primitives.
 //
-// Pure interfaces, no storage backend. Both nexus-graph and nexus-storage-sqlite
+// Pure interfaces, no storage backend. Both nexus-graph and nexus-storage-composite
 // depend on this crate only.
 //
 // # Capability-based trait design
@@ -32,7 +32,6 @@
 //   Aggregate: FullDetection = GapDetection + ContradictionDetection + StateChangeDetection
 
 pub mod blackboard;
-pub mod cold_query;
 pub mod detection;
 pub mod error;
 pub mod fih;
@@ -45,6 +44,6 @@ pub use detection::{
     GapDetection, StateChangeDetection, TaskStates,
 };
 pub use error::BlackboardError;
-pub use fih::{BoardState, Fact, FihHash, Hint, Intent};
+pub use fih::{BoardState, Content, Fact, FihHash, Hint, Intent};
 pub use interner::Interner;
 pub use storage::*;
