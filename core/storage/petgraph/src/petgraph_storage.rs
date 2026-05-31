@@ -89,7 +89,7 @@ impl PetgraphStorage {
             let ts_str = w
                 .properties
                 .get("submitted_at")
-                .and_then(|s| s.as_str())
+                .and_then(|c| c.as_str())
                 .unwrap_or("0");
             let ts: u128 = ts_str.parse().unwrap_or(0);
             if ts <= since_ts {
@@ -102,13 +102,13 @@ impl PetgraphStorage {
                         origin: w
                             .properties
                             .get("origin")
-                            .and_then(|s| s.as_str())
+                            .and_then(|c| c.as_str())
                             .unwrap_or("")
                             .into(),
                         content: w
                             .properties
                             .get("content")
-                            .and_then(|s| s.as_str())
+                            .and_then(|c| c.as_str())
                             .map(|s| Content {
                                 mime_type: "text/plain".into(),
                                 data: s.as_bytes().to_vec(),
@@ -120,7 +120,7 @@ impl PetgraphStorage {
                         creator: w
                             .properties
                             .get("creator")
-                            .and_then(|s| s.as_str())
+                            .and_then(|c| c.as_str())
                             .unwrap_or("")
                             .into(),
                     }) {
@@ -141,13 +141,13 @@ impl PetgraphStorage {
                         description: w
                             .properties
                             .get("description")
-                            .and_then(|s| s.as_str())
+                            .and_then(|c| c.as_str())
                             .unwrap_or("")
                             .into(),
                         creator: w
                             .properties
                             .get("creator")
-                            .and_then(|s| s.as_str())
+                            .and_then(|c| c.as_str())
                             .unwrap_or("")
                             .into(),
                         worker: w
@@ -167,13 +167,13 @@ impl PetgraphStorage {
                         last_heartbeat_at: w
                             .properties
                             .get("last_heartbeat_at")
-                            .and_then(|v| v.as_str())
+                            .and_then(|c| c.as_str())
                             .and_then(|s| s.parse::<i64>().ok())
                             .map(|ts| ts.to_string()),
                         created_at: w
                             .properties
                             .get("created_at")
-                            .and_then(|v| v.as_str())
+                            .and_then(|c| c.as_str())
                             .and_then(|s| s.parse::<i64>().ok())
                             .map(|ts| ts.to_string()),
                         concluded_at: None,
@@ -187,13 +187,13 @@ impl PetgraphStorage {
                         content: w
                             .properties
                             .get("content")
-                            .and_then(|s| s.as_str())
+                            .and_then(|c| c.as_str())
                             .unwrap_or("")
                             .into(),
                         creator: w
                             .properties
                             .get("creator")
-                            .and_then(|s| s.as_str())
+                            .and_then(|c| c.as_str())
                             .unwrap_or("")
                             .into(),
                     }) {
@@ -233,13 +233,13 @@ impl StorageRead for PetgraphStorage {
                             origin: w
                                 .properties
                                 .get("origin")
-                                .and_then(|s| s.as_str())
+                                .and_then(|c| c.as_str())
                                 .unwrap_or("")
                                 .into(),
                             content: w
                                 .properties
                                 .get("content")
-                                .and_then(|s| s.as_str())
+                                .and_then(|c| c.as_str())
                                 .map(|s| Content {
                                     mime_type: "text/plain".into(),
                                     data: s.as_bytes().to_vec(),
@@ -251,7 +251,7 @@ impl StorageRead for PetgraphStorage {
                             creator: w
                                 .properties
                                 .get("creator")
-                                .and_then(|s| s.as_str())
+                                .and_then(|c| c.as_str())
                                 .unwrap_or("")
                                 .into(),
                         });
@@ -271,13 +271,13 @@ impl StorageRead for PetgraphStorage {
                             description: w
                                 .properties
                                 .get("description")
-                                .and_then(|s| s.as_str())
+                                .and_then(|c| c.as_str())
                                 .unwrap_or("")
                                 .into(),
                             creator: w
                                 .properties
                                 .get("creator")
-                                .and_then(|s| s.as_str())
+                                .and_then(|c| c.as_str())
                                 .unwrap_or("")
                                 .into(),
                             worker: w
@@ -297,19 +297,19 @@ impl StorageRead for PetgraphStorage {
                             last_heartbeat_at: w
                                 .properties
                                 .get("last_heartbeat_at")
-                                .and_then(|v| v.as_str())
+                                .and_then(|c| c.as_str())
                                 .and_then(|s| s.parse::<i64>().ok())
                                 .map(|ts| ts.to_string()),
                             created_at: w
                                 .properties
                                 .get("created_at")
-                                .and_then(|v| v.as_str())
+                                .and_then(|c| c.as_str())
                                 .and_then(|s| s.parse::<i64>().ok())
                                 .map(|ts| ts.to_string()),
                             concluded_at: if w
                                 .properties
                                 .get("concluded")
-                                .and_then(|v| v.as_str())
+                                .and_then(|c| c.as_str())
                                 .is_some_and(|v| v == "true")
                             {
                                 Some("yes".into())
@@ -324,13 +324,13 @@ impl StorageRead for PetgraphStorage {
                             content: w
                                 .properties
                                 .get("content")
-                                .and_then(|s| s.as_str())
+                                .and_then(|c| c.as_str())
                                 .unwrap_or("")
                                 .into(),
                             creator: w
                                 .properties
                                 .get("creator")
-                                .and_then(|s| s.as_str())
+                                .and_then(|c| c.as_str())
                                 .unwrap_or("")
                                 .into(),
                         });
@@ -534,7 +534,8 @@ impl IntentCapable for PetgraphStorage {
                 }
                 if let Some(current) = w.properties.get("worker") {
                     return Err(BlackboardError::Conflict(format!(
-                        "Intent {intent_id} already claimed by {current}"
+                        "Intent {intent_id} already claimed by {}",
+                        current.as_str().unwrap_or("?")
                     )));
                 }
                 w.properties.insert(
@@ -675,7 +676,7 @@ impl IntentCapable for PetgraphStorage {
                 "concluded".into(),
                 Content {
                     mime_type: "text/plain".into(),
-                    data: "true".to_string().into_bytes(),
+                    data: b"true".to_vec(),
                 },
             );
             w.properties.remove("worker");
@@ -803,12 +804,12 @@ impl EvictCapable for PetgraphStorage {
                 let is_concluded = w
                     .properties
                     .get("concluded")
-                    .and_then(|v| v.as_str())
+                    .and_then(|c| c.as_str())
                     .is_some_and(|v| v == "true");
                 let hb_ts = w
                     .properties
                     .get("last_heartbeat_at")
-                    .and_then(|v| v.as_str())
+                    .and_then(|c| c.as_str())
                     .and_then(|s| s.parse::<i64>().ok());
 
                 let should_evict = match (is_concluded, hb_ts) {
@@ -863,7 +864,7 @@ impl EvictCapable for PetgraphStorage {
             let is_concluded = w
                 .properties
                 .get("concluded")
-                .and_then(|v| v.as_str())
+                .and_then(|c| c.as_str())
                 .is_some_and(|v| v == "true");
             if is_concluded {
                 continue;
@@ -875,7 +876,7 @@ impl EvictCapable for PetgraphStorage {
             let created = w
                 .properties
                 .get("created_at")
-                .and_then(|v| v.as_str())
+                .and_then(|c| c.as_str())
                 .and_then(|s| s.parse::<i64>().ok())
                 .unwrap_or(0) as u64;
             if created < cutoff {
