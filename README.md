@@ -54,7 +54,7 @@ During ingestion, documents, code artifacts, simulation outputs, or sensor strea
 
 ## Layer 2: Artifact Ingestion Pipeline
 
-Direct uploads from CI/CD, simulators, or robotic platforms to the knowledge graph create coupling, lack change detection, and complicate multi‑source merging. neXus decouples the pipeline:
+Direct uploads from CI/CD, simulators or robotic platforms to the knowledge graph create coupling, lack change detection, and complicate multi‑source merging. neXus decouples the pipeline:
 
 1.  Object Store: holds the authoritative copy of all artifacts: documentation, code symbols, simulation results, telemetry logs, video streams, hardware‑in‑the‑loop recordings. It provides strong consistency and a standard API.
 2.  Sync Worker: exposes an engine‑agnostic endpoint (`/sync/:engine`). It compares the current state of the object store with a persistent mapping of previously ingested items, computes a diff, and pushes small task chunks into a message queue.
