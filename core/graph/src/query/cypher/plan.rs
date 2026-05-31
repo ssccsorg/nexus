@@ -302,7 +302,7 @@ fn expr_to_json_value(expr: &cyrs_plan::Expr) -> Option<Value> {
 
 // ── Lightweight PlanIR types (fallback) ────────────────────────────────────
 
-use nexus_model::cold_query::{ColdFilter, ColdQuery};
+use super::cold_query::{ColdFilter, ColdQuery};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

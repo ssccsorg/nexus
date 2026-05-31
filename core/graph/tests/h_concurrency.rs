@@ -6,7 +6,7 @@
 // DefaultBlackboard directly.
 
 use nexus_graph::create_blackboard;
-use nexus_graph::{Blackboard, BlackboardError, Fact, FihHash, Intent};
+use nexus_graph::{Blackboard, BlackboardError, Content, Fact, FihHash, Intent};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -22,7 +22,10 @@ fn fact(id: &str) -> Fact {
     Fact {
         id: FihHash(id.into()),
         origin: "test".into(),
-        content: serde_json::json!("data"),
+        content: Content {
+            mime_type: "application/json".into(),
+            data: serde_json::json!("data").to_string().into_bytes(),
+        },
         creator: "tester".into(),
     }
 }
@@ -193,9 +196,6 @@ fn test_conclude_after_release() {
         .unwrap()
         .release_intent("i_car", "agent-a")
         .unwrap();
-    let result = bb
-        .lock()
-        .unwrap()
-        .conclude_intent("i_car", &serde_json::json!("done"));
+    let result = bb.lock().unwrap().conclude_intent("i_car", "done");
     assert!(result.is_ok(), "conclude after release succeeds");
 }

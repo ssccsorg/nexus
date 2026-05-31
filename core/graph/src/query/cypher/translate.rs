@@ -15,8 +15,10 @@ use std::collections::HashMap;
 
 use super::plan::*;
 
-use nexus_model::CypherCapable;
-use nexus_storage_petgraph::{GraphRead, Record};
+use super::capable::CypherCapable;
+use nexus_storage_petgraph::GraphRead;
+
+use crate::Record;
 
 // ── Unified execute ────────────────────────────────────────────────────────
 
@@ -40,7 +42,7 @@ pub fn execute<G: GraphRead>(graph: &G, plan: &Plan) -> Result<Vec<Record>, Tran
 ///
 /// This is the preferred entry point for production use, where `DualStorage`
 /// or a `DuckDbStorage` instance is available as the cold backend.
-pub fn execute_with_cold<G: GraphRead, C: CypherCapable>(
+pub fn execute_with_cold<G: GraphRead, C: CypherCapable + ?Sized>(
     graph: &G,
     cold: &C,
     plan: &Plan,
@@ -54,12 +56,11 @@ pub fn execute_with_cold<G: GraphRead, C: CypherCapable>(
         let records: Vec<Record> = if let serde_json::Value::Array(arr) = result {
             arr.into_iter()
                 .map(|item| {
-                    let fields = if let serde_json::Value::Object(obj) = item {
+                    if let serde_json::Value::Object(obj) = item {
                         obj.into_iter().collect()
                     } else {
                         HashMap::new()
-                    };
-                    Record { fields }
+                    }
                 })
                 .collect()
         } else {
@@ -93,7 +94,7 @@ fn execute_external<G: GraphRead>(
 
     // Last operator is the root — collect its rows as records
     let last = row_sets.last().cloned().unwrap_or_default();
-    Ok(last.into_iter().map(|row| Record { fields: row }).collect())
+    Ok(last) // already Vec<HashMap<String, Value>>
 }
 
 type RowSet = Vec<HashMap<String, serde_json::Value>>;
@@ -378,7 +379,8 @@ fn evaluate_expr<G: GraphRead>(
                 if let Some(w) = graph.node_weight(ni) {
                     w.properties
                         .get(prop.as_str())
-                        .cloned()
+                        .and_then(|c| c.as_str())
+                        .and_then(|s| serde_json::from_str(s).ok())
                         .unwrap_or(serde_json::Value::Null)
                 } else {
                     serde_json::Value::Null
@@ -590,7 +592,7 @@ fn execute_internal<G: GraphRead>(graph: &G, plan: &PlanIR) -> Result<Vec<Record
                                         alias.clone(),
                                         serde_json::Value::Number((count as i64).into()),
                                     );
-                                    Record { fields }
+                                    fields
                                 })
                                 .collect();
                         }
@@ -599,13 +601,14 @@ fn execute_internal<G: GraphRead>(graph: &G, plan: &PlanIR) -> Result<Vec<Record
                 if let Some(ref wc) = with_clause.where_clause {
                     records.retain(|r| {
                         wc.comparisons.iter().all(|cmp| {
-                            let field_val = r.fields.get(&cmp.field.variable);
+                            let field_val = r.get(&cmp.field.variable);
                             match (field_val, &cmp.value) {
                                 (Some(serde_json::Value::Number(n)), CompareValue::Int(v)) => {
                                     let val = n.as_i64().unwrap_or(0);
+                                    let v = *v;
                                     match cmp.op {
-                                        CompareOp::Eq => val == *v,
-                                        CompareOp::Ne => val != *v,
+                                        CompareOp::Eq => val == v,
+                                        CompareOp::Ne => val != v,
                                         _ => true,
                                     }
                                 }
@@ -626,10 +629,18 @@ fn execute_internal<G: GraphRead>(graph: &G, plan: &PlanIR) -> Result<Vec<Record
                                 fields.insert(var.clone(), serde_json::Value::String(var.clone()));
                                 if let Some(w) = graph.node_weight(idx) {
                                     for (k, v) in &w.properties {
-                                        fields.insert(k.clone(), v.clone());
+                                        let parsed = v
+                                            .as_str()
+                                            .and_then(|s| serde_json::from_str(s).ok())
+                                            .unwrap_or_else(|| {
+                                                serde_json::Value::String(
+                                                    String::from_utf8_lossy(&v.data).into_owned(),
+                                                )
+                                            });
+                                        fields.insert(k.clone(), parsed);
                                     }
                                 }
-                                Record { fields }
+                                fields
                             })
                             .collect();
                     }
@@ -637,7 +648,7 @@ fn execute_internal<G: GraphRead>(graph: &G, plan: &PlanIR) -> Result<Vec<Record
                 for item in &ret.items {
                     if let Some(ref prop) = item.property {
                         for rec in &mut records {
-                            rec.fields.insert(
+                            rec.insert(
                                 item.alias.clone().unwrap_or_else(|| prop.clone()),
                                 serde_json::Value::String(prop.clone()),
                             );
@@ -693,16 +704,14 @@ fn apply_where<G: GraphRead>(graph: &G, nodes: &[NodeIndex], wc: &WhereClause) -
                 if let Some(weight) = graph.node_weight(idx) {
                     let key = cmp.field.property.as_deref().unwrap_or("");
                     let field_val = weight.properties.get(key);
-                    match (field_val, &cmp.value) {
-                        (Some(serde_json::Value::String(s)), CompareValue::Str(v)) => {
-                            match cmp.op {
-                                CompareOp::Eq => s == v,
-                                CompareOp::Ne => s != v,
-                                _ => true,
-                            }
-                        }
-                        (Some(serde_json::Value::Number(n)), CompareValue::Int(v)) => {
-                            let val = n.as_i64().unwrap_or(0);
+                    match (field_val.and_then(|c| c.as_str()), &cmp.value) {
+                        (Some(s), CompareValue::Str(v)) => match cmp.op {
+                            CompareOp::Eq => s == v,
+                            CompareOp::Ne => s != v,
+                            _ => true,
+                        },
+                        (Some(s), CompareValue::Int(v)) => {
+                            let val = s.parse::<i64>().unwrap_or(0);
                             match cmp.op {
                                 CompareOp::Gt => val > *v,
                                 CompareOp::Lt => val < *v,

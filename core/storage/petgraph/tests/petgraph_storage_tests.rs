@@ -3,7 +3,9 @@
 // Covers GraphRead/GraphWrite trait implementations, EvictCapable,
 // and storage-level FIH operations directly (not via DefaultBlackboard).
 
-use nexus_model::{EvictCapable, Fact, FactCapable, FihHash, Hint, HintCapable, StorageRead};
+use nexus_model::{
+    Content, EvictCapable, Fact, FactCapable, FihHash, Hint, HintCapable, StorageRead,
+};
 use nexus_storage_petgraph::PetgraphStorage;
 
 fn storage() -> PetgraphStorage {
@@ -14,7 +16,7 @@ fn fact(id: &str) -> Fact {
     Fact {
         id: FihHash(id.into()),
         origin: "test".into(),
-        content: serde_json::json!("data"),
+        content: "data".into(),
         creator: "tester".into(),
     }
 }
@@ -159,12 +161,16 @@ fn test_conclude_intent_creates_fact() {
     };
     s.submit_intent(&intent).unwrap();
     s.claim_intent("i_concl", "agent-x").unwrap();
-    let result = s
-        .conclude_intent("i_concl", &serde_json::json!("result data"))
-        .unwrap();
+    let result = s.conclude_intent("i_concl", "result data").unwrap();
 
     assert_eq!(result.creator, "agent-x");
-    assert_eq!(result.content, serde_json::json!("result data"));
+    assert_eq!(
+        result.content,
+        Content {
+            mime_type: "text/plain".into(),
+            data: "result data".into()
+        }
+    );
 
     let state = s.read_state();
     assert_eq!(state.facts.len(), 2, "original + concluded fact");
@@ -195,8 +201,7 @@ fn test_evict_before_removes_old_concluded_intents() {
     };
     s.submit_intent(&intent).unwrap();
     s.claim_intent("i_old", "agent-x").unwrap();
-    s.conclude_intent("i_old", &serde_json::json!("done"))
-        .unwrap();
+    s.conclude_intent("i_old", "done").unwrap();
 
     // evict_before with far future timestamp — should evict the old concluded intent
     let removed = s.evict_before(&(now + 99999).to_string()).unwrap();

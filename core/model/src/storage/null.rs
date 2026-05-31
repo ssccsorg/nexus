@@ -1,7 +1,7 @@
 use std::ops::Range;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::cypher::CypherCapable;
+use super::aggregate::{ColdStorage, DeltaSet, HotStorage};
 use super::evict::EvictCapable;
 use super::fact::FactCapable;
 use super::filter::{FilterCapable, StateFilter};
@@ -12,7 +12,7 @@ use super::read::StorageRead;
 use super::scan::{PartitionData, ScanCapable};
 use super::time_range::TimeRangeCapable;
 use crate::error::BlackboardError;
-use crate::fih::{BoardState, Fact, FihHash, Hint, Intent};
+use crate::fih::{BoardState, Content, Fact, FihHash, Hint, Intent};
 
 pub struct NullStorage;
 
@@ -55,15 +55,11 @@ impl IntentCapable for NullStorage {
     fn release_intent(&self, _id: &str, _agent: &str) -> Result<(), BlackboardError> {
         Ok(())
     }
-    fn conclude_intent(
-        &self,
-        _id: &str,
-        _result: &serde_json::Value,
-    ) -> Result<Fact, BlackboardError> {
+    fn conclude_intent(&self, _id: &str, _result: &str) -> Result<Fact, BlackboardError> {
         Ok(Fact {
             id: FihHash("null".into()),
             origin: String::new(),
-            content: serde_json::Value::Null,
+            content: Content::from("null"),
             creator: String::new(),
         })
     }
@@ -122,7 +118,17 @@ impl FlushCapable for NullStorage {
     }
 }
 
-impl CypherCapable for NullStorage {}
+impl HotStorage for NullStorage {
+    fn read_delta_since(&self, _cursor_ts: &str) -> DeltaSet {
+        (Vec::new(), Vec::new(), Vec::new())
+    }
+}
+
+impl ColdStorage for NullStorage {
+    fn write_blob(&self, _key: &str, _data: &[u8]) -> Result<(), String> {
+        Ok(())
+    }
+}
 
 impl TimeRangeCapable for NullStorage {
     fn time_range(&self) -> Option<Range<String>> {

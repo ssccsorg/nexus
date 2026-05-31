@@ -44,7 +44,7 @@
 //   - Snapshots preserve all Facts, Intents, and claim state
 
 use nexus_graph::{
-    Blackboard, EvictCapable, Fact, FihHash, Intent, Snapshottable, StorageSnapshot,
+    Blackboard, Content, EvictCapable, Fact, FihHash, Intent, Snapshottable, StorageSnapshot,
     create_blackboard, create_blackboard_from_snapshot,
 };
 use nexus_process::scheduler::Scheduler;
@@ -59,11 +59,16 @@ fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) 
     Fact {
         id: FihHash(id.to_string()),
         origin: origin.to_string(),
-        content: serde_json::json!({
-            "claim": claim_text,
-            "topic": topic,
-            "position": position,
-        }),
+        content: Content {
+            mime_type: "application/json".into(),
+            data: serde_json::to_string(&serde_json::json!({
+                "claim": claim_text,
+                "topic": topic,
+                "position": position,
+            }))
+            .unwrap_or_default()
+            .into_bytes(),
+        },
         creator: "ingester".into(),
     }
 }
@@ -315,7 +320,12 @@ fn count_detector_facts(state: &nexus_graph::BoardState, detector: &str, fact_ty
         .facts
         .iter()
         .filter(|f| f.creator == detector)
-        .filter(|f| f.content.get("type").and_then(|v| v.as_str()) == Some(fact_type))
+        .filter(|f| {
+            let content_val: serde_json::Value =
+                serde_json::from_str(f.content.as_str().unwrap_or(""))
+                    .unwrap_or(serde_json::Value::Null);
+            content_val.get("type").and_then(|v| v.as_str()) == Some(fact_type)
+        })
         .count()
 }
 
@@ -342,7 +352,10 @@ fn agent_resolve_contradictions(
         if fact.creator != "contradiction-detector" {
             continue;
         }
-        let Some(t) = fact.content.get("topic").and_then(|v| v.as_str()) else {
+        let content_json: serde_json::Value =
+            serde_json::from_str(fact.content.as_str().unwrap_or(""))
+                .unwrap_or(serde_json::Value::Null);
+        let Some(t) = content_json.get("topic").and_then(|v| v.as_str()) else {
             continue;
         };
         if !t.contains(topic_filter) {
@@ -366,10 +379,11 @@ fn agent_resolve_contradictions(
             .bb
             .conclude_intent(
                 &iid.0,
-                &serde_json::json!({
+                &serde_json::to_string(&serde_json::json!({
                     "resolution": conclusion,
                     "agent": agent_name,
-                }),
+                }))
+                .unwrap(),
             )
             .expect("conclude");
     }

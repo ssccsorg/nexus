@@ -2,11 +2,13 @@
 
 pub mod cypher_sql;
 
+use nexus_graph::CypherCapable;
 use nexus_model::{
-    BoardState, CypherCapable, EvictCapable, Fact, FihHash, FilterCapable, FlushCapable,
+    BoardState, ColdStorage, Content, EvictCapable, Fact, FihHash, FilterCapable, FlushCapable,
     FlushCursor, FlushResult, Hint, Intent, PartitionData, ScanCapable, StateFilter, StorageRead,
-    TimeRangeCapable, cold_query::ColdQuery,
+    TimeRangeCapable,
 };
+use nexus_graph::query::cypher::cold_query::ColdQuery;
 use std::fs;
 use std::ops::Range;
 use std::sync::Mutex;
@@ -180,8 +182,24 @@ impl DuckDbStorage {
             Ok(Fact {
                 id: FihHash(id),
                 origin,
-                content: serde_json::from_str(&content_str)
-                    .unwrap_or(serde_json::Value::String(content_str)),
+                content: match serde_json::from_str::<serde_json::Value>(&content_str) {
+                    Ok(v) => match v {
+                        serde_json::Value::String(s) => Content {
+                            mime_type: "text/plain".into(),
+                            data: s.into_bytes(),
+                        },
+                        other => Content {
+                            mime_type: "application/json".into(),
+                            data: serde_json::to_string(&other)
+                                .unwrap_or_default()
+                                .into_bytes(),
+                        },
+                    },
+                    Err(_) => Content {
+                        mime_type: "text/plain".into(),
+                        data: content_str.into_bytes(),
+                    },
+                },
                 creator,
             })
         }) {
@@ -535,5 +553,17 @@ impl EvictCapable for DuckDbStorage {
         // DuckDB manages its own Parquet lifecycle via the flush cursor.
         // Explicit eviction is delegated to the DuckDB engine.
         Ok(0)
+    }
+}
+
+impl ColdStorage for DuckDbStorage {
+    fn write_blob(&self, key: &str, data: &[u8]) -> Result<(), String> {
+        let path = format!("{}/{}", self.base_path, key.trim_start_matches('/'));
+        if let Some(parent) = std::path::Path::new(&path).parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("write_blob create_dir: {e}"))?;
+        }
+        std::fs::write(&path, data)
+            .map_err(|e| format!("write_blob write: {e}"))
     }
 }

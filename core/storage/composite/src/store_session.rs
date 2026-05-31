@@ -1,20 +1,20 @@
-// IoBufferSession — concrete session backed by IoBufferKv/Blob/Object.
+// IoBufferSession — concrete session backed by IoBufferBlob/Object + MetaStore.
 //
-// Owns an IoBuffer trio + CompositeColdStorage. Implements SessionExecute
-// from nexus-model.
+// Owns a MetaStore + BlobStore + ObjectStore trio + CompositeColdStorage.
+// Implements SessionExecute from nexus-model.
 //
 // Architecture:
 //
 //   CF KV / R2 / DO  (source of truth, async)
 //       ↓ hydrate_*       ↑ cursor-driven flush
 //   IoBufferSession         │
-//   ├── IoBufferKv          │  ← pure HashMap
-//   ├── IoBufferBlob        │
-//   ├── IoBufferObject      │
+//   ├── IoBufferBlob        │  ← pure HashMap (BlobStore)
+//   ├── IoBufferObject      │  ← pure HashMap (ObjectStore)
+//   ├── IoBufferMeta        │  ← pure HashMap (MetaStore, cursor/delta ptrs)
 //   └── CompositeColdStorage (sync) ← orchestration
-//       ├── kv, blob, object (write)
-//       ├── commit_kv (cursor state)
-//       └── commit_blob (flush archives)
+//       ├── blob (archive)
+//       ├── object (CAS coordination)
+//       └── meta (cursor position, snapshot pointers)
 //
 // The consumer (CF Worker, blockchain validator, etc.):
 //   1. Creates an IoBufferSession
@@ -26,25 +26,9 @@
 // IoBufferSession is pure sync, never touches external I/O.
 
 use nexus_model::SessionExecute;
-use serde::Serialize;
 
 use crate::composite::CompositeColdStorage;
-use crate::{IoBufferBlob, IoBufferKv, IoBufferObject, SystemClock};
-
-// ── Stamped envelope helper for hydrate ──────────────────────────────────
-
-/// The internal Stamped envelope that CompositeColdStorage uses.
-/// Reproduced here so async consumers can preload raw `Fact`/`Intent`/`Hint`
-/// objects without manually constructing JSON.
-///
-/// Currently unused in production code (tests use their own copy).
-/// Future consumers (rs-worker) will use this.
-#[allow(dead_code)]
-#[derive(Serialize)]
-struct Stamped<'a, T: Serialize> {
-    submitted_at: &'a str,
-    data: &'a T,
-}
+use crate::{IoBufferBlob, IoBufferObject, IoBufferSessionMeta, SystemClock};
 
 /// Session backed by IoBuffer* + CompositeColdStorage.
 ///
@@ -52,7 +36,9 @@ struct Stamped<'a, T: Serialize> {
 /// The async bridge layer handles hydrate/flush;
 /// IoBufferSession provides the sync surface.
 pub struct IoBufferSession {
-    storage: CompositeColdStorage<IoBufferKv, IoBufferBlob, IoBufferObject, SystemClock>,
+    storage: CompositeColdStorage<IoBufferBlob, IoBufferObject, IoBufferSessionMeta, SystemClock>,
+    /// Meta buffer (cursor, snapshot pointers). Excluded from drain.
+    meta_buf: IoBufferSessionMeta,
 }
 
 impl IoBufferSession {
@@ -61,32 +47,27 @@ impl IoBufferSession {
     /// All IoBuffer* instances start empty. The caller must call
     /// `hydrate_*` methods before executing storage operations.
     pub fn new(project_id: impl Into<String>) -> Self {
-        let kv = IoBufferKv::new();
         let blob = IoBufferBlob::new();
         let object = IoBufferObject::new();
+        let meta = IoBufferSessionMeta::new();
         let storage = CompositeColdStorage::new_with_system_clock(
-            kv.clone(),
             blob.clone(),
             object.clone(),
+            meta.clone(),
             project_id,
         );
-        Self { storage }
+        Self {
+            storage,
+            meta_buf: meta,
+        }
+    }
+
+    /// Access the meta store (cursor, snapshot pointers).
+    pub fn meta_buf(&self) -> &IoBufferSessionMeta {
+        &self.meta_buf
     }
 
     // ── High-level hydrate API ───────────────────────────────────────────
-    //
-    // These accept raw `Fact`/`Intent`/`Hint` objects and apply the required
-    // Stamped envelope internally. The consumer does not need to know about
-    // the internal JSON format.
-    //
-    // For low-level preload (e.g. from CF KV raw data), use kv_buf()
-    // directly with hydrate_batch().
-
-    /// Preload a batch of raw KV key-value pairs without the Stamped envelope.
-    /// The consumer is responsible for correct JSON format (raw data from CF KV).
-    pub fn hydrate_kv(&self, entries: impl IntoIterator<Item = (String, String)>) {
-        self.storage.kv().hydrate_batch(entries);
-    }
 
     /// Preload a batch of raw Blob key-value pairs.
     pub fn hydrate_blob(&self, entries: impl IntoIterator<Item = (String, Vec<u8>)>) {
@@ -99,11 +80,6 @@ impl IoBufferSession {
     }
 
     // ── Low-level buffer access ──────────────────────────────────────────
-
-    /// Access the KV buffer directly for low-level operations.
-    pub fn kv_buf(&self) -> &IoBufferKv {
-        self.storage.kv()
-    }
 
     /// Access the Blob buffer directly for low-level operations.
     pub fn blob_buf(&self) -> &IoBufferBlob {
@@ -119,7 +95,8 @@ impl IoBufferSession {
 // ── SessionExecute ───────────────────────────────────────────────────────
 
 impl SessionExecute for IoBufferSession {
-    type Storage = CompositeColdStorage<IoBufferKv, IoBufferBlob, IoBufferObject, SystemClock>;
+    type Storage =
+        CompositeColdStorage<IoBufferBlob, IoBufferObject, IoBufferSessionMeta, SystemClock>;
 
     fn storage(&self) -> &Self::Storage {
         &self.storage

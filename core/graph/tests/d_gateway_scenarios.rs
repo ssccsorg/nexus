@@ -7,7 +7,7 @@
 // directly.
 
 use nexus_graph::mock_gateway::MockGateway;
-use nexus_graph::{Blackboard, Fact, FihHash, Intent, create_blackboard};
+use nexus_graph::{Blackboard, Content, Fact, FihHash, Intent, create_blackboard};
 
 /// Contradiction Detection — via MockGateway (JSON transport boundary).
 ///
@@ -25,8 +25,8 @@ fn scenario_contradiction_detection_via_gateway() {
     gw.submit_fact(&Fact {
         id: FihHash("f_gnn_deep".into()),
         origin: "paper_iclr_2024".into(),
-        content: serde_json::Value::String(
-            "Residual GNNs maintain accuracy at 50 layers with skip connections".into(),
+        content: Content::from(
+            "Residual GNNs maintain accuracy at 50 layers with skip connections",
         ),
         creator: "agent-a".into(),
     })
@@ -36,8 +36,8 @@ fn scenario_contradiction_detection_via_gateway() {
     gw.submit_fact(&Fact {
         id: FihHash("f_gnn_shallow".into()),
         origin: "paper_neurips_2023".into(),
-        content: serde_json::Value::String(
-            "Message-passing GNNs oversmooth beyond 6 layers without normalization".into(),
+        content: Content::from(
+            "Message-passing GNNs oversmooth beyond 6 layers without normalization",
         ),
         creator: "agent-b".into(),
     })
@@ -61,7 +61,7 @@ fn scenario_contradiction_detection_via_gateway() {
     gw.claim_intent("i_reconcile", "agent-c").unwrap();
     gw.conclude_intent(
         "i_reconcile",
-        &"Skip connections delay oversmoothing to 50+ layers; normalization alone is insufficient. Contradiction resolved.".into(),
+        "Skip connections delay oversmoothing to 50+ layers; normalization alone is insufficient. Contradiction resolved.",
     ).unwrap();
 
     let state = gw.read_state();

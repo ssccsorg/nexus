@@ -5,7 +5,6 @@
 //
 // Usage:
 //   cargo run                    # in-memory
-//   cargo run -- --db data.db    # SQLite persistence
 
 use nexus_gateway_api::build_router;
 use nexus_gateway_api::state::AppState;
@@ -20,15 +19,7 @@ async fn main() {
         )
         .init();
 
-    let state = match std::env::args().nth(1).as_deref() {
-        Some("--db") => {
-            let path = std::env::args()
-                .nth(2)
-                .expect("--db requires a path argument");
-            AppState::with_sqlite(&path).expect("failed to open SQLite database")
-        }
-        _ => AppState::in_memory(),
-    };
+    let state = AppState::in_memory();
 
     let app = build_router(state);
 

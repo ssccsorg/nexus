@@ -25,6 +25,7 @@ use nexus_graph::{
     Blackboard, EvictCapable, Fact, FihHash, Intent, Snapshottable, StorageSnapshot,
     create_blackboard, create_blackboard_from_snapshot,
 };
+use nexus_model::Content;
 use nexus_process::scheduler::Scheduler;
 use nexus_process::tasks::gap_detector::GapDetector;
 
@@ -140,13 +141,18 @@ fn flow_agent_creates_intent_from_detector_fact() {
         .heartbeat(&iid.0, "agent-alpha")
         .expect("heartbeat");
 
-    let result = serde_json::json!("synthesis complete");
-    let new_fact = sched.bb.conclude_intent(&iid.0, &result).expect("conclude");
-    assert_eq!(new_fact.content, result);
+    let new_fact = sched
+        .bb
+        .conclude_intent(&iid.0, "synthesis complete")
+        .expect("conclude");
+    assert_eq!(new_fact.content, Content::from("synthesis complete"));
 
     let state = Blackboard::read_state(&sched.bb);
     assert!(
-        state.facts.iter().any(|f| f.content == result),
+        state
+            .facts
+            .iter()
+            .any(|f| f.content == "synthesis complete"),
         "conclusion fact exists"
     );
     assert!(
@@ -191,10 +197,7 @@ fn flow_eviction() {
     };
     let iid = sched.bb.submit_intent(&intent).expect("submit");
     sched.bb.claim_intent(&iid.0, "evictor").expect("claim");
-    sched
-        .bb
-        .conclude_intent(&iid.0, &serde_json::json!("done"))
-        .expect("conclude");
+    sched.bb.conclude_intent(&iid.0, "done").expect("conclude");
 
     EvictCapable::evict_before(&sched.bb, "9999999999").expect("evict");
     let state = Blackboard::read_state(&sched.bb);
@@ -290,7 +293,12 @@ fn flow_cross_worker_snapshot() {
     bb_b.submit_fact(&Fact {
         id: FihHash("f_worker_b_001".into()),
         origin: "worker-b".into(),
-        content: serde_json::json!("Worker B discovery"),
+        content: Content {
+            mime_type: "application/json".into(),
+            data: serde_json::json!("Worker B discovery")
+                .to_string()
+                .into_bytes(),
+        },
         creator: "worker-b".into(),
     })
     .unwrap();
@@ -308,7 +316,7 @@ fn flow_cross_worker_snapshot() {
     };
     let iid = bb_b.submit_intent(&intent).expect("submit");
     bb_b.claim_intent(&iid.0, "worker-b").expect("claim");
-    bb_b.conclude_intent(&iid.0, &serde_json::json!("confirmed by Worker B"))
+    bb_b.conclude_intent(&iid.0, "confirmed by Worker B")
         .expect("conclude");
 
     let state = Blackboard::read_state(&bb_b);

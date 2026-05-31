@@ -62,7 +62,7 @@ impl DetectionCapable for NewDocumentAnalyzer {
             .filter(|f| self.seen_ids.contains(&f.id.0))
             .collect();
 
-        let mut existing_positions: HashMap<&str, HashSet<&str>> = HashMap::new();
+        let mut existing_positions: HashMap<String, HashSet<String>> = HashMap::new();
         for f in &existing_facts {
             if let (Some(topic), Some(pos)) = (topic_of(f), position_of(f)) {
                 existing_positions.entry(topic).or_default().insert(pos);
@@ -82,44 +82,49 @@ impl DetectionCapable for NewDocumentAnalyzer {
                 continue;
             };
 
-            let claim_text = fact
-                .content
+            let content_val: serde_json::Value =
+                serde_json::from_str(fact.content.as_str().unwrap_or(""))
+                    .unwrap_or(serde_json::Value::Null);
+            let claim_text = content_val
                 .get("claim")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
 
-            let (factor, detail) = if let Some(existing_pos_set) = existing_positions.get(topic) {
-                if existing_pos_set.contains(position) {
-                    (
-                        "+factor",
-                        format!("supports existing position [{}]", position),
-                    )
+            let (factor, detail) =
+                if let Some(existing_pos_set) = existing_positions.get(topic.as_str()) {
+                    if existing_pos_set.contains(&position) {
+                        (
+                            "+factor",
+                            format!("supports existing position [{}]", position),
+                        )
+                    } else {
+                        let existing: Vec<String> = existing_pos_set.iter().cloned().collect();
+                        (
+                            "-factor",
+                            format!(
+                                "claims [{}], but existing holds [{}]",
+                                position,
+                                existing.join(", ")
+                            ),
+                        )
+                    }
                 } else {
-                    let existing: Vec<&str> = existing_pos_set.iter().copied().collect();
-                    (
-                        "-factor",
-                        format!(
-                            "claims [{}], but existing holds [{}]",
-                            position,
-                            existing.join(", ")
-                        ),
-                    )
-                }
-            } else {
-                ("gap", format!("new topic '{}'", topic))
-            };
+                    ("gap", format!("new topic '{}'", topic))
+                };
 
             output.facts.push(Fact {
                 id: FihHash::new(&[tid, factor], "doc-analysis"),
                 origin: "new-document-analyzer".into(),
-                content: serde_json::json!({
+                content: serde_json::to_string(&serde_json::json!({
                     "type": "doc_analysis",
                     "factor": factor,
                     "topic": topic,
                     "claim": claim_text,
                     "source": fact.origin,
                     "detail": detail,
-                }),
+                }))
+                .unwrap()
+                .into(),
                 creator: "new-document-analyzer".into(),
             });
 
