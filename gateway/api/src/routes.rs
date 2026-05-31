@@ -111,8 +111,14 @@ pub async fn submit_fact(
         id: FihHash(id.clone()),
         origin: req.origin,
         content: match &req.content {
-            serde_json::Value::String(s) => Content(s.clone().into_bytes()),
-            other => Content(serde_json::to_string(other).unwrap_or_default().into_bytes()),
+            serde_json::Value::String(s) => Content {
+                mime_type: "text/plain".into(),
+                data: s.clone().into_bytes(),
+            },
+            other => Content {
+                mime_type: "application/json".into(),
+                data: serde_json::to_string(other).unwrap_or_default().into_bytes(),
+            },
         },
         creator: req.creator,
     };

@@ -293,7 +293,12 @@ fn flow_cross_worker_snapshot() {
     bb_b.submit_fact(&Fact {
         id: FihHash("f_worker_b_001".into()),
         origin: "worker-b".into(),
-        content: serde_json::json!("Worker B discovery").to_string().into(),
+        content: Content {
+            mime_type: "application/json".into(),
+            data: serde_json::json!("Worker B discovery")
+                .to_string()
+                .into_bytes(),
+        },
         creator: "worker-b".into(),
     })
     .unwrap();

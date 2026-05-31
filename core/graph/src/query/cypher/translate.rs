@@ -634,7 +634,7 @@ fn execute_internal<G: GraphRead>(graph: &G, plan: &PlanIR) -> Result<Vec<Record
                                             .and_then(|s| serde_json::from_str(s).ok())
                                             .unwrap_or_else(|| {
                                                 serde_json::Value::String(
-                                                    String::from_utf8_lossy(&v.0).into_owned(),
+                                                    String::from_utf8_lossy(&v.data).into_owned(),
                                                 )
                                             });
                                         fields.insert(k.clone(), parsed);
