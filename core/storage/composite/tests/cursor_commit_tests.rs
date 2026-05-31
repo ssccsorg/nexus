@@ -38,7 +38,7 @@ fn test_flush_updates_cursor() {
         last_flushed_at: String::new(),
         partition: "p".into(),
     };
-    let result = s.flush_since(&cursor).unwrap();
+    let _ = s.flush_since(&cursor).unwrap();
 
     // Cursor should now be set in meta store
     let new_cursor = s
@@ -62,7 +62,7 @@ fn test_cursor_tracks_flush_boundary() {
     assert_eq!(cursor1.last_flushed_at, r1.new_cursor.last_flushed_at);
 
     // Second flush advances cursor
-    let r2 = s
+    let _r2 = s
         .flush_since(&FlushCursor {
             last_flushed_at: cursor1.last_flushed_at.clone(),
             partition: "p".into(),
