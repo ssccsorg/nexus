@@ -183,23 +183,23 @@ impl DuckDbStorage {
                 id: FihHash(id),
                 origin,
                 content: match serde_json::from_str::<serde_json::Value>(&content_str) {
-                                    Ok(v) => match v {
-                                        serde_json::Value::String(s) => Content {
-                                            mime_type: "text/plain".into(),
-                                            data: s.into_bytes(),
-                                        },
-                                        other => Content {
-                                            mime_type: "application/json".into(),
-                                            data: serde_json::to_string(&other)
-                                                .unwrap_or_default()
-                                                .into_bytes(),
-                                        },
-                                    },
-                                    Err(_) => Content {
-                                        mime_type: "text/plain".into(),
-                                        data: content_str.into_bytes(),
-                                    },
-                                },
+                    Ok(v) => match v {
+                        serde_json::Value::String(s) => Content {
+                            mime_type: "text/plain".into(),
+                            data: s.into_bytes(),
+                        },
+                        other => Content {
+                            mime_type: "application/json".into(),
+                            data: serde_json::to_string(&other)
+                                .unwrap_or_default()
+                                .into_bytes(),
+                        },
+                    },
+                    Err(_) => Content {
+                        mime_type: "text/plain".into(),
+                        data: content_str.into_bytes(),
+                    },
+                },
                 creator,
             })
         }) {
