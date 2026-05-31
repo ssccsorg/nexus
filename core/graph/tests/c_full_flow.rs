@@ -7,7 +7,7 @@
 //   4. Read_state + unit assertions verify correctness (Cypher is for portability)
 
 use nexus_graph::cypher;
-use nexus_graph::{Blackboard, BlackboardError, Fact, FihHash, Intent, create_blackboard};
+use nexus_graph::{Blackboard, BlackboardError, Content, Fact, FihHash, Intent, create_blackboard};
 
 /// Helper: submit a fact with minimal boilerplate.
 fn submit_fact(bb: &mut impl Blackboard, id: &str, origin: &str, content: &str, creator: &str) {
@@ -180,7 +180,10 @@ fn test_petgraph_time_range() {
     bb.submit_fact(&Fact {
         id: FihHash("f_001".into()),
         origin: "test".into(),
-        content: serde_json::json!("data").to_string().into(),
+        content: Content {
+            mime_type: "application/json".into(),
+            data: serde_json::json!("data").to_string().into_bytes(),
+        },
         creator: "tester".into(),
     })
     .unwrap();

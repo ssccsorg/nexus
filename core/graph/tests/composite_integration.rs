@@ -148,7 +148,10 @@ fn fact(id: &str) -> Fact {
     Fact {
         id: FihHash(id.to_string()),
         origin: "integration".into(),
-        content: Content(json!({"key": id}).to_string().into_bytes()),
+        content: Content {
+            mime_type: "application/json".into(),
+            data: json!({"key": id}).to_string().into_bytes(),
+        },
         creator: "tester".into(),
     }
 }

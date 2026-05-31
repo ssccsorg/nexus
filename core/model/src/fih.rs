@@ -35,46 +35,56 @@ impl FihHash {
 // ── Content ───────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Content(pub Vec<u8>);
+pub struct Content {
+    pub mime_type: String,
+    pub data: Vec<u8>,
+}
 
 impl Content {
     pub fn as_str(&self) -> Option<&str> {
-        std::str::from_utf8(&self.0).ok()
+        match self.mime_type.as_str() {
+            "text/plain" | "application/json" => std::str::from_utf8(&self.data).ok(),
+            _ => None,
+        }
     }
 }
 
 impl std::fmt::Display for Content {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Ok(s) = std::str::from_utf8(&self.0) {
-            write!(f, "{s}")
-        } else {
-            write!(f, "<blob: {} bytes>", self.0.len())
+        match self.mime_type.as_str() {
+            "text/plain" | "application/json" => {
+                if let Ok(s) = std::str::from_utf8(&self.data) {
+                    write!(f, "{s}")
+                } else {
+                    write!(f, "<invalid utf-8 for {}>", self.mime_type)
+                }
+            }
+            _ => write!(f, "<{}: {} bytes>", self.mime_type, self.data.len()),
         }
     }
 }
 
 impl From<String> for Content {
     fn from(s: String) -> Self {
-        Content(s.into_bytes())
+        Content {
+            mime_type: "text/plain".into(),
+            data: s.into_bytes(),
+        }
     }
 }
 
 impl From<&str> for Content {
     fn from(s: &str) -> Self {
-        Content(s.as_bytes().to_vec())
+        Content {
+            mime_type: "text/plain".into(),
+            data: s.as_bytes().to_vec(),
+        }
     }
 }
 
 impl PartialEq<&str> for Content {
     fn eq(&self, other: &&str) -> bool {
-        self.0.as_slice() == other.as_bytes()
-    }
-}
-
-impl From<serde_json::Value> for Content {
-    fn from(v: serde_json::Value) -> Self {
-        let bytes = serde_json::to_vec(&v).unwrap_or_default();
-        Content(bytes)
+        self.mime_type == "text/plain" && self.data.as_slice() == other.as_bytes()
     }
 }
 

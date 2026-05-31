@@ -6,7 +6,7 @@
 // DefaultBlackboard directly.
 
 use nexus_graph::create_blackboard;
-use nexus_graph::{Blackboard, BlackboardError, Fact, FihHash, Intent};
+use nexus_graph::{Blackboard, BlackboardError, Content, Fact, FihHash, Intent};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -22,7 +22,10 @@ fn fact(id: &str) -> Fact {
     Fact {
         id: FihHash(id.into()),
         origin: "test".into(),
-        content: serde_json::json!("data").to_string().into(),
+        content: Content {
+            mime_type: "application/json".into(),
+            data: serde_json::json!("data").to_string().into_bytes(),
+        },
         creator: "tester".into(),
     }
 }
