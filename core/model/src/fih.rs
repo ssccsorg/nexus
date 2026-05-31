@@ -35,47 +35,46 @@ impl FihHash {
 // ── Content ───────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Content {
-    Text(String),
-    Blob(Vec<u8>),
-}
+pub struct Content(pub Vec<u8>);
 
 impl Content {
     pub fn as_str(&self) -> Option<&str> {
-        match self {
-            Content::Text(s) => Some(s.as_str()),
-            Content::Blob(_) => None,
-        }
+        std::str::from_utf8(&self.0).ok()
     }
 }
 
 impl std::fmt::Display for Content {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Content::Text(s) => write!(f, "{s}"),
-            Content::Blob(b) => write!(f, "<blob: {} bytes>", b.len()),
+        if let Ok(s) = std::str::from_utf8(&self.0) {
+            write!(f, "{s}")
+        } else {
+            write!(f, "<blob: {} bytes>", self.0.len())
         }
     }
 }
 
 impl From<String> for Content {
     fn from(s: String) -> Self {
-        Content::Text(s)
+        Content(s.into_bytes())
     }
 }
 
 impl From<&str> for Content {
     fn from(s: &str) -> Self {
-        Content::Text(s.to_string())
+        Content(s.as_bytes().to_vec())
     }
 }
 
 impl PartialEq<&str> for Content {
     fn eq(&self, other: &&str) -> bool {
-        match self {
-            Content::Text(s) => s == *other,
-            Content::Blob(_) => false,
-        }
+        self.0.as_slice() == other.as_bytes()
+    }
+}
+
+impl From<serde_json::Value> for Content {
+    fn from(v: serde_json::Value) -> Self {
+        let bytes = serde_json::to_vec(&v).unwrap_or_default();
+        Content(bytes)
     }
 }
 

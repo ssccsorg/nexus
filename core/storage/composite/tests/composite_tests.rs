@@ -106,7 +106,7 @@ fn test_flush_persists_data_to_blob() {
     let fact = nexus_model::Fact {
         id: nexus_model::FihHash("f1".into()),
         origin: "t".into(),
-        content: Content::Text("hello".into()),
+        content: Content("hello".into()),
         creator: "a".into(),
     };
     let bytes = postcard::to_allocvec(&fact).unwrap();
@@ -147,7 +147,7 @@ fn test_scan_partition_with_data() {
     let fact = nexus_model::Fact {
         id: nexus_model::FihHash("f1".into()),
         origin: "t".into(),
-        content: Content::Text("hello".into()),
+        content: Content("hello".into()),
         creator: "a".into(),
     };
     let bytes = postcard::to_allocvec(&fact).unwrap();

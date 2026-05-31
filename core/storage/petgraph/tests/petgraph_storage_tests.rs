@@ -164,7 +164,7 @@ fn test_conclude_intent_creates_fact() {
     let result = s.conclude_intent("i_concl", "result data").unwrap();
 
     assert_eq!(result.creator, "agent-x");
-    assert_eq!(result.content, Content::Text("result data".to_string()));
+    assert_eq!(result.content, Content("result data".into()));
 
     let state = s.read_state();
     assert_eq!(state.facts.len(), 2, "original + concluded fact");

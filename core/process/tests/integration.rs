@@ -145,10 +145,7 @@ fn flow_agent_creates_intent_from_detector_fact() {
         .bb
         .conclude_intent(&iid.0, "synthesis complete")
         .expect("conclude");
-    assert_eq!(
-        new_fact.content,
-        Content::Text("synthesis complete".to_string())
-    );
+    assert_eq!(new_fact.content, Content::from("synthesis complete"));
 
     let state = Blackboard::read_state(&sched.bb);
     assert!(

@@ -111,8 +111,8 @@ pub async fn submit_fact(
         id: FihHash(id.clone()),
         origin: req.origin,
         content: match &req.content {
-            serde_json::Value::String(s) => Content::Text(s.clone()),
-            other => Content::Text(serde_json::to_string(other).unwrap_or_default()),
+            serde_json::Value::String(s) => Content(s.clone().into_bytes()),
+            other => Content(serde_json::to_string(other).unwrap_or_default().into_bytes()),
         },
         creator: req.creator,
     };

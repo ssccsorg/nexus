@@ -121,7 +121,7 @@ impl DetectionCapable for StateChangeDetector {
 
     fn snapshot_state(&self) -> Option<nexus_model::Content> {
         self.checkpoint.as_ref().map(|cp| {
-            nexus_model::Content::Text(
+            nexus_model::Content::from(
                 serde_json::json!({
                     "fact_count": cp.fact_count,
                     "open_intent_count": cp.open_intent_count,

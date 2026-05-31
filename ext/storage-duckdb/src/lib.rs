@@ -184,10 +184,10 @@ impl DuckDbStorage {
                 origin,
                 content: match serde_json::from_str::<serde_json::Value>(&content_str) {
                     Ok(v) => match v {
-                        serde_json::Value::String(s) => Content::Text(s),
-                        other => Content::Text(serde_json::to_string(&other).unwrap_or_default()),
+                        serde_json::Value::String(s) => Content(s.into_bytes()),
+                        other => Content(serde_json::to_string(&other).unwrap_or_default().into_bytes()),
                     },
-                    Err(_) => Content::Text(content_str),
+                    Err(_) => Content(content_str.into_bytes()),
                 },
                 creator,
             })

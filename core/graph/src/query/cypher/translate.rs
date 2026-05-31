@@ -16,7 +16,6 @@ use std::collections::HashMap;
 use super::plan::*;
 
 use super::capable::CypherCapable;
-use nexus_model::Content;
 use nexus_storage_petgraph::GraphRead;
 
 use crate::Record;
@@ -630,13 +629,14 @@ fn execute_internal<G: GraphRead>(graph: &G, plan: &PlanIR) -> Result<Vec<Record
                                 fields.insert(var.clone(), serde_json::Value::String(var.clone()));
                                 if let Some(w) = graph.node_weight(idx) {
                                     for (k, v) in &w.properties {
-                                        let parsed = match v {
-                                            Content::Text(s) => serde_json::from_str(s)
-                                                .unwrap_or(serde_json::Value::String(s.clone())),
-                                            Content::Blob(b) => serde_json::Value::String(
-                                                String::from_utf8_lossy(b).into_owned(),
-                                            ),
-                                        };
+                                        let parsed = v
+                                            .as_str()
+                                            .and_then(|s| serde_json::from_str(s).ok())
+                                            .unwrap_or_else(|| {
+                                                serde_json::Value::String(
+                                                    String::from_utf8_lossy(&v.0).into_owned(),
+                                                )
+                                            });
                                         fields.insert(k.clone(), parsed);
                                     }
                                 }

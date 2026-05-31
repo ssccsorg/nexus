@@ -109,8 +109,8 @@ impl PetgraphStorage {
                             .properties
                             .get("content")
                             .and_then(|s| s.as_str())
-                            .map(|s| Content::Text(s.to_string()))
-                            .unwrap_or(Content::Text(String::new())),
+                            .map(|s| Content(s.as_bytes().to_vec()))
+                            .unwrap_or_else(|| Content(Vec::new())),
                         creator: w
                             .properties
                             .get("creator")
@@ -234,8 +234,8 @@ impl StorageRead for PetgraphStorage {
                                 .properties
                                 .get("content")
                                 .and_then(|s| s.as_str())
-                                .map(|s| Content::Text(s.to_string()))
-                                .unwrap_or(Content::Text(String::new())),
+                                .map(|s| Content(s.as_bytes().to_vec()))
+                                .unwrap_or_else(|| Content(Vec::new())),
                             creator: w
                                 .properties
                                 .get("creator")
@@ -344,19 +344,16 @@ impl FactCapable for PetgraphStorage {
             .unwrap_or_default()
             .as_nanos()
             .to_string();
-        let content_val = match &fact.content {
-            Content::Text(s) => s.clone(),
-            Content::Blob(b) => String::from_utf8_lossy(b).into_owned(),
-        };
+        let content_val = String::from_utf8_lossy(&fact.content.0).into_owned();
         g.add_node(NodeWeight {
             name: fact.id.0.clone(),
             label: "Fact".into(),
             properties: {
                 let mut m = HashMap::new();
-                m.insert("origin".into(), Content::Text(fact.origin.clone()));
-                m.insert("content".into(), Content::Text(content_val));
-                m.insert("creator".into(), Content::Text(fact.creator.clone()));
-                m.insert("submitted_at".into(), Content::Text(now));
+                m.insert("origin".into(), Content(fact.origin.clone().into_bytes()));
+                m.insert("content".into(), Content(content_val.into_bytes()));
+                m.insert("creator".into(), Content(fact.creator.clone().into_bytes()));
+                m.insert("submitted_at".into(), Content(now.into_bytes()));
                 m
             },
         });
@@ -372,14 +369,14 @@ impl HintCapable for PetgraphStorage {
             label: "Hint".into(),
             properties: {
                 let mut m = HashMap::new();
-                m.insert("content".into(), Content::Text(hint.content.clone()));
-                m.insert("creator".into(), Content::Text(hint.creator.clone()));
+                m.insert("content".into(), Content(hint.content.clone().into_bytes()));
+                m.insert("creator".into(), Content(hint.creator.clone().into_bytes()));
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_nanos()
                     .to_string();
-                m.insert("submitted_at".into(), Content::Text(now));
+                m.insert("submitted_at".into(), Content(now.into_bytes()));
                 m
             },
         });
@@ -407,21 +404,24 @@ impl IntentCapable for PetgraphStorage {
                 let mut m = HashMap::new();
                 m.insert(
                     "description".into(),
-                    Content::Text(intent.description.clone()),
+                    Content(intent.description.clone().into_bytes()),
                 );
-                m.insert("creator".into(), Content::Text(intent.creator.clone()));
+                m.insert(
+                    "creator".into(),
+                    Content(intent.creator.clone().into_bytes()),
+                );
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs()
                     .to_string();
-                m.insert("created_at".into(), Content::Text(now));
+                m.insert("created_at".into(), Content(now.into_bytes()));
                 let now_ns = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_nanos()
                     .to_string();
-                m.insert("submitted_at".into(), Content::Text(now_ns));
+                m.insert("submitted_at".into(), Content(now_ns.into_bytes()));
                 m
             },
         });
@@ -466,12 +466,12 @@ impl IntentCapable for PetgraphStorage {
                     )));
                 }
                 w.properties
-                    .insert("worker".into(), Content::Text(agent.to_string()));
+                    .insert("worker".into(), Content(agent.to_string().into_bytes()));
                 if let Ok(now) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
                 {
                     w.properties.insert(
                         "last_heartbeat_at".into(),
-                        Content::Text(now.as_secs().to_string()),
+                        Content(now.as_secs().to_string().into_bytes()),
                     );
                 }
                 return Ok(());
@@ -506,13 +506,13 @@ impl IntentCapable for PetgraphStorage {
                     }
                     _ => {
                         w.properties
-                            .insert("worker".into(), Content::Text(agent.to_string()));
+                            .insert("worker".into(), Content(agent.to_string().into_bytes()));
                         if let Ok(now) =
                             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
                         {
                             w.properties.insert(
                                 "last_heartbeat_at".into(),
-                                Content::Text(now.as_secs().to_string()),
+                                Content(now.as_secs().to_string().into_bytes()),
                             );
                         }
                         return Ok(());
@@ -584,12 +584,12 @@ impl IntentCapable for PetgraphStorage {
 
         if let Some(w) = g.node_weight_mut(intent_idx) {
             w.properties
-                .insert("concluded".into(), Content::Text("true".to_string()));
+                .insert("concluded".into(), Content("true".to_string().into_bytes()));
             w.properties.remove("worker");
         }
 
         let content_val = result.to_string();
-        let content_for_fact = Content::Text(result.to_string());
+        let content_for_fact = Content(result.to_string().into_bytes());
         let new_fact_id = format!("f_concl_{}", intent_id);
         let new_fact = Fact {
             id: FihHash(new_fact_id.clone()),
@@ -603,15 +603,21 @@ impl IntentCapable for PetgraphStorage {
             label: "Fact".into(),
             properties: {
                 let mut m = HashMap::new();
-                m.insert("origin".into(), Content::Text(new_fact.origin.clone()));
-                m.insert("content".into(), Content::Text(content_val));
-                m.insert("creator".into(), Content::Text(new_fact.creator.clone()));
+                m.insert(
+                    "origin".into(),
+                    Content(new_fact.origin.clone().into_bytes()),
+                );
+                m.insert("content".into(), Content(content_val.into_bytes()));
+                m.insert(
+                    "creator".into(),
+                    Content(new_fact.creator.clone().into_bytes()),
+                );
                 let now_ns = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_nanos()
                     .to_string();
-                m.insert("submitted_at".into(), Content::Text(now_ns));
+                m.insert("submitted_at".into(), Content(now_ns.into_bytes()));
                 m
             },
         });
@@ -646,10 +652,7 @@ impl EvictCapable for PetgraphStorage {
                 total += w.name.len() + w.label.len() + 64;
                 for (k, v) in &w.properties {
                     total += k.len();
-                    match v {
-                        Content::Text(s) => total += s.len(),
-                        Content::Blob(b) => total += b.len(),
-                    }
+                    total += v.0.len();
                 }
             }
         }
@@ -658,10 +661,7 @@ impl EvictCapable for PetgraphStorage {
                 total += e.rel_type.len() + 32;
                 for (k, v) in &e.properties {
                     total += k.len();
-                    match v {
-                        Content::Text(s) => total += s.len(),
-                        Content::Blob(b) => total += b.len(),
-                    }
+                    total += v.0.len();
                 }
             }
         }
