@@ -59,7 +59,7 @@ impl IntentCapable for NullStorage {
         Ok(Fact {
             id: FihHash("null".into()),
             origin: String::new(),
-            content: Content::Text("null".into()),
+            content: Content::from("null"),
             creator: String::new(),
         })
     }
