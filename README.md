@@ -54,7 +54,7 @@ During ingestion, documents, code artifacts, simulation outputs, or sensor strea
 
 ## Layer 2: Artifact Ingestion Pipeline
 
-Direct uploads from CI/CD, simulators or robotic platforms to the knowledge graph create coupling, lack change detection, and complicate multi‑source merging. neXus decouples the pipeline:
+Direct uploads from CI/CD, simulators, or robotic platforms to the knowledge graph create coupling, lack change detection, and complicate multi‑source merging. neXus decouples the pipeline:
 
 1.  Object Store: holds the authoritative copy of all artifacts: documentation, code symbols, simulation results, telemetry logs, video streams, hardware‑in‑the‑loop recordings. It provides strong consistency and a standard API.
 2.  Sync Worker: exposes an engine‑agnostic endpoint (`/sync/:engine`). It compares the current state of the object store with a persistent mapping of previously ingested items, computes a diff, and pushes small task chunks into a message queue.
@@ -66,7 +66,7 @@ The storage backend itself is abstracted behind a minimal interface: operations 
 
 ## Layer 3: Agentic Research Loop
 
-The term agent does not denote a privileged layer above the primitives. Every participant — verification engines, editor interfaces, synthesis tools — is a neXus peer that reads and writes FIH blocks through the same Blackboard interface. An “agent” is any peer engaged in an Intent lifecycle; the label describes a role, not a hierarchy. Agents coordinate through the Blackboard via Stigmergy: agents leave traces in a shared space, other agents perceive those traces and adapt. No module calls another module directly. The same FIH (Fact / Intent / Hint) interface that works at every scale: ecosystem, project, experiment, agent, primitive: governs all interaction.
+The term “agent” does not denote a privileged layer above the primitives. Every participant — verification engines, editor interfaces, synthesis tools — is a neXus peer that reads and writes FIH blocks through the same Blackboard interface. An “agent” is any peer engaged in an Intent lifecycle; the label describes a role, not a hierarchy. Agents coordinate through the Blackboard via Stigmergy: agents leave traces in a shared space, other agents perceive those traces and adapt. No module calls another module directly. The same FIH (Fact / Intent / Hint) interface that works at every scale: ecosystem, project, experiment, agent, primitive: governs all interaction.
 
 - Blackboard (shared graph): stores Facts (validated results), Intents (exploration directions), and Hints (governance rules). The only interface between modules.
 - Stigmergy coordination: agents read from and write to the Blackboard. Detectors: gap analysers, contradiction finders, state‑change monitors: observe patterns in the Fact graph and record their findings as new Facts. Agents perceive these detector Facts and decide which to act on by creating Intents. No pipeline dependency chain. The detectors themselves follow a proven stigmergic pattern: simple, count‑based heuristics applied every OODA tick, with content‑addressed Fact IDs ensuring that repeated observation of the same pattern produces the same Fact: idempotent, harmless, and requiring no state beyond the Blackboard itself.
