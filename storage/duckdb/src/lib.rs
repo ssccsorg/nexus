@@ -9,6 +9,7 @@ use nexus_model::{
     FlushCursor, FlushResult, Hint, Intent, PartitionData, ScanCapable, StateFilter, StorageRead,
     TimeRangeCapable,
 };
+use std::collections::HashMap;
 use std::fs;
 use std::ops::Range;
 use std::sync::Mutex;
@@ -365,19 +366,43 @@ impl TimeRangeCapable for DuckDbStorage {
 
 /// Read a column from a DuckDB row as a serde_json::Value.
 /// Tries string first, then integer, then float, then null.
-fn duckdb_column_to_value(row: &duckdb::Row, i: usize) -> serde_json::Value {
+fn duckdb_column_to_content(row: &duckdb::Row, i: usize) -> Content {
     if let Ok(Some(s)) = row.get::<_, Option<String>>(i) {
-        return serde_json::Value::String(s);
+        // If the string looks like JSON, tag it accordingly.
+        if s.starts_with('{') || s.starts_with('[') || s == "null" || s == "true" || s == "false" {
+            return Content {
+                mime_type: "application/json".into(),
+                data: s.into_bytes(),
+            };
+        }
+        // If the string is a quoted JSON value, preserve the quotes.
+        if s.starts_with('"') && s.ends_with('"') {
+            return Content {
+                mime_type: "application/json".into(),
+                data: s.into_bytes(),
+            };
+        }
+        return Content {
+            mime_type: "text/plain".into(),
+            data: s.into_bytes(),
+        };
     }
     if let Ok(Some(n)) = row.get::<_, Option<i64>>(i) {
-        return serde_json::Value::Number(n.into());
+        return Content {
+            mime_type: "text/plain".into(),
+            data: n.to_string().into_bytes(),
+        };
     }
-    if let Ok(Some(f)) = row.get::<_, Option<f64>>(i)
-        && let Some(n) = serde_json::Number::from_f64(f)
-    {
-        return serde_json::Value::Number(n);
+    if let Ok(Some(f)) = row.get::<_, Option<f64>>(i) {
+        return Content {
+            mime_type: "text/plain".into(),
+            data: f.to_string().into_bytes(),
+        };
     }
-    serde_json::Value::Null
+    Content {
+        mime_type: "text/plain".into(),
+        data: Vec::new(),
+    }
 }
 
 impl FlushCapable for DuckDbStorage {
@@ -499,14 +524,13 @@ impl FlushCapable for DuckDbStorage {
 }
 
 impl CypherCapable for DuckDbStorage {
-    fn query_plan(&self, plan: &ColdQuery) -> Result<String, String> {
+    fn query_plan(&self, plan: &ColdQuery) -> Result<Vec<HashMap<String, Content>>, String> {
         let sql = cypher_sql::translate(plan)?;
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(&sql)
             .map_err(|e| format!("SQL prepare error: {e}"))?;
-        // For aggregate queries, always project "count" regardless of
-        // plan.projections (which may be empty).
+
         let result_cols: Vec<String> = if plan.aggregate_count {
             vec!["count".to_string()]
         } else {
@@ -515,17 +539,15 @@ impl CypherCapable for DuckDbStorage {
 
         let rows = stmt
             .query_map([], |row| {
-                let mut map = serde_json::Map::new();
+                let mut map = HashMap::new();
                 for (i, col) in result_cols.iter().enumerate() {
-                    let val = duckdb_column_to_value(row, i);
+                    let val = duckdb_column_to_content(row, i);
                     map.insert(col.clone(), val);
                 }
-                Ok(serde_json::Value::Object(map))
+                Ok(map)
             })
             .map_err(|e| format!("SQL query error: {e}"))?;
-        let results: Vec<serde_json::Value> = rows.filter_map(|r| r.ok()).collect();
-        serde_json::to_string(&serde_json::Value::Array(results))
-            .map_err(|e| format!("JSON serialization error: {e}"))
+        Ok(rows.filter_map(|r| r.ok()).collect())
     }
 }
 

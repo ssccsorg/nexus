@@ -51,38 +51,9 @@ pub fn execute_with_cold<G: GraphRead, C: CypherCapable + ?Sized>(
 ) -> Result<Vec<Record>, TranslateError> {
     // Try cold routing first.
     if let Some(cold_query) = plan.to_cold_query() {
-        let result = cold
+        let records = cold
             .query_plan(&cold_query)
             .map_err(TranslateError::Other)?;
-        // Parse the JSON string result into Vec<Record>.
-        let records: Vec<Record> =
-            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&result) {
-                if let serde_json::Value::Array(arr) = val {
-                    arr.into_iter()
-                        .map(|item| {
-                            if let serde_json::Value::Object(obj) = item {
-                                obj.into_iter()
-                                    .map(|(k, v)| {
-                                        let content = Content {
-                                            mime_type: "application/json".into(),
-                                            data: v.to_string().into_bytes(),
-                                        };
-                                        (k, content)
-                                    })
-                                    .collect()
-                            } else {
-                                HashMap::new()
-                            }
-                        })
-                        .collect()
-                } else {
-                    return Err(TranslateError::Other(
-                        "cold query result is not an array".into(),
-                    ));
-                }
-            } else {
-                Vec::new()
-            };
         return Ok(records);
     }
 
