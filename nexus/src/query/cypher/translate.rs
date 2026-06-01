@@ -20,6 +20,8 @@ use crate::storage::petgraph::GraphRead;
 
 use crate::Record;
 
+use nexus_model::Content;
+
 // ── Unified execute ────────────────────────────────────────────────────────
 
 /// Execute a query plan against the hot petgraph only.
@@ -57,7 +59,15 @@ pub fn execute_with_cold<G: GraphRead, C: CypherCapable + ?Sized>(
             arr.into_iter()
                 .map(|item| {
                     if let serde_json::Value::Object(obj) = item {
-                        obj.into_iter().collect()
+                        obj.into_iter()
+                            .map(|(k, v)| {
+                                let content = Content {
+                                    mime_type: "application/json".into(),
+                                    data: v.to_string().into_bytes(),
+                                };
+                                (k, content)
+                            })
+                            .collect()
                     } else {
                         HashMap::new()
                     }
@@ -94,10 +104,10 @@ fn execute_external<G: GraphRead>(
 
     // Last operator is the root — collect its rows as records
     let last = row_sets.last().cloned().unwrap_or_default();
-    Ok(last) // already Vec<HashMap<String, Value>>
+    Ok(last) // already Vec<HashMap<String, Content>>
 }
 
-type RowSet = Vec<HashMap<String, serde_json::Value>>;
+type RowSet = Vec<HashMap<String, Content>>;
 
 fn exec_readop<G: GraphRead>(
     graph: &G,
@@ -117,7 +127,10 @@ fn exec_readop<G: GraphRead>(
                     let mut row = HashMap::new();
                     row.insert(
                         bind.0.to_string(),
-                        serde_json::Value::Number((idx.index() as i64).into()),
+                        Content {
+                            mime_type: "text/plain".into(),
+                            data: (idx.index() as i64).to_string().into_bytes(),
+                        },
                     );
                     row
                 })
@@ -166,7 +179,10 @@ fn exec_readop<G: GraphRead>(
                 let count = input_rows.len();
                 row.insert(
                     agg.func.to_string(),
-                    serde_json::Value::Number((count as i64).into()),
+                    Content {
+                        mime_type: "text/plain".into(),
+                        data: (count as i64).to_string().into_bytes(),
+                    },
                 );
             }
             Ok(vec![row])
@@ -244,12 +260,18 @@ fn exec_readop<G: GraphRead>(
                         let mut new_row = row.clone();
                         new_row.insert(
                             bind_to.0.to_string(),
-                            serde_json::Value::Number((neighbor.index() as i64).into()),
+                            Content {
+                                mime_type: "text/plain".into(),
+                                data: (neighbor.index() as i64).to_string().into_bytes(),
+                            },
                         );
                         if let Some(ei) = edge_idx.or_else(|| find_edge(graph, idx, neighbor)) {
                             new_row.insert(
                                 bind_rel.0.to_string(),
-                                serde_json::Value::Number((ei.index() as i64).into()),
+                                Content {
+                                    mime_type: "text/plain".into(),
+                                    data: (ei.index() as i64).to_string().into_bytes(),
+                                },
                             );
                         }
                         expanded.push(new_row);
@@ -294,7 +316,7 @@ fn exec_readop<G: GraphRead>(
         ReadOp::Distinct { input } => {
             let mut rows = get_input(prior, *input)?;
             // Simple dedup by row content (key order independent)
-            let mut seen: Vec<HashMap<String, serde_json::Value>> = Vec::new();
+            let mut seen: Vec<HashMap<String, Content>> = Vec::new();
             rows.retain(|row| {
                 let is_new = !seen.iter().any(|s| rows_equal(s, row));
                 if is_new {
@@ -357,92 +379,144 @@ fn get_input(prior: &[RowSet], op_id: cyrs_plan::OpId) -> Result<RowSet, Transla
         .ok_or_else(|| TranslateError::NotFound(format!("OpId {}", op_id.0)))
 }
 
-fn evaluate_expr<G: GraphRead>(
-    graph: &G,
-    row: &HashMap<String, serde_json::Value>,
-    expr: &Expr,
-) -> serde_json::Value {
+// ── Expression evaluation ──────────────────────────────────────────────────
+
+fn evaluate_expr<G: GraphRead>(graph: &G, row: &HashMap<String, Content>, expr: &Expr) -> Content {
     match expr {
-        Expr::Var(id) => row
-            .get(&id.0.to_string())
-            .cloned()
-            .unwrap_or(serde_json::Value::Null),
-        Expr::Int(n) => serde_json::Value::Number((*n).into()),
-        Expr::Float(f) => serde_json::json!(*f),
-        Expr::String(s) => serde_json::Value::String(s.to_string()),
-        Expr::Bool(b) => serde_json::Value::Bool(*b),
-        Expr::Null => serde_json::Value::Null,
+        Expr::Var(id) => row.get(&id.0.to_string()).cloned().unwrap_or(Content {
+            mime_type: "application/octet-stream".into(),
+            data: Vec::new(),
+        }),
+        Expr::Int(n) => Content {
+            mime_type: "text/plain".into(),
+            data: n.to_string().into_bytes(),
+        },
+        Expr::Float(f) => Content {
+            mime_type: "text/plain".into(),
+            data: f.to_string().into_bytes(),
+        },
+        Expr::String(s) => Content {
+            mime_type: "text/plain".into(),
+            data: s.as_bytes().to_vec(),
+        },
+        Expr::Bool(b) => Content {
+            mime_type: "text/plain".into(),
+            data: if *b { "true".into() } else { "false".into() },
+        },
+        Expr::Null => Content {
+            mime_type: "application/octet-stream".into(),
+            data: Vec::new(),
+        },
         Expr::Prop { target, prop } => {
             let node_val = evaluate_expr(graph, row, target);
-            if let Some(idx) = node_val.as_i64() {
-                let ni = NodeIndex::new(idx as usize);
-                if let Some(w) = graph.node_weight(ni) {
-                    w.properties
-                        .get(prop.as_str())
-                        .and_then(|c| c.as_str())
-                        .and_then(|s| serde_json::from_str(s).ok())
-                        .unwrap_or(serde_json::Value::Null)
+            if let Some(idx_str) = node_val.as_str() {
+                if let Ok(idx) = idx_str.parse::<i64>() {
+                    let ni = NodeIndex::new(idx as usize);
+                    if let Some(w) = graph.node_weight(ni) {
+                        w.properties.get(prop.as_str()).cloned().unwrap_or(Content {
+                            mime_type: "application/octet-stream".into(),
+                            data: Vec::new(),
+                        })
+                    } else {
+                        Content {
+                            mime_type: "application/octet-stream".into(),
+                            data: Vec::new(),
+                        }
+                    }
                 } else {
-                    serde_json::Value::Null
+                    Content {
+                        mime_type: "application/octet-stream".into(),
+                        data: Vec::new(),
+                    }
                 }
             } else {
-                serde_json::Value::Null
+                Content {
+                    mime_type: "application/octet-stream".into(),
+                    data: Vec::new(),
+                }
             }
         }
         Expr::BinOp { op, lhs, rhs } => {
             let l = evaluate_expr(graph, row, lhs);
             let r = evaluate_expr(graph, row, rhs);
             match op {
-                cyrs_plan::BinOp::Eq => serde_json::Value::Bool(l == r),
-                cyrs_plan::BinOp::Neq => serde_json::Value::Bool(l != r),
+                cyrs_plan::BinOp::Eq => Content {
+                    mime_type: "text/plain".into(),
+                    data: if l == r {
+                        "true".into()
+                    } else {
+                        "false".into()
+                    },
+                },
+                cyrs_plan::BinOp::Neq => Content {
+                    mime_type: "text/plain".into(),
+                    data: if l != r {
+                        "true".into()
+                    } else {
+                        "false".into()
+                    },
+                },
                 cyrs_plan::BinOp::Gt => compare_bool(&l, &r, |a, b| a > b),
                 cyrs_plan::BinOp::Lt => compare_bool(&l, &r, |a, b| a < b),
                 cyrs_plan::BinOp::Ge => compare_bool(&l, &r, |a, b| a >= b),
                 cyrs_plan::BinOp::Le => compare_bool(&l, &r, |a, b| a <= b),
-                _ => serde_json::Value::Null,
+                _ => Content {
+                    mime_type: "application/octet-stream".into(),
+                    data: Vec::new(),
+                },
             }
         }
-        _ => serde_json::Value::Null,
+        _ => Content {
+            mime_type: "application/octet-stream".into(),
+            data: Vec::new(),
+        },
     }
 }
 
-fn compare_bool(
-    l: &serde_json::Value,
-    r: &serde_json::Value,
-    f: fn(f64, f64) -> bool,
-) -> serde_json::Value {
+fn compare_bool(l: &Content, r: &Content, f: fn(f64, f64) -> bool) -> Content {
     let lf = value_as_f64(l);
     let rf = value_as_f64(r);
     match (lf, rf) {
-        (Some(a), Some(b)) => serde_json::Value::Bool(f(a, b)),
-        _ => serde_json::Value::Bool(false),
+        (Some(a), Some(b)) => Content {
+            mime_type: "text/plain".into(),
+            data: if f(a, b) {
+                "true".into()
+            } else {
+                "false".into()
+            },
+        },
+        _ => Content {
+            mime_type: "text/plain".into(),
+            data: "false".into(),
+        },
     }
 }
 
-fn is_truthy(v: &serde_json::Value) -> bool {
-    match v {
-        serde_json::Value::Bool(b) => *b,
-        serde_json::Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0),
-        serde_json::Value::String(s) => !s.is_empty(),
-        serde_json::Value::Null => false,
-        _ => true,
+fn is_truthy(v: &Content) -> bool {
+    match v.as_str() {
+        Some("true") => true,
+        Some("false") => false,
+        Some(s) => {
+            // Try number
+            if let Ok(f) = s.parse::<f64>() {
+                f != 0.0
+            } else {
+                !s.is_empty()
+            }
+        }
+        None => false,
     }
 }
 
-fn value_as_f64(v: &serde_json::Value) -> Option<f64> {
-    match v {
-        serde_json::Value::Number(n) => n.as_f64(),
-        serde_json::Value::String(s) => s.parse::<f64>().ok(),
-        _ => None,
-    }
+fn value_as_f64(v: &Content) -> Option<f64> {
+    v.as_str().and_then(|s| s.parse::<f64>().ok())
 }
 
-fn find_bound_node<G: GraphRead>(
-    graph: &G,
-    row: &HashMap<String, serde_json::Value>,
-) -> Option<NodeIndex> {
+fn find_bound_node<G: GraphRead>(graph: &G, row: &HashMap<String, Content>) -> Option<NodeIndex> {
     for val in row.values() {
-        if let Some(idx) = val.as_i64() {
+        if let Some(idx_str) = val.as_str()
+            && let Ok(idx) = idx_str.parse::<i64>()
+        {
             let ni = NodeIndex::new(idx as usize);
             if graph.node_weight(ni).is_some() {
                 return Some(ni);
@@ -517,27 +591,24 @@ fn eval_expr_as_usize(expr: &Expr) -> usize {
     }
 }
 
-fn cmp_values(a: &serde_json::Value, b: &serde_json::Value) -> std::cmp::Ordering {
+fn cmp_values(a: &Content, b: &Content) -> std::cmp::Ordering {
     use std::cmp::Ordering;
-    match (a, b) {
-        (serde_json::Value::Number(na), serde_json::Value::Number(nb)) => {
-            let fa = na.as_f64().unwrap_or(0.0);
-            let fb = nb.as_f64().unwrap_or(0.0);
-            fa.partial_cmp(&fb).unwrap_or(Ordering::Equal)
+    match (a.as_str(), b.as_str()) {
+        (Some(sa), Some(sb)) => {
+            // Try numeric comparison first
+            if let (Ok(fa), Ok(fb)) = (sa.parse::<f64>(), sb.parse::<f64>()) {
+                fa.partial_cmp(&fb).unwrap_or(Ordering::Equal)
+            } else {
+                sa.cmp(sb)
+            }
         }
-        (serde_json::Value::String(sa), serde_json::Value::String(sb)) => sa.cmp(sb),
-        (serde_json::Value::Bool(ba), serde_json::Value::Bool(bb)) => ba.cmp(bb),
-        (serde_json::Value::Null, serde_json::Value::Null) => Ordering::Equal,
-        (serde_json::Value::Null, _) => Ordering::Less,
-        (_, serde_json::Value::Null) => Ordering::Greater,
-        _ => Ordering::Equal,
+        (Some(_), None) => Ordering::Greater,
+        (None, Some(_)) => Ordering::Less,
+        (None, None) => Ordering::Equal,
     }
 }
 
-fn rows_equal(
-    a: &HashMap<String, serde_json::Value>,
-    b: &HashMap<String, serde_json::Value>,
-) -> bool {
+fn rows_equal(a: &HashMap<String, Content>, b: &HashMap<String, Content>) -> bool {
     if a.len() != b.len() {
         return false;
     }
@@ -586,11 +657,17 @@ fn execute_internal<G: GraphRead>(graph: &G, plan: &PlanIR) -> Result<Vec<Record
                                     let mut fields = HashMap::new();
                                     fields.insert(
                                         var.clone(),
-                                        serde_json::Value::String(var.clone()),
+                                        Content {
+                                            mime_type: "text/plain".into(),
+                                            data: var.as_bytes().to_vec(),
+                                        },
                                     );
                                     fields.insert(
                                         alias.clone(),
-                                        serde_json::Value::Number((count as i64).into()),
+                                        Content {
+                                            mime_type: "text/plain".into(),
+                                            data: (count as i64).to_string().into_bytes(),
+                                        },
                                     );
                                     fields
                                 })
@@ -602,9 +679,9 @@ fn execute_internal<G: GraphRead>(graph: &G, plan: &PlanIR) -> Result<Vec<Record
                     records.retain(|r| {
                         wc.comparisons.iter().all(|cmp| {
                             let field_val = r.get(&cmp.field.variable);
-                            match (field_val, &cmp.value) {
-                                (Some(serde_json::Value::Number(n)), CompareValue::Int(v)) => {
-                                    let val = n.as_i64().unwrap_or(0);
+                            match (field_val.and_then(|c| c.as_str()), &cmp.value) {
+                                (Some(s), CompareValue::Int(v)) => {
+                                    let val = s.parse::<i64>().unwrap_or(0);
                                     let v = *v;
                                     match cmp.op {
                                         CompareOp::Eq => val == v,
@@ -626,18 +703,16 @@ fn execute_internal<G: GraphRead>(graph: &G, plan: &PlanIR) -> Result<Vec<Record
                             .iter()
                             .map(|&idx| {
                                 let mut fields = HashMap::new();
-                                fields.insert(var.clone(), serde_json::Value::String(var.clone()));
+                                fields.insert(
+                                    var.clone(),
+                                    Content {
+                                        mime_type: "text/plain".into(),
+                                        data: var.as_bytes().to_vec(),
+                                    },
+                                );
                                 if let Some(w) = graph.node_weight(idx) {
                                     for (k, v) in &w.properties {
-                                        let parsed = v
-                                            .as_str()
-                                            .and_then(|s| serde_json::from_str(s).ok())
-                                            .unwrap_or_else(|| {
-                                                serde_json::Value::String(
-                                                    String::from_utf8_lossy(&v.data).into_owned(),
-                                                )
-                                            });
-                                        fields.insert(k.clone(), parsed);
+                                        fields.insert(k.clone(), v.clone());
                                     }
                                 }
                                 fields
@@ -650,7 +725,10 @@ fn execute_internal<G: GraphRead>(graph: &G, plan: &PlanIR) -> Result<Vec<Record
                         for rec in &mut records {
                             rec.insert(
                                 item.alias.clone().unwrap_or_else(|| prop.clone()),
-                                serde_json::Value::String(prop.clone()),
+                                Content {
+                                    mime_type: "text/plain".into(),
+                                    data: prop.as_bytes().to_vec(),
+                                },
                             );
                         }
                     }

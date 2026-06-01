@@ -21,7 +21,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 /// A single query result row from Cypher.
-pub type Record = std::collections::HashMap<String, serde_json::Value>;
+pub type Record = std::collections::HashMap<String, nexus_model::Content>;
 
 /// Tracks intent claims — which agent has claimed which intent.
 ///
