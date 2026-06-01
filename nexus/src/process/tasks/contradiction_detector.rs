@@ -9,8 +9,9 @@
 // knowledge state. Resolution is a separate act (Intent) by an agent.
 
 use super::common::{position_of, topic_of};
+use crate::helper::ContentJsonExt as _;
 use nexus_model::{
-    BoardState, ContradictionDetection, DetectionCapable, DetectionOutput, Fact, FihHash,
+    BoardState, Content, ContradictionDetection, DetectionCapable, DetectionOutput, Fact, FihHash,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -94,16 +95,14 @@ impl DetectionCapable for ContradictionDetector {
                     output.facts.push(Fact {
                         id: FihHash::new(&[topic, pa, pb], "contradiction"),
                         origin: "contradiction-detector".into(),
-                        content: serde_json::to_string(&serde_json::json!({
+                        content: Content::from_json(&serde_json::json!({
                             "type": "contradiction",
                             "topic": topic,
                             "position_a": pa,
                             "position_b": pb,
                             "origins_a": origins_a,
                             "origins_b": origins_b,
-                        }))
-                        .unwrap()
-                        .into(),
+                        })),
                         creator: "contradiction-detector".into(),
                     });
                 }
