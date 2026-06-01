@@ -1,9 +1,10 @@
 // nexus-storage-duckdb — DuckDB-backed cold storage for analytical queries.
 
+pub mod cold_query;
 pub mod cypher_sql;
 
+use crate::cold_query::ColdQuery;
 use nexus::CypherCapable;
-use nexus::query::cypher::cold_query::ColdQuery;
 use nexus_model::{
     BoardState, ColdStorage, Content, EvictCapable, Fact, FihHash, FilterCapable, FlushCapable,
     FlushCursor, FlushResult, Hint, Intent, PartitionData, ScanCapable, StateFilter, StorageRead,

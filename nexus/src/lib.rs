@@ -8,7 +8,8 @@ pub mod storage;
 pub use blackboard::{DefaultBlackboard, Record};
 pub use mock_gateway::MockGateway;
 pub use nexus_model::{
-    Blackboard, BlackboardError, BoardState, Content, Fact, FihHash, Hint, Intent,
+    Blackboard, BlackboardError, BoardState, Content, EvictCapable, Fact, FihHash, FlushCapable,
+    FlushCursor, Hint, Intent, ScanCapable, TimeRangeCapable,
 };
 pub use process::{error::ProcessError, scheduler::Scheduler};
 pub use query::cypher::capable::CypherCapable;
