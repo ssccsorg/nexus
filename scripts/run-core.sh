@@ -32,7 +32,7 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
-run_check()  { cargo check -p nexus && cargo check -p nexus-storage-duckdb; }
+run_check()  { cargo check -p nexus && (cd "$REPO_ROOT/ext" && cargo check); }
 
 # ── Pre-flight auto-fixes: catch trivial issues before strict checks ────
 
