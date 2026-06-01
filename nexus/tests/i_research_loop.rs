@@ -9,7 +9,9 @@
 //   6. Show that new gaps emerge after knowledge integration
 
 use interface_cypher as cypher;
-use nexus::{Blackboard, BlackboardError, Fact, FihHash, Intent, create_blackboard};
+use nexus::{
+    Blackboard, BlackboardError, DefaultBlackboard, Fact, FihHash, Intent, create_blackboard,
+};
 use serde_json;
 
 // ── In-memory document chunking (not in core/model yet) ───────────────────
@@ -85,9 +87,11 @@ fn ingest_document(bb: &mut impl Blackboard, chunks: &[MdDocumentChunk]) {
 
 // ── Helper: run a Cypher query and return record count ───────────────────
 
-fn cypher_count(bb: &impl nexus::storage::petgraph::GraphRead, query: &str) -> usize {
-    let plan = cypher::Plan::from_internal(query).expect("plan parse failed");
-    cypher::execute(bb, &plan).expect("execute failed").len()
+fn cypher_count(bb: &DefaultBlackboard, query: &str) -> usize {
+    bb.with_graph(|g| {
+        let plan = cypher::Plan::from_internal(query).expect("plan parse failed");
+        cypher::execute(g, &plan).expect("execute failed").len()
+    })
 }
 
 // ── Three synthetic llms.md documents ────────────────────────────────────

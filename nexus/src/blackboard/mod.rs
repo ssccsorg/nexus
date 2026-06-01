@@ -4,9 +4,7 @@
 // access and Cypher queries) with a cold storage backend for durability.
 // Storage is swappable via DualStorage.
 
-use crate::storage::petgraph::{
-    EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Snapshottable, StorageSnapshot,
-};
+use crate::storage::petgraph::{PetgraphStorage, Snapshottable, StorageSnapshot};
 use interface_cypher::capable::CypherCapable;
 use interface_cypher::{Plan, TranslateError, execute_with_cold};
 use nexus_model::{
@@ -14,11 +12,11 @@ use nexus_model::{
     FactCapable, FihHash, FlushCapable, FlushCursor, FlushResult, Hint, HintCapable, Intent,
     IntentCapable, NullStorage, PartitionData, ScanCapable, StorageRead,
 };
-use petgraph::graph::{EdgeIndex, NodeIndex};
-use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+
+use nexus_model::storage::{EdgeWeight, NodeWeight};
 
 /// A single query result row from Cypher.
 pub type Record = std::collections::HashMap<String, nexus_model::Content>;
@@ -307,61 +305,11 @@ impl Default for DefaultBlackboard {
     }
 }
 
-impl GraphRead for DefaultBlackboard {
-    fn node_indices(&self) -> Vec<NodeIndex> {
-        let g = self.hot_graph.read().unwrap();
-        petgraph::Graph::node_indices(&*g).collect()
-    }
-
-    fn edge_indices(&self) -> Vec<EdgeIndex> {
-        let g = self.hot_graph.read().unwrap();
-        petgraph::Graph::edge_indices(&*g).collect()
-    }
-
-    fn node_weight(&self, idx: NodeIndex) -> Option<NodeWeight> {
-        let g = self.hot_graph.read().unwrap();
-        petgraph::Graph::node_weight(&*g, idx).cloned()
-    }
-
-    fn edge_weight(&self, idx: EdgeIndex) -> Option<EdgeWeight> {
-        let g = self.hot_graph.read().unwrap();
-        petgraph::Graph::edge_weight(&*g, idx).cloned()
-    }
-
-    fn edge_endpoints(&self, idx: EdgeIndex) -> Option<(NodeIndex, NodeIndex)> {
-        let g = self.hot_graph.read().unwrap();
-        petgraph::Graph::edge_endpoints(&*g, idx)
-    }
-
-    fn neighbors_undirected(&self, idx: NodeIndex) -> Vec<NodeIndex> {
-        let g = self.hot_graph.read().unwrap();
-        petgraph::Graph::neighbors_undirected(&*g, idx).collect()
-    }
-
-    fn edges_directed(&self, idx: NodeIndex, outgoing: bool) -> Vec<EdgeIndex> {
-        let g = self.hot_graph.read().unwrap();
-        let dir = if outgoing {
-            petgraph::Direction::Outgoing
-        } else {
-            petgraph::Direction::Incoming
-        };
-        petgraph::Graph::edges_directed(&*g, idx, dir)
-            .map(|e| e.id())
-            .collect()
-    }
-}
-
-impl GraphWrite for DefaultBlackboard {
-    fn add_node(&mut self, weight: NodeWeight) -> NodeIndex {
-        let mut g = self.hot_graph.write().unwrap();
-        g.add_node(weight)
-    }
-
-    fn add_edge(&mut self, from: NodeIndex, to: NodeIndex, weight: EdgeWeight) -> EdgeIndex {
-        let mut g = self.hot_graph.write().unwrap();
-        g.add_edge(from, to, weight)
-    }
-}
+// GraphRead and GraphWrite are NOT implemented for DefaultBlackboard
+// because the trait requires returning an &petgraph::Graph, which
+// cannot be acquired from an Arc<RwLock<...>> without runtime locking.
+// Callers should use DefaultBlackboard::snapshot() which returns an
+// RwLockReadGuard (implementing GraphRead) for query access.
 
 // ── StorageRead — delegates to hot storage ────────────────────────────────
 
@@ -474,10 +422,7 @@ impl Snapshottable for DefaultBlackboard {
 mod tests {
     use super::*;
     use crate::DefaultBlackboard;
-    use nexus_model::{
-        Blackboard, BoardState, Fact, FihHash, FlushCapable, FlushCursor, FlushResult, Intent,
-        StorageRead,
-    };
+    use nexus_model::{Blackboard, Fact, FihHash, FlushCapable, FlushCursor, Intent};
 
     fn tick() {
         std::thread::sleep(std::time::Duration::from_millis(1));
@@ -610,7 +555,7 @@ mod tests {
         // Mutate graph directly (no fact submission).
         {
             let mut g = bb.hot_graph.write().unwrap();
-            g.add_node(crate::storage::petgraph::NodeWeight {
+            g.add_node(NodeWeight {
                 name: "test_node".into(),
                 label: "Test".into(),
                 properties: HashMap::new(),
@@ -641,7 +586,7 @@ mod tests {
     #[test]
     fn test_flush_noop_backend() {
         // NullStorage cold backend — flush should succeed.
-        let mut bb = bb_with_facts();
+        let bb = bb_with_facts();
         let result = bb.storage.flush_since(&bb.flush_cursor);
         assert!(result.is_ok());
     }

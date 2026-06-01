@@ -63,8 +63,10 @@ fn scenario_contradiction_detection() {
     );
 
     // Cypher verification
-    let plan = cypher::Plan::from_internal("MATCH (f:Fact) RETURN f").unwrap();
-    let rows = cypher::execute(&bb, &plan).unwrap();
+    let rows = bb.with_graph(|g| {
+        let plan = cypher::Plan::from_internal("MATCH (f:Fact) RETURN f").unwrap();
+        cypher::execute(g, &plan).unwrap()
+    });
     assert_eq!(rows.len(), 3);
 
     println!("  ✓ Contradiction Detection: 3 agents, contradiction resolved via FIH");
@@ -140,10 +142,10 @@ fn scenario_peer_review() {
     );
 
     // Verify via Cypher
-    let hint_count = {
+    let hint_count = bb.with_graph(|g| {
         let p = cypher::Plan::from_internal("MATCH (h:Hint) RETURN h").unwrap();
-        cypher::execute(&bb, &p).unwrap().len()
-    };
+        cypher::execute(g, &p).unwrap().len()
+    });
     assert_eq!(hint_count, 2, "Cypher finds 2 hints");
 
     println!("  ✓ Peer Review: author + 2 reviewers + editor, hints guide conclusion");
@@ -236,10 +238,10 @@ fn scenario_knowledge_synthesis() {
     assert_eq!(state.intents.len(), 1, "validation intent submitted");
 
     // Cypher: all pieces accessible
-    let count = {
+    let count = bb.with_graph(|g| {
         let p = cypher::Plan::from_internal("MATCH (f:Fact) RETURN f").unwrap();
-        cypher::execute(&bb, &p).unwrap().len()
-    };
+        cypher::execute(g, &p).unwrap().len()
+    });
     assert_eq!(count, 4, "Cypher confirms 4 facts");
     assert_eq!(state.facts.len(), count, "read_state matches Cypher");
 
