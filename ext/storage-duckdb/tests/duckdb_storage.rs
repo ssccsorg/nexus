@@ -1,4 +1,4 @@
-use nexus_graph::CypherCapable;
+use nexus::CypherCapable;
 use nexus_model::{
     Content, FilterCapable, ScanCapable, StateFilter, StorageRead,
     TimeRangeCapable,

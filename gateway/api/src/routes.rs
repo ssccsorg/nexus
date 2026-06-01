@@ -8,7 +8,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use nexus_graph::{BlackboardError, Content, Fact, FihHash, Hint, Intent};
+use nexus::{BlackboardError, Content, Fact, FihHash, Hint, Intent};
 use serde::{Deserialize, Serialize};
 
 use crate::state::AppState;
@@ -132,7 +132,7 @@ pub async fn submit_fact(
 /// GET /fih/state
 pub async fn read_state(
     State(state): State<AppState>,
-) -> Json<nexus_graph::BoardState> {
+) -> Json<nexus::BoardState> {
     let bb = state.blackboard.lock().unwrap();
     let board_state = bb.read_state();
     Json(board_state)
