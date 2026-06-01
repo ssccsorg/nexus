@@ -1,0 +1,18 @@
+[package]
+name = "nexus-storage-duckdb"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+nex = { path = "../../nex" }
+nexus-model = { path = "../../model" }
+interface-cypher = { path = "../../interface/cypher" }
+interface-query = { path = "../../interface/query" }
+duckdb = { version = "1.105", features = ["bundled", "parquet"] }
+serde.workspace = true
+serde_json.workspace = true
+
+
+[dev-dependencies]
+tempfile = "3"

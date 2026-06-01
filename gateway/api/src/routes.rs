@@ -4,11 +4,11 @@
 // Errors from the Blackboard are mapped to appropriate HTTP status codes.
 
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
-    Json,
 };
-use nexus_graph::{BlackboardError, Content, Fact, FihHash, Hint, Intent};
+use nex::{BlackboardError, Content, Fact, FihHash, Hint, Intent};
 use serde::{Deserialize, Serialize};
 
 use crate::state::AppState;
@@ -117,7 +117,9 @@ pub async fn submit_fact(
             },
             other => Content {
                 mime_type: "application/json".into(),
-                data: serde_json::to_string(other).unwrap_or_default().into_bytes(),
+                data: serde_json::to_string(other)
+                    .unwrap_or_default()
+                    .into_bytes(),
             },
         },
         creator: req.creator,
@@ -130,9 +132,7 @@ pub async fn submit_fact(
 }
 
 /// GET /fih/state
-pub async fn read_state(
-    State(state): State<AppState>,
-) -> Json<nexus_graph::BoardState> {
+pub async fn read_state(State(state): State<AppState>) -> Json<nex::BoardState> {
     let bb = state.blackboard.lock().unwrap();
     let board_state = bb.read_state();
     Json(board_state)
@@ -186,8 +186,7 @@ pub async fn heartbeat_intent(
     Json(req): Json<HeartbeatRequest>,
 ) -> Result<Json<()>, (StatusCode, Json<ApiError>)> {
     let mut bb = state.blackboard.lock().unwrap();
-    bb.heartbeat(&intent_id, &req.agent)
-        .map_err(err_response)?;
+    bb.heartbeat(&intent_id, &req.agent).map_err(err_response)?;
     Ok(Json(()))
 }
 
@@ -217,9 +216,7 @@ pub async fn conclude_intent(
     let fact = bb
         .conclude_intent(&intent_id, &result_str)
         .map_err(err_response)?;
-    Ok(Json(ConcludeResponse {
-        fact,
-    }))
+    Ok(Json(ConcludeResponse { fact }))
 }
 
 /// POST /fih/hints
@@ -234,8 +231,15 @@ pub async fn submit_hint(
         creator: req.creator,
     };
     let mut bb = state.blackboard.lock().unwrap();
-    bb.submit_hint(&hint)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiError { error: "hint_error".into(), detail: e.to_string() })))?;
+    bb.submit_hint(&hint).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiError {
+                error: "hint_error".into(),
+                detail: e.to_string(),
+            }),
+        )
+    })?;
     Ok(Json(()))
 }
 

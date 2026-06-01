@@ -1,0 +1,19 @@
+[package]
+name = "interface-cypher"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+interface-query = { path = "../query" }
+nexus-model = { path = "../../model" }
+cyrs-syntax = { git = "https://github.com/phall1/cyrs", features = ["serde"] }
+cyrs-ast = { git = "https://github.com/phall1/cyrs" }
+cyrs-hir = { git = "https://github.com/phall1/cyrs" }
+cyrs-plan = { git = "https://github.com/phall1/cyrs" }
+petgraph = { workspace = true }
+serde = { workspace = true }
+serde_json = "1"
+
+[dev-dependencies]
+nex = { path = "../../nex" }
