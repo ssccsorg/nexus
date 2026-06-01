@@ -10,15 +10,12 @@ pub use mock_gateway::MockGateway;
 pub use nexus_model::{
     Blackboard, BlackboardError, BoardState, Content, Fact, FihHash, Hint, Intent,
 };
-pub use process::{
-    error::ProcessError,
-    scheduler::Scheduler,
-};
+pub use process::{error::ProcessError, scheduler::Scheduler};
 pub use query::cypher::capable::CypherCapable;
-pub use storage::petgraph::{
-    GraphRead, GraphWrite, NodeWeight, EdgeWeight, PetgraphStorage, Snapshottable, StorageSnapshot,
-};
 pub use storage::composite::CompositeColdStorage;
+pub use storage::petgraph::{
+    EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Snapshottable, StorageSnapshot,
+};
 
 /// Create a default blackboard with in-memory petgraph hot storage
 /// and no cold backend.

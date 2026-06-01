@@ -27,7 +27,7 @@
 
 use nexus_model::SessionExecute;
 
-use super::composite::CompositeColdStorage;
+use super::cold::CompositeColdStorage;
 use super::{IoBufferBlob, IoBufferObject, IoBufferSessionMeta};
 use nexus_model::SystemClock;
 

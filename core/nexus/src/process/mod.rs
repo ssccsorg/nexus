@@ -5,10 +5,10 @@
 //   graph:   how data is stored and queried (Cypher, petgraph)
 //   process: how data drives action (scheduling, eviction, stigmergy)
 
-pub mod scheduler;
-pub mod eviction;
 pub mod error;
+pub mod eviction;
+pub mod scheduler;
 pub mod tasks;
 
-pub use scheduler::Scheduler;
 pub use error::ProcessError;
+pub use scheduler::Scheduler;

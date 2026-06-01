@@ -1,9 +1,9 @@
-pub mod composite;
+pub mod cold;
 pub mod iobuf;
 pub mod session_server;
 pub mod store_session;
 
-pub use composite::CompositeColdStorage;
+pub use cold::CompositeColdStorage;
 pub use iobuf::{IoBufferBlob, IoBufferKv, IoBufferObject, IoBufferSessionMeta};
 pub use session_server::{SessionHandle, SessionServer};
 pub use store_session::IoBufferSession;
