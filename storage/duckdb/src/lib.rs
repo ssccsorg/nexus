@@ -1,9 +1,8 @@
 // nexus-storage-duckdb — DuckDB-backed cold storage for analytical queries.
 
-pub mod cold_query;
 pub mod cypher_sql;
 
-use crate::cold_query::ColdQuery;
+use interface_cypher::cold_query::ColdQuery;
 use nexus::CypherCapable;
 use nexus_model::{
     BoardState, ColdStorage, Content, EvictCapable, Fact, FihHash, FilterCapable, FlushCapable,
@@ -500,20 +499,18 @@ impl FlushCapable for DuckDbStorage {
 }
 
 impl CypherCapable for DuckDbStorage {
-    fn query_plan(&self, plan: &serde_json::Value) -> Result<serde_json::Value, String> {
-        let cold_query: ColdQuery = serde_json::from_value(plan.clone())
-            .map_err(|e| format!("DuckDbStorage CypherCapable: failed to parse ColdQuery: {e}"))?;
-        let sql = cypher_sql::translate(&cold_query)?;
+    fn query_plan(&self, plan: &ColdQuery) -> Result<String, String> {
+        let sql = cypher_sql::translate(plan)?;
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(&sql)
             .map_err(|e| format!("SQL prepare error: {e}"))?;
         // For aggregate queries, always project "count" regardless of
-        // cold_query.projections (which may be empty).
-        let result_cols: Vec<String> = if cold_query.aggregate_count {
+        // plan.projections (which may be empty).
+        let result_cols: Vec<String> = if plan.aggregate_count {
             vec!["count".to_string()]
         } else {
-            cold_query.projections.clone()
+            plan.projections.clone()
         };
 
         let rows = stmt
@@ -527,7 +524,8 @@ impl CypherCapable for DuckDbStorage {
             })
             .map_err(|e| format!("SQL query error: {e}"))?;
         let results: Vec<serde_json::Value> = rows.filter_map(|r| r.ok()).collect();
-        Ok(serde_json::Value::Array(results))
+        serde_json::to_string(&serde_json::Value::Array(results))
+            .map_err(|e| format!("JSON serialization error: {e}"))
     }
 }
 

@@ -3,24 +3,16 @@
 // Tests Plan-ColdQuery translation for both External (cyrs_plan) and
 // Internal (PlanIR) plan variants, plus execute_with_cold hot/cold routing.
 
+use interface_cypher::cold_query::ColdQuery;
 use interface_cypher::{Plan, execute_with_cold};
 use nexus::storage::petgraph::{EdgeWeight, NodeWeight};
 
-fn assert_label(val: &serde_json::Value, expected: &str) {
-    assert_eq!(val["label"].as_str(), Some(expected));
+fn assert_label(cq: &ColdQuery, expected: &str) {
+    assert_eq!(cq.label, expected);
 }
 
-fn assert_filters_nonempty(val: &serde_json::Value) {
-    let filters = val["filters"].as_array().unwrap();
-    assert!(!filters.is_empty());
-}
-
-fn find_filter_by_op<'a>(val: &'a serde_json::Value, op: &str) -> Option<&'a serde_json::Value> {
-    val["filters"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|f| f["op"].as_str() == Some(op))
+fn assert_filters_nonempty(cq: &ColdQuery) {
+    assert!(!cq.filters.is_empty());
 }
 
 // -- External Plan to ColdQuery
@@ -69,8 +61,8 @@ fn external_source_filter_eq() {
     let cq = cold.unwrap();
     assert_label(&cq, "Fact");
     assert_filters_nonempty(&cq);
-    let eq = find_filter_by_op(&cq, "Eq").unwrap();
-    assert_eq!(eq["value"], serde_json::json!("test"));
+    let eq_filter = cq.filters.iter().find(|f| f.op == "Eq").unwrap();
+    assert_eq!(eq_filter.value, serde_json::json!("test"));
 }
 
 #[test]
@@ -79,8 +71,8 @@ fn external_source_filter_gt() {
     let cold = plan.to_cold_query();
     assert!(cold.is_some());
     let cq = cold.unwrap();
-    let gt = find_filter_by_op(&cq, "Gt").unwrap();
-    assert_eq!(gt["value"], serde_json::json!(5));
+    let gt_filter = cq.filters.iter().find(|f| f.op == "Gt").unwrap();
+    assert_eq!(gt_filter.value, serde_json::json!(5));
 }
 
 #[test]
@@ -90,11 +82,8 @@ fn external_source_project_limit() {
     assert!(cold.is_some());
     let cq = cold.unwrap();
     assert_label(&cq, "Fact");
-    assert_eq!(cq["limit"].as_i64(), Some(10));
-    assert_eq!(
-        cq["projections"].as_array().unwrap(),
-        &vec![serde_json::json!("fact_id")]
-    );
+    assert_eq!(cq.limit, Some(10));
+    assert_eq!(cq.projections, vec!["fact_id".to_string()]);
 }
 
 // -- Internal Plan (PlanIR) to ColdQuery

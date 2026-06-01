@@ -1630,6 +1630,7 @@ name = "nexus-storage-duckdb"
 version = "0.1.0"
 dependencies = [
  "duckdb",
+ "interface-cypher",
  "nexus",
  "nexus-model",
  "serde",

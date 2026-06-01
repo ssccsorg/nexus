@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 nexus = { path = "../../nexus" }
 nexus-model = { path = "../../model" }
+interface-cypher = { path = "../../interface/cypher" }
 duckdb = { version = "1.105", features = ["bundled", "parquet"] }
 serde.workspace = true
 serde_json.workspace = true
