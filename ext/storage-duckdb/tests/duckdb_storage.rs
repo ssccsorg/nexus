@@ -1,7 +1,6 @@
 use nexus::CypherCapable;
 use nexus_model::{
-    Content, FilterCapable, ScanCapable, StateFilter, StorageRead,
-    TimeRangeCapable,
+    Content, FilterCapable, ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
 };
 use nexus_storage_duckdb::DuckDbStorage;
 use tempfile::TempDir;
@@ -58,12 +57,24 @@ fn test_read_facts_from_parquet() {
 
     let fact_1 = state.facts.iter().find(|f| f.id.0 == "fact_1").unwrap();
     assert_eq!(fact_1.origin, "origin_a");
-    assert_eq!(fact_1.content, Content { mime_type: "text/plain".into(), data: "hello".into() });
+    assert_eq!(
+        fact_1.content,
+        Content {
+            mime_type: "text/plain".into(),
+            data: "hello".into()
+        }
+    );
     assert_eq!(fact_1.creator, "tester");
 
     let fact_2 = state.facts.iter().find(|f| f.id.0 == "fact_2").unwrap();
     assert_eq!(fact_2.origin, "origin_b");
-    assert_eq!(fact_2.content, Content { mime_type: "text/plain".into(), data: "world".into() });
+    assert_eq!(
+        fact_2.content,
+        Content {
+            mime_type: "text/plain".into(),
+            data: "world".into()
+        }
+    );
     assert_eq!(fact_2.creator, "admin");
 
     assert!(state.intents.is_empty(), "expected no intents");
@@ -231,7 +242,13 @@ fn test_filter_by_fact_ids() {
 
     assert_eq!(state.facts.len(), 1, "expected exactly 1 fact");
     assert_eq!(state.facts[0].id.0, "fact_1");
-    assert_eq!(state.facts[0].content, Content { mime_type: "text/plain".into(), data: "hello".into() });
+    assert_eq!(
+        state.facts[0].content,
+        Content {
+            mime_type: "text/plain".into(),
+            data: "hello".into()
+        }
+    );
 }
 
 // ── Test 7: scan partition ──────────────────────────────────────────────
@@ -274,7 +291,13 @@ fn test_scan_partition() {
     assert_eq!(data_1.partition, "2026-06-01");
     assert_eq!(data_1.facts.len(), 1, "expected 1 fact in partition 1");
     assert_eq!(data_1.facts[0].id.0, "fact_p1");
-    assert_eq!(data_1.facts[0].content, Content { mime_type: "text/plain".into(), data: "p1_data".into() });
+    assert_eq!(
+        data_1.facts[0].content,
+        Content {
+            mime_type: "text/plain".into(),
+            data: "p1_data".into()
+        }
+    );
     assert!(data_1.intents.is_empty(), "expected no intents");
     assert!(data_1.hints.is_empty(), "expected no hints");
 
@@ -283,7 +306,13 @@ fn test_scan_partition() {
     assert_eq!(data_2.partition, "2026-06-02");
     assert_eq!(data_2.facts.len(), 1, "expected 1 fact in partition 2");
     assert_eq!(data_2.facts[0].id.0, "fact_p2");
-    assert_eq!(data_2.facts[0].content, Content { mime_type: "text/plain".into(), data: "p2_data".into() });
+    assert_eq!(
+        data_2.facts[0].content,
+        Content {
+            mime_type: "text/plain".into(),
+            data: "p2_data".into()
+        }
+    );
 }
 
 // ── Test 9: multiple Parquet files unioned ──────────────────────────────
@@ -523,17 +552,12 @@ fn test_complex_json_content() {
     let state = storage.read_state();
 
     let nested = state.facts.iter().find(|f| f.id.0 == "f_nested").unwrap();
-    let cv: serde_json::Value =
-        serde_json::from_str(nested.content.as_str().unwrap_or(""))
-            .unwrap_or(serde_json::Value::Null);
+    let cv: serde_json::Value = serde_json::from_str(nested.content.as_str().unwrap_or(""))
+        .unwrap_or(serde_json::Value::Null);
     assert_eq!(cv["nested"]["array"][0], serde_json::json!(1));
-    assert_eq!(
-        cv["nested"]["obj"]["key"],
-        serde_json::json!("val")
-    );
-    let cv2: serde_json::Value =
-        serde_json::from_str(nested.content.as_str().unwrap_or(""))
-            .unwrap_or(serde_json::Value::Null);
+    assert_eq!(cv["nested"]["obj"]["key"], serde_json::json!("val"));
+    let cv2: serde_json::Value = serde_json::from_str(nested.content.as_str().unwrap_or(""))
+        .unwrap_or(serde_json::Value::Null);
     assert_eq!(cv2["num"], serde_json::json!(42));
     assert_eq!(cv2["flag"], serde_json::json!(true));
 
@@ -542,7 +566,15 @@ fn test_complex_json_content() {
         .iter()
         .find(|f| f.id.0 == "f_null_content")
         .unwrap();
-    assert_eq!(null_fact.content, Content { mime_type: "application/json".into(), data: serde_json::to_string(&serde_json::Value::Null).unwrap_or_default().into_bytes() });
+    assert_eq!(
+        null_fact.content,
+        Content {
+            mime_type: "application/json".into(),
+            data: serde_json::to_string(&serde_json::Value::Null)
+                .unwrap_or_default()
+                .into_bytes()
+        }
+    );
 }
 
 // ── Test 17: stress test — 1000 facts ───────────────────────────────────

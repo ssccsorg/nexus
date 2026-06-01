@@ -39,11 +39,20 @@ pub async fn start_ve_with(session: IoBufferSession) -> (String, tokio::task::Jo
     let state = Arc::new(AppState { session });
 
     let app = Router::new()
-        .route("/meta/{key}",
-            axum::routing::get(routes::meta_get).put(routes::meta_set))
-        .route("/r2/{project}/{key}",
-            axum::routing::get(routes::r2_get).put(routes::r2_put).delete(routes::r2_delete))
-        .route("/do/{project}/{key}/cas", axum::routing::post(routes::do_cas))
+        .route(
+            "/meta/{key}",
+            axum::routing::get(routes::meta_get).put(routes::meta_set),
+        )
+        .route(
+            "/r2/{project}/{key}",
+            axum::routing::get(routes::r2_get)
+                .put(routes::r2_put)
+                .delete(routes::r2_delete),
+        )
+        .route(
+            "/do/{project}/{key}/cas",
+            axum::routing::post(routes::do_cas),
+        )
         .with_state(state)
         .layer(CorsLayer::permissive());
 
