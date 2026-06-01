@@ -7,7 +7,7 @@
 //   4. Read_state + unit assertions verify correctness (Cypher is for portability)
 
 use interface_cypher as cypher;
-use nexus::{Blackboard, BlackboardError, Content, Fact, FihHash, Intent, create_blackboard};
+use nex::{Blackboard, BlackboardError, Content, Fact, FihHash, Intent, create_blackboard};
 
 /// Helper: submit a fact with minimal boilerplate.
 fn submit_fact(bb: &mut impl Blackboard, id: &str, origin: &str, content: &str, creator: &str) {
@@ -21,7 +21,7 @@ fn submit_fact(bb: &mut impl Blackboard, id: &str, origin: &str, content: &str, 
 }
 
 /// Helper: run a Cypher query on a DefaultBlackboard and count results.
-fn cypher_count(bb: &nexus::DefaultBlackboard, query: &str) -> usize {
+fn cypher_count(bb: &nex::DefaultBlackboard, query: &str) -> usize {
     bb.with_graph(|g| {
         let plan = cypher::Plan::from_internal(query).expect("parse failed");
         cypher::execute(g, &plan).expect("execute failed").len()
@@ -164,7 +164,7 @@ fn test_full_agent_collaboration_flow() {
 
 #[test]
 fn test_petgraph_time_range() {
-    use nexus::{Blackboard, Fact, FihHash, PetgraphStorage, TimeRangeCapable, create_blackboard};
+    use nex::{Blackboard, Fact, FihHash, PetgraphStorage, TimeRangeCapable, create_blackboard};
 
     // PetgraphStorage::time_range() returns None (unbounded in-memory store).
     // This test verifies the trait is wired correctly.

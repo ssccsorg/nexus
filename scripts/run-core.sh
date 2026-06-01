@@ -32,7 +32,7 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
-run_check()  { cargo check -p nexus && cargo check -p nexus-storage-duckdb; }
+run_check()  { cargo check -p nex && cargo check -p nexus-storage-duckdb; }
 
 # ── Pre-flight auto-fixes: catch trivial issues before strict checks ────
 
@@ -45,7 +45,7 @@ run_auto_fix()     { run_fmt && run_clippy_fix && run_compiler_fix && run_fmt; }
 
 run_clippy() { cargo clippy --workspace -- -D warnings; }
 run_test()   {
-    cargo test -p nexus -- --nocapture 2>&1
+    cargo test -p nex -- --nocapture 2>&1
     echo "---"
     cargo test -p nexus-storage-duckdb -- --nocapture 2>&1
 }

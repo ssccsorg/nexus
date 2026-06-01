@@ -6,7 +6,7 @@
 //   3. Parallel reads/writes do not race
 //   4. MetaStore (KV) stores cursor and snapshot pointers
 
-use nexus::storage::composite::{
+use nex::storage::composite::{
     CompositeColdStorage, IoBufferBlob, IoBufferObject, IoBufferSessionMeta,
 };
 use nexus_model::{FlushCapable, FlushCursor, MetaStore};

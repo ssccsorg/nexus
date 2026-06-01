@@ -10,9 +10,9 @@
 // These tests validate that it composes correctly with Petgraph via
 // DualStorage, matching the same trait contracts as DuckDbStorage.
 
-use nexus::storage::composite::{CompositeColdStorage, IoBufferBlob, IoBufferKv, IoBufferObject};
-use nexus::storage::petgraph::PetgraphStorage;
-use nexus::{Blackboard, Content, DefaultBlackboard, Fact, FihHash, ScanCapable, Snapshottable};
+use nex::storage::composite::{CompositeColdStorage, IoBufferBlob, IoBufferKv, IoBufferObject};
+use nex::storage::petgraph::PetgraphStorage;
+use nex::{Blackboard, Content, DefaultBlackboard, Fact, FihHash, ScanCapable, Snapshottable};
 use nexus_model::{
     BlobStore, ColdStorage, DualStorage, EvictCapable, FlushCapable, FlushCursor, MetaStore,
     ObjectStore,
@@ -288,7 +288,7 @@ fn test_multi_lifetime_data_preservation_across_restart() {
 
 #[test]
 fn test_multi_entity_persistence_through_dual_storage() {
-    use nexus::Intent;
+    use nex::Intent;
 
     let bb = make_bb();
     let mut guard = bb;
@@ -401,7 +401,7 @@ fn test_fih_scenario_submit_flush_read() {
     <_ as Blackboard>::submit_fact(&mut guard, &fact("scn_f2")).unwrap();
     <_ as Blackboard>::submit_fact(&mut guard, &fact("scn_f3")).unwrap();
 
-    let intent = nexus::Intent {
+    let intent = nex::Intent {
         id: FihHash("scn_i1".into()),
         from_facts: vec!["scn_f1".into(), "scn_f2".into()],
         to_fact_id: None,
@@ -415,7 +415,7 @@ fn test_fih_scenario_submit_flush_read() {
     <_ as Blackboard>::submit_intent(&mut guard, &intent).unwrap();
     <_ as Blackboard>::submit_hint(
         &mut guard,
-        &nexus::Hint {
+        &nex::Hint {
             id: FihHash("scn_h1".into()),
             content: "scenario hint".into(),
             creator: "tester".into(),
@@ -498,7 +498,7 @@ fn test_fih_scenario_petgraph_blob_identity() {
     <_ as Blackboard>::submit_fact(&mut guard, &fact("id_f2")).unwrap();
 
     // Claim and heartbeat an intent
-    let intent = nexus::Intent {
+    let intent = nex::Intent {
         id: FihHash("id_i1".into()),
         from_facts: vec!["id_f1".into()],
         to_fact_id: None,
