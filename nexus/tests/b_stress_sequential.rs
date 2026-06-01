@@ -6,7 +6,7 @@
 //   - All submitted Facts are visible via read_state
 //   - Intent lifecycle completes correctly under contention
 
-use nexus::query::cypher;
+use interface_cypher as cypher;
 use nexus::{Blackboard, Fact, FihHash, Intent, create_blackboard};
 use std::collections::HashSet;
 

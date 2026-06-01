@@ -13,14 +13,13 @@ use petgraph::graph::NodeIndex;
 
 use std::collections::HashMap;
 
-use super::plan::*;
-
-use crate::query::cypher::capable::CypherCapable;
-use crate::storage::petgraph::GraphRead;
-
-use crate::Record;
-
+use crate::capable::CypherCapable;
+use crate::plan::*;
 use nexus_model::Content;
+use nexus_model::storage::GraphRead;
+
+/// A single query result row: map of field names to content values.
+pub type Record = HashMap<String, Content>;
 
 // ── Unified execute ────────────────────────────────────────────────────────
 

@@ -6,7 +6,7 @@
 //   3. Agent-B claims, works on, and concludes the Intent
 //   4. Read_state + unit assertions verify correctness (Cypher is for portability)
 
-use nexus::query::cypher;
+use interface_cypher as cypher;
 use nexus::{Blackboard, BlackboardError, Content, Fact, FihHash, Intent, create_blackboard};
 
 /// Helper: submit a fact with minimal boilerplate.
