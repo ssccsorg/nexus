@@ -6,7 +6,10 @@
 mod routes;
 pub mod state;
 
-use axum::{Router, routing::{get, post}};
+use axum::{
+    Router,
+    routing::{get, post},
+};
 use state::AppState;
 use tower_http::cors::CorsLayer;
 

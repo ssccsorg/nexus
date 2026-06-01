@@ -3,8 +3,8 @@
 // Starts the server on a random port, exercises every endpoint,
 // and verifies the full FIH lifecycle works over HTTP.
 
-use nexus_gateway_api::state::AppState;
 use nexus_gateway_api::build_router;
+use nexus_gateway_api::state::AppState;
 
 fn test_state() -> AppState {
     AppState::in_memory()
@@ -64,7 +64,10 @@ async fn test_submit_and_read_fact() {
     let expected: Vec<u8> = b"Gateway API test fact".to_vec();
     assert_eq!(
         facts[0]["content"]["data"].as_array().unwrap(),
-        &expected.into_iter().map(serde_json::Value::from).collect::<Vec<_>>()
+        &expected
+            .into_iter()
+            .map(serde_json::Value::from)
+            .collect::<Vec<_>>()
     );
 }
 
@@ -139,11 +142,7 @@ async fn test_intent_lifecycle_over_http() {
         .collect::<Vec<_>>();
     assert!(String::from_utf8_lossy(&concluded_content).contains("Lifecycle verified"));
 
-    let resp = client
-        .get(format!("{base}/state"))
-        .send()
-        .await
-        .unwrap();
+    let resp = client.get(format!("{base}/state")).send().await.unwrap();
     let state: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(
         state["facts"].as_array().unwrap().len(),
@@ -175,11 +174,7 @@ async fn test_submit_hint() {
         .unwrap();
     assert_eq!(resp.status(), 200);
 
-    let resp = client
-        .get(format!("{base}/state"))
-        .send()
-        .await
-        .unwrap();
+    let resp = client.get(format!("{base}/state")).send().await.unwrap();
     let state: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(state["hints"].as_array().unwrap().len(), 1);
     assert_eq!(state["hints"][0]["content"], "Important observation");
@@ -202,11 +197,7 @@ async fn test_submit_intent_without_facts_fails() {
         .send()
         .await
         .unwrap();
-    assert_eq!(
-        resp.status(),
-        403,
-        "ungrounded intent should be forbidden"
-    );
+    assert_eq!(resp.status(), 403, "ungrounded intent should be forbidden");
 }
 
 #[tokio::test]
