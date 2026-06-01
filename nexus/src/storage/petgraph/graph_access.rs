@@ -1,6 +1,6 @@
-// nexus-graph — GraphRead / GraphWrite trait re-exports.
+// nexus-graph — GraphRead / GraphWrite trait definitions and implementations.
 //
-// Traits and their implementations are defined in nexus-model so they
+// Traits and implementations are defined in nexus-model so they
 // can be shared with interface-cypher without circular dependencies.
 // This module re-exports them for backward compatibility.
 //

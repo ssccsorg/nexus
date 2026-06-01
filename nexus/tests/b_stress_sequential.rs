@@ -278,20 +278,20 @@ fn test_stress_many_ants() {
     }
 
     // Invariant 4: Cypher MATCH returns correct node count
-    let fact_count = {
+    let fact_count = bb.with_graph(|g| {
         let plan = cypher::Plan::from_internal("MATCH (f:Fact) RETURN f").unwrap();
-        cypher::execute(&bb, &plan).unwrap().len()
-    };
+        cypher::execute(g, &plan).unwrap().len()
+    });
     assert_eq!(
         fact_count,
         state.facts.len(),
         "Cypher count != read_state count"
     );
 
-    let intent_count = {
+    let intent_count = bb.with_graph(|g| {
         let plan = cypher::Plan::from_internal("MATCH (i:Intent) RETURN i").unwrap();
-        cypher::execute(&bb, &plan).unwrap().len()
-    };
+        cypher::execute(g, &plan).unwrap().len()
+    });
     assert_eq!(
         intent_count,
         state.intents.len(),

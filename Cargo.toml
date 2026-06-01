@@ -3,10 +3,11 @@ resolver = "2"
 members = [
     "model",
     "nexus",
-    "ext/storage-duckdb",
-    "ext/ve-composite",
+    "storage/duckdb",
+    "storage/ve-composite",
     "gateway/api",
     "playbooks/agents",
+    "interface/cypher",
 ]
 
 [workspace.package]

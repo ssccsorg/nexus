@@ -98,11 +98,12 @@ fn main() {
 
     println!("\n6. Privileged: Cypher MATCH query...");
     let plan = cypher::Plan::from_internal("MATCH (f:Fact) RETURN f").unwrap();
-    let rows = cypher::execute(&bb, &plan).unwrap();
+    // Use snapshot() which returns an RwLockReadGuard implementing GraphRead.
+    let rows = cypher::execute(&bb.snapshot(), &plan).unwrap();
     println!("   Cypher returned {} rows (all Fact nodes)", rows.len());
 
     let plan2 = cypher::Plan::from_internal("MATCH (i:Intent) RETURN i").unwrap();
-    let rows2 = cypher::execute(&bb, &plan2).unwrap();
+    let rows2 = cypher::execute(&bb.snapshot(), &plan2).unwrap();
     println!("   Cypher returned {} rows (all Intent nodes)", rows2.len());
 
     // ── Final state ──────────────────────────────────────────────────

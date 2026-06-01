@@ -1,4 +1,4 @@
-/// Petgraph executor — unified dual-path engine.
+/// Petgraph executor -- unified dual-path engine.
 ///
 /// Handles both [`Plan::External`] (cyrs_plan ReadOp chain) and
 /// [`Plan::Internal`] (legacy PlanIR, fallback). Default path is
@@ -10,6 +10,7 @@
 /// preferred for batch operations since it acquires the graph read
 /// lock only once for the entire query execution.
 use petgraph::graph::NodeIndex;
+use petgraph::visit::EdgeRef;
 
 use std::collections::HashMap;
 
@@ -99,7 +100,7 @@ fn execute_external<G: GraphRead>(
         row_sets.push(rows);
     }
 
-    // Last operator is the root — collect its rows as records
+    // Last operator is the root -- collect its rows as records
     let last = row_sets.last().cloned().unwrap_or_default();
     Ok(last) // already Vec<HashMap<String, Content>>
 }
@@ -117,7 +118,8 @@ fn exec_readop<G: GraphRead>(
             let labels: Option<&str> = label
                 .as_ref()
                 .and_then(|ls| ls.0.first().map(|s| s.as_str()));
-            let indices = find_nodes_by_label_str(graph, labels);
+            let g = graph.graph();
+            let indices = find_nodes_by_label_str(g, labels);
             let rows: RowSet = indices
                 .into_iter()
                 .map(|idx| {
@@ -225,31 +227,30 @@ fn exec_readop<G: GraphRead>(
             let input_rows = get_input(prior, *input)?;
             let rel_types: Vec<&str> = rel.types.iter().map(|s| s.as_str()).collect();
             let dir = &rel.direction;
+            let g = graph.graph();
 
             let mut expanded = Vec::new();
             for row in input_rows {
-                let from_idx = find_bound_node(graph, &row);
+                let from_idx = find_bound_node(g, &row);
                 if let Some(idx) = from_idx {
                     // Use directed edge traversal based on direction
-                    let neighbors = match dir {
-                        cyrs_plan::Direction::Outgoing => graph
-                            .edges_directed(idx, true)
-                            .into_iter()
-                            .filter_map(|ei| graph.edge_endpoints(ei).map(|(_, dst)| dst))
+                    let neighbors: Vec<NodeIndex> = match dir {
+                        cyrs_plan::Direction::Outgoing => g
+                            .edges_directed(idx, petgraph::Direction::Outgoing)
+                            .map(|e| e.target())
                             .collect(),
-                        cyrs_plan::Direction::Incoming => graph
-                            .edges_directed(idx, false)
-                            .into_iter()
-                            .filter_map(|ei| graph.edge_endpoints(ei).map(|(_, dst)| dst))
+                        cyrs_plan::Direction::Incoming => g
+                            .edges_directed(idx, petgraph::Direction::Incoming)
+                            .map(|e| e.source())
                             .collect(),
-                        cyrs_plan::Direction::Undirected => graph.neighbors_undirected(idx),
-                        _ => graph.neighbors_undirected(idx),
+                        cyrs_plan::Direction::Undirected => g.neighbors_undirected(idx).collect(),
+                        _ => g.neighbors_undirected(idx).collect(),
                     };
 
                     // Filter edges by type if specified
                     for neighbor in neighbors {
                         // Check edge type match
-                        let edge_idx = find_edge_filtered(graph, idx, neighbor, &rel_types, dir);
+                        let edge_idx = find_edge_filtered(g, idx, neighbor, &rel_types, dir);
                         if !rel_types.is_empty() && edge_idx.is_none() {
                             continue;
                         }
@@ -262,7 +263,7 @@ fn exec_readop<G: GraphRead>(
                                 data: (neighbor.index() as i64).to_string().into_bytes(),
                             },
                         );
-                        if let Some(ei) = edge_idx.or_else(|| find_edge(graph, idx, neighbor)) {
+                        if let Some(ei) = edge_idx.or_else(|| find_edge(g, idx, neighbor)) {
                             new_row.insert(
                                 bind_rel.0.to_string(),
                                 Content {
@@ -379,6 +380,7 @@ fn get_input(prior: &[RowSet], op_id: cyrs_plan::OpId) -> Result<RowSet, Transla
 // ── Expression evaluation ──────────────────────────────────────────────────
 
 fn evaluate_expr<G: GraphRead>(graph: &G, row: &HashMap<String, Content>, expr: &Expr) -> Content {
+    let g = graph.graph();
     match expr {
         Expr::Var(id) => row.get(&id.0.to_string()).cloned().unwrap_or(Content {
             mime_type: "application/octet-stream".into(),
@@ -409,7 +411,7 @@ fn evaluate_expr<G: GraphRead>(graph: &G, row: &HashMap<String, Content>, expr: 
             if let Some(idx_str) = node_val.as_str() {
                 if let Ok(idx) = idx_str.parse::<i64>() {
                     let ni = NodeIndex::new(idx as usize);
-                    if let Some(w) = graph.node_weight(ni) {
+                    if let Some(w) = g.node_weight(ni) {
                         w.properties.get(prop.as_str()).cloned().unwrap_or(Content {
                             mime_type: "application/octet-stream".into(),
                             data: Vec::new(),
@@ -509,7 +511,10 @@ fn value_as_f64(v: &Content) -> Option<f64> {
     v.as_str().and_then(|s| s.parse::<f64>().ok())
 }
 
-fn find_bound_node<G: GraphRead>(graph: &G, row: &HashMap<String, Content>) -> Option<NodeIndex> {
+fn find_bound_node(
+    graph: &petgraph::Graph<nexus_model::storage::NodeWeight, nexus_model::storage::EdgeWeight>,
+    row: &HashMap<String, Content>,
+) -> Option<NodeIndex> {
     for val in row.values() {
         if let Some(idx_str) = val.as_str()
             && let Ok(idx) = idx_str.parse::<i64>()
@@ -523,59 +528,43 @@ fn find_bound_node<G: GraphRead>(graph: &G, row: &HashMap<String, Content>) -> O
     None
 }
 
-fn find_edge<G: GraphRead>(
-    graph: &G,
+fn find_edge(
+    graph: &petgraph::Graph<nexus_model::storage::NodeWeight, nexus_model::storage::EdgeWeight>,
     from: NodeIndex,
     to: NodeIndex,
 ) -> Option<petgraph::graph::EdgeIndex> {
-    for &ei in &graph.edges_directed(from, true) {
-        if let Some((_, dst)) = graph.edge_endpoints(ei)
-            && dst == to
-        {
-            return Some(ei);
+    for edge in graph.edges_directed(from, petgraph::Direction::Outgoing) {
+        if edge.target() == to {
+            return Some(edge.id());
         }
     }
-    for &ei in &graph.edges_directed(from, false) {
-        if let Some((_, dst)) = graph.edge_endpoints(ei)
-            && dst == to
-        {
-            return Some(ei);
+    for edge in graph.edges_directed(from, petgraph::Direction::Incoming) {
+        if edge.source() == to {
+            return Some(edge.id());
         }
     }
     None
 }
 
-fn find_edge_filtered<G: GraphRead>(
-    graph: &G,
+fn find_edge_filtered(
+    graph: &petgraph::Graph<nexus_model::storage::NodeWeight, nexus_model::storage::EdgeWeight>,
     from: NodeIndex,
     to: NodeIndex,
     types: &[&str],
     _dir: &cyrs_plan::Direction,
 ) -> Option<petgraph::graph::EdgeIndex> {
-    for &ei in &graph.edges_directed(from, true) {
-        if let Some((_, dst)) = graph.edge_endpoints(ei)
-            && dst == to
+    for edge in graph.edges_directed(from, petgraph::Direction::Outgoing) {
+        if edge.target() == to
+            && (types.is_empty() || types.contains(&edge.weight().rel_type.as_str()))
         {
-            if let Some(ew) = graph.edge_weight(ei) {
-                if types.is_empty() || types.contains(&ew.rel_type.as_str()) {
-                    return Some(ei);
-                }
-            } else if types.is_empty() {
-                return Some(ei);
-            }
+            return Some(edge.id());
         }
     }
-    for &ei in &graph.edges_directed(from, false) {
-        if let Some((_, dst)) = graph.edge_endpoints(ei)
-            && dst == to
+    for edge in graph.edges_directed(from, petgraph::Direction::Incoming) {
+        if edge.source() == to
+            && (types.is_empty() || types.contains(&edge.weight().rel_type.as_str()))
         {
-            if let Some(ew) = graph.edge_weight(ei) {
-                if types.is_empty() || types.contains(&ew.rel_type.as_str()) {
-                    return Some(ei);
-                }
-            } else if types.is_empty() {
-                return Some(ei);
-            }
+            return Some(edge.id());
         }
     }
     None
@@ -612,9 +601,12 @@ fn rows_equal(a: &HashMap<String, Content>, b: &HashMap<String, Content>) -> boo
     a.iter().all(|(k, v)| b.get(k) == Some(v))
 }
 
-fn find_nodes_by_label_str<G: GraphRead>(graph: &G, label: Option<&str>) -> Vec<NodeIndex> {
+fn find_nodes_by_label_str(
+    graph: &petgraph::Graph<nexus_model::storage::NodeWeight, nexus_model::storage::EdgeWeight>,
+    label: Option<&str>,
+) -> Vec<NodeIndex> {
     let mut results = Vec::new();
-    for &idx in &graph.node_indices() {
+    for idx in graph.node_indices() {
         if let Some(weight) = graph.node_weight(idx)
             && label.is_none_or(|l| weight.label == l)
         {
@@ -696,6 +688,7 @@ fn execute_internal<G: GraphRead>(graph: &G, plan: &PlanIR) -> Result<Vec<Record
                 if records.is_empty() {
                     // MATCH ... RETURN: create records from current_nodes
                     if let (Some(nodes), Some(var)) = (&current_nodes, &current_var) {
+                        let g = graph.graph();
                         records = nodes
                             .iter()
                             .map(|&idx| {
@@ -707,7 +700,7 @@ fn execute_internal<G: GraphRead>(graph: &G, plan: &PlanIR) -> Result<Vec<Record
                                         data: var.as_bytes().to_vec(),
                                     },
                                 );
-                                if let Some(w) = graph.node_weight(idx) {
+                                if let Some(w) = g.node_weight(idx) {
                                     for (k, v) in &w.properties {
                                         fields.insert(k.clone(), v.clone());
                                     }
@@ -759,9 +752,10 @@ impl std::error::Error for TranslateError {}
 // ── Internal executor helpers ──────────────────────────────────────────────
 
 fn find_matching_nodes<G: GraphRead>(graph: &G, pattern: &NodePattern) -> Vec<NodeIndex> {
+    let g = graph.graph();
     let mut results = Vec::new();
-    for &idx in &graph.node_indices() {
-        if let Some(weight) = graph.node_weight(idx)
+    for idx in g.node_indices() {
+        if let Some(weight) = g.node_weight(idx)
             && (pattern.labels.is_empty() || pattern.labels.contains(&weight.label))
         {
             results.push(idx);
@@ -771,12 +765,13 @@ fn find_matching_nodes<G: GraphRead>(graph: &G, pattern: &NodePattern) -> Vec<No
 }
 
 fn apply_where<G: GraphRead>(graph: &G, nodes: &[NodeIndex], wc: &WhereClause) -> Vec<NodeIndex> {
+    let g = graph.graph();
     nodes
         .iter()
         .copied()
         .filter(|&idx| {
             wc.comparisons.iter().all(|cmp| {
-                if let Some(weight) = graph.node_weight(idx) {
+                if let Some(weight) = g.node_weight(idx) {
                     let key = cmp.field.property.as_deref().unwrap_or("");
                     let field_val = weight.properties.get(key);
                     match (field_val.and_then(|c| c.as_str()), &cmp.value) {
@@ -805,9 +800,10 @@ fn apply_where<G: GraphRead>(graph: &G, nodes: &[NodeIndex], wc: &WhereClause) -
 }
 
 fn count_relationships<G: GraphRead>(graph: &G, nodes: &[NodeIndex]) -> Vec<(NodeIndex, usize)> {
+    let g = graph.graph();
     nodes
         .iter()
-        .map(|&idx| (idx, graph.neighbors_undirected(idx).len()))
+        .map(|&idx| (idx, g.neighbors_undirected(idx).count()))
         .collect()
 }
 

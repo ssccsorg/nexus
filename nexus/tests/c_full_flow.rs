@@ -20,10 +20,12 @@ fn submit_fact(bb: &mut impl Blackboard, id: &str, origin: &str, content: &str, 
     bb.submit_fact(&fact).unwrap();
 }
 
-/// Helper: run a Cypher query and count results.
-fn cypher_count(bb: &impl nexus::GraphRead, query: &str) -> usize {
-    let plan = cypher::Plan::from_internal(query).expect("parse failed");
-    cypher::execute(bb, &plan).expect("execute failed").len()
+/// Helper: run a Cypher query on a DefaultBlackboard and count results.
+fn cypher_count(bb: &nexus::DefaultBlackboard, query: &str) -> usize {
+    bb.with_graph(|g| {
+        let plan = cypher::Plan::from_internal(query).expect("parse failed");
+        cypher::execute(g, &plan).expect("execute failed").len()
+    })
 }
 
 #[test]

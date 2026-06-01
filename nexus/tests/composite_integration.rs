@@ -11,7 +11,7 @@
 // DualStorage, matching the same trait contracts as DuckDbStorage.
 
 use nexus::storage::composite::{CompositeColdStorage, IoBufferBlob, IoBufferKv, IoBufferObject};
-use nexus::storage::petgraph::{GraphRead, PetgraphStorage};
+use nexus::storage::petgraph::PetgraphStorage;
 use nexus::{
     Blackboard, Content, CypherCapable, DefaultBlackboard, Fact, FihHash, ScanCapable,
     Snapshottable,
