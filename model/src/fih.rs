@@ -90,7 +90,7 @@ impl PartialEq<&str> for Content {
 
 // ── FIH Primitives ───────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Fact {
     pub id: FihHash,
     pub origin: String,

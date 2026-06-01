@@ -1,4 +1,5 @@
 pub mod blackboard;
+pub mod helper;
 pub mod mock_gateway;
 pub mod process;
 pub mod query;

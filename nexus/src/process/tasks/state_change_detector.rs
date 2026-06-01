@@ -8,8 +8,9 @@
 // Stigmergy principle: state change is an observed fact. What to do about
 // it is a separate decision for agents in later iterations.
 
+use crate::helper::ContentJsonExt;
 use nexus_model::{
-    BoardState, DetectionCapable, DetectionCheckpoint, DetectionOutput, Fact, FihHash,
+    BoardState, Content, DetectionCapable, DetectionCheckpoint, DetectionOutput, Fact, FihHash,
     StateChangeDetection,
 };
 
@@ -98,16 +99,14 @@ impl DetectionCapable for StateChangeDetector {
         output.facts.push(Fact {
             id: FihHash::new(&[&triggers.join(",")], "state-change"),
             origin: "state-change-detector".into(),
-            content: serde_json::to_string(&serde_json::json!({
+            content: Content::from_json(&serde_json::json!({
                 "type": "state_change",
                 "triggers": triggers,
                 "prev_fact_count": checkpoint.fact_count,
                 "curr_fact_count": current_facts,
                 "prev_open_intents": checkpoint.open_intent_count,
                 "curr_open_intents": current_open,
-            }))
-            .unwrap()
-            .into(),
+            })),
             creator: "state-change-detector".into(),
         });
 
@@ -119,22 +118,18 @@ impl DetectionCapable for StateChangeDetector {
         output
     }
 
-    fn snapshot_state(&self) -> Option<nexus_model::Content> {
+    fn snapshot_state(&self) -> Option<Content> {
         self.checkpoint.as_ref().map(|cp| {
-            nexus_model::Content::from(
-                serde_json::json!({
-                    "fact_count": cp.fact_count,
-                    "open_intent_count": cp.open_intent_count,
-                })
-                .to_string(),
-            )
+            Content::from_json(&serde_json::json!({
+                "fact_count": cp.fact_count,
+                "open_intent_count": cp.open_intent_count,
+            }))
         })
     }
 
-    fn restore_state(&mut self, state: nexus_model::Content) {
+    fn restore_state(&mut self, state: Content) {
         let json = state
-            .as_str()
-            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+            .try_parse_json::<serde_json::Value>()
             .unwrap_or(serde_json::Value::Null);
         let fc = json.get("fact_count").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
         let oi = json
@@ -151,15 +146,13 @@ impl DetectionCapable for StateChangeDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nexus_model::FihHash;
+    use nexus_model::{Content, FihHash};
 
     fn make_fact(id: &str, origin: &str) -> Fact {
         Fact {
             id: FihHash(id.to_string()),
             origin: origin.to_string(),
-            content: serde_json::to_string(&serde_json::json!({"topic": "test"}))
-                .unwrap()
-                .into(),
+            content: Content::from_json(&serde_json::json!({"topic": "test"})),
             creator: "test".into(),
         }
     }
@@ -191,7 +184,9 @@ mod tests {
         });
         assert_eq!(o.facts.len(), 1);
         assert!(
-            serde_json::from_str::<serde_json::Value>(o.facts[0].content.as_str().unwrap_or(""))
+            o.facts[0]
+                .content
+                .try_parse_json::<serde_json::Value>()
                 .unwrap_or(serde_json::Value::Null)["type"]
                 .as_str()
                 == Some("state_change")

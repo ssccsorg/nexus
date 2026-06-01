@@ -13,7 +13,8 @@
 // is for agents to decide in later iterations.
 
 use super::common::{position_of, topic_of};
-use nexus_model::{BoardState, DetectionCapable, DetectionOutput, Fact, FihHash};
+use crate::helper::ContentJsonExt;
+use nexus_model::{BoardState, Content, DetectionCapable, DetectionOutput, Fact, FihHash};
 use std::collections::{HashMap, HashSet};
 
 pub struct NewDocumentAnalyzer {
@@ -82,9 +83,10 @@ impl DetectionCapable for NewDocumentAnalyzer {
                 continue;
             };
 
-            let content_val: serde_json::Value =
-                serde_json::from_str(fact.content.as_str().unwrap_or(""))
-                    .unwrap_or(serde_json::Value::Null);
+            let content_val = fact
+                .content
+                .try_parse_json::<serde_json::Value>()
+                .unwrap_or(serde_json::Value::Null);
             let claim_text = content_val
                 .get("claim")
                 .and_then(|v| v.as_str())
@@ -115,16 +117,14 @@ impl DetectionCapable for NewDocumentAnalyzer {
             output.facts.push(Fact {
                 id: FihHash::new(&[tid, factor], "doc-analysis"),
                 origin: "new-document-analyzer".into(),
-                content: serde_json::to_string(&serde_json::json!({
+                content: Content::from_json(&serde_json::json!({
                     "type": "doc_analysis",
                     "factor": factor,
                     "topic": topic,
                     "claim": claim_text,
                     "source": fact.origin,
                     "detail": detail,
-                }))
-                .unwrap()
-                .into(),
+                })),
                 creator: "new-document-analyzer".into(),
             });
 
