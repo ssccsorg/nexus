@@ -23,7 +23,7 @@
 // Physical isolation is simpler, equally safe, and doesn't require every
 // drain implementation to check a flag.
 
-use crate::{BlobStore, MetaStore, ObjectStore};
+use nexus_model::{BlobStore, MetaStore, ObjectStore};
 use std::collections::HashMap;
 
 // ── IoBufferSessionMeta ──────────────────────────────────────────────────

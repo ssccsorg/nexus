@@ -48,10 +48,10 @@
 // handled by PetgraphStorage (hot storage), NOT by CompositeColdStorage.
 // CompositeColdStorage only manages durable persistence.
 
-use crate::{BlobStore, MetaStore, ObjectStore, flush_blob_prefix};
-use crate::{Now, SystemClock};
+use crate::flush_blob_prefix;
 use log;
 use nexus_graph::CypherCapable;
+use nexus_model::{BlobStore, MetaStore, Now, ObjectStore, SystemClock};
 use nexus_model::{
     BoardState, ColdStorage, EvictCapable, FlushCapable, FlushCursor, FlushResult, PartitionData,
     ScanCapable, StorageRead, TimeRangeCapable,

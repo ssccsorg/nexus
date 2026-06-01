@@ -1,6 +1,6 @@
 // Mock implementations for testing KeyValueStore, BlobStore, and ObjectStore.
 
-use nexus_storage_composite::{BlobStore, MetaStore, ObjectStore};
+use nexus_model::{BlobStore, MetaStore, ObjectStore};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 

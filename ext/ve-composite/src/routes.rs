@@ -8,7 +8,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
 use nexus_model::SessionExecute;
-use nexus_storage_composite::{BlobStore, MetaStore, ObjectStore};
+use nexus_model::{BlobStore, MetaStore, ObjectStore};
 
 use crate::AppState;
 
