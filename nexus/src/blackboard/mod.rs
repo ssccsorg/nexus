@@ -356,7 +356,10 @@ impl ScanCapable for DefaultBlackboard {
 // ── Cypher query — delegates to the cold CypherCapable backend ────────────
 
 impl CypherCapable for DefaultBlackboard {
-    fn query_plan(&self, plan: &interface_cypher::cold_query::ColdQuery) -> Result<String, String> {
+    fn query_plan(
+        &self,
+        plan: &interface_cypher::cold_query::ColdQuery,
+    ) -> Result<Vec<HashMap<String, nexus_model::Content>>, String> {
         self.cold_cypher.query_plan(plan)
     }
 }

@@ -644,11 +644,10 @@ fn test_cypher_capable_cold_query() {
         ..ColdQuery::new("Fact")
     };
 
-    let result = storage.query_plan(&plan).unwrap();
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&result).unwrap_or_default();
+    let rows = storage.query_plan(&plan).unwrap();
     assert_eq!(rows.len(), 2, "expected 2 facts");
-    assert_eq!(rows[0]["fact_id"], "f_a");
-    assert_eq!(rows[1]["fact_id"], "f_b");
+    assert_eq!(rows[0].get("fact_id").and_then(|c| c.as_str()), Some("f_a"));
+    assert_eq!(rows[1].get("fact_id").and_then(|c| c.as_str()), Some("f_b"));
 
     // Query with filter
     let plan = ColdQuery {
@@ -667,10 +666,14 @@ fn test_cypher_capable_cold_query() {
         ..ColdQuery::new("Fact")
     };
 
-    let result = storage.query_plan(&plan).unwrap();
-    let rows: Vec<serde_json::Value> = serde_json::from_str(&result).unwrap_or_default();
+    let rows = storage.query_plan(&plan).unwrap();
     assert_eq!(rows.len(), 1, "expected 1 filtered fact");
-    assert_eq!(rows[0]["fact_id"], "f_a");
+    assert_eq!(rows[0].get("fact_id").and_then(|c| c.as_str()), Some("f_a"));
+    // content is stored as a JSON string literal in Parquet: "\"alpha\""
+    assert_eq!(
+        rows[0].get("content").and_then(|c| c.as_str()),
+        Some("\"alpha\"")
+    );
 
     // Count query
     let count_plan = ColdQuery {
@@ -684,12 +687,14 @@ fn test_cypher_capable_cold_query() {
         aggregate_count: true,
         ..ColdQuery::new("Fact")
     };
-    let count_result = storage.query_plan(&count_plan).unwrap();
-    let count_rows: Vec<serde_json::Value> =
-        serde_json::from_str(&count_result).unwrap_or_default();
+    let count_rows = storage.query_plan(&count_plan).unwrap();
     assert!(!count_rows.is_empty(), "count query returns array");
-    let count_row = count_rows.first().expect("count query should return a row");
-    assert_eq!(count_row["count"], serde_json::json!(2), "expected count=2");
+    let count_val = count_rows[0]
+        .get("count")
+        .and_then(|c| c.as_str())
+        .unwrap_or("0");
+    let count: i64 = count_val.parse().unwrap_or(0);
+    assert_eq!(count, 2, "expected count=2");
 
     // Empty query (no label) should fail
     let empty_result = storage.query_plan(&ColdQuery::new(""));
