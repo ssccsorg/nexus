@@ -265,6 +265,7 @@ dependencies = [
  "drop_bomb",
  "logos",
  "rowan",
+ "serde",
  "smol_str",
  "text-size",
  "thiserror",
@@ -932,14 +933,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexus"
+version = "0.1.0"
+dependencies = [
+ "cyrs-ast",
+ "cyrs-hir",
+ "cyrs-plan",
+ "cyrs-syntax",
+ "log",
+ "nexus-model",
+ "petgraph",
+ "postcard",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nexus-gateway-api"
 version = "0.1.0"
 dependencies = [
  "axum",
- "nexus-graph",
+ "nexus",
  "nexus-model",
- "nexus-storage-composite",
- "nexus-storage-petgraph",
  "reqwest",
  "serde",
  "serde_json",
@@ -951,47 +966,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "nexus-graph"
-version = "0.1.0"
-dependencies = [
- "cyrs-ast",
- "cyrs-hir",
- "cyrs-plan",
- "cyrs-syntax",
- "nexus-model",
- "nexus-storage-petgraph",
- "petgraph",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "nexus-model"
 version = "0.1.0"
 dependencies = [
  "serde",
  "sha2",
-]
-
-[[package]]
-name = "nexus-storage-composite"
-version = "0.1.0"
-dependencies = [
- "log",
- "nexus-graph",
- "nexus-model",
- "postcard",
- "serde",
-]
-
-[[package]]
-name = "nexus-storage-petgraph"
-version = "0.1.0"
-dependencies = [
- "nexus-model",
- "petgraph",
- "postcard",
- "serde",
 ]
 
 [[package]]
@@ -1595,6 +1574,9 @@ name = "text-size"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f18aa187839b2bdb1ad2fa35ead8c4c2976b64e4363c386d45ac0f7ee85c9233"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "thiserror"

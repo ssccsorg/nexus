@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-nexus-graph = { path = "../../core/graph" }
+nexus = { path = "../../core/nexus" }
 nexus-model = { path = "../../core/model" }
 duckdb = { version = "1.105", features = ["bundled", "parquet"] }
 serde.workspace = true

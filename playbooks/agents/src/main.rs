@@ -10,8 +10,8 @@
 // Usage:
 //   cd tests/agents && cargo run
 
-use nexus_graph::cypher;
-use nexus_graph::{Blackboard, create_blackboard, Fact, FihHash, Intent};
+use nexus::query::cypher;
+use nexus::{create_blackboard, Blackboard, Fact, FihHash, Intent};
 
 fn main() {
     println!("=== Rust Privileged Agent: Direct Blackboard Access ===\n");

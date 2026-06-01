@@ -2,10 +2,7 @@
 resolver = "2"
 members = [
     "model",
-    "graph",
-    "process",
-    "storage/petgraph",
-    "storage/composite",
+    "nexus",
 ]
 
 [workspace.package]
