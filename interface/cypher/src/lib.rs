@@ -1,7 +1,7 @@
 pub mod capable;
-pub mod cold_query;
 pub mod parser;
 pub mod plan;
+pub mod query;
 pub mod translate;
 
 // Re-export common query types from interface-query for convenience.
