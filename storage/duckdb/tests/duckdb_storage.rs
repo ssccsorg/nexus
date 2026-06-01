@@ -1,5 +1,5 @@
-use interface_cypher::CypherCapable;
-use interface_cypher::cold_query::{ColdFilter, ColdQuery};
+use interface_cypher::capable::CypherCapable;
+use interface_query::{ColdFilter, ColdQuery};
 use nexus_model::{
     Content, FilterCapable, ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
 };

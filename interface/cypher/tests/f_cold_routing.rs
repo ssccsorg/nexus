@@ -3,8 +3,8 @@
 // Tests Plan-ColdQuery translation for both External (cyrs_plan) and
 // Internal (PlanIR) plan variants, plus execute_with_cold hot/cold routing.
 
-use interface_cypher::cold_query::ColdQuery;
 use interface_cypher::{Plan, execute_with_cold};
+use interface_query::ColdQuery;
 use nexus::storage::petgraph::{EdgeWeight, NodeWeight};
 
 fn assert_label(cq: &ColdQuery, expected: &str) {

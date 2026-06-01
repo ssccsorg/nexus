@@ -20,26 +20,34 @@
 //   - CTE / WITH clause support
 //   - ORDER BY, LIMIT, OFFSET, DISTINCT
 
-use interface_cypher::cold_query::{
-    ColdFilter, ColdQuery, JsonFilter, VectorFilter, WindowFuncDef,
-};
+use crate::duckdb_ext::{DuckDbQueryExt, JsonFilter, VectorFilter, WindowFuncDef};
+use interface_query::{ColdFilter, ColdQuery};
 use serde_json::Value;
 
 // ── SQL translation ────────────────────────────────────────────────────────
 
 /// Translate a ColdQuery into a DuckDB SQL SELECT string.
-pub fn translate(query: &ColdQuery) -> Result<String, String> {
+pub fn translate(query: &ColdQuery, ext: Option<&DuckDbQueryExt>) -> Result<String, String> {
+    let default_ext;
+    let ext = match ext {
+        Some(e) => e,
+        None => {
+            default_ext = DuckDbQueryExt::default();
+            &default_ext
+        }
+    };
+
     let table = resolve_table(&query.label)?;
 
     // 1. CTE prefix
-    let cte_prefix = if query.with_ctes.is_empty() {
+    let cte_prefix = if ext.with_ctes.is_empty() {
         String::new()
     } else {
-        let cte_strings: Vec<String> = query
+        let cte_strings: Vec<String> = ext
             .with_ctes
             .iter()
             .map(|cte| -> Result<String, String> {
-                let sub_sql = translate(&cte.subquery)?;
+                let sub_sql = translate(&cte.subquery, None)?;
                 Ok(format!("{} AS ({})", quote_ident(&cte.alias), sub_sql))
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -48,13 +56,13 @@ pub fn translate(query: &ColdQuery) -> Result<String, String> {
     };
 
     // 2. SELECT clause
-    let select_clause = build_select_clause(query)?;
+    let select_clause = build_select_clause(query, ext)?;
 
     // 3. FROM clause
     let mut sql = format!("{cte_prefix}{select_clause} FROM {table}");
 
     // 4. WHERE clause (regular filters + json filters + vector filters)
-    let where_parts = build_where_clause(query, table)?;
+    let where_parts = build_where_clause(query, table, ext)?;
 
     if !where_parts.is_empty() {
         sql = format!("{} WHERE {}", sql, where_parts.join(" AND "));
@@ -67,7 +75,7 @@ pub fn translate(query: &ColdQuery) -> Result<String, String> {
     }
 
     // 6. ORDER BY
-    let order_clause = build_order_clause(query)?;
+    let order_clause = build_order_clause(query, ext)?;
     if let Some(oc) = order_clause {
         sql = format!("{} ORDER BY {}", sql, oc);
     }
@@ -93,7 +101,7 @@ fn resolve_table(label: &str) -> Result<&'static str, String> {
 }
 
 /// Build the SELECT clause string.
-fn build_select_clause(query: &ColdQuery) -> Result<String, String> {
+fn build_select_clause(query: &ColdQuery, ext: &DuckDbQueryExt) -> Result<String, String> {
     let mut select_parts: Vec<String> = Vec::new();
 
     // Aggregate count overrides everything
@@ -107,7 +115,7 @@ fn build_select_clause(query: &ColdQuery) -> Result<String, String> {
     }
 
     // JSON extractions
-    for jp in &query.json_projections {
+    for jp in &ext.json_projections {
         let alias = jp
             .alias
             .as_deref()
@@ -139,7 +147,7 @@ fn build_select_clause(query: &ColdQuery) -> Result<String, String> {
     }
 
     // Window function projections
-    for wf in &query.window_funcs {
+    for wf in &ext.window_funcs {
         let alias = wf
             .alias
             .clone()
@@ -165,7 +173,7 @@ fn build_select_clause(query: &ColdQuery) -> Result<String, String> {
     }
 
     // Vector score projection
-    if let Some(vs) = &query.vector_score {
+    if let Some(vs) = &ext.vector_score {
         // When projections is empty, we still want all columns plus the score column.
         let alias = vs.alias.as_deref().unwrap_or("score");
         let func_name = match vs.metric.to_lowercase().as_str() {
@@ -234,7 +242,7 @@ fn build_window_over_clause(wf: &WindowFuncDef) -> String {
 }
 
 /// Build the ORDER BY clause.
-fn build_order_clause(query: &ColdQuery) -> Result<Option<String>, String> {
+fn build_order_clause(query: &ColdQuery, ext: &DuckDbQueryExt) -> Result<Option<String>, String> {
     let mut order_parts: Vec<String> = Vec::new();
 
     for o in &query.order_by {
@@ -243,7 +251,7 @@ fn build_order_clause(query: &ColdQuery) -> Result<Option<String>, String> {
     }
 
     // Vector score ordering
-    if let Some(vs) = &query.vector_score
+    if let Some(vs) = &ext.vector_score
         && vs.sort_by_score
     {
         let alias = vs.alias.as_deref().unwrap_or("score");
@@ -263,7 +271,11 @@ fn build_order_clause(query: &ColdQuery) -> Result<Option<String>, String> {
 }
 
 /// Build WHERE clause parts: regular filters + json filters + vector filters.
-fn build_where_clause(query: &ColdQuery, table: &str) -> Result<Vec<String>, String> {
+fn build_where_clause(
+    query: &ColdQuery,
+    table: &str,
+    ext: &DuckDbQueryExt,
+) -> Result<Vec<String>, String> {
     let mut parts: Vec<String> = Vec::new();
 
     // Regular column filters
@@ -272,12 +284,12 @@ fn build_where_clause(query: &ColdQuery, table: &str) -> Result<Vec<String>, Str
     }
 
     // JSON path filters
-    for jf in &query.json_filters {
+    for jf in &ext.json_filters {
         parts.push(translate_json_filter(jf)?);
     }
 
     // Vector similarity filters
-    for vf in &query.vector_filters {
+    for vf in &ext.vector_filters {
         parts.push(translate_vector_filter(vf)?);
     }
 
@@ -514,9 +526,8 @@ fn value_to_sql(v: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use interface_cypher::cold_query::{
-        AggregateDef, ColdOrder, CteDef, JsonProjection, VectorScore,
-    };
+    use crate::duckdb_ext::{CteDef, DuckDbQueryExt, JsonProjection, VectorScore};
+    use interface_query::{AggregateDef, ColdOrder};
 
     // ── Existing test helpers ──────────────────────────────────────────────
 
@@ -530,14 +541,8 @@ mod tests {
             offset: None,
             distinct: false,
             aggregate_count: false,
-            with_ctes: vec![],
             group_by: vec![],
             aggregates: vec![],
-            window_funcs: vec![],
-            json_projections: vec![],
-            json_filters: vec![],
-            vector_filters: vec![],
-            vector_score: None,
         }
     }
 
@@ -547,7 +552,7 @@ mod tests {
     fn test_translate_fact_scan() {
         let mut q = base_query("Fact");
         q.projections = vec!["fact_id".into(), "origin".into()];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(sql, "SELECT fact_id, origin FROM facts_view");
     }
 
@@ -555,7 +560,7 @@ mod tests {
     fn test_translate_intent_scan() {
         let mut q = base_query("Intent");
         q.projections = vec!["intent_id".into(), "description".into()];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(sql, "SELECT intent_id, description FROM intents_view");
     }
 
@@ -563,14 +568,14 @@ mod tests {
     fn test_translate_hint_scan() {
         let mut q = base_query("Hint");
         q.projections = vec!["hint_id".into(), "content".into()];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(sql, "SELECT hint_id, content FROM hints_view");
     }
 
     #[test]
     fn test_translate_all_columns() {
         let q = base_query("Fact");
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(sql, "SELECT * FROM facts_view");
     }
 
@@ -583,7 +588,7 @@ mod tests {
             op: "Eq".into(),
             value: Value::String("arxiv_2401".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(
             sql,
             "SELECT fact_id FROM facts_view WHERE origin = 'arxiv_2401'"
@@ -606,7 +611,7 @@ mod tests {
                 value: Value::String("agent-a".into()),
             },
         ];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(
             sql,
             "SELECT fact_id FROM facts_view WHERE origin = 'test' AND creator = 'agent-a'"
@@ -623,7 +628,7 @@ mod tests {
         }];
         q.limit = Some(10);
         q.offset = Some(5);
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(
             sql,
             "SELECT fact_id FROM facts_view ORDER BY created_at DESC LIMIT 10 OFFSET 5"
@@ -635,7 +640,7 @@ mod tests {
         let mut q = base_query("Fact");
         q.projections = vec!["origin".into()];
         q.distinct = true;
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(sql, "SELECT DISTINCT origin FROM facts_view");
     }
 
@@ -643,7 +648,7 @@ mod tests {
     fn test_translate_count() {
         let mut q = base_query("Fact");
         q.aggregate_count = true;
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(sql, "SELECT COUNT(*) as count FROM facts_view");
     }
 
@@ -659,7 +664,7 @@ mod tests {
                 Value::String("f002".into()),
             ]),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(
             sql,
             "SELECT fact_id FROM facts_view WHERE fact_id IN ('f001', 'f002')"
@@ -677,16 +682,10 @@ mod tests {
             offset: None,
             distinct: false,
             aggregate_count: false,
-            with_ctes: vec![],
             group_by: vec![],
             aggregates: vec![],
-            window_funcs: vec![],
-            json_projections: vec![],
-            json_filters: vec![],
-            vector_filters: vec![],
-            vector_score: None,
         };
-        let result = translate(&q);
+        let result = translate(&q, None);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("unknown label"));
     }
@@ -700,7 +699,7 @@ mod tests {
             op: "Contains".into(),
             value: Value::String("neural".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(
             sql,
             "SELECT fact_id FROM facts_view WHERE CONTAINS(content, 'neural')"
@@ -715,7 +714,7 @@ mod tests {
             op: "Regex".into(),
             value: Value::String(".*".into()),
         }];
-        let result = translate(&q);
+        let result = translate(&q, None);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("unknown filter operator"));
     }
@@ -731,7 +730,7 @@ mod tests {
             op: "FtsMatch".into(),
             value: Value::String("neural network".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(
             sql,
             "SELECT fact_id FROM facts_view WHERE content IN (SELECT doc_id FROM fts_main_facts WHERE fts_main_facts.match('neural network'))"
@@ -747,7 +746,7 @@ mod tests {
             op: "FtsMatch".into(),
             value: Value::String("concept drift".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(
             sql,
             "SELECT intent_id FROM intents_view WHERE description IN (SELECT doc_id FROM fts_main_intents WHERE fts_main_intents.match('concept drift'))"
@@ -763,7 +762,7 @@ mod tests {
             op: "FtsMatchOr".into(),
             value: Value::String("neural transformer".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         // Two terms: CONTAINS(col, 'neural') OR CONTAINS(col, 'transformer')
         assert!(sql.contains("CONTAINS(content, 'neural') OR CONTAINS(content, 'transformer')"));
         assert!(sql.starts_with("SELECT fact_id FROM facts_view WHERE"));
@@ -777,7 +776,7 @@ mod tests {
             op: "FtsMatchOr".into(),
             value: Value::String("neural".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         // Single term: just CONTAINS, no OR
         assert_eq!(
             sql,
@@ -801,7 +800,7 @@ mod tests {
                 value: Value::String("deep learning".into()),
             },
         ];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert!(sql.contains("origin = 'arxiv'"));
         assert!(sql.contains("content IN (SELECT doc_id FROM fts_main_facts WHERE fts_main_facts.match('deep learning'))"));
         assert!(sql.contains("AND"));
@@ -813,14 +812,15 @@ mod tests {
     fn test_vector_cosine_similarity_filter() {
         let mut q = base_query("Fact");
         q.projections = vec!["fact_id".into()];
-        q.vector_filters = vec![VectorFilter {
+        let mut ext = DuckDbQueryExt::default();
+        ext.vector_filters = vec![VectorFilter {
             column: "embedding".into(),
             metric: "cosine".into(),
             vector: vec![0.1, 0.2, 0.3],
             op: "Gte".into(),
             threshold: 0.8,
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert_eq!(
             sql,
             "SELECT fact_id FROM facts_view WHERE array_cosine_similarity(embedding, [0.1, 0.2, 0.3]) >= 0.8"
@@ -831,14 +831,15 @@ mod tests {
     fn test_vector_euclidean_distance_filter() {
         let mut q = base_query("Fact");
         q.projections = vec!["fact_id".into()];
-        q.vector_filters = vec![VectorFilter {
+        let mut ext = DuckDbQueryExt::default();
+        ext.vector_filters = vec![VectorFilter {
             column: "embedding".into(),
             metric: "euclidean".into(),
             vector: vec![1.0, 2.0, 3.0],
             op: "Lte".into(),
             threshold: 5.0,
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert_eq!(
             sql,
             "SELECT fact_id FROM facts_view WHERE array_distance(embedding, [1.0, 2.0, 3.0]) <= 5"
@@ -854,14 +855,15 @@ mod tests {
             op: "Eq".into(),
             value: Value::String("arxiv".into()),
         }];
-        q.vector_filters = vec![VectorFilter {
+        let mut ext = DuckDbQueryExt::default();
+        ext.vector_filters = vec![VectorFilter {
             column: "embedding".into(),
             metric: "cosine".into(),
             vector: vec![0.5, 0.5],
             op: "Gte".into(),
             threshold: 0.9,
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert!(sql.contains("origin = 'arxiv'"));
         assert!(sql.contains("array_cosine_similarity(embedding, [0.5, 0.5]) >= 0.9"));
         assert!(sql.contains("AND"));
@@ -869,30 +871,32 @@ mod tests {
 
     #[test]
     fn test_vector_filter_unknown_metric() {
-        let mut q = base_query("Fact");
-        q.vector_filters = vec![VectorFilter {
+        let q = base_query("Fact");
+        let mut ext = DuckDbQueryExt::default();
+        ext.vector_filters = vec![VectorFilter {
             column: "v".into(),
             metric: "manhattan".into(),
             vector: vec![1.0],
             op: "Gte".into(),
             threshold: 0.5,
         }];
-        let result = translate(&q);
+        let result = translate(&q, Some(&ext));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("unknown vector metric"));
     }
 
     #[test]
     fn test_vector_filter_unknown_operator() {
-        let mut q = base_query("Fact");
-        q.vector_filters = vec![VectorFilter {
+        let q = base_query("Fact");
+        let mut ext = DuckDbQueryExt::default();
+        ext.vector_filters = vec![VectorFilter {
             column: "v".into(),
             metric: "cosine".into(),
             vector: vec![1.0],
             op: "Eq".into(),
             threshold: 0.5,
         }];
-        let result = translate(&q);
+        let result = translate(&q, Some(&ext));
         assert!(result.is_err());
         assert!(
             result
@@ -907,14 +911,15 @@ mod tests {
     fn test_vector_score_cosine() {
         let mut q = base_query("Fact");
         q.projections = vec!["fact_id".into()];
-        q.vector_score = Some(VectorScore {
+        let mut ext = DuckDbQueryExt::default();
+        ext.vector_score = Some(VectorScore {
             column: "embedding".into(),
             metric: "cosine".into(),
             vector: vec![0.1, 0.2, 0.3],
             alias: Some("similarity".into()),
             sort_by_score: true,
         });
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert_eq!(
             sql,
             "SELECT fact_id, array_cosine_similarity(embedding, [0.1, 0.2, 0.3]) AS similarity FROM facts_view ORDER BY similarity DESC"
@@ -923,15 +928,16 @@ mod tests {
 
     #[test]
     fn test_vector_score_euclidean() {
-        let mut q = base_query("Fact");
-        q.vector_score = Some(VectorScore {
+        let q = base_query("Fact");
+        let mut ext = DuckDbQueryExt::default();
+        ext.vector_score = Some(VectorScore {
             column: "embedding".into(),
             metric: "euclidean".into(),
             vector: vec![1.0, 2.0, 3.0],
             alias: None,
             sort_by_score: true,
         });
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert_eq!(
             sql,
             "SELECT *, array_distance(embedding, [1.0, 2.0, 3.0]) AS score FROM facts_view ORDER BY score ASC"
@@ -942,14 +948,15 @@ mod tests {
     fn test_vector_score_without_sort() {
         let mut q = base_query("Fact");
         q.projections = vec!["fact_id".into()];
-        q.vector_score = Some(VectorScore {
+        let mut ext = DuckDbQueryExt::default();
+        ext.vector_score = Some(VectorScore {
             column: "embedding".into(),
             metric: "cosine".into(),
             vector: vec![0.1, 0.2, 0.3],
             alias: None,
             sort_by_score: false,
         });
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         // Score column projected but no ORDER BY appended
         assert_eq!(
             sql,
@@ -965,14 +972,15 @@ mod tests {
             field: "created_at".into(),
             desc: true,
         }];
-        q.vector_score = Some(VectorScore {
+        let mut ext = DuckDbQueryExt::default();
+        ext.vector_score = Some(VectorScore {
             column: "embedding".into(),
             metric: "cosine".into(),
             vector: vec![0.1, 0.2, 0.3],
             alias: None,
             sort_by_score: true,
         });
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         // Both ORDER BY clauses present
         assert!(sql.contains("ORDER BY created_at DESC, score DESC"));
         assert!(sql.contains("array_cosine_similarity(embedding, [0.1, 0.2, 0.3]) AS score"));
@@ -980,15 +988,16 @@ mod tests {
 
     #[test]
     fn test_vector_score_unknown_metric() {
-        let mut q = base_query("Fact");
-        q.vector_score = Some(VectorScore {
+        let q = base_query("Fact");
+        let mut ext = DuckDbQueryExt::default();
+        ext.vector_score = Some(VectorScore {
             column: "embedding".into(),
             metric: "dot_product".into(),
             vector: vec![1.0],
             alias: None,
             sort_by_score: false,
         });
-        let result = translate(&q);
+        let result = translate(&q, Some(&ext));
         assert!(result.is_err());
     }
 
@@ -998,12 +1007,13 @@ mod tests {
     fn test_json_extract_projection() {
         let mut q = base_query("Fact");
         q.projections = vec!["fact_id".into()];
-        q.json_projections = vec![JsonProjection {
+        let mut ext = DuckDbQueryExt::default();
+        ext.json_projections = vec![JsonProjection {
             column: "metadata".into(),
             path: "$.category".into(),
             alias: Some("category".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert_eq!(
             sql,
             "SELECT fact_id, json_extract_string(metadata, '$.category') AS category FROM facts_view"
@@ -1014,7 +1024,8 @@ mod tests {
     fn test_json_extract_multiple() {
         let mut q = base_query("Fact");
         q.projections = vec!["fact_id".into()];
-        q.json_projections = vec![
+        let mut ext = DuckDbQueryExt::default();
+        ext.json_projections = vec![
             JsonProjection {
                 column: "metadata".into(),
                 path: "$.domain".into(),
@@ -1026,20 +1037,21 @@ mod tests {
                 alias: Some("version".into()),
             },
         ];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert!(sql.contains("json_extract_string(metadata, '$.domain') AS domain"));
         assert!(sql.contains("json_extract_string(metadata, '$.version') AS version"));
     }
 
     #[test]
     fn test_json_extract_only() {
-        let mut q = base_query("Fact");
-        q.json_projections = vec![JsonProjection {
+        let q = base_query("Fact");
+        let mut ext = DuckDbQueryExt::default();
+        ext.json_projections = vec![JsonProjection {
             column: "metadata".into(),
             path: "category".into(),
             alias: None,
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         // alias defaults to path sans "$."
         assert_eq!(
             sql,
@@ -1053,13 +1065,14 @@ mod tests {
     fn test_json_filter_eq() {
         let mut q = base_query("Fact");
         q.projections = vec!["fact_id".into()];
-        q.json_filters = vec![JsonFilter {
+        let mut ext = DuckDbQueryExt::default();
+        ext.json_filters = vec![JsonFilter {
             column: "metadata".into(),
             path: "$.domain".into(),
             op: "Eq".into(),
             value: Value::String("mathematics".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert_eq!(
             sql,
             "SELECT fact_id FROM facts_view WHERE json_extract_string(metadata, '$.domain') = 'mathematics'"
@@ -1068,14 +1081,15 @@ mod tests {
 
     #[test]
     fn test_json_filter_gt() {
-        let mut q = base_query("Fact");
-        q.json_filters = vec![JsonFilter {
+        let q = base_query("Fact");
+        let mut ext = DuckDbQueryExt::default();
+        ext.json_filters = vec![JsonFilter {
             column: "metadata".into(),
             path: "$.score".into(),
             op: "Gt".into(),
             value: Value::Number(serde_json::Number::from(85)),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert_eq!(
             sql,
             "SELECT * FROM facts_view WHERE json_extract_string(metadata, '$.score') > 85"
@@ -1084,14 +1098,15 @@ mod tests {
 
     #[test]
     fn test_json_filter_contains() {
-        let mut q = base_query("Fact");
-        q.json_filters = vec![JsonFilter {
+        let q = base_query("Fact");
+        let mut ext = DuckDbQueryExt::default();
+        ext.json_filters = vec![JsonFilter {
             column: "metadata".into(),
             path: "$.tags".into(),
             op: "Contains".into(),
             value: Value::String("graph".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert_eq!(
             sql,
             "SELECT * FROM facts_view WHERE CONTAINS(json_extract_string(metadata, '$.tags'), 'graph')"
@@ -1107,13 +1122,14 @@ mod tests {
             op: "Eq".into(),
             value: Value::String("arxiv".into()),
         }];
-        q.json_filters = vec![JsonFilter {
+        let mut ext = DuckDbQueryExt::default();
+        ext.json_filters = vec![JsonFilter {
             column: "metadata".into(),
             path: "$.domain".into(),
             op: "Eq".into(),
             value: Value::String("cs.AI".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert!(sql.contains("origin = 'arxiv'"));
         assert!(sql.contains("json_extract_string(metadata, '$.domain') = 'cs.AI'"));
         assert!(sql.contains("AND"));
@@ -1121,8 +1137,9 @@ mod tests {
 
     #[test]
     fn test_json_filter_in() {
-        let mut q = base_query("Fact");
-        q.json_filters = vec![JsonFilter {
+        let q = base_query("Fact");
+        let mut ext = DuckDbQueryExt::default();
+        ext.json_filters = vec![JsonFilter {
             column: "metadata".into(),
             path: "$.category".into(),
             op: "In".into(),
@@ -1131,7 +1148,7 @@ mod tests {
                 Value::String("physics".into()),
             ]),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert_eq!(
             sql,
             "SELECT * FROM facts_view WHERE json_extract_string(metadata, '$.category') IN ('math', 'physics')"
@@ -1140,14 +1157,15 @@ mod tests {
 
     #[test]
     fn test_json_filter_unknown_operator() {
-        let mut q = base_query("Fact");
-        q.json_filters = vec![JsonFilter {
+        let q = base_query("Fact");
+        let mut ext = DuckDbQueryExt::default();
+        ext.json_filters = vec![JsonFilter {
             column: "metadata".into(),
             path: "$.x".into(),
             op: "Regex".into(),
             value: Value::String(".*".into()),
         }];
-        let result = translate(&q);
+        let result = translate(&q, Some(&ext));
         assert!(result.is_err());
     }
 
@@ -1163,7 +1181,7 @@ mod tests {
             column: "fact_id".into(),
             alias: Some("cnt".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(
             sql,
             "SELECT origin, COUNT(fact_id) AS cnt FROM facts_view GROUP BY origin"
@@ -1180,7 +1198,7 @@ mod tests {
             column: "score".into(),
             alias: Some("total_score".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(
             sql,
             "SELECT origin, creator, SUM(score) AS total_score FROM facts_view GROUP BY origin, creator"
@@ -1197,7 +1215,7 @@ mod tests {
             column: "creator".into(),
             alias: Some("unique_creators".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(
             sql,
             "SELECT origin, COUNT(DISTINCT creator) AS unique_creators FROM facts_view GROUP BY origin"
@@ -1226,7 +1244,7 @@ mod tests {
                 alias: Some("max_score".into()),
             },
         ];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert!(sql.contains("AVG(score) AS avg_score"));
         assert!(sql.contains("MIN(score) AS min_score"));
         assert!(sql.contains("MAX(score) AS max_score"));
@@ -1248,7 +1266,7 @@ mod tests {
             op: "Ne".into(),
             value: Value::String("test".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert!(sql.contains("WHERE origin != 'test'"));
         assert!(sql.contains("GROUP BY origin"));
     }
@@ -1263,7 +1281,7 @@ mod tests {
             column: "fact_id".into(),
             alias: None,
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         // Default alias: "count(fact_id)"
         assert!(sql.contains("COUNT(fact_id) AS \"count(fact_id)\""));
     }
@@ -1274,7 +1292,8 @@ mod tests {
     fn test_window_row_number() {
         let mut q = base_query("Fact");
         q.projections = vec!["fact_id".into(), "origin".into()];
-        q.window_funcs = vec![WindowFuncDef {
+        let mut ext = DuckDbQueryExt::default();
+        ext.window_funcs = vec![WindowFuncDef {
             func: "ROW_NUMBER".into(),
             column: None,
             partition_by: vec!["origin".into()],
@@ -1284,7 +1303,7 @@ mod tests {
             }],
             alias: Some("rn".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert_eq!(
             sql,
             "SELECT fact_id, origin, ROW_NUMBER() OVER (PARTITION BY origin ORDER BY created_at DESC) AS rn FROM facts_view"
@@ -1295,7 +1314,8 @@ mod tests {
     fn test_window_rank() {
         let mut q = base_query("Fact");
         q.projections = vec!["fact_id".into()];
-        q.window_funcs = vec![WindowFuncDef {
+        let mut ext = DuckDbQueryExt::default();
+        ext.window_funcs = vec![WindowFuncDef {
             func: "RANK".into(),
             column: None,
             partition_by: vec![],
@@ -1305,7 +1325,7 @@ mod tests {
             }],
             alias: Some("rank".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert_eq!(
             sql,
             "SELECT fact_id, RANK() OVER (ORDER BY score DESC) AS rank FROM facts_view"
@@ -1314,15 +1334,16 @@ mod tests {
 
     #[test]
     fn test_window_dense_rank() {
-        let mut q = base_query("Fact");
-        q.window_funcs = vec![WindowFuncDef {
+        let q = base_query("Fact");
+        let mut ext = DuckDbQueryExt::default();
+        ext.window_funcs = vec![WindowFuncDef {
             func: "DENSE_RANK".into(),
             column: None,
             partition_by: vec![],
             order_by: vec![],
             alias: None,
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert!(sql.contains("DENSE_RANK() OVER () AS dense_rank_window"));
     }
 
@@ -1330,14 +1351,15 @@ mod tests {
     fn test_window_sum_partition() {
         let mut q = base_query("Fact");
         q.projections = vec!["origin".into(), "score".into()];
-        q.window_funcs = vec![WindowFuncDef {
+        let mut ext = DuckDbQueryExt::default();
+        ext.window_funcs = vec![WindowFuncDef {
             func: "SUM".into(),
             column: Some("score".into()),
             partition_by: vec!["origin".into()],
             order_by: vec![],
             alias: Some("origin_total".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert_eq!(
             sql,
             "SELECT origin, score, SUM(score) OVER (PARTITION BY origin) AS origin_total FROM facts_view"
@@ -1348,7 +1370,8 @@ mod tests {
     fn test_window_lead_lag() {
         let mut q = base_query("Fact");
         q.projections = vec!["fact_id".into(), "created_at".into()];
-        q.window_funcs = vec![
+        let mut ext = DuckDbQueryExt::default();
+        ext.window_funcs = vec![
             WindowFuncDef {
                 func: "LAG".into(),
                 column: Some("created_at".into()),
@@ -1370,7 +1393,7 @@ mod tests {
                 alias: Some("next_created".into()),
             },
         ];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert!(sql.contains(
             "LAG(created_at) OVER (PARTITION BY origin ORDER BY created_at ASC) AS prev_created"
         ));
@@ -1383,7 +1406,8 @@ mod tests {
     fn test_window_first_last_value() {
         let mut q = base_query("Fact");
         q.projections = vec!["origin".into()];
-        q.window_funcs = vec![WindowFuncDef {
+        let mut ext = DuckDbQueryExt::default();
+        ext.window_funcs = vec![WindowFuncDef {
             func: "FIRST_VALUE".into(),
             column: Some("fact_id".into()),
             partition_by: vec!["origin".into()],
@@ -1393,7 +1417,7 @@ mod tests {
             }],
             alias: Some("first_fact".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert!(sql.contains(
             "FIRST_VALUE(fact_id) OVER (PARTITION BY origin ORDER BY created_at ASC) AS first_fact"
         ));
@@ -1416,23 +1440,18 @@ mod tests {
             offset: None,
             distinct: false,
             aggregate_count: false,
-            with_ctes: vec![],
             group_by: vec![],
             aggregates: vec![],
-            window_funcs: vec![],
-            json_projections: vec![],
-            json_filters: vec![],
-            vector_filters: vec![],
-            vector_score: None,
         });
 
         let mut q = base_query("Fact");
-        q.with_ctes = vec![CteDef {
+        let mut ext = DuckDbQueryExt::default();
+        ext.with_ctes = vec![CteDef {
             alias: "arxiv_facts".into(),
             subquery: sub,
         }];
         q.projections = vec!["fact_id".into(), "content".into()];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert_eq!(
             sql,
             "WITH arxiv_facts AS (SELECT fact_id, content FROM facts_view WHERE origin = 'arxiv') SELECT fact_id, content FROM facts_view"
@@ -1454,14 +1473,8 @@ mod tests {
             offset: None,
             distinct: false,
             aggregate_count: false,
-            with_ctes: vec![],
             group_by: vec![],
             aggregates: vec![],
-            window_funcs: vec![],
-            json_projections: vec![],
-            json_filters: vec![],
-            vector_filters: vec![],
-            vector_score: None,
         });
 
         let recent_sub = Box::new(ColdQuery {
@@ -1476,18 +1489,13 @@ mod tests {
             offset: None,
             distinct: false,
             aggregate_count: false,
-            with_ctes: vec![],
             group_by: vec![],
             aggregates: vec![],
-            window_funcs: vec![],
-            json_projections: vec![],
-            json_filters: vec![],
-            vector_filters: vec![],
-            vector_score: None,
         });
 
         let mut q = base_query("Fact");
-        q.with_ctes = vec![
+        let mut ext = DuckDbQueryExt::default();
+        ext.with_ctes = vec![
             CteDef {
                 alias: "arxiv_facts".into(),
                 subquery: arxiv_sub,
@@ -1498,7 +1506,7 @@ mod tests {
             },
         ];
         q.projections = vec!["fact_id".into()];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert!(sql.starts_with("WITH arxiv_facts AS (SELECT fact_id, content FROM facts_view WHERE origin = 'arxiv'), recent_facts AS (SELECT fact_id FROM facts_view ORDER BY created_at DESC LIMIT 100)"));
         assert!(sql.ends_with("SELECT fact_id FROM facts_view"));
     }
@@ -1514,22 +1522,17 @@ mod tests {
             offset: None,
             distinct: false,
             aggregate_count: false,
-            with_ctes: vec![],
             group_by: vec!["origin".into()],
             aggregates: vec![AggregateDef {
                 func: "COUNT".into(),
                 column: "fact_id".into(),
                 alias: Some("cnt".into()),
             }],
-            window_funcs: vec![],
-            json_projections: vec![],
-            json_filters: vec![],
-            vector_filters: vec![],
-            vector_score: None,
         });
 
         let mut q = base_query("Fact");
-        q.with_ctes = vec![CteDef {
+        let mut ext = DuckDbQueryExt::default();
+        ext.with_ctes = vec![CteDef {
             alias: "origin_counts".into(),
             subquery: sub,
         }];
@@ -1539,7 +1542,7 @@ mod tests {
             desc: true,
         }];
         q.limit = Some(5);
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert!(sql.contains("WITH origin_counts AS (SELECT origin, COUNT(fact_id) AS cnt FROM facts_view GROUP BY origin)"));
         assert!(sql.contains("ORDER BY cnt DESC LIMIT 5"));
     }
@@ -1550,7 +1553,8 @@ mod tests {
     fn test_combined_json_projection_with_group_by() {
         let mut q = base_query("Fact");
         q.projections = vec!["origin".into()];
-        q.json_projections = vec![JsonProjection {
+        let mut ext = DuckDbQueryExt::default();
+        ext.json_projections = vec![JsonProjection {
             column: "metadata".into(),
             path: "$.category".into(),
             alias: Some("category".into()),
@@ -1566,7 +1570,7 @@ mod tests {
             desc: true,
         }];
         q.limit = Some(10);
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert!(sql.contains("json_extract_string(metadata, '$.category') AS category"));
         assert!(sql.contains("GROUP BY origin, category"));
         assert!(sql.contains("ORDER BY cnt DESC LIMIT 10"));
@@ -1581,20 +1585,21 @@ mod tests {
             op: "Eq".into(),
             value: Value::String("arxiv".into()),
         }];
-        q.json_filters = vec![JsonFilter {
+        let mut ext = DuckDbQueryExt::default();
+        ext.json_filters = vec![JsonFilter {
             column: "metadata".into(),
             path: "$.domain".into(),
             op: "Eq".into(),
             value: Value::String("cs.AI".into()),
         }];
-        q.vector_filters = vec![VectorFilter {
+        ext.vector_filters = vec![VectorFilter {
             column: "embedding".into(),
             metric: "cosine".into(),
             vector: vec![0.1, 0.2, 0.3],
             op: "Gte".into(),
             threshold: 0.85,
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert!(sql.contains("origin = 'arxiv'"));
         assert!(sql.contains("json_extract_string(metadata, '$.domain') = 'cs.AI'"));
         assert!(sql.contains("array_cosine_similarity(embedding, [0.1, 0.2, 0.3]) >= 0.85"));
@@ -1604,7 +1609,8 @@ mod tests {
     fn test_combined_window_with_vector_score() {
         let mut q = base_query("Fact");
         q.projections = vec!["fact_id".into(), "origin".into(), "score".into()];
-        q.window_funcs = vec![WindowFuncDef {
+        let mut ext = DuckDbQueryExt::default();
+        ext.window_funcs = vec![WindowFuncDef {
             func: "ROW_NUMBER".into(),
             column: None,
             partition_by: vec!["origin".into()],
@@ -1614,7 +1620,7 @@ mod tests {
             }],
             alias: Some("rn".into()),
         }];
-        q.vector_score = Some(VectorScore {
+        ext.vector_score = Some(VectorScore {
             column: "embedding".into(),
             metric: "cosine".into(),
             vector: vec![0.1, 0.2, 0.3],
@@ -1622,7 +1628,7 @@ mod tests {
             sort_by_score: true,
         });
         q.limit = Some(20);
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert!(sql.contains("ROW_NUMBER() OVER (PARTITION BY origin ORDER BY score DESC) AS rn"));
         assert!(sql.contains("array_cosine_similarity(embedding, [0.1, 0.2, 0.3]) AS score"));
         // Two ORDER BYs: external (vector_score) overrides nothing, so both appear
@@ -1649,7 +1655,7 @@ mod tests {
             field: "cnt".into(),
             desc: true,
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert!(sql.contains("fts_main_facts.match('deep learning')"));
         assert!(sql.contains("GROUP BY origin"));
         assert!(sql.contains("ORDER BY cnt DESC"));
@@ -1666,7 +1672,7 @@ mod tests {
             column: "fact_id".into(),
             alias: Some("total".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(sql, "SELECT COUNT(fact_id) AS total FROM facts_view");
     }
 
@@ -1679,7 +1685,7 @@ mod tests {
             column: "*".into(),
             alias: Some("cnt".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(
             sql,
             "SELECT COUNT(*) AS cnt FROM facts_view GROUP BY origin"
@@ -1689,15 +1695,16 @@ mod tests {
     #[test]
     fn test_vec_f64_edge_cases() {
         // Integer-like floats should format as "{n}.0"
-        let mut q = base_query("Fact");
-        q.vector_filters = vec![VectorFilter {
+        let q = base_query("Fact");
+        let mut ext = DuckDbQueryExt::default();
+        ext.vector_filters = vec![VectorFilter {
             column: "v".into(),
             metric: "cosine".into(),
             vector: vec![0.0, 1.0, -1.0, 3.0],
             op: "Gte".into(),
             threshold: 0.5,
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert!(sql.contains("[0.0, 1.0, -1.0, 3.0]"));
     }
 
@@ -1747,7 +1754,7 @@ mod tests {
             op: "Gt".into(),
             value: Value::Number(serde_json::Number::from(80)),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(sql, "SELECT * FROM facts_view WHERE score > 80");
     }
 
@@ -1759,7 +1766,7 @@ mod tests {
             op: "Lt".into(),
             value: Value::Number(serde_json::Number::from(50)),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(sql, "SELECT * FROM facts_view WHERE score < 50");
     }
 
@@ -1771,7 +1778,7 @@ mod tests {
             op: "Gte".into(),
             value: Value::Number(serde_json::Number::from(60)),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(sql, "SELECT * FROM facts_view WHERE score >= 60");
     }
 
@@ -1783,7 +1790,7 @@ mod tests {
             op: "Lte".into(),
             value: Value::Number(serde_json::Number::from(100)),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(sql, "SELECT * FROM facts_view WHERE score <= 100");
     }
 
@@ -1795,7 +1802,7 @@ mod tests {
             op: "In".into(),
             value: Value::String("not_an_array".into()),
         }];
-        let result = translate(&q);
+        let result = translate(&q, None);
         assert!(result.is_err());
         assert!(
             result
@@ -1808,14 +1815,15 @@ mod tests {
 
     #[test]
     fn test_json_filter_ne() {
-        let mut q = base_query("Fact");
-        q.json_filters = vec![JsonFilter {
+        let q = base_query("Fact");
+        let mut ext = DuckDbQueryExt::default();
+        ext.json_filters = vec![JsonFilter {
             column: "metadata".into(),
             path: "$.status".into(),
             op: "Ne".into(),
             value: Value::String("archived".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert_eq!(
             sql,
             "SELECT * FROM facts_view WHERE json_extract_string(metadata, '$.status') != 'archived'"
@@ -1824,14 +1832,15 @@ mod tests {
 
     #[test]
     fn test_json_filter_lt() {
-        let mut q = base_query("Fact");
-        q.json_filters = vec![JsonFilter {
+        let q = base_query("Fact");
+        let mut ext = DuckDbQueryExt::default();
+        ext.json_filters = vec![JsonFilter {
             column: "metadata".into(),
             path: "$.priority".into(),
             op: "Lt".into(),
             value: Value::Number(serde_json::Number::from(3)),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert_eq!(
             sql,
             "SELECT * FROM facts_view WHERE json_extract_string(metadata, '$.priority') < 3"
@@ -1840,14 +1849,15 @@ mod tests {
 
     #[test]
     fn test_json_filter_gte() {
-        let mut q = base_query("Fact");
-        q.json_filters = vec![JsonFilter {
+        let q = base_query("Fact");
+        let mut ext = DuckDbQueryExt::default();
+        ext.json_filters = vec![JsonFilter {
             column: "metadata".into(),
             path: "$.confidence".into(),
             op: "Gte".into(),
             value: Value::Number(serde_json::Number::from(90)),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert_eq!(
             sql,
             "SELECT * FROM facts_view WHERE json_extract_string(metadata, '$.confidence') >= 90"
@@ -1856,14 +1866,15 @@ mod tests {
 
     #[test]
     fn test_json_filter_lte() {
-        let mut q = base_query("Fact");
-        q.json_filters = vec![JsonFilter {
+        let q = base_query("Fact");
+        let mut ext = DuckDbQueryExt::default();
+        ext.json_filters = vec![JsonFilter {
             column: "metadata".into(),
             path: "$.revision".into(),
             op: "Lte".into(),
             value: Value::Number(serde_json::Number::from(5)),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         assert_eq!(
             sql,
             "SELECT * FROM facts_view WHERE json_extract_string(metadata, '$.revision') <= 5"
@@ -1872,14 +1883,15 @@ mod tests {
 
     #[test]
     fn test_json_filter_in_non_array_error() {
-        let mut q = base_query("Fact");
-        q.json_filters = vec![JsonFilter {
+        let q = base_query("Fact");
+        let mut ext = DuckDbQueryExt::default();
+        ext.json_filters = vec![JsonFilter {
             column: "metadata".into(),
             path: "$.category".into(),
             op: "In".into(),
             value: Value::String("not_an_array".into()),
         }];
-        let result = translate(&q);
+        let result = translate(&q, Some(&ext));
         assert!(result.is_err());
         assert!(
             result
@@ -1899,7 +1911,7 @@ mod tests {
             op: "FtsMatchAnd".into(),
             value: Value::String("neural network transformer".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert!(sql.contains("CONTAINS(content, 'neural') AND CONTAINS(content, 'network') AND CONTAINS(content, 'transformer')"));
         assert!(!sql.contains("fts_main"));
     }
@@ -1912,7 +1924,7 @@ mod tests {
             op: "FtsMatchAnd".into(),
             value: Value::String("single".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(
             sql,
             "SELECT * FROM facts_view WHERE CONTAINS(content, 'single')"
@@ -1926,7 +1938,7 @@ mod tests {
         let mut q = base_query("Fact");
         q.projections = vec!["fact_id".into()];
         q.offset = Some(10);
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         // DuckDB requires LIMIT with OFFSET; translator emits LIMIT 1000000
         assert_eq!(
             sql,
@@ -1941,7 +1953,7 @@ mod tests {
         let mut q = base_query("Fact");
         q.distinct = true;
         // Empty projections + distinct = SELECT DISTINCT *
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(sql, "SELECT DISTINCT * FROM facts_view");
     }
 
@@ -1951,14 +1963,15 @@ mod tests {
     fn test_window_unknown_func_passthrough() {
         let mut q = base_query("Fact");
         q.projections = vec!["fact_id".into()];
-        q.window_funcs = vec![WindowFuncDef {
+        let mut ext = DuckDbQueryExt::default();
+        ext.window_funcs = vec![WindowFuncDef {
             func: "NTILE".into(),
             column: Some("score".into()),
             partition_by: vec!["origin".into()],
             order_by: vec![],
             alias: Some("quartile".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, Some(&ext)).unwrap();
         // Unknown func names pass through as-is: NTILE(score)
         assert!(sql.contains("NTILE(score) OVER (PARTITION BY origin) AS quartile"));
     }
@@ -1976,22 +1989,17 @@ mod tests {
             offset: None,
             distinct: false,
             aggregate_count: false,
-            with_ctes: vec![],
             group_by: vec![],
             aggregates: vec![],
-            window_funcs: vec![],
-            json_projections: vec![],
-            json_filters: vec![],
-            vector_filters: vec![],
-            vector_score: None,
         });
 
-        let mut q = base_query("Fact");
-        q.with_ctes = vec![CteDef {
+        let q = base_query("Fact");
+        let mut ext = DuckDbQueryExt::default();
+        ext.with_ctes = vec![CteDef {
             alias: "bad_cte".into(),
             subquery: bad_sub,
         }];
-        let result = translate(&q);
+        let result = translate(&q, Some(&ext));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("unknown label"));
     }
@@ -2007,7 +2015,7 @@ mod tests {
             op: "FtsMatch".into(),
             value: Value::String("action item".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(
             sql,
             "SELECT hint_id FROM hints_view WHERE content IN (SELECT doc_id FROM fts_main_hints WHERE fts_main_hints.match('action item'))"
@@ -2028,7 +2036,7 @@ mod tests {
             column: "f.fact_id".into(),
             alias: Some("cnt".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(
             sql,
             "SELECT f.origin, COUNT(f.fact_id) AS cnt FROM facts_view GROUP BY f.origin"
@@ -2047,7 +2055,7 @@ mod tests {
             column: "fact_id".into(),
             alias: Some("cnt".into()),
         }];
-        let sql = translate(&q).unwrap();
+        let sql = translate(&q, None).unwrap();
         assert_eq!(
             sql,
             "SELECT DISTINCT origin, COUNT(fact_id) AS cnt FROM facts_view"

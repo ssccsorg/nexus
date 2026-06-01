@@ -1,9 +1,10 @@
 // nexus-storage-duckdb — DuckDB-backed cold storage for analytical queries.
 
 pub mod cypher_sql;
+pub mod duckdb_ext;
 
-use interface_cypher::CypherCapable;
-use interface_cypher::cold_query::ColdQuery;
+use interface_cypher::capable::CypherCapable;
+use interface_query::ColdQuery;
 use nexus_model::{
     BoardState, ColdStorage, Content, EvictCapable, Fact, FihHash, FilterCapable, FlushCapable,
     FlushCursor, FlushResult, Hint, Intent, PartitionData, ScanCapable, StateFilter, StorageRead,
@@ -525,7 +526,7 @@ impl FlushCapable for DuckDbStorage {
 
 impl CypherCapable for DuckDbStorage {
     fn query_plan(&self, plan: &ColdQuery) -> Result<Vec<HashMap<String, Content>>, String> {
-        let sql = cypher_sql::translate(plan)?;
+        let sql = cypher_sql::translate(plan, None)?;
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(&sql)

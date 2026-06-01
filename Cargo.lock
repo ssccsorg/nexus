@@ -1300,9 +1300,19 @@ dependencies = [
  "cyrs-hir",
  "cyrs-plan",
  "cyrs-syntax",
+ "interface-query",
  "nexus",
  "nexus-model",
  "petgraph",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "interface-query"
+version = "0.1.0"
+dependencies = [
+ "nexus-model",
  "serde",
  "serde_json",
 ]
@@ -1630,6 +1640,7 @@ version = "0.1.0"
 dependencies = [
  "duckdb",
  "interface-cypher",
+ "interface-query",
  "nexus",
  "nexus-model",
  "serde",
