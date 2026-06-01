@@ -43,6 +43,22 @@ The architecture is vertical rather than horizontal: it does not chain model out
 
 These layers implement an organic growth model: contract‑governed ingestion feeds a unified knowledge graph, which drives hypothesis generation and validation, with the system continuously learning from its own discoveries: whether those discoveries occur in a document, a simulation, or a physical laboratory.
 
+### FIH as a Data Structure Dimension
+
+FIH are not merely message types or protocol elements, together they form a single data structure dimension: a 3-vector where every node in the shared graph is characterized by three independent axes. A node may carry a validated observation (Fact), an exploration direction (Intent), a governance constraint (Hint), or any combination thereof. The graph itself is the system state, and the FIH primitives are its basis.
+
+This dimensionality enables three forms of scaling:
+
+**Multi-Blackboard composition.** A Fact at one dimension becomes a Scheme at the next. An Observation at dimension N becomes a Hint at dimension N-1. This recursive structure means Blackboards can contain Blackboards, creating a hierarchy of reasoning scopes from a single agent’s internal state to an ecosystem-wide knowledge graph. The same FIH interface governs every scale.
+
+**Temporal accumulation.** Each FIH type accumulates independently. Facts are immutable and permanent. Intents are created, claimed, heartbeated, and concluded, leaving a concluded Fact as their residue. Hints are injected and may be garbage-collected. All three carry timestamps, making the graph inherently a time series. The combination of spatial (graph topology) and temporal (per-node timestamps) dimensions forms a 4D structure: a spatiotemporal graph where the system state at any point in history is exactly the union of all Facts, active Intents, and active Hints at that moment.
+
+**Independent streaming.** Because Facts, Intents, and Hints are independent axes, they can be transmitted, subscribed to, and persisted independently. A transport layer built on top of the FIH interface can treat each type as a separate pub/sub stream. Multiple nexus instances distributed across different machines, domains, or realities can synchronize their local graphs by exchanging FIH deltas without requiring a shared database or message broker. The graph itself is the transport unit.
+
+This dimensional view is what allows domain-specific nexus extensions to exchange data with the core nexus through the same FIH primitives. A hardware simulation nexus and a document analysis nexus speak the same data structure language, even though their internal storage, query patterns, and deployment targets differ. The primitives abstract over implementation without constraining it.
+
+Existing standards map naturally onto this structure: for example, IPLD (InterPlanetary Linked Data) provides content-addressed DAG serialization compatible with FihHash. C2PA attaches verifiable provenance to Fact content. ODRL expresses Hint governance rules.
+
 ## Layer 1: Knowledge Graph Engine
 
 The knowledge graph engine is a graph‑native retrieval‑augmented generation system. It decomposes incoming artifacts into entities, typed relationships, and community clusters. All data resides in a single transactional database with two extensions:
