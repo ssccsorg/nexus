@@ -2,18 +2,17 @@ pub mod blackboard;
 pub mod helper;
 pub mod mock_gateway;
 pub mod process;
-pub mod query;
 pub mod storage;
 
 // Re-export key types for convenience
 pub use blackboard::{DefaultBlackboard, Record};
+pub use interface_cypher::CypherCapable;
 pub use mock_gateway::MockGateway;
 pub use nexus_model::{
     Blackboard, BlackboardError, BoardState, Content, EvictCapable, Fact, FihHash, FlushCapable,
     FlushCursor, Hint, Intent, ScanCapable, TimeRangeCapable,
 };
 pub use process::{error::ProcessError, scheduler::Scheduler};
-pub use query::cypher::capable::CypherCapable;
 pub use storage::composite::CompositeColdStorage;
 pub use storage::petgraph::{
     EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Snapshottable, StorageSnapshot,

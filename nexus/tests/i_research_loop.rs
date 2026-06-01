@@ -8,7 +8,7 @@
 //   5. Verify the knowledge graph now connects previously disconnected concepts
 //   6. Show that new gaps emerge after knowledge integration
 
-use nexus::query::cypher;
+use interface_cypher as cypher;
 use nexus::{Blackboard, BlackboardError, Fact, FihHash, Intent, create_blackboard};
 use serde_json;
 

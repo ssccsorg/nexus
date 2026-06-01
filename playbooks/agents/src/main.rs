@@ -10,7 +10,7 @@
 // Usage:
 //   cd tests/agents && cargo run
 
-use nexus::query::cypher;
+use interface_cypher as cypher;
 use nexus::{Blackboard, Fact, FihHash, Intent, create_blackboard};
 
 fn main() {

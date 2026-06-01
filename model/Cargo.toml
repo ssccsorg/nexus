@@ -7,3 +7,4 @@ license.workspace = true
 [dependencies]
 serde.workspace = true
 sha2 = "0.10"
+petgraph = { workspace = true }

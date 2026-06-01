@@ -18,3 +18,5 @@ pub trait CypherCapable: nexus_model::StorageRead {
         Err("CypherCapable: not yet implemented for this backend".into())
     }
 }
+
+impl CypherCapable for nexus_model::NullStorage {}

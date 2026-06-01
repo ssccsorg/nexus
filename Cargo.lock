@@ -598,7 +598,7 @@ dependencies = [
 [[package]]
 name = "cyrs-ast"
 version = "0.1.0"
-source = "git+https://github.com/phall1/cyrs#b966c4c528a984ed95110cdb1f575524c0b78723"
+source = "git+https://github.com/phall1/cyrs#9adf7465724777bf8addc484fb131688e2b8754a"
 dependencies = [
  "cyrs-syntax",
  "smol_str",
@@ -607,7 +607,7 @@ dependencies = [
 [[package]]
 name = "cyrs-hir"
 version = "0.1.0"
-source = "git+https://github.com/phall1/cyrs#b966c4c528a984ed95110cdb1f575524c0b78723"
+source = "git+https://github.com/phall1/cyrs#9adf7465724777bf8addc484fb131688e2b8754a"
 dependencies = [
  "cyrs-ast",
  "cyrs-syntax",
@@ -618,7 +618,7 @@ dependencies = [
 [[package]]
 name = "cyrs-plan"
 version = "0.1.0"
-source = "git+https://github.com/phall1/cyrs#b966c4c528a984ed95110cdb1f575524c0b78723"
+source = "git+https://github.com/phall1/cyrs#9adf7465724777bf8addc484fb131688e2b8754a"
 dependencies = [
  "cyrs-hir",
  "indexmap",
@@ -628,7 +628,7 @@ dependencies = [
 [[package]]
 name = "cyrs-syntax"
 version = "0.1.0"
-source = "git+https://github.com/phall1/cyrs#b966c4c528a984ed95110cdb1f575524c0b78723"
+source = "git+https://github.com/phall1/cyrs#9adf7465724777bf8addc484fb131688e2b8754a"
 dependencies = [
  "drop_bomb",
  "logos",
@@ -1293,6 +1293,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "interface-cypher"
+version = "0.1.0"
+dependencies = [
+ "cyrs-ast",
+ "cyrs-hir",
+ "cyrs-plan",
+ "cyrs-syntax",
+ "nexus-model",
+ "petgraph",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1565,10 +1579,7 @@ dependencies = [
 name = "nexus"
 version = "0.1.0"
 dependencies = [
- "cyrs-ast",
- "cyrs-hir",
- "cyrs-plan",
- "cyrs-syntax",
+ "interface-cypher",
  "log",
  "nexus-model",
  "petgraph",
@@ -1599,6 +1610,7 @@ dependencies = [
 name = "nexus-model"
 version = "0.1.0"
 dependencies = [
+ "petgraph",
  "serde",
  "sha2",
 ]
@@ -1607,6 +1619,7 @@ dependencies = [
 name = "nexus-privileged-agent"
 version = "0.1.0"
 dependencies = [
+ "interface-cypher",
  "nexus",
  "serde_json",
 ]

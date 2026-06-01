@@ -3,7 +3,7 @@
 // Each scenario: a group of agents use FIH to collaboratively solve a concrete
 // research problem. No agent talks directly to another — all via Blackboard.
 
-use nexus::query::cypher;
+use interface_cypher as cypher;
 use nexus::{Blackboard, Fact, FihHash, Hint, Intent, create_blackboard};
 
 // ── Scenario 1: Contradiction Detection ───────────────────────────────────
