@@ -4,7 +4,8 @@ pub mod parser;
 pub mod plan;
 pub mod translate;
 
-pub use capable::CypherCapable;
+// Re-export common query types from interface-query for convenience.
+pub use interface_query::{AggregateDef, ColdFilter, ColdOrder, ColdQuery, QueryCapable};
 pub use parser::parse_query;
 pub use plan::*;
 pub use translate::*;

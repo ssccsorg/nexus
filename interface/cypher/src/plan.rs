@@ -9,7 +9,7 @@ pub use cyrs_hir;
 
 use cyrs_plan::{self, ReadOp, VarId, WriteOp};
 
-use crate::cold_query::{ColdFilter, ColdQuery};
+use interface_query::{ColdFilter, ColdQuery};
 
 /// Unified plan: one type for both execution paths.
 #[derive(Debug, Clone)]
