@@ -1300,6 +1300,7 @@ dependencies = [
  "cyrs-hir",
  "cyrs-plan",
  "cyrs-syntax",
+ "nexus",
  "nexus-model",
  "petgraph",
  "serde",
