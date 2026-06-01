@@ -493,8 +493,3 @@ fn expr_to_prop_value(expr: &Expr) -> Option<PropertyValue> {
         _ => None,
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-}
