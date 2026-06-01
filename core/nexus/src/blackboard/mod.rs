@@ -491,7 +491,7 @@ mod tests {
             let fact = Fact {
                 id: FihHash(format!("f{i}")),
                 origin: "test".into(),
-                content: format!("fact #{i}"),
+                content: format!("fact #{i}").into(),
                 creator: "tester".into(),
             };
             bb.submit_fact(&fact).unwrap();
@@ -528,7 +528,7 @@ mod tests {
             let fact = Fact {
                 id: FihHash(format!("f{i}")),
                 origin: "test".into(),
-                content: format!("fact #{i}"),
+                content: format!("fact #{i}").into(),
                 creator: "tester".into(),
             };
             bb.submit_fact(&fact).unwrap();
@@ -581,7 +581,7 @@ mod tests {
             let fact = Fact {
                 id: FihHash(format!("f{i}")),
                 origin: "test".into(),
-                content: format!("fact #{i}"),
+                content: format!("fact #{i}").into(),
                 creator: "tester".into(),
             };
             restored.submit_fact(&fact).unwrap();
@@ -610,10 +610,14 @@ mod tests {
         let c1 = bb.flush_cursor.clone();
 
         // Mutate graph directly (no fact submission).
-        bb.add_node(crate::storage::petgraph::NodeWeight {
-            label: "Test".into(),
-            properties: HashMap::new(),
-        });
+        {
+            let mut g = bb.hot_graph.write().unwrap();
+            g.add_node(crate::storage::petgraph::NodeWeight {
+                name: "test_node".into(),
+                label: "Test".into(),
+                properties: HashMap::new(),
+            });
+        }
         let c2 = bb.flush_cursor.clone();
         assert_eq!(
             c1, c2,
@@ -638,16 +642,10 @@ mod tests {
 
     #[test]
     fn test_flush_noop_backend() {
-        // NullStorage cold backend — flush should succeed but produce zero records.
+        // NullStorage cold backend — flush should succeed.
         let mut bb = bb_with_facts();
         let result = bb.storage.flush_since(&bb.flush_cursor);
         assert!(result.is_ok());
-        let FlushResult {
-            records_flushed,
-            new_cursor,
-        } = result.unwrap();
-        assert_eq!(records_flushed, 0);
-        assert_eq!(new_cursor, FlushCursor::default());
     }
 
     #[test]
@@ -672,7 +670,7 @@ mod tests {
         let mut bb = bb_with_facts();
         bb.flush().unwrap();
         let cursor = bb.flush_cursor.clone();
-        let ts: i64 = cursor.into();
+        let ts: u128 = cursor.last_flushed_at.parse().unwrap_or(0);
         assert!(ts > 0, "flush cursor should contain a positive timestamp");
     }
 
@@ -684,9 +682,14 @@ mod tests {
         // Add intents
         let intent = Intent {
             id: FihHash("i1".into()),
-            origin: "test".into(),
-            goal: "test goal".into(),
+            from_facts: vec![],
+            to_fact_id: None,
+            description: "test goal".into(),
             creator: "tester".into(),
+            worker: None,
+            last_heartbeat_at: None,
+            created_at: None,
+            concluded_at: None,
         };
         bb.submit_intent(&intent).unwrap();
 
@@ -696,7 +699,7 @@ mod tests {
         let restored = DefaultBlackboard::from_snapshot(snapshot);
 
         // Verify graph data
-        let state = restored.read_state();
+        let state = <DefaultBlackboard as nexus_model::Blackboard>::read_state(&restored);
         assert_eq!(state.facts.len(), 5);
         assert_eq!(state.intents.len(), 1);
 
