@@ -1,3 +1,4 @@
+use interface_cypher::cold_query::{ColdFilter, ColdOrder, ColdQuery};
 use nexus::CypherCapable;
 use nexus_model::{
     Content, FilterCapable, ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
@@ -631,66 +632,68 @@ fn test_cypher_capable_cold_query() {
     let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap(), "test").unwrap();
 
     // Query all facts via ColdQuery
-    let plan = serde_json::json!({
-        "label": "Fact",
-        "filters": [],
-        "projections": ["fact_id", "origin", "content"],
-        "order_by": [],
-        "limit": null,
-        "offset": null,
-        "distinct": false,
-        "aggregate_count": false
-    });
+    let plan = ColdQuery {
+        label: "Fact".into(),
+        filters: vec![],
+        projections: vec!["fact_id".into(), "origin".into(), "content".into()],
+        order_by: vec![],
+        limit: None,
+        offset: None,
+        distinct: false,
+        aggregate_count: false,
+        ..ColdQuery::new("Fact")
+    };
 
     let result = storage.query_plan(&plan).unwrap();
-    let rows = result.as_array().unwrap();
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&result).unwrap_or_default();
     assert_eq!(rows.len(), 2, "expected 2 facts");
     assert_eq!(rows[0]["fact_id"], "f_a");
     assert_eq!(rows[1]["fact_id"], "f_b");
 
     // Query with filter
-    let plan = serde_json::json!({
-        "label": "Fact",
-        "filters": [{"field": "fact_id", "op": "Eq", "value": "f_a"}],
-        "projections": ["fact_id", "content"],
-        "order_by": [],
-        "limit": null,
-        "offset": null,
-        "distinct": false,
-        "aggregate_count": false
-    });
+    let plan = ColdQuery {
+        label: "Fact".into(),
+        filters: vec![ColdFilter {
+            field: "fact_id".into(),
+            op: "Eq".into(),
+            value: serde_json::json!("f_a"),
+        }],
+        projections: vec!["fact_id".into(), "content".into()],
+        order_by: vec![],
+        limit: None,
+        offset: None,
+        distinct: false,
+        aggregate_count: false,
+        ..ColdQuery::new("Fact")
+    };
 
     let result = storage.query_plan(&plan).unwrap();
-    let rows = result.as_array().unwrap();
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&result).unwrap_or_default();
     assert_eq!(rows.len(), 1, "expected 1 filtered fact");
     assert_eq!(rows[0]["fact_id"], "f_a");
 
     // Count query
-    let count_plan = serde_json::json!({
-        "label": "Fact",
-        "filters": [],
-        "projections": [],
-        "order_by": [],
-        "limit": null,
-        "offset": null,
-        "distinct": false,
-        "aggregate_count": true
-    });
+    let count_plan = ColdQuery {
+        label: "Fact".into(),
+        filters: vec![],
+        projections: vec![],
+        order_by: vec![],
+        limit: None,
+        offset: None,
+        distinct: false,
+        aggregate_count: true,
+        ..ColdQuery::new("Fact")
+    };
     let count_result = storage.query_plan(&count_plan).unwrap();
-    assert!(count_result.is_array(), "count query returns array");
-    let count_row = count_result
-        .as_array()
-        .and_then(|a| a.first())
-        .expect("count query should return a row");
+    let count_rows: Vec<serde_json::Value> =
+        serde_json::from_str(&count_result).unwrap_or_default();
+    assert!(!count_rows.is_empty(), "count query returns array");
+    let count_row = count_rows.first().expect("count query should return a row");
     assert_eq!(count_row["count"], serde_json::json!(2), "expected count=2");
 
-    // Empty plan should fail to parse
-    let empty_result = storage.query_plan(&serde_json::json!({}));
-    assert!(empty_result.is_err(), "empty plan should fail to parse");
-    assert!(
-        empty_result.unwrap_err().contains("ColdQuery"),
-        "error should mention ColdQuery"
-    );
+    // Empty query (no label) should fail
+    let empty_result = storage.query_plan(&ColdQuery::new(""));
+    assert!(empty_result.is_err(), "empty label should fail to parse");
 }
 
 // ── Test 20: TimeRangeCapable routing demo (hot vs cold) ─────────────

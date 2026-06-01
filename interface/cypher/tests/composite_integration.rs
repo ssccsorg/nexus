@@ -10,6 +10,7 @@
 // These tests validate that it composes correctly with Petgraph via
 // DualStorage, matching the same trait contracts as DuckDbStorage.
 
+use interface_cypher::cold_query::ColdQuery;
 use nexus::storage::composite::{CompositeColdStorage, IoBufferBlob, IoBufferKv, IoBufferObject};
 use nexus::storage::petgraph::PetgraphStorage;
 use nexus::{
@@ -197,11 +198,12 @@ fn test_cypher_query_routes_to_petgraph_hot() {
     <_ as Blackboard>::submit_fact(&mut guard, &fact("f_cypher_1")).unwrap();
     <_ as Blackboard>::submit_fact(&mut guard, &fact("f_cypher_2")).unwrap();
 
-    let plan = json!({
-        "label": "Fact",
-        "projections": ["fact_id"],
-    });
-    let result = <_ as CypherCapable>::query_plan(&guard, &plan);
+    let cold_query = ColdQuery {
+        label: "Fact".into(),
+        projections: vec!["fact_id".into()],
+        ..ColdQuery::new("Fact")
+    };
+    let result = <_ as CypherCapable>::query_plan(&guard, &cold_query);
     assert!(result.is_err(), "Composite cold storage is Cypher no-op");
 }
 

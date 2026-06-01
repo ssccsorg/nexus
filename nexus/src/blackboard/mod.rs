@@ -356,7 +356,7 @@ impl ScanCapable for DefaultBlackboard {
 // ── Cypher query — delegates to the cold CypherCapable backend ────────────
 
 impl CypherCapable for DefaultBlackboard {
-    fn query_plan(&self, plan: &serde_json::Value) -> Result<serde_json::Value, String> {
+    fn query_plan(&self, plan: &interface_cypher::cold_query::ColdQuery) -> Result<String, String> {
         self.cold_cypher.query_plan(plan)
     }
 }

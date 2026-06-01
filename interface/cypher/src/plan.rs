@@ -9,6 +9,8 @@ pub use cyrs_hir;
 
 use cyrs_plan::{self, ReadOp, VarId, WriteOp};
 
+use crate::cold_query::{ColdFilter, ColdQuery};
+
 /// Unified plan: one type for both execution paths.
 #[derive(Debug, Clone)]
 pub enum Plan {
@@ -63,30 +65,27 @@ impl Plan {
         crate::parser::parse_query(input).map(Plan::Internal)
     }
 
-    /// Attempt to translate this plan into a serialized ColdQuery for DuckDB
-    /// cold storage. Returns `None` if the plan involves graph patterns
+    /// Attempt to translate this plan into a `ColdQuery` for DuckDB cold
+    /// storage. Returns `None` if the plan involves graph patterns
     /// (relationships) that cannot be represented as a simple tabular scan.
-    ///
-    /// The returned JSON value matches the `ColdQuery` struct shape defined in
-    /// `nexus-storage-duckdb`.
-    pub fn to_cold_query(&self) -> Option<serde_json::Value> {
+    pub fn to_cold_query(&self) -> Option<ColdQuery> {
         match self {
-            Plan::External(ext) => ext.to_cold_query_json(),
-            Plan::Internal(ir) => ir.to_cold_query_json(),
+            Plan::External(ext) => ext.to_cold_query(),
+            Plan::Internal(ir) => ir.to_cold_query(),
         }
     }
 }
 
-// ── Translation to ColdQuery (JSON) ───────────────────────────────────────
+// ── Translation to ColdQuery ───────────────────────────────────────────────
 
 impl ExternalPlan {
-    /// Translate an external plan to a JSON-serialized ColdQuery.
-    /// Only supports simple Source -> Filter -> Project -> Limit chains.
-    fn to_cold_query_json(&self) -> Option<serde_json::Value> {
+    /// Translate an external plan to a `ColdQuery`. Only supports simple
+    /// Source -> Filter -> Project -> Limit chains.
+    fn to_cold_query(&self) -> Option<ColdQuery> {
         use cyrs_plan::ReadOp;
 
         let mut label: Option<String> = None;
-        let mut filters: Vec<serde_json::Value> = Vec::new();
+        let mut filters: Vec<ColdFilter> = Vec::new();
         let mut projections: Vec<String> = Vec::new();
         let mut limit: Option<usize> = None;
         let mut distinct = false;
@@ -102,7 +101,7 @@ impl ExternalPlan {
                     label = Some(first.to_string());
                 }
                 ReadOp::Filter { predicate, .. } => {
-                    let cf = expr_to_json_filter(predicate)?;
+                    let cf = expr_to_cold_filter(predicate)?;
                     filters.push(cf);
                 }
                 ReadOp::Project { items, .. } => {
@@ -128,33 +127,21 @@ impl ExternalPlan {
             }
         }
 
-        Some(serde_json::json!({
-            "label": label?,
-            "filters": filters,
-            "projections": projections,
-            "limit": limit,
-            "distinct": distinct,
-            "order_by": [],
-            "offset": null,
-            "aggregate_count": false,
-            "with_ctes": [],
-            "group_by": [],
-            "aggregates": [],
-            "window_funcs": [],
-            "json_projections": [],
-            "json_filters": [],
-            "vector_filters": [],
-            "vector_score": null,
-        }))
+        let mut cq = ColdQuery::new(label?);
+        cq.filters = filters;
+        cq.projections = projections;
+        cq.limit = limit;
+        cq.distinct = distinct;
+        Some(cq)
     }
 }
 
 impl PlanIR {
-    /// Translate an internal PlanIR to a JSON-serialized ColdQuery.
-    /// Only supports a single Match (no relationship) + optional Where + optional Return.
-    fn to_cold_query_json(&self) -> Option<serde_json::Value> {
+    /// Translate an internal PlanIR to a `ColdQuery`. Only supports a single
+    /// Match (no relationship) + optional Where + optional Return.
+    fn to_cold_query(&self) -> Option<ColdQuery> {
         let mut label: Option<String> = None;
-        let mut filters: Vec<serde_json::Value> = Vec::new();
+        let mut filters: Vec<ColdFilter> = Vec::new();
         let mut projections: Vec<String> = Vec::new();
 
         for clause in &self.clauses {
@@ -171,16 +158,16 @@ impl PlanIR {
                 }
                 Clause::Where(w) => {
                     for (left, right) in &w.field_eq {
-                        let (field, value) = field_eq_to_json(left, right)?;
-                        filters.push(serde_json::json!({
-                            "field": field,
-                            "op": "Eq",
-                            "value": value,
-                        }));
+                        let (field, value) = field_eq_to_cold_filter(left, right)?;
+                        filters.push(ColdFilter {
+                            field,
+                            op: "Eq".into(),
+                            value,
+                        });
                     }
                     for cmp in &w.comparisons {
                         let field = cmp.field.property.as_deref()?.to_string();
-                        let op = match cmp.op {
+                        let op_str = match cmp.op {
                             CompareOp::Eq => "Eq",
                             CompareOp::Ne => "Ne",
                             CompareOp::Gt => "Gt",
@@ -189,11 +176,11 @@ impl PlanIR {
                             CompareOp::Lte => "Lte",
                         };
                         let value = compare_value_to_json(&cmp.value)?;
-                        filters.push(serde_json::json!({
-                            "field": field,
-                            "op": op,
-                            "value": value,
-                        }));
+                        filters.push(ColdFilter {
+                            field,
+                            op: op_str.into(),
+                            value,
+                        });
                     }
                 }
                 Clause::Return(r) => {
@@ -209,30 +196,19 @@ impl PlanIR {
             }
         }
 
-        Some(serde_json::json!({
-            "label": label?,
-            "filters": filters,
-            "projections": projections,
-            "order_by": [],
-            "limit": null,
-            "offset": null,
-            "distinct": false,
-            "aggregate_count": false,
-            "with_ctes": [],
-            "group_by": [],
-            "aggregates": [],
-            "window_funcs": [],
-            "json_projections": [],
-            "json_filters": [],
-            "vector_filters": [],
-            "vector_score": null,
-        }))
+        let mut cq = ColdQuery::new(label?);
+        cq.filters = filters;
+        cq.projections = projections;
+        Some(cq)
     }
 }
 
 /// Translate a field_eq pair (FieldRef, FieldRef) to (field_name, json_value).
 /// The right side must be a literal value, not a field reference.
-fn field_eq_to_json(left: &FieldRef, right: &FieldRef) -> Option<(String, serde_json::Value)> {
+fn field_eq_to_cold_filter(
+    left: &FieldRef,
+    right: &FieldRef,
+) -> Option<(String, serde_json::Value)> {
     if right.property.is_none() && right.variable.is_empty() {
         let field = format!("{}.{}", left.variable, left.property.as_ref()?);
         Some((field, serde_json::Value::String(right.variable.clone())))
@@ -260,8 +236,8 @@ fn compare_value_to_json(v: &CompareValue) -> Option<serde_json::Value> {
     }
 }
 
-/// Translate a cyrs_plan Expr (BinOp with Prop/Int/Str) to a JSON filter object.
-fn expr_to_json_filter(expr: &cyrs_plan::Expr) -> Option<serde_json::Value> {
+/// Translate a cyrs_plan Expr (BinOp with Prop/Int/Str) to a ColdFilter.
+fn expr_to_cold_filter(expr: &cyrs_plan::Expr) -> Option<ColdFilter> {
     use cyrs_plan::Expr;
     match expr {
         Expr::BinOp { op, lhs, rhs } => {
@@ -276,11 +252,11 @@ fn expr_to_json_filter(expr: &cyrs_plan::Expr) -> Option<serde_json::Value> {
                 cyrs_plan::BinOp::Le => "Lte",
                 _ => return None,
             };
-            Some(serde_json::json!({
-                "field": field,
-                "op": op_str,
-                "value": value,
-            }))
+            Some(ColdFilter {
+                field,
+                op: op_str.into(),
+                value,
+            })
         }
         _ => None,
     }
@@ -302,16 +278,16 @@ fn expr_to_field_name(expr: &cyrs_plan::Expr) -> Option<String> {
 }
 
 /// Extract a JSON value from a cyrs_plan Expr literal.
-fn expr_to_json_value(expr: &cyrs_plan::Expr) -> Option<Value> {
+fn expr_to_json_value(expr: &cyrs_plan::Expr) -> Option<serde_json::Value> {
     use cyrs_plan::Expr;
     match expr {
-        Expr::String(s) => Some(Value::String(s.to_string())),
-        Expr::Int(n) => Some(Value::Number((*n).into())),
+        Expr::String(s) => Some(serde_json::Value::String(s.to_string())),
+        Expr::Int(n) => Some(serde_json::Value::Number((*n).into())),
         Expr::Float(f) => {
             let n = serde_json::Number::from_f64(*f)?;
-            Some(Value::Number(n))
+            Some(serde_json::Value::Number(n))
         }
-        Expr::Bool(b) => Some(Value::Bool(*b)),
+        Expr::Bool(b) => Some(serde_json::Value::Bool(*b)),
         _ => None,
     }
 }
@@ -319,7 +295,6 @@ fn expr_to_json_value(expr: &cyrs_plan::Expr) -> Option<Value> {
 // ── Lightweight PlanIR types (fallback) ────────────────────────────────────
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 #[derive(Debug, Clone)]
 pub struct PlanIR {
