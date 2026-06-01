@@ -6,7 +6,6 @@ pub mod storage;
 
 // Re-export key types for convenience
 pub use blackboard::{DefaultBlackboard, Record};
-pub use interface_cypher::CypherCapable;
 pub use mock_gateway::MockGateway;
 pub use nexus_model::{
     Blackboard, BlackboardError, BoardState, Content, EvictCapable, Fact, FihHash, FlushCapable,

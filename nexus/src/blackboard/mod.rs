@@ -5,8 +5,6 @@
 // Storage is swappable via DualStorage.
 
 use crate::storage::petgraph::{PetgraphStorage, Snapshottable, StorageSnapshot};
-use interface_cypher::capable::CypherCapable;
-use interface_cypher::{Plan, TranslateError, execute_with_cold};
 use nexus_model::{
     Blackboard, BlackboardError, BoardState, ColdStorage, DualStorage, EvictCapable, Fact,
     FactCapable, FihHash, FlushCapable, FlushCursor, FlushResult, Hint, HintCapable, Intent,
@@ -133,9 +131,6 @@ impl ClaimsTracker {
 /// For multi-worker thread-safe access, wrap in `Arc<Mutex<DefaultBlackboard>>`.
 pub struct DefaultBlackboard {
     storage: DualStorage,
-    /// Cold storage backend that implements CypherCapable.
-    /// Holds the same cold storage instance as DualStorage's cold backend.
-    cold_cypher: Box<dyn CypherCapable>,
     hot_graph: Arc<RwLock<petgraph::Graph<NodeWeight, EdgeWeight>>>,
     claims: ClaimsTracker,
     project_id: String,
@@ -153,12 +148,10 @@ impl DefaultBlackboard {
             "default",
         ));
         let cold = Box::new(NullStorage);
-        let cold_cypher: Box<dyn CypherCapable> = Box::new(NullStorage);
         let storage = DualStorage::new(hot, cold);
 
         Self {
             storage,
-            cold_cypher,
             hot_graph: graph,
             claims: ClaimsTracker::new(),
             project_id: "default".into(),
@@ -171,14 +164,8 @@ impl DefaultBlackboard {
         let project_id = hot.project_id.clone();
         let storage = DualStorage::new(Box::new(hot), cold);
 
-        // Clone the cold backend for CypherCapable use.
-        // Since ColdStorage is the only trait we know, we need to downcast.
-        // For now, use NullStorage as fallback.
-        let cold_cypher: Box<dyn CypherCapable> = Box::new(NullStorage);
-
         Self {
             storage,
-            cold_cypher,
             hot_graph,
             claims: ClaimsTracker::new(),
             project_id,
@@ -194,14 +181,19 @@ impl DefaultBlackboard {
         f(&g)
     }
 
-    /// Execute a Cypher query plan with hot/cold routing.
+    /// Returns an `RwLockReadGuard` to the hot petgraph for direct query access.
+    /// The guard implements `GraphRead`, so callers can pass it to
+    /// `interface_cypher::execute*` functions directly.
     ///
-    /// Hot queries run against the in-memory petgraph (µs).
-    /// Cold-eligible queries (simple tabular scans) route to the cold storage
-    /// backend (DuckDB/Parquet) via the `CypherCapable` trait.
-    pub fn query(&self, plan: &Plan) -> Result<Vec<Record>, TranslateError> {
-        let hot = self.hot_graph.read().unwrap();
-        execute_with_cold(&*hot, &*self.cold_cypher, plan)
+    /// For cold-backed query execution, use `interface_cypher::execute_with_cold`
+    /// with the graph guard and your cold backend:
+    ///
+    /// ```ignore
+    /// let guard = bb.graph();
+    /// let records = interface_cypher::execute_with_cold(&guard, &cold_storage, &plan)?;
+    /// ```
+    pub fn graph(&self) -> std::sync::RwLockReadGuard<'_, petgraph::Graph<NodeWeight, EdgeWeight>> {
+        self.hot_graph.read().unwrap()
     }
 
     /// Flush recently-ingested data to cold storage.
@@ -260,12 +252,10 @@ impl DefaultBlackboard {
             &snapshot.project_id,
         ));
         let cold = Box::new(NullStorage);
-        let cold_cypher: Box<dyn CypherCapable> = Box::new(NullStorage);
         let storage = DualStorage::new(hot, cold);
 
         Self {
             storage,
-            cold_cypher,
             hot_graph: graph,
             claims: ClaimsTracker::from_snapshot(snapshot.claims.clone()),
             project_id: snapshot.project_id.clone(),
@@ -284,13 +274,9 @@ impl DefaultBlackboard {
             &snapshot.project_id,
         ));
         let storage = DualStorage::new(hot, cold);
-        // The caller is responsible for providing a matching CypherCapable backend.
-        // Fall back to NullStorage if none is available.
-        let cold_cypher: Box<dyn CypherCapable> = Box::new(NullStorage);
 
         Self {
             storage,
-            cold_cypher,
             hot_graph: graph,
             claims: ClaimsTracker::from_snapshot(snapshot.claims.clone()),
             project_id: snapshot.project_id.clone(),
@@ -352,19 +338,6 @@ impl ScanCapable for DefaultBlackboard {
         self.storage.scan_partition(partition)
     }
 }
-
-// ── Cypher query — delegates to the cold CypherCapable backend ────────────
-
-impl CypherCapable for DefaultBlackboard {
-    fn query_plan(
-        &self,
-        plan: &interface_cypher::cold_query::ColdQuery,
-    ) -> Result<Vec<HashMap<String, nexus_model::Content>>, String> {
-        self.cold_cypher.query_plan(plan)
-    }
-}
-
-impl CypherCapable for PetgraphStorage {}
 
 impl Blackboard for DefaultBlackboard {
     fn project_id(&self) -> &str {

@@ -19,7 +19,7 @@
 //                 ┌──────────────────────────────────────────────┐
 //                 │          ColdStorage trait                    │
 //                 │  (ScanCapable + EvictCapable + TimeRangeCapable │
-//                 │   + CypherCapable + FlushCapable)             │
+//                 │   + FlushCapable)                              │
 //                 └─────────────────────┬────────────────────────┘
 //                                       │
 //                 ┌─────────────────────┴────────────────────────┐
@@ -49,7 +49,6 @@
 // CompositeColdStorage only manages durable persistence.
 
 use super::flush_blob_prefix;
-use crate::CypherCapable;
 use log;
 use nexus_model::{BlobStore, MetaStore, Now, ObjectStore, SystemClock};
 use nexus_model::{
@@ -350,15 +349,6 @@ impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> TimeRangeCapable
     fn time_range(&self) -> Option<Range<String>> {
         None
     }
-}
-
-// ── CypherCapable ─────────────────────────────────────────────────────────
-
-impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> CypherCapable
-    for CompositeColdStorage<B, O, M, C>
-{
-    // CompositeColdStorage does not support Cypher queries directly.
-    // Graph queries are handled by PetgraphStorage (hot).
 }
 
 impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> ColdStorage

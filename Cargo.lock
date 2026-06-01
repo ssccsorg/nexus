@@ -1580,7 +1580,6 @@ dependencies = [
 name = "nexus"
 version = "0.1.0"
 dependencies = [
- "interface-cypher",
  "log",
  "nexus-model",
  "petgraph",
