@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
     "model",
-    "nexus",
+    "nex",
     "storage/duckdb",
     "storage/ve-composite",
     "gateway/api",

@@ -11,7 +11,7 @@
 //   cd tests/agents && cargo run
 
 use interface_cypher as cypher;
-use nexus::{Blackboard, Fact, FihHash, Intent, create_blackboard};
+use nex::{Blackboard, Fact, FihHash, Intent, create_blackboard};
 
 fn main() {
     println!("=== Rust Privileged Agent: Direct Blackboard Access ===\n");

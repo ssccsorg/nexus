@@ -27,13 +27,13 @@
 //   5. Document revision (v1 → detector facts → v2 arrives → state change)
 //      — knowledge evolution tracked through detector observations
 
-use nexus::process::scheduler::Scheduler;
-use nexus::process::tasks::contradiction_detector::ContradictionDetector;
-use nexus::process::tasks::gap_detector::GapDetector;
-use nexus::process::tasks::new_document_analyzer::NewDocumentAnalyzer;
-use nexus::process::tasks::state_change_detector::StateChangeDetector;
-use nexus::storage::petgraph::{Snapshottable, StorageSnapshot};
-use nexus::{
+use nex::process::scheduler::Scheduler;
+use nex::process::tasks::contradiction_detector::ContradictionDetector;
+use nex::process::tasks::gap_detector::GapDetector;
+use nex::process::tasks::new_document_analyzer::NewDocumentAnalyzer;
+use nex::process::tasks::state_change_detector::StateChangeDetector;
+use nex::storage::petgraph::{Snapshottable, StorageSnapshot};
+use nex::{
     Blackboard, BoardState, Content, DefaultBlackboard, EvictCapable, Fact, FihHash, Intent,
     create_blackboard,
 };

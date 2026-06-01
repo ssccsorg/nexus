@@ -3,7 +3,7 @@
 // Covers GraphRead/GraphWrite trait implementations, EvictCapable,
 // and storage-level FIH operations directly (not via DefaultBlackboard).
 
-use nexus::storage::petgraph::PetgraphStorage;
+use nex::storage::petgraph::PetgraphStorage;
 use nexus_model::{
     Content, EvictCapable, Fact, FactCapable, FihHash, Hint, HintCapable, StorageRead,
 };

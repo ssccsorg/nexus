@@ -21,10 +21,10 @@
 // Intents are agent actions. Facts are observations.
 // This separation is the core FIH semantics enforcement.
 
-use nexus::process::scheduler::Scheduler;
-use nexus::process::tasks::gap_detector::GapDetector;
-use nexus::storage::petgraph::{Snapshottable, StorageSnapshot};
-use nexus::{
+use nex::process::scheduler::Scheduler;
+use nex::process::tasks::gap_detector::GapDetector;
+use nex::storage::petgraph::{Snapshottable, StorageSnapshot};
+use nex::{
     Blackboard, BoardState, Content, DefaultBlackboard, EvictCapable, Fact, FihHash, Intent,
     create_blackboard,
 };

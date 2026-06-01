@@ -6,8 +6,8 @@
 // but communicates through MockGateway instead of calling DefaultBlackboard
 // directly.
 
-use nexus::mock_gateway::MockGateway;
-use nexus::{Blackboard, Content, Fact, FihHash, Intent, create_blackboard};
+use nex::mock_gateway::MockGateway;
+use nex::{Blackboard, Content, Fact, FihHash, Intent, create_blackboard};
 
 /// Contradiction Detection — via MockGateway (JSON transport boundary).
 ///

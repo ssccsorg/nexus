@@ -5,8 +5,8 @@
 // access patterns. Uses create_blackboard() factory — never depends on
 // DefaultBlackboard directly.
 
-use nexus::create_blackboard;
-use nexus::{Blackboard, BlackboardError, Content, Fact, FihHash, Intent};
+use nex::create_blackboard;
+use nex::{Blackboard, BlackboardError, Content, Fact, FihHash, Intent};
 use std::sync::{Arc, Mutex};
 use std::thread;
 

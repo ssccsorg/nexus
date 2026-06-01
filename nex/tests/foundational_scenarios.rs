@@ -13,12 +13,12 @@
 //   3. Track knowledge evolution when formal §2 revises manifesto claims
 //   4. Support multi-agent review across foundational layers
 
-use nexus::process::scheduler::Scheduler;
-use nexus::process::tasks::contradiction_detector::ContradictionDetector;
-use nexus::process::tasks::gap_detector::GapDetector;
-use nexus::process::tasks::new_document_analyzer::NewDocumentAnalyzer;
-use nexus::process::tasks::state_change_detector::StateChangeDetector;
-use nexus::{Blackboard, BoardState, EvictCapable, Fact, FihHash, Intent, create_blackboard};
+use nex::process::scheduler::Scheduler;
+use nex::process::tasks::contradiction_detector::ContradictionDetector;
+use nex::process::tasks::gap_detector::GapDetector;
+use nex::process::tasks::new_document_analyzer::NewDocumentAnalyzer;
+use nex::process::tasks::state_change_detector::StateChangeDetector;
+use nex::{Blackboard, BoardState, EvictCapable, Fact, FihHash, Intent, create_blackboard};
 
 fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) -> Fact {
     Fact {

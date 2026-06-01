@@ -11,7 +11,7 @@
 //   - StorageRead (minimal, returns empty state)
 //   - MetaStore (cursor position, snapshot pointers)
 
-use nexus::storage::composite::CompositeColdStorage;
+use nex::storage::composite::CompositeColdStorage;
 use nexus_model::{
     BlobStore, Content, EvictCapable, FlushCapable, FlushCursor, ScanCapable, StorageRead,
 };
