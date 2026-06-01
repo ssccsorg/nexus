@@ -11,7 +11,7 @@
 //   cd tests/agents && cargo run
 
 use nexus::query::cypher;
-use nexus::{create_blackboard, Blackboard, Fact, FihHash, Intent};
+use nexus::{Blackboard, Fact, FihHash, Intent, create_blackboard};
 
 fn main() {
     println!("=== Rust Privileged Agent: Direct Blackboard Access ===\n");
@@ -21,26 +21,34 @@ fn main() {
     // ── Phase 1: Submit facts ────────────────────────────────────────
 
     println!("1. Submitting facts...");
-    let f1 = bb.submit_fact(&Fact {
-        id: FihHash::new(&["gnn-accuracy"], "fact"),
-        origin: "arxiv_2401".into(),
-        content: serde_json::to_string(&serde_json::json!({
-            "model": "GNN",
-            "accuracy": 0.92,
-            "dataset": "ogbn-arxiv",
-            "layers": 3
-        })).unwrap().into(),
-        creator: "agent-a".into(),
-    }).unwrap();
-    let f2 = bb.submit_fact(&Fact {
-        id: FihHash::new(&["gnn-oversmoothing"], "fact"),
-        origin: "neurips_2023".into(),
-        content: serde_json::to_string(&serde_json::json!({
-            "finding": "Message-passing GNNs oversmooth beyond 6 layers",
-            "threshold": 6
-        })).unwrap().into(),
-        creator: "agent-b".into(),
-    }).unwrap();
+    let f1 = bb
+        .submit_fact(&Fact {
+            id: FihHash::new(&["gnn-accuracy"], "fact"),
+            origin: "arxiv_2401".into(),
+            content: serde_json::to_string(&serde_json::json!({
+                "model": "GNN",
+                "accuracy": 0.92,
+                "dataset": "ogbn-arxiv",
+                "layers": 3
+            }))
+            .unwrap()
+            .into(),
+            creator: "agent-a".into(),
+        })
+        .unwrap();
+    let f2 = bb
+        .submit_fact(&Fact {
+            id: FihHash::new(&["gnn-oversmoothing"], "fact"),
+            origin: "neurips_2023".into(),
+            content: serde_json::to_string(&serde_json::json!({
+                "finding": "Message-passing GNNs oversmooth beyond 6 layers",
+                "threshold": 6
+            }))
+            .unwrap()
+            .into(),
+            creator: "agent-b".into(),
+        })
+        .unwrap();
     println!("   Fact 1: {}", f1);
     println!("   Fact 2: {}", f2);
 
@@ -80,7 +88,8 @@ fn main() {
                 "result": "Shallow GNN (3 layers): 94% accuracy. Deep GNN (10 layers): 89%.",
                 "winner": "shallow",
                 "delta": 0.05
-            })).unwrap(),
+            }))
+            .unwrap(),
         )
         .unwrap();
     println!("   New fact: {} = {}", new_fact.id, new_fact.content);

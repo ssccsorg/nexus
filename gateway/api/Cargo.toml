@@ -5,7 +5,7 @@ edition = "2024"
 license = "Apache-2.0"
 
 [dependencies]
-nexus = { path = "../../core/nexus" }
+nexus = { path = "../../nexus" }
 axum = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -16,6 +16,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
-nexus-model = { path = "../../core/model" }
-nexus = { path = "../../core/nexus" }
+nexus-model = { path = "../../model" }
+nexus = { path = "../../nexus" }
 reqwest = { version = "0.12", features = ["json"] }

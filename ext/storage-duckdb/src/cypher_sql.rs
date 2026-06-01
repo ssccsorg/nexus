@@ -514,7 +514,9 @@ fn value_to_sql(v: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nexus::query::cypher::cold_query::{AggregateDef, ColdOrder, CteDef, JsonProjection, VectorScore};
+    use nexus::query::cypher::cold_query::{
+        AggregateDef, ColdOrder, CteDef, JsonProjection, VectorScore,
+    };
 
     // ── Existing test helpers ──────────────────────────────────────────────
 

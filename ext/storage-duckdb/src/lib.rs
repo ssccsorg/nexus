@@ -3,12 +3,12 @@
 pub mod cypher_sql;
 
 use nexus::CypherCapable;
+use nexus::query::cypher::cold_query::ColdQuery;
 use nexus_model::{
     BoardState, ColdStorage, Content, EvictCapable, Fact, FihHash, FilterCapable, FlushCapable,
     FlushCursor, FlushResult, Hint, Intent, PartitionData, ScanCapable, StateFilter, StorageRead,
     TimeRangeCapable,
 };
-use nexus::query::cypher::cold_query::ColdQuery;
 use std::fs;
 use std::ops::Range;
 use std::sync::Mutex;
@@ -560,10 +560,8 @@ impl ColdStorage for DuckDbStorage {
     fn write_blob(&self, key: &str, data: &[u8]) -> Result<(), String> {
         let path = format!("{}/{}", self.base_path, key.trim_start_matches('/'));
         if let Some(parent) = std::path::Path::new(&path).parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("write_blob create_dir: {e}"))?;
+            std::fs::create_dir_all(parent).map_err(|e| format!("write_blob create_dir: {e}"))?;
         }
-        std::fs::write(&path, data)
-            .map_err(|e| format!("write_blob write: {e}"))
+        std::fs::write(&path, data).map_err(|e| format!("write_blob write: {e}"))
     }
 }
