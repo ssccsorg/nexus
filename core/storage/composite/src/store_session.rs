@@ -28,7 +28,8 @@
 use nexus_model::SessionExecute;
 
 use crate::composite::CompositeColdStorage;
-use crate::{IoBufferBlob, IoBufferObject, IoBufferSessionMeta, SystemClock};
+use crate::{IoBufferBlob, IoBufferObject, IoBufferSessionMeta};
+use nexus_model::SystemClock;
 
 /// Session backed by IoBuffer* + CompositeColdStorage.
 ///

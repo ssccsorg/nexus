@@ -32,6 +32,7 @@
 //   Aggregate: FullDetection = GapDetection + ContradictionDetection + StateChangeDetection
 
 pub mod blackboard;
+pub mod clock;
 pub mod detection;
 pub mod error;
 pub mod fih;
@@ -39,6 +40,7 @@ pub mod interner;
 pub mod storage;
 
 pub use blackboard::Blackboard;
+pub use clock::{Now, SystemClock};
 pub use detection::{
     ContradictionDetection, DetectionCapable, DetectionCheckpoint, DetectionOutput, FullDetection,
     GapDetection, StateChangeDetection, TaskStates,

@@ -15,8 +15,9 @@ use nexus_graph::{
     GraphRead, PetgraphStorage, ScanCapable, Snapshottable, create_blackboard_from_snapshot,
     create_blackboard_with_storage,
 };
+use nexus_model::{BlobStore, MetaStore, ObjectStore};
 use nexus_model::{DualStorage, FlushCursor};
-use nexus_storage_composite::{BlobStore, CompositeColdStorage, MetaStore, ObjectStore};
+use nexus_storage_composite::CompositeColdStorage;
 use serde_json::json;
 
 // ── Inline mock implementations for integration tests ───────────────────────
