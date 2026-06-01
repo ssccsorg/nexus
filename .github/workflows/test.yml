@@ -4,14 +4,24 @@ on:
   push:
     branches: ["main"]
     paths:
-      - "core/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "model/**"
+      - "nex/**"
+      - "interface/**"
+      - "storage/**"
       - "gateway/**"
       - "playbooks/**"
       - "scripts/**"
       - ".github/workflows/test.yml"
   pull_request:
     paths:
-      - "core/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "model/**"
+      - "nex/**"
+      - "interface/**"
+      - "storage/**"
       - "gateway/**"
       - "playbooks/**"
       - "scripts/**"
@@ -32,6 +42,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            model
+            nex
+            interface/query
+            interface/cypher
+            storage/duckdb
+            storage/ve-composite
+          cache-targets: true
+          cache-on-failure: true
       - name: Core checks
         run: ./run.sh --core
 
@@ -55,9 +76,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
-            gateway/api
+            model
+            nex
+            interface/query
+            interface/cypher
             playbooks/agents
           cache-targets: true
+          cache-on-failure: true
       - uses: actions/setup-node@v4
         with:
           node-version: 22
