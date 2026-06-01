@@ -2,8 +2,8 @@
 
 pub mod cypher_sql;
 
+use interface_cypher::CypherCapable;
 use interface_cypher::cold_query::ColdQuery;
-use nexus::CypherCapable;
 use nexus_model::{
     BoardState, ColdStorage, Content, EvictCapable, Fact, FihHash, FilterCapable, FlushCapable,
     FlushCursor, FlushResult, Hint, Intent, PartitionData, ScanCapable, StateFilter, StorageRead,

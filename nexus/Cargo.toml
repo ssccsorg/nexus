@@ -6,7 +6,6 @@ license.workspace = true
 
 [dependencies]
 nexus-model = { path = "../model" }
-interface-cypher = { path = "../interface/cypher" }
 petgraph = { workspace = true }
 postcard = { version = "1", features = ["alloc"] }
 serde = { workspace = true }
