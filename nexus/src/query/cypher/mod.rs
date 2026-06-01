@@ -11,7 +11,6 @@
 // Executor handles both plan variants through a unified interface.
 
 pub mod capable;
-pub mod cold_query;
 mod parser;
 mod plan;
 mod translate;

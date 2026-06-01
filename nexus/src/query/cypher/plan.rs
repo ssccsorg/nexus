@@ -63,27 +63,30 @@ impl Plan {
         super::parser::parse_query(input).map(Plan::Internal)
     }
 
-    /// Attempt to translate this plan into a ColdQuery for DuckDB cold storage.
-    /// Returns `None` if the plan involves graph patterns (relationships) that
-    /// cannot be represented as a simple tabular scan.
-    pub fn to_cold_query(&self) -> Option<ColdQuery> {
+    /// Attempt to translate this plan into a serialized ColdQuery for DuckDB
+    /// cold storage. Returns `None` if the plan involves graph patterns
+    /// (relationships) that cannot be represented as a simple tabular scan.
+    ///
+    /// The returned JSON value matches the `ColdQuery` struct shape defined in
+    /// `nexus-storage-duckdb`.
+    pub fn to_cold_query(&self) -> Option<serde_json::Value> {
         match self {
-            Plan::External(ext) => ext.to_cold_query(),
-            Plan::Internal(ir) => ir.to_cold_query(),
+            Plan::External(ext) => ext.to_cold_query_json(),
+            Plan::Internal(ir) => ir.to_cold_query_json(),
         }
     }
 }
 
-// ── Translation to ColdQuery ───────────────────────────────────────────────
+// ── Translation to ColdQuery (JSON) ───────────────────────────────────────
 
 impl ExternalPlan {
-    /// Translate an external plan to a ColdQuery.
+    /// Translate an external plan to a JSON-serialized ColdQuery.
     /// Only supports simple Source -> Filter -> Project -> Limit chains.
-    fn to_cold_query(&self) -> Option<ColdQuery> {
+    fn to_cold_query_json(&self) -> Option<serde_json::Value> {
         use cyrs_plan::ReadOp;
 
         let mut label: Option<String> = None;
-        let mut filters: Vec<ColdFilter> = Vec::new();
+        let mut filters: Vec<serde_json::Value> = Vec::new();
         let mut projections: Vec<String> = Vec::new();
         let mut limit: Option<usize> = None;
         let mut distinct = false;
@@ -91,7 +94,6 @@ impl ExternalPlan {
         for op in &self.ops {
             match op {
                 ReadOp::Source { label: ls, .. } => {
-                    // Only single-label sources are cold-eligible.
                     let labels = ls.as_ref()?;
                     let first = labels.0.first()?;
                     if !matches!(first.as_str(), "Fact" | "Intent" | "Hint") {
@@ -100,24 +102,21 @@ impl ExternalPlan {
                     label = Some(first.to_string());
                 }
                 ReadOp::Filter { predicate, .. } => {
-                    let cf = expr_to_cold_filter(predicate)?;
+                    let cf = expr_to_json_filter(predicate)?;
                     filters.push(cf);
                 }
                 ReadOp::Project { items, .. } => {
                     for item in items {
                         match &item.expr {
                             cyrs_plan::Expr::Prop { prop, .. } => {
-                                // f.fact_id -> "fact_id" (DuckDB view column name)
                                 projections.push(prop.to_string());
                             }
-                            // Var means "return whole node" -> leave empty (SELECT *)
                             cyrs_plan::Expr::Var(_) => {}
                             _ => {}
                         }
                     }
                 }
                 ReadOp::Limit { count, .. } => {
-                    // count is an Expr; extract integer literal if present.
                     if let cyrs_plan::Expr::Int(n) = count {
                         limit = Some(*n as usize);
                     }
@@ -125,31 +124,42 @@ impl ExternalPlan {
                 ReadOp::Distinct { .. } => {
                     distinct = true;
                 }
-                // Any other op -> not cold-eligible.
                 _ => return None,
             }
         }
 
-        let mut cq = ColdQuery::new(label?);
-        cq.filters = filters;
-        cq.projections = projections;
-        cq.limit = limit;
-        cq.distinct = distinct;
-        Some(cq)
+        Some(serde_json::json!({
+            "label": label?,
+            "filters": filters,
+            "projections": projections,
+            "limit": limit,
+            "distinct": distinct,
+            "order_by": [],
+            "offset": null,
+            "aggregate_count": false,
+            "with_ctes": [],
+            "group_by": [],
+            "aggregates": [],
+            "window_funcs": [],
+            "json_projections": [],
+            "json_filters": [],
+            "vector_filters": [],
+            "vector_score": null,
+        }))
     }
 }
 
 impl PlanIR {
-    /// Translate an internal PlanIR to a ColdQuery.
+    /// Translate an internal PlanIR to a JSON-serialized ColdQuery.
     /// Only supports a single Match (no relationship) + optional Where + optional Return.
-    fn to_cold_query(&self) -> Option<ColdQuery> {
+    fn to_cold_query_json(&self) -> Option<serde_json::Value> {
         let mut label: Option<String> = None;
-        let mut filters: Vec<ColdFilter> = Vec::new();
+        let mut filters: Vec<serde_json::Value> = Vec::new();
         let mut projections: Vec<String> = Vec::new();
+
         for clause in &self.clauses {
             match clause {
                 Clause::Match(m) => {
-                    // Must be a single-label, relationship-free match.
                     if m.relationship.is_some() || m.target.is_some() {
                         return None;
                     }
@@ -160,16 +170,14 @@ impl PlanIR {
                     label = Some(first.clone());
                 }
                 Clause::Where(w) => {
-                    // Translate field_eq comparisons.
                     for (left, right) in &w.field_eq {
-                        let (field, value) = field_eq_to_filter(left, right)?;
-                        filters.push(ColdFilter {
-                            field,
-                            op: "Eq".into(),
-                            value,
-                        });
+                        let (field, value) = field_eq_to_json(left, right)?;
+                        filters.push(serde_json::json!({
+                            "field": field,
+                            "op": "Eq",
+                            "value": value,
+                        }));
                     }
-                    // Translate comparisons.
                     for cmp in &w.comparisons {
                         let field = cmp.field.property.as_deref()?.to_string();
                         let op = match cmp.op {
@@ -181,11 +189,11 @@ impl PlanIR {
                             CompareOp::Lte => "Lte",
                         };
                         let value = compare_value_to_json(&cmp.value)?;
-                        filters.push(ColdFilter {
-                            field,
-                            op: op.into(),
-                            value,
-                        });
+                        filters.push(serde_json::json!({
+                            "field": field,
+                            "op": op,
+                            "value": value,
+                        }));
                     }
                 }
                 Clause::Return(r) => {
@@ -201,51 +209,59 @@ impl PlanIR {
             }
         }
 
-        let mut cq = ColdQuery::new(label?);
-        cq.filters = filters;
-        cq.projections = projections;
-        Some(cq)
+        Some(serde_json::json!({
+            "label": label?,
+            "filters": filters,
+            "projections": projections,
+            "order_by": [],
+            "limit": null,
+            "offset": null,
+            "distinct": false,
+            "aggregate_count": false,
+            "with_ctes": [],
+            "group_by": [],
+            "aggregates": [],
+            "window_funcs": [],
+            "json_projections": [],
+            "json_filters": [],
+            "vector_filters": [],
+            "vector_score": null,
+        }))
     }
 }
 
 /// Translate a field_eq pair (FieldRef, FieldRef) to (field_name, json_value).
 /// The right side must be a literal value, not a field reference.
-fn field_eq_to_filter(left: &FieldRef, right: &FieldRef) -> Option<(String, Value)> {
-    // One side must have no variable (literal) or be a simple string literal.
+fn field_eq_to_json(left: &FieldRef, right: &FieldRef) -> Option<(String, serde_json::Value)> {
     if right.property.is_none() && right.variable.is_empty() {
-        // Right side is a literal.
         let field = format!("{}.{}", left.variable, left.property.as_ref()?);
-        Some((field, Value::String(right.variable.clone())))
+        Some((field, serde_json::Value::String(right.variable.clone())))
     } else if left.property.is_none() && left.variable.is_empty() {
-        // Left side is a literal.
         let field = format!("{}.{}", right.variable, right.property.as_ref()?);
-        Some((field, Value::String(left.variable.clone())))
+        Some((field, serde_json::Value::String(left.variable.clone())))
     } else {
-        // Both are field references -- not a filterable pattern for cold storage.
         None
     }
 }
 
 /// Translate a CompareValue to a serde_json::Value.
-fn compare_value_to_json(v: &CompareValue) -> Option<Value> {
+fn compare_value_to_json(v: &CompareValue) -> Option<serde_json::Value> {
     match v {
-        CompareValue::Int(n) => Some(Value::Number((*n).into())),
+        CompareValue::Int(n) => Some(serde_json::Value::Number((*n).into())),
         CompareValue::Float(f) => {
             let n = serde_json::Number::from_f64(*f)?;
-            Some(Value::Number(n))
+            Some(serde_json::Value::Number(n))
         }
-        CompareValue::Str(s) => Some(Value::String(s.clone())),
-        // Parser stores string literals as FieldRef { variable: "value", property: None }.
+        CompareValue::Str(s) => Some(serde_json::Value::String(s.clone())),
         CompareValue::Field(field) if field.property.is_none() => {
-            Some(Value::String(field.variable.clone()))
+            Some(serde_json::Value::String(field.variable.clone()))
         }
-        // Actual field references (f.origin) cannot be literal values.
         CompareValue::Field(_) => None,
     }
 }
 
-/// Translate a cyrs_plan Expr (BinOp with Prop/Int/Str) to a ColdFilter.
-fn expr_to_cold_filter(expr: &cyrs_plan::Expr) -> Option<ColdFilter> {
+/// Translate a cyrs_plan Expr (BinOp with Prop/Int/Str) to a JSON filter object.
+fn expr_to_json_filter(expr: &cyrs_plan::Expr) -> Option<serde_json::Value> {
     use cyrs_plan::Expr;
     match expr {
         Expr::BinOp { op, lhs, rhs } => {
@@ -260,11 +276,11 @@ fn expr_to_cold_filter(expr: &cyrs_plan::Expr) -> Option<ColdFilter> {
                 cyrs_plan::BinOp::Le => "Lte",
                 _ => return None,
             };
-            Some(ColdFilter {
-                field,
-                op: op_str.into(),
-                value,
-            })
+            Some(serde_json::json!({
+                "field": field,
+                "op": op_str,
+                "value": value,
+            }))
         }
         _ => None,
     }
@@ -302,7 +318,6 @@ fn expr_to_json_value(expr: &cyrs_plan::Expr) -> Option<Value> {
 
 // ── Lightweight PlanIR types (fallback) ────────────────────────────────────
 
-use super::cold_query::{ColdFilter, ColdQuery};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
