@@ -1,0 +1,46 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "nexus-gateway-nex-cf",
+  "main": "build/worker/shim.mjs",
+  "compatibility_date": "2026-01-14",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "kv_namespaces": [
+    {
+      "binding": "FIH_KV",
+      "id": "PLACEHOLDER_KV_ID",
+      "preview_id": "PLACEHOLDER_KV_PREVIEW_ID"
+    }
+  ],
+
+  "r2_buckets": [
+    {
+      "binding": "FIH_R2",
+      "bucket_name": "nexus-fih-content"
+    }
+  ],
+
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "INTENT_DO",
+        "class_name": "IntentClaimDO"
+      }
+    ]
+  },
+
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["IntentClaimDO"]
+    }
+  ],
+
+  "observability": {
+    "enabled": true
+  },
+
+  "vars": {
+    "DEPLOYMENT_ENV": "dev"
+  }
+}
