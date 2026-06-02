@@ -1,25 +1,12 @@
-// CF Worker environment bindings for the nexus-gateway-nex-cf worker.
+// CF Worker environment bindings for nexus-gateway-nex-cf.
 //
-// This module provides typed access to KV, R2, and Durable Object bindings
-// declared in wrangler.jsonc. Each binding is read once from the Env on
-// worker startup and cached.
+// Currently the worker handlers use ctx.kv("FIH_KV") and
+// ctx.durable_object("INTENT_DO") directly (worker-rs 0.8 pattern).
+// This module exists as a typed wrapper placeholder for R2 blob
+// content operations and future binding abstractions.
 
 use worker::*;
 
-// ── Binding names (must match wrangler.jsonc) ────────────────────────────
-
-const KV_BINDING: &str = "FIH_KV";
-const R2_BINDING: &str = "FIH_R2";
-const DO_BINDING: &str = "INTENT_DO";
-
-// ── Environment handle ───────────────────────────────────────────────────
-
-/// Wraps all CF Worker bindings in a single cloneable handle.
-///
-/// Each method returns a fresh binding handle on every call — appropriate for
-/// stateless use in a single-threaded Workers runtime. If performance
-/// profiling reveals overhead, the bindings can be cached behind
-/// `wasm-bindgen` references.
 #[derive(Clone)]
 pub struct WorkerEnv {
     env: Env,
@@ -30,22 +17,16 @@ impl WorkerEnv {
         Self { env: env.clone() }
     }
 
-    // ── KV ──────────────────────────────────────────────────────────────
-
-    pub fn kv(&self) -> Result<KvStore> {
-        self.env.kv(KV_BINDING)
+    pub fn kv(&self, binding: &str) -> Result<KvStore> {
+        self.env.kv(binding)
     }
-
-    // ── R2 ──────────────────────────────────────────────────────────────
 
     pub fn r2(&self) -> Result<Bucket> {
-        self.env.bucket(R2_BINDING)
+        self.env.bucket("FIH_R2")
     }
 
-    // ── Durable Object stub ─────────────────────────────────────────────
-
-    pub fn intent_do_stub(&self, id: &str) -> Result<Stub> {
-        let namespace = self.env.durable_object(DO_BINDING)?;
+    pub fn intent_do(&self, id: &str) -> Result<Stub> {
+        let namespace = self.env.durable_object("INTENT_DO")?;
         let do_id = namespace.id_from_string(id)?;
         do_id.get_stub()
     }
