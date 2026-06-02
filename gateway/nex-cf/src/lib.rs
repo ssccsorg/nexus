@@ -7,8 +7,8 @@
 // Depends only on `worker`. Zero dependency on `nex`,
 // `petgraph`, `interface-cypher`, or `nexus-model`.
 
-use worker::*;
 use worker::DurableObject;
+use worker::*;
 
 #[event(fetch)]
 pub async fn main(_req: Request, _env: Env, _ctx: Context) -> Result<Response> {
