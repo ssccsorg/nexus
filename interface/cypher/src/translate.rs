@@ -784,10 +784,3 @@ fn count_relationships<G: GraphRead>(graph: &G, nodes: &[NodeIndex]) -> Vec<(Nod
         .map(|&idx| (idx, g.neighbors_undirected(idx).count()))
         .collect()
 }
-
-#[cfg(test)]
-mod tests {
-
-    #[test]
-    fn test_find_matching_nodes_empty_graph() {}
-}

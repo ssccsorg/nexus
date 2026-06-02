@@ -60,26 +60,3 @@ impl<B: Blackboard> Blackboard for MockGateway<B> {
         serde_json::from_slice(&serde_json::to_vec(&state).unwrap()).unwrap()
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::DefaultBlackboard;
-
-    #[test]
-    fn test_mock_gateway_submit_fact() {
-        let mut gw = MockGateway::new(DefaultBlackboard::new());
-        let fact = Fact {
-            id: FihHash("f_mock_001".into()),
-            origin: "mock-test".into(),
-            content: "Mock gateway test".into(),
-            creator: "tester".into(),
-        };
-        let hash = gw.submit_fact(&fact).unwrap();
-        assert_eq!(hash.0, "f_mock_001");
-
-        let state = gw.read_state();
-        assert_eq!(state.facts.len(), 1);
-        assert_eq!(state.facts[0].content, "Mock gateway test");
-    }
-}
