@@ -39,6 +39,7 @@ struct Intent {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[allow(dead_code)]
 struct Hint {
     id: String,
     content: String,
@@ -57,6 +58,7 @@ fn fact_key(id: &str) -> String {
 fn intent_key(id: &str) -> String {
     format!("intent:{}", encode_id(id))
 }
+#[allow(dead_code)]
 fn hint_key(id: &str) -> String {
     format!("hint:{}", encode_id(id))
 }
