@@ -4,11 +4,13 @@ members = [
     "model",
     "nex",
     "storage/duckdb",
-    "storage/ve-composite",
+    "sim/storage/ve-composite",
     "gateway/api",
+    "gateway/nex-cf",
     "playbooks/agents",
     "interface/query",
     "interface/cypher",
+
 ]
 
 [workspace.package]
