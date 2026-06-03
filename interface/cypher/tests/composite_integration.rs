@@ -10,7 +10,9 @@
 // These tests validate that it composes correctly with Petgraph via
 // DualStorage, matching the same trait contracts as DuckDbStorage.
 
-use nex::storage::composite::{AsyncStoreBlob, AsyncStoreKv, AsyncStoreObject, CompositeColdStorage};
+use nex::storage::composite::{
+    AsyncStoreBlob, AsyncStoreKv, AsyncStoreObject, CompositeColdStorage,
+};
 use nex::storage::petgraph::PetgraphStorage;
 use nex::{Blackboard, Content, DefaultBlackboard, Fact, FihHash, ScanCapable, Snapshottable};
 use nexus_model::{

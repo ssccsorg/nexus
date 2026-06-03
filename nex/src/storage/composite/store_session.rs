@@ -37,7 +37,8 @@ use nexus_model::SystemClock;
 /// The async bridge layer handles hydrate/flush;
 /// AsyncStoreSession provides the sync surface.
 pub struct AsyncStoreSession {
-    storage: CompositeColdStorage<AsyncStoreBlob, AsyncStoreObject, AsyncStoreSessionMeta, SystemClock>,
+    storage:
+        CompositeColdStorage<AsyncStoreBlob, AsyncStoreObject, AsyncStoreSessionMeta, SystemClock>,
     /// Meta buffer (cursor, snapshot pointers). Excluded from drain.
     meta_buf: AsyncStoreSessionMeta,
 }

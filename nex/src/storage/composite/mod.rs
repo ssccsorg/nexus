@@ -1,10 +1,10 @@
-pub mod cold;
 pub mod async_store;
+pub mod cold;
 pub mod session_server;
 pub mod store_session;
 
-pub use cold::CompositeColdStorage;
 pub use async_store::{AsyncStoreBlob, AsyncStoreKv, AsyncStoreObject, AsyncStoreSessionMeta};
+pub use cold::CompositeColdStorage;
 pub use session_server::{SessionHandle, SessionServer};
 pub use store_session::AsyncStoreSession;
 
