@@ -5,7 +5,7 @@
 //
 //   SessionExecute — access the underlying ColdStorage for sync ops
 //
-// Implementations: IoBufferSession (composite), future adapters.
+// Implementations: AsyncStoreSession (composite), future adapters.
 
 use super::ColdStorage;
 

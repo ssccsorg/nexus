@@ -1,7 +1,7 @@
 /// Minimal key-value store for cursor position, snapshot pointers, and
 /// other metadata. NOT for graph data.
 ///
-/// Implementations: IoBufferKv (in-memory HashMap), CF KV Namespace,
+/// Implementations: AsyncStoreKv (in-memory HashMap), CF KV Namespace,
 /// sled (server).
 ///
 /// MetaStore is intentionally limited to get/set — no list, no delete —
