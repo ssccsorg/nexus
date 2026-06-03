@@ -10,7 +10,7 @@ use interface_cypher as cypher;
 use nex::{Blackboard, BlackboardError, Content, Fact, FihHash, Intent, create_blackboard};
 
 /// Helper: submit a fact with minimal boilerplate.
-fn submit_fact(bb: &mut impl Blackboard, id: &str, origin: &str, content: &str, creator: &str) {
+fn submit_fact(bb: &impl Blackboard, id: &str, origin: &str, content: &str, creator: &str) {
     let fact = Fact {
         id: FihHash(id.into()),
         origin: origin.into(),
@@ -30,26 +30,26 @@ fn cypher_count(bb: &nex::DefaultBlackboard, query: &str) -> usize {
 
 #[test]
 fn test_full_agent_collaboration_flow() {
-    let mut bb = create_blackboard();
+    let bb = create_blackboard();
 
     // ── Phase 1: Agent-A ingests research facts ───────────────────────
 
     submit_fact(
-        &mut bb,
+        &bb,
         "f001",
         "arxiv_2401",
         "Graph neural networks achieve 92% accuracy on molecular property prediction",
         "agent-a",
     );
     submit_fact(
-        &mut bb,
+        &bb,
         "f002",
         "arxiv_2401",
         "Message-passing GNNs suffer from oversmoothing beyond 6 layers",
         "agent-a",
     );
     submit_fact(
-        &mut bb,
+        &bb,
         "f003",
         "nature_2023",
         "Deep learning models require 10x more data than classical ML",
@@ -176,7 +176,7 @@ fn test_petgraph_time_range() {
 
     // create_blackboard() uses DualStorage internally.
     // PetgraphStorage is the hot layer, NullStorage is the cold layer.
-    let mut bb = create_blackboard();
+    let bb = create_blackboard();
     bb.submit_fact(&Fact {
         id: FihHash("f_001".into()),
         origin: "test".into(),

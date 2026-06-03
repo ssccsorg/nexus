@@ -15,11 +15,11 @@ use nex::{Blackboard, BlackboardError, Content, Fact, FihHash, Intent, create_bl
 
 #[test]
 fn scenario_intermittent_sensor_agent() {
-    let mut bb = create_blackboard();
+    let bb = create_blackboard();
 
     // Session 1: agent connects, submits a fact, disconnects
     {
-        let mut gw = MockGateway::new(&mut bb);
+        let gw = MockGateway::new(&bb);
         gw.submit_fact(&Fact {
             id: FihHash("f_temp_001".into()),
             origin: "sensor-alpha".into(),
@@ -42,7 +42,7 @@ fn scenario_intermittent_sensor_agent() {
 
     // Session 2: same agent reconnects after offline period
     {
-        let mut gw = MockGateway::new(&mut bb);
+        let gw = MockGateway::new(&bb);
 
         let state = gw.read_state();
         assert_eq!(state.facts.len(), 1, "fact persisted across sessions");
@@ -81,7 +81,7 @@ fn scenario_intermittent_sensor_agent() {
 
 #[test]
 fn scenario_satellite_burst_agent() {
-    let mut gw = MockGateway::new(create_blackboard());
+    let gw = MockGateway::new(create_blackboard());
 
     let readings = [
         (
@@ -150,7 +150,7 @@ fn scenario_satellite_burst_agent() {
 
 #[test]
 fn scenario_browser_agent() {
-    let mut gw = MockGateway::new(create_blackboard());
+    let gw = MockGateway::new(create_blackboard());
 
     gw.submit_fact(&Fact {
         id: FihHash("f_background".into()),
@@ -208,11 +208,11 @@ fn scenario_browser_agent() {
 
 #[test]
 fn scenario_multi_language_agents() {
-    let mut bb = create_blackboard();
+    let bb = create_blackboard();
 
     // Python agent submits a fact
     {
-        let mut gw = MockGateway::new(&mut bb);
+        let gw = MockGateway::new(&bb);
         gw.submit_fact(&Fact {
             id: FihHash("f_py_001".into()),
             origin: "python-etl".into(),
@@ -227,7 +227,7 @@ fn scenario_multi_language_agents() {
 
     // Rust agent submits a fact
     {
-        let mut gw = MockGateway::new(&mut bb);
+        let gw = MockGateway::new(&bb);
         gw.submit_fact(&Fact {
             id: FihHash("f_rs_001".into()),
             origin: "rust-analyzer".into(),
@@ -248,7 +248,7 @@ fn scenario_multi_language_agents() {
 
     // TypeScript agent reads both and submits an intent
     {
-        let mut gw = MockGateway::new(&mut bb);
+        let gw = MockGateway::new(&bb);
 
         let state = gw.read_state();
         assert_eq!(
@@ -273,7 +273,7 @@ fn scenario_multi_language_agents() {
 
     // Rust agent claims and concludes
     {
-        let mut gw = MockGateway::new(&mut bb);
+        let gw = MockGateway::new(&bb);
         gw.claim_intent("i_cross_lang", "rs-agent").unwrap();
         gw
             .conclude_intent(
@@ -285,7 +285,7 @@ fn scenario_multi_language_agents() {
 
     // Python agent sees the result
     {
-        let gw = MockGateway::new(&mut bb);
+        let gw = MockGateway::new(&bb);
         let state = gw.read_state();
         assert_eq!(state.facts.len(), 3, "py agent sees concluded fact");
         assert_eq!(state.intents.len(), 1, "py agent sees original intent only");
@@ -304,7 +304,7 @@ fn scenario_multi_language_agents() {
 
 #[test]
 fn scenario_conflicting_claims() {
-    let mut gw = MockGateway::new(create_blackboard());
+    let gw = MockGateway::new(create_blackboard());
 
     gw.submit_fact(&Fact {
         id: FihHash("f_conflict".into()),
