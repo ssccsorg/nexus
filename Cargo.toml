@@ -6,9 +6,11 @@ members = [
     "storage/duckdb",
     "storage/ve-composite",
     "gateway/api",
+    "gateway/nex-cf",
     "playbooks/agents",
     "interface/query",
     "interface/cypher",
+
 ]
 
 [workspace.package]

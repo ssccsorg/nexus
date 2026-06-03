@@ -23,6 +23,10 @@ case "${1:-}" in
     --gateway-api)
         cd gateway/api && cargo test
         ;;
+    --nex-cf)
+        shift
+        exec ./scripts/run-nex-cf.sh "$@"
+        ;;
     --playbooks)
         exec ./playbooks/run.sh
         ;;
@@ -34,6 +38,7 @@ case "${1:-}" in
         echo "  (no arg)     Core checks + playbooks [default]"
         echo "  --core        Core checks only"
         echo "  --gateway-api Gateway API unit tests"
+        echo "  --nex-cf      Nexus CF Worker WASM check"
         echo "  --playbooks   Consumer playbooks only"
         echo "  --gateway     Start gateway API server"
         ;;
@@ -44,6 +49,9 @@ case "${1:-}" in
         echo ""
         echo "=== Gateway API ==="
         (cd gateway/api && cargo test)
+        echo ""
+        echo "=== Nexus CF Worker ==="
+        ./scripts/run-nex-cf.sh
         echo ""
         echo "=== Playbooks ==="
         ./playbooks/run.sh
