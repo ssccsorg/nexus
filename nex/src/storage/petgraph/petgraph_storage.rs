@@ -1,30 +1,76 @@
 // nexus-graph — PetgraphStorage: in-memory HotStorage implementation.
 //
-// Wraps petgraph::Graph in Arc<RwLock<>> for thread-safe shared access.
+// Wraps petgraph::Graph in Arc<RwLock<>> for thread-safe shared access on
+// native targets, and Rc<RefCell<>> (no lock) on WASM targets where
+// std::sync::RwLock is broken (hangs after write, recursive panic, CPU
+// timeout).
 // Implements StorageRead, FactCapable, HintCapable, IntentCapable,
 // TimeRangeCapable, EvictCapable, FilterCapable, and CypherCapable.
 
 use super::weight::{EdgeWeight, NodeWeight};
+use cfg_if::cfg_if;
 use nexus_model::{
     BlackboardError, BoardState, Content, DeltaSet, EvictCapable, Fact, FactCapable, FihHash,
-    FilterCapable, Hint, HintCapable, HotStorage, Intent, IntentCapable, StateFilter, StorageRead,
-    TimeRangeCapable,
+    FilterCapable, Hint, HintCapable, HotStorage, Intent, IntentCapable, Now, StateFilter,
+    StorageRead, TimeRangeCapable,
 };
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use postcard;
 use std::collections::HashMap;
 use std::ops::Range;
-use std::sync::{Arc, RwLock};
 
-/// In-memory petgraph-backed storage. Thread-safe via internal RwLock.
+cfg_if! {
+    if #[cfg(target_arch = "wasm32")] {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+        use std::cell::{Ref, RefMut};
+
+        /// WASM: single-threaded, no lock needed. Rc<RefCell<>> for shared
+        /// interior mutability.
+        pub type SharedGraph = Rc<RefCell<petgraph::Graph<NodeWeight, EdgeWeight>>>;
+
+        pub fn read_graph(g: &SharedGraph) -> Ref<'_, petgraph::Graph<NodeWeight, EdgeWeight>> {
+            g.borrow()
+        }
+
+        pub fn write_graph(g: &SharedGraph) -> RefMut<'_, petgraph::Graph<NodeWeight, EdgeWeight>> {
+            g.borrow_mut()
+        }
+
+        struct WasmClock;
+        impl nexus_model::Now for WasmClock {
+            fn now_nanos(&self) -> String { "0".to_string() }
+            fn now_secs(&self) -> u64 { 0 }
+        }
+    } else {
+        use std::sync::{Arc, RwLock};
+        use std::sync::RwLockReadGuard;
+        use std::sync::RwLockWriteGuard;
+
+        /// Native: thread-safe shared access via Arc<RwLock<>>.
+        pub type SharedGraph = Arc<RwLock<petgraph::Graph<NodeWeight, EdgeWeight>>>;
+
+        pub fn read_graph(g: &SharedGraph) -> RwLockReadGuard<'_, petgraph::Graph<NodeWeight, EdgeWeight>> {
+            g.read().unwrap()
+        }
+
+        pub fn write_graph(g: &SharedGraph) -> RwLockWriteGuard<'_, petgraph::Graph<NodeWeight, EdgeWeight>> {
+            g.write().unwrap()
+        }
+    }
+}
+
+/// In-memory petgraph-backed storage.
 ///
-/// The underlying `petgraph::Graph` is shared through an `Arc<RwLock<...>>`
-/// so that `DefaultBlackboard` can access the same graph for Cypher queries
-/// while `PetgraphStorage` handles FIH persistence.
+/// On native, the underlying `petgraph::Graph` is shared through an
+/// `Arc<RwLock<...>>` so that `DefaultBlackboard` can access the same graph
+/// for Cypher queries while `PetgraphStorage` handles FIH persistence.
+/// On WASM, uses `Rc<RefCell<...>>` since WASM is single-threaded.
 pub struct PetgraphStorage {
-    pub graph: Arc<RwLock<petgraph::Graph<NodeWeight, EdgeWeight>>>,
+    pub graph: SharedGraph,
     pub project_id: String,
+    clock: Box<dyn Now + Send>,
 }
 
 impl PetgraphStorage {
@@ -33,27 +79,76 @@ impl PetgraphStorage {
     }
 
     pub fn with_project_id(project_id: &str) -> Self {
-        Self {
-            graph: Arc::new(RwLock::new(petgraph::Graph::new())),
-            project_id: project_id.to_string(),
+        cfg_if! {
+            if #[cfg(target_arch = "wasm32")] {
+                Self {
+                    graph: Rc::new(RefCell::new(petgraph::Graph::new())),
+                    project_id: project_id.to_string(),
+                    clock: Self::default_clock(),
+                }
+            } else {
+                Self {
+                    graph: Arc::new(RwLock::new(petgraph::Graph::new())),
+                    project_id: project_id.to_string(),
+                    clock: Self::default_clock(),
+                }
+            }
         }
     }
 
-    pub fn with_shared_graph(
-        graph: Arc<RwLock<petgraph::Graph<NodeWeight, EdgeWeight>>>,
-        project_id: &str,
-    ) -> Self {
+    pub fn with_shared_graph(graph: SharedGraph, project_id: &str) -> Self {
         Self {
             graph,
             project_id: project_id.to_string(),
+            clock: Self::default_clock(),
         }
+    }
+
+    /// Create a PetgraphStorage wrapping a clone of the given graph data.
+    /// Used by snapshot restoration to seed the hot graph from saved state.
+    pub fn with_shared_graph_from_data(
+        graph_data: petgraph::Graph<NodeWeight, EdgeWeight>,
+        project_id: &str,
+    ) -> Self {
+        cfg_if! {
+            if #[cfg(target_arch = "wasm32")] {
+                Self {
+                    graph: Rc::new(RefCell::new(graph_data)),
+                    project_id: project_id.to_string(),
+                    clock: Self::default_clock(),
+                }
+            } else {
+                Self {
+                    graph: Arc::new(RwLock::new(graph_data)),
+                    project_id: project_id.to_string(),
+                    clock: Self::default_clock(),
+                }
+            }
+        }
+    }
+
+    fn default_clock() -> Box<dyn Now + Send> {
+        cfg_if! {
+            if #[cfg(target_arch = "wasm32")] {
+                Box::new(WasmClock)
+            } else {
+                Box::new(nexus_model::SystemClock)
+            }
+        }
+    }
+
+    /// Replace the clock. Use this to inject FakeClock (testing) or
+    /// HybridLogicalClock (distributed).
+    pub fn with_clock(mut self, clock: Box<dyn Now + Send>) -> Self {
+        self.clock = clock;
+        self
     }
 
     pub fn with_graph<R>(
         &self,
         f: impl FnOnce(&petgraph::Graph<NodeWeight, EdgeWeight>) -> R,
     ) -> R {
-        let g = self.graph.read().unwrap();
+        let g = read_graph(&self.graph);
         f(&g)
     }
 
@@ -61,7 +156,7 @@ impl PetgraphStorage {
         &self,
         f: impl FnOnce(&mut petgraph::Graph<NodeWeight, EdgeWeight>) -> R,
     ) -> R {
-        let mut g = self.graph.write().unwrap();
+        let mut g = write_graph(&self.graph);
         f(&mut g)
     }
 
@@ -77,7 +172,7 @@ impl PetgraphStorage {
         } else {
             cursor_ts.parse().unwrap_or(0)
         };
-        let g = self.graph.read().unwrap();
+        let g = read_graph(&self.graph);
         let mut facts = Vec::new();
         let mut intents = Vec::new();
         let mut hints = Vec::new();
@@ -219,7 +314,7 @@ impl StorageRead for PetgraphStorage {
     }
 
     fn read_state(&self) -> BoardState {
-        let g = self.graph.read().unwrap();
+        let g = read_graph(&self.graph);
         let mut facts = Vec::new();
         let mut intents = Vec::new();
         let mut hints = Vec::new();
@@ -350,12 +445,8 @@ impl StorageRead for PetgraphStorage {
 
 impl FactCapable for PetgraphStorage {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
-        let mut g = self.graph.write().unwrap();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos()
-            .to_string();
+        let mut g = write_graph(&self.graph);
+        let now = self.clock.now_nanos();
         let content_val = String::from_utf8_lossy(&fact.content.data).into_owned();
         g.add_node(NodeWeight {
             name: fact.id.0.clone(),
@@ -399,7 +490,7 @@ impl FactCapable for PetgraphStorage {
 
 impl HintCapable for PetgraphStorage {
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
-        let mut g = self.graph.write().unwrap();
+        let mut g = write_graph(&self.graph);
         g.add_node(NodeWeight {
             name: hint.id.0.clone(),
             label: "Hint".into(),
@@ -419,11 +510,7 @@ impl HintCapable for PetgraphStorage {
                         data: hint.creator.clone().into_bytes(),
                     },
                 );
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos()
-                    .to_string();
+                let now = self.clock.now_nanos();
                 m.insert(
                     "submitted_at".into(),
                     Content {
@@ -440,7 +527,7 @@ impl HintCapable for PetgraphStorage {
 
 impl IntentCapable for PetgraphStorage {
     fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
-        let mut g = self.graph.write().unwrap();
+        let mut g = write_graph(&self.graph);
 
         for fid in &intent.from_facts {
             let found = g
@@ -470,11 +557,7 @@ impl IntentCapable for PetgraphStorage {
                         data: intent.creator.clone().into_bytes(),
                     },
                 );
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs()
-                    .to_string();
+                let now = self.clock.now_secs().to_string();
                 m.insert(
                     "created_at".into(),
                     Content {
@@ -482,11 +565,7 @@ impl IntentCapable for PetgraphStorage {
                         data: now.into_bytes(),
                     },
                 );
-                let now_ns = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos()
-                    .to_string();
+                let now_ns = self.clock.now_nanos();
                 m.insert(
                     "submitted_at".into(),
                     Content {
@@ -518,7 +597,7 @@ impl IntentCapable for PetgraphStorage {
     }
 
     fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let mut g = self.graph.write().unwrap();
+        let mut g = write_graph(&self.graph);
         for idx in g.node_indices() {
             if let Some(w) = g.node_weight_mut(idx)
                 && w.name == intent_id
@@ -545,16 +624,14 @@ impl IntentCapable for PetgraphStorage {
                         data: agent.to_string().into_bytes(),
                     },
                 );
-                if let Ok(now) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
-                {
-                    w.properties.insert(
-                        "last_heartbeat_at".into(),
-                        Content {
-                            mime_type: "text/plain".into(),
-                            data: now.as_secs().to_string().into_bytes(),
-                        },
-                    );
-                }
+                let now_secs = self.clock.now_secs();
+                w.properties.insert(
+                    "last_heartbeat_at".into(),
+                    Content {
+                        mime_type: "text/plain".into(),
+                        data: now_secs.to_string().into_bytes(),
+                    },
+                );
                 return Ok(());
             }
         }
@@ -564,7 +641,7 @@ impl IntentCapable for PetgraphStorage {
     }
 
     fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let mut g = self.graph.write().unwrap();
+        let mut g = write_graph(&self.graph);
         for idx in g.node_indices() {
             if let Some(w) = g.node_weight_mut(idx)
                 && w.name == intent_id
@@ -593,17 +670,14 @@ impl IntentCapable for PetgraphStorage {
                                 data: agent.to_string().into_bytes(),
                             },
                         );
-                        if let Ok(now) =
-                            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
-                        {
-                            w.properties.insert(
-                                "last_heartbeat_at".into(),
-                                Content {
-                                    mime_type: "text/plain".into(),
-                                    data: now.as_secs().to_string().into_bytes(),
-                                },
-                            );
-                        }
+                        let now_secs = self.clock.now_secs();
+                        w.properties.insert(
+                            "last_heartbeat_at".into(),
+                            Content {
+                                mime_type: "text/plain".into(),
+                                data: now_secs.to_string().into_bytes(),
+                            },
+                        );
                         return Ok(());
                     }
                 }
@@ -615,7 +689,7 @@ impl IntentCapable for PetgraphStorage {
     }
 
     fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let mut g = self.graph.write().unwrap();
+        let mut g = write_graph(&self.graph);
         for idx in g.node_indices() {
             if let Some(w) = g.node_weight_mut(idx)
                 && w.name == intent_id
@@ -654,7 +728,7 @@ impl IntentCapable for PetgraphStorage {
     }
 
     fn conclude_intent(&self, intent_id: &str, result: &str) -> Result<Fact, BlackboardError> {
-        let mut g = self.graph.write().unwrap();
+        let mut g = write_graph(&self.graph);
 
         let intent_idx = g
             .node_indices()
@@ -721,11 +795,7 @@ impl IntentCapable for PetgraphStorage {
                         data: new_fact.creator.clone().into_bytes(),
                     },
                 );
-                let now_ns = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos()
-                    .to_string();
+                let now_ns = self.clock.now_nanos();
                 m.insert(
                     "submitted_at".into(),
                     Content {
@@ -760,7 +830,7 @@ impl TimeRangeCapable for PetgraphStorage {
 
 impl EvictCapable for PetgraphStorage {
     fn approximate_size(&self) -> usize {
-        let g = self.graph.read().unwrap();
+        let g = read_graph(&self.graph);
         let mut total = 0usize;
         for idx in g.node_indices() {
             if let Some(w) = g.node_weight(idx) {
@@ -787,7 +857,7 @@ impl EvictCapable for PetgraphStorage {
         let before_secs: u64 = before
             .parse()
             .map_err(|e| format!("invalid timestamp: {e}"))?;
-        let mut g = self.graph.write().unwrap();
+        let mut g = write_graph(&self.graph);
 
         // Phase 1: collect intent nodes that are either:
         //   - concluded and older than `before`, OR
@@ -845,13 +915,10 @@ impl EvictCapable for PetgraphStorage {
     }
 
     fn evict_stale_intents(&self, older_than_secs: u64) -> Result<u64, String> {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let now = self.clock.now_secs();
         let cutoff = now.saturating_sub(older_than_secs);
 
-        let mut g = self.graph.write().unwrap();
+        let mut g = write_graph(&self.graph);
         let mut to_remove: Vec<NodeIndex> = Vec::new();
 
         for idx in g.node_indices() {

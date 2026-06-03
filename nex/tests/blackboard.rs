@@ -1,4 +1,5 @@
 use nex::blackboard::DefaultBlackboard;
+use nex::storage::petgraph::write_graph;
 use nex::*;
 use nexus_model::{Blackboard, Fact, FihHash, FlushCapable, FlushCursor, Intent};
 
@@ -135,7 +136,7 @@ fn test_cursor_independent_of_graph_mutations() {
 
     // Mutate graph directly (no fact submission).
     {
-        let mut g = bb.hot_graph.write().unwrap();
+        let mut g = write_graph(&bb.hot_graph);
         g.add_node(NodeWeight {
             name: "test_node".into(),
             label: "Test".into(),

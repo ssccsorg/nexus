@@ -6,7 +6,7 @@
 ///
 /// MetaStore is intentionally limited to get/set — no list, no delete —
 /// because it only stores scalar metadata.
-pub trait MetaStore: Send + Sync {
+pub trait MetaStore {
     /// Get a value by key. Returns None if not found.
     fn get(&self, key: &str) -> Result<Option<String>, String>;
 

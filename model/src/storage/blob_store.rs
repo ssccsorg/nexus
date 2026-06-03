@@ -2,7 +2,7 @@
 ///
 /// Implementations: AsyncStoreBlob (in-memory HashMap),
 /// R2 bucket (CF Workers), local filesystem (server).
-pub trait BlobStore: Send + Sync {
+pub trait BlobStore {
     /// Store binary data at the given key.
     fn put(&self, key: &str, data: &[u8]) -> Result<(), String>;
 
