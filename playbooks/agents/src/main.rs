@@ -16,7 +16,7 @@ use nex::{Blackboard, Fact, FihHash, Intent, create_blackboard};
 fn main() {
     println!("=== Rust Privileged Agent: Direct Blackboard Access ===\n");
 
-    let mut bb = create_blackboard();
+    let bb = create_blackboard();
 
     // ── Phase 1: Submit facts ────────────────────────────────────────
 

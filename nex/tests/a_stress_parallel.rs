@@ -181,7 +181,7 @@ fn test_parallel_many_ants() {
 
     // Seed initial facts
     {
-        let mut guard = bb.lock().unwrap();
+        let guard = bb.lock().unwrap();
         let seeds = [
             (
                 "p_corpus_a",

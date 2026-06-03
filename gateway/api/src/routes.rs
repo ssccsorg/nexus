@@ -125,7 +125,7 @@ pub async fn submit_fact(
         creator: req.creator,
     };
     let hash = {
-        let mut bb = state.blackboard.lock().unwrap();
+        let bb = state.blackboard.lock().unwrap();
         bb.submit_fact(&fact).map_err(err_response)?
     };
     Ok(Json(SubmitFactResponse { id: hash.0 }))
@@ -161,7 +161,7 @@ pub async fn submit_intent(
         concluded_at: None,
     };
     let hash = {
-        let mut bb = state.blackboard.lock().unwrap();
+        let bb = state.blackboard.lock().unwrap();
         bb.submit_intent(&intent).map_err(err_response)?
     };
     Ok(Json(SubmitIntentResponse { id: hash.0 }))
@@ -173,7 +173,7 @@ pub async fn claim_intent(
     Path(intent_id): Path<String>,
     Json(req): Json<ClaimRequest>,
 ) -> Result<Json<()>, (StatusCode, Json<ApiError>)> {
-    let mut bb = state.blackboard.lock().unwrap();
+    let bb = state.blackboard.lock().unwrap();
     bb.claim_intent(&intent_id, &req.agent)
         .map_err(err_response)?;
     Ok(Json(()))
@@ -185,7 +185,7 @@ pub async fn heartbeat_intent(
     Path(intent_id): Path<String>,
     Json(req): Json<HeartbeatRequest>,
 ) -> Result<Json<()>, (StatusCode, Json<ApiError>)> {
-    let mut bb = state.blackboard.lock().unwrap();
+    let bb = state.blackboard.lock().unwrap();
     bb.heartbeat(&intent_id, &req.agent).map_err(err_response)?;
     Ok(Json(()))
 }
@@ -196,7 +196,7 @@ pub async fn release_intent(
     Path(intent_id): Path<String>,
     Json(req): Json<ReleaseRequest>,
 ) -> Result<Json<()>, (StatusCode, Json<ApiError>)> {
-    let mut bb = state.blackboard.lock().unwrap();
+    let bb = state.blackboard.lock().unwrap();
     bb.release_intent(&intent_id, &req.agent)
         .map_err(err_response)?;
     Ok(Json(()))
@@ -208,7 +208,7 @@ pub async fn conclude_intent(
     Path(intent_id): Path<String>,
     Json(req): Json<ConcludeRequest>,
 ) -> Result<Json<ConcludeResponse>, (StatusCode, Json<ApiError>)> {
-    let mut bb = state.blackboard.lock().unwrap();
+    let bb = state.blackboard.lock().unwrap();
     let result_str = match &req.result {
         serde_json::Value::String(s) => s.clone(),
         other => serde_json::to_string(other).unwrap_or_default(),
@@ -230,7 +230,7 @@ pub async fn submit_hint(
         content: req.content,
         creator: req.creator,
     };
-    let mut bb = state.blackboard.lock().unwrap();
+    let bb = state.blackboard.lock().unwrap();
     bb.submit_hint(&hint).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
