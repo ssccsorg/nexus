@@ -240,8 +240,14 @@ impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> StorageRead
 
 // ── FlushCapable ──────────────────────────────────────────────────────────
 
-impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> FlushCapable
-    for CompositeColdStorage<B, O, M, C>
+use nexus_model::StorageSend;
+
+impl<
+    B: BlobStore + StorageSend,
+    O: ObjectStore + StorageSend,
+    M: MetaStore + StorageSend,
+    C: Now + StorageSend,
+> FlushCapable for CompositeColdStorage<B, O, M, C>
 {
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
         let partition = &cursor.partition;
@@ -285,8 +291,12 @@ impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> FlushCapable
 
 // ── ScanCapable ───────────────────────────────────────────────────────────
 
-impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> ScanCapable
-    for CompositeColdStorage<B, O, M, C>
+impl<
+    B: BlobStore + StorageSend,
+    O: ObjectStore + StorageSend,
+    M: MetaStore + StorageSend,
+    C: Now + StorageSend,
+> ScanCapable for CompositeColdStorage<B, O, M, C>
 {
     fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
         // CompositeColdStorage only reads flushed data from blob.
@@ -308,8 +318,12 @@ impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> ScanCapable
 
 // ── EvictCapable ──────────────────────────────────────────────────────────
 
-impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> EvictCapable
-    for CompositeColdStorage<B, O, M, C>
+impl<
+    B: BlobStore + StorageSend,
+    O: ObjectStore + StorageSend,
+    M: MetaStore + StorageSend,
+    C: Now + StorageSend,
+> EvictCapable for CompositeColdStorage<B, O, M, C>
 {
     fn approximate_size(&self) -> usize {
         self.blob
@@ -343,16 +357,24 @@ impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> EvictCapable
 
 // ── TimeRangeCapable ───────────────────────────────────────────────────────
 
-impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> TimeRangeCapable
-    for CompositeColdStorage<B, O, M, C>
+impl<
+    B: BlobStore + StorageSend,
+    O: ObjectStore + StorageSend,
+    M: MetaStore + StorageSend,
+    C: Now + StorageSend,
+> TimeRangeCapable for CompositeColdStorage<B, O, M, C>
 {
     fn time_range(&self) -> Option<Range<String>> {
         None
     }
 }
 
-impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> ColdStorage
-    for CompositeColdStorage<B, O, M, C>
+impl<
+    B: BlobStore + StorageSend,
+    O: ObjectStore + StorageSend,
+    M: MetaStore + StorageSend,
+    C: Now + StorageSend,
+> ColdStorage for CompositeColdStorage<B, O, M, C>
 {
     fn write_blob(&self, key: &str, data: &[u8]) -> Result<(), String> {
         self.blob.put(key, data)

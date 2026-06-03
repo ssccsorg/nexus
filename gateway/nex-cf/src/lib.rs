@@ -1,10 +1,12 @@
-// gateway/nex-cf — CF Worker running nex DefaultBlackboard.
+// gateway/nex-cf — Thin HTTP adapter. GET-only. No Router.
+//
+// PetgraphStorage uses conditional graph storage (Arc<RwLock<>> on native,
+// Rc<RefCell<>> on WASM). WASM runs single-threaded so no Send/Sync bound
+// is needed. Thread-local storage provides state persistence across requests
+// within the same isolate.
 
+use nex::{Blackboard, BlackboardError, Content, DefaultBlackboard, Fact, FihHash, Intent};
 use std::cell::RefCell;
-
-use nex::DefaultBlackboard;
-use nexus_model::{Blackboard, BlackboardError, Content, Fact, FihHash, Intent};
-use serde::Deserialize;
 use worker::*;
 
 thread_local! {
@@ -13,79 +15,111 @@ thread_local! {
 
 #[event(fetch)]
 pub async fn main(req: Request, _env: Env, _ctx: Context) -> Result<Response> {
-    Router::new()
-        .get_async("/", |_req, _ctx| async { Response::ok("nexus-gateway-nex-cf") })
-        .get_async("/state", |_req, _ctx| async move {
-            BB.with(|bb| Response::from_json(&bb.borrow().read_state()))
-        })
-        .post_async("/facts", |mut req, _ctx| async move {
-            let b: SubmitFactRequest = req.json().await?;
-            let fact = Fact {
-                id: FihHash(b.id.clone()), origin: b.origin,
-                content: Content {
-                    mime_type: "application/json".into(),
-                    data: serde_json::to_vec(&serde_json::json!({"text": b.text, "tags": b.tags}))
-                        .map_err(|e| Error::RustError(e.to_string()))?,
-                },
-                creator: b.creator,
-            };
-            BB.with(|bb| {
-                let hash = bb.borrow_mut().submit_fact(&fact)
-                    .map_err(|e| Error::RustError(e.to_string()))?;
-                Response::from_json(&serde_json::json!({"id": hash.0}))
+    let url = req.url()?;
+    let path = url.path().to_string();
+    let q: Vec<(String, String)> = url
+        .query_pairs()
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
+
+    fn qv(q: &[(String, String)], k: &str) -> String {
+        for (key, val) in q {
+            if key == k {
+                return val.clone();
+            }
+        }
+        String::new()
+    }
+
+    // Root
+    if path == "/" || path.len() <= 1 {
+        return Response::ok("nexus-gateway-nex-cf");
+    }
+
+    // State
+    if path == "/state" {
+        let state = BB.with(|bb| bb.borrow().read_state());
+        return Response::from_json(&state);
+    }
+
+    // Fact
+    if path == "/fact" {
+        let fact = Fact {
+            id: FihHash(qv(&q, "id")),
+            origin: qv(&q, "origin"),
+            content: Content {
+                mime_type: "application/json".into(),
+                data: qv(&q, "content").into_bytes(),
+            },
+            creator: qv(&q, "creator"),
+        };
+        let hash = BB
+            .with(|bb| bb.borrow().submit_fact(&fact))
+            .map_err(|e| Error::RustError(e.to_string()))?;
+        return Response::from_json(&serde_json::json!({"id": hash.0}));
+    }
+
+    // Intent
+    if path == "/intent" {
+        let intent = Intent {
+            id: FihHash(qv(&q, "id")),
+            from_facts: qv(&q, "from")
+                .split(',')
+                .filter(|s| !s.is_empty())
+                .map(String::from)
+                .collect(),
+            description: qv(&q, "desc"),
+            creator: qv(&q, "creator"),
+            worker: None,
+            to_fact_id: None,
+            last_heartbeat_at: None,
+            created_at: None,
+            concluded_at: None,
+        };
+        BB.with(|bb| bb.borrow().submit_intent(&intent))
+            .map_err(|e| Error::RustError(e.to_string()))?;
+        return Response::from_json(&serde_json::json!({"id": intent.id.0}));
+    }
+
+    // Claim
+    if path == "/claim" {
+        match BB.with(|bb| bb.borrow().claim_intent(&qv(&q, "id"), &qv(&q, "agent"))) {
+            Ok(()) => {
+                return Response::from_json(&serde_json::json!({"status":"claimed"}));
+            }
+            Err(BlackboardError::Conflict(m)) => {
+                return Ok(Response::from_json(&serde_json::json!({"error":m}))?.with_status(409));
+            }
+            Err(e) => {
+                return Err(Error::RustError(e.to_string()));
+            }
+        }
+    }
+
+    // Conclude
+    if path == "/conclude" {
+        let f = BB
+            .with(|bb| {
+                bb.borrow()
+                    .conclude_intent(&qv(&q, "id"), &qv(&q, "result"))
             })
-        })
-        .post_async("/intents", |mut req, _ctx| async move {
-            let b: SubmitIntentRequest = req.json().await?;
-            let id = b.id.unwrap_or_else(|| format!("intent_{}", Date::now().as_millis()));
-            let intent = Intent {
-                id: FihHash(id.clone()), from_facts: b.from_facts,
-                description: b.description, creator: b.creator,
-                worker: None, to_fact_id: None,
-                last_heartbeat_at: None, created_at: None, concluded_at: None,
-            };
-            BB.with(|bb| {
-                bb.borrow_mut().submit_intent(&intent)
-                    .map_err(|e| Error::RustError(e.to_string()))?;
-                Response::from_json(&serde_json::json!({"id": id}))
-            })
-        })
-        .post_async("/intents/:id/claim", |mut req, ctx| async move {
-            let id = ctx.param("id").map_or("", |v| v.as_str()).to_string();
-            let body: ClaimRequest = req.json().await?;
-            BB.with(|bb| {
-                match bb.borrow_mut().claim_intent(&id, &body.agent) {
-                    Ok(()) => Response::from_json(&serde_json::json!({"status": "claimed"})),
-                    Err(BlackboardError::Conflict(m)) =>
-                        Ok(Response::from_json(&serde_json::json!({"error": m}))?.with_status(409)),
-                    Err(e) => Err(Error::RustError(e.to_string())),
-                }
-            })
-        })
-        .post_async("/intents/:id/conclude", |mut req, ctx| async move {
-            let id = ctx.param("id").map_or("", |v| v.as_str()).to_string();
-            let body: ConcludeRequest = req.json().await?;
-            BB.with(|bb| {
-                let fact = bb.borrow_mut().conclude_intent(&id, &body.result)
-                    .map_err(|e| Error::RustError(e.to_string()))?;
-                Response::from_json(&serde_json::json!({"status": "concluded", "fact": fact}))
-            })
-        })
-        .run(req, _env).await
+            .map_err(|e| Error::RustError(e.to_string()))?;
+        return Response::from_json(&serde_json::json!({"status":"concluded","fact":f}));
+    }
+
+    Response::error("not found", 404)
 }
 
-#[derive(Deserialize)]
-struct SubmitFactRequest { id: String, origin: String, text: String, tags: Vec<String>, creator: String }
-#[derive(Deserialize)]
-struct SubmitIntentRequest { id: Option<String>, from_facts: Vec<String>, description: String, creator: String }
-#[derive(Deserialize)]
-struct ClaimRequest { agent: String }
-#[derive(Deserialize)]
-struct ConcludeRequest { result: String }
-
 #[durable_object]
-pub struct IntentClaimDO { #[allow(unused)] state: worker::State }
+pub struct IntentClaimDO {
+    #[allow(unused)]
+    state: State,
+}
 impl worker::DurableObject for IntentClaimDO {
-    fn new(state: worker::State, _env: Env) -> Self { Self { state } }
-    async fn fetch(&self, _req: Request) -> Result<Response> { Response::ok("IntentClaimDO stub") }
+    fn new(state: State, _env: Env) -> Self {
+        Self { state }
+    }
+    async fn fetch(&self, _req: Request) -> Result<Response> {
+        Response::ok("stub")
+    }
 }

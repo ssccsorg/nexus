@@ -6,7 +6,7 @@
 /// Each key represents an independent CAS namespace. In CF Workers,
 /// `key` maps to a DO instance ID, making each Intent claim its own
 /// atomic gate.
-pub trait ObjectStore: Send + Sync {
+pub trait ObjectStore {
     /// Read current state for a key. Returns None if key does not exist.
     fn get_state(&self, key: &str) -> Result<Option<String>, String>;
 
