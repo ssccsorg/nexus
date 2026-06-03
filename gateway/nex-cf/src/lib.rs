@@ -9,7 +9,7 @@
 // Key design: Core traits are sync with interior mutability (Arc<RwLock<>>).
 // Async boundary exists only at hydrate/drain — never during trait operations.
 
-use nex::storage::composite::AsyncStoreKv;
+use nex::storage::composite::{AsyncStoreKv, AsyncStoreSession};
 use nexus_model::{
     Blackboard, BlackboardError, BoardState, Content, Fact, FactCapable, FihHash, Intent,
     IntentCapable, MetaStore, StorageRead,
@@ -22,6 +22,7 @@ use worker::*;
 struct CfBlackboard {
     facts: AsyncStoreKv,
     intents: AsyncStoreKv,
+    session: AsyncStoreSession,
 }
 
 impl CfBlackboard {
@@ -29,6 +30,7 @@ impl CfBlackboard {
         Self {
             facts: AsyncStoreKv::new(),
             intents: AsyncStoreKv::new(),
+            session: AsyncStoreSession::new("default"),
         }
     }
 
@@ -52,6 +54,20 @@ impl CfBlackboard {
             }
         }
         Ok(count)
+    }
+
+    async fn hydrate_session(&self, kv: &KvStore) -> Result<()> {
+        if let Some(raw) = kv.get("cursor").text().await? {
+            self.session.meta_buf().set("cursor", &raw).map_err(Error::RustError)?;
+        }
+        Ok(())
+    }
+
+    async fn drain_session(&self, kv: &KvStore) -> Result<()> {
+        if let Ok(Some(val)) = self.session.meta_buf().get("cursor") {
+            kv.put("cursor", val)?.execute().await?;
+        }
+        Ok(())
     }
 
     async fn drain(&self, kv: &KvStore, kind: &str) -> Result<u64> {
@@ -233,8 +249,14 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             bb.hydrate(&kv, "fact")
                 .await
                 .map_err(|e| Error::RustError(e.to_string()))?;
+            bb.hydrate_session(&kv)
+                .await
+                .map_err(|e| Error::RustError(e.to_string()))?;
             let id = bb
                 .submit_fact(&fact)
+                .map_err(|e| Error::RustError(e.to_string()))?;
+            bb.drain_session(&kv)
+                .await
                 .map_err(|e| Error::RustError(e.to_string()))?;
             bb.drain(&kv, "fact")
                 .await
