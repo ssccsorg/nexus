@@ -1,6 +1,6 @@
 /// Atomic CAS store for cross-worker coordination.
 ///
-/// Implementations: IoBufferObject (in-memory HashMap),
+/// Implementations: AsyncStoreObject (in-memory HashMap),
 /// Durable Object (CF Workers), Redis lock (server).
 ///
 /// Each key represents an independent CAS namespace. In CF Workers,

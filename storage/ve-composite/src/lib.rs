@@ -14,28 +14,28 @@
 //     ├── /r2/{project}/{key}   PUT/GET/DELETE  (R2)
 //     └── /do/{project}/{key}/cas POST          (DO CAS)
 //
-// Every request goes through IoBufferSession.
+// Every request goes through AsyncStoreSession.
 
 mod routes;
 
 use std::sync::Arc;
 
 use axum::Router;
-use nex::storage::composite::IoBufferSession;
+use nex::storage::composite::AsyncStoreSession;
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
 
 pub struct AppState {
-    pub session: IoBufferSession,
+    pub session: AsyncStoreSession,
 }
 
 /// Start VE server on random port, return (base_url, task_handle).
 pub async fn start_ve() -> (String, tokio::task::JoinHandle<()>) {
-    let session = IoBufferSession::new("ve-test");
+    let session = AsyncStoreSession::new("ve-test");
     start_ve_with(session).await
 }
 
-pub async fn start_ve_with(session: IoBufferSession) -> (String, tokio::task::JoinHandle<()>) {
+pub async fn start_ve_with(session: AsyncStoreSession) -> (String, tokio::task::JoinHandle<()>) {
     let state = Arc::new(AppState { session });
 
     let app = Router::new()

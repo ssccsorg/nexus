@@ -1,4 +1,4 @@
-// IoBufferSession — concrete session backed by IoBufferBlob/Object + MetaStore.
+// AsyncStoreSession — concrete session backed by AsyncStoreBlob/Object + MetaStore.
 //
 // Owns a MetaStore + BlobStore + ObjectStore trio + CompositeColdStorage.
 // Implements SessionExecute from nexus-model.
@@ -7,50 +7,50 @@
 //
 //   CF KV / R2 / DO  (source of truth, async)
 //       ↓ hydrate_*       ↑ cursor-driven flush
-//   IoBufferSession         │
-//   ├── IoBufferBlob        │  ← pure HashMap (BlobStore)
-//   ├── IoBufferObject      │  ← pure HashMap (ObjectStore)
-//   ├── IoBufferMeta        │  ← pure HashMap (MetaStore, cursor/delta ptrs)
+//   AsyncStoreSession         │
+//   ├── AsyncStoreBlob        │  ← pure HashMap (BlobStore)
+//   ├── AsyncStoreObject      │  ← pure HashMap (ObjectStore)
+//   ├── AsyncStoreMeta        │  ← pure HashMap (MetaStore, cursor/delta ptrs)
 //   └── CompositeColdStorage (sync) ← orchestration
 //       ├── blob (archive)
 //       ├── object (CAS coordination)
 //       └── meta (cursor position, snapshot pointers)
 //
 // The consumer (CF Worker, blockchain validator, etc.):
-//   1. Creates an IoBufferSession
-//   2. Hydrates IoBuffer* from external source (async)
+//   1. Creates an AsyncStoreSession
+//   2. Hydrates AsyncStore* from external source (async)
 //   3. Runs CompositeColdStorage sync operations via storage()
 //   4. Reads cursor via read_cursor() to determine flush boundary
 //
 // CompositeColdStorage itself is pure sync, never touches async code.
-// IoBufferSession is pure sync, never touches external I/O.
+// AsyncStoreSession is pure sync, never touches external I/O.
 
 use nexus_model::SessionExecute;
 
 use super::cold::CompositeColdStorage;
-use super::{IoBufferBlob, IoBufferObject, IoBufferSessionMeta};
+use super::{AsyncStoreBlob, AsyncStoreObject, AsyncStoreSessionMeta};
 use nexus_model::SystemClock;
 
-/// Session backed by IoBuffer* + CompositeColdStorage.
+/// Session backed by AsyncStore* + CompositeColdStorage.
 ///
 /// Implements `SessionExecute` (access to ColdStorage).
 /// The async bridge layer handles hydrate/flush;
-/// IoBufferSession provides the sync surface.
-pub struct IoBufferSession {
-    storage: CompositeColdStorage<IoBufferBlob, IoBufferObject, IoBufferSessionMeta, SystemClock>,
+/// AsyncStoreSession provides the sync surface.
+pub struct AsyncStoreSession {
+    storage: CompositeColdStorage<AsyncStoreBlob, AsyncStoreObject, AsyncStoreSessionMeta, SystemClock>,
     /// Meta buffer (cursor, snapshot pointers). Excluded from drain.
-    meta_buf: IoBufferSessionMeta,
+    meta_buf: AsyncStoreSessionMeta,
 }
 
-impl IoBufferSession {
+impl AsyncStoreSession {
     /// Create a fresh session for the given project.
     ///
-    /// All IoBuffer* instances start empty. The caller must call
+    /// All AsyncStore* instances start empty. The caller must call
     /// `hydrate_*` methods before executing storage operations.
     pub fn new(project_id: impl Into<String>) -> Self {
-        let blob = IoBufferBlob::new();
-        let object = IoBufferObject::new();
-        let meta = IoBufferSessionMeta::new();
+        let blob = AsyncStoreBlob::new();
+        let object = AsyncStoreObject::new();
+        let meta = AsyncStoreSessionMeta::new();
         let storage = CompositeColdStorage::new_with_system_clock(
             blob.clone(),
             object.clone(),
@@ -64,7 +64,7 @@ impl IoBufferSession {
     }
 
     /// Access the meta store (cursor, snapshot pointers).
-    pub fn meta_buf(&self) -> &IoBufferSessionMeta {
+    pub fn meta_buf(&self) -> &AsyncStoreSessionMeta {
         &self.meta_buf
     }
 
@@ -83,21 +83,21 @@ impl IoBufferSession {
     // ── Low-level buffer access ──────────────────────────────────────────
 
     /// Access the Blob buffer directly for low-level operations.
-    pub fn blob_buf(&self) -> &IoBufferBlob {
+    pub fn blob_buf(&self) -> &AsyncStoreBlob {
         self.storage.blob()
     }
 
     /// Access the Object buffer directly for low-level operations.
-    pub fn object_buf(&self) -> &IoBufferObject {
+    pub fn object_buf(&self) -> &AsyncStoreObject {
         self.storage.object()
     }
 }
 
 // ── SessionExecute ───────────────────────────────────────────────────────
 
-impl SessionExecute for IoBufferSession {
+impl SessionExecute for AsyncStoreSession {
     type Storage =
-        CompositeColdStorage<IoBufferBlob, IoBufferObject, IoBufferSessionMeta, SystemClock>;
+        CompositeColdStorage<AsyncStoreBlob, AsyncStoreObject, AsyncStoreSessionMeta, SystemClock>;
 
     fn storage(&self) -> &Self::Storage {
         &self.storage

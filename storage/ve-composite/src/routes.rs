@@ -1,5 +1,5 @@
 // HTTP route handlers for VECompositeStorage.
-// Uses IoBufferSession exclusively — no WASM or CF bindings.
+// Uses AsyncStoreSession exclusively — no WASM or CF bindings.
 
 use std::sync::Arc;
 
