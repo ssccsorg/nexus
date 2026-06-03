@@ -4,46 +4,25 @@
 //   R2:  blob content (Fact.text, etc.)
 //   DO:  reserved for future CAS-based Intent claiming
 //
-// Depends only on `worker`, `serde`, `serde_json`.
-// Zero dependency on `nex`, `petgraph`, `interface-cypher`, or `nexus-model`.
+// Uses nexus-model FIH types as the canonical storage format.
+// Extra document metadata (title, tags, href, etc.) is stored inside
+// Fact.content.data as a JSON blob.
 
+use nexus_model::fih::{Content, Fact, FihHash, Intent};
 use serde::{Deserialize, Serialize};
 use worker::DurableObject;
 use worker::*;
 
-// ── FIH types ────────────────────────────────────────────────────────────
+// ── Document metadata (stored inside Fact.content.data) ──────────────────
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-struct Fact {
-    id: String,
-    origin: String,
+struct DocMeta {
     tags: Vec<String>,
     title: String,
     href: String,
     text_len: usize,
     r2_key: String,
-    creator: String,
     created_at: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct Intent {
-    id: String,
-    from_facts: Vec<String>,
-    description: String,
-    creator: String,
-    worker: Option<String>,
-    to_fact_id: Option<String>,
-    created_at: Option<String>,
-    concluded_at: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[allow(dead_code)]
-struct Hint {
-    id: String,
-    content: String,
-    creator: String,
 }
 
 // ── KV keys ──────────────────────────────────────────────────────────────
@@ -126,16 +105,25 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                     .execute()
                     .await?;
 
-                let fact = Fact {
-                    id: id.clone(),
-                    origin: "docs.ssccs.org".into(),
+                let doc_meta = DocMeta {
                     tags: tags.clone(),
                     title: entry.title.clone(),
                     href: entry.href.clone(),
                     text_len: entry.text.len(),
                     r2_key,
-                    creator: "system".into(),
                     created_at: now.clone(),
+                };
+                let data =
+                    serde_json::to_vec(&doc_meta).map_err(|e| Error::RustError(e.to_string()))?;
+
+                let fact = Fact {
+                    id: FihHash(id.clone()),
+                    origin: "docs.ssccs.org".into(),
+                    content: Content {
+                        mime_type: "application/json".into(),
+                        data,
+                    },
+                    creator: "system".into(),
                 };
                 kv.put(&fact_key(&id), serde_json::to_string(&fact)?)?
                     .execute()
@@ -200,7 +188,9 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             let raw = kv.get(&fact_key(&id)).text().await?.unwrap_or_default();
             let fact: Fact =
                 serde_json::from_str(&raw).map_err(|_| Error::RustError("not found".into()))?;
-            match r2.get(&fact.r2_key).execute().await? {
+            let doc_meta: DocMeta = serde_json::from_slice(&fact.content.data)
+                .map_err(|_| Error::RustError("invalid content".into()))?;
+            match r2.get(&doc_meta.r2_key).execute().await? {
                 Some(obj) => {
                     let body = obj
                         .body()
@@ -217,12 +207,13 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             let kv = ctx.kv("FIH_KV")?;
             let id = body.id.unwrap_or_else(|| format!("intent_{}", uid()));
             let intent = Intent {
-                id: id.clone(),
+                id: FihHash(id.clone()),
                 from_facts: body.from_facts,
+                to_fact_id: None,
                 description: body.description,
                 creator: body.creator,
                 worker: None,
-                to_fact_id: None,
+                last_heartbeat_at: None,
                 created_at: Some(Date::now().as_millis().to_string()),
                 concluded_at: None,
             };
@@ -267,16 +258,25 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                 .execute()
                 .await?;
 
-            let fact = Fact {
-                id: fact_id.clone(),
-                origin: "gateway".into(),
+            let doc_meta = DocMeta {
                 tags: intent.from_facts.clone(),
                 title: format!("Output of {}", id),
                 href: String::new(),
                 text_len: body.result.len(),
                 r2_key,
-                creator: intent.creator.clone(),
                 created_at: Date::now().as_millis().to_string(),
+            };
+            let data = serde_json::to_vec(&doc_meta)
+                .map_err(|e| Error::RustError(format!("serialize doc_meta: {e}")))?;
+
+            let fact = Fact {
+                id: FihHash(fact_id.clone()),
+                origin: "gateway".into(),
+                content: Content {
+                    mime_type: "application/json".into(),
+                    data,
+                },
+                creator: intent.creator.clone(),
             };
             kv.put(&fact_key(&fact_id), serde_json::to_string(&fact)?)?
                 .execute()
