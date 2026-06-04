@@ -49,7 +49,7 @@ fn facts_by_creator<'a>(state: &'a BoardState, creator: &str) -> Vec<&'a Fact> {
 //  Foundational Corpus
 // ═════════════════════════════════════════════════════════════════════════
 
-fn seed_foundational(bb: &mut impl Blackboard) -> Vec<String> {
+fn seed_foundational(bb: &impl Blackboard) -> Vec<String> {
     let facts = [
         // ── manifesto.llms.md — ontology ──────────────────────────
         claim(
@@ -253,8 +253,8 @@ fn seed_foundational(bb: &mut impl Blackboard) -> Vec<String> {
 
 #[test]
 fn scenario_foundational_consistency_audit() {
-    let mut bb = create_blackboard();
-    let baseline = seed_foundational(&mut bb);
+    let bb = create_blackboard();
+    let baseline = seed_foundational(&bb);
 
     let mut sched = Scheduler::new(bb);
     sched.register(Box::new(GapDetector::new()));
@@ -321,7 +321,7 @@ fn scenario_foundational_consistency_audit() {
 
 #[test]
 fn scenario_formal_revision_of_philosophy() {
-    let mut bb = create_blackboard();
+    let bb = create_blackboard();
 
     // Phase 1: Only manifesto + epistemology (philosophical layer)
     let phil_facts = [
@@ -487,7 +487,7 @@ fn scenario_formal_revision_of_philosophy() {
 
 #[test]
 fn scenario_theory_practice_gap() {
-    let mut bb = create_blackboard();
+    let bb = create_blackboard();
 
     // Theory layer: manifesto + epistemology
     let theory = [
@@ -633,7 +633,7 @@ fn scenario_theory_practice_gap() {
 
 #[test]
 fn scenario_epistemology_as_bridge() {
-    let mut bb = create_blackboard();
+    let bb = create_blackboard();
 
     // Manifesto (what IS) + Whitepaper §2 (formal definitions)
     let claims = [

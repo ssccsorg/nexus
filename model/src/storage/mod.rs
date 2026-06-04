@@ -17,7 +17,7 @@ pub mod scan;
 pub mod session;
 pub mod time_range;
 
-pub use aggregate::{ColdStorage, DeltaSet, FihPersistence, HotStorage};
+pub use aggregate::{ColdStorage, DeltaSet, FihPersistence, HotStorage, StorageSend};
 pub use blob_store::BlobStore;
 pub use dual::DualStorage;
 pub use evict::EvictCapable;

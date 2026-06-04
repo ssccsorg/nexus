@@ -24,34 +24,34 @@ impl<B: Blackboard> Blackboard for MockGateway<B> {
         self.inner.project_id()
     }
 
-    fn submit_fact(&mut self, fact: &Fact) -> Result<FihHash, BlackboardError> {
+    fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         let decoded: Fact = serde_json::from_slice(&serde_json::to_vec(fact).unwrap()).unwrap();
         self.inner.submit_fact(&decoded)
     }
 
-    fn submit_intent(&mut self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+    fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
         let decoded: Intent = serde_json::from_slice(&serde_json::to_vec(intent).unwrap()).unwrap();
         self.inner.submit_intent(&decoded)
     }
 
-    fn submit_hint(&mut self, hint: &Hint) -> Result<(), BlackboardError> {
+    fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         let decoded: Hint = serde_json::from_slice(&serde_json::to_vec(hint).unwrap()).unwrap();
         self.inner.submit_hint(&decoded)
     }
 
-    fn claim_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+    fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         self.inner.claim_intent(intent_id, agent)
     }
 
-    fn heartbeat(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+    fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         self.inner.heartbeat(intent_id, agent)
     }
 
-    fn release_intent(&mut self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+    fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         self.inner.release_intent(intent_id, agent)
     }
 
-    fn conclude_intent(&mut self, intent_id: &str, result: &str) -> Result<Fact, BlackboardError> {
+    fn conclude_intent(&self, intent_id: &str, result: &str) -> Result<Fact, BlackboardError> {
         self.inner.conclude_intent(intent_id, result)
     }
 

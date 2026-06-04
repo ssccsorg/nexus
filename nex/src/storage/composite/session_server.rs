@@ -1,7 +1,7 @@
 // SessionServer — serializes access to a StoreSession via a request queue.
 //
 // Multiple concurrent requests must not interleave writes to the same
-// IoBuffer* — CompositeColdStorage orchestration (claim_intent CAS two-step,
+// AsyncStore* — CompositeColdStorage orchestration (claim_intent CAS two-step,
 // flush_since streaming, etc.) requires exclusive access.
 //
 // SessionServer owns the StoreSession. Requests are submitted as closures;
@@ -15,7 +15,7 @@
 //                        │                                     │
 //                        │                          CompositeColdStorage
 //                        │                                     │
-//                        │                     IoBufferKv/Blob/Object (sync)
+//                        │                     AsyncStoreKv/Blob/Object (sync)
 //                        │
 //                        ←──── responses ──────────────────────┘
 

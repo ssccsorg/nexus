@@ -10,7 +10,9 @@
 // These tests validate that it composes correctly with Petgraph via
 // DualStorage, matching the same trait contracts as DuckDbStorage.
 
-use nex::storage::composite::{CompositeColdStorage, IoBufferBlob, IoBufferKv, IoBufferObject};
+use nex::storage::composite::{
+    AsyncStoreBlob, AsyncStoreKv, AsyncStoreObject, CompositeColdStorage,
+};
 use nex::storage::petgraph::PetgraphStorage;
 use nex::{Blackboard, Content, DefaultBlackboard, Fact, FihHash, ScanCapable, Snapshottable};
 use nexus_model::{
@@ -549,9 +551,9 @@ fn test_fih_scenario_petgraph_blob_identity() {
 fn test_fih_scenario_project_id_mismatch_panics() {
     let hot = PetgraphStorage::with_project_id("hot-project");
     let cold_mock = CompositeColdStorage::new_with_system_clock(
-        IoBufferBlob::new(),
-        IoBufferObject::new(),
-        IoBufferKv::new(),
+        AsyncStoreBlob::new(),
+        AsyncStoreObject::new(),
+        AsyncStoreKv::new(),
         "cold-project",
     );
     let _storage = DualStorage::new(Box::new(hot), Box::new(cold_mock));

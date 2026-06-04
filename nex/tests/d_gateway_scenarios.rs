@@ -19,7 +19,7 @@ use nex::{Blackboard, Content, Fact, FihHash, Intent, create_blackboard};
 /// except all FIH operations pass through MockGateway's JSON round-trip.
 #[test]
 fn scenario_contradiction_detection_via_gateway() {
-    let mut gw = MockGateway::new(create_blackboard());
+    let gw = MockGateway::new(create_blackboard());
 
     // Agent-A: ingests paper claiming GNNs work fine at 50 layers
     gw.submit_fact(&Fact {

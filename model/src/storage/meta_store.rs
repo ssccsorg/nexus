@@ -1,12 +1,12 @@
 /// Minimal key-value store for cursor position, snapshot pointers, and
 /// other metadata. NOT for graph data.
 ///
-/// Implementations: IoBufferKv (in-memory HashMap), CF KV Namespace,
+/// Implementations: AsyncStoreKv (in-memory HashMap), CF KV Namespace,
 /// sled (server).
 ///
 /// MetaStore is intentionally limited to get/set — no list, no delete —
 /// because it only stores scalar metadata.
-pub trait MetaStore: Send + Sync {
+pub trait MetaStore {
     /// Get a value by key. Returns None if not found.
     fn get(&self, key: &str) -> Result<Option<String>, String>;
 

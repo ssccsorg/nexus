@@ -3,7 +3,7 @@
 // Covers GraphRead/GraphWrite trait implementations, EvictCapable,
 // and storage-level FIH operations directly (not via DefaultBlackboard).
 
-use nex::storage::petgraph::PetgraphStorage;
+use nex::storage::petgraph::{PetgraphStorage, read_graph};
 use nexus_model::{
     Content, EvictCapable, Fact, FactCapable, FihHash, Hint, HintCapable, StorageRead,
 };
@@ -41,7 +41,7 @@ fn now_secs() -> u64 {
 #[test]
 fn test_add_and_retrieve_node() {
     let s = storage();
-    let g = s.graph.read().unwrap();
+    let g = read_graph(&s.graph);
 
     let initial_count = g.node_count();
     // PetgraphStorage starts empty? No — it may have sentinel nodes.

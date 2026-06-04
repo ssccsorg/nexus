@@ -2,12 +2,18 @@
 
 /// Clock abstraction for platform-independent timestamp generation.
 ///
-/// Implementations: SystemClock (native), js_sys::Date (WASM).
-/// Without this trait, storage backends would be hardcoded to SystemTime::now(),
-/// which is incorrect for WASM targets and makes testing impossible.
-pub trait Now: Send + Sync {
-    /// Return current time as a nanosecond-precision string.
+/// Implementations: SystemClock (native, real time), WasmClock (WASM,
+/// monotonic-zero), FakeClock (deterministic testing), HybridLogicalClock
+/// (distributed causal ordering).
+///
+/// A single trait injection point. Replace the clock, replace time semantics
+/// for the entire system — no code in PetgraphStorage or Blackboard changes.
+pub trait Now {
+    /// Nanosecond-precision timestamp as a decimal string.
     fn now_nanos(&self) -> String;
+    /// Second-precision timestamp as u64. Used for heartbeat expiry and
+    /// eviction cutoffs.
+    fn now_secs(&self) -> u64;
 }
 
 /// SystemTime-based clock. Correct for native targets.
@@ -21,5 +27,12 @@ impl Now for SystemClock {
             .unwrap_or_default()
             .as_nanos()
             .to_string()
+    }
+
+    fn now_secs(&self) -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
     }
 }

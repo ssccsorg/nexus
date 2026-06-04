@@ -45,7 +45,7 @@ fn intent(id: &str, from: Vec<&str>) -> Intent {
 }
 
 fn setup_intent(bb: &SharedBlackboard, iid: &str) {
-    let mut b = bb.lock().unwrap();
+    let b = bb.lock().unwrap();
     b.submit_fact(&fact("f_base")).unwrap();
     b.submit_intent(&intent(iid, vec!["f_base"])).unwrap();
 }
@@ -87,7 +87,7 @@ fn test_concurrent_claim_same_intent() {
 fn test_concurrent_claim_different_intents() {
     let bb = bb();
     {
-        let mut b = bb.lock().unwrap();
+        let b = bb.lock().unwrap();
         b.submit_fact(&fact("f_base")).unwrap();
         b.submit_intent(&intent("i_a", vec!["f_base"])).unwrap();
         b.submit_intent(&intent("i_b", vec!["f_base"])).unwrap();
@@ -138,7 +138,7 @@ fn test_concurrent_read_during_write() {
     let bb = bb();
 
     {
-        let mut b = bb.lock().unwrap();
+        let b = bb.lock().unwrap();
         for i in 0..50 {
             b.submit_fact(&fact(&format!("f_init_{}", i))).unwrap();
         }
