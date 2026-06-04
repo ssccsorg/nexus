@@ -1,16 +1,43 @@
 // gateway/nex-cf — Thin HTTP adapter. GET-only. No Router.
 //
-// PetgraphStorage uses conditional graph storage (Arc<RwLock<>> on native,
-// Rc<RefCell<>> on WASM). WASM runs single-threaded so no Send/Sync bound
-// is needed. Thread-local storage provides state persistence across requests
-// within the same isolate.
+// WASM single-threaded. We use a once-cell wrapper that relaxes Sync
+// on wasm32 targets. CF Workers isolate reuse ensures the same
+// DefaultBlackboard instance persists across requests.
+//
+// Blackboard trait is &self throughout, so no Mutex/RefCell is needed.
+// PetgraphStorage owns its internal synchronization.
 
 use nex::{Blackboard, BlackboardError, Content, DefaultBlackboard, Fact, FihHash, Intent};
-use std::cell::RefCell;
 use worker::*;
 
-thread_local! {
-    static BB: RefCell<DefaultBlackboard> = RefCell::new(DefaultBlackboard::new());
+/// A once-cell that is Sync on wasm32 (single-threaded) but not on native.
+/// This lets us store DefaultBlackboard (which contains Rc<RefCell<>> on
+/// wasm32) in a static variable.
+struct SyncOnce<T> {
+    inner: std::sync::OnceLock<T>,
+}
+
+// Safety: wasm32 is single-threaded; Sync is a no-op.
+// Native uses Arc<RwLock<>> internally so DefaultBlackboard is Sync there.
+#[cfg(target_arch = "wasm32")]
+unsafe impl<T> Sync for SyncOnce<T> {}
+
+impl<T> SyncOnce<T> {
+    const fn new() -> Self {
+        Self {
+            inner: std::sync::OnceLock::new(),
+        }
+    }
+
+    fn get_or_init<F: FnOnce() -> T>(&self, f: F) -> &T {
+        self.inner.get_or_init(f)
+    }
+}
+
+static BB: SyncOnce<DefaultBlackboard> = SyncOnce::new();
+
+fn bb() -> &'static DefaultBlackboard {
+    BB.get_or_init(DefaultBlackboard::new)
 }
 
 #[event(fetch)]
@@ -38,8 +65,7 @@ pub async fn main(req: Request, _env: Env, _ctx: Context) -> Result<Response> {
 
     // State
     if path == "/state" {
-        let state = BB.with(|bb| bb.borrow().read_state());
-        return Response::from_json(&state);
+        return Response::from_json(&bb().read_state());
     }
 
     // Fact
@@ -53,8 +79,8 @@ pub async fn main(req: Request, _env: Env, _ctx: Context) -> Result<Response> {
             },
             creator: qv(&q, "creator"),
         };
-        let hash = BB
-            .with(|bb| bb.borrow().submit_fact(&fact))
+        let hash = bb()
+            .submit_fact(&fact)
             .map_err(|e| Error::RustError(e.to_string()))?;
         return Response::from_json(&serde_json::json!({"id": hash.0}));
     }
@@ -76,14 +102,15 @@ pub async fn main(req: Request, _env: Env, _ctx: Context) -> Result<Response> {
             created_at: None,
             concluded_at: None,
         };
-        BB.with(|bb| bb.borrow().submit_intent(&intent))
+        bb()
+            .submit_intent(&intent)
             .map_err(|e| Error::RustError(e.to_string()))?;
         return Response::from_json(&serde_json::json!({"id": intent.id.0}));
     }
 
     // Claim
     if path == "/claim" {
-        match BB.with(|bb| bb.borrow().claim_intent(&qv(&q, "id"), &qv(&q, "agent"))) {
+        match bb().claim_intent(&qv(&q, "id"), &qv(&q, "agent")) {
             Ok(()) => {
                 return Response::from_json(&serde_json::json!({"status":"claimed"}));
             }
@@ -98,11 +125,8 @@ pub async fn main(req: Request, _env: Env, _ctx: Context) -> Result<Response> {
 
     // Conclude
     if path == "/conclude" {
-        let f = BB
-            .with(|bb| {
-                bb.borrow()
-                    .conclude_intent(&qv(&q, "id"), &qv(&q, "result"))
-            })
+        let f = bb()
+            .conclude_intent(&qv(&q, "id"), &qv(&q, "result"))
             .map_err(|e| Error::RustError(e.to_string()))?;
         return Response::from_json(&serde_json::json!({"status":"concluded","fact":f}));
     }
