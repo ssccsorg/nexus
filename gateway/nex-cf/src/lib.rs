@@ -1,25 +1,21 @@
 // gateway/nex-cf — Thin HTTP adapter. GET-only. No Router.
 //
-// WASM single-threaded. We use a once-cell wrapper that relaxes Sync
-// on wasm32 targets. CF Workers isolate reuse ensures the same
-// DefaultBlackboard instance persists across requests.
-//
 // Blackboard trait is &self throughout, so no Mutex/RefCell is needed.
-// PetgraphStorage owns its internal synchronization.
+// DefaultBlackboard is Sync on both native (Arc<RwLock<>>) and wasm32
+// (single-threaded, OnceLock provides internal synchronization).
 
 use nex::{Blackboard, BlackboardError, Content, DefaultBlackboard, Fact, FihHash, Intent};
 use worker::*;
 
-/// A once-cell that is Sync on wasm32 (single-threaded) but not on native.
-/// This lets us store DefaultBlackboard (which contains Rc<RefCell<>> on
-/// wasm32) in a static variable.
+/// A once-cell wrapper that is unconditionally Sync.
+///
+/// On native: DefaultBlackboard contains Arc<RwLock<>>, so it is Sync.
+/// On wasm32: single-threaded runtime; Sync is a no-op.
+/// OnceLock::call_once already provides internal synchronization.
 struct SyncOnce<T> {
     inner: std::sync::OnceLock<T>,
 }
 
-// Safety: wasm32 is single-threaded; Sync is a no-op.
-// Native uses Arc<RwLock<>> internally so DefaultBlackboard is Sync there.
-#[cfg(target_arch = "wasm32")]
 unsafe impl<T> Sync for SyncOnce<T> {}
 
 impl<T> SyncOnce<T> {
@@ -102,8 +98,7 @@ pub async fn main(req: Request, _env: Env, _ctx: Context) -> Result<Response> {
             created_at: None,
             concluded_at: None,
         };
-        bb()
-            .submit_intent(&intent)
+        bb().submit_intent(&intent)
             .map_err(|e| Error::RustError(e.to_string()))?;
         return Response::from_json(&serde_json::json!({"id": intent.id.0}));
     }
