@@ -117,6 +117,12 @@ pub async fn main(req: Request, _env: Env, _ctx: Context) -> Result<Response> {
             Err(BlackboardError::Conflict(m)) => {
                 return Ok(Response::from_json(&serde_json::json!({"error":m}))?.with_status(409));
             }
+            Err(BlackboardError::NotFound(m)) => {
+                return Ok(Response::from_json(&serde_json::json!({"error":m}))?.with_status(404));
+            }
+            Err(BlackboardError::Forbidden(m)) => {
+                return Ok(Response::from_json(&serde_json::json!({"error":m}))?.with_status(403));
+            }
             Err(e) => {
                 return Err(Error::RustError(e.to_string()));
             }
@@ -125,10 +131,20 @@ pub async fn main(req: Request, _env: Env, _ctx: Context) -> Result<Response> {
 
     // Conclude
     if path == "/conclude" {
-        let f = bb()
-            .conclude_intent(&qv(&q, "id"), &qv(&q, "result"))
-            .map_err(|e| Error::RustError(e.to_string()))?;
-        return Response::from_json(&serde_json::json!({"status":"concluded","fact":f}));
+        match bb().conclude_intent(&qv(&q, "id"), &qv(&q, "result")) {
+            Ok(f) => {
+                return Response::from_json(&serde_json::json!({"status":"concluded","fact":f}));
+            }
+            Err(BlackboardError::NotFound(m)) => {
+                return Ok(Response::from_json(&serde_json::json!({"error":m}))?.with_status(404));
+            }
+            Err(BlackboardError::Conflict(m)) => {
+                return Ok(Response::from_json(&serde_json::json!({"error":m}))?.with_status(409));
+            }
+            Err(e) => {
+                return Err(Error::RustError(e.to_string()));
+            }
+        }
     }
 
     Response::error("not found", 404)
