@@ -14,7 +14,7 @@ use nex::{Blackboard, Fact, FihHash, Hint, Intent, create_blackboard};
 
 #[test]
 fn scenario_contradiction_detection() {
-    let mut bb = create_blackboard();
+    let bb = create_blackboard();
 
     // Agent-A: ingests paper claiming GNNs work fine at 50 layers
     bb.submit_fact(&Fact {
@@ -80,7 +80,7 @@ fn scenario_contradiction_detection() {
 
 #[test]
 fn scenario_peer_review() {
-    let mut bb = create_blackboard();
+    let bb = create_blackboard();
 
     // Phase 1: Agent-A submits hypothesis as Intent
     let hypothesis = Intent {
@@ -159,7 +159,7 @@ fn scenario_peer_review() {
 
 #[test]
 fn scenario_knowledge_synthesis() {
-    let mut bb = create_blackboard();
+    let bb = create_blackboard();
 
     // Three agents each submit partial observations
     let pieces = [
@@ -257,7 +257,7 @@ fn scenario_knowledge_synthesis() {
 
 #[test]
 fn scenario_emergency_response() {
-    let mut bb = create_blackboard();
+    let bb = create_blackboard();
 
     // Sensor agents detect anomalies
     let alerts = [
@@ -360,7 +360,7 @@ fn scenario_emergency_response() {
 
 #[test]
 fn scenario_bug_fix_pipeline() {
-    let mut bb = create_blackboard();
+    let bb = create_blackboard();
 
     // Reporter submits the bug as a Fact
     bb.submit_fact(&Fact {
@@ -464,7 +464,7 @@ fn scenario_bug_fix_pipeline() {
 
 #[test]
 fn scenario_ci_failure_investigation() {
-    let mut bb = create_blackboard();
+    let bb = create_blackboard();
 
     // CI system reports build failure
     bb.submit_fact(&Fact {
@@ -544,7 +544,7 @@ fn scenario_ci_failure_investigation() {
 
 #[test]
 fn scenario_supply_chain_incident() {
-    let mut bb = create_blackboard();
+    let bb = create_blackboard();
 
     // Security advisory published (external trigger)
     bb.submit_fact(&Fact {
@@ -659,7 +659,7 @@ fn scenario_supply_chain_incident() {
 
 #[test]
 fn scenario_ssccs_primitive_discovery() {
-    let mut bb = create_blackboard();
+    let bb = create_blackboard();
 
     // ── Phase 1: Agents observe different IRs ─────────────────────────
 

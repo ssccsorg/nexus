@@ -279,7 +279,7 @@ fn flow_cross_worker_snapshot() {
     let json = serde_json::to_vec(&snapshot_a).expect("serialize");
 
     let snapshot_b: StorageSnapshot = serde_json::from_slice(&json).expect("deserialize");
-    let mut bb_b = <DefaultBlackboard as Snapshottable>::from_snapshot(snapshot_b);
+    let bb_b = <DefaultBlackboard as Snapshottable>::from_snapshot(snapshot_b);
 
     let state = Blackboard::read_state(&bb_b);
     assert_eq!(

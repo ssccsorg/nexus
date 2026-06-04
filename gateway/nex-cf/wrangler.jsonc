@@ -5,6 +5,9 @@
   "compatibility_date": "2026-01-14",
   "compatibility_flags": ["nodejs_compat"],
 
+  "routes": ["cf.nexgate.ssccs.org/*"],
+  "workers_dev": true,
+
   "kv_namespaces": [
     {
       "binding": "FIH_KV",
@@ -36,8 +39,18 @@
     }
   ],
 
+  "limits": {
+    "cpu_ms": 300000
+  },
+
   "observability": {
-    "enabled": true
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true
+    },
+    "traces": {
+      "enabled": true
+    }
   },
 
   "vars": {

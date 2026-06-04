@@ -4,7 +4,7 @@ use nexus_model::{Blackboard, Fact, FihHash};
 
 #[test]
 fn test_mock_gateway_submit_fact() {
-    let mut gw = MockGateway::new(DefaultBlackboard::new());
+    let gw = MockGateway::new(DefaultBlackboard::new());
     let fact = Fact {
         id: FihHash("f_mock_001".into()),
         origin: "mock-test".into(),

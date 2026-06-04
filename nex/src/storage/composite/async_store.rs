@@ -1,4 +1,4 @@
-// IoBuffer* — in-memory I/O proxies for K/V/Blob/Object.
+// AsyncStore* — in-memory I/O proxies for K/V/Blob/Object.
 //
 // These implement KeyValueStore, BlobStore, and ObjectStore with plain
 // HashMap storage. Thread-safe via Arc<RwLock<...>>.
@@ -10,7 +10,7 @@
 // === CQRS commit channel ===
 //
 // CQRS separation is achieved by physical instance isolation, NOT by a
-// `track_dirty` flag. `IoBufferSession` owns two pairs:
+// `track_dirty` flag. `AsyncStoreSession` owns two pairs:
 //
 //   kv / blob                  — general read/write (tracked for drain)
 //   commit_kv / commit_blob    — flush output only (separate HashMap)
@@ -26,28 +26,28 @@
 use nexus_model::{BlobStore, MetaStore, ObjectStore};
 use std::collections::HashMap;
 
-// ── IoBufferSessionMeta ──────────────────────────────────────────────────
+// ── AsyncStoreSessionMeta ──────────────────────────────────────────────────
 
-/// In-memory MetaStore for IoBufferSession.
+/// In-memory MetaStore for AsyncStoreSession.
 /// Stores cursor position and snapshot pointers.
-/// `IoBufferSessionMeta` is a newtype over `IoBufferKv` providing the `MetaStore`
+/// `AsyncStoreSessionMeta` is a newtype over `AsyncStoreKv` providing the `MetaStore`
 /// trait implementation. It ensures type-level separation from general Kv usage.
 #[derive(Debug, Clone)]
-pub struct IoBufferSessionMeta(IoBufferKv);
+pub struct AsyncStoreSessionMeta(AsyncStoreKv);
 
-impl IoBufferSessionMeta {
+impl AsyncStoreSessionMeta {
     pub fn new() -> Self {
-        Self(IoBufferKv::new())
+        Self(AsyncStoreKv::new())
     }
 }
 
-impl Default for IoBufferSessionMeta {
+impl Default for AsyncStoreSessionMeta {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl MetaStore for IoBufferSessionMeta {
+impl MetaStore for AsyncStoreSessionMeta {
     fn get(&self, key: &str) -> Result<Option<String>, String> {
         self.0.get(key)
     }
@@ -58,18 +58,18 @@ impl MetaStore for IoBufferSessionMeta {
 
 use std::sync::{Arc, RwLock};
 
-// ── IoBufferKv ──────────────────────────────────────────────────────────
+// ── AsyncStoreKv ──────────────────────────────────────────────────────────
 
 /// In-memory key-value store. Thread-safe via `Arc<RwLock<...>>`.
 ///
 /// Pure HashMap storage. Physical instance isolation provides CQRS separation:
 /// general buffers and commit-channel buffers are independent HashMap instances.
 #[derive(Debug, Clone)]
-pub struct IoBufferKv {
+pub struct AsyncStoreKv {
     data: Arc<RwLock<HashMap<String, String>>>,
 }
 
-impl IoBufferKv {
+impl AsyncStoreKv {
     pub fn new() -> Self {
         Self {
             data: Arc::new(RwLock::new(HashMap::new())),
@@ -85,13 +85,13 @@ impl IoBufferKv {
     }
 }
 
-impl Default for IoBufferKv {
+impl Default for AsyncStoreKv {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl MetaStore for IoBufferKv {
+impl MetaStore for AsyncStoreKv {
     fn get(&self, key: &str) -> Result<Option<String>, String> {
         let map = self.data.read().map_err(|e| e.to_string())?;
         Ok(map.get(key).cloned())
@@ -104,17 +104,17 @@ impl MetaStore for IoBufferKv {
     }
 }
 
-// ── IoBufferBlob ────────────────────────────────────────────────────────
+// ── AsyncStoreBlob ────────────────────────────────────────────────────────
 
 /// In-memory blob store. Thread-safe via `Arc<RwLock<...>>`.
 ///
 /// Pure HashMap storage. Physical instance isolation provides CQRS separation.
 #[derive(Debug, Clone)]
-pub struct IoBufferBlob {
+pub struct AsyncStoreBlob {
     data: Arc<RwLock<HashMap<String, Vec<u8>>>>,
 }
 
-impl IoBufferBlob {
+impl AsyncStoreBlob {
     pub fn new() -> Self {
         Self {
             data: Arc::new(RwLock::new(HashMap::new())),
@@ -130,13 +130,13 @@ impl IoBufferBlob {
     }
 }
 
-impl Default for IoBufferBlob {
+impl Default for AsyncStoreBlob {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl BlobStore for IoBufferBlob {
+impl BlobStore for AsyncStoreBlob {
     fn put(&self, key: &str, data: &[u8]) -> Result<(), String> {
         let mut map = self.data.write().map_err(|e| e.to_string())?;
         map.insert(key.to_string(), data.to_vec());
@@ -166,18 +166,18 @@ impl BlobStore for IoBufferBlob {
     }
 }
 
-// ── IoBufferObject ──────────────────────────────────────────────────────
+// ── AsyncStoreObject ──────────────────────────────────────────────────────
 
 /// In-memory CAS store. Each key is an independent CAS namespace.
 ///
 /// ObjectStore does not participate in CQRS commit channel separation —
 /// CAS operations are inherently isolated and never bulk-drained.
 #[derive(Debug, Clone)]
-pub struct IoBufferObject {
+pub struct AsyncStoreObject {
     data: Arc<RwLock<HashMap<String, String>>>,
 }
 
-impl IoBufferObject {
+impl AsyncStoreObject {
     pub fn new() -> Self {
         Self {
             data: Arc::new(RwLock::new(HashMap::new())),
@@ -193,13 +193,13 @@ impl IoBufferObject {
     }
 }
 
-impl Default for IoBufferObject {
+impl Default for AsyncStoreObject {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl ObjectStore for IoBufferObject {
+impl ObjectStore for AsyncStoreObject {
     fn get_state(&self, key: &str) -> Result<Option<String>, String> {
         let map = self.data.read().map_err(|e| e.to_string())?;
         Ok(map.get(key).cloned())

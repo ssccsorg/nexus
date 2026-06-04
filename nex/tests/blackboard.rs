@@ -1,4 +1,5 @@
 use nex::blackboard::DefaultBlackboard;
+use nex::storage::petgraph::write_graph;
 use nex::*;
 use nexus_model::{Blackboard, Fact, FihHash, FlushCapable, FlushCursor, Intent};
 
@@ -7,7 +8,7 @@ fn tick() {
 }
 
 fn bb_with_facts() -> DefaultBlackboard {
-    let mut bb = DefaultBlackboard::new();
+    let bb = DefaultBlackboard::new();
     for i in 0..5 {
         let fact = Fact {
             id: FihHash(format!("f{i}")),
@@ -81,7 +82,7 @@ fn test_cursor_survives_snapshot_roundtrip() {
 #[test]
 fn test_old_snapshot_without_cursor_gets_default() {
     // Simulate a snapshot created by older code that did not include flush_cursor.
-    // The default FlushCursor is the epoch — a fresh blackboard with no cursor
+    // The default FlushCursor is the epoch -- a fresh blackboard with no cursor
     // should start from the beginning.
     let bb = DefaultBlackboard::new();
     assert_eq!(bb.flush_cursor, FlushCursor::default());
@@ -135,7 +136,7 @@ fn test_cursor_independent_of_graph_mutations() {
 
     // Mutate graph directly (no fact submission).
     {
-        let mut g = bb.hot_graph.write().unwrap();
+        let mut g = write_graph(&bb.hot_graph);
         g.add_node(NodeWeight {
             name: "test_node".into(),
             label: "Test".into(),
@@ -202,7 +203,7 @@ fn test_cursor_timestamp_numeric() {
 fn test_storage_snapshot_roundtrip() {
     use nex::storage::petgraph::Snapshottable;
 
-    let mut bb = bb_with_facts();
+    let bb = bb_with_facts();
     // Add intents
     let intent = Intent {
         id: FihHash("i1".into()),

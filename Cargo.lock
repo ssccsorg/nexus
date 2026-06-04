@@ -1621,6 +1621,7 @@ dependencies = [
 name = "nex"
 version = "0.1.0"
 dependencies = [
+ "cfg-if",
  "log",
  "nexus-model",
  "petgraph",
@@ -1651,8 +1652,10 @@ dependencies = [
 name = "nexus-gateway-nex-cf"
 version = "0.1.0"
 dependencies = [
+ "nex",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "worker",
 ]
 

@@ -7,17 +7,17 @@
 //   4. MetaStore (KV) stores cursor and snapshot pointers
 
 use nex::storage::composite::{
-    CompositeColdStorage, IoBufferBlob, IoBufferObject, IoBufferSessionMeta,
+    AsyncStoreBlob, AsyncStoreObject, AsyncStoreSessionMeta, CompositeColdStorage,
 };
 use nexus_model::{FlushCapable, FlushCursor, MetaStore};
 use std::sync::Arc;
 use std::thread;
 
-fn storage() -> CompositeColdStorage<IoBufferBlob, IoBufferObject, IoBufferSessionMeta> {
+fn storage() -> CompositeColdStorage<AsyncStoreBlob, AsyncStoreObject, AsyncStoreSessionMeta> {
     CompositeColdStorage::new_with_system_clock(
-        IoBufferBlob::new(),
-        IoBufferObject::new(),
-        IoBufferSessionMeta::new(),
+        AsyncStoreBlob::new(),
+        AsyncStoreObject::new(),
+        AsyncStoreSessionMeta::new(),
         "cqrs-test",
     )
 }
@@ -142,9 +142,9 @@ fn test_incremental_flush_respects_cursor() {
 
 #[test]
 fn test_meta_store_get_set() {
-    // Verify that the meta store (IoBufferSessionMeta) works correctly
+    // Verify that the meta store (AsyncStoreSessionMeta) works correctly
     // for storing cursor and snapshot pointer values.
-    let meta = IoBufferSessionMeta::new();
+    let meta = AsyncStoreSessionMeta::new();
 
     meta.set("cursor", "20260530_123456").unwrap();
     assert_eq!(meta.get("cursor").unwrap(), Some("20260530_123456".into()));

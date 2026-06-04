@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::RwLockReadGuard;
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::RwLockWriteGuard;
 
 /// Weight type for petgraph nodes.
@@ -50,13 +52,29 @@ impl GraphWrite for petgraph::Graph<NodeWeight, EdgeWeight> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<'a> GraphRead for RwLockReadGuard<'a, petgraph::Graph<NodeWeight, EdgeWeight>> {
     fn graph(&self) -> &petgraph::Graph<NodeWeight, EdgeWeight> {
         self
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<'a> GraphWrite for RwLockWriteGuard<'a, petgraph::Graph<NodeWeight, EdgeWeight>> {
+    fn graph_mut(&mut self) -> &mut petgraph::Graph<NodeWeight, EdgeWeight> {
+        self
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl<'a> GraphRead for std::cell::Ref<'a, petgraph::Graph<NodeWeight, EdgeWeight>> {
+    fn graph(&self) -> &petgraph::Graph<NodeWeight, EdgeWeight> {
+        self
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl<'a> GraphWrite for std::cell::RefMut<'a, petgraph::Graph<NodeWeight, EdgeWeight>> {
     fn graph_mut(&mut self) -> &mut petgraph::Graph<NodeWeight, EdgeWeight> {
         self
     }
