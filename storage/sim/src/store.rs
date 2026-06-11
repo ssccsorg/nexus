@@ -105,12 +105,26 @@ impl<I: FihIo> NativeFihStorage<I> {
 
     /// Enqueue content as a blob write. Uses pending so that flush
     /// atomicity applies: blob + record are committed together.
+    ///
+    /// Lock ordering: pending (lowest) → io.read (stateless).
     fn enqueue_content(&self, content: &Content) -> Result<String, String> {
         let blob_hash = content_hash(&content.data);
         let blob_path = format!("blob/{}.bin", blob_hash);
         let meta_path = format!("blob/{}.bin.meta", blob_hash);
 
-        // Check dedup from cache first, then IO
+        // Check dedup from pending buffer first (avoids IO read)
+        {
+            let pending = self.pending.lock().unwrap();
+            for op in pending.iter() {
+                if let WriteOp::Write { path, .. } = op
+                    && *path == blob_path
+                {
+                    return Ok(blob_hash); // already queued, skip
+                }
+            }
+        }
+
+        // Fall back to IO check
         {
             let map = self.io.read(&blob_path)?;
             if map.is_some() {
@@ -466,6 +480,10 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
         Ok(())
     }
 
+    /// Conclude an intent: transition Claimed → Concluded, produce result Fact.
+    ///
+    /// Lock ordering: intent_cache (write) → fact_cache (write via submit_fact).
+    /// Must NOT interleave with any other cache in the opposite order.
     fn conclude_intent(&self, intent_id: &str, result: &str) -> Result<Fact, BlackboardError> {
         let mut cache = self.intent_cache.write().unwrap();
         let record = cache
