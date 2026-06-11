@@ -1,7 +1,7 @@
 // ── FihIo: storage IO abstraction ───────────────────────────────────────
 //
-// The single IO boundary. Every storage backend (disk, S3, SQLite, CF KV)
-// implements this trait. The core storage logic never calls IO directly.
+// The single IO boundary. Every storage backend (local fs, remote storage,
+// SQLite, in-memory) implements this trait. The core never calls IO directly.
 //
 // All methods are synchronous. Async buffering is handled by the outer
 // FihSession layer, not by this trait.
