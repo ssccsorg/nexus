@@ -1,4 +1,4 @@
-// Scenario tests routed through MockGateway.
+// Scenario tests routed through MockGateway, backed by NativeFihStorage<SimFihIo>.
 //
 // Validates that the FIH protocol produces identical results when all
 // primitives cross a JSON serialization boundary (simulating a real HTTP
@@ -7,9 +7,8 @@
 // directly.
 
 use nex::mock_gateway::MockGateway;
-use nex::{
-    Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead, create_blackboard,
-};
+use nex::{Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
+use nexus_storage_sim::{NativeFihStorage, SimFihIo};
 
 /// Contradiction Detection — via MockGateway (JSON transport boundary).
 ///
@@ -21,7 +20,9 @@ use nex::{
 /// except all FIH operations pass through MockGateway's JSON round-trip.
 #[test]
 fn scenario_contradiction_detection_via_gateway() {
-    let gw = MockGateway::new(create_blackboard());
+    let io = SimFihIo::new();
+    let storage = NativeFihStorage::new(io, "test");
+    let gw = MockGateway::new(storage);
 
     // Agent-A: ingests paper claiming GNNs work fine at 50 layers
     gw.submit_fact(&Fact {
@@ -69,13 +70,20 @@ fn scenario_contradiction_detection_via_gateway() {
 
     let state = gw.read_state();
     assert_eq!(state.facts.len(), 3, "2 original + 1 concluded");
+    let conclusion = state
+        .facts
+        .iter()
+        .find(|f| f.origin.starts_with("conclusion:"));
+    assert!(conclusion.is_some(), "conclusion fact should exist");
     assert!(
-        state.facts[2]
+        conclusion
+            .unwrap()
             .content
             .as_str()
             .unwrap_or("")
-            .contains("Contradiction resolved")
+            .contains("Contradiction resolved"),
+        "conclusion fact should contain result text"
     );
 
-    println!("  ✓ MockGateway: Contradiction Detection — 3 agents, JSON round-trip verified");
+    println!("  v MockGateway: Contradiction Detection -- 3 agents, JSON round-trip verified");
 }

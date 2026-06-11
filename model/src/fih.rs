@@ -106,9 +106,10 @@ pub struct Intent {
     pub description: String,
     pub creator: String,
     pub worker: Option<String>,
-    pub last_heartbeat_at: Option<String>,
-    pub created_at: Option<String>,
-    pub concluded_at: Option<String>,
+    pub last_heartbeat_at: Option<u64>,
+    pub created_at: Option<u64>,
+    pub is_concluded: bool,
+    pub concluded_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

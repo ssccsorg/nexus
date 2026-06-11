@@ -4,7 +4,10 @@
 // research problem. No agent talks directly to another — all via Blackboard.
 
 use interface_cypher as cypher;
-use nex::{Blackboard, Fact, FihHash, Hint, Intent, create_blackboard};
+use nex::{
+    Fact, FactCapable, FihHash, Hint, HintCapable, Intent, IntentCapable, StorageRead,
+    create_blackboard,
+};
 
 // ── Scenario 1: Contradiction Detection ───────────────────────────────────
 //
@@ -44,6 +47,7 @@ fn scenario_contradiction_detection() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        is_concluded: false,
         concluded_at: None,
     })
     .unwrap();
@@ -92,6 +96,7 @@ fn scenario_peer_review() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        is_concluded: false,
         concluded_at: None,
     };
     // Need a grounding fact first
@@ -230,6 +235,7 @@ fn scenario_knowledge_synthesis() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        is_concluded: false,
         concluded_at: None,
     })
     .unwrap();
@@ -302,6 +308,7 @@ fn scenario_emergency_response() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        is_concluded: false,
         concluded_at: None,
     })
     .unwrap();
@@ -387,6 +394,7 @@ fn scenario_bug_fix_pipeline() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        is_concluded: false,
         concluded_at: None,
     })
     .unwrap();
@@ -409,6 +417,7 @@ fn scenario_bug_fix_pipeline() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        is_concluded: false,
         concluded_at: None,
     })
     .unwrap();
@@ -429,6 +438,7 @@ fn scenario_bug_fix_pipeline() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        is_concluded: false,
         concluded_at: None,
     }).unwrap();
     bb.claim_intent("i_review_1337", "reviewer-bob").unwrap();
@@ -513,6 +523,7 @@ fn scenario_ci_failure_investigation() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        is_concluded: false,
         concluded_at: None,
     }).unwrap();
     bb.claim_intent("i_root_cause", "agent-d").unwrap();
@@ -564,6 +575,7 @@ fn scenario_supply_chain_incident() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        is_concluded: false,
         concluded_at: None,
     })
     .unwrap();
@@ -589,6 +601,7 @@ fn scenario_supply_chain_incident() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        is_concluded: false,
         concluded_at: None,
     })
     .unwrap();
@@ -614,6 +627,7 @@ fn scenario_supply_chain_incident() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        is_concluded: false,
         concluded_at: None,
     })
     .unwrap();
@@ -734,6 +748,7 @@ fn scenario_ssccs_primitive_discovery() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        is_concluded: false,
         concluded_at: None,
     }).unwrap();
 
@@ -788,6 +803,7 @@ that the von Neumann architecture can be redesigned around.",
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        is_concluded: false,
         concluded_at: None,
     }).unwrap();
     bb.claim_intent("i_validate_segment", "agent-a").unwrap();
@@ -806,6 +822,7 @@ that the von Neumann architecture can be redesigned around.",
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        is_concluded: false,
         concluded_at: None,
     }).unwrap();
     bb.claim_intent("i_scheme_definition", "agent-e").unwrap();

@@ -8,8 +8,9 @@ pub mod storage;
 pub use blackboard::{DefaultBlackboard, Record};
 pub use mock_gateway::MockGateway;
 pub use nexus_model::{
-    Blackboard, BlackboardError, BoardState, Content, EvictCapable, Fact, FihHash, FlushCapable,
-    FlushCursor, Hint, Intent, ScanCapable, TimeRangeCapable,
+    Blackboard, BlackboardError, BoardState, Content, EvictCapable, Fact, FactCapable, FihHash,
+    FlushCapable, FlushCursor, Hint, HintCapable, Intent, IntentCapable, ScanCapable, StorageRead,
+    TimeRangeCapable,
 };
 pub use process::{error::ProcessError, scheduler::Scheduler};
 pub use storage::composite::CompositeColdStorage;

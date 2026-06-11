@@ -187,11 +187,11 @@ impl FlushCapable for DualStorage {
         let now_ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
-            .as_nanos()
-            .to_string();
+            .as_nanos() as u64;
 
-        let (fact_bytes, intent_bytes, hint_bytes): DeltaSet =
-            self.hot.read_delta_since(&cursor.last_flushed_at);
+        let (fact_bytes, intent_bytes, hint_bytes): DeltaSet = self
+            .hot
+            .read_delta_since(&cursor.last_flushed_at.to_string());
         let records_flushed = (fact_bytes.len() + intent_bytes.len() + hint_bytes.len()) as u64;
 
         if !fact_bytes.is_empty() {
@@ -219,7 +219,7 @@ impl FlushCapable for DualStorage {
             partition: partition.clone(),
         };
         let cursor_json = format!(
-            "{{\"last_flushed_at\":\"{}\",\"partition\":\"{}\"}}",
+            "{{\"last_flushed_at\":{},\"partition\":\"{}\"}}",
             new_cursor.last_flushed_at, new_cursor.partition
         );
         let cursor_key = format!("{project_id}/cursor.json");

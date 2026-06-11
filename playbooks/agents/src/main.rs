@@ -11,7 +11,7 @@
 //   cd tests/agents && cargo run
 
 use interface_cypher as cypher;
-use nex::{Blackboard, Fact, FihHash, Intent, create_blackboard};
+use nex::{Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead, create_blackboard};
 
 fn main() {
     println!("=== Rust Privileged Agent: Direct Blackboard Access ===\n");
@@ -65,6 +65,7 @@ fn main() {
             to_fact_id: None,
             last_heartbeat_at: None,
             created_at: None,
+            is_concluded: false,
             concluded_at: None,
         })
         .expect("intent grounded");

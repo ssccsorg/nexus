@@ -48,6 +48,8 @@ run_test()   {
     cargo test -p nex -- --nocapture 2>&1
     echo "---"
     cargo test -p nexus-storage-duckdb -- --nocapture 2>&1
+    echo "---"
+    cargo test -p nexus-storage-sim -- --nocapture 2>&1
 }
 run_all() {
     echo "=== fmt --all ===" && run_fmt

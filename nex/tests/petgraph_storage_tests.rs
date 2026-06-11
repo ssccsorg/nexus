@@ -132,6 +132,7 @@ fn test_submit_intent_requires_existing_fact() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        is_concluded: false,
         concluded_at: None,
     };
     let result = s.submit_intent(&intent);
@@ -157,6 +158,7 @@ fn test_conclude_intent_creates_fact() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        is_concluded: false,
         concluded_at: None,
     };
     s.submit_intent(&intent).unwrap();
@@ -197,6 +199,7 @@ fn test_evict_before_removes_old_concluded_intents() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        is_concluded: false,
         concluded_at: None,
     };
     s.submit_intent(&intent).unwrap();

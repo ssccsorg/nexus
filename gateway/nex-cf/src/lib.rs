@@ -4,7 +4,10 @@
 // DefaultBlackboard is Sync on both native (Arc<RwLock<>>) and wasm32
 // (single-threaded, OnceLock provides internal synchronization).
 
-use nex::{Blackboard, BlackboardError, Content, DefaultBlackboard, Fact, FihHash, Intent};
+use nex::{
+    BlackboardError, Content, DefaultBlackboard, Fact, FactCapable, FihHash, Intent, IntentCapable,
+    StorageRead,
+};
 use worker::*;
 
 /// A once-cell wrapper that is unconditionally Sync.
@@ -96,6 +99,7 @@ pub async fn main(req: Request, _env: Env, _ctx: Context) -> Result<Response> {
             to_fact_id: None,
             last_heartbeat_at: None,
             created_at: None,
+            is_concluded: false,
             concluded_at: None,
         };
         bb().submit_intent(&intent)

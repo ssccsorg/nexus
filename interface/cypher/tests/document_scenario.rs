@@ -51,7 +51,7 @@ use nex::process::tasks::state_change_detector::StateChangeDetector;
 use nex::storage::petgraph::{Snapshottable, StorageSnapshot};
 use nex::{
     Blackboard, BoardState, Content, DefaultBlackboard, EvictCapable, Fact, FihHash, Intent,
-    create_blackboard,
+    StorageRead, create_blackboard,
 };
 
 // ── Helper: construct a claim Fact with {claim, topic, position} content ─
@@ -308,7 +308,7 @@ struct TickResult {
 
 fn do_tick(sched: &mut Scheduler<impl Blackboard + EvictCapable>) -> TickResult {
     let facts_submitted = sched.tick().expect("tick");
-    let state = Blackboard::read_state(&sched.bb);
+    let state = StorageRead::read_state(&sched.bb);
     TickResult {
         facts_submitted,
         state,
@@ -348,7 +348,7 @@ fn agent_resolve_contradictions(
     topic_filter: &str,
     conclusion: &str,
 ) {
-    let state = Blackboard::read_state(&sched.bb);
+    let state = StorageRead::read_state(&sched.bb);
     for fact in &state.facts {
         if fact.creator != "contradiction-detector" {
             continue;
@@ -371,6 +371,7 @@ fn agent_resolve_contradictions(
             to_fact_id: None,
             last_heartbeat_at: None,
             created_at: None,
+            is_concluded: false,
             concluded_at: None,
         };
         let iid = sched.bb.submit_intent(&intent).expect("submit intent");
@@ -422,7 +423,7 @@ fn scenario_full_document_lifecycle() {
     sched.register(Box::new(GapDetector::new()));
     sched.register(Box::new(ContradictionDetector::new()));
 
-    let state = Blackboard::read_state(&sched.bb);
+    let state = StorageRead::read_state(&sched.bb);
     assert_eq!(
         state.facts.len(),
         19,
@@ -490,7 +491,7 @@ fn scenario_full_document_lifecycle() {
         "Abstract admissibility and value-binding are complementary views of Field",
     );
 
-    let state = Blackboard::read_state(&sched.bb);
+    let state = StorageRead::read_state(&sched.bb);
     let total_facts = state.facts.len();
     assert!(
         total_facts >= 28,
@@ -503,7 +504,7 @@ fn scenario_full_document_lifecycle() {
     let json = serde_json::to_vec(&snapshot).expect("serialize");
     let restored: StorageSnapshot = serde_json::from_slice(&json).expect("deserialize");
     let bb_restored = <DefaultBlackboard as Snapshottable>::from_snapshot(restored);
-    let state_restored = Blackboard::read_state(&bb_restored);
+    let state_restored = StorageRead::read_state(&bb_restored);
     assert_eq!(
         state_restored.facts.len(),
         total_facts,
@@ -511,10 +512,10 @@ fn scenario_full_document_lifecycle() {
         total_facts
     );
 
-    let state_before = Blackboard::read_state(&sched.bb);
+    let state_before = StorageRead::read_state(&sched.bb);
     let intents_before = state_before.intents.len();
     EvictCapable::evict_before(&sched.bb, "9999999999").expect("evict");
-    let state_after = Blackboard::read_state(&sched.bb);
+    let state_after = StorageRead::read_state(&sched.bb);
     assert!(
         state_after.intents.len() < intents_before,
         "Phase 7b: concluded intents evicted"
@@ -553,7 +554,7 @@ fn scenario_gap_facts_are_immutable_observations() {
     );
 
     EvictCapable::evict_before(&sched.bb, "9999999999").expect("evict");
-    let state = Blackboard::read_state(&sched.bb);
+    let state = StorageRead::read_state(&sched.bb);
     let gap_after_evict = count_detector_facts(&state, "gap-detector", "gap");
     assert_eq!(
         gap_after_evict, gap_facts_t1,
@@ -711,7 +712,7 @@ fn scenario_flush_then_evict() {
 
     // tick_with_flush requires FlushCapable — now provided by create_blackboard()
     let _ = sched.tick_with_flush().expect("tick with flush");
-    let state = Blackboard::read_state(&sched.bb);
+    let state = StorageRead::read_state(&sched.bb);
     assert!(
         state.facts.len() >= 19,
         "tick_with_flush works: {} facts",

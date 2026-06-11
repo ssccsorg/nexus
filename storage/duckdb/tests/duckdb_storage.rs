@@ -97,12 +97,12 @@ fn test_read_intents_from_parquet() {
 
     write_parquet(
         "SELECT 'intent_1' as intent_id, '[\"fact_1\"]' as from_facts, 'do something' as description, 'tester' as creator,
-                'worker_a' as worker, NULL as to_fact_id, '2026-06-01T00:00:00Z' as last_heartbeat_at,
-                '2026-06-01' as created_at, NULL as concluded_at
+                'worker_a' as worker, NULL as to_fact_id, '1782000000' as last_heartbeat_at,
+                '1781913600' as created_at, NULL as concluded_at
          UNION ALL
          SELECT 'intent_2' as intent_id, '[\"fact_1\",\"fact_2\"]' as from_facts, 'do more' as description, 'admin' as creator,
                 NULL as worker, 'fact_3' as to_fact_id, NULL as last_heartbeat_at,
-                '2026-06-02' as created_at, '2026-06-03' as concluded_at",
+                '1782000000' as created_at, '1782086400' as concluded_at",
         &parquet_path,
     );
 
@@ -118,11 +118,8 @@ fn test_read_intents_from_parquet() {
     assert_eq!(intent_1.creator, "tester");
     assert_eq!(intent_1.worker, Some("worker_a".to_string()));
     assert_eq!(intent_1.to_fact_id, None);
-    assert_eq!(
-        intent_1.last_heartbeat_at,
-        Some("2026-06-01T00:00:00Z".to_string())
-    );
-    assert_eq!(intent_1.created_at, Some("2026-06-01".to_string()));
+    assert_eq!(intent_1.last_heartbeat_at, Some(1782000000));
+    assert_eq!(intent_1.created_at, Some(1781913600));
     assert_eq!(intent_1.concluded_at, None);
 
     // intent_2 — different optional fields populated
@@ -136,8 +133,8 @@ fn test_read_intents_from_parquet() {
     assert_eq!(intent_2.worker, None);
     assert_eq!(intent_2.to_fact_id, Some("fact_3".to_string()));
     assert_eq!(intent_2.last_heartbeat_at, None);
-    assert_eq!(intent_2.created_at, Some("2026-06-02".to_string()));
-    assert_eq!(intent_2.concluded_at, Some("2026-06-03".to_string()));
+    assert_eq!(intent_2.created_at, Some(1782000000));
+    assert_eq!(intent_2.concluded_at, Some(1782086400));
 
     assert!(state.facts.is_empty(), "expected no facts");
     assert!(state.hints.is_empty(), "expected no hints");

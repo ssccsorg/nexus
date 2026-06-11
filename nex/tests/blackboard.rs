@@ -1,7 +1,7 @@
 use nex::blackboard::DefaultBlackboard;
 use nex::storage::petgraph::write_graph;
 use nex::*;
-use nexus_model::{Blackboard, Fact, FihHash, FlushCapable, FlushCursor, Intent};
+use nexus_model::{Fact, FihHash, FlushCapable, FlushCursor, Intent};
 
 fn tick() {
     std::thread::sleep(std::time::Duration::from_millis(1));
@@ -195,7 +195,7 @@ fn test_cursor_timestamp_numeric() {
     let mut bb = bb_with_facts();
     bb.flush().unwrap();
     let cursor = bb.flush_cursor.clone();
-    let ts: u128 = cursor.last_flushed_at.parse().unwrap_or(0);
+    let ts = cursor.last_flushed_at;
     assert!(ts > 0, "flush cursor should contain a positive timestamp");
 }
 
@@ -214,6 +214,7 @@ fn test_storage_snapshot_roundtrip() {
         worker: None,
         last_heartbeat_at: None,
         created_at: None,
+        is_concluded: false,
         concluded_at: None,
     };
     bb.submit_intent(&intent).unwrap();
@@ -224,7 +225,7 @@ fn test_storage_snapshot_roundtrip() {
     let restored = DefaultBlackboard::from_snapshot(snapshot);
 
     // Verify graph data
-    let state = <DefaultBlackboard as nexus_model::Blackboard>::read_state(&restored);
+    let state = <DefaultBlackboard as nexus_model::StorageRead>::read_state(&restored);
     assert_eq!(state.facts.len(), 5);
     assert_eq!(state.intents.len(), 1);
 

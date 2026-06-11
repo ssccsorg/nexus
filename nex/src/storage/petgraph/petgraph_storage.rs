@@ -40,7 +40,7 @@ cfg_if! {
 
         struct WasmClock;
         impl nexus_model::Now for WasmClock {
-            fn now_nanos(&self) -> String { "0".to_string() }
+            fn now_nanos(&self) -> u64 { 0 }
             fn now_secs(&self) -> u64 { 0 }
         }
     } else {
@@ -263,14 +263,13 @@ impl PetgraphStorage {
                             .properties
                             .get("last_heartbeat_at")
                             .and_then(|c| c.as_str())
-                            .and_then(|s| s.parse::<i64>().ok())
-                            .map(|ts| ts.to_string()),
+                            .and_then(|s| s.parse::<u64>().ok()),
                         created_at: w
                             .properties
                             .get("created_at")
                             .and_then(|c| c.as_str())
-                            .and_then(|s| s.parse::<i64>().ok())
-                            .map(|ts| ts.to_string()),
+                            .and_then(|s| s.parse::<u64>().ok()),
+                        is_concluded: false,
                         concluded_at: None,
                     }) {
                         intents.push(line);
@@ -393,21 +392,24 @@ impl StorageRead for PetgraphStorage {
                                 .properties
                                 .get("last_heartbeat_at")
                                 .and_then(|c| c.as_str())
-                                .and_then(|s| s.parse::<i64>().ok())
-                                .map(|ts| ts.to_string()),
+                                .and_then(|s| s.parse::<u64>().ok()),
                             created_at: w
                                 .properties
                                 .get("created_at")
                                 .and_then(|c| c.as_str())
-                                .and_then(|s| s.parse::<i64>().ok())
-                                .map(|ts| ts.to_string()),
+                                .and_then(|s| s.parse::<u64>().ok()),
+                            is_concluded: w
+                                .properties
+                                .get("is_concluded")
+                                .and_then(|c| c.as_str())
+                                .is_some_and(|v| v == "true"),
                             concluded_at: if w
                                 .properties
-                                .get("concluded")
+                                .get("is_concluded")
                                 .and_then(|c| c.as_str())
                                 .is_some_and(|v| v == "true")
                             {
-                                Some("yes".into())
+                                Some(1)
                             } else {
                                 None
                             },
@@ -446,7 +448,7 @@ impl StorageRead for PetgraphStorage {
 impl FactCapable for PetgraphStorage {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         let mut g = write_graph(&self.graph);
-        let now = self.clock.now_nanos();
+        let now = self.clock.now_nanos().to_string();
         let content_val = String::from_utf8_lossy(&fact.content.data).into_owned();
         g.add_node(NodeWeight {
             name: fact.id.0.clone(),
@@ -510,7 +512,7 @@ impl HintCapable for PetgraphStorage {
                         data: hint.creator.clone().into_bytes(),
                     },
                 );
-                let now = self.clock.now_nanos();
+                let now = self.clock.now_nanos().to_string();
                 m.insert(
                     "submitted_at".into(),
                     Content {
@@ -565,7 +567,7 @@ impl IntentCapable for PetgraphStorage {
                         data: now.into_bytes(),
                     },
                 );
-                let now_ns = self.clock.now_nanos();
+                let now_ns = self.clock.now_nanos().to_string();
                 m.insert(
                     "submitted_at".into(),
                     Content {
@@ -604,7 +606,7 @@ impl IntentCapable for PetgraphStorage {
                 && w.label == "Intent"
             {
                 if w.properties
-                    .get("concluded")
+                    .get("is_concluded")
                     .is_some_and(|v| v.as_str() == Some("true"))
                 {
                     return Err(BlackboardError::NotFound(format!(
@@ -648,7 +650,7 @@ impl IntentCapable for PetgraphStorage {
                 && w.label == "Intent"
             {
                 if w.properties
-                    .get("concluded")
+                    .get("is_concluded")
                     .is_some_and(|v| v.as_str() == Some("true"))
                 {
                     return Err(BlackboardError::NotFound(format!(
@@ -696,7 +698,7 @@ impl IntentCapable for PetgraphStorage {
                 && w.label == "Intent"
             {
                 if w.properties
-                    .get("concluded")
+                    .get("is_concluded")
                     .is_some_and(|v| v.as_str() == Some("true"))
                 {
                     return Err(BlackboardError::NotFound(format!(
@@ -795,7 +797,7 @@ impl IntentCapable for PetgraphStorage {
                         data: new_fact.creator.clone().into_bytes(),
                     },
                 );
-                let now_ns = self.clock.now_nanos();
+                let now_ns = self.clock.now_nanos().to_string();
                 m.insert(
                     "submitted_at".into(),
                     Content {
@@ -873,7 +875,7 @@ impl EvictCapable for PetgraphStorage {
             if w.label.as_str() == "Intent" {
                 let is_concluded = w
                     .properties
-                    .get("concluded")
+                    .get("is_concluded")
                     .and_then(|c| c.as_str())
                     .is_some_and(|v| v == "true");
                 let hb_ts = w
@@ -930,7 +932,7 @@ impl EvictCapable for PetgraphStorage {
             }
             let is_concluded = w
                 .properties
-                .get("concluded")
+                .get("is_concluded")
                 .and_then(|c| c.as_str())
                 .is_some_and(|v| v == "true");
             if is_concluded {
@@ -984,8 +986,7 @@ impl FilterCapable for PetgraphStorage {
         {
             state.intents.retain(|i| {
                 i.created_at
-                    .as_ref()
-                    .and_then(|c| c.parse::<u128>().ok())
+                    .map(|c| c as u128)
                     .is_none_or(|ts| ts >= since_ts)
             });
         }
@@ -994,8 +995,7 @@ impl FilterCapable for PetgraphStorage {
         {
             state.intents.retain(|i| {
                 i.created_at
-                    .as_ref()
-                    .and_then(|c| c.parse::<u128>().ok())
+                    .map(|c| c as u128)
                     .is_none_or(|ts| ts <= until_ts)
             });
         }

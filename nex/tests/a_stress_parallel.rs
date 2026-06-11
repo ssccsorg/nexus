@@ -6,7 +6,9 @@
 //   - claim_intent while another thread concludes
 //   - heartbeat while another thread releases
 
-use nex::{Blackboard, Fact, FihHash, Intent, create_blackboard};
+use nex::{
+    Blackboard, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead, create_blackboard,
+};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicU64, Ordering},
@@ -102,6 +104,7 @@ impl ParallelAnt {
                     to_fact_id: None,
                     last_heartbeat_at: None,
                     created_at: None,
+                    is_concluded: false,
                     concluded_at: None,
                 }) {
                     Ok(_) => format!("{:<16} submit Intent {id}", self.name),

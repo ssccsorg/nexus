@@ -2,7 +2,7 @@
 // Claims extracted exclusively from:
 //   manifesto.llms.md           — ontology ("what SSCCS is")
 //   philosophy/epistemology.llms.md — epistemology ("how we know")
-//   whitepaper/whitepaper.llms.md §2 — formal primitives
+//   whitepaper/whitepaper.llms.md .2 — formal primitives
 //   guide.llms.md               — developer usage
 //
 // These four documents form the coherent foundation against which
@@ -10,7 +10,7 @@
 // that the nexus detection layer can:
 //   1. Find contradictions between ontology and formal definitions
 //   2. Detect gaps between abstract philosophy and practical guide
-//   3. Track knowledge evolution when formal §2 revises manifesto claims
+//   3. Track knowledge evolution when formal .2 revises manifesto claims
 //   4. Support multi-agent review across foundational layers
 
 use nex::process::scheduler::Scheduler;
@@ -20,8 +20,9 @@ use nex::process::tasks::new_document_analyzer::NewDocumentAnalyzer;
 use nex::process::tasks::state_change_detector::StateChangeDetector;
 use nex::{
     Blackboard, BoardState, EvictCapable, Fact, FactCapable, FihHash, Intent, IntentCapable,
-    StorageRead, create_blackboard,
+    StorageRead,
 };
+use nexus_storage_sim::{NativeFihStorage, SimFihIo};
 
 fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) -> Fact {
     Fact {
@@ -154,18 +155,18 @@ fn seed_foundational(bb: &impl Blackboard) -> Vec<String> {
             "intelligence-definition",
             "structural-intelligence",
         ),
-        // ── whitepaper §2 — formal primitives ─────────────────────
+        // ── whitepaper .2 — formal primitives ─────────────────────
         claim(
             "wp01",
             "whitepaper.llms.md",
-            "Segment s = (c, id) where c ∈ R^d, id = H(c)",
+            "Segment s = (c, id) where c \u{2208} R^d, id = H(c)",
             "segment-definition",
             "formal-tuple",
         ),
         claim(
             "wp02",
             "whitepaper.llms.md",
-            "Scheme Σ = (A, R, L, O) — axes, relations, memory-layout, observation rules",
+            "Scheme \u{03a3} = (A, R, L, O) — axes, relations, memory-layout, observation rules",
             "scheme-definition",
             "formal-quadruple",
         ),
@@ -179,7 +180,7 @@ fn seed_foundational(bb: &impl Blackboard) -> Vec<String> {
         claim(
             "wp04",
             "whitepaper.llms.md",
-            "Observation P = Ω(Σ, F) — deterministic projection from Scheme and Field",
+            "Observation P = \u{03a9}(\u{03a3}, F) — deterministic projection from Scheme and Field",
             "observation-definition",
             "deterministic-function",
         ),
@@ -251,12 +252,13 @@ fn seed_foundational(bb: &impl Blackboard) -> Vec<String> {
 // ═════════════════════════════════════════════════════════════════════════
 //  Scenario 1: Foundational Consistency Audit
 //  Detects tensions between manifesto (ontology), epistemology (how we know),
-//  whitepaper §2 (formal), and guide (practical) layers.
+//  whitepaper .2 (formal), and guide (practical) layers.
 // ═════════════════════════════════════════════════════════════════════════
 
 #[test]
 fn scenario_foundational_consistency_audit() {
-    let bb = create_blackboard();
+    let io = SimFihIo::new();
+    let bb = NativeFihStorage::new(io, "test");
     let baseline = seed_foundational(&bb);
 
     let mut sched = Scheduler::new(bb);
@@ -275,7 +277,7 @@ fn scenario_foundational_consistency_audit() {
     // Contradiction: "field-definition" has 4 different positions across documents
     // - manifesto: admissibility-conditions
     // - epistemology: bounded-domain-with-constraints
-    // - whitepaper §2: formal-pair (C, T)
+    // - whitepaper .2: formal-pair (C, T)
     // - guide: practical-mutable + value-binding
     let contradictions = facts_by_creator(&state, "contradiction-detector");
     let field_tensions: Vec<_> = contradictions
@@ -292,7 +294,7 @@ fn scenario_foundational_consistency_audit() {
         field_tensions.len()
     );
 
-    // "segment-definition": pure-coordinate (manifesto) vs formal-tuple (whitepaper §2)
+    // "segment-definition": pure-coordinate (manifesto) vs formal-tuple (whitepaper .2)
     let segment_tensions: Vec<_> = contradictions
         .iter()
         .filter(|f| {
@@ -317,14 +319,15 @@ fn scenario_foundational_consistency_audit() {
 
 // ═════════════════════════════════════════════════════════════════════════
 //  Scenario 2: Formal Revision of Philosophical Claims
-//  Whitepaper §2 provides formal definitions that may refine manifesto
+//  Whitepaper .2 provides formal definitions that may refine manifesto
 //  declarations. The system should detect when formal treatment adds
 //  precision that the philosophical layer lacks.
 // ═════════════════════════════════════════════════════════════════════════
 
 #[test]
 fn scenario_formal_revision_of_philosophy() {
-    let bb = create_blackboard();
+    let io = SimFihIo::new();
+    let bb = NativeFihStorage::new(io, "test");
 
     // Phase 1: Only manifesto + epistemology (philosophical layer)
     let phil_facts = [
@@ -380,33 +383,33 @@ fn scenario_formal_revision_of_philosophy() {
     let state1 = StorageRead::read_state(&sched.bb);
     let contradictions_before = facts_by_creator(&state1, "contradiction-detector").len();
 
-    // Phase 2: Whitepaper §2 arrives — formal definitions
+    // Phase 2: Whitepaper .2 arrives — formal definitions
     let formal_facts = [
         claim(
             "f01",
             "whitepaper.llms.md",
-            "Segment s = (c, id) where c ∈ R^d, id = H(c)",
+            "Segment s = (c, id) where c \u{2208} R^d, id = H(c)",
             "segment-definition",
             "formal-tuple",
         ),
         claim(
             "f02",
             "whitepaper.llms.md",
-            "Scheme Σ = (A, R, L, O) — axes, relations, memory-layout, observation rules",
+            "Scheme \u{03a3} = (A, R, L, O) — axes, relations, memory-layout, observation rules",
             "scheme-definition",
             "formal-quadruple",
         ),
         claim(
             "f03",
             "whitepaper.llms.md",
-            "Field F = (C, T) — constraint predicate C: S→B and transition matrix T: S×S→R",
+            "Field F = (C, T) — constraint predicate C: S\u{2192}B and transition matrix T: S\u{00d7}S\u{2192}R",
             "field-definition",
             "formal-pair",
         ),
         claim(
             "f04",
             "whitepaper.llms.md",
-            "Observation P = Ω(Σ, F) — deterministic function",
+            "Observation P = \u{03a9}(\u{03a3}, F) — deterministic function",
             "observation-definition",
             "deterministic-function",
         ),
@@ -423,7 +426,7 @@ fn scenario_formal_revision_of_philosophy() {
     // (formal-tuple vs pure-coordinate, formal-pair vs admissibility-conditions)
     assert!(
         contradictions_after > contradictions_before,
-        "Formal §2 adds precision tensions: {} -> {}",
+        "Formal .2 adds precision tensions: {} -> {}",
         contradictions_before,
         contradictions_after
     );
@@ -440,7 +443,7 @@ fn scenario_formal_revision_of_philosophy() {
         .count();
     assert!(
         challenges >= 2,
-        "Formal §2 challenges philosophical claims: {} -factors",
+        "Formal .2 challenges philosophical claims: {} -factors",
         challenges
     );
 
@@ -471,7 +474,7 @@ fn scenario_formal_revision_of_philosophy() {
             .claim_intent(&iid.0, "formal-reviewer")
             .expect("claim");
         sched.bb.conclude_intent(&iid.0, &serde_json::to_string(&serde_json::json!({
-            "synthesis": "Manifesto declares what Field IS (admissibility conditions). Epistemology explains what Field DOES (bounds observation). Whitepaper §2 defines Field formally as (C,T). All three are consistent layers of the same concept."
+            "synthesis": "Manifesto declares what Field IS (admissibility conditions). Epistemology explains what Field DOES (bounds observation). Whitepaper .2 defines Field formally as (C,T). All three are consistent layers of the same concept."
         })).unwrap()).expect("conclude");
     }
 
@@ -491,7 +494,8 @@ fn scenario_formal_revision_of_philosophy() {
 
 #[test]
 fn scenario_theory_practice_gap() {
-    let bb = create_blackboard();
+    let io = SimFihIo::new();
+    let bb = NativeFihStorage::new(io, "test");
 
     // Theory layer: manifesto + epistemology
     let theory = [
@@ -555,7 +559,7 @@ fn scenario_theory_practice_gap() {
         claim(
             "p04",
             "guide.llms.md",
-            "Future: Translation Compiler analyzes data formats → generates .ss files",
+            "Future: Translation Compiler analyzes data formats \u{2192} generates .ss files",
             "compiler-future",
             "translation-compiler",
         ),
@@ -579,7 +583,7 @@ fn scenario_theory_practice_gap() {
 
     // NDA: guide should both support (+factor) and extend (gap) the theory
     let nda = facts_by_creator(&state, "new-document-analyzer");
-    // Guide challenges theory: same topics, different positions → -factors
+    // Guide challenges theory: same topics, different positions \u{2192} -factors
     let content_val_of = |f: &&Fact| -> serde_json::Value {
         serde_json::from_str(f.content.as_str().unwrap_or("")).unwrap_or(serde_json::Value::Null)
     };
@@ -637,9 +641,10 @@ fn scenario_theory_practice_gap() {
 
 #[test]
 fn scenario_epistemology_as_bridge() {
-    let bb = create_blackboard();
+    let io = SimFihIo::new();
+    let bb = NativeFihStorage::new(io, "test");
 
-    // Manifesto (what IS) + Whitepaper §2 (formal definitions)
+    // Manifesto (what IS) + Whitepaper .2 (formal definitions)
     let claims = [
         claim(
             "a01",
@@ -658,7 +663,7 @@ fn scenario_epistemology_as_bridge() {
         claim(
             "a03",
             "whitepaper.llms.md",
-            "Observation P = Ω(Σ, F) — deterministic function",
+            "Observation P = \u{03a9}(\u{03a3}, F) — deterministic function",
             "observation-definition",
             "deterministic-function",
         ),
@@ -680,7 +685,7 @@ fn scenario_epistemology_as_bridge() {
     sched.register(Box::new(GapDetector::new()));
     sched.register(Box::new(NewDocumentAnalyzer::with_baseline(baseline)));
 
-    // Phase 1: Without epistemology, manifesto and whitepaper §2 have tensions
+    // Phase 1: Without epistemology, manifesto and whitepaper .2 have tensions
     do_tick(&mut sched);
     let state1 = StorageRead::read_state(&sched.bb);
     let _contradictions_without_ep = facts_by_creator(&state1, "contradiction-detector").len();
@@ -724,7 +729,7 @@ fn scenario_epistemology_as_bridge() {
     let state2 = StorageRead::read_state(&sched.bb);
 
     // Epistemology bridges by introducing mediating positions.
-    // Same topics, different positions → -factors (constructive challenges)
+    // Same topics, different positions \u{2192} -factors (constructive challenges)
     let nda = facts_by_creator(&state2, "new-document-analyzer");
     let content_val_of = |f: &&Fact| -> serde_json::Value {
         serde_json::from_str(f.content.as_str().unwrap_or("")).unwrap_or(serde_json::Value::Null)

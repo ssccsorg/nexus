@@ -7,7 +7,9 @@
 //   - Intent lifecycle completes correctly under contention
 
 use interface_cypher as cypher;
-use nex::{Blackboard, Fact, FihHash, Intent, create_blackboard};
+use nex::{
+    Blackboard, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead, create_blackboard,
+};
 use std::collections::HashSet;
 
 /// An agent that randomly reads and writes the Blackboard.
@@ -68,6 +70,7 @@ impl Ant {
                     to_fact_id: None,
                     last_heartbeat_at: None,
                     created_at: None,
+                    is_concluded: false,
                     concluded_at: None,
                 };
                 match bb.submit_intent(&intent) {
