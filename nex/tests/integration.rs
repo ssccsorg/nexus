@@ -25,8 +25,8 @@ use nex::process::scheduler::Scheduler;
 use nex::process::tasks::gap_detector::GapDetector;
 use nex::storage::petgraph::{Snapshottable, StorageSnapshot};
 use nex::{
-    Blackboard, BoardState, Content, DefaultBlackboard, EvictCapable, Fact, FihHash, Intent,
-    create_blackboard,
+    Blackboard, BoardState, Content, DefaultBlackboard, EvictCapable, Fact, FactCapable, FihHash, Intent,
+    IntentCapable, StorageRead, create_blackboard,
 };
 
 fn seed_corpus(bb: &mut impl Blackboard) {
@@ -64,7 +64,7 @@ fn count_detector_facts(state: &BoardState, creator: &str) -> usize {
 //   4. Second tick: same data → no new gap Facts (duplicate prevention)
 //
 // Core layer exercised: Scheduler, DetectionCapable trait, GapDetector,
-//   Blackboard::submit_fact, Blackboard::read_state
+//   Blackboard::submit_fact, StorageRead::read_state
 // ─────────────────────────────────────────────────────────────────────────
 #[test]
 fn flow_ooda_with_gap_detector() {
@@ -78,7 +78,7 @@ fn flow_ooda_with_gap_detector() {
     assert!(facts_submitted > 0, "gap detector produces gap facts");
     let facts_submitted_2 = sched.tick().expect("second tick");
     assert_eq!(facts_submitted_2, 0, "no new gap facts on second tick");
-    let state = Blackboard::read_state(&sched.bb);
+    let state = StorageRead::read_state(&sched.bb);
     assert!(
         state.facts.len() > 5,
         "original facts + gap facts: {}",
@@ -115,7 +115,7 @@ fn flow_agent_creates_intent_from_detector_fact() {
     sched.register(Box::new(GapDetector::new()));
     sched.tick().expect("tick");
 
-    let state = Blackboard::read_state(&sched.bb);
+    let state = StorageRead::read_state(&sched.bb);
     let gap_facts: Vec<&Fact> = state
         .facts
         .iter()
@@ -147,7 +147,7 @@ fn flow_agent_creates_intent_from_detector_fact() {
         .expect("conclude");
     assert_eq!(new_fact.content, Content::from("synthesis complete"));
 
-    let state = Blackboard::read_state(&sched.bb);
+    let state = StorageRead::read_state(&sched.bb);
     assert!(
         state
             .facts
@@ -173,7 +173,7 @@ fn flow_agent_creates_intent_from_detector_fact() {
 //   3. Concluded intent is removed from state.intents
 //   4. Referenced facts survive (they're still needed)
 //
-// Core layer exercised: EvictCapable::evict_before, Blackboard::read_state
+// Core layer exercised: EvictCapable::evict_before, StorageRead::read_state
 // Stigmergy metaphor: pheromone evaporation — old signals decay
 // ─────────────────────────────────────────────────────────────────────────
 #[test]
@@ -200,7 +200,7 @@ fn flow_eviction() {
     sched.bb.conclude_intent(&iid.0, "done").expect("conclude");
 
     EvictCapable::evict_before(&sched.bb, "9999999999").expect("evict");
-    let state = Blackboard::read_state(&sched.bb);
+    let state = StorageRead::read_state(&sched.bb);
     assert_eq!(state.intents.len(), 0, "concluded intent evicted");
     assert!(
         state.facts.len() >= 2,
@@ -231,14 +231,14 @@ fn flow_no_duplicates() {
 
     let n0 = sched.tick().expect("tick 0");
     assert!(n0 > 0, "tick 0: gap facts produced");
-    let state0 = Blackboard::read_state(&sched.bb);
+    let state0 = StorageRead::read_state(&sched.bb);
     let gap_count_0 = count_detector_facts(&state0, "gap-detector");
 
     for tick in 1..10 {
         let n = sched.tick().expect("tick");
         assert_eq!(n, 0, "tick {tick}: no new facts");
     }
-    let state = Blackboard::read_state(&sched.bb);
+    let state = StorageRead::read_state(&sched.bb);
     let gap_count_final = count_detector_facts(&state, "gap-detector");
     assert_eq!(
         gap_count_0, gap_count_final,
@@ -271,7 +271,7 @@ fn flow_cross_worker_snapshot() {
     sched.register(Box::new(GapDetector::new()));
     sched.tick().expect("worker A tick");
 
-    let state_a = Blackboard::read_state(&sched.bb);
+    let state_a = StorageRead::read_state(&sched.bb);
     let facts_a = state_a.facts.len();
     let gap_a = count_detector_facts(&state_a, "gap-detector");
 
@@ -281,7 +281,7 @@ fn flow_cross_worker_snapshot() {
     let snapshot_b: StorageSnapshot = serde_json::from_slice(&json).expect("deserialize");
     let bb_b = <DefaultBlackboard as Snapshottable>::from_snapshot(snapshot_b);
 
-    let state = Blackboard::read_state(&bb_b);
+    let state = StorageRead::read_state(&bb_b);
     assert_eq!(
         state.facts.len(),
         facts_a,
@@ -319,7 +319,7 @@ fn flow_cross_worker_snapshot() {
     bb_b.conclude_intent(&iid.0, "confirmed by Worker B")
         .expect("conclude");
 
-    let state = Blackboard::read_state(&bb_b);
+    let state = StorageRead::read_state(&bb_b);
     assert_eq!(
         state.facts.len(),
         facts_a + 2,

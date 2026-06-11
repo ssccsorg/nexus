@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::sync::{Mutex, RwLock};
 
 use nexus_model::{
-    Blackboard, BlackboardError, BoardState, Content, EvictCapable, Fact, FactCapable, FihHash,
+    BlackboardError, BoardState, Content, EvictCapable, Fact, FactCapable, FihHash,
     FilterCapable, Hint, HintCapable, Intent, IntentCapable, Now, StateFilter, StorageRead,
 };
 
@@ -172,9 +172,14 @@ impl<I: FihIo> NativeFihStorage<I> {
         }
 
         // Fall back to IO, with mime_type from meta
-        let mime = self.read_mime_type(blob_hash).unwrap_or(default_mime.to_string());
+        let mime = self
+            .read_mime_type(blob_hash)
+            .unwrap_or(default_mime.to_string());
         match self.io.read(&blob_path) {
-            Ok(Some(data)) => Content { mime_type: mime, data },
+            Ok(Some(data)) => Content {
+                mime_type: mime,
+                data,
+            },
             _ => Content {
                 mime_type: default_mime.to_string(),
                 data: Vec::new(),
@@ -252,9 +257,9 @@ impl<I: FihIo> StorageRead for NativeFihStorage<I> {
                         _ => None,
                     },
                     last_heartbeat_at: match &r.status {
-                        IntentStatus::Claimed { last_heartbeat_at, .. } => {
-                            Some(last_heartbeat_at.to_string())
-                        }
+                        IntentStatus::Claimed {
+                            last_heartbeat_at, ..
+                        } => Some(last_heartbeat_at.to_string()),
                         _ => None,
                     },
                     created_at: Some(r.created_at.to_string()),
@@ -286,8 +291,8 @@ impl<I: FihIo> FactCapable for NativeFihStorage<I> {
 
         let record = FactRecord::from_model(fact, blob_hash, &self.clock.now_nanos());
 
-        let bytes = bincode::serialize(&record)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let bytes =
+            bincode::serialize(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let op = WriteOp::Write {
             path: record.key(),
@@ -317,8 +322,8 @@ impl<I: FihIo> HintCapable for NativeFihStorage<I> {
             ttl_secs: None,
         };
 
-        let bytes = bincode::serialize(&record)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let bytes =
+            bincode::serialize(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let op = WriteOp::Write {
             path: record.key(),
@@ -357,8 +362,8 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
             created_at: self.clock.now_secs(),
         };
 
-        let bytes = bincode::serialize(&record)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let bytes =
+            bincode::serialize(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let op = WriteOp::Write {
             path: record.key(),
@@ -391,8 +396,8 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
 
         record.status = new_status;
 
-        let bytes = bincode::serialize(record)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let bytes =
+            bincode::serialize(record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.pending.lock().unwrap().push(WriteOp::Write {
             path: record.key(),
             data: bytes,
@@ -418,8 +423,8 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
 
         record.status = new_status;
 
-        let bytes = bincode::serialize(record)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let bytes =
+            bincode::serialize(record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.pending.lock().unwrap().push(WriteOp::Write {
             path: record.key(),
             data: bytes,
@@ -451,8 +456,8 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
             }
         }
 
-        let bytes = bincode::serialize(record)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let bytes =
+            bincode::serialize(record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.pending.lock().unwrap().push(WriteOp::Write {
             path: record.key(),
             data: bytes,
@@ -512,46 +517,6 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
         });
 
         Ok(new_fact)
-    }
-}
-
-// ── Blackboard ───────────────────────────────────────────────────────────
-
-impl<I: FihIo> Blackboard for NativeFihStorage<I> {
-    fn project_id(&self) -> &str {
-        StorageRead::project_id(self)
-    }
-
-    fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
-        FactCapable::submit_fact(self, fact)
-    }
-
-    fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
-        HintCapable::submit_hint(self, hint)
-    }
-
-    fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
-        IntentCapable::submit_intent(self, intent)
-    }
-
-    fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        IntentCapable::claim_intent(self, intent_id, agent)
-    }
-
-    fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        IntentCapable::heartbeat(self, intent_id, agent)
-    }
-
-    fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        IntentCapable::release_intent(self, intent_id, agent)
-    }
-
-    fn conclude_intent(&self, intent_id: &str, result: &str) -> Result<Fact, BlackboardError> {
-        IntentCapable::conclude_intent(self, intent_id, result)
-    }
-
-    fn read_state(&self) -> BoardState {
-        StorageRead::read_state(self)
     }
 }
 
@@ -722,31 +687,52 @@ mod tests {
         // Verify concluded_at is set
         let state = StorageRead::read_state(&store);
         assert_eq!(state.facts.len(), 2);
-        assert_eq!(state.intents[0].to_fact_id.as_deref(), Some(result.id.0.as_str()));
-        assert!(state.intents[0].concluded_at.is_some(), "concluded_at should be set");
+        assert_eq!(
+            state.intents[0].to_fact_id.as_deref(),
+            Some(result.id.0.as_str())
+        );
+        assert!(
+            state.intents[0].concluded_at.is_some(),
+            "concluded_at should be set"
+        );
         // created_at should be non-zero (clock.now_secs())
-        assert!(state.intents[0].created_at.as_deref() != Some("0"), "created_at should be from clock");
+        assert!(
+            state.intents[0].created_at.as_deref() != Some("0"),
+            "created_at should be from clock"
+        );
     }
 
     #[test]
     fn test_double_claim_rejected() {
         let store = make_storage();
-        FactCapable::submit_fact(&store, &Fact {
-            id: FihHash("f_base".into()),
-            origin: "test".into(),
-            content: Content {
-                mime_type: "text/plain".into(),
-                data: b"x".to_vec(),
+        FactCapable::submit_fact(
+            &store,
+            &Fact {
+                id: FihHash("f_base".into()),
+                origin: "test".into(),
+                content: Content {
+                    mime_type: "text/plain".into(),
+                    data: b"x".to_vec(),
+                },
+                creator: "alice".into(),
             },
-            creator: "alice".into(),
-        }).unwrap();
-        IntentCapable::submit_intent(&store, &Intent {
-            id: FihHash("i001".into()),
-            from_facts: vec!["f_base".into()],
-            description: "test".into(),
-            creator: "bob".into(),
-            worker: None, to_fact_id: None, last_heartbeat_at: None, created_at: None, concluded_at: None,
-        }).unwrap();
+        )
+        .unwrap();
+        IntentCapable::submit_intent(
+            &store,
+            &Intent {
+                id: FihHash("i001".into()),
+                from_facts: vec!["f_base".into()],
+                description: "test".into(),
+                creator: "bob".into(),
+                worker: None,
+                to_fact_id: None,
+                last_heartbeat_at: None,
+                created_at: None,
+                concluded_at: None,
+            },
+        )
+        .unwrap();
 
         IntentCapable::claim_intent(&store, "i001", "alice").unwrap();
         assert!(IntentCapable::claim_intent(&store, "i001", "bob").is_err());
@@ -757,15 +743,19 @@ mod tests {
         let io = SimFihIo::new();
         let store = NativeFihStorage::new(io.clone(), "test");
 
-        FactCapable::submit_fact(&store, &Fact {
-            id: FihHash("f001".into()),
-            origin: "t".into(),
-            content: Content {
-                mime_type: "text/plain".into(),
-                data: b"flush test data".to_vec(),
+        FactCapable::submit_fact(
+            &store,
+            &Fact {
+                id: FihHash("f001".into()),
+                origin: "t".into(),
+                content: Content {
+                    mime_type: "text/plain".into(),
+                    data: b"flush test data".to_vec(),
+                },
+                creator: "alice".into(),
             },
-            creator: "alice".into(),
-        }).unwrap();
+        )
+        .unwrap();
 
         store.flush_pending().unwrap();
 

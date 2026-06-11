@@ -10,7 +10,8 @@
 
 use interface_cypher as cypher;
 use nex::{
-    Blackboard, BlackboardError, DefaultBlackboard, Fact, FihHash, Intent, create_blackboard,
+    Blackboard, BlackboardError, DefaultBlackboard, Fact, FactCapable, FihHash, Intent,
+    IntentCapable, StorageRead, create_blackboard,
 };
 use serde_json;
 

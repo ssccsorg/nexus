@@ -34,8 +34,8 @@ use nex::process::tasks::new_document_analyzer::NewDocumentAnalyzer;
 use nex::process::tasks::state_change_detector::StateChangeDetector;
 use nex::storage::petgraph::{Snapshottable, StorageSnapshot};
 use nex::{
-    Blackboard, BoardState, Content, DefaultBlackboard, EvictCapable, Fact, FihHash, Intent,
-    create_blackboard,
+    Blackboard, BoardState, Content, DefaultBlackboard, EvictCapable, Fact, FactCapable, FihHash, Intent,
+    IntentCapable, StorageRead, create_blackboard,
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -80,7 +80,7 @@ struct TickResult {
 
 fn do_tick(sched: &mut Scheduler<impl Blackboard + EvictCapable>) -> TickResult {
     let facts_submitted = sched.tick().expect("tick");
-    let state = Blackboard::read_state(&sched.bb);
+    let state = StorageRead::read_state(&sched.bb);
     TickResult {
         facts_submitted,
         state,
@@ -255,7 +255,7 @@ fn scenario_cross_domain_discovery() {
         })).unwrap()).expect("conclude");
     }
 
-    let state = Blackboard::read_state(&sched.bb);
+    let state = StorageRead::read_state(&sched.bb);
     // Original + detector facts + conclusions
     assert!(
         state.facts.len() > 11,
@@ -449,7 +449,7 @@ fn scenario_peer_review_challenge() {
         })).unwrap()).expect("conclude");
     }
 
-    let state = Blackboard::read_state(&sched.bb);
+    let state = StorageRead::read_state(&sched.bb);
     assert!(
         state.facts.len() > 9,
         "Knowledge grew through peer review: {} facts",
@@ -507,7 +507,7 @@ fn scenario_incremental_knowledge_growth() {
 
     // Phase 4-7: Agent loop — read contradiction facts, create intents, conclude
     for iteration in 4..8 {
-        let state = Blackboard::read_state(&sched.bb);
+        let state = StorageRead::read_state(&sched.bb);
         let unresolved: Vec<_> = state
             .facts
             .iter()
@@ -557,7 +557,7 @@ fn scenario_incremental_knowledge_growth() {
         let _ = do_tick(&mut sched);
     }
 
-    let final_state = Blackboard::read_state(&sched.bb);
+    let final_state = StorageRead::read_state(&sched.bb);
     let total_facts = final_state.facts.len();
     let total_intents = final_state.intents.len();
     // Original 11 + detector facts + conclusions from iterations
@@ -695,7 +695,7 @@ fn scenario_multi_agent_collaboration() {
         })).unwrap()).expect("conclude");
     }
 
-    let state = Blackboard::read_state(&sched.bb);
+    let state = StorageRead::read_state(&sched.bb);
     // Verify each agent's conclusions exist
     let alpha_conclusions = state
         .facts
@@ -859,7 +859,7 @@ fn scenario_document_revision() {
     let json = serde_json::to_vec(&snapshot).expect("serialize");
     let restored: StorageSnapshot = serde_json::from_slice(&json).expect("deserialize");
     let bb_restored = <DefaultBlackboard as Snapshottable>::from_snapshot(restored);
-    let restored_state = Blackboard::read_state(&bb_restored);
+    let restored_state = StorageRead::read_state(&bb_restored);
     assert!(
         restored_state.facts.len() >= 6,
         "Snapshot preserves v1 + v2 + detector facts: {}",

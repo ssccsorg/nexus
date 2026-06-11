@@ -18,7 +18,7 @@ use nex::process::tasks::contradiction_detector::ContradictionDetector;
 use nex::process::tasks::gap_detector::GapDetector;
 use nex::process::tasks::new_document_analyzer::NewDocumentAnalyzer;
 use nex::process::tasks::state_change_detector::StateChangeDetector;
-use nex::{Blackboard, BoardState, EvictCapable, Fact, FihHash, Intent};
+use nex::{Blackboard, BoardState, EvictCapable, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
 use nexus_storage_sim::{NativeFihStorage, SimFihIo};
 
 fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) -> Fact {
@@ -265,7 +265,7 @@ fn scenario_foundational_consistency_audit() {
 
     // Phase 1: Initial analysis
     do_tick(&mut sched);
-    let state = Blackboard::read_state(&sched.bb);
+    let state = StorageRead::read_state(&sched.bb);
 
     // Gap facts: cross-origin gaps between the 4 foundational layers
     let gaps = facts_by_creator(&state, "gap-detector");
@@ -377,7 +377,7 @@ fn scenario_formal_revision_of_philosophy() {
 
     // Analyze philosophical layer
     do_tick(&mut sched);
-    let state1 = Blackboard::read_state(&sched.bb);
+    let state1 = StorageRead::read_state(&sched.bb);
     let contradictions_before = facts_by_creator(&state1, "contradiction-detector").len();
 
     // Phase 2: Whitepaper .2 arrives — formal definitions
@@ -416,7 +416,7 @@ fn scenario_formal_revision_of_philosophy() {
     }
 
     do_tick(&mut sched);
-    let state2 = Blackboard::read_state(&sched.bb);
+    let state2 = StorageRead::read_state(&sched.bb);
     let contradictions_after = facts_by_creator(&state2, "contradiction-detector").len();
 
     // More contradictions after formal definitions arrive
@@ -474,7 +474,7 @@ fn scenario_formal_revision_of_philosophy() {
         })).unwrap()).expect("conclude");
     }
 
-    let final_state = Blackboard::read_state(&sched.bb);
+    let final_state = StorageRead::read_state(&sched.bb);
     assert!(
         final_state.facts.len() > 9,
         "Knowledge grew through formal revision: {} facts",
@@ -575,7 +575,7 @@ fn scenario_theory_practice_gap() {
     }
     do_tick(&mut sched);
 
-    let state = Blackboard::read_state(&sched.bb);
+    let state = StorageRead::read_state(&sched.bb);
 
     // NDA: guide should both support (+factor) and extend (gap) the theory
     let nda = facts_by_creator(&state, "new-document-analyzer");
@@ -683,7 +683,7 @@ fn scenario_epistemology_as_bridge() {
 
     // Phase 1: Without epistemology, manifesto and whitepaper .2 have tensions
     do_tick(&mut sched);
-    let state1 = Blackboard::read_state(&sched.bb);
+    let state1 = StorageRead::read_state(&sched.bb);
     let _contradictions_without_ep = facts_by_creator(&state1, "contradiction-detector").len();
 
     // Phase 2: Epistemology arrives — provides the connecting layer
@@ -722,7 +722,7 @@ fn scenario_epistemology_as_bridge() {
     }
 
     do_tick(&mut sched);
-    let state2 = Blackboard::read_state(&sched.bb);
+    let state2 = StorageRead::read_state(&sched.bb);
 
     // Epistemology bridges by introducing mediating positions.
     // Same topics, different positions \u{2192} -factors (constructive challenges)

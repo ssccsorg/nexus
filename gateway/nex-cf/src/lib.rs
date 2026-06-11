@@ -4,7 +4,10 @@
 // DefaultBlackboard is Sync on both native (Arc<RwLock<>>) and wasm32
 // (single-threaded, OnceLock provides internal synchronization).
 
-use nex::{Blackboard, BlackboardError, Content, DefaultBlackboard, Fact, FihHash, Intent};
+use nex::{
+    BlackboardError, Content, DefaultBlackboard, Fact, FactCapable, FihHash, Intent,
+    IntentCapable, StorageRead,
+};
 use worker::*;
 
 /// A once-cell wrapper that is unconditionally Sync.

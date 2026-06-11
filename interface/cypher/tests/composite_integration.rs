@@ -14,7 +14,7 @@ use nex::storage::composite::{
     AsyncStoreBlob, AsyncStoreKv, AsyncStoreObject, CompositeColdStorage,
 };
 use nex::storage::petgraph::PetgraphStorage;
-use nex::{Blackboard, Content, DefaultBlackboard, Fact, FihHash, ScanCapable, Snapshottable};
+use nex::{Blackboard, Content, DefaultBlackboard, Fact, FactCapable, FihHash, IntentCapable, ScanCapable, Snapshottable, StorageRead, HintCapable};
 use nexus_model::{
     BlobStore, ColdStorage, DualStorage, EvictCapable, FlushCapable, FlushCursor, MetaStore,
     ObjectStore,
@@ -159,7 +159,7 @@ fn test_dual_storage_writes_to_both_backends() {
     let bb = make_bb();
     let mut guard = bb;
 
-    <_ as Blackboard>::submit_fact(&mut guard, &fact("f_dual_1")).unwrap();
+    <_ as FactCapable>::submit_fact(&mut guard, &fact("f_dual_1")).unwrap();
 
     // flush_since delegates to cold (CompositeColdStorage).
     // Cold no longer stores graph data, so records_flushed is 0
@@ -179,7 +179,7 @@ fn test_dual_storage_writes_to_both_backends() {
     );
 
     // Fact is still readable from hot (Petgraph)
-    let state = <_ as Blackboard>::read_state(&guard);
+    let state = <_ as StorageRead>::read_state(&guard);
     assert!(
         state.facts.iter().any(|f| f.id.0 == "f_dual_1"),
         "fact survives in hot"
@@ -213,8 +213,8 @@ fn test_flush_through_composite_to_blob() {
     let bb = make_bb();
     let mut guard = bb;
 
-    <_ as Blackboard>::submit_fact(&mut guard, &fact("f_flush_a")).unwrap();
-    <_ as Blackboard>::submit_fact(&mut guard, &fact("f_flush_b")).unwrap();
+    <_ as FactCapable>::submit_fact(&mut guard, &fact("f_flush_a")).unwrap();
+    <_ as FactCapable>::submit_fact(&mut guard, &fact("f_flush_b")).unwrap();
 
     let cursor = FlushCursor {
         last_flushed_at: String::new(),
@@ -223,7 +223,7 @@ fn test_flush_through_composite_to_blob() {
     let r1 = <_ as FlushCapable>::flush_since(&guard, &cursor).unwrap();
     assert_eq!(r1.records_flushed, 2, "first flush exports 2 facts");
 
-    <_ as Blackboard>::submit_fact(&mut guard, &fact("f_flush_c")).unwrap();
+    <_ as FactCapable>::submit_fact(&mut guard, &fact("f_flush_c")).unwrap();
     let r2 = <_ as FlushCapable>::flush_since(&guard, &r1.new_cursor).unwrap();
     assert!(r2.records_flushed > 0, "second flush exports facts");
     assert!(
@@ -239,11 +239,11 @@ fn test_snapshot_roundtrip_with_composite_cold() {
     let bb = make_bb();
     let mut guard = bb;
 
-    <_ as Blackboard>::submit_fact(&mut guard, &fact("f_snap_1")).unwrap();
+    <_ as FactCapable>::submit_fact(&mut guard, &fact("f_snap_1")).unwrap();
 
     let _snap = <_ as Snapshottable>::to_snapshot(&guard);
     let restored = DefaultBlackboard::from_snapshot(_snap);
-    let state = <_ as Blackboard>::read_state(&restored);
+    let state = <_ as StorageRead>::read_state(&restored);
     assert!(
         state.facts.iter().any(|f| f.id.0 == "f_snap_1"),
         "fact survives snapshot roundtrip"
@@ -257,9 +257,9 @@ fn test_multi_lifetime_data_preservation_across_restart() {
     let bb = make_bb();
     let mut guard = bb;
 
-    <_ as Blackboard>::submit_fact(&mut guard, &fact("f_life_1")).unwrap();
-    <_ as Blackboard>::submit_fact(&mut guard, &fact("f_life_2")).unwrap();
-    <_ as Blackboard>::submit_fact(&mut guard, &fact("f_life_3")).unwrap();
+    <_ as FactCapable>::submit_fact(&mut guard, &fact("f_life_1")).unwrap();
+    <_ as FactCapable>::submit_fact(&mut guard, &fact("f_life_2")).unwrap();
+    <_ as FactCapable>::submit_fact(&mut guard, &fact("f_life_3")).unwrap();
 
     let cursor = FlushCursor {
         last_flushed_at: String::new(),
@@ -275,8 +275,8 @@ fn test_multi_lifetime_data_preservation_across_restart() {
     let cold: Box<dyn ColdStorage> = Box::new(make_composite_cold());
     let _bb2 = DefaultBlackboard::with_storage(hot, cold);
 
-    <_ as Blackboard>::submit_fact(&mut guard, &fact("f_life_4")).unwrap();
-    <_ as Blackboard>::submit_fact(&mut guard, &fact("f_life_5")).unwrap();
+    <_ as FactCapable>::submit_fact(&mut guard, &fact("f_life_4")).unwrap();
+    <_ as FactCapable>::submit_fact(&mut guard, &fact("f_life_5")).unwrap();
 
     let cursor2 = FlushCursor {
         last_flushed_at: cursor_t1,
@@ -295,7 +295,7 @@ fn test_multi_entity_persistence_through_dual_storage() {
     let bb = make_bb();
     let mut guard = bb;
 
-    <_ as Blackboard>::submit_fact(&mut guard, &fact("f_persist")).unwrap();
+    <_ as FactCapable>::submit_fact(&mut guard, &fact("f_persist")).unwrap();
 
     let intent = Intent {
         id: FihHash("i_persist".into()),
@@ -308,21 +308,21 @@ fn test_multi_entity_persistence_through_dual_storage() {
         created_at: Some("0".into()),
         concluded_at: None,
     };
-    <_ as Blackboard>::submit_intent(&mut guard, &intent).unwrap();
+    <_ as IntentCapable>::submit_intent(&mut guard, &intent).unwrap();
 
-    <_ as Blackboard>::claim_intent(&mut guard, "i_persist", "agent-x").unwrap();
-    <_ as Blackboard>::heartbeat(&mut guard, "i_persist", "agent-x").unwrap();
+    <_ as IntentCapable>::claim_intent(&mut guard, "i_persist", "agent-x").unwrap();
+    <_ as IntentCapable>::heartbeat(&mut guard, "i_persist", "agent-x").unwrap();
 
-    let state = <_ as Blackboard>::read_state(&guard);
+    let state = <_ as StorageRead>::read_state(&guard);
     assert!(
         state.intents.iter().any(|i| i.id.0 == "i_persist"),
         "intent exists"
     );
 
     let concluded_fact =
-        <_ as Blackboard>::conclude_intent(&mut guard, "i_persist", "concluded").unwrap();
+        <_ as IntentCapable>::conclude_intent(&mut guard, "i_persist", "concluded").unwrap();
 
-    let state = <_ as Blackboard>::read_state(&guard);
+    let state = <_ as StorageRead>::read_state(&guard);
     assert!(
         state.facts.iter().any(|f| f.id.0 == concluded_fact.id.0),
         "concluded fact readable"
@@ -343,7 +343,7 @@ fn test_evict_after_flush_removes_both_hot_and_cold_blobs() {
     let bb = make_bb();
     let mut guard = bb;
 
-    <_ as Blackboard>::submit_fact(&mut guard, &fact("f_evict")).unwrap();
+    <_ as FactCapable>::submit_fact(&mut guard, &fact("f_evict")).unwrap();
 
     let cursor = FlushCursor {
         last_flushed_at: String::new(),
@@ -368,8 +368,8 @@ fn test_flush_then_snapshot_roundtrip_null_cold_is_noop() {
     let bb = make_bb();
     let mut guard = bb;
 
-    <_ as Blackboard>::submit_fact(&mut guard, &fact("f_cycle_a")).unwrap();
-    <_ as Blackboard>::submit_fact(&mut guard, &fact("f_cycle_b")).unwrap();
+    <_ as FactCapable>::submit_fact(&mut guard, &fact("f_cycle_a")).unwrap();
+    <_ as FactCapable>::submit_fact(&mut guard, &fact("f_cycle_b")).unwrap();
 
     let cursor = FlushCursor {
         last_flushed_at: String::new(),
@@ -381,7 +381,7 @@ fn test_flush_then_snapshot_roundtrip_null_cold_is_noop() {
     let snapshot = <_ as Snapshottable>::to_snapshot(&guard);
     let mut restored = DefaultBlackboard::from_snapshot(snapshot);
 
-    let state = <_ as Blackboard>::read_state(&restored);
+    let state = <_ as StorageRead>::read_state(&restored);
     assert_eq!(state.facts.len(), 2, "facts survive snapshot roundtrip");
 
     let r_after = <_ as FlushCapable>::flush_since(&mut restored, &r_before.new_cursor).unwrap();
@@ -399,9 +399,9 @@ fn test_fih_scenario_submit_flush_read() {
     let mut guard = bb;
 
     // Submit 3 facts, 1 intent, 1 hint
-    <_ as Blackboard>::submit_fact(&mut guard, &fact("scn_f1")).unwrap();
-    <_ as Blackboard>::submit_fact(&mut guard, &fact("scn_f2")).unwrap();
-    <_ as Blackboard>::submit_fact(&mut guard, &fact("scn_f3")).unwrap();
+    <_ as FactCapable>::submit_fact(&mut guard, &fact("scn_f1")).unwrap();
+    <_ as FactCapable>::submit_fact(&mut guard, &fact("scn_f2")).unwrap();
+    <_ as FactCapable>::submit_fact(&mut guard, &fact("scn_f3")).unwrap();
 
     let intent = nex::Intent {
         id: FihHash("scn_i1".into()),
@@ -414,8 +414,8 @@ fn test_fih_scenario_submit_flush_read() {
         created_at: Some("0".into()),
         concluded_at: None,
     };
-    <_ as Blackboard>::submit_intent(&mut guard, &intent).unwrap();
-    <_ as Blackboard>::submit_hint(
+    <_ as IntentCapable>::submit_intent(&mut guard, &intent).unwrap();
+    <_ as HintCapable>::submit_hint(
         &mut guard,
         &nex::Hint {
             id: FihHash("scn_h1".into()),
@@ -426,7 +426,7 @@ fn test_fih_scenario_submit_flush_read() {
     .unwrap();
 
     // Read state before flush (from Petgraph hot)
-    let state_before = <_ as Blackboard>::read_state(&guard);
+    let state_before = <_ as StorageRead>::read_state(&guard);
     assert_eq!(state_before.facts.len(), 3);
     assert_eq!(state_before.intents.len(), 1);
     assert_eq!(state_before.hints.len(), 1);
@@ -440,7 +440,7 @@ fn test_fih_scenario_submit_flush_read() {
     assert_eq!(result.records_flushed, 5, "all 5 entities flushed");
 
     // Read state after flush (still from Petgraph hot)
-    let state_after = <_ as Blackboard>::read_state(&guard);
+    let state_after = <_ as StorageRead>::read_state(&guard);
     assert_eq!(state_after.facts.len(), 3, "facts survive flush");
     assert_eq!(state_after.intents.len(), 1, "intents survive flush");
     assert_eq!(state_after.hints.len(), 1, "hints survive flush");
@@ -460,8 +460,8 @@ fn test_fih_scenario_incremental_flush() {
     let mut guard = bb;
 
     // Phase 1: submit 2 facts, flush
-    <_ as Blackboard>::submit_fact(&mut guard, &fact("inc_f1")).unwrap();
-    <_ as Blackboard>::submit_fact(&mut guard, &fact("inc_f2")).unwrap();
+    <_ as FactCapable>::submit_fact(&mut guard, &fact("inc_f1")).unwrap();
+    <_ as FactCapable>::submit_fact(&mut guard, &fact("inc_f2")).unwrap();
 
     let cursor = FlushCursor {
         last_flushed_at: String::new(),
@@ -472,7 +472,7 @@ fn test_fih_scenario_incremental_flush() {
     assert!(!r1.new_cursor.last_flushed_at.is_empty(), "cursor set");
 
     // Phase 2: add 1 more fact, flush with cursor
-    <_ as Blackboard>::submit_fact(&mut guard, &fact("inc_f3")).unwrap();
+    <_ as FactCapable>::submit_fact(&mut guard, &fact("inc_f3")).unwrap();
 
     let r2 = <_ as FlushCapable>::flush_since(&guard, &r1.new_cursor).unwrap();
     assert_eq!(r2.records_flushed, 1, "incremental flush: only 1 new fact");
@@ -482,8 +482,8 @@ fn test_fih_scenario_incremental_flush() {
     );
 
     // Phase 3: flush again with same cursor (no new data) — should be 0
-    <_ as Blackboard>::submit_fact(&mut guard, &fact("inc_f4")).unwrap();
-    <_ as Blackboard>::submit_fact(&mut guard, &fact("inc_f5")).unwrap();
+    <_ as FactCapable>::submit_fact(&mut guard, &fact("inc_f4")).unwrap();
+    <_ as FactCapable>::submit_fact(&mut guard, &fact("inc_f5")).unwrap();
     let r3 = <_ as FlushCapable>::flush_since(&guard, &r2.new_cursor).unwrap();
     assert_eq!(r3.records_flushed, 2, "third flush: 2 new facts");
 }
@@ -496,8 +496,8 @@ fn test_fih_scenario_petgraph_blob_identity() {
     let mut guard = bb;
 
     // Submit varied data
-    <_ as Blackboard>::submit_fact(&mut guard, &fact("id_f1")).unwrap();
-    <_ as Blackboard>::submit_fact(&mut guard, &fact("id_f2")).unwrap();
+    <_ as FactCapable>::submit_fact(&mut guard, &fact("id_f1")).unwrap();
+    <_ as FactCapable>::submit_fact(&mut guard, &fact("id_f2")).unwrap();
 
     // Claim and heartbeat an intent
     let intent = nex::Intent {
@@ -511,12 +511,12 @@ fn test_fih_scenario_petgraph_blob_identity() {
         created_at: Some("0".into()),
         concluded_at: None,
     };
-    <_ as Blackboard>::submit_intent(&mut guard, &intent).unwrap();
-    <_ as Blackboard>::claim_intent(&mut guard, "id_i1", "agent-x").unwrap();
-    <_ as Blackboard>::heartbeat(&mut guard, "id_i1", "agent-x").unwrap();
+    <_ as IntentCapable>::submit_intent(&mut guard, &intent).unwrap();
+    <_ as IntentCapable>::claim_intent(&mut guard, "id_i1", "agent-x").unwrap();
+    <_ as IntentCapable>::heartbeat(&mut guard, "id_i1", "agent-x").unwrap();
 
     // Read from Petgraph
-    let state = <_ as Blackboard>::read_state(&guard);
+    let state = <_ as StorageRead>::read_state(&guard);
     let petgraph_fact_ids: Vec<String> = state.facts.iter().map(|f| f.id.0.clone()).collect();
     let petgraph_intent_ids: Vec<String> = state.intents.iter().map(|i| i.id.0.clone()).collect();
 

@@ -7,7 +7,7 @@
 // directly.
 
 use nex::mock_gateway::MockGateway;
-use nex::{Blackboard, Content, Fact, FihHash, Intent, create_blackboard};
+use nex::{Blackboard, Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead, create_blackboard};
 
 /// Contradiction Detection — via MockGateway (JSON transport boundary).
 ///
