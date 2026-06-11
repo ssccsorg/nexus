@@ -9,6 +9,7 @@ nexus-model = { path = "../../model" }
 serde = { version = "1", features = ["derive"] }
 bincode = "1"
 cfg-if = "1"
+walkdir = "2"
 
 [dev-dependencies]
 tempfile = "3"
