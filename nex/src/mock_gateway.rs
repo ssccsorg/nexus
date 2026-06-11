@@ -7,7 +7,10 @@
 ///
 /// Implements `Blackboard` trait so it can be used wherever `&mut dyn Blackboard`
 /// is expected.
-use nexus_model::{Blackboard, BlackboardError, BoardState, Fact, FactCapable, FihHash, Hint, HintCapable, Intent, IntentCapable, StorageRead};
+use nexus_model::{
+    Blackboard, BlackboardError, BoardState, Fact, FactCapable, FihHash, Hint, HintCapable, Intent,
+    IntentCapable, StorageRead,
+};
 
 pub struct MockGateway<B: Blackboard> {
     inner: B,

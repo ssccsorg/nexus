@@ -16,8 +16,8 @@ use std::collections::HashMap;
 use std::sync::{Mutex, RwLock};
 
 use nexus_model::{
-    BlackboardError, BoardState, Content, EvictCapable, Fact, FactCapable, FihHash,
-    FilterCapable, Hint, HintCapable, Intent, IntentCapable, Now, StateFilter, StorageRead,
+    BlackboardError, BoardState, Content, EvictCapable, Fact, FactCapable, FihHash, FilterCapable,
+    Hint, HintCapable, Intent, IntentCapable, Now, StateFilter, StorageRead,
 };
 
 use crate::io::{FihIo, FihIoBatch, WriteOp};

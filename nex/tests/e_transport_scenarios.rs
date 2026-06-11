@@ -4,7 +4,10 @@
 // all communicating through the FIH protocol via MockGateway's JSON boundary.
 
 use nex::mock_gateway::MockGateway;
-use nex::{Blackboard, BlackboardError, Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead, create_blackboard};
+use nex::{
+    BlackboardError, Content, Fact, FactCapable, FihHash, Intent, IntentCapable,
+    StorageRead, create_blackboard,
+};
 
 // ── Scenario: Intermittent agent (Bluetooth / short-range radio) ─────────
 //

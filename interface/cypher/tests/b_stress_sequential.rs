@@ -7,7 +7,9 @@
 //   - Intent lifecycle completes correctly under contention
 
 use interface_cypher as cypher;
-use nex::{Blackboard, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead, create_blackboard};
+use nex::{
+    Blackboard, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead, create_blackboard,
+};
 use std::collections::HashSet;
 
 /// An agent that randomly reads and writes the Blackboard.
