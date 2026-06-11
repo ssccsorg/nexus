@@ -326,7 +326,7 @@ fn scenario_full_research_loop() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
-        concluded: false,
+        is_concluded: false,
         concluded_at: None,
     };
 
@@ -348,7 +348,7 @@ fn scenario_full_research_loop() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
-        concluded: false,
+        is_concluded: false,
         concluded_at: None,
     };
 
@@ -496,7 +496,7 @@ fn scenario_full_research_loop() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
-        concluded: false,
+        is_concluded: false,
         concluded_at: None,
     };
 

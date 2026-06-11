@@ -462,7 +462,7 @@ fn scenario_formal_revision_of_philosophy() {
             to_fact_id: None,
             last_heartbeat_at: None,
             created_at: None,
-            concluded: false,
+            is_concluded: false,
             concluded_at: None,
         };
         let iid = sched.bb.submit_intent(&intent).expect("submit");

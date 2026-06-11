@@ -55,7 +55,7 @@ fn scenario_contradiction_detection_via_gateway() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
-        concluded: false,
+        is_concluded: false,
         concluded_at: None,
     })
     .unwrap();

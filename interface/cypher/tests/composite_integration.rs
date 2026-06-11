@@ -306,7 +306,7 @@ fn test_multi_entity_persistence_through_dual_storage() {
         worker: None,
         last_heartbeat_at: None,
         created_at: Some(0),
-        concluded: false,
+        is_concluded: false,
         concluded_at: None,
     };
     <_ as IntentCapable>::submit_intent(&mut guard, &intent).unwrap();
@@ -413,7 +413,7 @@ fn test_fih_scenario_submit_flush_read() {
         worker: None,
         last_heartbeat_at: None,
         created_at: Some(0),
-        concluded: false,
+        is_concluded: false,
         concluded_at: None,
     };
     <_ as IntentCapable>::submit_intent(&mut guard, &intent).unwrap();
@@ -511,7 +511,7 @@ fn test_fih_scenario_petgraph_blob_identity() {
         worker: None,
         last_heartbeat_at: None,
         created_at: Some(0),
-        concluded: false,
+        is_concluded: false,
         concluded_at: None,
     };
     <_ as IntentCapable>::submit_intent(&mut guard, &intent).unwrap();
