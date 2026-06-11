@@ -8,7 +8,7 @@
 
 use interface_cypher as cypher;
 use nex::{
-    Blackboard, BlackboardError, Content, Fact, FactCapable, FihHash, Intent, IntentCapable,
+    Blackboard, BlackboardError, Content, Fact, FihHash, Intent, IntentCapable,
     StorageRead, create_blackboard,
 };
 
@@ -168,7 +168,7 @@ fn test_full_agent_collaboration_flow() {
 #[test]
 fn test_petgraph_time_range() {
     use nex::{
-        Blackboard, Fact, FactCapable, FihHash, PetgraphStorage, StorageRead, TimeRangeCapable,
+        Fact, FactCapable, FihHash, PetgraphStorage, StorageRead, TimeRangeCapable,
         create_blackboard,
     };
 
