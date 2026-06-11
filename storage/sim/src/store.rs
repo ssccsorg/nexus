@@ -13,6 +13,7 @@
 //   - all timestamps flow through Now trait, never SystemTime::now() directly
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, RwLock};
 
 use nexus_model::{
@@ -20,6 +21,7 @@ use nexus_model::{
     Hint, HintCapable, Intent, IntentCapable, Now, StateFilter, StorageRead,
 };
 
+use crate::index::TimeIndex;
 use crate::io::{FihIo, FihIoBatch, WriteOp};
 use crate::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
 
@@ -35,6 +37,10 @@ pub struct NativeFihStorage<I: FihIo> {
     fact_cache: RwLock<HashMap<String, FactRecord>>,
     intent_cache: RwLock<HashMap<String, IntentRecord>>,
     hint_cache: RwLock<HashMap<String, HintRecord>>,
+    // Indices
+    time_index: TimeIndex,
+    ref_counts: RwLock<HashMap<String, AtomicU64>>,
+    by_origin: RwLock<HashMap<String, Vec<String>>>,
     // Pending writes (for FihSession coordination).
     pub(crate) pending: Mutex<Vec<WriteOp>>,
 }
@@ -52,6 +58,9 @@ impl<I: FihIo> NativeFihStorage<I> {
             fact_cache: RwLock::new(HashMap::new()),
             intent_cache: RwLock::new(HashMap::new()),
             hint_cache: RwLock::new(HashMap::new()),
+            time_index: TimeIndex::new(),
+            ref_counts: RwLock::new(HashMap::new()),
+            by_origin: RwLock::new(HashMap::new()),
             pending: Mutex::new(Vec::new()),
         }
     }
@@ -320,6 +329,23 @@ impl<I: FihIo> FactCapable for NativeFihStorage<I> {
             .insert(record.id.clone(), record);
         self.pending.lock().unwrap().push(op);
 
+        // Update indices
+        let ts = self.clock.now_nanos().parse::<u64>().unwrap_or(0);
+        self.time_index.record(ts, &fact.id.0);
+        {
+            let mut origin_map = self.by_origin.write().unwrap();
+            origin_map
+                .entry(fact.origin.clone())
+                .or_default()
+                .push(fact.id.0.clone());
+        }
+        // ref_count defaults to 0 — orphan unless referenced by an Intent
+        self.ref_counts
+            .write()
+            .unwrap()
+            .entry(fact.id.0.clone())
+            .or_insert_with(|| AtomicU64::new(0));
+
         Ok(fact.id.clone())
     }
 }
@@ -366,6 +392,16 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
             }
         }
         drop(facts);
+
+        // Increment ref_count for each from_fact
+        {
+            let refs = self.ref_counts.write().unwrap();
+            for fid in &intent.from_facts {
+                if let Some(rc) = refs.get(fid) {
+                    rc.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        }
 
         let record = IntentRecord {
             id: intent.id.0.clone(),
