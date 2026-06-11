@@ -5,7 +5,7 @@
 
 mod common;
 
-use nexus_model::{Content, Fact, FactCapable, FihHash, FilterCapable, StateFilter, StorageRead};
+use nexus_model::{FactCapable, FilterCapable, StateFilter, StorageRead};
 use nexus_storage_sim::{NativeFihStorage, SimFihIo};
 
 fn make_clocked() -> NativeFihStorage<SimFihIo> {
@@ -16,23 +16,11 @@ fn make_clocked() -> NativeFihStorage<SimFihIo> {
     )
 }
 
-fn fact(id: &str, data: &[u8]) -> Fact {
-    Fact {
-        id: FihHash(id.into()),
-        origin: "t".into(),
-        content: Content {
-            mime_type: "text/plain".into(),
-            data: data.to_vec(),
-        },
-        creator: "t".into(),
-    }
-}
-
 #[test]
 fn test_since_returns_newer_only() {
     let store = make_clocked();
-    FactCapable::submit_fact(&store, &fact("f_a", b"a")).unwrap(); // ts=10_000_000
-    FactCapable::submit_fact(&store, &fact("f_b", b"b")).unwrap(); // ts=11_000_000
+    FactCapable::submit_fact(&store, &common::fact("f_a")).unwrap(); // ts=10_000_000
+    FactCapable::submit_fact(&store, &common::fact("f_b")).unwrap(); // ts=11_000_000
 
     let state = StorageRead::read_state(&store);
     assert_eq!(state.facts.len(), 2);
@@ -54,9 +42,9 @@ fn test_since_returns_newer_only() {
 #[test]
 fn test_until_as_of_time_travel() {
     let store = make_clocked();
-    FactCapable::submit_fact(&store, &fact("f_a", b"a")).unwrap(); // ts=10_000_000
-    FactCapable::submit_fact(&store, &fact("f_b", b"b")).unwrap(); // ts=11_000_000
-    FactCapable::submit_fact(&store, &fact("f_c", b"c")).unwrap(); // ts=12_000_000
+    FactCapable::submit_fact(&store, &common::fact("f_a")).unwrap(); // ts=10_000_000
+    FactCapable::submit_fact(&store, &common::fact("f_b")).unwrap(); // ts=11_000_000
+    FactCapable::submit_fact(&store, &common::fact("f_c")).unwrap(); // ts=12_000_000
 
     // f_a at ~2G, f_b at ~4G, f_c at ~6G
     // as_of=3_000_000_000 → only f_a (ts=2G)
@@ -76,9 +64,9 @@ fn test_until_as_of_time_travel() {
 #[test]
 fn test_range_returns_mid_only() {
     let store = make_clocked();
-    FactCapable::submit_fact(&store, &fact("f_a", b"a")).unwrap(); // ts=10_000_000
-    FactCapable::submit_fact(&store, &fact("f_b", b"b")).unwrap(); // ts=11_000_000
-    FactCapable::submit_fact(&store, &fact("f_c", b"c")).unwrap(); // ts=12_000_000
+    FactCapable::submit_fact(&store, &common::fact("f_a")).unwrap(); // ts=10_000_000
+    FactCapable::submit_fact(&store, &common::fact("f_b")).unwrap(); // ts=11_000_000
+    FactCapable::submit_fact(&store, &common::fact("f_c")).unwrap(); // ts=12_000_000
 
     // f_a at ~2G, f_b at ~4G, f_c at ~6G
     // range 3_000_000_000..5_000_000_000 → f_b only
@@ -98,7 +86,7 @@ fn test_range_returns_mid_only() {
 #[test]
 fn test_since_after_all_returns_empty() {
     let store = make_clocked();
-    FactCapable::submit_fact(&store, &fact("f_a", b"a")).unwrap(); // ts=10_000_000
+    FactCapable::submit_fact(&store, &common::fact("f_a")).unwrap(); // ts=10_000_000
 
     // f_a at ~2G
     // since=7_000_000_000 → empty
@@ -117,7 +105,7 @@ fn test_since_after_all_returns_empty() {
 #[test]
 fn test_until_before_all_returns_empty() {
     let store = make_clocked();
-    FactCapable::submit_fact(&store, &fact("f_a", b"a")).unwrap(); // ts=10_000_000
+    FactCapable::submit_fact(&store, &common::fact("f_a")).unwrap(); // ts=10_000_000
 
     // f_a at ~2G
     // as_of=1_000_000_000 → empty (nothing submitted yet)
@@ -136,8 +124,8 @@ fn test_until_before_all_returns_empty() {
 #[test]
 fn test_fact_ids_filter_independent_of_time() {
     let store = make_clocked();
-    FactCapable::submit_fact(&store, &fact("f_a", b"a")).unwrap();
-    FactCapable::submit_fact(&store, &fact("f_b", b"b")).unwrap();
+    FactCapable::submit_fact(&store, &common::fact("f_a")).unwrap();
+    FactCapable::submit_fact(&store, &common::fact("f_b")).unwrap();
 
     // fact_ids filter (no time filter) → only f_a
     let filtered = store.read_state_filtered(&StateFilter {
