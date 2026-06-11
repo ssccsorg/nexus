@@ -53,10 +53,7 @@ fn test_flush_empty_storage() {
     let cursor = FlushCursor::default();
     let result = s.flush_since(&cursor).expect("flush");
     assert_eq!(result.records_flushed, 0, "empty storage: 0 records");
-    assert!(
-        !result.new_cursor.last_flushed_at.is_empty(),
-        "cursor updated"
-    );
+    assert!(result.new_cursor.last_flushed_at > 0, "cursor updated");
 }
 
 #[test]
@@ -79,7 +76,7 @@ fn test_incremental_flush() {
 
     let r2 = s
         .flush_since(&FlushCursor {
-            last_flushed_at: r1.new_cursor.last_flushed_at.clone(),
+            last_flushed_at: r1.new_cursor.last_flushed_at,
             partition: "default".into(),
         })
         .expect("second flush");
@@ -94,7 +91,7 @@ fn test_incremental_flush() {
 fn test_flush_with_partition() {
     let s = storage();
     let cursor = FlushCursor {
-        last_flushed_at: String::new(),
+        last_flushed_at: 0,
         partition: "partition-x".into(),
     };
     let result = s.flush_since(&cursor).expect("flush with partition");

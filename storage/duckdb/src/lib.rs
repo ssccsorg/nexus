@@ -224,8 +224,8 @@ impl DuckDbStorage {
             let worker: Option<String> = row.get(4).ok();
             let to_fact_id: Option<String> = row.get(5).ok();
             let last_hb: Option<String> = row.get(6).ok();
-            let created_at: Option<String> = row.get(7).ok();
-            let concluded_at: Option<String> = row.get(8).ok();
+            let created_at_str: Option<String> = row.get(7).ok();
+            let concluded_at_str: Option<String> = row.get(8).ok();
             let from_facts: Vec<String> = from_facts_json
                 .and_then(|j| serde_json::from_str(&j).ok())
                 .unwrap_or_default();
@@ -236,9 +236,9 @@ impl DuckDbStorage {
                 creator,
                 worker,
                 to_fact_id,
-                last_heartbeat_at: last_hb,
-                created_at,
-                concluded_at,
+                last_heartbeat_at: last_hb.and_then(|s| s.parse::<u64>().ok()),
+                created_at: created_at_str.and_then(|s| s.parse::<u64>().ok()),
+                concluded_at: concluded_at_str.and_then(|s| s.parse::<u64>().ok()),
             })
         }) {
             Ok(rows) => rows.filter_map(|r| r.ok()).collect(),
@@ -419,13 +419,10 @@ impl FlushCapable for DuckDbStorage {
         let partition = &cursor.partition;
 
         // Timestamp for output file name and cursor.
-        // Unix epoch seconds: string comparison is correct when both
-        // created_at and cursor use the same epoch-second format.
         let now_ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
-            .as_secs()
-            .to_string();
+            .as_secs();
 
         // Ensure output directories exist.
         let facts_dir = format!("{}/facts/partition={}", self.base_path, partition);
@@ -456,11 +453,11 @@ impl FlushCapable for DuckDbStorage {
             );
         }
 
-        // Export facts newer than `since` (or all if since is empty).
-        let fact_where = if since.is_empty() {
+        // Export facts newer than `since` (or all if since is 0).
+        let fact_where = if *since == 0 {
             String::new()
         } else {
-            format!("WHERE created_at > '{}'", since.replace('\'', "''"))
+            format!("WHERE created_at > '{since}'")
         };
         // Preserve original created_at — do NOT override it.
         // Incremental flush relies on cursor.last_flushed_at tracking
@@ -471,10 +468,10 @@ impl FlushCapable for DuckDbStorage {
         );
         let fact_count: usize = conn.execute(&fact_sql, []).unwrap_or_default(); // 0 if view not yet created
 
-        let intent_where = if since.is_empty() {
+        let intent_where = if *since == 0 {
             String::new()
         } else {
-            format!("WHERE created_at > '{}'", since.replace('\'', "''"))
+            format!("WHERE created_at > '{since}'")
         };
         let intent_sql = format!(
             "COPY (SELECT intent_id, from_facts, description, creator, worker, to_fact_id, last_heartbeat_at, created_at, concluded_at FROM intents_view {}) TO '{}' (FORMAT PARQUET);",
@@ -484,10 +481,10 @@ impl FlushCapable for DuckDbStorage {
         // exist if no data has been written for those entity types yet.
         let _ = conn.execute(&intent_sql, []);
 
-        let hint_where = if since.is_empty() {
+        let hint_where = if *since == 0 {
             String::new()
         } else {
-            format!("WHERE created_at > '{}'", since.replace('\'', "''"))
+            format!("WHERE created_at > '{since}'")
         };
         let hint_sql = format!(
             "COPY (SELECT hint_id, content, creator, created_at FROM hints_view {}) TO '{}' (FORMAT PARQUET);",

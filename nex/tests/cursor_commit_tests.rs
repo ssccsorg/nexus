@@ -35,7 +35,7 @@ fn test_flush_updates_cursor() {
 
     // Flush with empty cursor (full flush)
     let cursor = FlushCursor {
-        last_flushed_at: String::new(),
+        last_flushed_at: 0,
         partition: "p".into(),
     };
     let _ = s.flush_since(&cursor).unwrap();
@@ -54,7 +54,7 @@ fn test_cursor_tracks_flush_boundary() {
 
     let r1 = s
         .flush_since(&FlushCursor {
-            last_flushed_at: String::new(),
+            last_flushed_at: 0,
             partition: "p".into(),
         })
         .unwrap();
@@ -64,7 +64,7 @@ fn test_cursor_tracks_flush_boundary() {
     // Second flush advances cursor
     let _r2 = s
         .flush_since(&FlushCursor {
-            last_flushed_at: cursor1.last_flushed_at.clone(),
+            last_flushed_at: cursor1.last_flushed_at,
             partition: "p".into(),
         })
         .unwrap();
@@ -89,7 +89,7 @@ fn test_concurrent_read_during_flush() {
     let writer = thread::spawn(move || {
         for _ in 0..5 {
             let _ = sw.flush_since(&FlushCursor {
-                last_flushed_at: String::new(),
+                last_flushed_at: 0,
                 partition: "p".into(),
             });
         }
@@ -113,7 +113,7 @@ fn test_incremental_flush_respects_cursor() {
 
     let r1 = s
         .flush_since(&FlushCursor {
-            last_flushed_at: String::new(),
+            last_flushed_at: 0,
             partition: "p".into(),
         })
         .unwrap();
@@ -121,12 +121,12 @@ fn test_incremental_flush_respects_cursor() {
         r1.records_flushed, 0,
         "first flush on empty storage: 0 records"
     );
-    let c1 = r1.new_cursor.last_flushed_at.clone();
+    let c1 = r1.new_cursor.last_flushed_at;
 
     // Second flush with same cursor should also be 0 (no new data)
     let r2 = s
         .flush_since(&FlushCursor {
-            last_flushed_at: c1.clone(),
+            last_flushed_at: c1,
             partition: "p".into(),
         })
         .unwrap();
@@ -134,10 +134,7 @@ fn test_incremental_flush_respects_cursor() {
 
     // cursor was updated (flush_since always writes new cursor)
     let saved = s.read_cursor().unwrap().unwrap();
-    assert!(
-        !saved.last_flushed_at.is_empty(),
-        "cursor should exist after flush"
-    );
+    assert!(saved.last_flushed_at > 0, "cursor should exist after flush");
 }
 
 #[test]

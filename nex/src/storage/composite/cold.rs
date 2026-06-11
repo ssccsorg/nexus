@@ -124,8 +124,7 @@ impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> CompositeColdStorage<B,
         let cursor_key = format!("{}:cursor", self.project());
         match self.meta.get(&cursor_key)? {
             Some(raw) => {
-                let cursor: FlushCursor =
-                    postcard::from_bytes(raw.as_bytes()).map_err(|e| e.to_string())?;
+                let cursor: FlushCursor = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
                 Ok(Some(cursor))
             }
             None => Ok(None),
@@ -251,7 +250,7 @@ impl<
 {
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
         let partition = &cursor.partition;
-        let now_ts = self.clock.now_nanos().to_string();
+        let now_ts = self.clock.now_nanos();
 
         let mut records_flushed = 0u64;
 
@@ -260,7 +259,6 @@ impl<
         // that updates the cursor only. The caller (DualStorage or Worker)
         // writes Petgraph data to blob before calling flush_since.
         //
-        // TODO: replace String cursor with u64 in FlushCursor
         // If data was pre-written to blob, count the records (one per blob).
         let fact_prefix = flush_blob_prefix(self.project(), "facts", partition);
         let fact_keys = self.blob.list(&fact_prefix)?;
@@ -277,11 +275,10 @@ impl<
             last_flushed_at: now_ts,
             partition: partition.clone(),
         };
-        let cursor_bytes =
-            postcard::to_allocvec(&new_cursor).map_err(|e| format!("serialize cursor: {e}"))?;
+        let cursor_json =
+            serde_json::to_string(&new_cursor).map_err(|e| format!("serialize cursor: {e}"))?;
         let cursor_key = format!("{}:cursor", self.project());
-        self.meta
-            .set(&cursor_key, &String::from_utf8_lossy(&cursor_bytes))?;
+        self.meta.set(&cursor_key, &cursor_json)?;
 
         Ok(FlushResult {
             records_flushed,

@@ -96,14 +96,14 @@ fn test_flush_full_export_with_empty_cursor() {
     tick();
     let (count, cursor) = storage
         .flush_since(&FlushCursor {
-            last_flushed_at: String::new(),
+            last_flushed_at: 0,
             partition: "test".to_string(),
         })
         .unwrap()
         .into();
 
     assert_eq!(count, 2, "full flush exports 2 facts");
-    assert!(!cursor.last_flushed_at.is_empty());
+    assert!(cursor.last_flushed_at > 0);
 }
 
 // ── Test 2: incremental flush exports only newer data ──────────────────
@@ -120,7 +120,7 @@ fn test_incremental_flush_exports_only_new_data() {
     tick();
     let (_, cursor) = storage
         .flush_since(&FlushCursor {
-            last_flushed_at: String::new(),
+            last_flushed_at: 0,
             partition: "test".to_string(),
         })
         .unwrap()
@@ -133,7 +133,7 @@ fn test_incremental_flush_exports_only_new_data() {
 
     let (count, cursor2) = storage
         .flush_since(&FlushCursor {
-            last_flushed_at: ts.clone(),
+            last_flushed_at: ts,
             partition: "test".to_string(),
         })
         .unwrap()
@@ -155,7 +155,7 @@ fn test_repeated_flush_no_duplicate() {
     tick();
     let (first_count, cursor) = storage
         .flush_since(&FlushCursor {
-            last_flushed_at: String::new(),
+            last_flushed_at: 0,
             partition: "test".to_string(),
         })
         .unwrap()
@@ -166,7 +166,7 @@ fn test_repeated_flush_no_duplicate() {
     tick();
     let (second_count, _) = storage
         .flush_since(&FlushCursor {
-            last_flushed_at: cursor.last_flushed_at.clone(),
+            last_flushed_at: cursor.last_flushed_at,
             partition: "test".to_string(),
         })
         .unwrap()
@@ -177,7 +177,7 @@ fn test_repeated_flush_no_duplicate() {
     // Use epoch second (1970-01-01) which is chronologically before any now_ts().
     let (third_count, _) = storage
         .flush_since(&FlushCursor {
-            last_flushed_at: "0".to_string(),
+            last_flushed_at: 0,
             partition: "test".to_string(),
         })
         .unwrap()
@@ -198,7 +198,7 @@ fn test_future_cursor_returns_zero() {
 
     let (count, _) = storage
         .flush_since(&FlushCursor {
-            last_flushed_at: "9999999999".to_string(),
+            last_flushed_at: 9999999999,
             partition: "test".to_string(),
         })
         .unwrap()
@@ -219,7 +219,7 @@ fn test_flushed_parquet_is_readable() {
 
     let _ = storage
         .flush_since(&FlushCursor {
-            last_flushed_at: String::new(),
+            last_flushed_at: 0,
             partition: "test".to_string(),
         })
         .unwrap();
@@ -250,7 +250,7 @@ fn test_incremental_flush_data_completeness() {
     tick();
     let (batch1, c1) = storage
         .flush_since(&FlushCursor {
-            last_flushed_at: String::new(),
+            last_flushed_at: 0,
             partition: "test".to_string(),
         })
         .unwrap()
@@ -264,7 +264,7 @@ fn test_incremental_flush_data_completeness() {
     tick();
     let (batch2, c2) = storage
         .flush_since(&FlushCursor {
-            last_flushed_at: c1.last_flushed_at.clone(),
+            last_flushed_at: c1.last_flushed_at,
             partition: c1.partition.clone(),
         })
         .unwrap()
@@ -276,7 +276,7 @@ fn test_incremental_flush_data_completeness() {
     tick();
     let (batch3, _) = storage
         .flush_since(&FlushCursor {
-            last_flushed_at: c2.last_flushed_at.clone(),
+            last_flushed_at: c2.last_flushed_at,
             partition: c2.partition.clone(),
         })
         .unwrap()
@@ -311,7 +311,7 @@ fn test_flush_partition_isolation() {
     tick();
     let (ca, _) = sa
         .flush_since(&FlushCursor {
-            last_flushed_at: String::new(),
+            last_flushed_at: 0,
             partition: "proj_a".to_string(),
         })
         .unwrap()
@@ -323,7 +323,7 @@ fn test_flush_partition_isolation() {
     tick();
     let (cb, _) = sb
         .flush_since(&FlushCursor {
-            last_flushed_at: String::new(),
+            last_flushed_at: 0,
             partition: "proj_b".to_string(),
         })
         .unwrap()
@@ -347,14 +347,14 @@ fn test_flush_empty_storage_returns_zero() {
 
     let (count, cursor) = storage
         .flush_since(&FlushCursor {
-            last_flushed_at: String::new(),
+            last_flushed_at: 0,
             partition: "test".to_string(),
         })
         .unwrap()
         .into();
 
     assert_eq!(count, 0, "empty storage flush returns 0");
-    assert!(!cursor.last_flushed_at.is_empty(), "cursor still advances");
+    assert!(cursor.last_flushed_at > 0, "cursor still advances");
 }
 
 // ── Test 9: flush does not corrupt read_state ───────────────────────────
@@ -374,7 +374,7 @@ fn test_flush_preserves_original_data() {
     tick();
     let _ = storage
         .flush_since(&FlushCursor {
-            last_flushed_at: String::new(),
+            last_flushed_at: 0,
             partition: "test".to_string(),
         })
         .unwrap();
@@ -400,13 +400,13 @@ fn test_cursor_monotonic_advance() {
     let t0 = past_ts();
     inject_fact(&storage, "f_seq_1", &t0);
 
-    let mut prev_ts = String::new();
+    let mut prev_ts: u64 = 0;
 
     for i in 0..5 {
         tick();
         let (count, cursor) = storage
             .flush_since(&FlushCursor {
-                last_flushed_at: prev_ts.clone(),
+                last_flushed_at: prev_ts,
                 partition: "test".to_string(),
             })
             .unwrap()
@@ -421,7 +421,7 @@ fn test_cursor_monotonic_advance() {
         }
 
         assert!(
-            cursor.last_flushed_at > prev_ts || (i == 0 && prev_ts.is_empty()),
+            cursor.last_flushed_at > prev_ts || (i == 0 && prev_ts == 0),
             "cursor advances: {} > {}",
             cursor.last_flushed_at,
             prev_ts
@@ -460,7 +460,7 @@ fn test_flush_all_entity_types() {
     tick();
     let (count, cursor) = storage
         .flush_since(&FlushCursor {
-            last_flushed_at: String::new(),
+            last_flushed_at: 0,
             partition: "test".to_string(),
         })
         .unwrap()
@@ -468,7 +468,7 @@ fn test_flush_all_entity_types() {
 
     // Facts are flushed; intents/hints views may be empty (no crash)
     assert_eq!(count, 1, "fact flushed");
-    assert!(!cursor.last_flushed_at.is_empty());
+    assert!(cursor.last_flushed_at > 0);
 }
 
 // ── Test 13: large data flush (1000 facts) ─────────────────────────────
@@ -494,14 +494,14 @@ fn test_large_flush() {
     tick();
     let (count, cursor) = storage
         .flush_since(&FlushCursor {
-            last_flushed_at: String::new(),
+            last_flushed_at: 0,
             partition: "test".to_string(),
         })
         .unwrap()
         .into();
 
     assert_eq!(count, 1000, "large flush exports 1000 facts");
-    assert!(!cursor.last_flushed_at.is_empty());
+    assert!(cursor.last_flushed_at > 0);
 }
 
 // ── Test 14: concurrent flush from multiple threads ─────────────────────
@@ -532,7 +532,7 @@ fn test_concurrent_flush() {
             let s = s.lock().unwrap();
             let (count, cursor) = s
                 .flush_since(&FlushCursor {
-                    last_flushed_at: String::new(),
+                    last_flushed_at: 0,
                     partition: "test".to_string(),
                 })
                 .unwrap()
@@ -553,7 +553,7 @@ fn test_concurrent_flush() {
         "concurrent flushes export at least 2 facts total"
     );
     assert!(
-        results.iter().all(|(_, ts)| !ts.is_empty()),
+        results.iter().all(|(_, ts)| *ts > 0),
         "all concurrent flushes produce a cursor timestamp"
     );
 }
@@ -584,7 +584,7 @@ fn test_flush_during_read() {
             let s = s_flush.lock().unwrap();
             let _ = s
                 .flush_since(&FlushCursor {
-                    last_flushed_at: String::new(),
+                    last_flushed_at: 0,
                     partition: "test".to_string(),
                 })
                 .unwrap();
@@ -617,7 +617,7 @@ fn test_rapid_sequential_flush() {
     inject_fact(&storage, "f_rapid", &t0);
 
     let mut cursor = FlushCursor {
-        last_flushed_at: String::new(),
+        last_flushed_at: 0,
         partition: "test".to_string(),
     };
 
@@ -627,7 +627,7 @@ fn test_rapid_sequential_flush() {
             assert_eq!(count, 1, "first rapid flush exports 1 fact");
         }
         cursor = FlushCursor {
-            last_flushed_at: new_cursor.last_flushed_at.clone(),
+            last_flushed_at: new_cursor.last_flushed_at,
             partition: new_cursor.partition.clone(),
         };
     }
@@ -651,7 +651,7 @@ fn test_read_state_bounded_after_flush() {
     tick();
     let _ = storage
         .flush_since(&FlushCursor {
-            last_flushed_at: String::new(),
+            last_flushed_at: 0,
             partition: "test".to_string(),
         })
         .unwrap();

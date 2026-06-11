@@ -168,7 +168,7 @@ fn test_dual_storage_writes_to_both_backends() {
     // Cold no longer stores graph data, so records_flushed is 0
     // unless hot data was pre-written to cold blob.
     let cursor = FlushCursor {
-        last_flushed_at: String::new(),
+        last_flushed_at: 0,
         partition: "default".into(),
     };
     let result = <_ as FlushCapable>::flush_since(&guard, &cursor).unwrap();
@@ -176,10 +176,7 @@ fn test_dual_storage_writes_to_both_backends() {
         result.records_flushed > 0,
         "flush should persist hot data to cold blob"
     );
-    assert!(
-        !result.new_cursor.last_flushed_at.is_empty(),
-        "cursor updated"
-    );
+    assert!(result.new_cursor.last_flushed_at > 0, "cursor updated");
 
     // Fact is still readable from hot (Petgraph)
     let state = <_ as StorageRead>::read_state(&guard);
@@ -220,7 +217,7 @@ fn test_flush_through_composite_to_blob() {
     <_ as FactCapable>::submit_fact(&mut guard, &fact("f_flush_b")).unwrap();
 
     let cursor = FlushCursor {
-        last_flushed_at: String::new(),
+        last_flushed_at: 0,
         partition: "default".into(),
     };
     let r1 = <_ as FlushCapable>::flush_since(&guard, &cursor).unwrap();
@@ -265,14 +262,14 @@ fn test_multi_lifetime_data_preservation_across_restart() {
     <_ as FactCapable>::submit_fact(&mut guard, &fact("f_life_3")).unwrap();
 
     let cursor = FlushCursor {
-        last_flushed_at: String::new(),
+        last_flushed_at: 0,
         partition: "default".into(),
     };
     let r1 = <_ as FlushCapable>::flush_since(&guard, &cursor).unwrap();
     assert_eq!(r1.records_flushed, 3, "lifetime 1: flush exports 3 facts");
 
     let _snap2 = <_ as Snapshottable>::to_snapshot(&guard);
-    let cursor_t1 = r1.new_cursor.last_flushed_at.clone();
+    let cursor_t1 = r1.new_cursor.last_flushed_at;
 
     let hot = PetgraphStorage::with_project_id("default");
     let cold: Box<dyn ColdStorage> = Box::new(make_composite_cold());
@@ -308,7 +305,7 @@ fn test_multi_entity_persistence_through_dual_storage() {
         creator: "tester".into(),
         worker: None,
         last_heartbeat_at: None,
-        created_at: Some("0".into()),
+        created_at: Some(0),
         concluded_at: None,
     };
     <_ as IntentCapable>::submit_intent(&mut guard, &intent).unwrap();
@@ -332,7 +329,7 @@ fn test_multi_entity_persistence_through_dual_storage() {
     );
 
     let cursor = FlushCursor {
-        last_flushed_at: String::new(),
+        last_flushed_at: 0,
         partition: "default".into(),
     };
     let flush = <_ as FlushCapable>::flush_since(&guard, &cursor).unwrap();
@@ -349,7 +346,7 @@ fn test_evict_after_flush_removes_both_hot_and_cold_blobs() {
     <_ as FactCapable>::submit_fact(&mut guard, &fact("f_evict")).unwrap();
 
     let cursor = FlushCursor {
-        last_flushed_at: String::new(),
+        last_flushed_at: 0,
         partition: "default".into(),
     };
     <_ as FlushCapable>::flush_since(&guard, &cursor).unwrap();
@@ -375,7 +372,7 @@ fn test_flush_then_snapshot_roundtrip_null_cold_is_noop() {
     <_ as FactCapable>::submit_fact(&mut guard, &fact("f_cycle_b")).unwrap();
 
     let cursor = FlushCursor {
-        last_flushed_at: String::new(),
+        last_flushed_at: 0,
         partition: "default".into(),
     };
     let r_before = <_ as FlushCapable>::flush_since(&guard, &cursor).unwrap();
@@ -414,7 +411,7 @@ fn test_fih_scenario_submit_flush_read() {
         creator: "tester".into(),
         worker: None,
         last_heartbeat_at: None,
-        created_at: Some("0".into()),
+        created_at: Some(0),
         concluded_at: None,
     };
     <_ as IntentCapable>::submit_intent(&mut guard, &intent).unwrap();
@@ -436,7 +433,7 @@ fn test_fih_scenario_submit_flush_read() {
 
     // Flush (cursor-aware: only data after cursor)
     let cursor = FlushCursor {
-        last_flushed_at: String::new(),
+        last_flushed_at: 0,
         partition: "default".into(),
     };
     let result = <_ as FlushCapable>::flush_since(&guard, &cursor).unwrap();
@@ -467,12 +464,12 @@ fn test_fih_scenario_incremental_flush() {
     <_ as FactCapable>::submit_fact(&mut guard, &fact("inc_f2")).unwrap();
 
     let cursor = FlushCursor {
-        last_flushed_at: String::new(),
+        last_flushed_at: 0,
         partition: "default".into(),
     };
     let r1 = <_ as FlushCapable>::flush_since(&guard, &cursor).unwrap();
     assert_eq!(r1.records_flushed, 2, "first flush: 2 facts");
-    assert!(!r1.new_cursor.last_flushed_at.is_empty(), "cursor set");
+    assert!(r1.new_cursor.last_flushed_at > 0, "cursor set");
 
     // Phase 2: add 1 more fact, flush with cursor
     <_ as FactCapable>::submit_fact(&mut guard, &fact("inc_f3")).unwrap();
@@ -511,7 +508,7 @@ fn test_fih_scenario_petgraph_blob_identity() {
         creator: "tester".into(),
         worker: None,
         last_heartbeat_at: None,
-        created_at: Some("0".into()),
+        created_at: Some(0),
         concluded_at: None,
     };
     <_ as IntentCapable>::submit_intent(&mut guard, &intent).unwrap();
@@ -525,7 +522,7 @@ fn test_fih_scenario_petgraph_blob_identity() {
 
     // Flush
     let cursor = FlushCursor {
-        last_flushed_at: String::new(),
+        last_flushed_at: 0,
         partition: "default".into(),
     };
     let result = <_ as FlushCapable>::flush_since(&guard, &cursor).unwrap();
