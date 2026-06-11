@@ -11,8 +11,8 @@ pub struct FakeClock {
     step_ns: u64,
 }
 
+#[allow(dead_code)]
 impl FakeClock {
-    #[allow(dead_code)]
     pub fn new(start_ns: u64) -> Self {
         Self {
             now: Mutex::new(start_ns),
@@ -20,6 +20,7 @@ impl FakeClock {
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_step(start_ns: u64, step_ns: u64) -> Self {
         Self {
             now: Mutex::new(start_ns),
@@ -56,6 +57,7 @@ pub fn fact(id: &str) -> Fact {
     }
 }
 
+#[allow(dead_code)]
 pub fn intent(id: &str, from: Vec<&str>) -> Intent {
     Intent {
         id: FihHash(id.into()),

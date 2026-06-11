@@ -15,6 +15,6 @@ pub mod session;
 pub mod sim_io;
 pub mod store;
 
-pub use io::{FihIo, FihIoBatch, WriteOp};
+pub use io::{AsyncFihIo, BlockingFihIo, WriteOp};
 pub use sim_io::SimFihIo;
 pub use store::NativeFihStorage;

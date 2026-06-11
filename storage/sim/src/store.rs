@@ -22,15 +22,16 @@ use nexus_model::{
 };
 
 use crate::index::TimeIndex;
-use crate::io::{FihIo, FihIoBatch, WriteOp};
+use crate::io::{AsyncFihIo, BlockingFihIo, WriteOp};
 use crate::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
 
 /// Unified FIH storage backended by an abstract IO layer.
 ///
 /// All FIH trait methods are sync. They enqueue WriteOps into a buffer
 /// for batch commit by the outer FihSession layer.
-pub struct NativeFihStorage<I: FihIo> {
-    io: I,
+/// IO is wrapped in BlockingFihIo to bridge the async IO trait with sync callers.
+pub struct NativeFihStorage<I: AsyncFihIo> {
+    io: BlockingFihIo<I>,
     project_id: String,
     clock: Box<dyn Now + Send + Sync>,
     // In-memory cache: rebuilt from IO on hydrate, kept in sync for reads.
@@ -45,14 +46,14 @@ pub struct NativeFihStorage<I: FihIo> {
     pub(crate) pending: Mutex<Vec<WriteOp>>,
 }
 
-impl<I: FihIo> NativeFihStorage<I> {
+impl<I: AsyncFihIo> NativeFihStorage<I> {
     pub fn new(io: I, project_id: &str) -> Self {
         Self::with_clock(io, project_id, Box::new(nexus_model::SystemClock))
     }
 
     pub fn with_clock(io: I, project_id: &str, clock: Box<dyn Now + Send + Sync>) -> Self {
         Self {
-            io,
+            io: BlockingFihIo::new(io),
             project_id: project_id.to_string(),
             clock,
             fact_cache: RwLock::new(HashMap::new()),
@@ -261,7 +262,7 @@ fn content_hash(data: &[u8]) -> String {
 
 // ── StorageRead ──────────────────────────────────────────────────────────
 
-impl<I: FihIo> StorageRead for NativeFihStorage<I> {
+impl<I: AsyncFihIo> StorageRead for NativeFihStorage<I> {
     fn project_id(&self) -> &str {
         &self.project_id
     }
@@ -335,7 +336,7 @@ impl<I: FihIo> StorageRead for NativeFihStorage<I> {
 
 // ── FactCapable ──────────────────────────────────────────────────────────
 
-impl<I: FihIo> FactCapable for NativeFihStorage<I> {
+impl<I: AsyncFihIo> FactCapable for NativeFihStorage<I> {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         let blob_hash = self
             .enqueue_content(&fact.content)
@@ -381,7 +382,7 @@ impl<I: FihIo> FactCapable for NativeFihStorage<I> {
 
 // ── HintCapable ──────────────────────────────────────────────────────────
 
-impl<I: FihIo> HintCapable for NativeFihStorage<I> {
+impl<I: AsyncFihIo> HintCapable for NativeFihStorage<I> {
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         let record = HintRecord {
             id: hint.id.0.clone(),
@@ -411,7 +412,7 @@ impl<I: FihIo> HintCapable for NativeFihStorage<I> {
 
 // ── IntentCapable ────────────────────────────────────────────────────────
 
-impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
+impl<I: AsyncFihIo> IntentCapable for NativeFihStorage<I> {
     fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
         // Verify all from_facts exist in cache
         let facts = self.fact_cache.read().unwrap();
@@ -618,7 +619,7 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
 
 // ── EvictCapable ─────────────────────────────────────────────────────────
 
-impl<I: FihIo> EvictCapable for NativeFihStorage<I> {
+impl<I: AsyncFihIo> EvictCapable for NativeFihStorage<I> {
     fn approximate_size(&self) -> usize {
         let facts = self.fact_cache.read().unwrap().len();
         let intents = self.intent_cache.read().unwrap().len();
@@ -665,7 +666,7 @@ impl<I: FihIo> EvictCapable for NativeFihStorage<I> {
 
 // ── FilterCapable ────────────────────────────────────────────────────────
 
-impl<I: FihIo> FilterCapable for NativeFihStorage<I> {
+impl<I: AsyncFihIo> FilterCapable for NativeFihStorage<I> {
     fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
         // Determine time range using TimeIndex (O(log N) seek)
         let time_filtered_ids: Option<std::collections::HashSet<String>> =
@@ -755,7 +756,7 @@ impl<I: FihIo> FilterCapable for NativeFihStorage<I> {
 
 use nexus_model::{FlushCapable, FlushCursor, FlushResult};
 
-impl<I: FihIo> FlushCapable for NativeFihStorage<I> {
+impl<I: AsyncFihIo> FlushCapable for NativeFihStorage<I> {
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
         let since_ts = cursor.last_flushed_at;
         let now_ts = self.clock.now_nanos();
@@ -1218,7 +1219,7 @@ mod tests {
             partition: "default".into(),
         };
         <NativeFihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor).unwrap();
-        let keys = io.list("flush/").unwrap();
+        let keys = BlockingFihIo::new(io).list("flush/").unwrap();
         assert!(!keys.is_empty());
         assert!(keys.iter().any(|k| k.contains("f001")));
     }

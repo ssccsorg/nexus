@@ -5,9 +5,11 @@
 // Compatible with wasm32-unknown-unknown (no std::fs dependency).
 
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 
-use crate::io::FihIo;
+use crate::io::AsyncFihIo;
 
 /// Deterministic in-memory IO. No filesystem, no network, no async.
 /// On wasm32, uses Rc<RefCell<>> internally; on native, Arc<RwLock<>>.
@@ -68,79 +70,108 @@ impl Default for SimFihIo {
     }
 }
 
-impl FihIo for SimFihIo {
-    fn read(&self, path: &str) -> Result<Option<Vec<u8>>, String> {
-        let map = self.data.read().map_err(|e| e.to_string())?;
-        Ok(map.get(path).cloned())
+impl AsyncFihIo for SimFihIo {
+    fn read<'a>(
+        &'a self,
+        path: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Vec<u8>>, String>> + 'a>> {
+        Box::pin(async move {
+            let map = self.data.read().map_err(|e| e.to_string())?;
+            Ok(map.get(path).cloned())
+        })
     }
 
-    fn write(&self, path: &str, data: &[u8]) -> Result<(), String> {
-        // Failure injection
-        if self.failure_rate > 0.0 {
-            let mut count = self.op_count.write().map_err(|e| e.to_string())?;
-            *count += 1;
-            let should_fail = (*count as f64 * self.failure_rate).fract() < self.failure_rate;
-            if should_fail {
-                return Err(format!("injected failure on op {}", *count));
+    fn write<'a>(
+        &'a self,
+        path: &'a str,
+        data: &'a [u8],
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + 'a>> {
+        Box::pin(async move {
+            // Failure injection
+            if self.failure_rate > 0.0 {
+                let mut count = self.op_count.write().map_err(|e| e.to_string())?;
+                *count += 1;
+                let should_fail = (*count as f64 * self.failure_rate).fract() < self.failure_rate;
+                if should_fail {
+                    return Err(format!("injected failure on op {}", *count));
+                }
             }
-        }
 
-        let mut map = self.data.write().map_err(|e| e.to_string())?;
-        map.insert(path.to_string(), data.to_vec());
-        Ok(())
+            let mut map = self.data.write().map_err(|e| e.to_string())?;
+            map.insert(path.to_string(), data.to_vec());
+            Ok(())
+        })
     }
 
-    fn list(&self, prefix: &str) -> Result<Vec<String>, String> {
-        let map = self.data.read().map_err(|e| e.to_string())?;
-        let mut keys: Vec<String> = map
-            .keys()
-            .filter(|k| k.starts_with(prefix))
-            .cloned()
-            .collect();
-        keys.sort();
-        Ok(keys)
+    fn list<'a>(
+        &'a self,
+        prefix: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<String>, String>> + 'a>> {
+        Box::pin(async move {
+            let map = self.data.read().map_err(|e| e.to_string())?;
+            let mut keys: Vec<String> = map
+                .keys()
+                .filter(|k| k.starts_with(prefix))
+                .cloned()
+                .collect();
+            keys.sort();
+            Ok(keys)
+        })
     }
 
-    fn delete(&self, path: &str) -> Result<(), String> {
-        let mut map = self.data.write().map_err(|e| e.to_string())?;
-        map.remove(path);
-        Ok(())
+    fn delete<'a>(
+        &'a self,
+        path: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + 'a>> {
+        Box::pin(async move {
+            let mut map = self.data.write().map_err(|e| e.to_string())?;
+            map.remove(path);
+            Ok(())
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::io::BlockingFihIo;
 
     #[test]
     fn test_write_read_roundtrip() {
         let io = SimFihIo::new();
-        io.write("facts/f_test.fact", b"hello").unwrap();
-        let data = io.read("facts/f_test.fact").unwrap().expect("should exist");
+        let blocking = BlockingFihIo::new(io);
+        blocking.write("facts/f_test.fact", b"hello").unwrap();
+        let data = blocking
+            .read("facts/f_test.fact")
+            .unwrap()
+            .expect("should exist");
         assert_eq!(data, b"hello");
     }
 
     #[test]
     fn test_read_nonexistent() {
         let io = SimFihIo::new();
-        assert!(io.read("nonexistent").unwrap().is_none());
+        let blocking = BlockingFihIo::new(io);
+        assert!(blocking.read("nonexistent").unwrap().is_none());
     }
 
     #[test]
     fn test_delete() {
         let io = SimFihIo::new();
-        io.write("facts/f_test.fact", b"data").unwrap();
-        io.delete("facts/f_test.fact").unwrap();
-        assert!(io.read("facts/f_test.fact").unwrap().is_none());
+        let blocking = BlockingFihIo::new(io);
+        blocking.write("facts/f_test.fact", b"data").unwrap();
+        blocking.delete("facts/f_test.fact").unwrap();
+        assert!(blocking.read("facts/f_test.fact").unwrap().is_none());
     }
 
     #[test]
     fn test_list_prefix() {
         let io = SimFihIo::new();
-        io.write("facts/f_a.fact", b"a").unwrap();
-        io.write("facts/f_b.fact", b"b").unwrap();
-        io.write("blob/hash.bin", b"c").unwrap();
-        let facts = io.list("facts/").unwrap();
+        let blocking = BlockingFihIo::new(io);
+        blocking.write("facts/f_a.fact", b"a").unwrap();
+        blocking.write("facts/f_b.fact", b"b").unwrap();
+        blocking.write("blob/hash.bin", b"c").unwrap();
+        let facts = blocking.list("facts/").unwrap();
         assert_eq!(facts.len(), 2);
         assert!(facts.contains(&"facts/f_a.fact".to_string()));
         assert!(facts.contains(&"facts/f_b.fact".to_string()));
@@ -149,13 +180,15 @@ mod tests {
     #[test]
     fn test_failure_injection() {
         let io = SimFihIo::new().with_failure_rate(1.0); // 100% fail
-        assert!(io.write("x", b"data").is_err());
+        let blocking = BlockingFihIo::new(io);
+        assert!(blocking.write("x", b"data").is_err());
     }
 
     #[test]
     fn test_clear() {
         let io = SimFihIo::new();
-        io.write("test", b"data").unwrap();
+        let blocking = BlockingFihIo::new(io.clone());
+        blocking.write("test", b"data").unwrap();
         assert_eq!(io.len(), 1);
         io.clear();
         assert_eq!(io.len(), 0);

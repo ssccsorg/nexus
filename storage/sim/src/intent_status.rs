@@ -3,7 +3,7 @@
 // IntentStatus enum with compile-time enforcement of valid transitions.
 // Invalid transitions return Err without modifying state.
 
-use crate::record::IntentStatus;
+pub use crate::record::IntentStatus;
 
 impl IntentStatus {
     /// Attempt to transition from the current state to Claimed.
