@@ -69,10 +69,18 @@ fn scenario_contradiction_detection_via_gateway() {
 
     let state = gw.read_state();
     assert_eq!(state.facts.len(), 3, "2 original + 1 concluded");
-    let conclusion = state.facts.iter().find(|f| f.origin.starts_with("conclusion:"));
+    let conclusion = state
+        .facts
+        .iter()
+        .find(|f| f.origin.starts_with("conclusion:"));
     assert!(conclusion.is_some(), "conclusion fact should exist");
     assert!(
-        conclusion.unwrap().content.as_str().unwrap_or("").contains("Contradiction resolved"),
+        conclusion
+            .unwrap()
+            .content
+            .as_str()
+            .unwrap_or("")
+            .contains("Contradiction resolved"),
         "conclusion fact should contain result text"
     );
 
