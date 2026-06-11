@@ -665,8 +665,8 @@ impl<I: FihIo> EvictCapable for NativeFihStorage<I> {
 impl<I: FihIo> FilterCapable for NativeFihStorage<I> {
     fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
         // Use TimeIndex for temporal filtering when since is provided
-        if let Some(since_str) = &filter.since {
-            if let Ok(since_ts) = since_str.parse::<u64>() {
+        if let Some(since_str) = &filter.since
+            && let Ok(since_ts) = since_str.parse::<u64>() {
                 let ids: std::collections::HashSet<String> = self
                     .time_index
                     .since(since_ts)
@@ -679,11 +679,10 @@ impl<I: FihIo> FilterCapable for NativeFihStorage<I> {
                 state.intents.retain(|i| ids.contains(&i.id.0));
                 state.hints.retain(|h| ids.contains(&h.id.0));
 
-                if let Some(until_str) = &filter.until {
-                    if let Ok(_until_ts) = until_str.parse::<u64>() {
+                if let Some(until_str) = &filter.until
+                    && let Ok(_until_ts) = until_str.parse::<u64>() {
                         // Further filter by until using fact_cache or time_index
                     }
-                }
 
                 let offset = filter.offset.unwrap_or(0);
                 if let Some(limit) = filter.limit {
@@ -698,7 +697,6 @@ impl<I: FihIo> FilterCapable for NativeFihStorage<I> {
 
                 return state;
             }
-        }
 
         // Fallback for non-temporal filters
         let mut state = StorageRead::read_state(self);
