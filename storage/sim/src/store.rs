@@ -667,56 +667,54 @@ impl<I: FihIo> EvictCapable for NativeFihStorage<I> {
 impl<I: FihIo> FilterCapable for NativeFihStorage<I> {
     fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
         // Determine time range using TimeIndex (O(log N) seek)
-        let time_filtered_ids: Option<std::collections::HashSet<String>> = match (
-            &filter.since,
-            &filter.until,
-        ) {
-            (Some(since_str), Some(until_str)) => {
-                // Both bounds: range query
-                if let (Ok(since_ts), Ok(until_ts)) =
-                    (since_str.parse::<u64>(), until_str.parse::<u64>())
-                {
-                    Some(
-                        self.time_index
-                            .range(since_ts, until_ts)
-                            .into_iter()
-                            .map(|(_, id)| id)
-                            .collect(),
-                    )
-                } else {
-                    None
+        let time_filtered_ids: Option<std::collections::HashSet<String>> =
+            match (&filter.since, &filter.until) {
+                (Some(since_str), Some(until_str)) => {
+                    // Both bounds: range query
+                    if let (Ok(since_ts), Ok(until_ts)) =
+                        (since_str.parse::<u64>(), until_str.parse::<u64>())
+                    {
+                        Some(
+                            self.time_index
+                                .range(since_ts, until_ts)
+                                .into_iter()
+                                .map(|(_, id)| id)
+                                .collect(),
+                        )
+                    } else {
+                        None
+                    }
                 }
-            }
-            (Some(since_str), None) => {
-                // Lower bound only: since query
-                if let Ok(since_ts) = since_str.parse::<u64>() {
-                    Some(
-                        self.time_index
-                            .since(since_ts)
-                            .into_iter()
-                            .map(|(_, id)| id)
-                            .collect(),
-                    )
-                } else {
-                    None
+                (Some(since_str), None) => {
+                    // Lower bound only: since query
+                    if let Ok(since_ts) = since_str.parse::<u64>() {
+                        Some(
+                            self.time_index
+                                .since(since_ts)
+                                .into_iter()
+                                .map(|(_, id)| id)
+                                .collect(),
+                        )
+                    } else {
+                        None
+                    }
                 }
-            }
-            (None, Some(until_str)) => {
-                // Upper bound only: as_of query (time-travel)
-                if let Ok(until_ts) = until_str.parse::<u64>() {
-                    Some(
-                        self.time_index
-                            .as_of(until_ts)
-                            .into_iter()
-                            .map(|(_, id)| id)
-                            .collect(),
-                    )
-                } else {
-                    None
+                (None, Some(until_str)) => {
+                    // Upper bound only: as_of query (time-travel)
+                    if let Ok(until_ts) = until_str.parse::<u64>() {
+                        Some(
+                            self.time_index
+                                .as_of(until_ts)
+                                .into_iter()
+                                .map(|(_, id)| id)
+                                .collect(),
+                        )
+                    } else {
+                        None
+                    }
                 }
-            }
-            (None, None) => None,
-        };
+                (None, None) => None,
+            };
 
         let mut state = StorageRead::read_state(self);
 
@@ -1108,26 +1106,50 @@ mod tests {
         use nexus_model::FilterCapable;
         let store = make_storage();
 
-        FactCapable::submit_fact(&store, &Fact {
-            id: FihHash("f_early".into()), origin: "t".into(),
-            content: Content { mime_type: "text/plain".into(), data: b"early".to_vec() },
-            creator: "t".into(),
-        }).unwrap();
+        FactCapable::submit_fact(
+            &store,
+            &Fact {
+                id: FihHash("f_early".into()),
+                origin: "t".into(),
+                content: Content {
+                    mime_type: "text/plain".into(),
+                    data: b"early".to_vec(),
+                },
+                creator: "t".into(),
+            },
+        )
+        .unwrap();
 
         // Small delay to separate timestamps
         std::thread::sleep(std::time::Duration::from_millis(2));
 
-        FactCapable::submit_fact(&store, &Fact {
-            id: FihHash("f_mid".into()), origin: "t".into(),
-            content: Content { mime_type: "text/plain".into(), data: b"mid".to_vec() },
-            creator: "t".into(),
-        }).unwrap();
+        FactCapable::submit_fact(
+            &store,
+            &Fact {
+                id: FihHash("f_mid".into()),
+                origin: "t".into(),
+                content: Content {
+                    mime_type: "text/plain".into(),
+                    data: b"mid".to_vec(),
+                },
+                creator: "t".into(),
+            },
+        )
+        .unwrap();
 
-        FactCapable::submit_fact(&store, &Fact {
-            id: FihHash("f_late".into()), origin: "t".into(),
-            content: Content { mime_type: "text/plain".into(), data: b"late".to_vec() },
-            creator: "t".into(),
-        }).unwrap();
+        FactCapable::submit_fact(
+            &store,
+            &Fact {
+                id: FihHash("f_late".into()),
+                origin: "t".into(),
+                content: Content {
+                    mime_type: "text/plain".into(),
+                    data: b"late".to_vec(),
+                },
+                creator: "t".into(),
+            },
+        )
+        .unwrap();
 
         // Time-travel: as_of before f_late should exclude f_late
         let mid_ts = store.clock.now_nanos();
@@ -1135,21 +1157,41 @@ mod tests {
         // 1. until filter doesn't panic
         // 2. result count is reasonable
         let filter_until = StateFilter {
-            fact_ids: None, intent_ids: None, hint_ids: None,
-            since: None, until: Some(mid_ts.to_string()),
-            limit: None, offset: None,
+            fact_ids: None,
+            intent_ids: None,
+            hint_ids: None,
+            since: None,
+            until: Some(mid_ts.to_string()),
+            limit: None,
+            offset: None,
         };
-        let state = <NativeFihStorage<SimFihIo> as FilterCapable>::read_state_filtered(&store, &filter_until);
-        assert!(state.facts.len() <= 3, "as_of filter should not exceed total facts");
+        let state = <NativeFihStorage<SimFihIo> as FilterCapable>::read_state_filtered(
+            &store,
+            &filter_until,
+        );
+        assert!(
+            state.facts.len() <= 3,
+            "as_of filter should not exceed total facts"
+        );
 
         // Range: since + until
         let range_filter = StateFilter {
-            fact_ids: None, intent_ids: None, hint_ids: None,
-            since: Some("0".to_string()), until: Some(mid_ts.to_string()),
-            limit: None, offset: None,
+            fact_ids: None,
+            intent_ids: None,
+            hint_ids: None,
+            since: Some("0".to_string()),
+            until: Some(mid_ts.to_string()),
+            limit: None,
+            offset: None,
         };
-        let state = <NativeFihStorage<SimFihIo> as FilterCapable>::read_state_filtered(&store, &range_filter);
+        let state = <NativeFihStorage<SimFihIo> as FilterCapable>::read_state_filtered(
+            &store,
+            &range_filter,
+        );
         assert!(state.facts.len() <= 3);
-        assert!(state.facts.len() >= 1, "range filter should return at least early fact");
+        assert!(
+            state.facts.len() >= 1,
+            "range filter should return at least early fact"
+        );
     }
 }
