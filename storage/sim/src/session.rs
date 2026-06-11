@@ -6,7 +6,7 @@
 // Unlike StoreSession, FihSession is generic over any FihIo implementation
 // and does not require separate MetaStore/BlobStore/ObjectStore instances.
 
-use crate::io::{FihIo, FihIoBatch};
+use crate::io::FihIo;
 use crate::store::NativeFihStorage;
 
 /// Session wrapper around NativeFihStorage that manages the
@@ -57,7 +57,7 @@ impl<I: FihIo> FihSession<I> {
 mod tests {
     use super::*;
     use crate::sim_io::SimFihIo;
-    use nexus_model::{Fact, FactCapable, FihHash, Content, StorageRead};
+    use nexus_model::{Content, Fact, FactCapable, FihHash, StorageRead};
 
     #[test]
     fn test_session_hydrate_flush() {

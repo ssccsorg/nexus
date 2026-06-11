@@ -46,6 +46,10 @@ impl SimFihIo {
     pub fn len(&self) -> usize {
         self.data.read().unwrap().len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.data.read().unwrap().is_empty()
+    }
 }
 
 impl Clone for SimFihIo {

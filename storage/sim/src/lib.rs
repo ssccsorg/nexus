@@ -6,8 +6,8 @@
 // All FIH trait implementations are sync. IO is enqueued as WriteOps in a
 // buffer and flushed by the outer FihSession layer (see session.rs).
 
-pub mod io;
 pub mod intent_status;
+pub mod io;
 pub mod record;
 pub mod session;
 pub mod sim_io;

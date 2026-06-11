@@ -14,12 +14,8 @@ impl IntentStatus {
                 worker: worker.to_string(),
                 last_heartbeat_at: heartbeat_at,
             }),
-            IntentStatus::Claimed { worker: w, .. } => {
-                Err(format!("already claimed by {}", w))
-            }
-            IntentStatus::Concluded { .. } => {
-                Err("already concluded".to_string())
-            }
+            IntentStatus::Claimed { worker: w, .. } => Err(format!("already claimed by {}", w)),
+            IntentStatus::Concluded { .. } => Err("already concluded".to_string()),
         }
     }
 
@@ -72,10 +68,14 @@ mod tests {
         assert!(matches!(claimed, IntentStatus::Claimed { ref worker, .. } if worker == "alice"));
 
         let heartbeat = claimed.try_heartbeat("alice", 200).unwrap();
-        assert!(matches!(heartbeat, IntentStatus::Claimed { last_heartbeat_at, .. } if last_heartbeat_at == 200));
+        assert!(
+            matches!(heartbeat, IntentStatus::Claimed { last_heartbeat_at, .. } if last_heartbeat_at == 200)
+        );
 
         let concluded = claimed.try_conclude("f_result", 300).unwrap();
-        assert!(matches!(concluded, IntentStatus::Concluded { to_fact, .. } if to_fact == "f_result"));
+        assert!(
+            matches!(concluded, IntentStatus::Concluded { to_fact, .. } if to_fact == "f_result")
+        );
     }
 
     #[test]
