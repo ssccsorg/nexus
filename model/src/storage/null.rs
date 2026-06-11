@@ -106,8 +106,7 @@ impl FlushCapable for NullStorage {
         let now_ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
-            .as_secs()
-            .to_string();
+            .as_secs();
         Ok(FlushResult {
             records_flushed: 0,
             new_cursor: FlushCursor {

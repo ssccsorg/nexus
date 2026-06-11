@@ -263,14 +263,12 @@ impl PetgraphStorage {
                             .properties
                             .get("last_heartbeat_at")
                             .and_then(|c| c.as_str())
-                            .and_then(|s| s.parse::<i64>().ok())
-                            .map(|ts| ts.to_string()),
+                            .and_then(|s| s.parse::<u64>().ok()),
                         created_at: w
                             .properties
                             .get("created_at")
                             .and_then(|c| c.as_str())
-                            .and_then(|s| s.parse::<i64>().ok())
-                            .map(|ts| ts.to_string()),
+                            .and_then(|s| s.parse::<u64>().ok()),
                         concluded_at: None,
                     }) {
                         intents.push(line);
@@ -393,21 +391,19 @@ impl StorageRead for PetgraphStorage {
                                 .properties
                                 .get("last_heartbeat_at")
                                 .and_then(|c| c.as_str())
-                                .and_then(|s| s.parse::<i64>().ok())
-                                .map(|ts| ts.to_string()),
+                                .and_then(|s| s.parse::<u64>().ok()),
                             created_at: w
                                 .properties
                                 .get("created_at")
                                 .and_then(|c| c.as_str())
-                                .and_then(|s| s.parse::<i64>().ok())
-                                .map(|ts| ts.to_string()),
+                                .and_then(|s| s.parse::<u64>().ok()),
                             concluded_at: if w
                                 .properties
                                 .get("concluded")
                                 .and_then(|c| c.as_str())
                                 .is_some_and(|v| v == "true")
                             {
-                                Some("yes".into())
+                                Some(1)
                             } else {
                                 None
                             },
@@ -984,8 +980,7 @@ impl FilterCapable for PetgraphStorage {
         {
             state.intents.retain(|i| {
                 i.created_at
-                    .as_ref()
-                    .and_then(|c| c.parse::<u128>().ok())
+                    .map(|c| c as u128)
                     .is_none_or(|ts| ts >= since_ts)
             });
         }
@@ -994,8 +989,7 @@ impl FilterCapable for PetgraphStorage {
         {
             state.intents.retain(|i| {
                 i.created_at
-                    .as_ref()
-                    .and_then(|c| c.parse::<u128>().ok())
+                    .map(|c| c as u128)
                     .is_none_or(|ts| ts <= until_ts)
             });
         }

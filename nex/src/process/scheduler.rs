@@ -90,7 +90,7 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
                 // call DefaultBlackboard::flush() directly to get
                 // incremental flush with cursor persistence.
                 let cursor = nexus_model::FlushCursor {
-                    last_flushed_at: String::new(),
+                    last_flushed_at: 0,
                     partition: bb.project_id().to_string(),
                 };
                 super::eviction::try_evict_flush(bb, &cursor, threshold, cutoff_secs)
@@ -128,8 +128,7 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
             .as_secs();
         for intent in &state.intents {
             if let Some(worker) = &intent.worker
-                && let Some(ref hb_str) = intent.last_heartbeat_at
-                && let Ok(hb_secs) = hb_str.parse::<u64>()
+                && let Some(hb_secs) = intent.last_heartbeat_at
             {
                 let elapsed = now_secs.saturating_sub(hb_secs);
                 if elapsed > self.config.heartbeat_ttl.as_secs() {

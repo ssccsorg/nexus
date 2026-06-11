@@ -195,7 +195,7 @@ fn test_cursor_timestamp_numeric() {
     let mut bb = bb_with_facts();
     bb.flush().unwrap();
     let cursor = bb.flush_cursor.clone();
-    let ts: u128 = cursor.last_flushed_at.parse().unwrap_or(0);
+    let ts = cursor.last_flushed_at;
     assert!(ts > 0, "flush cursor should contain a positive timestamp");
 }
 

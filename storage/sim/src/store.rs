@@ -310,12 +310,12 @@ impl<I: FihIo> StorageRead for NativeFihStorage<I> {
                     last_heartbeat_at: match &r.status {
                         IntentStatus::Claimed {
                             last_heartbeat_at, ..
-                        } => Some(last_heartbeat_at.to_string()),
+                        } => Some(*last_heartbeat_at),
                         _ => None,
                     },
-                    created_at: Some(r.created_at.to_string()),
+                    created_at: Some(r.created_at),
                     concluded_at: match &r.status {
-                        IntentStatus::Concluded { .. } => Some("yes".into()),
+                        IntentStatus::Concluded { .. } => Some(1),
                         _ => None,
                     },
                 })
@@ -849,7 +849,7 @@ mod tests {
         );
         // created_at should be non-zero (clock.now_secs())
         assert!(
-            state.intents[0].created_at.as_deref() != Some("0"),
+            state.intents[0].created_at != Some(0),
             "created_at should be from clock"
         );
     }
