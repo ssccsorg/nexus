@@ -6,3 +6,15 @@ use crate::fih::{Fact, FihHash};
 pub trait FactCapable: StorageRead {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError>;
 }
+
+impl<T: FactCapable> FactCapable for &T {
+    fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
+        (**self).submit_fact(fact)
+    }
+}
+
+impl<T: FactCapable> FactCapable for &mut T {
+    fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
+        (**self).submit_fact(fact)
+    }
+}

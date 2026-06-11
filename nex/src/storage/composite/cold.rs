@@ -124,8 +124,7 @@ impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> CompositeColdStorage<B,
         let cursor_key = format!("{}:cursor", self.project());
         match self.meta.get(&cursor_key)? {
             Some(raw) => {
-                let cursor: FlushCursor =
-                    postcard::from_bytes(raw.as_bytes()).map_err(|e| e.to_string())?;
+                let cursor: FlushCursor = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
                 Ok(Some(cursor))
             }
             None => Ok(None),
@@ -276,11 +275,10 @@ impl<
             last_flushed_at: now_ts,
             partition: partition.clone(),
         };
-        let cursor_bytes =
-            postcard::to_allocvec(&new_cursor).map_err(|e| format!("serialize cursor: {e}"))?;
+        let cursor_json =
+            serde_json::to_string(&new_cursor).map_err(|e| format!("serialize cursor: {e}"))?;
         let cursor_key = format!("{}:cursor", self.project());
-        self.meta
-            .set(&cursor_key, &String::from_utf8_lossy(&cursor_bytes))?;
+        self.meta.set(&cursor_key, &cursor_json)?;
 
         Ok(FlushResult {
             records_flushed,

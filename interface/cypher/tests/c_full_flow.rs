@@ -7,7 +7,10 @@
 //   4. Read_state + unit assertions verify correctness (Cypher is for portability)
 
 use interface_cypher as cypher;
-use nex::{Blackboard, BlackboardError, Content, Fact, FihHash, Intent, create_blackboard};
+use nex::{
+    Blackboard, BlackboardError, Content, Fact, FihHash, Intent, IntentCapable, StorageRead,
+    create_blackboard,
+};
 
 /// Helper: submit a fact with minimal boilerplate.
 fn submit_fact(bb: &impl Blackboard, id: &str, origin: &str, content: &str, creator: &str) {
@@ -82,6 +85,7 @@ fn test_full_agent_collaboration_flow() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        is_concluded: false,
         concluded_at: None,
     };
     bb.submit_intent(&intent).expect("intent should be valid");
@@ -164,7 +168,10 @@ fn test_full_agent_collaboration_flow() {
 
 #[test]
 fn test_petgraph_time_range() {
-    use nex::{Blackboard, Fact, FihHash, PetgraphStorage, TimeRangeCapable, create_blackboard};
+    use nex::{
+        Fact, FactCapable, FihHash, PetgraphStorage, StorageRead, TimeRangeCapable,
+        create_blackboard,
+    };
 
     // PetgraphStorage::time_range() returns None (unbounded in-memory store).
     // This test verifies the trait is wired correctly.

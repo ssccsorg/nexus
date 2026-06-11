@@ -4,7 +4,10 @@
 // all communicating through the FIH protocol via MockGateway's JSON boundary.
 
 use nex::mock_gateway::MockGateway;
-use nex::{Blackboard, BlackboardError, Content, Fact, FihHash, Intent, create_blackboard};
+use nex::{
+    BlackboardError, Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead,
+    create_blackboard,
+};
 
 // ── Scenario: Intermittent agent (Bluetooth / short-range radio) ─────────
 //
@@ -122,6 +125,7 @@ fn scenario_satellite_burst_agent() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        is_concluded: false,
         concluded_at: None,
     })
     .unwrap();
@@ -172,6 +176,7 @@ fn scenario_browser_agent() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        is_concluded: false,
         concluded_at: None,
     })
     .unwrap();
@@ -266,6 +271,7 @@ fn scenario_multi_language_agents() {
             to_fact_id: None,
             last_heartbeat_at: None,
             created_at: None,
+            is_concluded: false,
             concluded_at: None,
         })
         .unwrap();
@@ -326,6 +332,7 @@ fn scenario_conflicting_claims() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        is_concluded: false,
         concluded_at: None,
     })
     .unwrap();

@@ -10,7 +10,8 @@
 
 use interface_cypher as cypher;
 use nex::{
-    Blackboard, BlackboardError, DefaultBlackboard, Fact, FihHash, Intent, create_blackboard,
+    Blackboard, BlackboardError, DefaultBlackboard, Fact, FactCapable, FihHash, Intent,
+    IntentCapable, StorageRead, create_blackboard,
 };
 use serde_json;
 
@@ -325,6 +326,7 @@ fn scenario_full_research_loop() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        is_concluded: false,
         concluded_at: None,
     };
 
@@ -346,6 +348,7 @@ fn scenario_full_research_loop() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        is_concluded: false,
         concluded_at: None,
     };
 
@@ -493,6 +496,7 @@ fn scenario_full_research_loop() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        is_concluded: false,
         concluded_at: None,
     };
 

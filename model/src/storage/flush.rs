@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /// only data ingested after the last completed flush.
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct FlushCursor {
-    pub last_flushed_at: String,
+    pub last_flushed_at: u64,
     pub partition: String,
 }
 

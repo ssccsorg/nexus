@@ -9,9 +9,9 @@ use crate::storage::petgraph::{
 };
 use cfg_if::cfg_if;
 use nexus_model::{
-    Blackboard, BlackboardError, BoardState, ColdStorage, DualStorage, EvictCapable, Fact,
-    FactCapable, FihHash, FlushCapable, FlushCursor, FlushResult, Hint, HintCapable, Intent,
-    IntentCapable, NullStorage, PartitionData, ScanCapable, StorageRead,
+    BlackboardError, BoardState, ColdStorage, DualStorage, EvictCapable, Fact, FactCapable,
+    FihHash, FlushCapable, FlushCursor, FlushResult, Hint, HintCapable, Intent, IntentCapable,
+    NullStorage, PartitionData, ScanCapable, StorageRead,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -322,19 +322,25 @@ impl ScanCapable for DefaultBlackboard {
     }
 }
 
-impl Blackboard for DefaultBlackboard {
-    fn project_id(&self) -> &str {
-        &self.project_id
-    }
+// ── FactCapable — delegates to storage ───────────────────────────────────
 
+impl FactCapable for DefaultBlackboard {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         self.storage.submit_fact(fact)
     }
+}
 
+// ── HintCapable — delegates to storage ───────────────────────────────────
+
+impl HintCapable for DefaultBlackboard {
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         self.storage.submit_hint(hint)
     }
+}
 
+// ── IntentCapable — full lifecycle with local claims tracking ────────────
+
+impl IntentCapable for DefaultBlackboard {
     fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
         self.storage.submit_intent(intent)
     }
@@ -363,10 +369,6 @@ impl Blackboard for DefaultBlackboard {
     fn conclude_intent(&self, intent_id: &str, result: &str) -> Result<Fact, BlackboardError> {
         self.claims.lock().unwrap().remove(intent_id);
         self.storage.conclude_intent(intent_id, result)
-    }
-
-    fn read_state(&self) -> BoardState {
-        self.storage.read_state()
     }
 }
 
