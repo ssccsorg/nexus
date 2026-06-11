@@ -8,6 +8,7 @@ pub struct FakeClock {
 }
 
 impl FakeClock {
+    #[allow(dead_code)]
     pub fn new(start_ns: u64) -> Self {
         Self {
             now: Mutex::new(start_ns),
