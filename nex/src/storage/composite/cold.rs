@@ -251,7 +251,7 @@ impl<
 {
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
         let partition = &cursor.partition;
-        let now_ts = self.clock.now_nanos();
+        let now_ts = self.clock.now_nanos().to_string();
 
         let mut records_flushed = 0u64;
 
@@ -260,6 +260,7 @@ impl<
         // that updates the cursor only. The caller (DualStorage or Worker)
         // writes Petgraph data to blob before calling flush_since.
         //
+        // TODO: replace String cursor with u64 in FlushCursor
         // If data was pre-written to blob, count the records (one per blob).
         let fact_prefix = flush_blob_prefix(self.project(), "facts", partition);
         let fact_keys = self.blob.list(&fact_prefix)?;

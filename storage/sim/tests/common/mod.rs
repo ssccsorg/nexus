@@ -25,11 +25,11 @@ impl FakeClock {
 }
 
 impl nexus_model::Now for FakeClock {
-    fn now_nanos(&self) -> String {
+    fn now_nanos(&self) -> u64 {
         let mut now = self.now.lock().unwrap();
         let ts = *now;
         *now += self.step_ns;
-        ts.to_string()
+        ts
     }
 
     fn now_secs(&self) -> u64 {

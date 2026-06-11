@@ -40,7 +40,7 @@ cfg_if! {
 
         struct WasmClock;
         impl nexus_model::Now for WasmClock {
-            fn now_nanos(&self) -> String { "0".to_string() }
+            fn now_nanos(&self) -> u64 { 0 }
             fn now_secs(&self) -> u64 { 0 }
         }
     } else {
@@ -446,7 +446,7 @@ impl StorageRead for PetgraphStorage {
 impl FactCapable for PetgraphStorage {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         let mut g = write_graph(&self.graph);
-        let now = self.clock.now_nanos();
+        let now = self.clock.now_nanos().to_string();
         let content_val = String::from_utf8_lossy(&fact.content.data).into_owned();
         g.add_node(NodeWeight {
             name: fact.id.0.clone(),
@@ -510,7 +510,7 @@ impl HintCapable for PetgraphStorage {
                         data: hint.creator.clone().into_bytes(),
                     },
                 );
-                let now = self.clock.now_nanos();
+                let now = self.clock.now_nanos().to_string();
                 m.insert(
                     "submitted_at".into(),
                     Content {
@@ -565,7 +565,7 @@ impl IntentCapable for PetgraphStorage {
                         data: now.into_bytes(),
                     },
                 );
-                let now_ns = self.clock.now_nanos();
+                let now_ns = self.clock.now_nanos().to_string();
                 m.insert(
                     "submitted_at".into(),
                     Content {
@@ -795,7 +795,7 @@ impl IntentCapable for PetgraphStorage {
                         data: new_fact.creator.clone().into_bytes(),
                     },
                 );
-                let now_ns = self.clock.now_nanos();
+                let now_ns = self.clock.now_nanos().to_string();
                 m.insert(
                     "submitted_at".into(),
                     Content {
