@@ -8,7 +8,7 @@
 
 use interface_cypher as cypher;
 use nex::{
-    BlackboardError, Content, Fact, FactCapable, FihHash, Intent, IntentCapable,
+    Blackboard, BlackboardError, Content, Fact, FactCapable, FihHash, Intent, IntentCapable,
     StorageRead, create_blackboard,
 };
 
