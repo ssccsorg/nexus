@@ -1706,8 +1706,10 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "cfg-if",
+ "nex",
  "nexus-model",
  "serde",
+ "serde_json",
  "tempfile",
 ]
 

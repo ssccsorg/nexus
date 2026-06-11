@@ -15,8 +15,8 @@ use std::collections::HashMap;
 use std::sync::{Mutex, RwLock};
 
 use nexus_model::{
-    BlackboardError, BoardState, Content, EvictCapable, Fact, FactCapable, FihHash, FilterCapable,
-    Hint, HintCapable, Intent, IntentCapable, StateFilter, StorageRead,
+    Blackboard, BlackboardError, BoardState, Content, EvictCapable, Fact, FactCapable, FihHash,
+    FilterCapable, Hint, HintCapable, Intent, IntentCapable, StateFilter, StorageRead,
 };
 
 use crate::io::{FihIo, FihIoBatch, WriteOp};
@@ -64,20 +64,20 @@ impl<I: FihIo> NativeFihStorage<I> {
         let intent_keys = self.io.list("intents/")?;
         let mut intents = HashMap::new();
         for key in intent_keys {
-            if let Some(bytes) = self.io.read(&key)? {
-                if let Ok(record) = bincode::deserialize::<IntentRecord>(&bytes) {
-                    intents.insert(record.id.clone(), record);
-                }
+            if let Some(bytes) = self.io.read(&key)?
+                && let Ok(record) = bincode::deserialize::<IntentRecord>(&bytes)
+            {
+                intents.insert(record.id.clone(), record);
             }
         }
 
         let hint_keys = self.io.list("hints/")?;
         let mut hints = HashMap::new();
         for key in hint_keys {
-            if let Some(bytes) = self.io.read(&key)? {
-                if let Ok(record) = bincode::deserialize::<HintRecord>(&bytes) {
-                    hints.insert(record.id.clone(), record);
-                }
+            if let Some(bytes) = self.io.read(&key)?
+                && let Ok(record) = bincode::deserialize::<HintRecord>(&bytes)
+            {
+                hints.insert(record.id.clone(), record);
             }
         }
 
@@ -132,8 +132,13 @@ impl<I: FihIo> NativeFihStorage<I> {
 
     /// Load blob content. Checks pending writes first, then IO.
     /// This ensures read-after-write consistency without flushing.
+    /// Reads the stored mime type from the meta file.
     fn load_content(&self, blob_hash: &str, default_mime: &str) -> Content {
         let blob_path = format!("blob/{}.bin", blob_hash);
+        let meta_path = format!("blob/{}.bin.meta", blob_hash);
+
+        // Determine the stored mime type by reading the meta file
+        let mime_type = self.read_mime_type(&meta_path).unwrap_or_else(|| default_mime.to_string());
 
         // Check pending writes first
         let pending = self.pending.lock().unwrap();
@@ -141,7 +146,7 @@ impl<I: FihIo> NativeFihStorage<I> {
             if let WriteOp::Write { path, data } = op {
                 if *path == blob_path {
                     return Content {
-                        mime_type: default_mime.to_string(),
+                        mime_type,
                         data: data.clone(),
                     };
                 }
@@ -152,13 +157,37 @@ impl<I: FihIo> NativeFihStorage<I> {
         // Fall back to IO
         match self.io.read(&blob_path) {
             Ok(Some(data)) => Content {
-                mime_type: default_mime.to_string(),
+                mime_type,
                 data,
             },
             _ => Content {
                 mime_type: default_mime.to_string(),
                 data: Vec::new(),
             },
+        }
+    }
+
+    /// Read the stored mime type from a blob meta file.
+    /// Returns None if the meta file cannot be read or deserialized.
+    fn read_mime_type(&self, meta_path: &str) -> Option<String> {
+        // Check pending writes first
+        let pending = self.pending.lock().unwrap();
+        for op in pending.iter() {
+            if let WriteOp::Write { path, data } = op {
+                if *path == *meta_path {
+                    if let Ok(meta) = bincode::deserialize::<ContentMeta>(data) {
+                        return Some(meta.mime_type);
+                    }
+                    return None;
+                }
+            }
+        }
+        drop(pending);
+
+        // Fall back to IO
+        match self.io.read(meta_path) {
+            Ok(Some(data)) => bincode::deserialize::<ContentMeta>(&data).ok().map(|m| m.mime_type),
+            _ => None,
         }
     }
 }
@@ -472,7 +501,7 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
 
         // Submit conclusion fact via FactCapable, then re-serialize intent
         drop(cache);
-        self.submit_fact(&new_fact)?;
+        FactCapable::submit_fact(self, &new_fact)?;
 
         let intent_bytes =
             bincode::serialize(&*self.intent_cache.read().unwrap().get(intent_id).unwrap())
@@ -487,6 +516,44 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
 }
 
 // ── EvictCapable ─────────────────────────────────────────────────────────
+
+impl<I: FihIo> Blackboard for NativeFihStorage<I> {
+    fn project_id(&self) -> &str {
+        StorageRead::project_id(self)
+    }
+
+    fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
+        FactCapable::submit_fact(self, fact)
+    }
+
+    fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
+        HintCapable::submit_hint(self, hint)
+    }
+
+    fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+        IntentCapable::submit_intent(self, intent)
+    }
+
+    fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        IntentCapable::claim_intent(self, intent_id, agent)
+    }
+
+    fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        IntentCapable::heartbeat(self, intent_id, agent)
+    }
+
+    fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        IntentCapable::release_intent(self, intent_id, agent)
+    }
+
+    fn conclude_intent(&self, intent_id: &str, result: &str) -> Result<Fact, BlackboardError> {
+        IntentCapable::conclude_intent(self, intent_id, result)
+    }
+
+    fn read_state(&self) -> BoardState {
+        StorageRead::read_state(self)
+    }
+}
 
 impl<I: FihIo> EvictCapable for NativeFihStorage<I> {
     fn approximate_size(&self) -> usize {
@@ -540,7 +607,7 @@ impl<I: FihIo> EvictCapable for NativeFihStorage<I> {
 
 impl<I: FihIo> FilterCapable for NativeFihStorage<I> {
     fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
-        let mut state = self.read_state();
+        let mut state = StorageRead::read_state(self);
 
         if let Some(ids) = &filter.fact_ids {
             state.facts.retain(|f| ids.contains(&f.id.0));
@@ -588,9 +655,9 @@ mod tests {
             },
             creator: "alice".into(),
         };
-        store.submit_fact(&fact).unwrap();
+        FactCapable::submit_fact(&store, &fact).unwrap();
 
-        let state = store.read_state();
+        let state = StorageRead::read_state(&store);
         assert_eq!(state.facts.len(), 1);
         assert_eq!(state.facts[0].id.0, "f001");
         // Content should be readable
@@ -611,7 +678,7 @@ mod tests {
             created_at: None,
             concluded_at: None,
         };
-        let result = store.submit_intent(&intent);
+        let result = IntentCapable::submit_intent(&store, &intent);
         assert!(result.is_err());
         assert!(matches!(result, Err(BlackboardError::NotFound(_))));
     }
@@ -629,7 +696,7 @@ mod tests {
             },
             creator: "alice".into(),
         };
-        store.submit_fact(&fact).unwrap();
+        FactCapable::submit_fact(&store, &fact).unwrap();
 
         let intent = Intent {
             id: FihHash("i001".into()),
@@ -642,19 +709,19 @@ mod tests {
             created_at: None,
             concluded_at: None,
         };
-        store.submit_intent(&intent).unwrap();
+        IntentCapable::submit_intent(&store, &intent).unwrap();
 
-        store.claim_intent("i001", "alice").unwrap();
-        let state = store.read_state();
+        IntentCapable::claim_intent(&store, "i001", "alice").unwrap();
+        let state = StorageRead::read_state(&store);
         assert_eq!(state.intents[0].worker.as_deref(), Some("alice"));
 
-        store.heartbeat("i001", "alice").unwrap();
+        IntentCapable::heartbeat(&store, "i001", "alice").unwrap();
 
-        let result = store.conclude_intent("i001", "analysis complete").unwrap();
+        let result = IntentCapable::conclude_intent(&store, "i001", "analysis complete").unwrap();
         assert!(result.id.0.starts_with("f_concl_"));
         assert_eq!(result.content.data, b"analysis complete");
 
-        let state = store.read_state();
+        let state = StorageRead::read_state(&store);
         assert_eq!(state.facts.len(), 2);
         assert_eq!(state.intents[0].to_fact_id.as_deref(), Some(result.id.0.as_str()));
     }
@@ -662,8 +729,7 @@ mod tests {
     #[test]
     fn test_double_claim_rejected() {
         let store = make_storage();
-        store
-            .submit_fact(&Fact {
+        FactCapable::submit_fact(&store, &Fact {
                 id: FihHash("f_base".into()),
                 origin: "test".into(),
                 content: Content {
@@ -673,8 +739,7 @@ mod tests {
                 creator: "alice".into(),
             })
             .unwrap();
-        store
-            .submit_intent(&Intent {
+        IntentCapable::submit_intent(&store, &Intent {
                 id: FihHash("i001".into()),
                 from_facts: vec!["f_base".into()],
                 description: "test".into(),
@@ -687,8 +752,8 @@ mod tests {
             })
             .unwrap();
 
-        store.claim_intent("i001", "alice").unwrap();
-        assert!(store.claim_intent("i001", "bob").is_err());
+        IntentCapable::claim_intent(&store, "i001", "alice").unwrap();
+        assert!(IntentCapable::claim_intent(&store, "i001", "bob").is_err());
     }
 
     #[test]
@@ -696,8 +761,7 @@ mod tests {
         let io = SimFihIo::new();
         let store = NativeFihStorage::new(io.clone(), "test");
 
-        store
-            .submit_fact(&Fact {
+        FactCapable::submit_fact(&store, &Fact {
                 id: FihHash("f001".into()),
                 origin: "t".into(),
                 content: Content {
@@ -714,7 +778,7 @@ mod tests {
         // Read back from fresh cache
         let store2 = NativeFihStorage::new(io, "test");
         store2.rebuild_cache().unwrap();
-        let state = store2.read_state();
+        let state = StorageRead::read_state(&store2);
         assert_eq!(state.facts.len(), 1);
         assert_eq!(state.facts[0].content.data, b"flush test data");
     }
