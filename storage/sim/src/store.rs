@@ -25,6 +25,27 @@ use crate::index::TimeIndex;
 use crate::io::{AsyncFihIo, BlockingFihIo, WriteOp};
 use crate::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
 
+// ── Type aliases for in-memory caches ───────────────────────────────────
+//
+// Isolate the concrete map implementation so that switching from HashMap to
+// BTreeMap (or any other Map-like structure) requires changing only the type
+// alias below — not the 50+ call sites throughout this file.
+
+/// Fact cache: fact_id → FactRecord
+pub(crate) type FactCache = HashMap<String, FactRecord>;
+
+/// Intent cache: intent_id → IntentRecord
+pub(crate) type IntentCache = HashMap<String, IntentRecord>;
+
+/// Hint cache: hint_id → HintRecord
+pub(crate) type HintCache = HashMap<String, HintRecord>;
+
+/// Reference counts: fact_id → number of Intents referencing this Fact
+pub(crate) type RefCounts = HashMap<String, AtomicU64>;
+
+/// Origin index: origin → [fact_id, ...]
+pub(crate) type OriginIndex = HashMap<String, Vec<String>>;
+
 /// Unified FIH storage backended by an abstract IO layer.
 ///
 /// All FIH trait methods are sync. They enqueue WriteOps into a buffer
@@ -35,13 +56,13 @@ pub struct NativeFihStorage<I: AsyncFihIo> {
     project_id: String,
     clock: Box<dyn Now + Send + Sync>,
     // In-memory cache: rebuilt from IO on hydrate, kept in sync for reads.
-    fact_cache: RwLock<HashMap<String, FactRecord>>,
-    intent_cache: RwLock<HashMap<String, IntentRecord>>,
-    hint_cache: RwLock<HashMap<String, HintRecord>>,
+    fact_cache: RwLock<FactCache>,
+    intent_cache: RwLock<IntentCache>,
+    hint_cache: RwLock<HintCache>,
     // Indices
     time_index: TimeIndex,
-    ref_counts: RwLock<HashMap<String, AtomicU64>>,
-    by_origin: RwLock<HashMap<String, Vec<String>>>,
+    ref_counts: RwLock<RefCounts>,
+    by_origin: RwLock<OriginIndex>,
     // Pending writes (for FihSession coordination).
     pub(crate) pending: Mutex<Vec<WriteOp>>,
 }
@@ -56,12 +77,12 @@ impl<I: AsyncFihIo> NativeFihStorage<I> {
             io: BlockingFihIo::new(io),
             project_id: project_id.to_string(),
             clock,
-            fact_cache: RwLock::new(HashMap::new()),
-            intent_cache: RwLock::new(HashMap::new()),
-            hint_cache: RwLock::new(HashMap::new()),
+            fact_cache: RwLock::new(FactCache::new()),
+            intent_cache: RwLock::new(IntentCache::new()),
+            hint_cache: RwLock::new(HintCache::new()),
             time_index: TimeIndex::new(),
-            ref_counts: RwLock::new(HashMap::new()),
-            by_origin: RwLock::new(HashMap::new()),
+            ref_counts: RwLock::new(RefCounts::new()),
+            by_origin: RwLock::new(OriginIndex::new()),
             pending: Mutex::new(Vec::new()),
         }
     }
@@ -69,7 +90,7 @@ impl<I: AsyncFihIo> NativeFihStorage<I> {
     /// Rebuild in-memory cache from IO storage.
     pub fn rebuild_cache(&self) -> Result<(), String> {
         let fact_keys = self.io.list("facts/")?;
-        let mut facts = HashMap::new();
+        let mut facts = FactCache::new();
         for key in fact_keys {
             if let Some(bytes) = self.io.read(&key)?
                 && let Ok(record) = bincode::deserialize::<FactRecord>(&bytes)
@@ -79,7 +100,7 @@ impl<I: AsyncFihIo> NativeFihStorage<I> {
         }
 
         let intent_keys = self.io.list("intents/")?;
-        let mut intents = HashMap::new();
+        let mut intents = IntentCache::new();
         for key in intent_keys {
             if let Some(bytes) = self.io.read(&key)?
                 && let Ok(record) = bincode::deserialize::<IntentRecord>(&bytes)
@@ -89,7 +110,7 @@ impl<I: AsyncFihIo> NativeFihStorage<I> {
         }
 
         let hint_keys = self.io.list("hints/")?;
-        let mut hints = HashMap::new();
+        let mut hints = HintCache::new();
         for key in hint_keys {
             if let Some(bytes) = self.io.read(&key)?
                 && let Ok(record) = bincode::deserialize::<HintRecord>(&bytes)
