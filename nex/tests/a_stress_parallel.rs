@@ -104,6 +104,7 @@ impl ParallelAnt {
                     to_fact_id: None,
                     last_heartbeat_at: None,
                     created_at: None,
+                    concluded: false,
                     concluded_at: None,
                 }) {
                     Ok(_) => format!("{:<16} submit Intent {id}", self.name),

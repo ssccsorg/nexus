@@ -269,6 +269,7 @@ impl PetgraphStorage {
                             .get("created_at")
                             .and_then(|c| c.as_str())
                             .and_then(|s| s.parse::<u64>().ok()),
+                        concluded: false,
                         concluded_at: None,
                     }) {
                         intents.push(line);
@@ -397,6 +398,11 @@ impl StorageRead for PetgraphStorage {
                                 .get("created_at")
                                 .and_then(|c| c.as_str())
                                 .and_then(|s| s.parse::<u64>().ok()),
+                            concluded: w
+                                .properties
+                                .get("concluded")
+                                .and_then(|c| c.as_str())
+                                .is_some_and(|v| v == "true"),
                             concluded_at: if w
                                 .properties
                                 .get("concluded")

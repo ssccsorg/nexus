@@ -238,6 +238,7 @@ impl DuckDbStorage {
                 to_fact_id,
                 last_heartbeat_at: last_hb.and_then(|s| s.parse::<u64>().ok()),
                 created_at: created_at_str.and_then(|s| s.parse::<u64>().ok()),
+                concluded: concluded_at_str.as_ref().and_then(|s| s.parse::<u64>().ok()).is_some(),
                 concluded_at: concluded_at_str.and_then(|s| s.parse::<u64>().ok()),
             })
         }) {

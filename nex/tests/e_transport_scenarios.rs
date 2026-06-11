@@ -125,6 +125,7 @@ fn scenario_satellite_burst_agent() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        concluded: false,
         concluded_at: None,
     })
     .unwrap();
@@ -175,6 +176,7 @@ fn scenario_browser_agent() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        concluded: false,
         concluded_at: None,
     })
     .unwrap();
@@ -269,6 +271,7 @@ fn scenario_multi_language_agents() {
             to_fact_id: None,
             last_heartbeat_at: None,
             created_at: None,
+            concluded: false,
             concluded_at: None,
         })
         .unwrap();
@@ -329,6 +332,7 @@ fn scenario_conflicting_claims() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        concluded: false,
         concluded_at: None,
     })
     .unwrap();
