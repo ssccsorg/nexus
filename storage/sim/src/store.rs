@@ -54,10 +54,10 @@ impl<I: FihIo> NativeFihStorage<I> {
         let fact_keys = self.io.list("facts/")?;
         let mut facts = HashMap::new();
         for key in fact_keys {
-            if let Some(bytes) = self.io.read(&key)? {
-                if let Ok(record) = bincode::deserialize::<FactRecord>(&bytes) {
-                    facts.insert(record.id.clone(), record);
-                }
+            if let Some(bytes) = self.io.read(&key)?
+                && let Ok(record) = bincode::deserialize::<FactRecord>(&bytes)
+            {
+                facts.insert(record.id.clone(), record);
             }
         }
 
@@ -138,28 +138,27 @@ impl<I: FihIo> NativeFihStorage<I> {
         let meta_path = format!("blob/{}.bin.meta", blob_hash);
 
         // Determine the stored mime type by reading the meta file
-        let mime_type = self.read_mime_type(&meta_path).unwrap_or_else(|| default_mime.to_string());
+        let mime_type = self
+            .read_mime_type(&meta_path)
+            .unwrap_or_else(|| default_mime.to_string());
 
         // Check pending writes first
         let pending = self.pending.lock().unwrap();
         for op in pending.iter() {
-            if let WriteOp::Write { path, data } = op {
-                if *path == blob_path {
-                    return Content {
-                        mime_type,
-                        data: data.clone(),
-                    };
-                }
+            if let WriteOp::Write { path, data } = op
+                && *path == blob_path
+            {
+                return Content {
+                    mime_type,
+                    data: data.clone(),
+                };
             }
         }
         drop(pending);
 
         // Fall back to IO
         match self.io.read(&blob_path) {
-            Ok(Some(data)) => Content {
-                mime_type,
-                data,
-            },
+            Ok(Some(data)) => Content { mime_type, data },
             _ => Content {
                 mime_type: default_mime.to_string(),
                 data: Vec::new(),
@@ -173,20 +172,22 @@ impl<I: FihIo> NativeFihStorage<I> {
         // Check pending writes first
         let pending = self.pending.lock().unwrap();
         for op in pending.iter() {
-            if let WriteOp::Write { path, data } = op {
-                if *path == *meta_path {
-                    if let Ok(meta) = bincode::deserialize::<ContentMeta>(data) {
-                        return Some(meta.mime_type);
-                    }
-                    return None;
+            if let WriteOp::Write { path, data } = op
+                && *path == *meta_path
+            {
+                if let Ok(meta) = bincode::deserialize::<ContentMeta>(data) {
+                    return Some(meta.mime_type);
                 }
+                return None;
             }
         }
         drop(pending);
 
         // Fall back to IO
         match self.io.read(meta_path) {
-            Ok(Some(data)) => bincode::deserialize::<ContentMeta>(&data).ok().map(|m| m.mime_type),
+            Ok(Some(data)) => bincode::deserialize::<ContentMeta>(&data)
+                .ok()
+                .map(|m| m.mime_type),
             _ => None,
         }
     }
@@ -284,8 +285,8 @@ impl<I: FihIo> FactCapable for NativeFihStorage<I> {
 
         let record = FactRecord::from_model(fact, blob_hash, "0");
 
-        let bytes = bincode::serialize(&record)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let bytes =
+            bincode::serialize(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let op = WriteOp::Write {
             path: record.key(),
@@ -315,8 +316,8 @@ impl<I: FihIo> HintCapable for NativeFihStorage<I> {
             ttl_secs: None,
         };
 
-        let bytes = bincode::serialize(&record)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let bytes =
+            bincode::serialize(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let op = WriteOp::Write {
             path: record.key(),
@@ -355,8 +356,8 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
             created_at: 0,
         };
 
-        let bytes = bincode::serialize(&record)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let bytes =
+            bincode::serialize(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let op = WriteOp::Write {
             path: record.key(),
@@ -388,8 +389,8 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
 
         record.status = new_status;
 
-        let bytes = bincode::serialize(record)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let bytes =
+            bincode::serialize(record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.pending.lock().unwrap().push(WriteOp::Write {
             path: record.key(),
             data: bytes,
@@ -414,8 +415,8 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
 
         record.status = new_status;
 
-        let bytes = bincode::serialize(record)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let bytes =
+            bincode::serialize(record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.pending.lock().unwrap().push(WriteOp::Write {
             path: record.key(),
             data: bytes,
@@ -447,8 +448,8 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
             }
         }
 
-        let bytes = bincode::serialize(record)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let bytes =
+            bincode::serialize(record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.pending.lock().unwrap().push(WriteOp::Write {
             path: record.key(),
             data: bytes,
@@ -467,10 +468,10 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
         let worker = match &record.status {
             IntentStatus::Claimed { worker, .. } => worker.clone(),
             IntentStatus::Submitted => {
-                return Err(BlackboardError::Internal("not claimed".to_string()))
+                return Err(BlackboardError::Internal("not claimed".to_string()));
             }
             IntentStatus::Concluded { .. } => {
-                return Err(BlackboardError::Internal("already concluded".to_string()))
+                return Err(BlackboardError::Internal("already concluded".to_string()));
             }
         };
 
@@ -504,7 +505,7 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
         FactCapable::submit_fact(self, &new_fact)?;
 
         let intent_bytes =
-            bincode::serialize(&*self.intent_cache.read().unwrap().get(intent_id).unwrap())
+            bincode::serialize(self.intent_cache.read().unwrap().get(intent_id).unwrap())
                 .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.pending.lock().unwrap().push(WriteOp::Write {
             path: format!("intents/i_{}.intent", intent_id),
@@ -723,13 +724,18 @@ mod tests {
 
         let state = StorageRead::read_state(&store);
         assert_eq!(state.facts.len(), 2);
-        assert_eq!(state.intents[0].to_fact_id.as_deref(), Some(result.id.0.as_str()));
+        assert_eq!(
+            state.intents[0].to_fact_id.as_deref(),
+            Some(result.id.0.as_str())
+        );
     }
 
     #[test]
     fn test_double_claim_rejected() {
         let store = make_storage();
-        FactCapable::submit_fact(&store, &Fact {
+        FactCapable::submit_fact(
+            &store,
+            &Fact {
                 id: FihHash("f_base".into()),
                 origin: "test".into(),
                 content: Content {
@@ -737,9 +743,12 @@ mod tests {
                     data: b"x".to_vec(),
                 },
                 creator: "alice".into(),
-            })
-            .unwrap();
-        IntentCapable::submit_intent(&store, &Intent {
+            },
+        )
+        .unwrap();
+        IntentCapable::submit_intent(
+            &store,
+            &Intent {
                 id: FihHash("i001".into()),
                 from_facts: vec!["f_base".into()],
                 description: "test".into(),
@@ -749,8 +758,9 @@ mod tests {
                 last_heartbeat_at: None,
                 created_at: None,
                 concluded_at: None,
-            })
-            .unwrap();
+            },
+        )
+        .unwrap();
 
         IntentCapable::claim_intent(&store, "i001", "alice").unwrap();
         assert!(IntentCapable::claim_intent(&store, "i001", "bob").is_err());
@@ -761,7 +771,9 @@ mod tests {
         let io = SimFihIo::new();
         let store = NativeFihStorage::new(io.clone(), "test");
 
-        FactCapable::submit_fact(&store, &Fact {
+        FactCapable::submit_fact(
+            &store,
+            &Fact {
                 id: FihHash("f001".into()),
                 origin: "t".into(),
                 content: Content {
@@ -769,8 +781,9 @@ mod tests {
                     data: b"flush test data".to_vec(),
                 },
                 creator: "alice".into(),
-            })
-            .unwrap();
+            },
+        )
+        .unwrap();
 
         // Flush: blob + record should both be in IO
         store.flush_pending().unwrap();
