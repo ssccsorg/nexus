@@ -85,7 +85,7 @@ fn test_full_agent_collaboration_flow() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
-        concluded: false,
+        is_concluded: false,
         concluded_at: None,
     };
     bb.submit_intent(&intent).expect("intent should be valid");

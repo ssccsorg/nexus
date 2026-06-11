@@ -269,7 +269,7 @@ impl PetgraphStorage {
                             .get("created_at")
                             .and_then(|c| c.as_str())
                             .and_then(|s| s.parse::<u64>().ok()),
-                        concluded: false,
+                        is_concluded: false,
                         concluded_at: None,
                     }) {
                         intents.push(line);
@@ -398,14 +398,14 @@ impl StorageRead for PetgraphStorage {
                                 .get("created_at")
                                 .and_then(|c| c.as_str())
                                 .and_then(|s| s.parse::<u64>().ok()),
-                            concluded: w
+                            is_concluded: w
                                 .properties
-                                .get("concluded")
+                                .get("is_concluded")
                                 .and_then(|c| c.as_str())
                                 .is_some_and(|v| v == "true"),
                             concluded_at: if w
                                 .properties
-                                .get("concluded")
+                                .get("is_concluded")
                                 .and_then(|c| c.as_str())
                                 .is_some_and(|v| v == "true")
                             {
@@ -606,7 +606,7 @@ impl IntentCapable for PetgraphStorage {
                 && w.label == "Intent"
             {
                 if w.properties
-                    .get("concluded")
+                    .get("is_concluded")
                     .is_some_and(|v| v.as_str() == Some("true"))
                 {
                     return Err(BlackboardError::NotFound(format!(
@@ -650,7 +650,7 @@ impl IntentCapable for PetgraphStorage {
                 && w.label == "Intent"
             {
                 if w.properties
-                    .get("concluded")
+                    .get("is_concluded")
                     .is_some_and(|v| v.as_str() == Some("true"))
                 {
                     return Err(BlackboardError::NotFound(format!(
@@ -698,7 +698,7 @@ impl IntentCapable for PetgraphStorage {
                 && w.label == "Intent"
             {
                 if w.properties
-                    .get("concluded")
+                    .get("is_concluded")
                     .is_some_and(|v| v.as_str() == Some("true"))
                 {
                     return Err(BlackboardError::NotFound(format!(
@@ -875,7 +875,7 @@ impl EvictCapable for PetgraphStorage {
             if w.label.as_str() == "Intent" {
                 let is_concluded = w
                     .properties
-                    .get("concluded")
+                    .get("is_concluded")
                     .and_then(|c| c.as_str())
                     .is_some_and(|v| v == "true");
                 let hb_ts = w
@@ -932,7 +932,7 @@ impl EvictCapable for PetgraphStorage {
             }
             let is_concluded = w
                 .properties
-                .get("concluded")
+                .get("is_concluded")
                 .and_then(|c| c.as_str())
                 .is_some_and(|v| v == "true");
             if is_concluded {
