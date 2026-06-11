@@ -32,7 +32,7 @@ use crate::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentSta
 pub struct NativeFihStorage<I: FihIo> {
     io: I,
     project_id: String,
-    clock: Box<dyn Now + Send>,
+    clock: Box<dyn Now + Send + Sync>,
     // In-memory cache: rebuilt from IO on hydrate, kept in sync for reads.
     fact_cache: RwLock<HashMap<String, FactRecord>>,
     intent_cache: RwLock<HashMap<String, IntentRecord>>,
@@ -50,7 +50,7 @@ impl<I: FihIo> NativeFihStorage<I> {
         Self::with_clock(io, project_id, Box::new(nexus_model::SystemClock))
     }
 
-    pub fn with_clock(io: I, project_id: &str, clock: Box<dyn Now + Send>) -> Self {
+    pub fn with_clock(io: I, project_id: &str, clock: Box<dyn Now + Send + Sync>) -> Self {
         Self {
             io,
             project_id: project_id.to_string(),
