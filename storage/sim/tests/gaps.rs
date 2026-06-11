@@ -35,8 +35,10 @@ fn test_duplicate_fact_same_id_replaces() {
 fn test_multiple_intents_same_fact_refcount() {
     let s = store();
     s.submit_fact(&common::fact("f_base")).unwrap();
-    s.submit_intent(&common::intent("i_a", vec!["f_base"])).unwrap();
-    s.submit_intent(&common::intent("i_b", vec!["f_base"])).unwrap();
+    s.submit_intent(&common::intent("i_a", vec!["f_base"]))
+        .unwrap();
+    s.submit_intent(&common::intent("i_b", vec!["f_base"]))
+        .unwrap();
 
     // Both intents exist
     let state = s.read_state();
@@ -50,8 +52,11 @@ fn test_multiple_intents_same_fact_refcount() {
 
     // The original fact plus two conclusion facts (one per intent)
     let state = s.read_state();
-    assert_eq!(state.facts.len(), 3,
-               "f_base + conclusion for i_a + conclusion for i_b");
+    assert_eq!(
+        state.facts.len(),
+        3,
+        "f_base + conclusion for i_a + conclusion for i_b"
+    );
 }
 
 #[test]

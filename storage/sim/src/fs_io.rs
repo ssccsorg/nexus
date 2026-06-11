@@ -39,8 +39,15 @@ impl FsFihIo {
 
     fn resolve(&self, path: &str) -> PathBuf {
         // Sanitize: prevent directory traversal
-        let safe: String = path.chars()
-            .map(|c| if c == '/' || c == '_' || c == '-' || c == '.' || c.is_alphanumeric() { c } else { '_' })
+        let safe: String = path
+            .chars()
+            .map(|c| {
+                if c == '/' || c == '_' || c == '-' || c == '.' || c.is_alphanumeric() {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect();
         self.root.join(&safe)
     }
@@ -77,8 +84,8 @@ impl FihIo for FsFihIo {
 
         if full.is_dir() {
             // Walk directory recursively
-            let walker = walkdir::WalkDir::new(&full)
-                .sort_by(|a, b| a.file_name().cmp(b.file_name()));
+            let walker =
+                walkdir::WalkDir::new(&full).sort_by(|a, b| a.file_name().cmp(b.file_name()));
             for entry in walker.into_iter().filter_map(|e| e.ok()) {
                 if entry.file_type().is_file() {
                     let abs_path = entry.path().to_string_lossy().to_string();
@@ -110,8 +117,13 @@ mod tests {
     use super::*;
 
     fn make_fs() -> FsFihIo {
-        let dir = std::env::temp_dir().join(format!("nexus_test_{}", std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let dir = std::env::temp_dir().join(format!(
+            "nexus_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         FsFihIo::new(dir).unwrap()
     }
 
