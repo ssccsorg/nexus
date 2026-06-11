@@ -132,6 +132,7 @@ fn flow_agent_creates_intent_from_detector_fact() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        concluded: false,
         concluded_at: None,
     };
     let iid = sched.bb.submit_intent(&intent).expect("submit");
@@ -193,6 +194,7 @@ fn flow_eviction() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        concluded: false,
         concluded_at: None,
     };
     let iid = sched.bb.submit_intent(&intent).expect("submit");
@@ -312,6 +314,7 @@ fn flow_cross_worker_snapshot() {
         to_fact_id: None,
         last_heartbeat_at: None,
         created_at: None,
+        concluded: false,
         concluded_at: None,
     };
     let iid = bb_b.submit_intent(&intent).expect("submit");

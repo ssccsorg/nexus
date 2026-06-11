@@ -214,6 +214,7 @@ fn test_storage_snapshot_roundtrip() {
         worker: None,
         last_heartbeat_at: None,
         created_at: None,
+        concluded: false,
         concluded_at: None,
     };
     bb.submit_intent(&intent).unwrap();

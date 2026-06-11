@@ -314,6 +314,7 @@ impl<I: FihIo> StorageRead for NativeFihStorage<I> {
                         _ => None,
                     },
                     created_at: Some(r.created_at),
+                    concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
                     concluded_at: match &r.status {
                         IntentStatus::Concluded { .. } => Some(1),
                         _ => None,
@@ -791,6 +792,7 @@ mod tests {
             to_fact_id: None,
             last_heartbeat_at: None,
             created_at: None,
+            concluded: false,
             concluded_at: None,
         };
         let result = IntentCapable::submit_intent(&store, &intent);
@@ -822,6 +824,7 @@ mod tests {
             to_fact_id: None,
             last_heartbeat_at: None,
             created_at: None,
+            concluded: false,
             concluded_at: None,
         };
         IntentCapable::submit_intent(&store, &intent).unwrap();
@@ -881,6 +884,7 @@ mod tests {
                 to_fact_id: None,
                 last_heartbeat_at: None,
                 created_at: None,
+                concluded: false,
                 concluded_at: None,
             },
         )
@@ -1018,6 +1022,7 @@ mod tests {
                 to_fact_id: None,
                 last_heartbeat_at: None,
                 created_at: None,
+                concluded: false,
                 concluded_at: None,
             },
         )

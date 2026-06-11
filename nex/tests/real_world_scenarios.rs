@@ -243,6 +243,7 @@ fn scenario_cross_domain_discovery() {
             to_fact_id: None,
             last_heartbeat_at: None,
             created_at: None,
+            concluded: false,
             concluded_at: None,
         };
         let iid = sched.bb.submit_intent(&intent).expect("submit");
@@ -440,6 +441,7 @@ fn scenario_peer_review_challenge() {
             to_fact_id: None,
             last_heartbeat_at: None,
             created_at: None,
+            concluded: false,
             concluded_at: None,
         };
         let iid = sched.bb.submit_intent(&intent).expect("submit");
@@ -537,6 +539,7 @@ fn scenario_incremental_knowledge_growth() {
                 to_fact_id: None,
                 last_heartbeat_at: None,
                 created_at: None,
+                concluded: false,
                 concluded_at: None,
             };
             let iid = sched.bb.submit_intent(&intent).expect("submit");
@@ -614,6 +617,7 @@ fn scenario_multi_agent_collaboration() {
             to_fact_id: None,
             last_heartbeat_at: None,
             created_at: None,
+            concluded: false,
             concluded_at: None,
         };
         let iid = sched.bb.submit_intent(&intent).expect("submit");
@@ -649,6 +653,7 @@ fn scenario_multi_agent_collaboration() {
             to_fact_id: None,
             last_heartbeat_at: None,
             created_at: None,
+            concluded: false,
             concluded_at: None,
         };
         let iid = sched.bb.submit_intent(&intent).expect("submit");
@@ -684,6 +689,7 @@ fn scenario_multi_agent_collaboration() {
             to_fact_id: None,
             last_heartbeat_at: None,
             created_at: None,
+            concluded: false,
             concluded_at: None,
         };
         let iid = sched.bb.submit_intent(&intent).expect("submit");

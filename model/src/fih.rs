@@ -108,6 +108,7 @@ pub struct Intent {
     pub worker: Option<String>,
     pub last_heartbeat_at: Option<u64>,
     pub created_at: Option<u64>,
+    pub concluded: bool,
     pub concluded_at: Option<u64>,
 }
 
