@@ -6,7 +6,7 @@
 //   - claim_intent while another thread concludes
 //   - heartbeat while another thread releases
 
-use nex::{Blackboard, Fact, FihHash, Intent, create_blackboard};
+use nex::{Blackboard, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead, create_blackboard};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicU64, Ordering},

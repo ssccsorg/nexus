@@ -1,6 +1,6 @@
 // Full lifecycle test for NativeFihStorage<SimFihIo>.
 
-use nex::{Blackboard, Content, Fact, FihHash, Intent};
+use nex::{Blackboard, Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
 use nexus_storage_sim::{NativeFihStorage, SimFihIo};
 
 #[test]

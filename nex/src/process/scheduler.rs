@@ -11,7 +11,7 @@
 // Detection tasks implement `DetectionCapable` (or marker traits) from nexus-model.
 
 use super::error::ProcessError;
-use nexus_model::{Blackboard, DetectionCapable, DetectionOutput, EvictCapable, TaskStates};
+use nexus_model::{Blackboard, DetectionCapable, DetectionOutput, EvictCapable, StorageRead, TaskStates};
 use std::time::Duration;
 
 #[derive(Debug, Clone)]
@@ -105,7 +105,7 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
         &mut self,
         evict_fn: impl FnOnce(&mut B) -> Result<(), ProcessError>,
     ) -> Result<usize, ProcessError> {
-        let state = Blackboard::read_state(&self.bb);
+        let state = StorageRead::read_state(&self.bb);
 
         let mut combined = DetectionOutput::default();
         for task in &mut self.tasks {

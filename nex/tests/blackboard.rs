@@ -1,7 +1,7 @@
 use nex::blackboard::DefaultBlackboard;
 use nex::storage::petgraph::write_graph;
 use nex::*;
-use nexus_model::{Blackboard, Fact, FihHash, FlushCapable, FlushCursor, Intent};
+use nexus_model::{Blackboard, Fact, FactCapable, FihHash, FlushCapable, FlushCursor, Intent, StorageRead};
 
 fn tick() {
     std::thread::sleep(std::time::Duration::from_millis(1));
@@ -224,7 +224,7 @@ fn test_storage_snapshot_roundtrip() {
     let restored = DefaultBlackboard::from_snapshot(snapshot);
 
     // Verify graph data
-    let state = <DefaultBlackboard as nexus_model::Blackboard>::read_state(&restored);
+    let state = <DefaultBlackboard as nexus_model::StorageRead>::read_state(&restored);
     assert_eq!(state.facts.len(), 5);
     assert_eq!(state.intents.len(), 1);
 
