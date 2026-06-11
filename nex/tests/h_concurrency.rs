@@ -6,7 +6,9 @@
 // DefaultBlackboard directly.
 
 use nex::create_blackboard;
-use nex::{Blackboard, BlackboardError, Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
+use nex::{
+    BlackboardError, Content, Fact, FihHash, Intent,
+};
 use std::sync::{Arc, Mutex};
 use std::thread;
 

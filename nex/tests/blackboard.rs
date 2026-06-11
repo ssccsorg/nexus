@@ -1,7 +1,9 @@
 use nex::blackboard::DefaultBlackboard;
 use nex::storage::petgraph::write_graph;
 use nex::*;
-use nexus_model::{Blackboard, Fact, FactCapable, FihHash, FlushCapable, FlushCursor, Intent, StorageRead};
+use nexus_model::{
+    Fact, FihHash, FlushCapable, FlushCursor, Intent, StorageRead,
+};
 
 fn tick() {
     std::thread::sleep(std::time::Duration::from_millis(1));

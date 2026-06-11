@@ -5,8 +5,8 @@
 // (single-threaded, OnceLock provides internal synchronization).
 
 use nex::{
-    BlackboardError, Content, DefaultBlackboard, Fact, FactCapable, FihHash, Intent,
-    IntentCapable, StorageRead,
+    BlackboardError, Content, DefaultBlackboard, Fact, FactCapable, FihHash, Intent, IntentCapable,
+    StorageRead,
 };
 use worker::*;
 

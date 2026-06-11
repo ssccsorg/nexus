@@ -25,8 +25,8 @@ use nex::process::scheduler::Scheduler;
 use nex::process::tasks::gap_detector::GapDetector;
 use nex::storage::petgraph::{Snapshottable, StorageSnapshot};
 use nex::{
-    Blackboard, BoardState, Content, DefaultBlackboard, EvictCapable, Fact, FactCapable, FihHash, Intent,
-    IntentCapable, StorageRead, create_blackboard,
+    Blackboard, BoardState, Content, DefaultBlackboard, EvictCapable, Fact, FactCapable, FihHash,
+    Intent, IntentCapable, StorageRead, create_blackboard,
 };
 
 fn seed_corpus(bb: &mut impl Blackboard) {

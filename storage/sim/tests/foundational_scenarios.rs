@@ -18,7 +18,10 @@ use nex::process::tasks::contradiction_detector::ContradictionDetector;
 use nex::process::tasks::gap_detector::GapDetector;
 use nex::process::tasks::new_document_analyzer::NewDocumentAnalyzer;
 use nex::process::tasks::state_change_detector::StateChangeDetector;
-use nex::{Blackboard, BoardState, EvictCapable, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
+use nex::{
+    Blackboard, BoardState, EvictCapable, Fact, FactCapable, FihHash, Intent, IntentCapable,
+    StorageRead,
+};
 use nexus_storage_sim::{NativeFihStorage, SimFihIo};
 
 fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) -> Fact {

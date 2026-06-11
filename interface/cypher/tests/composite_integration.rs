@@ -14,7 +14,10 @@ use nex::storage::composite::{
     AsyncStoreBlob, AsyncStoreKv, AsyncStoreObject, CompositeColdStorage,
 };
 use nex::storage::petgraph::PetgraphStorage;
-use nex::{Blackboard, Content, DefaultBlackboard, Fact, FactCapable, FihHash, IntentCapable, ScanCapable, Snapshottable, StorageRead, HintCapable};
+use nex::{
+    Content, DefaultBlackboard, Fact, FactCapable, FihHash, HintCapable, IntentCapable,
+    ScanCapable, Snapshottable, StorageRead,
+};
 use nexus_model::{
     BlobStore, ColdStorage, DualStorage, EvictCapable, FlushCapable, FlushCursor, MetaStore,
     ObjectStore,

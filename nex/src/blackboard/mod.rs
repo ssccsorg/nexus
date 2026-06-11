@@ -9,9 +9,9 @@ use crate::storage::petgraph::{
 };
 use cfg_if::cfg_if;
 use nexus_model::{
-    BlackboardError, BoardState, ColdStorage, DualStorage, EvictCapable, Fact,
-    FactCapable, FihHash, FlushCapable, FlushCursor, FlushResult, Hint, HintCapable, Intent,
-    IntentCapable, NullStorage, PartitionData, ScanCapable, StorageRead,
+    BlackboardError, BoardState, ColdStorage, DualStorage, EvictCapable, Fact, FactCapable,
+    FihHash, FlushCapable, FlushCursor, FlushResult, Hint, HintCapable, Intent, IntentCapable,
+    NullStorage, PartitionData, ScanCapable, StorageRead,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

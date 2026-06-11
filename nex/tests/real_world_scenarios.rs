@@ -34,8 +34,8 @@ use nex::process::tasks::new_document_analyzer::NewDocumentAnalyzer;
 use nex::process::tasks::state_change_detector::StateChangeDetector;
 use nex::storage::petgraph::{Snapshottable, StorageSnapshot};
 use nex::{
-    Blackboard, BoardState, Content, DefaultBlackboard, EvictCapable, Fact, FactCapable, FihHash, Intent,
-    IntentCapable, StorageRead, create_blackboard,
+    Blackboard, BoardState, Content, DefaultBlackboard, EvictCapable, Fact, FactCapable, FihHash,
+    Intent, IntentCapable, StorageRead, create_blackboard,
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 use nex::DefaultBlackboard;
 use nex::MockGateway;
-use nexus_model::{Blackboard, Fact, FactCapable, FihHash, StorageRead};
+use nexus_model::{Fact, FactCapable, FihHash, StorageRead};
 
 #[test]
 fn test_mock_gateway_submit_fact() {
