@@ -751,6 +751,67 @@ impl<I: FihIo> FilterCapable for NativeFihStorage<I> {
     }
 }
 
+// ── FlushCapable ───────────────────────────────────────────────────────────
+
+use nexus_model::{FlushCapable, FlushCursor, FlushResult};
+
+impl<I: FihIo> FlushCapable for NativeFihStorage<I> {
+    fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
+        let since_ts = cursor.last_flushed_at;
+        let now_ts = self.clock.now_nanos();
+        let mut records_flushed = 0u64;
+
+        // Collect delta fact IDs via TimeIndex (O(log N))
+        let delta_ids: std::collections::HashSet<String> = self
+            .time_index
+            .since(since_ts)
+            .into_iter()
+            .map(|(_, id)| id)
+            .collect();
+
+        // Export each delta fact record as a blob
+        let facts = self.fact_cache.read().map_err(|e| e.to_string())?;
+        for id in &delta_ids {
+            if let Some(record) = facts.get(id) {
+                let bytes = bincode::serialize(record)
+                    .map_err(|e| format!("serialize fact: {e}"))?;
+                self.pending.lock().unwrap().push(WriteOp::Write {
+                    path: format!("flush/{}/facts/{}.fact", cursor.partition, id),
+                    data: bytes,
+                });
+                records_flushed += 1;
+            }
+        }
+        drop(facts);
+
+        // Export delta intents
+        let intents = self.intent_cache.read().map_err(|e| e.to_string())?;
+        for id in &delta_ids {
+            if let Some(record) = intents.get(id) {
+                let bytes = bincode::serialize(record)
+                    .map_err(|e| format!("serialize intent: {e}"))?;
+                self.pending.lock().unwrap().push(WriteOp::Write {
+                    path: format!("flush/{}/intents/{}.intent", cursor.partition, id),
+                    data: bytes,
+                });
+                records_flushed += 1;
+            }
+        }
+        drop(intents);
+
+        // Write pending batch to IO
+        self.flush_pending()?;
+
+        Ok(FlushResult {
+            records_flushed,
+            new_cursor: FlushCursor {
+                last_flushed_at: now_ts,
+                partition: cursor.partition.clone(),
+            },
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1050,6 +1111,68 @@ mod tests {
             Some(0),
             "conclude should decrement ref_count"
         );
+    }
+
+    #[test]
+    fn test_flush_cursor_advances() {
+        let store = make_storage();
+        FactCapable::submit_fact(&store, &Fact {
+            id: FihHash("f001".into()), origin: "t".into(),
+            content: Content { mime_type: "text/plain".into(), data: b"a".to_vec() },
+            creator: "t".into(),
+        }).unwrap();
+        let cursor = FlushCursor { last_flushed_at: 0, partition: "default".into() };
+        let result = <NativeFihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor).unwrap();
+        assert!(result.records_flushed > 0);
+        assert!(result.new_cursor.last_flushed_at > 0);
+    }
+
+    #[test]
+    fn test_flush_empty_delta() {
+        let store = make_storage();
+        let cursor = FlushCursor { last_flushed_at: 0, partition: "default".into() };
+        let result = <NativeFihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor).unwrap();
+        assert_eq!(result.records_flushed, 0);
+    }
+
+    #[test]
+    fn test_flush_incremental() {
+        let store = make_storage();
+        FactCapable::submit_fact(&store, &Fact {
+            id: FihHash("f001".into()), origin: "t".into(),
+            content: Content { mime_type: "text/plain".into(), data: b"a".to_vec() },
+            creator: "t".into(),
+        }).unwrap();
+        let cursor1 = FlushCursor { last_flushed_at: 0, partition: "default".into() };
+        let r1 = <NativeFihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor1).unwrap();
+        assert!(r1.records_flushed > 0);
+        FactCapable::submit_fact(&store, &Fact {
+            id: FihHash("f002".into()), origin: "t".into(),
+            content: Content { mime_type: "text/plain".into(), data: b"b".to_vec() },
+            creator: "t".into(),
+        }).unwrap();
+        let cursor2 = FlushCursor {
+            last_flushed_at: r1.new_cursor.last_flushed_at,
+            partition: "default".into(),
+        };
+        let r2 = <NativeFihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor2).unwrap();
+        assert_eq!(r2.records_flushed, 1);
+    }
+
+    #[test]
+    fn test_flush_writes_to_io() {
+        let io = SimFihIo::new();
+        let store = NativeFihStorage::new(io.clone(), "test");
+        FactCapable::submit_fact(&store, &Fact {
+            id: FihHash("f001".into()), origin: "t".into(),
+            content: Content { mime_type: "text/plain".into(), data: b"data".to_vec() },
+            creator: "t".into(),
+        }).unwrap();
+        let cursor = FlushCursor { last_flushed_at: 0, partition: "default".into() };
+        <NativeFihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor).unwrap();
+        let keys = io.list("flush/").unwrap();
+        assert!(!keys.is_empty());
+        assert!(keys.iter().any(|k| k.contains("f001")));
     }
 
     #[test]
