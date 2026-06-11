@@ -30,7 +30,7 @@ pub struct FactRecord {
     pub blob_hash: BlobHash, // → blob/{hash}.bin
     pub origin: String,
     pub creator: String,
-    pub submitted_at: String, // nanosecond timestamp string
+    pub submitted_at: u64, // nanosecond timestamp
 }
 
 /// Intent lifecycle state, enforced at the type level.
@@ -109,13 +109,13 @@ impl HintRecord {
 impl FactRecord {
     /// Build a FactRecord from a nexus_model::Fact, given a pre-computed
     /// blob_hash and submitted_at timestamp.
-    pub fn from_model(fact: &nexus_model::Fact, blob_hash: BlobHash, submitted_at: &str) -> Self {
+    pub fn from_model(fact: &nexus_model::Fact, blob_hash: BlobHash, submitted_at: u64) -> Self {
         Self {
             id: fact.id.0.clone(),
             blob_hash,
             origin: fact.origin.clone(),
             creator: fact.creator.clone(),
-            submitted_at: submitted_at.to_string(),
+            submitted_at,
         }
     }
 }

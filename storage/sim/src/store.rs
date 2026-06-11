@@ -110,9 +110,7 @@ impl<I: FihIo> NativeFihStorage<I> {
             let intents = self.intent_cache.read().map_err(|e| e.to_string())?;
 
             for r in facts.values() {
-                if let Ok(ts) = r.submitted_at.parse::<u64>() {
-                    time_idx.record(ts, &r.id);
-                }
+                time_idx.record(r.submitted_at, &r.id);
                 origin_idx
                     .entry(r.origin.clone())
                     .or_default()
@@ -342,7 +340,7 @@ impl<I: FihIo> FactCapable for NativeFihStorage<I> {
             .enqueue_content(&fact.content)
             .map_err(BlackboardError::Internal)?;
 
-        let record = FactRecord::from_model(fact, blob_hash, &self.clock.now_nanos());
+        let record = FactRecord::from_model(fact, blob_hash, self.clock.now_nanos());
 
         let bytes =
             bincode::serialize(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -360,7 +358,7 @@ impl<I: FihIo> FactCapable for NativeFihStorage<I> {
         self.pending.lock().unwrap().push(op);
 
         // Update indices
-        let ts = self.clock.now_nanos().parse::<u64>().unwrap_or(0);
+        let ts = self.clock.now_nanos();
         self.time_index.record(ts, &fact.id.0);
         {
             let mut origin_map = self.by_origin.write().unwrap();
@@ -580,7 +578,7 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
         };
 
         // Transition status with real IDs
-        let now_ns = self.clock.now_nanos().parse::<u64>().unwrap_or(0);
+        let now_ns = self.clock.now_nanos();
         let new_status = record
             .status
             .try_conclude(&conclusion_fact_id, now_ns)
@@ -1088,7 +1086,7 @@ mod tests {
         .unwrap();
 
         // Filter since=now should only return f_new
-        let now_ns = store.clock.now_nanos().parse::<u64>().unwrap_or(0);
+        let now_ns = store.clock.now_nanos();
         let filter = StateFilter {
             fact_ids: None,
             intent_ids: None,
@@ -1132,7 +1130,7 @@ mod tests {
         }).unwrap();
 
         // Time-travel: as_of before f_late should exclude f_late
-        let mid_ts = store.clock.now_nanos().parse::<u64>().unwrap_or(0);
+        let mid_ts = store.clock.now_nanos();
         // We can't know exact timestamps, but we can verify that:
         // 1. until filter doesn't panic
         // 2. result count is reasonable
