@@ -6,17 +6,17 @@
 // Unlike StoreSession, FihSession is generic over any FihIo implementation
 // and does not require separate MetaStore/BlobStore/ObjectStore instances.
 
-use crate::io::FihIo;
+use crate::io::AsyncFihIo;
 use crate::store::NativeFihStorage;
 
 /// Session wrapper around NativeFihStorage that manages the
 /// hydrate → (read/write) → flush lifecycle.
-pub struct FihSession<I: FihIo> {
+pub struct FihSession<I: AsyncFihIo> {
     pub storage: NativeFihStorage<I>,
     flushed: bool,
 }
 
-impl<I: FihIo> FihSession<I> {
+impl<I: AsyncFihIo> FihSession<I> {
     /// Create a new session. Storage is empty until hydrate() or
     /// operations are called.
     pub fn new(io: I, project_id: &str) -> Self {

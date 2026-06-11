@@ -7,9 +7,11 @@
 // Thread-safe via the OS filesystem (no internal locks needed).
 // Compatible with wasm32-wasi (WASI filesystem) but NOT wasm32-unknown-unknown.
 
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 
-use crate::io::FihIo;
+use crate::io::AsyncFihIo;
 
 /// Filesystem-backed FihIo. Root directory is created on construction.
 ///
@@ -53,70 +55,92 @@ impl FsFihIo {
     }
 }
 
-impl FihIo for FsFihIo {
-    fn read(&self, path: &str) -> Result<Option<Vec<u8>>, String> {
-        let full = self.resolve(path);
-        match std::fs::read(&full) {
-            Ok(data) => Ok(Some(data)),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(format!("read {path}: {e}")),
-        }
+impl AsyncFihIo for FsFihIo {
+    fn read<'a>(
+        &'a self,
+        path: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Vec<u8>>, String>> + 'a>> {
+        Box::pin(async move {
+            let full = self.resolve(path);
+            match std::fs::read(&full) {
+                Ok(data) => Ok(Some(data)),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                Err(e) => Err(format!("read {path}: {e}")),
+            }
+        })
     }
 
-    fn write(&self, path: &str, data: &[u8]) -> Result<(), String> {
-        let full = self.resolve(path);
-        // Create parent directories
-        if let Some(parent) = full.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| format!("mkdir {path}: {e}"))?;
-        }
-        std::fs::write(&full, data).map_err(|e| format!("write {path}: {e}"))?;
-        Ok(())
+    fn write<'a>(
+        &'a self,
+        path: &'a str,
+        data: &'a [u8],
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + 'a>> {
+        Box::pin(async move {
+            let full = self.resolve(path);
+            // Create parent directories
+            if let Some(parent) = full.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| format!("mkdir {path}: {e}"))?;
+            }
+            std::fs::write(&full, data).map_err(|e| format!("write {path}: {e}"))?;
+            Ok(())
+        })
     }
 
-    fn list(&self, prefix: &str) -> Result<Vec<String>, String> {
-        let full = self.resolve(prefix);
-        let root_prefix = self.root.to_string_lossy().to_string();
-        let mut results = Vec::new();
+    fn list<'a>(
+        &'a self,
+        prefix: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<String>, String>> + 'a>> {
+        Box::pin(async move {
+            let full = self.resolve(prefix);
+            let root_prefix = self.root.to_string_lossy().to_string();
+            let mut results = Vec::new();
 
-        if !full.exists() {
-            return Ok(results);
-        }
+            if !full.exists() {
+                return Ok(results);
+            }
 
-        if full.is_dir() {
-            // Walk directory recursively
-            let walker =
-                walkdir::WalkDir::new(&full).sort_by(|a, b| a.file_name().cmp(b.file_name()));
-            for entry in walker.into_iter().filter_map(|e| e.ok()) {
-                if entry.file_type().is_file() {
-                    let abs_path = entry.path().to_string_lossy().to_string();
-                    // Strip root prefix to get the relative key
-                    if let Some(rel) = abs_path.strip_prefix(&root_prefix) {
-                        let rel = rel.trim_start_matches('/');
-                        if rel.starts_with(prefix) {
-                            results.push(rel.to_string());
+            if full.is_dir() {
+                // Walk directory recursively
+                let walker =
+                    walkdir::WalkDir::new(&full).sort_by(|a, b| a.file_name().cmp(b.file_name()));
+                for entry in walker.into_iter().filter_map(|e| e.ok()) {
+                    if entry.file_type().is_file() {
+                        let abs_path = entry.path().to_string_lossy().to_string();
+                        // Strip root prefix to get the relative key
+                        if let Some(rel) = abs_path.strip_prefix(&root_prefix) {
+                            let rel = rel.trim_start_matches('/');
+                            if rel.starts_with(prefix) {
+                                results.push(rel.to_string());
+                            }
                         }
                     }
                 }
             }
-        }
 
-        Ok(results)
+            Ok(results)
+        })
     }
 
-    fn delete(&self, path: &str) -> Result<(), String> {
-        let full = self.resolve(path);
-        if full.exists() {
-            std::fs::remove_file(&full).map_err(|e| format!("delete {path}: {e}"))?;
-        }
-        Ok(())
+    fn delete<'a>(
+        &'a self,
+        path: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + 'a>> {
+        Box::pin(async move {
+            let full = self.resolve(path);
+            if full.exists() {
+                std::fs::remove_file(&full).map_err(|e| format!("delete {path}: {e}"))?;
+            }
+            Ok(())
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::io::BlockingFihIo;
 
-    fn make_fs() -> FsFihIo {
+    fn make_fs_blocking() -> BlockingFihIo<FsFihIo> {
         let dir = std::env::temp_dir().join(format!(
             "nexus_test_{}",
             std::time::SystemTime::now()
@@ -124,12 +148,13 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        FsFihIo::new(dir).unwrap()
+        let fs = FsFihIo::new(dir).unwrap();
+        BlockingFihIo::new(fs)
     }
 
     #[test]
     fn test_write_read_roundtrip() {
-        let fs = make_fs();
+        let fs = make_fs_blocking();
         fs.write("facts/f001.fact", b"hello").unwrap();
         let data = fs.read("facts/f001.fact").unwrap().expect("should exist");
         assert_eq!(data, b"hello");
@@ -137,13 +162,13 @@ mod tests {
 
     #[test]
     fn test_read_nonexistent() {
-        let fs = make_fs();
+        let fs = make_fs_blocking();
         assert!(fs.read("nonexistent").unwrap().is_none());
     }
 
     #[test]
     fn test_delete() {
-        let fs = make_fs();
+        let fs = make_fs_blocking();
         fs.write("test.txt", b"data").unwrap();
         fs.delete("test.txt").unwrap();
         assert!(fs.read("test.txt").unwrap().is_none());
@@ -151,7 +176,7 @@ mod tests {
 
     #[test]
     fn test_list_prefix() {
-        let fs = make_fs();
+        let fs = make_fs_blocking();
         fs.write("facts/f_a.fact", b"a").unwrap();
         fs.write("facts/f_b.fact", b"b").unwrap();
         fs.write("blob/hash.bin", b"c").unwrap();
@@ -163,7 +188,7 @@ mod tests {
 
     #[test]
     fn test_deep_path_creates_dirs() {
-        let fs = make_fs();
+        let fs = make_fs_blocking();
         fs.write("a/b/c/d.txt", b"deep").unwrap();
         let data = fs.read("a/b/c/d.txt").unwrap().expect("should exist");
         assert_eq!(data, b"deep");
@@ -171,14 +196,14 @@ mod tests {
 
     #[test]
     fn test_list_empty_prefix() {
-        let fs = make_fs();
+        let fs = make_fs_blocking();
         let items = fs.list("nonexistent/").unwrap();
         assert!(items.is_empty());
     }
 
     #[test]
     fn test_delete_nonexistent_ok() {
-        let fs = make_fs();
+        let fs = make_fs_blocking();
         fs.delete("no_such_file").unwrap(); // should not error
     }
 }
