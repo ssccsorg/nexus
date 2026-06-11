@@ -26,11 +26,11 @@ pub struct ContentMeta {
 /// On-disk Fact record. Append-only, immutable after write.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FactRecord {
-    pub id: String,            // FihHash.0
-    pub blob_hash: BlobHash,   // → blob/{hash}.bin
+    pub id: String,          // FihHash.0
+    pub blob_hash: BlobHash, // → blob/{hash}.bin
     pub origin: String,
     pub creator: String,
-    pub submitted_at: String,  // nanosecond timestamp string
+    pub submitted_at: String, // nanosecond timestamp string
 }
 
 /// Intent lifecycle state, enforced at the type level.
@@ -45,9 +45,9 @@ pub enum IntentStatus {
     },
     /// A worker has concluded this intent, producing a result Fact.
     Concluded {
-        to_fact: String,      // FihHash of the conclusion Fact
+        to_fact: String, // FihHash of the conclusion Fact
         concluded_at: u64,
-        worker: String,       // permanent record of who concluded
+        worker: String, // permanent record of who concluded
     },
 }
 
@@ -56,7 +56,7 @@ pub enum IntentStatus {
 pub struct IntentRecord {
     pub id: String,
     pub from_facts: Vec<String>,
-    pub description_hash: BlobHash,  // → blob/{hash}.bin
+    pub description_hash: BlobHash, // → blob/{hash}.bin
     pub creator: String,
     pub status: IntentStatus,
     pub created_at: u64,
@@ -69,7 +69,7 @@ pub struct HintRecord {
     pub content: String,
     pub creator: String,
     pub submitted_at: u64,
-    pub ttl_secs: Option<u64>,  // None = permanent
+    pub ttl_secs: Option<u64>, // None = permanent
 }
 
 impl FactRecord {
@@ -106,8 +106,6 @@ impl HintRecord {
 
 // ── Conversions between nexus_model types and sim record types ──────────
 
-use nexus_model::Content;
-
 impl FactRecord {
     /// Build a FactRecord from a nexus_model::Fact, given a pre-computed
     /// blob_hash and submitted_at timestamp.
@@ -121,5 +119,3 @@ impl FactRecord {
         }
     }
 }
-
-

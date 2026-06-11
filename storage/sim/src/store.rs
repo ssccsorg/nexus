@@ -52,30 +52,30 @@ impl<I: FihIo> NativeFihStorage<I> {
         let fact_keys = self.io.list("facts/")?;
         let mut facts = HashMap::new();
         for key in fact_keys {
-            if let Some(bytes) = self.io.read(&key)? {
-                if let Ok(record) = bincode::deserialize::<FactRecord>(&bytes) {
-                    facts.insert(record.id.clone(), record);
-                }
+            if let Some(bytes) = self.io.read(&key)?
+                && let Ok(record) = bincode::deserialize::<FactRecord>(&bytes)
+            {
+                facts.insert(record.id.clone(), record);
             }
         }
 
         let intent_keys = self.io.list("intents/")?;
         let mut intents = HashMap::new();
         for key in intent_keys {
-            if let Some(bytes) = self.io.read(&key)? {
-                if let Ok(record) = bincode::deserialize::<IntentRecord>(&bytes) {
-                    intents.insert(record.id.clone(), record);
-                }
+            if let Some(bytes) = self.io.read(&key)?
+                && let Ok(record) = bincode::deserialize::<IntentRecord>(&bytes)
+            {
+                intents.insert(record.id.clone(), record);
             }
         }
 
         let hint_keys = self.io.list("hints/")?;
         let mut hints = HashMap::new();
         for key in hint_keys {
-            if let Some(bytes) = self.io.read(&key)? {
-                if let Ok(record) = bincode::deserialize::<HintRecord>(&bytes) {
-                    hints.insert(record.id.clone(), record);
-                }
+            if let Some(bytes) = self.io.read(&key)?
+                && let Ok(record) = bincode::deserialize::<HintRecord>(&bytes)
+            {
+                hints.insert(record.id.clone(), record);
             }
         }
 
@@ -106,7 +106,10 @@ impl<I: FihIo> NativeFihStorage<I> {
                 mime_type: content.mime_type.clone(),
                 size: content.data.len() as u64,
             };
-            io.write(&meta_path, &bincode::serialize(&meta).map_err(|e| e.to_string())?)?;
+            io.write(
+                &meta_path,
+                &bincode::serialize(&meta).map_err(|e| e.to_string())?,
+            )?;
         }
         Ok(blob_hash)
     }
@@ -138,50 +141,59 @@ impl<I: FihIo> StorageRead for NativeFihStorage<I> {
         let hints = self.hint_cache.read().unwrap();
 
         BoardState {
-            facts: facts.values().map(|r| Fact {
-                id: FihHash(r.id.clone()),
-                origin: r.origin.clone(),
-                content: Content {
-                    mime_type: "application/octet-stream".into(),
-                    data: Vec::new(), // blob content loaded separately
-                },
-                creator: r.creator.clone(),
-            }).collect(),
-            intents: intents.values().map(|r| Intent {
-                id: FihHash(r.id.clone()),
-                from_facts: r.from_facts.clone(),
-                description: {
-                    // Load description from blob if cache has it
-                    // For now, return the ID as placeholder
-                    r.id.clone()
-                },
-                creator: r.creator.clone(),
-                worker: match &r.status {
-                    IntentStatus::Claimed { worker, .. } => Some(worker.clone()),
-                    IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
-                    IntentStatus::Submitted => None,
-                },
-                to_fact_id: match &r.status {
-                    IntentStatus::Concluded { to_fact, .. } => Some(to_fact.clone()),
-                    _ => None,
-                },
-                last_heartbeat_at: match &r.status {
-                    IntentStatus::Claimed { last_heartbeat_at, .. } => {
-                        Some(last_heartbeat_at.to_string())
-                    }
-                    _ => None,
-                },
-                created_at: Some(r.created_at.to_string()),
-                concluded_at: match &r.status {
-                    IntentStatus::Concluded { .. } => Some("yes".into()),
-                    _ => None,
-                },
-            }).collect(),
-            hints: hints.values().map(|r| Hint {
-                id: FihHash(r.id.clone()),
-                content: r.content.clone(),
-                creator: r.creator.clone(),
-            }).collect(),
+            facts: facts
+                .values()
+                .map(|r| Fact {
+                    id: FihHash(r.id.clone()),
+                    origin: r.origin.clone(),
+                    content: Content {
+                        mime_type: "application/octet-stream".into(),
+                        data: Vec::new(), // blob content loaded separately
+                    },
+                    creator: r.creator.clone(),
+                })
+                .collect(),
+            intents: intents
+                .values()
+                .map(|r| Intent {
+                    id: FihHash(r.id.clone()),
+                    from_facts: r.from_facts.clone(),
+                    description: {
+                        // Load description from blob if cache has it
+                        // For now, return the ID as placeholder
+                        r.id.clone()
+                    },
+                    creator: r.creator.clone(),
+                    worker: match &r.status {
+                        IntentStatus::Claimed { worker, .. } => Some(worker.clone()),
+                        IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
+                        IntentStatus::Submitted => None,
+                    },
+                    to_fact_id: match &r.status {
+                        IntentStatus::Concluded { to_fact, .. } => Some(to_fact.clone()),
+                        _ => None,
+                    },
+                    last_heartbeat_at: match &r.status {
+                        IntentStatus::Claimed {
+                            last_heartbeat_at, ..
+                        } => Some(last_heartbeat_at.to_string()),
+                        _ => None,
+                    },
+                    created_at: Some(r.created_at.to_string()),
+                    concluded_at: match &r.status {
+                        IntentStatus::Concluded { .. } => Some("yes".into()),
+                        _ => None,
+                    },
+                })
+                .collect(),
+            hints: hints
+                .values()
+                .map(|r| Hint {
+                    id: FihHash(r.id.clone()),
+                    content: r.content.clone(),
+                    creator: r.creator.clone(),
+                })
+                .collect(),
         }
     }
 }
@@ -190,21 +202,23 @@ impl<I: FihIo> StorageRead for NativeFihStorage<I> {
 
 impl<I: FihIo> FactCapable for NativeFihStorage<I> {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
-        let blob_hash = self.store_content(&fact.content, &self.io).map_err(|e| {
-            BlackboardError::Internal(e)
-        })?;
+        let blob_hash = self
+            .store_content(&fact.content, &self.io)
+            .map_err(BlackboardError::Internal)?;
 
         let record = FactRecord::from_model(fact, blob_hash, "0");
 
-        let bytes = bincode::serialize(&record).map_err(|e| {
-            BlackboardError::Internal(e.to_string())
-        })?;
+        let bytes =
+            bincode::serialize(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let path = record.key();
         let op = WriteOp::Write { path, data: bytes };
 
         // Update cache
-        self.fact_cache.write().unwrap().insert(record.id.clone(), record.clone());
+        self.fact_cache
+            .write()
+            .unwrap()
+            .insert(record.id.clone(), record.clone());
         // Queue for IO
         self.pending.lock().unwrap().push(op);
 
@@ -224,16 +238,18 @@ impl<I: FihIo> HintCapable for NativeFihStorage<I> {
             ttl_secs: None,
         };
 
-        let bytes = bincode::serialize(&record).map_err(|e| {
-            BlackboardError::Internal(e.to_string())
-        })?;
+        let bytes =
+            bincode::serialize(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let op = WriteOp::Write {
             path: record.key(),
             data: bytes,
         };
 
-        self.hint_cache.write().unwrap().insert(record.id.clone(), record);
+        self.hint_cache
+            .write()
+            .unwrap()
+            .insert(record.id.clone(), record);
         self.pending.lock().unwrap().push(op);
 
         Ok(())
@@ -262,16 +278,18 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
             created_at: 0,
         };
 
-        let bytes = bincode::serialize(&record).map_err(|e| {
-            BlackboardError::Internal(e.to_string())
-        })?;
+        let bytes =
+            bincode::serialize(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let op = WriteOp::Write {
             path: record.key(),
             data: bytes,
         };
 
-        self.intent_cache.write().unwrap().insert(record.id.clone(), record);
+        self.intent_cache
+            .write()
+            .unwrap()
+            .insert(record.id.clone(), record);
         self.pending.lock().unwrap().push(op);
 
         Ok(intent.id.clone())
@@ -279,9 +297,9 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
 
     fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let mut cache = self.intent_cache.write().unwrap();
-        let record = cache.get_mut(intent_id).ok_or_else(|| {
-            BlackboardError::NotFound(format!("Intent {intent_id} not found"))
-        })?;
+        let record = cache
+            .get_mut(intent_id)
+            .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
 
         let new_status = record.status.try_claim(agent, 0).map_err(|e| {
             if e.starts_with("already claimed") {
@@ -294,9 +312,8 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
         record.status = new_status;
 
         // Re-serialize and queue
-        let bytes = bincode::serialize(record).map_err(|e| {
-            BlackboardError::Internal(e.to_string())
-        })?;
+        let bytes =
+            bincode::serialize(record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.pending.lock().unwrap().push(WriteOp::Write {
             path: record.key(),
             data: bytes,
@@ -307,9 +324,9 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
 
     fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let mut cache = self.intent_cache.write().unwrap();
-        let record = cache.get_mut(intent_id).ok_or_else(|| {
-            BlackboardError::NotFound(format!("Intent {intent_id} not found"))
-        })?;
+        let record = cache
+            .get_mut(intent_id)
+            .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
 
         let new_status = record.status.try_heartbeat(agent, 0).map_err(|e| {
             if e.contains("not") {
@@ -321,9 +338,8 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
 
         record.status = new_status;
 
-        let bytes = bincode::serialize(record).map_err(|e| {
-            BlackboardError::Internal(e.to_string())
-        })?;
+        let bytes =
+            bincode::serialize(record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.pending.lock().unwrap().push(WriteOp::Write {
             path: record.key(),
             data: bytes,
@@ -334,9 +350,9 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
 
     fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let mut cache = self.intent_cache.write().unwrap();
-        let record = cache.get_mut(intent_id).ok_or_else(|| {
-            BlackboardError::NotFound(format!("Intent {intent_id} not found"))
-        })?;
+        let record = cache
+            .get_mut(intent_id)
+            .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
 
         match &record.status {
             IntentStatus::Claimed { worker, .. } if worker == agent => {
@@ -355,9 +371,8 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
             }
         }
 
-        let bytes = bincode::serialize(record).map_err(|e| {
-            BlackboardError::Internal(e.to_string())
-        })?;
+        let bytes =
+            bincode::serialize(record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.pending.lock().unwrap().push(WriteOp::Write {
             path: record.key(),
             data: bytes,
@@ -368,13 +383,14 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
 
     fn conclude_intent(&self, intent_id: &str, result: &str) -> Result<Fact, BlackboardError> {
         let mut cache = self.intent_cache.write().unwrap();
-        let record = cache.get_mut(intent_id).ok_or_else(|| {
-            BlackboardError::NotFound(format!("Intent {intent_id} not found"))
-        })?;
+        let record = cache
+            .get_mut(intent_id)
+            .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
 
-        let new_status = record.status.try_conclude("", 0).map_err(|e| {
-            BlackboardError::Internal(e)
-        })?;
+        let new_status = record
+            .status
+            .try_conclude("", 0)
+            .map_err(BlackboardError::Internal)?;
 
         // Extract worker before moving
         let worker = match &new_status {
@@ -397,7 +413,10 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
 
         // Update conclusion fact ID in status
         let conclusion_fact_id = new_fact.id.0.clone();
-        if let IntentStatus::Concluded { ref mut to_fact, .. } = record.status {
+        if let IntentStatus::Concluded {
+            ref mut to_fact, ..
+        } = record.status
+        {
             to_fact.clone_from(&conclusion_fact_id);
         }
 
@@ -406,7 +425,7 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
         self.submit_fact(&new_fact)?;
 
         // Re-serialize intent
-        let bytes = bincode::serialize(&*self.intent_cache.read().unwrap().get(intent_id).unwrap())
+        let bytes = bincode::serialize(self.intent_cache.read().unwrap().get(intent_id).unwrap())
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.pending.lock().unwrap().push(WriteOp::Write {
             path: format!("intents/i_{}.intent", intent_id),
@@ -591,25 +610,39 @@ mod tests {
         // Verify conclusion fact exists
         let state = store.read_state();
         assert_eq!(state.facts.len(), 2);
-        assert_eq!(state.intents[0].to_fact_id.as_deref(), Some(result.id.0.as_str()));
+        assert_eq!(
+            state.intents[0].to_fact_id.as_deref(),
+            Some(result.id.0.as_str())
+        );
     }
 
     #[test]
     fn test_double_claim_rejected() {
         let store = make_storage();
-        store.submit_fact(&Fact {
-            id: FihHash("f_base".into()),
-            origin: "test".into(),
-            content: Content { mime_type: "text/plain".into(), data: b"x".to_vec() },
-            creator: "alice".into(),
-        }).unwrap();
-        store.submit_intent(&Intent {
-            id: FihHash("i001".into()),
-            from_facts: vec!["f_base".into()],
-            description: "test".into(),
-            creator: "bob".into(),
-            worker: None, to_fact_id: None, last_heartbeat_at: None, created_at: None, concluded_at: None,
-        }).unwrap();
+        store
+            .submit_fact(&Fact {
+                id: FihHash("f_base".into()),
+                origin: "test".into(),
+                content: Content {
+                    mime_type: "text/plain".into(),
+                    data: b"x".to_vec(),
+                },
+                creator: "alice".into(),
+            })
+            .unwrap();
+        store
+            .submit_intent(&Intent {
+                id: FihHash("i001".into()),
+                from_facts: vec!["f_base".into()],
+                description: "test".into(),
+                creator: "bob".into(),
+                worker: None,
+                to_fact_id: None,
+                last_heartbeat_at: None,
+                created_at: None,
+                concluded_at: None,
+            })
+            .unwrap();
 
         store.claim_intent("i001", "alice").unwrap();
         assert!(store.claim_intent("i001", "bob").is_err());
