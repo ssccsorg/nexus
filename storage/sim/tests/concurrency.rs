@@ -21,7 +21,8 @@ fn bb() -> SharedStorage {
 
 fn setup_intent(bb: &SharedStorage, iid: &str) {
     bb.submit_fact(&common::fact("f_base")).unwrap();
-    bb.submit_intent(&common::intent(iid, vec!["f_base"])).unwrap();
+    bb.submit_intent(&common::intent(iid, vec!["f_base"]))
+        .unwrap();
 }
 
 // ── Test 1: concurrent claim of the same intent → Conflict ─────────────
@@ -61,8 +62,10 @@ fn test_concurrent_claim_same_intent() {
 fn test_concurrent_claim_different_intents() {
     let bb = bb();
     bb.submit_fact(&common::fact("f_base")).unwrap();
-    bb.submit_intent(&common::intent("i_a", vec!["f_base"])).unwrap();
-    bb.submit_intent(&common::intent("i_b", vec!["f_base"])).unwrap();
+    bb.submit_intent(&common::intent("i_a", vec!["f_base"]))
+        .unwrap();
+    bb.submit_intent(&common::intent("i_b", vec!["f_base"]))
+        .unwrap();
 
     let bb1 = Arc::clone(&bb);
     let bb2 = Arc::clone(&bb);
@@ -85,7 +88,8 @@ fn test_concurrent_submit_fact() {
         let bb = Arc::clone(&bb);
         handles.push(thread::spawn(move || {
             for i in 0..100 {
-                bb.submit_fact(&common::fact(&format!("f_t{}_i{}", t, i))).unwrap();
+                bb.submit_fact(&common::fact(&format!("f_t{}_i{}", t, i)))
+                    .unwrap();
             }
         }));
     }
@@ -105,13 +109,16 @@ fn test_concurrent_read_during_write() {
     let bb = bb();
 
     for i in 0..50 {
-        bb.submit_fact(&common::fact(&format!("f_init_{}", i))).unwrap();
+        bb.submit_fact(&common::fact(&format!("f_init_{}", i)))
+            .unwrap();
     }
 
     let bb_write = Arc::clone(&bb);
     let writer = thread::spawn(move || {
         for i in 0..200 {
-            bb_write.submit_fact(&common::fact(&format!("f_write_{}", i))).unwrap();
+            bb_write
+                .submit_fact(&common::fact(&format!("f_write_{}", i)))
+                .unwrap();
         }
     });
 
