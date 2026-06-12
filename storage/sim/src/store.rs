@@ -18,7 +18,7 @@ use std::sync::{Mutex, RwLock};
 
 use nexus_model::{
     BlackboardError, BoardState, Content, EvictCapable, Fact, FactCapable, FihHash, FilterCapable,
-    Hint, HintCapable, Intent, IntentCapable, Now, StateFilter, StorageRead,
+    Hint, HintCapable, Intent, IntentCapable, Now, PartitionData, StateFilter, StorageRead,
 };
 
 use crate::index::TimeIndex;
@@ -55,11 +55,15 @@ pub struct NativeFihStorage<I: AsyncFihIo> {
     io: BlockingFihIo<I>,
     project_id: String,
     clock: Box<dyn Now + Send + Sync>,
+    /// When true (default), in-memory caches are active for O(1) reads.
+    /// Set to false when used exclusively as ColdStorage — all reads go
+    /// directly to IO, and cache fields remain empty.
+    is_hotmemory_enabled: bool,
     // In-memory cache: rebuilt from IO on hydrate, kept in sync for reads.
     fact_cache: RwLock<FactCache>,
     intent_cache: RwLock<IntentCache>,
     hint_cache: RwLock<HintCache>,
-    // Indices
+    // Indices (valid only when is_hotmemory_enabled)
     time_index: TimeIndex,
     ref_counts: RwLock<RefCounts>,
     by_origin: RwLock<OriginIndex>,
@@ -73,10 +77,23 @@ impl<I: AsyncFihIo> NativeFihStorage<I> {
     }
 
     pub fn with_clock(io: I, project_id: &str, clock: Box<dyn Now + Send + Sync>) -> Self {
+        Self::with_clock_and_memory(io, project_id, clock, true)
+    }
+
+    /// Create storage with explicit memory cache control.
+    /// Set `memory` to false when this instance is used exclusively as
+    /// ColdStorage — all reads go directly to IO, saving memory.
+    pub fn with_clock_and_memory(
+        io: I,
+        project_id: &str,
+        clock: Box<dyn Now + Send + Sync>,
+        is_hotmemory_enabled: bool,
+    ) -> Self {
         Self {
             io: BlockingFihIo::new(io),
             project_id: project_id.to_string(),
             clock,
+            is_hotmemory_enabled,
             fact_cache: RwLock::new(FactCache::new()),
             intent_cache: RwLock::new(IntentCache::new()),
             hint_cache: RwLock::new(HintCache::new()),
@@ -283,12 +300,97 @@ fn content_hash(data: &[u8]) -> String {
 
 // ── StorageRead ──────────────────────────────────────────────────────────
 
+impl<I: AsyncFihIo> NativeFihStorage<I> {
+    /// Read state directly from IO, bypassing in-memory cache.
+    /// Used when `is_hotmemory_enabled` is false (ColdStorage mode).
+    fn read_state_uncached(&self) -> BoardState {
+        let mut facts = Vec::new();
+        let mut intents = Vec::new();
+        let mut hints = Vec::new();
+
+        if let Ok(keys) = self.io.list("facts/") {
+            for key in keys {
+                if let Ok(Some(bytes)) = self.io.read(&key)
+                    && let Ok(r) = postcard::from_bytes::<FactRecord>(&bytes)
+                {
+                    let content = self.load_content(&r.blob_hash, "application/octet-stream");
+                    facts.push(Fact {
+                        id: FihHash(r.id.clone()),
+                        origin: r.origin.clone(),
+                        content,
+                        creator: r.creator.clone(),
+                    });
+                }
+            }
+        }
+
+        if let Ok(keys) = self.io.list("intents/") {
+            for key in keys {
+                if let Ok(Some(bytes)) = self.io.read(&key)
+                    && let Ok(r) = postcard::from_bytes::<IntentRecord>(&bytes)
+                {
+                    intents.push(Intent {
+                        id: FihHash(r.id.clone()),
+                        from_facts: r.from_facts.clone(),
+                        description: String::new(),
+                        creator: r.creator.clone(),
+                        worker: match &r.status {
+                            IntentStatus::Claimed { worker, .. }
+                            | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
+                            IntentStatus::Submitted => None,
+                        },
+                        to_fact_id: match &r.status {
+                            IntentStatus::Concluded { to_fact, .. } => Some(to_fact.clone()),
+                            _ => None,
+                        },
+                        last_heartbeat_at: match &r.status {
+                            IntentStatus::Claimed {
+                                last_heartbeat_at, ..
+                            } => Some(*last_heartbeat_at),
+                            _ => None,
+                        },
+                        created_at: Some(r.created_at),
+                        is_concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
+                        concluded_at: match &r.status {
+                            IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
+                            _ => None,
+                        },
+                    });
+                }
+            }
+        }
+
+        if let Ok(keys) = self.io.list("hints/") {
+            for key in keys {
+                if let Ok(Some(bytes)) = self.io.read(&key)
+                    && let Ok(r) = postcard::from_bytes::<HintRecord>(&bytes)
+                {
+                    hints.push(Hint {
+                        id: FihHash(r.id.clone()),
+                        content: r.content.clone(),
+                        creator: r.creator.clone(),
+                    });
+                }
+            }
+        }
+
+        BoardState {
+            facts,
+            intents,
+            hints,
+        }
+    }
+}
+
 impl<I: AsyncFihIo> StorageRead for NativeFihStorage<I> {
     fn project_id(&self) -> &str {
         &self.project_id
     }
 
     fn read_state(&self) -> BoardState {
+        if !self.is_hotmemory_enabled {
+            return self.read_state_uncached();
+        }
         let facts = self.fact_cache.read().unwrap();
         let intents = self.intent_cache.read().unwrap();
         let hints = self.hint_cache.read().unwrap();
@@ -338,7 +440,7 @@ impl<I: AsyncFihIo> StorageRead for NativeFihStorage<I> {
                     created_at: Some(r.created_at),
                     is_concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
                     concluded_at: match &r.status {
-                        IntentStatus::Concluded { .. } => Some(1),
+                        IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
                         _ => None,
                     },
                 })
@@ -374,28 +476,32 @@ impl<I: AsyncFihIo> FactCapable for NativeFihStorage<I> {
         };
 
         // Update cache immediately for subsequent reads
-        self.fact_cache
-            .write()
-            .unwrap()
-            .insert(record.id.clone(), record);
+        if self.is_hotmemory_enabled {
+            self.fact_cache
+                .write()
+                .unwrap()
+                .insert(record.id.clone(), record);
+        }
         self.pending.lock().unwrap().push(op);
 
-        // Update indices
-        let ts = self.clock.now_nanos();
-        self.time_index.record(ts, &fact.id.0);
-        {
-            let mut origin_map = self.by_origin.write().unwrap();
-            origin_map
-                .entry(fact.origin.clone())
-                .or_default()
-                .push(fact.id.0.clone());
+        if self.is_hotmemory_enabled {
+            // Update indices
+            let ts = self.clock.now_nanos();
+            self.time_index.record(ts, &fact.id.0);
+            {
+                let mut origin_map = self.by_origin.write().unwrap();
+                origin_map
+                    .entry(fact.origin.clone())
+                    .or_default()
+                    .push(fact.id.0.clone());
+            }
+            // ref_count defaults to 0 — orphan unless referenced by an Intent
+            self.ref_counts
+                .write()
+                .unwrap()
+                .entry(fact.id.0.clone())
+                .or_insert_with(|| AtomicU64::new(0));
         }
-        // ref_count defaults to 0 — orphan unless referenced by an Intent
-        self.ref_counts
-            .write()
-            .unwrap()
-            .entry(fact.id.0.clone())
-            .or_insert_with(|| AtomicU64::new(0));
 
         Ok(fact.id.clone())
     }
@@ -421,10 +527,12 @@ impl<I: AsyncFihIo> HintCapable for NativeFihStorage<I> {
             data: bytes,
         };
 
-        self.hint_cache
-            .write()
-            .unwrap()
-            .insert(record.id.clone(), record);
+        if self.is_hotmemory_enabled {
+            self.hint_cache
+                .write()
+                .unwrap()
+                .insert(record.id.clone(), record);
+        }
         self.pending.lock().unwrap().push(op);
 
         Ok(())
@@ -435,21 +543,23 @@ impl<I: AsyncFihIo> HintCapable for NativeFihStorage<I> {
 
 impl<I: AsyncFihIo> IntentCapable for NativeFihStorage<I> {
     fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
-        // Verify all from_facts exist in cache
-        let facts = self.fact_cache.read().unwrap();
-        for fid in &intent.from_facts {
-            if !facts.contains_key(fid) {
-                return Err(BlackboardError::NotFound(format!("Fact {fid} not found")));
-            }
-        }
-        drop(facts);
-
-        // Increment ref_count for each from_fact
-        {
-            let refs = self.ref_counts.read().unwrap();
+        // Verify all from_facts exist
+        if self.is_hotmemory_enabled {
+            let facts = self.fact_cache.read().unwrap();
             for fid in &intent.from_facts {
-                if let Some(rc) = refs.get(fid) {
-                    rc.fetch_add(1, Ordering::Relaxed);
+                if !facts.contains_key(fid) {
+                    return Err(BlackboardError::NotFound(format!("Fact {fid} not found")));
+                }
+            }
+            drop(facts);
+
+            // Increment ref_count for each from_fact
+            {
+                let refs = self.ref_counts.read().unwrap();
+                for fid in &intent.from_facts {
+                    if let Some(rc) = refs.get(fid) {
+                        rc.fetch_add(1, Ordering::Relaxed);
+                    }
                 }
             }
         }
@@ -471,10 +581,12 @@ impl<I: AsyncFihIo> IntentCapable for NativeFihStorage<I> {
             data: bytes,
         };
 
-        self.intent_cache
-            .write()
-            .unwrap()
-            .insert(record.id.clone(), record);
+        if self.is_hotmemory_enabled {
+            self.intent_cache
+                .write()
+                .unwrap()
+                .insert(record.id.clone(), record);
+        }
         self.pending.lock().unwrap().push(op);
 
         Ok(intent.id.clone())
@@ -775,7 +887,71 @@ impl<I: AsyncFihIo> FilterCapable for NativeFihStorage<I> {
 
 // ── FlushCapable ───────────────────────────────────────────────────────────
 
-use nexus_model::{FlushCapable, FlushCursor, FlushResult};
+use nexus_model::{
+    ColdStorage, FlushCapable, FlushCursor, FlushResult, ScanCapable, TimeRangeCapable,
+};
+use std::ops::Range;
+
+// ── NativeFihStorage as HotStorage (standalone Blackboard) ───────────────
+//
+// StorageRead + FactCapable + IntentCapable + HintCapable + FilterCapable +
+// EvictCapable + FlushCapable — all implemented above.
+//
+// NativeFihStorage can operate as a standalone Blackboard (no DualStorage
+// needed), OR as the cold half of DualStorage via the ColdStorage trait.
+// This is nex's principle of recursive self-similarity: the same struct
+// fulfills both roles through trait composition.
+
+// ── ScanCapable ───────────────────────────────────────────────────────────
+
+impl<I: AsyncFihIo> ScanCapable for NativeFihStorage<I> {
+    fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
+        let state = StorageRead::read_state(self);
+        let prefix = format!("partition:{}", partition);
+        Ok(PartitionData {
+            partition: partition.into(),
+            facts: state
+                .facts
+                .into_iter()
+                .filter(|f| f.origin == prefix)
+                .collect(),
+            intents: state
+                .intents
+                .into_iter()
+                .filter(|i| i.creator == prefix)
+                .collect(),
+            hints: state
+                .hints
+                .into_iter()
+                .filter(|h| h.creator == prefix)
+                .collect(),
+        })
+    }
+}
+
+// ── TimeRangeCapable ──────────────────────────────────────────────────────
+
+impl<I: AsyncFihIo> TimeRangeCapable for NativeFihStorage<I> {
+    fn time_range(&self) -> Option<Range<String>> {
+        let first = self.time_index.first_ts()?;
+        let last = self.time_index.last_ts()?;
+        Some(first.to_string()..last.to_string())
+    }
+}
+
+// ── ColdStorage ───────────────────────────────────────────────────────────
+
+impl<I: AsyncFihIo + Send> ColdStorage for NativeFihStorage<I> {
+    fn write_blob(&self, key: &str, data: &[u8]) -> Result<(), String> {
+        self.pending.lock().unwrap().push(WriteOp::Write {
+            path: key.to_string(),
+            data: data.to_vec(),
+        });
+        Ok(())
+    }
+}
+
+// ── FlushCapable ───────────────────────────────────────────────────────────
 
 impl<I: AsyncFihIo> FlushCapable for NativeFihStorage<I> {
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
@@ -939,6 +1115,10 @@ mod tests {
         assert!(
             state.intents[0].concluded_at.is_some(),
             "concluded_at should be set"
+        );
+        assert!(
+            state.intents[0].concluded_at.unwrap() > 0,
+            "concluded_at should be a real timestamp, not 0 or 1"
         );
         // created_at should be non-zero (clock.now_secs())
         assert!(
