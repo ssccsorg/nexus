@@ -7,7 +7,7 @@ license.workspace = true
 [dependencies]
 nexus-model = { path = "../../model" }
 serde = { version = "1", features = ["derive"] }
-bincode = "1"
+postcard = { version = "1", features = ["alloc"] }
 cfg-if = "1"
 walkdir = "2"
 futures-executor = "0.3"

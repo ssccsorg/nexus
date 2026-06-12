@@ -251,7 +251,10 @@ fn main() {
         FlushCapable::flush_since(&store, &cursor).unwrap();
         let keys = BlockingFihIo::new(io).list("flush/").unwrap();
         assert!(!keys.is_empty(), "flush should write to io");
-        assert!(keys.iter().any(|k| k.contains("f001")));
+        assert!(
+            keys.iter().any(|k| k.ends_with(".chain")),
+            "expected .chain file in flush output"
+        );
     });
 
     // ── 4. Filtering ──────────────────────────────────────────────────
