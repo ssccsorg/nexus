@@ -45,6 +45,7 @@ impl nexus_model::Now for FakeClock {
 
 // ── Fact / Intent helpers ──────────────────────────────────────────────
 
+#[allow(dead_code)]
 pub fn fact(id: &str) -> Fact {
     Fact {
         id: FihHash(id.into()),
