@@ -93,7 +93,7 @@ impl<I: AsyncFihIo> NativeFihStorage<I> {
         let mut facts = FactCache::new();
         for key in fact_keys {
             if let Some(bytes) = self.io.read(&key)?
-                && let Ok(record) = bincode::deserialize::<FactRecord>(&bytes)
+                && let Ok(record) = postcard::from_bytes::<FactRecord>(&bytes)
             {
                 facts.insert(record.id.clone(), record);
             }
@@ -103,7 +103,7 @@ impl<I: AsyncFihIo> NativeFihStorage<I> {
         let mut intents = IntentCache::new();
         for key in intent_keys {
             if let Some(bytes) = self.io.read(&key)?
-                && let Ok(record) = bincode::deserialize::<IntentRecord>(&bytes)
+                && let Ok(record) = postcard::from_bytes::<IntentRecord>(&bytes)
             {
                 intents.insert(record.id.clone(), record);
             }
@@ -113,7 +113,7 @@ impl<I: AsyncFihIo> NativeFihStorage<I> {
         let mut hints = HintCache::new();
         for key in hint_keys {
             if let Some(bytes) = self.io.read(&key)?
-                && let Ok(record) = bincode::deserialize::<HintRecord>(&bytes)
+                && let Ok(record) = postcard::from_bytes::<HintRecord>(&bytes)
             {
                 hints.insert(record.id.clone(), record);
             }
@@ -201,7 +201,7 @@ impl<I: AsyncFihIo> NativeFihStorage<I> {
             mime_type: content.mime_type.clone(),
             size: content.data.len() as u64,
         };
-        let meta_bytes = bincode::serialize(&meta).map_err(|e| e.to_string())?;
+        let meta_bytes = postcard::to_allocvec(&meta).map_err(|e| e.to_string())?;
         self.pending.lock().unwrap().push(WriteOp::Write {
             path: meta_path,
             data: meta_bytes,
@@ -227,7 +227,7 @@ impl<I: AsyncFihIo> NativeFihStorage<I> {
                         blob_data = Some(data.clone());
                     }
                     WriteOp::Write { path, data } if *path == meta_path => {
-                        if let Ok(meta) = bincode::deserialize::<ContentMeta>(data) {
+                        if let Ok(meta) = postcard::from_bytes::<ContentMeta>(data) {
                             mime = Some(meta.mime_type);
                         }
                     }
@@ -264,7 +264,7 @@ impl<I: AsyncFihIo> NativeFihStorage<I> {
     fn read_mime_type(&self, blob_hash: &str) -> Option<String> {
         let meta_path = format!("blob/{}.bin.meta", blob_hash);
         match self.io.read(&meta_path) {
-            Ok(Some(bytes)) => bincode::deserialize::<ContentMeta>(&bytes)
+            Ok(Some(bytes)) => postcard::from_bytes::<ContentMeta>(&bytes)
                 .ok()
                 .map(|m| m.mime_type),
             _ => None,
@@ -366,7 +366,7 @@ impl<I: AsyncFihIo> FactCapable for NativeFihStorage<I> {
         let record = FactRecord::from_model(fact, blob_hash, self.clock.now_nanos());
 
         let bytes =
-            bincode::serialize(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+            postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let op = WriteOp::Write {
             path: record.key(),
@@ -414,7 +414,7 @@ impl<I: AsyncFihIo> HintCapable for NativeFihStorage<I> {
         };
 
         let bytes =
-            bincode::serialize(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+            postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let op = WriteOp::Write {
             path: record.key(),
@@ -464,7 +464,7 @@ impl<I: AsyncFihIo> IntentCapable for NativeFihStorage<I> {
         };
 
         let bytes =
-            bincode::serialize(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+            postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let op = WriteOp::Write {
             path: record.key(),
@@ -498,7 +498,7 @@ impl<I: AsyncFihIo> IntentCapable for NativeFihStorage<I> {
         record.status = new_status;
 
         let bytes =
-            bincode::serialize(record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+            postcard::to_allocvec(record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.pending.lock().unwrap().push(WriteOp::Write {
             path: record.key(),
             data: bytes,
@@ -525,7 +525,7 @@ impl<I: AsyncFihIo> IntentCapable for NativeFihStorage<I> {
         record.status = new_status;
 
         let bytes =
-            bincode::serialize(record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+            postcard::to_allocvec(record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.pending.lock().unwrap().push(WriteOp::Write {
             path: record.key(),
             data: bytes,
@@ -558,7 +558,7 @@ impl<I: AsyncFihIo> IntentCapable for NativeFihStorage<I> {
         }
 
         let bytes =
-            bincode::serialize(record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+            postcard::to_allocvec(record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.pending.lock().unwrap().push(WriteOp::Write {
             path: record.key(),
             data: bytes,
@@ -627,7 +627,7 @@ impl<I: AsyncFihIo> IntentCapable for NativeFihStorage<I> {
         }
 
         let intent_bytes =
-            bincode::serialize(self.intent_cache.read().unwrap().get(intent_id).unwrap())
+            postcard::to_allocvec(self.intent_cache.read().unwrap().get(intent_id).unwrap())
                 .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.pending.lock().unwrap().push(WriteOp::Write {
             path: format!("intents/i_{}.intent", intent_id),
@@ -781,45 +781,52 @@ impl<I: AsyncFihIo> FlushCapable for NativeFihStorage<I> {
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
         let since_ts = cursor.last_flushed_at;
         let now_ts = self.clock.now_nanos();
-        let mut records_flushed = 0u64;
 
-        // Collect delta fact IDs via TimeIndex (O(log N))
-        let delta_ids: std::collections::HashSet<String> = self
+        // Collect delta IDs via TimeIndex (O(log N))
+        let delta_ids: Vec<(String, u64)> = self
             .time_index
             .since(since_ts)
             .into_iter()
-            .map(|(_, id)| id)
+            .map(|(ts, id)| (id, ts))
             .collect();
+        let records_flushed = delta_ids.len() as u64;
 
-        // Export each delta fact record as a blob
-        let facts = self.fact_cache.read().map_err(|e| e.to_string())?;
-        for id in &delta_ids {
-            if let Some(record) = facts.get(id) {
-                let bytes =
-                    bincode::serialize(record).map_err(|e| format!("serialize fact: {e}"))?;
-                self.pending.lock().unwrap().push(WriteOp::Write {
-                    path: format!("flush/{}/facts/{}.fact", cursor.partition, id),
-                    data: bytes,
-                });
-                records_flushed += 1;
+        if records_flushed == 0 {
+            return Ok(FlushResult {
+                records_flushed: 0,
+                new_cursor: FlushCursor {
+                    last_flushed_at: now_ts,
+                    partition: cursor.partition.clone(),
+                },
+            });
+        }
+
+        // Build delta chain entry: batch all delta records into one snapshot
+        let mut facts = Vec::new();
+        let mut intents = Vec::new();
+        {
+            let fc = self.fact_cache.read().map_err(|e| e.to_string())?;
+            let ic = self.intent_cache.read().map_err(|e| e.to_string())?;
+            for (id, _) in &delta_ids {
+                if let Some(record) = fc.get(id) {
+                    facts.push(record.clone());
+                }
+                if let Some(record) = ic.get(id) {
+                    intents.push(record.clone());
+                }
             }
         }
-        drop(facts);
 
-        // Export delta intents
-        let intents = self.intent_cache.read().map_err(|e| e.to_string())?;
-        for id in &delta_ids {
-            if let Some(record) = intents.get(id) {
-                let bytes =
-                    bincode::serialize(record).map_err(|e| format!("serialize intent: {e}"))?;
-                self.pending.lock().unwrap().push(WriteOp::Write {
-                    path: format!("flush/{}/intents/{}.intent", cursor.partition, id),
-                    data: bytes,
-                });
-                records_flushed += 1;
-            }
-        }
-        drop(intents);
+        // Serialize delta chain entry: (cursor_ts, records_flushed, facts, intents)
+        let chain_bytes =
+            postcard::to_allocvec(&(cursor.last_flushed_at, records_flushed, &facts, &intents))
+                .map_err(|e| format!("serialize chain: {e}"))?;
+
+        let chain_path = format!("flush/{}/cursor_{}.chain", cursor.partition, now_ts);
+        self.pending.lock().unwrap().push(WriteOp::Write {
+            path: chain_path,
+            data: chain_bytes,
+        });
 
         // Write pending batch to IO
         self.flush_pending()?;
@@ -1240,9 +1247,25 @@ mod tests {
             partition: "default".into(),
         };
         <NativeFihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor).unwrap();
-        let keys = BlockingFihIo::new(io).list("flush/").unwrap();
-        assert!(!keys.is_empty());
-        assert!(keys.iter().any(|k| k.contains("f001")));
+        let blocking = BlockingFihIo::new(io.clone());
+        let keys = blocking.list("flush/").unwrap();
+        assert!(!keys.is_empty(), "flush directory should have chain files");
+        assert!(
+            keys.iter().any(|k| k.ends_with(".chain")),
+            "expected .chain files in flush output"
+        );
+        let chain_key = keys.iter().find(|k| k.ends_with(".chain")).unwrap();
+        let chain_data = BlockingFihIo::new(io)
+            .read(chain_key)
+            .unwrap()
+            .expect("chain file");
+        let (_prev_cursor, count, _facts, _intents): (
+            u64,
+            u64,
+            Vec<super::FactRecord>,
+            Vec<super::IntentRecord>,
+        ) = postcard::from_bytes(&chain_data).unwrap();
+        assert_eq!(count, 1, "chain should contain 1 record");
     }
 
     #[test]

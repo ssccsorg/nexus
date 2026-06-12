@@ -1,7 +1,7 @@
 // ── FIH record types ────────────────────────────────────────────────────
 //
 // Canonical on-disk record formats for Fact, Intent, and Hint.
-// Serialized with bincode. Each record is stored as a separate file.
+// Serialized with postcard. Each record is stored as a separate file.
 //
 // Key paths:
 //   facts/f_{hash}.fact         → FactRecord
