@@ -62,6 +62,22 @@ impl TimeIndex {
         self.entries.read().unwrap().is_empty()
     }
 
+    /// Earliest timestamp in the index, or None if empty. O(1).
+    pub fn first_ts(&self) -> Option<u64> {
+        self.entries
+            .read()
+            .ok()
+            .and_then(|e| e.first().map(|(ts, _)| *ts))
+    }
+
+    /// Latest timestamp in the index, or None if empty. O(1).
+    pub fn last_ts(&self) -> Option<u64> {
+        self.entries
+            .read()
+            .ok()
+            .and_then(|e| e.last().map(|(ts, _)| *ts))
+    }
+
     /// Drain all entries (for testing). O(1).
     pub fn clear(&self) {
         self.entries.write().unwrap().clear();
