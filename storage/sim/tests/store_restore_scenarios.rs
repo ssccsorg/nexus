@@ -7,7 +7,7 @@
 mod common;
 
 use nexus_model::{
-    Content, Fact, FactCapable, FihHash, FlushCapable, FlushCursor, Hint, HintCapable, Intent,
+    Content, Fact, FactCapable, FihHash, Hint, HintCapable, Intent,
     IntentCapable, StorageRead,
 };
 use nexus_storage_sim::{FihStorage, SimIo};
@@ -230,12 +230,16 @@ fn test_scenario_multi_agent_collaboration() {
 
     assert!(IntentCapable::claim_intent(&store, "analysis_1", "charlie").is_err());
 
-    let result = IntentCapable::conclude_intent(&store, "analysis_1", "obs_42 is consistent").unwrap();
+    let result =
+        IntentCapable::conclude_intent(&store, "analysis_1", "obs_42 is consistent").unwrap();
 
     let state = StorageRead::read_state(&store);
     assert_eq!(state.facts.len(), 2);
     assert_eq!(state.intents.len(), 1);
-    assert_eq!(state.intents[0].to_fact_id.as_deref(), Some(result.id.0.as_str()));
+    assert_eq!(
+        state.intents[0].to_fact_id.as_deref(),
+        Some(result.id.0.as_str())
+    );
     assert!(state.intents[0].is_concluded);
 }
 
@@ -263,11 +267,11 @@ fn test_scenario_content_dedup() {
 fn test_scenario_empty_from_facts_rejected() {
     let store = FihStorage::new(SimIo::new(), "s");
 
-    let result = IntentCapable::submit_intent(
-        &store,
-        &intent("i_empty", vec![]),
+    let result = IntentCapable::submit_intent(&store, &intent("i_empty", vec![]));
+    assert!(
+        result.is_err(),
+        "intent without from_facts must be rejected"
     );
-    assert!(result.is_err(), "intent without from_facts must be rejected");
 }
 
 // ── Scenario L: Storage migration (SimIo to fresh SimIo) ──────────
