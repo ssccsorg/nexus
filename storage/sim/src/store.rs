@@ -625,7 +625,12 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
                 "cannot submit_intent in read-only ColdStorage mode".into(),
             ));
         }
-        // Verify all from_facts exist
+        // Verify at least one from_fact exists and all referenced facts exist
+        if intent.from_facts.is_empty() {
+            return Err(BlackboardError::Forbidden(
+                "intent must reference at least one fact".into(),
+            ));
+        }
         if self.is_hotmemory_enabled {
             let facts = self.fact_cache.read().unwrap();
             for fid in &intent.from_facts {
