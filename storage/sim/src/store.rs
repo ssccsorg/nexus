@@ -1,4 +1,4 @@
-// ── NativeFihStorage — unified FIH storage over FihIo ──────────────────
+// ── FihStorage — unified FIH storage over FihIo ──────────────────
 //
 // Implements FactCapable, IntentCapable, HintCapable, StorageRead, and
 // EvictCapable on top of a single FihIo implementation.
@@ -18,49 +18,88 @@ use std::sync::{Mutex, RwLock};
 
 use nexus_model::{
     BlackboardError, BoardState, Content, EvictCapable, Fact, FactCapable, FihHash, FilterCapable,
-    Hint, HintCapable, Intent, IntentCapable, Now, StateFilter, StorageRead,
+    Hint, HintCapable, Intent, IntentCapable, Now, PartitionData, StateFilter, StorageRead,
 };
 
 use crate::index::TimeIndex;
-use crate::io::{FihIo, FihIoBatch, WriteOp};
+use crate::io::{AsyncFihIo, BlockingFihIo, WriteOp};
 use crate::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
+
+// ── Type aliases for in-memory caches ───────────────────────────────────
+//
+// Isolate the concrete map implementation so that switching from HashMap to
+// BTreeMap (or any other Map-like structure) requires changing only the type
+// alias below — not the 50+ call sites throughout this file.
+
+/// Fact cache: fact_id → FactRecord
+pub(crate) type FactCache = HashMap<String, FactRecord>;
+
+/// Intent cache: intent_id → IntentRecord
+pub(crate) type IntentCache = HashMap<String, IntentRecord>;
+
+/// Hint cache: hint_id → HintRecord
+pub(crate) type HintCache = HashMap<String, HintRecord>;
+
+/// Reference counts: fact_id → number of Intents referencing this Fact
+pub(crate) type RefCounts = HashMap<String, AtomicU64>;
+
+/// Origin index: origin → [fact_id, ...]
+pub(crate) type OriginIndex = HashMap<String, Vec<String>>;
 
 /// Unified FIH storage backended by an abstract IO layer.
 ///
 /// All FIH trait methods are sync. They enqueue WriteOps into a buffer
 /// for batch commit by the outer FihSession layer.
-pub struct NativeFihStorage<I: FihIo> {
-    io: I,
+/// IO is wrapped in BlockingFihIo to bridge the async IO trait with sync callers.
+pub struct FihStorage<I: AsyncFihIo> {
+    io: BlockingFihIo<I>,
     project_id: String,
-    clock: Box<dyn Now + Send>,
+    clock: Box<dyn Now + Send + Sync>,
+    /// When true (default), in-memory caches are active for O(1) reads.
+    /// Set to false when used exclusively as ColdStorage — all reads go
+    /// directly to IO, and cache fields remain empty.
+    is_hotmemory_enabled: bool,
     // In-memory cache: rebuilt from IO on hydrate, kept in sync for reads.
-    fact_cache: RwLock<HashMap<String, FactRecord>>,
-    intent_cache: RwLock<HashMap<String, IntentRecord>>,
-    hint_cache: RwLock<HashMap<String, HintRecord>>,
-    // Indices
+    fact_cache: RwLock<FactCache>,
+    intent_cache: RwLock<IntentCache>,
+    hint_cache: RwLock<HintCache>,
+    // Indices (valid only when is_hotmemory_enabled)
     time_index: TimeIndex,
-    ref_counts: RwLock<HashMap<String, AtomicU64>>,
-    by_origin: RwLock<HashMap<String, Vec<String>>>,
+    ref_counts: RwLock<RefCounts>,
+    by_origin: RwLock<OriginIndex>,
     // Pending writes (for FihSession coordination).
     pub(crate) pending: Mutex<Vec<WriteOp>>,
 }
 
-impl<I: FihIo> NativeFihStorage<I> {
+impl<I: AsyncFihIo> FihStorage<I> {
     pub fn new(io: I, project_id: &str) -> Self {
         Self::with_clock(io, project_id, Box::new(nexus_model::SystemClock))
     }
 
-    pub fn with_clock(io: I, project_id: &str, clock: Box<dyn Now + Send>) -> Self {
+    pub fn with_clock(io: I, project_id: &str, clock: Box<dyn Now + Send + Sync>) -> Self {
+        Self::with_clock_and_memory(io, project_id, clock, true)
+    }
+
+    /// Create storage with explicit memory cache control.
+    /// Set `memory` to false when this instance is used exclusively as
+    /// ColdStorage — all reads go directly to IO, saving memory.
+    pub fn with_clock_and_memory(
+        io: I,
+        project_id: &str,
+        clock: Box<dyn Now + Send + Sync>,
+        is_hotmemory_enabled: bool,
+    ) -> Self {
         Self {
-            io,
+            io: BlockingFihIo::new(io),
             project_id: project_id.to_string(),
             clock,
-            fact_cache: RwLock::new(HashMap::new()),
-            intent_cache: RwLock::new(HashMap::new()),
-            hint_cache: RwLock::new(HashMap::new()),
+            is_hotmemory_enabled,
+            fact_cache: RwLock::new(FactCache::new()),
+            intent_cache: RwLock::new(IntentCache::new()),
+            hint_cache: RwLock::new(HintCache::new()),
             time_index: TimeIndex::new(),
-            ref_counts: RwLock::new(HashMap::new()),
-            by_origin: RwLock::new(HashMap::new()),
+            ref_counts: RwLock::new(RefCounts::new()),
+            by_origin: RwLock::new(OriginIndex::new()),
             pending: Mutex::new(Vec::new()),
         }
     }
@@ -68,30 +107,30 @@ impl<I: FihIo> NativeFihStorage<I> {
     /// Rebuild in-memory cache from IO storage.
     pub fn rebuild_cache(&self) -> Result<(), String> {
         let fact_keys = self.io.list("facts/")?;
-        let mut facts = HashMap::new();
+        let mut facts = FactCache::new();
         for key in fact_keys {
             if let Some(bytes) = self.io.read(&key)?
-                && let Ok(record) = bincode::deserialize::<FactRecord>(&bytes)
+                && let Ok(record) = postcard::from_bytes::<FactRecord>(&bytes)
             {
                 facts.insert(record.id.clone(), record);
             }
         }
 
         let intent_keys = self.io.list("intents/")?;
-        let mut intents = HashMap::new();
+        let mut intents = IntentCache::new();
         for key in intent_keys {
             if let Some(bytes) = self.io.read(&key)?
-                && let Ok(record) = bincode::deserialize::<IntentRecord>(&bytes)
+                && let Ok(record) = postcard::from_bytes::<IntentRecord>(&bytes)
             {
                 intents.insert(record.id.clone(), record);
             }
         }
 
         let hint_keys = self.io.list("hints/")?;
-        let mut hints = HashMap::new();
+        let mut hints = HintCache::new();
         for key in hint_keys {
             if let Some(bytes) = self.io.read(&key)?
-                && let Ok(record) = bincode::deserialize::<HintRecord>(&bytes)
+                && let Ok(record) = postcard::from_bytes::<HintRecord>(&bytes)
             {
                 hints.insert(record.id.clone(), record);
             }
@@ -179,7 +218,7 @@ impl<I: FihIo> NativeFihStorage<I> {
             mime_type: content.mime_type.clone(),
             size: content.data.len() as u64,
         };
-        let meta_bytes = bincode::serialize(&meta).map_err(|e| e.to_string())?;
+        let meta_bytes = postcard::to_allocvec(&meta).map_err(|e| e.to_string())?;
         self.pending.lock().unwrap().push(WriteOp::Write {
             path: meta_path,
             data: meta_bytes,
@@ -205,7 +244,7 @@ impl<I: FihIo> NativeFihStorage<I> {
                         blob_data = Some(data.clone());
                     }
                     WriteOp::Write { path, data } if *path == meta_path => {
-                        if let Ok(meta) = bincode::deserialize::<ContentMeta>(data) {
+                        if let Ok(meta) = postcard::from_bytes::<ContentMeta>(data) {
                             mime = Some(meta.mime_type);
                         }
                     }
@@ -242,7 +281,7 @@ impl<I: FihIo> NativeFihStorage<I> {
     fn read_mime_type(&self, blob_hash: &str) -> Option<String> {
         let meta_path = format!("blob/{}.bin.meta", blob_hash);
         match self.io.read(&meta_path) {
-            Ok(Some(bytes)) => bincode::deserialize::<ContentMeta>(&bytes)
+            Ok(Some(bytes)) => postcard::from_bytes::<ContentMeta>(&bytes)
                 .ok()
                 .map(|m| m.mime_type),
             _ => None,
@@ -261,12 +300,97 @@ fn content_hash(data: &[u8]) -> String {
 
 // ── StorageRead ──────────────────────────────────────────────────────────
 
-impl<I: FihIo> StorageRead for NativeFihStorage<I> {
+impl<I: AsyncFihIo> FihStorage<I> {
+    /// Read state directly from IO, bypassing in-memory cache.
+    /// Used when `is_hotmemory_enabled` is false (ColdStorage mode).
+    fn read_state_uncached(&self) -> BoardState {
+        let mut facts = Vec::new();
+        let mut intents = Vec::new();
+        let mut hints = Vec::new();
+
+        if let Ok(keys) = self.io.list("facts/") {
+            for key in keys {
+                if let Ok(Some(bytes)) = self.io.read(&key)
+                    && let Ok(r) = postcard::from_bytes::<FactRecord>(&bytes)
+                {
+                    let content = self.load_content(&r.blob_hash, "application/octet-stream");
+                    facts.push(Fact {
+                        id: FihHash(r.id.clone()),
+                        origin: r.origin.clone(),
+                        content,
+                        creator: r.creator.clone(),
+                    });
+                }
+            }
+        }
+
+        if let Ok(keys) = self.io.list("intents/") {
+            for key in keys {
+                if let Ok(Some(bytes)) = self.io.read(&key)
+                    && let Ok(r) = postcard::from_bytes::<IntentRecord>(&bytes)
+                {
+                    intents.push(Intent {
+                        id: FihHash(r.id.clone()),
+                        from_facts: r.from_facts.clone(),
+                        description: String::new(),
+                        creator: r.creator.clone(),
+                        worker: match &r.status {
+                            IntentStatus::Claimed { worker, .. }
+                            | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
+                            IntentStatus::Submitted => None,
+                        },
+                        to_fact_id: match &r.status {
+                            IntentStatus::Concluded { to_fact, .. } => Some(to_fact.clone()),
+                            _ => None,
+                        },
+                        last_heartbeat_at: match &r.status {
+                            IntentStatus::Claimed {
+                                last_heartbeat_at, ..
+                            } => Some(*last_heartbeat_at),
+                            _ => None,
+                        },
+                        created_at: Some(r.created_at),
+                        is_concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
+                        concluded_at: match &r.status {
+                            IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
+                            _ => None,
+                        },
+                    });
+                }
+            }
+        }
+
+        if let Ok(keys) = self.io.list("hints/") {
+            for key in keys {
+                if let Ok(Some(bytes)) = self.io.read(&key)
+                    && let Ok(r) = postcard::from_bytes::<HintRecord>(&bytes)
+                {
+                    hints.push(Hint {
+                        id: FihHash(r.id.clone()),
+                        content: r.content.clone(),
+                        creator: r.creator.clone(),
+                    });
+                }
+            }
+        }
+
+        BoardState {
+            facts,
+            intents,
+            hints,
+        }
+    }
+}
+
+impl<I: AsyncFihIo> StorageRead for FihStorage<I> {
     fn project_id(&self) -> &str {
         &self.project_id
     }
 
     fn read_state(&self) -> BoardState {
+        if !self.is_hotmemory_enabled {
+            return self.read_state_uncached();
+        }
         let facts = self.fact_cache.read().unwrap();
         let intents = self.intent_cache.read().unwrap();
         let hints = self.hint_cache.read().unwrap();
@@ -316,7 +440,7 @@ impl<I: FihIo> StorageRead for NativeFihStorage<I> {
                     created_at: Some(r.created_at),
                     is_concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
                     concluded_at: match &r.status {
-                        IntentStatus::Concluded { .. } => Some(1),
+                        IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
                         _ => None,
                     },
                 })
@@ -335,8 +459,16 @@ impl<I: FihIo> StorageRead for NativeFihStorage<I> {
 
 // ── FactCapable ──────────────────────────────────────────────────────────
 
-impl<I: FihIo> FactCapable for NativeFihStorage<I> {
+impl<I: AsyncFihIo> FactCapable for FihStorage<I> {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
+        // ColdStorage mode is read-only; writes go through write_blob only.
+        // Block FIH writes to prevent accidental data corruption when this
+        // instance is serving as the cold half of DualStorage.
+        if !self.is_hotmemory_enabled {
+            return Err(BlackboardError::Forbidden(
+                "cannot submit_fact in read-only ColdStorage mode".into(),
+            ));
+        }
         let blob_hash = self
             .enqueue_content(&fact.content)
             .map_err(BlackboardError::Internal)?;
@@ -344,7 +476,7 @@ impl<I: FihIo> FactCapable for NativeFihStorage<I> {
         let record = FactRecord::from_model(fact, blob_hash, self.clock.now_nanos());
 
         let bytes =
-            bincode::serialize(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+            postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let op = WriteOp::Write {
             path: record.key(),
@@ -352,28 +484,32 @@ impl<I: FihIo> FactCapable for NativeFihStorage<I> {
         };
 
         // Update cache immediately for subsequent reads
-        self.fact_cache
-            .write()
-            .unwrap()
-            .insert(record.id.clone(), record);
+        if self.is_hotmemory_enabled {
+            self.fact_cache
+                .write()
+                .unwrap()
+                .insert(record.id.clone(), record);
+        }
         self.pending.lock().unwrap().push(op);
 
-        // Update indices
-        let ts = self.clock.now_nanos();
-        self.time_index.record(ts, &fact.id.0);
-        {
-            let mut origin_map = self.by_origin.write().unwrap();
-            origin_map
-                .entry(fact.origin.clone())
-                .or_default()
-                .push(fact.id.0.clone());
+        if self.is_hotmemory_enabled {
+            // Update indices
+            let ts = self.clock.now_nanos();
+            self.time_index.record(ts, &fact.id.0);
+            {
+                let mut origin_map = self.by_origin.write().unwrap();
+                origin_map
+                    .entry(fact.origin.clone())
+                    .or_default()
+                    .push(fact.id.0.clone());
+            }
+            // ref_count defaults to 0 — orphan unless referenced by an Intent
+            self.ref_counts
+                .write()
+                .unwrap()
+                .entry(fact.id.0.clone())
+                .or_insert_with(|| AtomicU64::new(0));
         }
-        // ref_count defaults to 0 — orphan unless referenced by an Intent
-        self.ref_counts
-            .write()
-            .unwrap()
-            .entry(fact.id.0.clone())
-            .or_insert_with(|| AtomicU64::new(0));
 
         Ok(fact.id.clone())
     }
@@ -381,8 +517,13 @@ impl<I: FihIo> FactCapable for NativeFihStorage<I> {
 
 // ── HintCapable ──────────────────────────────────────────────────────────
 
-impl<I: FihIo> HintCapable for NativeFihStorage<I> {
+impl<I: AsyncFihIo> HintCapable for FihStorage<I> {
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
+        if !self.is_hotmemory_enabled {
+            return Err(BlackboardError::Forbidden(
+                "cannot submit_hint in read-only ColdStorage mode".into(),
+            ));
+        }
         let record = HintRecord {
             id: hint.id.0.clone(),
             content: hint.content.clone(),
@@ -392,17 +533,19 @@ impl<I: FihIo> HintCapable for NativeFihStorage<I> {
         };
 
         let bytes =
-            bincode::serialize(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+            postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let op = WriteOp::Write {
             path: record.key(),
             data: bytes,
         };
 
-        self.hint_cache
-            .write()
-            .unwrap()
-            .insert(record.id.clone(), record);
+        if self.is_hotmemory_enabled {
+            self.hint_cache
+                .write()
+                .unwrap()
+                .insert(record.id.clone(), record);
+        }
         self.pending.lock().unwrap().push(op);
 
         Ok(())
@@ -411,23 +554,30 @@ impl<I: FihIo> HintCapable for NativeFihStorage<I> {
 
 // ── IntentCapable ────────────────────────────────────────────────────────
 
-impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
+impl<I: AsyncFihIo> IntentCapable for FihStorage<I> {
     fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
-        // Verify all from_facts exist in cache
-        let facts = self.fact_cache.read().unwrap();
-        for fid in &intent.from_facts {
-            if !facts.contains_key(fid) {
-                return Err(BlackboardError::NotFound(format!("Fact {fid} not found")));
-            }
+        if !self.is_hotmemory_enabled {
+            return Err(BlackboardError::Forbidden(
+                "cannot submit_intent in read-only ColdStorage mode".into(),
+            ));
         }
-        drop(facts);
-
-        // Increment ref_count for each from_fact
-        {
-            let refs = self.ref_counts.read().unwrap();
+        // Verify all from_facts exist
+        if self.is_hotmemory_enabled {
+            let facts = self.fact_cache.read().unwrap();
             for fid in &intent.from_facts {
-                if let Some(rc) = refs.get(fid) {
-                    rc.fetch_add(1, Ordering::Relaxed);
+                if !facts.contains_key(fid) {
+                    return Err(BlackboardError::NotFound(format!("Fact {fid} not found")));
+                }
+            }
+            drop(facts);
+
+            // Increment ref_count for each from_fact
+            {
+                let refs = self.ref_counts.read().unwrap();
+                for fid in &intent.from_facts {
+                    if let Some(rc) = refs.get(fid) {
+                        rc.fetch_add(1, Ordering::Relaxed);
+                    }
                 }
             }
         }
@@ -442,17 +592,19 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
         };
 
         let bytes =
-            bincode::serialize(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+            postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let op = WriteOp::Write {
             path: record.key(),
             data: bytes,
         };
 
-        self.intent_cache
-            .write()
-            .unwrap()
-            .insert(record.id.clone(), record);
+        if self.is_hotmemory_enabled {
+            self.intent_cache
+                .write()
+                .unwrap()
+                .insert(record.id.clone(), record);
+        }
         self.pending.lock().unwrap().push(op);
 
         Ok(intent.id.clone())
@@ -476,7 +628,7 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
         record.status = new_status;
 
         let bytes =
-            bincode::serialize(record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+            postcard::to_allocvec(record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.pending.lock().unwrap().push(WriteOp::Write {
             path: record.key(),
             data: bytes,
@@ -503,7 +655,7 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
         record.status = new_status;
 
         let bytes =
-            bincode::serialize(record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+            postcard::to_allocvec(record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.pending.lock().unwrap().push(WriteOp::Write {
             path: record.key(),
             data: bytes,
@@ -536,7 +688,7 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
         }
 
         let bytes =
-            bincode::serialize(record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+            postcard::to_allocvec(record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.pending.lock().unwrap().push(WriteOp::Write {
             path: record.key(),
             data: bytes,
@@ -605,7 +757,7 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
         }
 
         let intent_bytes =
-            bincode::serialize(self.intent_cache.read().unwrap().get(intent_id).unwrap())
+            postcard::to_allocvec(self.intent_cache.read().unwrap().get(intent_id).unwrap())
                 .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.pending.lock().unwrap().push(WriteOp::Write {
             path: format!("intents/i_{}.intent", intent_id),
@@ -618,7 +770,7 @@ impl<I: FihIo> IntentCapable for NativeFihStorage<I> {
 
 // ── EvictCapable ─────────────────────────────────────────────────────────
 
-impl<I: FihIo> EvictCapable for NativeFihStorage<I> {
+impl<I: AsyncFihIo> EvictCapable for FihStorage<I> {
     fn approximate_size(&self) -> usize {
         let facts = self.fact_cache.read().unwrap().len();
         let intents = self.intent_cache.read().unwrap().len();
@@ -665,7 +817,7 @@ impl<I: FihIo> EvictCapable for NativeFihStorage<I> {
 
 // ── FilterCapable ────────────────────────────────────────────────────────
 
-impl<I: FihIo> FilterCapable for NativeFihStorage<I> {
+impl<I: AsyncFihIo> FilterCapable for FihStorage<I> {
     fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
         // Determine time range using TimeIndex (O(log N) seek)
         let time_filtered_ids: Option<std::collections::HashSet<String>> =
@@ -751,13 +903,148 @@ impl<I: FihIo> FilterCapable for NativeFihStorage<I> {
     }
 }
 
+// ── FlushCapable ───────────────────────────────────────────────────────────
+
+use nexus_model::{
+    ColdStorage, FlushCapable, FlushCursor, FlushResult, ScanCapable, TimeRangeCapable,
+};
+use std::ops::Range;
+
+// ── FihStorage as HotStorage (standalone Blackboard) ───────────────
+//
+// StorageRead + FactCapable + IntentCapable + HintCapable + FilterCapable +
+// EvictCapable + FlushCapable — all implemented above.
+//
+// FihStorage can operate as a standalone Blackboard (no DualStorage
+// needed), OR as the cold half of DualStorage via the ColdStorage trait.
+// This is nex's principle of recursive self-similarity: the same struct
+// fulfills both roles through trait composition.
+
+// ── ScanCapable ───────────────────────────────────────────────────────────
+
+impl<I: AsyncFihIo> ScanCapable for FihStorage<I> {
+    fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
+        let state = StorageRead::read_state(self);
+        let prefix = format!("partition:{}", partition);
+        Ok(PartitionData {
+            partition: partition.into(),
+            facts: state
+                .facts
+                .into_iter()
+                .filter(|f| f.origin == prefix)
+                .collect(),
+            intents: state
+                .intents
+                .into_iter()
+                .filter(|i| i.creator == prefix)
+                .collect(),
+            hints: state
+                .hints
+                .into_iter()
+                .filter(|h| h.creator == prefix)
+                .collect(),
+        })
+    }
+}
+
+// ── TimeRangeCapable ──────────────────────────────────────────────────────
+
+impl<I: AsyncFihIo> TimeRangeCapable for FihStorage<I> {
+    fn time_range(&self) -> Option<Range<String>> {
+        let first = self.time_index.first_ts()?;
+        let last = self.time_index.last_ts()?;
+        Some(first.to_string()..last.to_string())
+    }
+}
+
+// ── ColdStorage ───────────────────────────────────────────────────────────
+
+impl<I: AsyncFihIo + Send> ColdStorage for FihStorage<I> {
+    fn write_blob(&self, key: &str, data: &[u8]) -> Result<(), String> {
+        self.pending.lock().unwrap().push(WriteOp::Write {
+            path: key.to_string(),
+            data: data.to_vec(),
+        });
+        Ok(())
+    }
+}
+
+// ── FlushCapable ───────────────────────────────────────────────────────────
+
+impl<I: AsyncFihIo> FlushCapable for FihStorage<I> {
+    fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
+        let since_ts = cursor.last_flushed_at;
+        let now_ts = self.clock.now_nanos();
+
+        // Collect delta IDs via TimeIndex (O(log N))
+        let delta_ids: Vec<(String, u64)> = self
+            .time_index
+            .since(since_ts)
+            .into_iter()
+            .map(|(ts, id)| (id, ts))
+            .collect();
+        let records_flushed = delta_ids.len() as u64;
+
+        if records_flushed == 0 {
+            return Ok(FlushResult {
+                records_flushed: 0,
+                new_cursor: FlushCursor {
+                    last_flushed_at: now_ts,
+                    partition: cursor.partition.clone(),
+                },
+            });
+        }
+
+        // Build delta chain entry: batch all delta records into one snapshot.
+        // Hints are intentionally excluded from the chain because they are
+        // ephemeral (see EvictCapable::evict_before). Hint reconstruction
+        // must use rebuild_cache() which reads directly from the hints/ prefix.
+        let mut facts = Vec::new();
+        let mut intents = Vec::new();
+        {
+            let fc = self.fact_cache.read().map_err(|e| e.to_string())?;
+            let ic = self.intent_cache.read().map_err(|e| e.to_string())?;
+            for (id, _) in &delta_ids {
+                if let Some(record) = fc.get(id) {
+                    facts.push(record.clone());
+                }
+                if let Some(record) = ic.get(id) {
+                    intents.push(record.clone());
+                }
+            }
+        }
+
+        // Serialize delta chain entry: (cursor_ts, records_flushed, facts, intents)
+        let chain_bytes =
+            postcard::to_allocvec(&(cursor.last_flushed_at, records_flushed, &facts, &intents))
+                .map_err(|e| format!("serialize chain: {e}"))?;
+
+        let chain_path = format!("flush/{}/cursor_{}.chain", cursor.partition, now_ts);
+        self.pending.lock().unwrap().push(WriteOp::Write {
+            path: chain_path,
+            data: chain_bytes,
+        });
+
+        // Write pending batch to IO
+        self.flush_pending()?;
+
+        Ok(FlushResult {
+            records_flushed,
+            new_cursor: FlushCursor {
+                last_flushed_at: now_ts,
+                partition: cursor.partition.clone(),
+            },
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::sim_io::SimFihIo;
 
-    fn make_storage() -> NativeFihStorage<SimFihIo> {
-        NativeFihStorage::new(SimFihIo::new(), "test")
+    fn make_storage() -> FihStorage<SimFihIo> {
+        FihStorage::new(SimFihIo::new(), "test")
     }
 
     #[test]
@@ -850,6 +1137,10 @@ mod tests {
             state.intents[0].concluded_at.is_some(),
             "concluded_at should be set"
         );
+        assert!(
+            state.intents[0].concluded_at.unwrap() > 0,
+            "concluded_at should be a real timestamp, not 0 or 1"
+        );
         // created_at should be non-zero (clock.now_secs())
         assert!(
             state.intents[0].created_at != Some(0),
@@ -897,7 +1188,7 @@ mod tests {
     #[test]
     fn test_flush_preserves_content() {
         let io = SimFihIo::new();
-        let store = NativeFihStorage::new(io.clone(), "test");
+        let store = FihStorage::new(io.clone(), "test");
 
         FactCapable::submit_fact(
             &store,
@@ -915,7 +1206,7 @@ mod tests {
 
         store.flush_pending().unwrap();
 
-        let store2 = NativeFihStorage::new(io, "test");
+        let store2 = FihStorage::new(io, "test");
         store2.rebuild_cache().unwrap();
         let state = StorageRead::read_state(&store2);
         assert_eq!(state.facts.len(), 1);
@@ -925,7 +1216,7 @@ mod tests {
     #[test]
     fn test_time_index_after_rebuild() {
         let io = SimFihIo::new();
-        let store = NativeFihStorage::new(io.clone(), "test");
+        let store = FihStorage::new(io.clone(), "test");
 
         FactCapable::submit_fact(
             &store,
@@ -957,7 +1248,7 @@ mod tests {
         store.flush_pending().unwrap();
 
         // Rebuild from IO — indices should be reconstructed
-        let store2 = NativeFihStorage::new(io, "test");
+        let store2 = FihStorage::new(io, "test");
         store2.rebuild_cache().unwrap();
 
         // TimeIndex should have both entries
@@ -1053,6 +1344,128 @@ mod tests {
     }
 
     #[test]
+    fn test_flush_cursor_advances() {
+        let store = make_storage();
+        FactCapable::submit_fact(
+            &store,
+            &Fact {
+                id: FihHash("f001".into()),
+                origin: "t".into(),
+                content: Content {
+                    mime_type: "text/plain".into(),
+                    data: b"a".to_vec(),
+                },
+                creator: "t".into(),
+            },
+        )
+        .unwrap();
+        let cursor = FlushCursor {
+            last_flushed_at: 0,
+            partition: "default".into(),
+        };
+        let result = <FihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor).unwrap();
+        assert!(result.records_flushed > 0);
+        assert!(result.new_cursor.last_flushed_at > 0);
+    }
+
+    #[test]
+    fn test_flush_empty_delta() {
+        let store = make_storage();
+        let cursor = FlushCursor {
+            last_flushed_at: 0,
+            partition: "default".into(),
+        };
+        let result = <FihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor).unwrap();
+        assert_eq!(result.records_flushed, 0);
+    }
+
+    #[test]
+    fn test_flush_incremental() {
+        let store = make_storage();
+        FactCapable::submit_fact(
+            &store,
+            &Fact {
+                id: FihHash("f001".into()),
+                origin: "t".into(),
+                content: Content {
+                    mime_type: "text/plain".into(),
+                    data: b"a".to_vec(),
+                },
+                creator: "t".into(),
+            },
+        )
+        .unwrap();
+        let cursor1 = FlushCursor {
+            last_flushed_at: 0,
+            partition: "default".into(),
+        };
+        let r1 = <FihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor1).unwrap();
+        assert!(r1.records_flushed > 0);
+        FactCapable::submit_fact(
+            &store,
+            &Fact {
+                id: FihHash("f002".into()),
+                origin: "t".into(),
+                content: Content {
+                    mime_type: "text/plain".into(),
+                    data: b"b".to_vec(),
+                },
+                creator: "t".into(),
+            },
+        )
+        .unwrap();
+        let cursor2 = FlushCursor {
+            last_flushed_at: r1.new_cursor.last_flushed_at,
+            partition: "default".into(),
+        };
+        let r2 = <FihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor2).unwrap();
+        assert_eq!(r2.records_flushed, 1);
+    }
+
+    #[test]
+    fn test_flush_writes_to_io() {
+        let io = SimFihIo::new();
+        let store = FihStorage::new(io.clone(), "test");
+        FactCapable::submit_fact(
+            &store,
+            &Fact {
+                id: FihHash("f001".into()),
+                origin: "t".into(),
+                content: Content {
+                    mime_type: "text/plain".into(),
+                    data: b"data".to_vec(),
+                },
+                creator: "t".into(),
+            },
+        )
+        .unwrap();
+        let cursor = FlushCursor {
+            last_flushed_at: 0,
+            partition: "default".into(),
+        };
+        <FihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor).unwrap();
+        let blocking = BlockingFihIo::new(io.clone());
+        let keys = blocking.list("flush/").unwrap();
+        assert!(!keys.is_empty(), "flush directory should have chain files");
+        assert!(
+            keys.iter().any(|k| k.ends_with(".chain")),
+            "expected .chain files in flush output"
+        );
+        let chain_key = keys.iter().find(|k| k.ends_with(".chain")).unwrap();
+        let chain_data = BlockingFihIo::new(io)
+            .read(chain_key)
+            .unwrap()
+            .expect("chain file");
+        let (_prev_cursor, count, _facts, _intents): (
+            u64,
+            u64,
+            Vec<super::FactRecord>,
+            Vec<super::IntentRecord>,
+        ) = postcard::from_bytes(&chain_data).unwrap();
+        assert_eq!(count, 1, "chain should contain 1 record");
+    }
+
+    #[test]
     fn test_time_index_since_filter() {
         use nexus_model::FilterCapable;
         let store = make_storage();
@@ -1099,8 +1512,7 @@ mod tests {
             limit: None,
             offset: None,
         };
-        let state =
-            <NativeFihStorage<SimFihIo> as FilterCapable>::read_state_filtered(&store, &filter);
+        let state = <FihStorage<SimFihIo> as FilterCapable>::read_state_filtered(&store, &filter);
         // f_new may or may not appear depending on timing, but at minimum
         // the query should not panic and should return <= 2 facts
         assert!(state.facts.len() <= 2);
@@ -1170,10 +1582,8 @@ mod tests {
             limit: None,
             offset: None,
         };
-        let state = <NativeFihStorage<SimFihIo> as FilterCapable>::read_state_filtered(
-            &store,
-            &filter_until,
-        );
+        let state =
+            <FihStorage<SimFihIo> as FilterCapable>::read_state_filtered(&store, &filter_until);
         assert!(
             state.facts.len() <= 3,
             "as_of filter should not exceed total facts"
@@ -1189,10 +1599,8 @@ mod tests {
             limit: None,
             offset: None,
         };
-        let state = <NativeFihStorage<SimFihIo> as FilterCapable>::read_state_filtered(
-            &store,
-            &range_filter,
-        );
+        let state =
+            <FihStorage<SimFihIo> as FilterCapable>::read_state_filtered(&store, &range_filter);
         assert!(state.facts.len() <= 3);
         assert!(
             state.facts.len() >= 1,

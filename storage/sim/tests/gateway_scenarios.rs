@@ -1,4 +1,4 @@
-// Scenario tests routed through MockGateway, backed by NativeFihStorage<SimFihIo>.
+// Scenario tests routed through MockGateway, backed by FihStorage<SimFihIo>.
 //
 // Validates that the FIH protocol produces identical results when all
 // primitives cross a JSON serialization boundary (simulating a real HTTP
@@ -8,7 +8,7 @@
 
 use nex::mock_gateway::MockGateway;
 use nex::{Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
-use nexus_storage_sim::{NativeFihStorage, SimFihIo};
+use nexus_storage_sim::{FihStorage, SimFihIo};
 
 /// Contradiction Detection — via MockGateway (JSON transport boundary).
 ///
@@ -21,7 +21,7 @@ use nexus_storage_sim::{NativeFihStorage, SimFihIo};
 #[test]
 fn scenario_contradiction_detection_via_gateway() {
     let io = SimFihIo::new();
-    let storage = NativeFihStorage::new(io, "test");
+    let storage = FihStorage::new(io, "test");
     let gw = MockGateway::new(storage);
 
     // Agent-A: ingests paper claiming GNNs work fine at 50 layers
