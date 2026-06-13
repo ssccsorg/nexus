@@ -1,8 +1,8 @@
-// Concurrency tests against FihStorage<SimFihIo>.
+// Concurrency tests against FihStorage<SimIo>.
 //
 // FihStorage uses RwLock internally (intent_cache, fact_cache, etc.),
 // so the outer Mutex wrapper used in the original nex tests is unnecessary.
-// Direct Arc<FihStorage<SimFihIo>> ensures all internal RwLock
+// Direct Arc<FihStorage<SimIo>> ensures all internal RwLock
 // contention is tested at the storage level.
 
 mod common;
@@ -11,12 +11,12 @@ use std::sync::{Arc, Barrier};
 use std::thread;
 
 use nexus_model::{BlackboardError, FactCapable, IntentCapable, StorageRead};
-use nexus_storage_sim::{FihStorage, SimFihIo};
+use nexus_storage_sim::{FihStorage, SimIo};
 
-type SharedStorage = Arc<FihStorage<SimFihIo>>;
+type SharedStorage = Arc<FihStorage<SimIo>>;
 
 fn bb() -> SharedStorage {
-    Arc::new(FihStorage::new(SimFihIo::new(), "test"))
+    Arc::new(FihStorage::new(SimIo::new(), "test"))
 }
 
 fn setup_intent(bb: &SharedStorage, iid: &str) {

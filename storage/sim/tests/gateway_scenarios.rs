@@ -1,4 +1,4 @@
-// Scenario tests routed through MockGateway, backed by FihStorage<SimFihIo>.
+// Scenario tests routed through MockGateway, backed by FihStorage<SimIo>.
 //
 // Validates that the FIH protocol produces identical results when all
 // primitives cross a JSON serialization boundary (simulating a real HTTP
@@ -8,7 +8,7 @@
 
 use nex::mock_gateway::MockGateway;
 use nex::{Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
-use nexus_storage_sim::{FihStorage, SimFihIo};
+use nexus_storage_sim::{FihStorage, SimIo};
 
 /// Contradiction Detection — via MockGateway (JSON transport boundary).
 ///
@@ -20,7 +20,7 @@ use nexus_storage_sim::{FihStorage, SimFihIo};
 /// except all FIH operations pass through MockGateway's JSON round-trip.
 #[test]
 fn scenario_contradiction_detection_via_gateway() {
-    let io = SimFihIo::new();
+    let io = SimIo::new();
     let storage = FihStorage::new(io, "test");
     let gw = MockGateway::new(storage);
 
