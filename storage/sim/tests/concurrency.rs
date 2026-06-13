@@ -7,7 +7,7 @@
 
 mod common;
 
-use std::sync::Arc;
+use std::sync::{Arc, Barrier};
 use std::thread;
 
 use nexus_model::{BlackboardError, FactCapable, IntentCapable, StorageRead};
@@ -34,11 +34,17 @@ fn test_concurrent_claim_same_intent() {
 
     let bb1 = Arc::clone(&bb);
     let bb2 = Arc::clone(&bb);
+    let barrier = Arc::new(Barrier::new(2));
+    let b1 = Arc::clone(&barrier);
+    let b2 = Arc::clone(&barrier);
 
-    let h1 = thread::spawn(move || bb1.claim_intent("i_conflict", "agent-a"));
+    let h1 = thread::spawn(move || {
+        b1.wait();
+        bb1.claim_intent("i_conflict", "agent-a")
+    });
 
     let h2 = thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(5));
+        b2.wait();
         bb2.claim_intent("i_conflict", "agent-b")
     });
 
@@ -48,10 +54,10 @@ fn test_concurrent_claim_same_intent() {
     match (&r1, &r2) {
         (Ok(()), Ok(())) => panic!("both claimed same intent"),
         (Err(BlackboardError::Conflict(_)), Err(BlackboardError::Conflict(_))) => {
-            panic!("both got conflict — one should succeed")
+            panic!("both got conflict - one should succeed")
         }
         (Ok(()), Err(BlackboardError::Conflict(_)))
-        | (Err(BlackboardError::Conflict(_)), Ok(())) => {} // Expected
+        | (Err(BlackboardError::Conflict(_)), Ok(())) => {}
         _ => panic!("unexpected: {:?}, {:?}", r1, r2),
     }
 }
@@ -144,7 +150,6 @@ fn test_release_then_reclaim() {
 
     bb.claim_intent("i_rel", "agent-a").unwrap();
     bb.release_intent("i_rel", "agent-a").unwrap();
-    // After release, intent is Submitted — a different agent can claim it
     bb.claim_intent("i_rel", "agent-b").unwrap();
     let result = bb.heartbeat("i_rel", "agent-b");
     assert!(result.is_ok(), "heartbeat after re-claim succeeds");
@@ -159,7 +164,6 @@ fn test_release_then_reclaim_conclude() {
 
     bb.claim_intent("i_car", "agent-a").unwrap();
     bb.release_intent("i_car", "agent-a").unwrap();
-    // After release, different agent can claim and conclude
     bb.claim_intent("i_car", "agent-b").unwrap();
     let result = bb.conclude_intent("i_car", "done");
     assert!(result.is_ok(), "conclude after re-claim succeeds");

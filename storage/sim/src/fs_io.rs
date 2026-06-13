@@ -7,11 +7,9 @@
 // Thread-safe via the OS filesystem (no internal locks needed).
 // Compatible with wasm32-wasi (WASI filesystem) but NOT wasm32-unknown-unknown.
 
-use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
 
-use crate::io::AsyncFihIo;
+use crate::io::{AsyncFihIo, IoFuture};
 
 /// Filesystem-backed FihIo. Root directory is created on construction.
 ///
@@ -39,29 +37,26 @@ impl FsFihIo {
         Self::new(dir)
     }
 
-    fn resolve(&self, path: &str) -> PathBuf {
-        // Sanitize: prevent directory traversal
-        let safe: String = path
-            .chars()
-            .map(|c| {
-                if c == '/' || c == '_' || c == '-' || c == '.' || c.is_alphanumeric() {
-                    c
-                } else {
-                    '_'
-                }
-            })
-            .collect();
-        self.root.join(&safe)
+    fn resolve(&self, path: &str) -> Result<PathBuf, String> {
+        // Reject invalid characters explicitly instead of silent sanitization.
+        // Silent mutation breaks prefix matching: write("facts/foo@bar") stores as
+        // "facts/foo_bar" but list("facts/foo@") looks for "facts/foo@" and finds nothing.
+        for c in path.chars() {
+            if c != '/' && c != '_' && c != '-' && c != '.' && !c.is_alphanumeric() {
+                return Err(format!(
+                    "invalid character '{}' in path '{}': only alphanumeric, /, _, -, . allowed",
+                    c, path
+                ));
+            }
+        }
+        Ok(self.root.join(path))
     }
 }
 
 impl AsyncFihIo for FsFihIo {
-    fn read<'a>(
-        &'a self,
-        path: &'a str,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<Vec<u8>>, String>> + 'a>> {
+    fn read<'a>(&'a self, path: &'a str) -> IoFuture<'a, Option<Vec<u8>>> {
         Box::pin(async move {
-            let full = self.resolve(path);
+            let full = self.resolve(path)?;
             match std::fs::read(&full) {
                 Ok(data) => Ok(Some(data)),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -70,14 +65,9 @@ impl AsyncFihIo for FsFihIo {
         })
     }
 
-    fn write<'a>(
-        &'a self,
-        path: &'a str,
-        data: &'a [u8],
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + 'a>> {
+    fn write<'a>(&'a self, path: &'a str, data: &'a [u8]) -> IoFuture<'a, ()> {
         Box::pin(async move {
-            let full = self.resolve(path);
-            // Create parent directories
+            let full = self.resolve(path)?;
             if let Some(parent) = full.parent() {
                 std::fs::create_dir_all(parent).map_err(|e| format!("mkdir {path}: {e}"))?;
             }
@@ -86,12 +76,9 @@ impl AsyncFihIo for FsFihIo {
         })
     }
 
-    fn list<'a>(
-        &'a self,
-        prefix: &'a str,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<String>, String>> + 'a>> {
+    fn list<'a>(&'a self, prefix: &'a str) -> IoFuture<'a, Vec<String>> {
         Box::pin(async move {
-            let full = self.resolve(prefix);
+            let full = self.resolve(prefix)?;
             let root_prefix = self.root.to_string_lossy().to_string();
             let mut results = Vec::new();
 
@@ -100,13 +87,11 @@ impl AsyncFihIo for FsFihIo {
             }
 
             if full.is_dir() {
-                // Walk directory recursively
                 let walker =
                     walkdir::WalkDir::new(&full).sort_by(|a, b| a.file_name().cmp(b.file_name()));
                 for entry in walker.into_iter().filter_map(|e| e.ok()) {
                     if entry.file_type().is_file() {
                         let abs_path = entry.path().to_string_lossy().to_string();
-                        // Strip root prefix to get the relative key
                         if let Some(rel) = abs_path.strip_prefix(&root_prefix) {
                             let rel = rel.trim_start_matches('/');
                             if rel.starts_with(prefix) {
@@ -121,12 +106,9 @@ impl AsyncFihIo for FsFihIo {
         })
     }
 
-    fn delete<'a>(
-        &'a self,
-        path: &'a str,
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + 'a>> {
+    fn delete<'a>(&'a self, path: &'a str) -> IoFuture<'a, ()> {
         Box::pin(async move {
-            let full = self.resolve(path);
+            let full = self.resolve(path)?;
             if full.exists() {
                 std::fs::remove_file(&full).map_err(|e| format!("delete {path}: {e}"))?;
             }
@@ -204,6 +186,17 @@ mod tests {
     #[test]
     fn test_delete_nonexistent_ok() {
         let fs = make_fs_blocking();
-        fs.delete("no_such_file").unwrap(); // should not error
+        fs.delete("no_such_file").unwrap();
+    }
+
+    #[test]
+    fn test_invalid_path_rejected() {
+        let fs = make_fs_blocking();
+        let result = fs.write("facts/foo@bar.fact", b"data");
+        assert!(result.is_err(), "path with @ must be rejected");
+        assert!(
+            result.unwrap_err().contains("invalid character"),
+            "error must mention invalid character"
+        );
     }
 }

@@ -5,11 +5,9 @@
 // Compatible with wasm32-unknown-unknown (no std::fs dependency).
 
 use std::collections::HashMap;
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 
-use crate::io::AsyncFihIo;
+use crate::io::{AsyncFihIo, IoFuture};
 
 /// Deterministic in-memory IO. No filesystem, no network, no async.
 /// On wasm32, uses Rc<RefCell<>> internally; on native, Arc<RwLock<>>.
@@ -71,21 +69,14 @@ impl Default for SimFihIo {
 }
 
 impl AsyncFihIo for SimFihIo {
-    fn read<'a>(
-        &'a self,
-        path: &'a str,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<Vec<u8>>, String>> + 'a>> {
+    fn read<'a>(&'a self, path: &'a str) -> IoFuture<'a, Option<Vec<u8>>> {
         Box::pin(async move {
             let map = self.data.read().map_err(|e| e.to_string())?;
             Ok(map.get(path).cloned())
         })
     }
 
-    fn write<'a>(
-        &'a self,
-        path: &'a str,
-        data: &'a [u8],
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + 'a>> {
+    fn write<'a>(&'a self, path: &'a str, data: &'a [u8]) -> IoFuture<'a, ()> {
         Box::pin(async move {
             // Failure injection
             if self.failure_rate > 0.0 {
@@ -103,10 +94,7 @@ impl AsyncFihIo for SimFihIo {
         })
     }
 
-    fn list<'a>(
-        &'a self,
-        prefix: &'a str,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<String>, String>> + 'a>> {
+    fn list<'a>(&'a self, prefix: &'a str) -> IoFuture<'a, Vec<String>> {
         Box::pin(async move {
             let map = self.data.read().map_err(|e| e.to_string())?;
             let mut keys: Vec<String> = map
@@ -119,10 +107,7 @@ impl AsyncFihIo for SimFihIo {
         })
     }
 
-    fn delete<'a>(
-        &'a self,
-        path: &'a str,
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + 'a>> {
+    fn delete<'a>(&'a self, path: &'a str) -> IoFuture<'a, ()> {
         Box::pin(async move {
             let mut map = self.data.write().map_err(|e| e.to_string())?;
             map.remove(path);
