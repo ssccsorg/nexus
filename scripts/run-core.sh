@@ -34,6 +34,27 @@ done
 
 run_check()  { cargo check -p nex && cargo check -p nexus-storage-duckdb; }
 
+# ── WASM check: ensure storage-sim builds for wasm32 target ────────────
+
+run_wasm_check() {
+    # Find all Cargo.toml under core directories, excluding non-WASM targets.
+    # Exclusions: storage/duckdb (crossterm), storage/ve-composite (tokio),
+    # gateway/* (HTTP server), playbooks/* (scripts), target/ (build artifacts).
+    find . -name Cargo.toml \
+        -not -path './target/*' \
+        -not -path './ext/*' \
+        -not -path './storage/duckdb/*' \
+        -not -path './storage/ve-composite/*' \
+        -not -path './gateway/*' \
+        -not -path './playbooks/*' \
+        -not -path './Cargo.toml' \
+        -exec sh -c '
+            dir="$(dirname "$1")"
+            echo "=== WASM: $dir ==="
+            cargo check --manifest-path "$1" --target wasm32-unknown-unknown 2>&1
+        ' _ {} \;
+}
+
 # ── Pre-flight auto-fixes: catch trivial issues before strict checks ────
 
 run_fmt()          { cargo fmt --all; }
@@ -57,14 +78,15 @@ run_all() {
     echo "=== fix --workspace ===" && run_compiler_fix
     echo "=== fmt (after fixes) ===" && run_fmt
     echo "=== check ===" && run_check
+    echo "=== wasm check ===" && run_wasm_check
     echo "=== clippy ===" && run_clippy
     echo "=== test ===" && run_test
 }
 
 case $MODE in
-    check)  echo "=== fmt --all ===" && run_fmt && run_check ;;
+    check)  echo "=== fmt --all ===" && run_fmt && run_check && run_wasm_check ;;
     clippy) run_auto_fix && run_clippy ;;
-    test)   echo "=== fmt --all ===" && run_fmt && run_test ;;
+    test)   echo "=== fmt --all ===" && run_fmt && run_wasm_check && run_test ;;
     all)
         echo "nexus-core CI (local)"
         run_all
