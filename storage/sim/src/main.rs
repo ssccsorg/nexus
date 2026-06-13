@@ -12,7 +12,7 @@ use nexus_model::{
     EvictCapable, Fact, FactCapable, FihHash, FilterCapable, FlushCapable, FlushCursor, Hint,
     HintCapable, Intent, IntentCapable, StateFilter, StorageRead,
 };
-use nexus_storage_sim::{BlockingFihIo, NativeFihStorage, SimFihIo, intent_status};
+use nexus_storage_sim::{BlockingFihIo, FihStorage, SimFihIo, intent_status};
 
 fn main() {
     eprintln!("+-----------------------------------------------------------+");
@@ -52,7 +52,7 @@ fn main() {
     // ── 1. Basic FIH lifecycle ────────────────────────────────────────
 
     check!("submit_fact + read_state", {
-        let store = NativeFihStorage::new(SimFihIo::new(), "verify");
+        let store = FihStorage::new(SimFihIo::new(), "verify");
         FactCapable::submit_fact(
             &store,
             &Fact {
@@ -69,7 +69,7 @@ fn main() {
     });
 
     check!("submit_intent requires existing fact", {
-        let store = NativeFihStorage::new(SimFihIo::new(), "verify");
+        let store = FihStorage::new(SimFihIo::new(), "verify");
         let result = IntentCapable::submit_intent(
             &store,
             &Intent {
@@ -92,7 +92,7 @@ fn main() {
     });
 
     check!("full intent lifecycle", {
-        let store = NativeFihStorage::new(SimFihIo::new(), "verify");
+        let store = FihStorage::new(SimFihIo::new(), "verify");
         FactCapable::submit_fact(
             &store,
             &Fact {
@@ -128,7 +128,7 @@ fn main() {
     });
 
     check!("double claim rejected", {
-        let store = NativeFihStorage::new(SimFihIo::new(), "verify");
+        let store = FihStorage::new(SimFihIo::new(), "verify");
         FactCapable::submit_fact(
             &store,
             &Fact {
@@ -163,7 +163,7 @@ fn main() {
     // ── 2. Hint operations ────────────────────────────────────────────
 
     check!("submit_hint + read_state", {
-        let store = NativeFihStorage::new(SimFihIo::new(), "verify");
+        let store = FihStorage::new(SimFihIo::new(), "verify");
         HintCapable::submit_hint(
             &store,
             &Hint {
@@ -181,7 +181,7 @@ fn main() {
 
     check!("flush + rebuild preserves data", {
         let io = SimFihIo::new();
-        let store = NativeFihStorage::new(io.clone(), "verify");
+        let store = FihStorage::new(io.clone(), "verify");
         FactCapable::submit_fact(
             &store,
             &Fact {
@@ -193,7 +193,7 @@ fn main() {
         )
         .unwrap();
         store.flush_pending().unwrap();
-        let store2 = NativeFihStorage::new(io, "verify");
+        let store2 = FihStorage::new(io, "verify");
         store2.rebuild_cache().unwrap();
         let state = StorageRead::read_state(&store2);
         assert_eq!(state.facts.len(), 1);
@@ -201,7 +201,7 @@ fn main() {
     });
 
     check!("flush_cursor advances", {
-        let store = NativeFihStorage::new(SimFihIo::new(), "verify");
+        let store = FihStorage::new(SimFihIo::new(), "verify");
         FactCapable::submit_fact(
             &store,
             &Fact {
@@ -222,7 +222,7 @@ fn main() {
     });
 
     check!("flush_empty_delta", {
-        let store = NativeFihStorage::new(SimFihIo::new(), "verify");
+        let store = FihStorage::new(SimFihIo::new(), "verify");
         let cursor = FlushCursor {
             last_flushed_at: u64::MAX,
             partition: "default".into(),
@@ -233,7 +233,7 @@ fn main() {
 
     check!("flush writes to io", {
         let io = SimFihIo::new();
-        let store = NativeFihStorage::new(io.clone(), "verify");
+        let store = FihStorage::new(io.clone(), "verify");
         FactCapable::submit_fact(
             &store,
             &Fact {
@@ -260,7 +260,7 @@ fn main() {
     // ── 4. Filtering ──────────────────────────────────────────────────
 
     check!("time_index since filter", {
-        let store = NativeFihStorage::new(SimFihIo::new(), "verify");
+        let store = FihStorage::new(SimFihIo::new(), "verify");
         FactCapable::submit_fact(
             &store,
             &Fact {
@@ -280,7 +280,7 @@ fn main() {
     });
 
     check!("time_index until filter (time travel)", {
-        let store = NativeFihStorage::new(SimFihIo::new(), "verify");
+        let store = FihStorage::new(SimFihIo::new(), "verify");
         FactCapable::submit_fact(
             &store,
             &Fact {
@@ -302,7 +302,7 @@ fn main() {
     // ── 5. Eviction ───────────────────────────────────────────────────
 
     check!("evict_before removes old hints", {
-        let store = NativeFihStorage::new(SimFihIo::new(), "verify");
+        let store = FihStorage::new(SimFihIo::new(), "verify");
         HintCapable::submit_hint(
             &store,
             &Hint {
@@ -321,7 +321,7 @@ fn main() {
     // ── 6. Concurrent access ──────────────────────────────────────────
 
     check!("concurrent submit and read", {
-        let store = Arc::new(NativeFihStorage::new(SimFihIo::new(), "verify"));
+        let store = Arc::new(FihStorage::new(SimFihIo::new(), "verify"));
         let mut handles = Vec::new();
         for i in 0..10 {
             let s = Arc::clone(&store);
@@ -347,7 +347,7 @@ fn main() {
     // ── 7. Ref count / orphan detection ───────────────────────────────
 
     check!("ref_count orphan detection via conclude", {
-        let store = NativeFihStorage::new(SimFihIo::new(), "verify");
+        let store = FihStorage::new(SimFihIo::new(), "verify");
         FactCapable::submit_fact(
             &store,
             &Fact {

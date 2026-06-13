@@ -20,4 +20,4 @@ pub mod store;
 
 pub use io::{AsyncFihIo, BlockingFihIo, WriteOp};
 pub use sim_io::SimFihIo;
-pub use store::NativeFihStorage;
+pub use store::FihStorage;

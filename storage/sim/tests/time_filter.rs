@@ -6,10 +6,10 @@
 mod common;
 
 use nexus_model::{FactCapable, FilterCapable, StateFilter, StorageRead};
-use nexus_storage_sim::{NativeFihStorage, SimFihIo};
+use nexus_storage_sim::{FihStorage, SimFihIo};
 
-fn make_clocked() -> NativeFihStorage<SimFihIo> {
-    NativeFihStorage::with_clock(
+fn make_clocked() -> FihStorage<SimFihIo> {
+    FihStorage::with_clock(
         SimFihIo::new(),
         "test",
         Box::new(common::FakeClock::with_step(1_000_000_000, 1_000_000_000)), // start at 1s, step 1s
