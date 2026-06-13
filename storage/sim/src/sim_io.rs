@@ -1,4 +1,4 @@
-// ── SimFihIo: in-memory deterministic IO implementation ─────────────────
+// ── SimIo: in-memory deterministic IO implementation ─────────────────
 //
 // Backed by HashMap. All operations are O(1) and synchronous.
 // Supports failure injection for scenario testing.
@@ -7,11 +7,11 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use crate::io::{AsyncFihIo, IoFuture};
+use crate::io::{AsyncFileIo, IoFuture};
 
 /// Deterministic in-memory IO. No filesystem, no network, no async.
 /// On wasm32, uses Rc<RefCell<>> internally; on native, Arc<RwLock<>>.
-pub struct SimFihIo {
+pub struct SimIo {
     data: Arc<RwLock<HashMap<String, Vec<u8>>>>,
     /// If set, every N-th write will fail. 0 = no failures.
     failure_rate: f64,
@@ -19,7 +19,7 @@ pub struct SimFihIo {
     op_count: Arc<RwLock<u64>>,
 }
 
-impl SimFihIo {
+impl SimIo {
     pub fn new() -> Self {
         Self {
             data: Arc::new(RwLock::new(HashMap::new())),
@@ -52,7 +52,7 @@ impl SimFihIo {
     }
 }
 
-impl Clone for SimFihIo {
+impl Clone for SimIo {
     fn clone(&self) -> Self {
         Self {
             data: Arc::clone(&self.data),
@@ -62,13 +62,13 @@ impl Clone for SimFihIo {
     }
 }
 
-impl Default for SimFihIo {
+impl Default for SimIo {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl AsyncFihIo for SimFihIo {
+impl AsyncFileIo for SimIo {
     fn read<'a>(&'a self, path: &'a str) -> IoFuture<'a, Option<Vec<u8>>> {
         Box::pin(async move {
             let map = self.data.read().map_err(|e| e.to_string())?;
@@ -119,12 +119,12 @@ impl AsyncFihIo for SimFihIo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::io::BlockingFihIo;
+    use crate::io::SyncFileIo;
 
     #[test]
     fn test_write_read_roundtrip() {
-        let io = SimFihIo::new();
-        let blocking = BlockingFihIo::new(io);
+        let io = SimIo::new();
+        let blocking = SyncFileIo::new(io);
         blocking.write("facts/f_test.fact", b"hello").unwrap();
         let data = blocking
             .read("facts/f_test.fact")
@@ -135,15 +135,15 @@ mod tests {
 
     #[test]
     fn test_read_nonexistent() {
-        let io = SimFihIo::new();
-        let blocking = BlockingFihIo::new(io);
+        let io = SimIo::new();
+        let blocking = SyncFileIo::new(io);
         assert!(blocking.read("nonexistent").unwrap().is_none());
     }
 
     #[test]
     fn test_delete() {
-        let io = SimFihIo::new();
-        let blocking = BlockingFihIo::new(io);
+        let io = SimIo::new();
+        let blocking = SyncFileIo::new(io);
         blocking.write("facts/f_test.fact", b"data").unwrap();
         blocking.delete("facts/f_test.fact").unwrap();
         assert!(blocking.read("facts/f_test.fact").unwrap().is_none());
@@ -151,8 +151,8 @@ mod tests {
 
     #[test]
     fn test_list_prefix() {
-        let io = SimFihIo::new();
-        let blocking = BlockingFihIo::new(io);
+        let io = SimIo::new();
+        let blocking = SyncFileIo::new(io);
         blocking.write("facts/f_a.fact", b"a").unwrap();
         blocking.write("facts/f_b.fact", b"b").unwrap();
         blocking.write("blob/hash.bin", b"c").unwrap();
@@ -164,15 +164,15 @@ mod tests {
 
     #[test]
     fn test_failure_injection() {
-        let io = SimFihIo::new().with_failure_rate(1.0); // 100% fail
-        let blocking = BlockingFihIo::new(io);
+        let io = SimIo::new().with_failure_rate(1.0); // 100% fail
+        let blocking = SyncFileIo::new(io);
         assert!(blocking.write("x", b"data").is_err());
     }
 
     #[test]
     fn test_clear() {
-        let io = SimFihIo::new();
-        let blocking = BlockingFihIo::new(io.clone());
+        let io = SimIo::new();
+        let blocking = SyncFileIo::new(io.clone());
         blocking.write("test", b"data").unwrap();
         assert_eq!(io.len(), 1);
         io.clear();
