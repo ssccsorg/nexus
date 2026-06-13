@@ -1,4 +1,4 @@
-// ── NativeFihStorage — unified FIH storage over FihIo ──────────────────
+// ── FihStorage — unified FIH storage over FihIo ──────────────────
 //
 // Implements FactCapable, IntentCapable, HintCapable, StorageRead, and
 // EvictCapable on top of a single FihIo implementation.
@@ -51,7 +51,7 @@ pub(crate) type OriginIndex = HashMap<String, Vec<String>>;
 /// All FIH trait methods are sync. They enqueue WriteOps into a buffer
 /// for batch commit by the outer FihSession layer.
 /// IO is wrapped in BlockingFihIo to bridge the async IO trait with sync callers.
-pub struct NativeFihStorage<I: AsyncFihIo> {
+pub struct FihStorage<I: AsyncFihIo> {
     io: BlockingFihIo<I>,
     project_id: String,
     clock: Box<dyn Now + Send + Sync>,
@@ -71,7 +71,7 @@ pub struct NativeFihStorage<I: AsyncFihIo> {
     pub(crate) pending: Mutex<Vec<WriteOp>>,
 }
 
-impl<I: AsyncFihIo> NativeFihStorage<I> {
+impl<I: AsyncFihIo> FihStorage<I> {
     pub fn new(io: I, project_id: &str) -> Self {
         Self::with_clock(io, project_id, Box::new(nexus_model::SystemClock))
     }
@@ -300,7 +300,7 @@ fn content_hash(data: &[u8]) -> String {
 
 // ── StorageRead ──────────────────────────────────────────────────────────
 
-impl<I: AsyncFihIo> NativeFihStorage<I> {
+impl<I: AsyncFihIo> FihStorage<I> {
     /// Read state directly from IO, bypassing in-memory cache.
     /// Used when `is_hotmemory_enabled` is false (ColdStorage mode).
     fn read_state_uncached(&self) -> BoardState {
@@ -382,7 +382,7 @@ impl<I: AsyncFihIo> NativeFihStorage<I> {
     }
 }
 
-impl<I: AsyncFihIo> StorageRead for NativeFihStorage<I> {
+impl<I: AsyncFihIo> StorageRead for FihStorage<I> {
     fn project_id(&self) -> &str {
         &self.project_id
     }
@@ -459,7 +459,7 @@ impl<I: AsyncFihIo> StorageRead for NativeFihStorage<I> {
 
 // ── FactCapable ──────────────────────────────────────────────────────────
 
-impl<I: AsyncFihIo> FactCapable for NativeFihStorage<I> {
+impl<I: AsyncFihIo> FactCapable for FihStorage<I> {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         // ColdStorage mode is read-only; writes go through write_blob only.
         // Block FIH writes to prevent accidental data corruption when this
@@ -517,7 +517,7 @@ impl<I: AsyncFihIo> FactCapable for NativeFihStorage<I> {
 
 // ── HintCapable ──────────────────────────────────────────────────────────
 
-impl<I: AsyncFihIo> HintCapable for NativeFihStorage<I> {
+impl<I: AsyncFihIo> HintCapable for FihStorage<I> {
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         if !self.is_hotmemory_enabled {
             return Err(BlackboardError::Forbidden(
@@ -554,7 +554,7 @@ impl<I: AsyncFihIo> HintCapable for NativeFihStorage<I> {
 
 // ── IntentCapable ────────────────────────────────────────────────────────
 
-impl<I: AsyncFihIo> IntentCapable for NativeFihStorage<I> {
+impl<I: AsyncFihIo> IntentCapable for FihStorage<I> {
     fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
         if !self.is_hotmemory_enabled {
             return Err(BlackboardError::Forbidden(
@@ -770,7 +770,7 @@ impl<I: AsyncFihIo> IntentCapable for NativeFihStorage<I> {
 
 // ── EvictCapable ─────────────────────────────────────────────────────────
 
-impl<I: AsyncFihIo> EvictCapable for NativeFihStorage<I> {
+impl<I: AsyncFihIo> EvictCapable for FihStorage<I> {
     fn approximate_size(&self) -> usize {
         let facts = self.fact_cache.read().unwrap().len();
         let intents = self.intent_cache.read().unwrap().len();
@@ -817,7 +817,7 @@ impl<I: AsyncFihIo> EvictCapable for NativeFihStorage<I> {
 
 // ── FilterCapable ────────────────────────────────────────────────────────
 
-impl<I: AsyncFihIo> FilterCapable for NativeFihStorage<I> {
+impl<I: AsyncFihIo> FilterCapable for FihStorage<I> {
     fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
         // Determine time range using TimeIndex (O(log N) seek)
         let time_filtered_ids: Option<std::collections::HashSet<String>> =
@@ -910,19 +910,19 @@ use nexus_model::{
 };
 use std::ops::Range;
 
-// ── NativeFihStorage as HotStorage (standalone Blackboard) ───────────────
+// ── FihStorage as HotStorage (standalone Blackboard) ───────────────
 //
 // StorageRead + FactCapable + IntentCapable + HintCapable + FilterCapable +
 // EvictCapable + FlushCapable — all implemented above.
 //
-// NativeFihStorage can operate as a standalone Blackboard (no DualStorage
+// FihStorage can operate as a standalone Blackboard (no DualStorage
 // needed), OR as the cold half of DualStorage via the ColdStorage trait.
 // This is nex's principle of recursive self-similarity: the same struct
 // fulfills both roles through trait composition.
 
 // ── ScanCapable ───────────────────────────────────────────────────────────
 
-impl<I: AsyncFihIo> ScanCapable for NativeFihStorage<I> {
+impl<I: AsyncFihIo> ScanCapable for FihStorage<I> {
     fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
         let state = StorageRead::read_state(self);
         let prefix = format!("partition:{}", partition);
@@ -949,7 +949,7 @@ impl<I: AsyncFihIo> ScanCapable for NativeFihStorage<I> {
 
 // ── TimeRangeCapable ──────────────────────────────────────────────────────
 
-impl<I: AsyncFihIo> TimeRangeCapable for NativeFihStorage<I> {
+impl<I: AsyncFihIo> TimeRangeCapable for FihStorage<I> {
     fn time_range(&self) -> Option<Range<String>> {
         let first = self.time_index.first_ts()?;
         let last = self.time_index.last_ts()?;
@@ -959,7 +959,7 @@ impl<I: AsyncFihIo> TimeRangeCapable for NativeFihStorage<I> {
 
 // ── ColdStorage ───────────────────────────────────────────────────────────
 
-impl<I: AsyncFihIo + Send> ColdStorage for NativeFihStorage<I> {
+impl<I: AsyncFihIo + Send> ColdStorage for FihStorage<I> {
     fn write_blob(&self, key: &str, data: &[u8]) -> Result<(), String> {
         self.pending.lock().unwrap().push(WriteOp::Write {
             path: key.to_string(),
@@ -971,7 +971,7 @@ impl<I: AsyncFihIo + Send> ColdStorage for NativeFihStorage<I> {
 
 // ── FlushCapable ───────────────────────────────────────────────────────────
 
-impl<I: AsyncFihIo> FlushCapable for NativeFihStorage<I> {
+impl<I: AsyncFihIo> FlushCapable for FihStorage<I> {
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
         let since_ts = cursor.last_flushed_at;
         let now_ts = self.clock.now_nanos();
@@ -1043,8 +1043,8 @@ mod tests {
     use super::*;
     use crate::sim_io::SimFihIo;
 
-    fn make_storage() -> NativeFihStorage<SimFihIo> {
-        NativeFihStorage::new(SimFihIo::new(), "test")
+    fn make_storage() -> FihStorage<SimFihIo> {
+        FihStorage::new(SimFihIo::new(), "test")
     }
 
     #[test]
@@ -1188,7 +1188,7 @@ mod tests {
     #[test]
     fn test_flush_preserves_content() {
         let io = SimFihIo::new();
-        let store = NativeFihStorage::new(io.clone(), "test");
+        let store = FihStorage::new(io.clone(), "test");
 
         FactCapable::submit_fact(
             &store,
@@ -1206,7 +1206,7 @@ mod tests {
 
         store.flush_pending().unwrap();
 
-        let store2 = NativeFihStorage::new(io, "test");
+        let store2 = FihStorage::new(io, "test");
         store2.rebuild_cache().unwrap();
         let state = StorageRead::read_state(&store2);
         assert_eq!(state.facts.len(), 1);
@@ -1216,7 +1216,7 @@ mod tests {
     #[test]
     fn test_time_index_after_rebuild() {
         let io = SimFihIo::new();
-        let store = NativeFihStorage::new(io.clone(), "test");
+        let store = FihStorage::new(io.clone(), "test");
 
         FactCapable::submit_fact(
             &store,
@@ -1248,7 +1248,7 @@ mod tests {
         store.flush_pending().unwrap();
 
         // Rebuild from IO — indices should be reconstructed
-        let store2 = NativeFihStorage::new(io, "test");
+        let store2 = FihStorage::new(io, "test");
         store2.rebuild_cache().unwrap();
 
         // TimeIndex should have both entries
@@ -1363,8 +1363,7 @@ mod tests {
             last_flushed_at: 0,
             partition: "default".into(),
         };
-        let result =
-            <NativeFihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor).unwrap();
+        let result = <FihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor).unwrap();
         assert!(result.records_flushed > 0);
         assert!(result.new_cursor.last_flushed_at > 0);
     }
@@ -1376,8 +1375,7 @@ mod tests {
             last_flushed_at: 0,
             partition: "default".into(),
         };
-        let result =
-            <NativeFihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor).unwrap();
+        let result = <FihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor).unwrap();
         assert_eq!(result.records_flushed, 0);
     }
 
@@ -1401,8 +1399,7 @@ mod tests {
             last_flushed_at: 0,
             partition: "default".into(),
         };
-        let r1 =
-            <NativeFihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor1).unwrap();
+        let r1 = <FihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor1).unwrap();
         assert!(r1.records_flushed > 0);
         FactCapable::submit_fact(
             &store,
@@ -1421,15 +1418,14 @@ mod tests {
             last_flushed_at: r1.new_cursor.last_flushed_at,
             partition: "default".into(),
         };
-        let r2 =
-            <NativeFihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor2).unwrap();
+        let r2 = <FihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor2).unwrap();
         assert_eq!(r2.records_flushed, 1);
     }
 
     #[test]
     fn test_flush_writes_to_io() {
         let io = SimFihIo::new();
-        let store = NativeFihStorage::new(io.clone(), "test");
+        let store = FihStorage::new(io.clone(), "test");
         FactCapable::submit_fact(
             &store,
             &Fact {
@@ -1447,7 +1443,7 @@ mod tests {
             last_flushed_at: 0,
             partition: "default".into(),
         };
-        <NativeFihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor).unwrap();
+        <FihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor).unwrap();
         let blocking = BlockingFihIo::new(io.clone());
         let keys = blocking.list("flush/").unwrap();
         assert!(!keys.is_empty(), "flush directory should have chain files");
@@ -1516,8 +1512,7 @@ mod tests {
             limit: None,
             offset: None,
         };
-        let state =
-            <NativeFihStorage<SimFihIo> as FilterCapable>::read_state_filtered(&store, &filter);
+        let state = <FihStorage<SimFihIo> as FilterCapable>::read_state_filtered(&store, &filter);
         // f_new may or may not appear depending on timing, but at minimum
         // the query should not panic and should return <= 2 facts
         assert!(state.facts.len() <= 2);
@@ -1587,10 +1582,8 @@ mod tests {
             limit: None,
             offset: None,
         };
-        let state = <NativeFihStorage<SimFihIo> as FilterCapable>::read_state_filtered(
-            &store,
-            &filter_until,
-        );
+        let state =
+            <FihStorage<SimFihIo> as FilterCapable>::read_state_filtered(&store, &filter_until);
         assert!(
             state.facts.len() <= 3,
             "as_of filter should not exceed total facts"
@@ -1606,10 +1599,8 @@ mod tests {
             limit: None,
             offset: None,
         };
-        let state = <NativeFihStorage<SimFihIo> as FilterCapable>::read_state_filtered(
-            &store,
-            &range_filter,
-        );
+        let state =
+            <FihStorage<SimFihIo> as FilterCapable>::read_state_filtered(&store, &range_filter);
         assert!(state.facts.len() <= 3);
         assert!(
             state.facts.len() >= 1,

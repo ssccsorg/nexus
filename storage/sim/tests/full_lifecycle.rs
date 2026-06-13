@@ -1,12 +1,12 @@
-// Full lifecycle test for NativeFihStorage<SimFihIo>.
+// Full lifecycle test for FihStorage<SimFihIo>.
 
 use nex::{Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
-use nexus_storage_sim::{NativeFihStorage, SimFihIo};
+use nexus_storage_sim::{FihStorage, SimFihIo};
 
 #[test]
 fn test_sim_fact_submit_and_read() {
     let io = SimFihIo::new();
-    let storage = NativeFihStorage::new(io, "test");
+    let storage = FihStorage::new(io, "test");
 
     storage
         .submit_fact(&Fact {
@@ -25,7 +25,7 @@ fn test_sim_fact_submit_and_read() {
 #[test]
 fn test_sim_full_lifecycle() {
     let io = SimFihIo::new();
-    let storage = NativeFihStorage::new(io, "test");
+    let storage = FihStorage::new(io, "test");
 
     storage
         .submit_fact(&Fact {

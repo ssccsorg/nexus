@@ -1,18 +1,18 @@
-// ── FihSession: hydrate/buffer/flush session for NativeFihStorage ──────
+// ── FihSession: hydrate/buffer/flush session for FihStorage ──────
 //
-// Wraps NativeFihStorage<I> and provides the hydrate/flush lifecycle that
+// Wraps FihStorage<I> and provides the hydrate/flush lifecycle that
 // StoreSession used to provide for CompositeColdStorage.
 //
 // Unlike StoreSession, FihSession is generic over any FihIo implementation
 // and does not require separate MetaStore/BlobStore/ObjectStore instances.
 
 use crate::io::AsyncFihIo;
-use crate::store::NativeFihStorage;
+use crate::store::FihStorage;
 
-/// Session wrapper around NativeFihStorage that manages the
+/// Session wrapper around FihStorage that manages the
 /// hydrate → (read/write) → flush lifecycle.
 pub struct FihSession<I: AsyncFihIo> {
-    pub storage: NativeFihStorage<I>,
+    pub storage: FihStorage<I>,
     flushed: bool,
 }
 
@@ -21,7 +21,7 @@ impl<I: AsyncFihIo> FihSession<I> {
     /// operations are called.
     pub fn new(io: I, project_id: &str) -> Self {
         Self {
-            storage: NativeFihStorage::new(io, project_id),
+            storage: FihStorage::new(io, project_id),
             flushed: true,
         }
     }
@@ -48,7 +48,7 @@ impl<I: AsyncFihIo> FihSession<I> {
     }
 
     /// Access the underlying storage for FIH operations.
-    pub fn storage(&self) -> &NativeFihStorage<I> {
+    pub fn storage(&self) -> &FihStorage<I> {
         &self.storage
     }
 }

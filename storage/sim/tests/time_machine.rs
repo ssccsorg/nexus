@@ -2,7 +2,7 @@
 //
 // Validates FIH StateSpace as a 4D time-travelable storage:
 //   1. Delta chain reconstruction (cursor-based replay)
-//   2. Storage migration (SimFihIo → fresh NativeFihStorage)
+//   2. Storage migration (SimFihIo → fresh FihStorage)
 //   3. Time-travel consistency (as_of window excludes future)
 //   4. Content deduplication (same blob stored once)
 //   5. Full StateSpace round-trip (submit → flush → rebuild → verify)
@@ -13,15 +13,15 @@ use nexus_model::{
     Content, EvictCapable, Fact, FactCapable, FihHash, FilterCapable, FlushCapable, FlushCursor,
     FlushResult, Hint, HintCapable, Intent, IntentCapable, StateFilter, StorageRead,
 };
-use nexus_storage_sim::{BlockingFihIo, NativeFihStorage, SimFihIo};
+use nexus_storage_sim::{BlockingFihIo, FihStorage, SimFihIo};
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
-fn store() -> NativeFihStorage<SimFihIo> {
-    NativeFihStorage::new(SimFihIo::new(), "tm")
+fn store() -> FihStorage<SimFihIo> {
+    FihStorage::new(SimFihIo::new(), "tm")
 }
 
-fn submit_fact(store: &NativeFihStorage<SimFihIo>, id: &str, data: &str) {
+fn submit_fact(store: &FihStorage<SimFihIo>, id: &str, data: &str) {
     FactCapable::submit_fact(
         store,
         &Fact {
@@ -37,7 +37,7 @@ fn submit_fact(store: &NativeFihStorage<SimFihIo>, id: &str, data: &str) {
     .unwrap();
 }
 
-fn submit_intent(store: &NativeFihStorage<SimFihIo>, id: &str, from: &[&str]) {
+fn submit_intent(store: &FihStorage<SimFihIo>, id: &str, from: &[&str]) {
     IntentCapable::submit_intent(
         store,
         &Intent {
@@ -56,7 +56,7 @@ fn submit_intent(store: &NativeFihStorage<SimFihIo>, id: &str, from: &[&str]) {
     .unwrap();
 }
 
-fn flush_at(store: &NativeFihStorage<SimFihIo>, cursor: &FlushCursor) -> FlushResult {
+fn flush_at(store: &FihStorage<SimFihIo>, cursor: &FlushCursor) -> FlushResult {
     FlushCapable::flush_since(store, cursor).unwrap()
 }
 
@@ -68,7 +68,7 @@ fn flush_at(store: &NativeFihStorage<SimFihIo>, cursor: &FlushCursor) -> FlushRe
 #[test]
 fn test_delta_chain_reconstruction() {
     let io = SimFihIo::new();
-    let store = NativeFihStorage::new(io.clone(), "tm");
+    let store = FihStorage::new(io.clone(), "tm");
 
     // Epoch 1: submit f_a
     submit_fact(&store, "f_a", "alpha");
@@ -103,7 +103,7 @@ fn test_delta_chain_reconstruction() {
     );
 
     // Reconstruct from IO — all 3 facts should be present
-    let store2 = NativeFihStorage::new(io, "tm");
+    let store2 = FihStorage::new(io, "tm");
     store2.rebuild_cache().unwrap();
     let state = StorageRead::read_state(&store2);
     assert_eq!(
@@ -117,7 +117,7 @@ fn test_delta_chain_reconstruction() {
     assert!(ids.contains(&"f_c"));
 }
 
-// ── Test 2: Storage migration (SimFihIo → fresh NativeFihStorage) ────────
+// ── Test 2: Storage migration (SimFihIo → fresh FihStorage) ────────
 //
 // Simulate moving FIH data between stores: flush everything into io_a,
 // then a new store on the same io instance reads it all back.
@@ -127,14 +127,14 @@ fn test_storage_migration() {
     let io = SimFihIo::new();
 
     // Source store
-    let src = NativeFihStorage::new(io.clone(), "tm");
+    let src = FihStorage::new(io.clone(), "tm");
     submit_fact(&src, "f1", "data1");
     submit_fact(&src, "f2", "data2");
     submit_intent(&src, "i1", &["f1", "f2"]);
     src.flush_pending().unwrap();
 
     // Destination store — reads from same io
-    let dst = NativeFihStorage::new(io, "tm");
+    let dst = FihStorage::new(io, "tm");
     dst.rebuild_cache().unwrap();
 
     let state = StorageRead::read_state(&dst);
@@ -152,7 +152,7 @@ fn test_storage_migration() {
 fn test_time_travel_consistency() {
     // FakeClock: start at 1_000_000_000, step 1_000_000_000 each call
     let clock = common::FakeClock::with_step(1_000_000_000, 1_000_000_000);
-    let store = NativeFihStorage::with_clock(SimFihIo::new(), "tm", Box::new(clock));
+    let store = FihStorage::with_clock(SimFihIo::new(), "tm", Box::new(clock));
 
     // Fact submitted at clock call 1 (1_000_000_000), TimeIndex at call 2 (2_000_000_000)
     submit_fact(&store, "f_pre", "pre");
@@ -187,7 +187,7 @@ fn test_time_travel_consistency() {
 #[test]
 fn test_content_dedup() {
     let io = SimFihIo::new();
-    let store = NativeFihStorage::new(io.clone(), "tm");
+    let store = FihStorage::new(io.clone(), "tm");
 
     submit_fact(&store, "f_dup_a", "shared content");
     submit_fact(&store, "f_dup_b", "shared content");
@@ -242,7 +242,7 @@ fn test_full_statespace_round_trip() {
 #[test]
 fn test_chain_order_preservation() {
     let io = SimFihIo::new();
-    let store = NativeFihStorage::new(io.clone(), "tm");
+    let store = FihStorage::new(io.clone(), "tm");
 
     let mut cursor = FlushCursor {
         last_flushed_at: 0,
@@ -271,7 +271,7 @@ fn test_chain_order_preservation() {
 #[test]
 fn test_empty_statespace_is_valid() {
     let io = SimFihIo::new();
-    let store = NativeFihStorage::new(io.clone(), "tm");
+    let store = FihStorage::new(io.clone(), "tm");
     store.flush_pending().unwrap();
 
     let state = StorageRead::read_state(&store);
