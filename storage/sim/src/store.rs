@@ -461,6 +461,14 @@ impl<I: AsyncFihIo> StorageRead for NativeFihStorage<I> {
 
 impl<I: AsyncFihIo> FactCapable for NativeFihStorage<I> {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
+        // ColdStorage mode is read-only; writes go through write_blob only.
+        // Block FIH writes to prevent accidental data corruption when this
+        // instance is serving as the cold half of DualStorage.
+        if !self.is_hotmemory_enabled {
+            return Err(BlackboardError::Forbidden(
+                "cannot submit_fact in read-only ColdStorage mode".into(),
+            ));
+        }
         let blob_hash = self
             .enqueue_content(&fact.content)
             .map_err(BlackboardError::Internal)?;
@@ -511,6 +519,11 @@ impl<I: AsyncFihIo> FactCapable for NativeFihStorage<I> {
 
 impl<I: AsyncFihIo> HintCapable for NativeFihStorage<I> {
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
+        if !self.is_hotmemory_enabled {
+            return Err(BlackboardError::Forbidden(
+                "cannot submit_hint in read-only ColdStorage mode".into(),
+            ));
+        }
         let record = HintRecord {
             id: hint.id.0.clone(),
             content: hint.content.clone(),
@@ -543,6 +556,11 @@ impl<I: AsyncFihIo> HintCapable for NativeFihStorage<I> {
 
 impl<I: AsyncFihIo> IntentCapable for NativeFihStorage<I> {
     fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+        if !self.is_hotmemory_enabled {
+            return Err(BlackboardError::Forbidden(
+                "cannot submit_intent in read-only ColdStorage mode".into(),
+            ));
+        }
         // Verify all from_facts exist
         if self.is_hotmemory_enabled {
             let facts = self.fact_cache.read().unwrap();
@@ -977,7 +995,10 @@ impl<I: AsyncFihIo> FlushCapable for NativeFihStorage<I> {
             });
         }
 
-        // Build delta chain entry: batch all delta records into one snapshot
+        // Build delta chain entry: batch all delta records into one snapshot.
+        // Hints are intentionally excluded from the chain because they are
+        // ephemeral (see EvictCapable::evict_before). Hint reconstruction
+        // must use rebuild_cache() which reads directly from the hints/ prefix.
         let mut facts = Vec::new();
         let mut intents = Vec::new();
         {

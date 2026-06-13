@@ -8,6 +8,12 @@
 use std::future::Future;
 use std::pin::Pin;
 
+/// Type alias to suppress clippy::type_complexity on AsyncFihIo methods.
+/// GAT-based alternative (nightly): `type IoFuture<'a, T>: Future<Output = Result<T, String>> + 'a`
+/// That would eliminate per-call heap allocation but requires nightly Rust.
+/// Keeping Box for now is acceptable for this abstraction layer.
+pub type IoFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, String>> + 'a>>;
+
 /// A single storage operation that can be committed or rolled back.
 /// The core enqueues these; FihSession flushes them as a batch.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,38 +28,21 @@ pub enum WriteOp {
 ///
 /// The key-space is flat (`facts/f_{hash}.fact`, `blob/{hash}.bin`).
 /// Directory structure is an implementation detail of the IO layer.
-#[allow(clippy::type_complexity)]
 pub trait AsyncFihIo {
     /// Read a single file. Returns None if not found.
-    fn read<'a>(
-        &'a self,
-        path: &'a str,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<Vec<u8>>, String>> + 'a>>;
+    fn read<'a>(&'a self, path: &'a str) -> IoFuture<'a, Option<Vec<u8>>>;
 
     /// Write a single file. Creates parent directories if needed.
-    fn write<'a>(
-        &'a self,
-        path: &'a str,
-        data: &'a [u8],
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + 'a>>;
+    fn write<'a>(&'a self, path: &'a str, data: &'a [u8]) -> IoFuture<'a, ()>;
 
     /// List all paths with the given prefix.
-    fn list<'a>(
-        &'a self,
-        prefix: &'a str,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<String>, String>> + 'a>>;
+    fn list<'a>(&'a self, prefix: &'a str) -> IoFuture<'a, Vec<String>>;
 
     /// Delete a single file. Ok if not found.
-    fn delete<'a>(
-        &'a self,
-        path: &'a str,
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + 'a>>;
+    fn delete<'a>(&'a self, path: &'a str) -> IoFuture<'a, ()>;
 
     /// Apply a batch of WriteOps. Default impl calls write/delete sequentially.
-    fn apply_batch<'a>(
-        &'a self,
-        ops: &'a [WriteOp],
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + 'a>> {
+    fn apply_batch<'a>(&'a self, ops: &'a [WriteOp]) -> IoFuture<'a, ()> {
         Box::pin(async move {
             for op in ops {
                 match op {
