@@ -22,7 +22,7 @@ use nex::{
     Blackboard, BoardState, EvictCapable, Fact, FactCapable, FihHash, Intent, IntentCapable,
     StorageRead,
 };
-use nexus_storage_sim::{FihStorage, SimFihIo};
+use nexus_storage_sim::{FihStorage, SimIo};
 
 fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) -> Fact {
     Fact {
@@ -257,7 +257,7 @@ fn seed_foundational(bb: &impl Blackboard) -> Vec<String> {
 
 #[test]
 fn scenario_foundational_consistency_audit() {
-    let io = SimFihIo::new();
+    let io = SimIo::new();
     let bb = FihStorage::new(io, "test");
     let baseline = seed_foundational(&bb);
 
@@ -326,7 +326,7 @@ fn scenario_foundational_consistency_audit() {
 
 #[test]
 fn scenario_formal_revision_of_philosophy() {
-    let io = SimFihIo::new();
+    let io = SimIo::new();
     let bb = FihStorage::new(io, "test");
 
     // Phase 1: Only manifesto + epistemology (philosophical layer)
@@ -494,7 +494,7 @@ fn scenario_formal_revision_of_philosophy() {
 
 #[test]
 fn scenario_theory_practice_gap() {
-    let io = SimFihIo::new();
+    let io = SimIo::new();
     let bb = FihStorage::new(io, "test");
 
     // Theory layer: manifesto + epistemology
@@ -641,7 +641,7 @@ fn scenario_theory_practice_gap() {
 
 #[test]
 fn scenario_epistemology_as_bridge() {
-    let io = SimFihIo::new();
+    let io = SimIo::new();
     let bb = FihStorage::new(io, "test");
 
     // Manifesto (what IS) + Whitepaper .2 (formal definitions)

@@ -22,7 +22,7 @@ use nexus_model::{
 };
 
 use crate::index::TimeIndex;
-use crate::io::{AsyncFihIo, BlockingFihIo, WriteOp};
+use crate::io::{AsyncFileIo, SyncFileIo, WriteOp};
 use crate::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
 
 // ── Type aliases for in-memory caches ───────────────────────────────────
@@ -46,13 +46,18 @@ pub(crate) type RefCounts = HashMap<String, AtomicU64>;
 /// Origin index: origin → [fact_id, ...]
 pub(crate) type OriginIndex = HashMap<String, Vec<String>>;
 
+/// Reverse index: fact_id → intent_id list (Intents that reference this Fact).
+/// Updated in submit_intent (append) and conclude_intent (remove).
+/// Enables O(1) query: "which Intents depend on Fact f001?"
+pub(crate) type ByFromFact = HashMap<String, Vec<String>>;
+
 /// Unified FIH storage backended by an abstract IO layer.
 ///
 /// All FIH trait methods are sync. They enqueue WriteOps into a buffer
 /// for batch commit by the outer FihSession layer.
-/// IO is wrapped in BlockingFihIo to bridge the async IO trait with sync callers.
-pub struct FihStorage<I: AsyncFihIo> {
-    io: BlockingFihIo<I>,
+/// IO is wrapped in SyncFileIo to bridge the async IO trait with sync callers.
+pub struct FihStorage<I: AsyncFileIo> {
+    io: SyncFileIo<I>,
     project_id: String,
     clock: Box<dyn Now + Send + Sync>,
     /// When true (default), in-memory caches are active for O(1) reads.
@@ -67,11 +72,12 @@ pub struct FihStorage<I: AsyncFihIo> {
     time_index: TimeIndex,
     ref_counts: RwLock<RefCounts>,
     by_origin: RwLock<OriginIndex>,
+    by_from_fact: RwLock<ByFromFact>,
     // Pending writes (for FihSession coordination).
     pub(crate) pending: Mutex<Vec<WriteOp>>,
 }
 
-impl<I: AsyncFihIo> FihStorage<I> {
+impl<I: AsyncFileIo> FihStorage<I> {
     pub fn new(io: I, project_id: &str) -> Self {
         Self::with_clock(io, project_id, Box::new(nexus_model::SystemClock))
     }
@@ -90,7 +96,7 @@ impl<I: AsyncFihIo> FihStorage<I> {
         is_hotmemory_enabled: bool,
     ) -> Self {
         Self {
-            io: BlockingFihIo::new(io),
+            io: SyncFileIo::new(io),
             project_id: project_id.to_string(),
             clock,
             is_hotmemory_enabled,
@@ -100,6 +106,7 @@ impl<I: AsyncFihIo> FihStorage<I> {
             time_index: TimeIndex::new(),
             ref_counts: RwLock::new(RefCounts::new()),
             by_origin: RwLock::new(OriginIndex::new()),
+            by_from_fact: RwLock::new(ByFromFact::new()),
             pending: Mutex::new(Vec::new()),
         }
     }
@@ -144,6 +151,7 @@ impl<I: AsyncFihIo> FihStorage<I> {
         {
             let time_idx = &self.time_index;
             let mut origin_idx = self.by_origin.write().map_err(|e| e.to_string())?;
+            let mut by_ff = self.by_from_fact.write().map_err(|e| e.to_string())?;
             let mut refs = self.ref_counts.write().map_err(|e| e.to_string())?;
             let facts = self.fact_cache.read().map_err(|e| e.to_string())?;
             let intents = self.intent_cache.read().map_err(|e| e.to_string())?;
@@ -163,11 +171,24 @@ impl<I: AsyncFihIo> FihStorage<I> {
                     if let Some(rc) = refs.get(fid) {
                         rc.fetch_add(1, Ordering::Relaxed);
                     }
+                    by_ff.entry(fid.clone()).or_default().push(r.id.clone());
                 }
             }
         }
 
         Ok(())
+    }
+
+    /// Flush pending writes to IO.
+    /// Return all Intent IDs that reference the given Fact.
+    /// O(1) via by_from_fact reverse index.
+    pub fn intents_by_fact(&self, fact_id: &str) -> Vec<String> {
+        self.by_from_fact
+            .read()
+            .unwrap()
+            .get(fact_id)
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// Flush pending writes to IO.
@@ -300,7 +321,7 @@ fn content_hash(data: &[u8]) -> String {
 
 // ── StorageRead ──────────────────────────────────────────────────────────
 
-impl<I: AsyncFihIo> FihStorage<I> {
+impl<I: AsyncFileIo> FihStorage<I> {
     /// Read state directly from IO, bypassing in-memory cache.
     /// Used when `is_hotmemory_enabled` is false (ColdStorage mode).
     fn read_state_uncached(&self) -> BoardState {
@@ -382,7 +403,7 @@ impl<I: AsyncFihIo> FihStorage<I> {
     }
 }
 
-impl<I: AsyncFihIo> StorageRead for FihStorage<I> {
+impl<I: AsyncFileIo> StorageRead for FihStorage<I> {
     fn project_id(&self) -> &str {
         &self.project_id
     }
@@ -459,7 +480,7 @@ impl<I: AsyncFihIo> StorageRead for FihStorage<I> {
 
 // ── FactCapable ──────────────────────────────────────────────────────────
 
-impl<I: AsyncFihIo> FactCapable for FihStorage<I> {
+impl<I: AsyncFileIo> FactCapable for FihStorage<I> {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         // ColdStorage mode is read-only; writes go through write_blob only.
         // Block FIH writes to prevent accidental data corruption when this
@@ -517,7 +538,7 @@ impl<I: AsyncFihIo> FactCapable for FihStorage<I> {
 
 // ── HintCapable ──────────────────────────────────────────────────────────
 
-impl<I: AsyncFihIo> HintCapable for FihStorage<I> {
+impl<I: AsyncFileIo> HintCapable for FihStorage<I> {
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         if !self.is_hotmemory_enabled {
             return Err(BlackboardError::Forbidden(
@@ -554,7 +575,7 @@ impl<I: AsyncFihIo> HintCapable for FihStorage<I> {
 
 // ── IntentCapable ────────────────────────────────────────────────────────
 
-impl<I: AsyncFihIo> IntentCapable for FihStorage<I> {
+impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
     fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
         if !self.is_hotmemory_enabled {
             return Err(BlackboardError::Forbidden(
@@ -604,6 +625,14 @@ impl<I: AsyncFihIo> IntentCapable for FihStorage<I> {
                 .write()
                 .unwrap()
                 .insert(record.id.clone(), record);
+            // Update by_from_fact reverse index
+            let mut by_ff = self.by_from_fact.write().unwrap();
+            for fid in &intent.from_facts {
+                by_ff
+                    .entry(fid.clone())
+                    .or_default()
+                    .push(intent.id.0.clone());
+            }
         }
         self.pending.lock().unwrap().push(op);
 
@@ -770,7 +799,7 @@ impl<I: AsyncFihIo> IntentCapable for FihStorage<I> {
 
 // ── EvictCapable ─────────────────────────────────────────────────────────
 
-impl<I: AsyncFihIo> EvictCapable for FihStorage<I> {
+impl<I: AsyncFileIo> EvictCapable for FihStorage<I> {
     fn approximate_size(&self) -> usize {
         let facts = self.fact_cache.read().unwrap().len();
         let intents = self.intent_cache.read().unwrap().len();
@@ -817,7 +846,7 @@ impl<I: AsyncFihIo> EvictCapable for FihStorage<I> {
 
 // ── FilterCapable ────────────────────────────────────────────────────────
 
-impl<I: AsyncFihIo> FilterCapable for FihStorage<I> {
+impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
     fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
         // Determine time range using TimeIndex (O(log N) seek)
         let time_filtered_ids: Option<std::collections::HashSet<String>> =
@@ -922,7 +951,7 @@ use std::ops::Range;
 
 // ── ScanCapable ───────────────────────────────────────────────────────────
 
-impl<I: AsyncFihIo> ScanCapable for FihStorage<I> {
+impl<I: AsyncFileIo> ScanCapable for FihStorage<I> {
     fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
         let state = StorageRead::read_state(self);
         let prefix = format!("partition:{}", partition);
@@ -949,7 +978,7 @@ impl<I: AsyncFihIo> ScanCapable for FihStorage<I> {
 
 // ── TimeRangeCapable ──────────────────────────────────────────────────────
 
-impl<I: AsyncFihIo> TimeRangeCapable for FihStorage<I> {
+impl<I: AsyncFileIo> TimeRangeCapable for FihStorage<I> {
     fn time_range(&self) -> Option<Range<String>> {
         let first = self.time_index.first_ts()?;
         let last = self.time_index.last_ts()?;
@@ -959,7 +988,7 @@ impl<I: AsyncFihIo> TimeRangeCapable for FihStorage<I> {
 
 // ── ColdStorage ───────────────────────────────────────────────────────────
 
-impl<I: AsyncFihIo + Send> ColdStorage for FihStorage<I> {
+impl<I: AsyncFileIo + Send> ColdStorage for FihStorage<I> {
     fn write_blob(&self, key: &str, data: &[u8]) -> Result<(), String> {
         self.pending.lock().unwrap().push(WriteOp::Write {
             path: key.to_string(),
@@ -971,7 +1000,7 @@ impl<I: AsyncFihIo + Send> ColdStorage for FihStorage<I> {
 
 // ── FlushCapable ───────────────────────────────────────────────────────────
 
-impl<I: AsyncFihIo> FlushCapable for FihStorage<I> {
+impl<I: AsyncFileIo> FlushCapable for FihStorage<I> {
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
         let since_ts = cursor.last_flushed_at;
         let now_ts = self.clock.now_nanos();
@@ -1041,10 +1070,10 @@ impl<I: AsyncFihIo> FlushCapable for FihStorage<I> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim_io::SimFihIo;
+    use crate::sim_io::SimIo;
 
-    fn make_storage() -> FihStorage<SimFihIo> {
-        FihStorage::new(SimFihIo::new(), "test")
+    fn make_storage() -> FihStorage<SimIo> {
+        FihStorage::new(SimIo::new(), "test")
     }
 
     #[test]
@@ -1187,7 +1216,7 @@ mod tests {
 
     #[test]
     fn test_flush_preserves_content() {
-        let io = SimFihIo::new();
+        let io = SimIo::new();
         let store = FihStorage::new(io.clone(), "test");
 
         FactCapable::submit_fact(
@@ -1215,7 +1244,7 @@ mod tests {
 
     #[test]
     fn test_time_index_after_rebuild() {
-        let io = SimFihIo::new();
+        let io = SimIo::new();
         let store = FihStorage::new(io.clone(), "test");
 
         FactCapable::submit_fact(
@@ -1363,7 +1392,7 @@ mod tests {
             last_flushed_at: 0,
             partition: "default".into(),
         };
-        let result = <FihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor).unwrap();
+        let result = <FihStorage<SimIo> as FlushCapable>::flush_since(&store, &cursor).unwrap();
         assert!(result.records_flushed > 0);
         assert!(result.new_cursor.last_flushed_at > 0);
     }
@@ -1375,7 +1404,7 @@ mod tests {
             last_flushed_at: 0,
             partition: "default".into(),
         };
-        let result = <FihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor).unwrap();
+        let result = <FihStorage<SimIo> as FlushCapable>::flush_since(&store, &cursor).unwrap();
         assert_eq!(result.records_flushed, 0);
     }
 
@@ -1399,7 +1428,7 @@ mod tests {
             last_flushed_at: 0,
             partition: "default".into(),
         };
-        let r1 = <FihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor1).unwrap();
+        let r1 = <FihStorage<SimIo> as FlushCapable>::flush_since(&store, &cursor1).unwrap();
         assert!(r1.records_flushed > 0);
         FactCapable::submit_fact(
             &store,
@@ -1418,13 +1447,13 @@ mod tests {
             last_flushed_at: r1.new_cursor.last_flushed_at,
             partition: "default".into(),
         };
-        let r2 = <FihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor2).unwrap();
+        let r2 = <FihStorage<SimIo> as FlushCapable>::flush_since(&store, &cursor2).unwrap();
         assert_eq!(r2.records_flushed, 1);
     }
 
     #[test]
     fn test_flush_writes_to_io() {
-        let io = SimFihIo::new();
+        let io = SimIo::new();
         let store = FihStorage::new(io.clone(), "test");
         FactCapable::submit_fact(
             &store,
@@ -1443,8 +1472,8 @@ mod tests {
             last_flushed_at: 0,
             partition: "default".into(),
         };
-        <FihStorage<SimFihIo> as FlushCapable>::flush_since(&store, &cursor).unwrap();
-        let blocking = BlockingFihIo::new(io.clone());
+        <FihStorage<SimIo> as FlushCapable>::flush_since(&store, &cursor).unwrap();
+        let blocking = SyncFileIo::new(io.clone());
         let keys = blocking.list("flush/").unwrap();
         assert!(!keys.is_empty(), "flush directory should have chain files");
         assert!(
@@ -1452,7 +1481,7 @@ mod tests {
             "expected .chain files in flush output"
         );
         let chain_key = keys.iter().find(|k| k.ends_with(".chain")).unwrap();
-        let chain_data = BlockingFihIo::new(io)
+        let chain_data = SyncFileIo::new(io)
             .read(chain_key)
             .unwrap()
             .expect("chain file");
@@ -1512,10 +1541,136 @@ mod tests {
             limit: None,
             offset: None,
         };
-        let state = <FihStorage<SimFihIo> as FilterCapable>::read_state_filtered(&store, &filter);
+        let state = <FihStorage<SimIo> as FilterCapable>::read_state_filtered(&store, &filter);
         // f_new may or may not appear depending on timing, but at minimum
         // the query should not panic and should return <= 2 facts
         assert!(state.facts.len() <= 2);
+    }
+
+    #[test]
+    fn test_by_from_fact_returns_intents_for_fact() {
+        let store = make_storage();
+
+        FactCapable::submit_fact(
+            &store,
+            &Fact {
+                id: FihHash("f_a".into()),
+                origin: "t".into(),
+                content: Content {
+                    mime_type: "text/plain".into(),
+                    data: b"a".to_vec(),
+                },
+                creator: "t".into(),
+            },
+        )
+        .unwrap();
+        FactCapable::submit_fact(
+            &store,
+            &Fact {
+                id: FihHash("f_b".into()),
+                origin: "t".into(),
+                content: Content {
+                    mime_type: "text/plain".into(),
+                    data: b"b".to_vec(),
+                },
+                creator: "t".into(),
+            },
+        )
+        .unwrap();
+
+        // Two Intents reference f_a; one references f_b
+        IntentCapable::submit_intent(
+            &store,
+            &Intent {
+                id: FihHash("i1".into()),
+                from_facts: vec!["f_a".into()],
+                description: "uses a".into(),
+                creator: "t".into(),
+                worker: None,
+                to_fact_id: None,
+                last_heartbeat_at: None,
+                created_at: None,
+                is_concluded: false,
+                concluded_at: None,
+            },
+        )
+        .unwrap();
+        IntentCapable::submit_intent(
+            &store,
+            &Intent {
+                id: FihHash("i2".into()),
+                from_facts: vec!["f_a".into(), "f_b".into()],
+                description: "uses a and b".into(),
+                creator: "t".into(),
+                worker: None,
+                to_fact_id: None,
+                last_heartbeat_at: None,
+                created_at: None,
+                is_concluded: false,
+                concluded_at: None,
+            },
+        )
+        .unwrap();
+
+        // f_a should be referenced by both i1 and i2
+        let refs_a = store.intents_by_fact("f_a");
+        assert_eq!(refs_a.len(), 2);
+        assert!(refs_a.iter().any(|s| s == "i1"));
+        assert!(refs_a.iter().any(|s| s == "i2"));
+
+        // f_b should be referenced only by i2
+        let refs_b = store.intents_by_fact("f_b");
+        assert_eq!(refs_b.len(), 1);
+        assert!(refs_b.iter().any(|s| s == "i2"));
+
+        // Nonexistent fact returns empty vec
+        assert!(store.intents_by_fact("nonexistent").is_empty());
+    }
+
+    #[test]
+    fn test_by_from_fact_rebuild_from_io() {
+        let io = SimIo::new();
+        let store = FihStorage::new(io.clone(), "test");
+
+        FactCapable::submit_fact(
+            &store,
+            &Fact {
+                id: FihHash("f_x".into()),
+                origin: "t".into(),
+                content: Content {
+                    mime_type: "text/plain".into(),
+                    data: b"x".to_vec(),
+                },
+                creator: "t".into(),
+            },
+        )
+        .unwrap();
+        IntentCapable::submit_intent(
+            &store,
+            &Intent {
+                id: FihHash("i_ref".into()),
+                from_facts: vec!["f_x".into()],
+                description: "ref x".into(),
+                creator: "t".into(),
+                worker: None,
+                to_fact_id: None,
+                last_heartbeat_at: None,
+                created_at: None,
+                is_concluded: false,
+                concluded_at: None,
+            },
+        )
+        .unwrap();
+
+        store.flush_pending().unwrap();
+
+        // Rebuild from IO — by_from_fact should be restored
+        let store2 = FihStorage::new(io, "test");
+        store2.rebuild_cache().unwrap();
+
+        let refs = store2.intents_by_fact("f_x");
+        assert_eq!(refs.len(), 1);
+        assert!(refs.iter().any(|s| s == "i_ref"));
     }
 
     #[test]
@@ -1583,7 +1738,7 @@ mod tests {
             offset: None,
         };
         let state =
-            <FihStorage<SimFihIo> as FilterCapable>::read_state_filtered(&store, &filter_until);
+            <FihStorage<SimIo> as FilterCapable>::read_state_filtered(&store, &filter_until);
         assert!(
             state.facts.len() <= 3,
             "as_of filter should not exceed total facts"
@@ -1600,7 +1755,7 @@ mod tests {
             offset: None,
         };
         let state =
-            <FihStorage<SimFihIo> as FilterCapable>::read_state_filtered(&store, &range_filter);
+            <FihStorage<SimIo> as FilterCapable>::read_state_filtered(&store, &range_filter);
         assert!(state.facts.len() <= 3);
         assert!(
             state.facts.len() >= 1,

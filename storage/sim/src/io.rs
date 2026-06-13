@@ -1,14 +1,42 @@
-// ── AsyncFihIo: async storage IO abstraction ───────────────────────────
+// ── AsyncFileIo: flat key-space file IO abstraction ────────────────
 //
-// The single IO boundary. Every storage backend (local fs, remote storage,
-// SQLite, in-memory) implements this trait. The core never calls IO directly.
+// The single IO boundary. Every storage backend (local fs, remote object
+// store, in-memory HashMap, bare-metal flash) implements this trait.
+// The core never calls IO directly.
 //
-// Async trait. Sync callers use BlockingFihIo wrapper.
+// Despite the name, this trait does NOT require `std::fs` or a local
+// filesystem. Implementations include:
+//   - SimIo: in-memory HashMap (no_std compatible)
+//   - FsIo: std::fs (native, WASI)
+//   - CfIo: Cloudflare R2 (WASM)
+//   - (your backend here): any flat key-space with read/write/list/delete
+// # Why async?
+//
+// Storage is inherently asynchronous. At the hardware level, every I/O
+// operation (DRAM read, DMA transfer, NVMe queue, network round-trip)
+// involves pipelining, interrupts, or completion queues. None of it is
+// truly synchronous. "Sync" is a programmer convenience abstraction over
+// cooperative scheduling (async) or preemptive scheduling (OS threads).
+//
+// By making AsyncFileIo async at the trait level, we align with:
+//   - CF Workers: await on R2 bucket.get() directly (no block_on)
+//   - tokio: spawn + await on async fs/network
+//   - wasm32: single-threaded, cooperative multitasking via await
+//
+// Sync callers (FihStorage, FactCapable, etc.) use SyncFileIo wrapper,
+// which calls futures_executor::block_on internally. This is NOT an adapter
+// layer. Async is the design center; sync is the extension.
+//
+// SyncFileIo does NOT introduce significant overhead because FihStorage
+// buffers all writes into pending WriteOps and only flushes in batch.
+// Individual IO calls are amortized over the flush window.
+//
+// AsyncFileIo is the design center. Sync is the extension.
 
 use std::future::Future;
 use std::pin::Pin;
 
-/// Type alias to suppress clippy::type_complexity on AsyncFihIo methods.
+/// Type alias to suppress clippy::type_complexity on AsyncFileIo methods.
 /// GAT-based alternative (nightly): `type IoFuture<'a, T>: Future<Output = Result<T, String>> + 'a`
 /// That would eliminate per-call heap allocation but requires nightly Rust.
 /// Keeping Box for now is acceptable for this abstraction layer.
@@ -28,7 +56,7 @@ pub enum WriteOp {
 ///
 /// The key-space is flat (`facts/f_{hash}.fact`, `blob/{hash}.bin`).
 /// Directory structure is an implementation detail of the IO layer.
-pub trait AsyncFihIo {
+pub trait AsyncFileIo {
     /// Read a single file. Returns None if not found.
     fn read<'a>(&'a self, path: &'a str) -> IoFuture<'a, Option<Vec<u8>>>;
 
@@ -55,13 +83,13 @@ pub trait AsyncFihIo {
     }
 }
 
-/// Wraps an AsyncFihIo into a blocking/sync FihIo interface.
+/// Wraps an AsyncFileIo into a blocking/sync interface.
 /// Uses futures_executor::block_on internally.
-pub struct BlockingFihIo<A: AsyncFihIo> {
+pub struct SyncFileIo<A: AsyncFileIo> {
     inner: A,
 }
 
-impl<A: AsyncFihIo> BlockingFihIo<A> {
+impl<A: AsyncFileIo> SyncFileIo<A> {
     pub fn new(inner: A) -> Self {
         Self { inner }
     }

@@ -1,4 +1,4 @@
-// ── FsFihIo: filesystem-backed FihIo implementation ────────────────────
+// ── FsIo: filesystem-backed FihIo implementation ────────────────────
 //
 // Wraps std::fs operations behind the FihIo trait.
 // Uses a root directory as the store. Directory structure mirrors the
@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::io::{AsyncFihIo, IoFuture};
+use crate::io::{AsyncFileIo, IoFuture};
 
 /// Filesystem-backed FihIo. Root directory is created on construction.
 ///
@@ -17,12 +17,12 @@ use crate::io::{AsyncFihIo, IoFuture};
 ///   {root}/{path}  →  file content
 ///
 /// List with prefix scans directories recursively.
-pub struct FsFihIo {
+pub struct FsIo {
     root: PathBuf,
 }
 
-impl FsFihIo {
-    /// Create a new FsFihIo rooted at the given path.
+impl FsIo {
+    /// Create a new FsIo rooted at the given path.
     /// Creates the directory if it does not exist.
     pub fn new<P: AsRef<Path>>(root: P) -> Result<Self, String> {
         let root = root.as_ref().to_path_buf();
@@ -30,7 +30,7 @@ impl FsFihIo {
         Ok(Self { root })
     }
 
-    /// Create a temporary FsFihIo for testing. Directory is auto-cleaned
+    /// Create a temporary FsIo for testing. Directory is auto-cleaned
     /// on drop or explicitly via clear().
     pub fn temp() -> Result<Self, String> {
         let dir = std::env::temp_dir().join(format!("nexus_fs_{}", std::process::id()));
@@ -53,7 +53,7 @@ impl FsFihIo {
     }
 }
 
-impl AsyncFihIo for FsFihIo {
+impl AsyncFileIo for FsIo {
     fn read<'a>(&'a self, path: &'a str) -> IoFuture<'a, Option<Vec<u8>>> {
         Box::pin(async move {
             let full = self.resolve(path)?;
@@ -120,9 +120,9 @@ impl AsyncFihIo for FsFihIo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::io::BlockingFihIo;
+    use crate::io::SyncFileIo;
 
-    fn make_fs_blocking() -> BlockingFihIo<FsFihIo> {
+    fn make_fs_blocking() -> SyncFileIo<FsIo> {
         let dir = std::env::temp_dir().join(format!(
             "nexus_test_{}",
             std::time::SystemTime::now()
@@ -130,8 +130,8 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        let fs = FsFihIo::new(dir).unwrap();
-        BlockingFihIo::new(fs)
+        let fs = FsIo::new(dir).unwrap();
+        SyncFileIo::new(fs)
     }
 
     #[test]

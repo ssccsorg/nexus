@@ -12,12 +12,12 @@ use nexus_model::{
     EvictCapable, Fact, FactCapable, FihHash, FilterCapable, FlushCapable, FlushCursor, Hint,
     HintCapable, Intent, IntentCapable, StateFilter, StorageRead,
 };
-use nexus_storage_sim::{BlockingFihIo, FihStorage, SimFihIo, intent_status};
+use nexus_storage_sim::{FihStorage, SimIo, SyncFileIo, intent_status};
 
 fn main() {
     eprintln!("+-----------------------------------------------------------+");
     eprintln!("| nexus-storage-sim verification runner                      |");
-    eprintln!("| Phase 3: AsyncFihIo + FlushCapable + FsFihIo              |");
+    eprintln!("| Phase 3: AsyncFileIo + FlushCapable + FsIo              |");
     eprintln!("+-----------------------------------------------------------+");
     eprintln!();
 
@@ -52,7 +52,7 @@ fn main() {
     // ── 1. Basic FIH lifecycle ────────────────────────────────────────
 
     check!("submit_fact + read_state", {
-        let store = FihStorage::new(SimFihIo::new(), "verify");
+        let store = FihStorage::new(SimIo::new(), "verify");
         FactCapable::submit_fact(
             &store,
             &Fact {
@@ -69,7 +69,7 @@ fn main() {
     });
 
     check!("submit_intent requires existing fact", {
-        let store = FihStorage::new(SimFihIo::new(), "verify");
+        let store = FihStorage::new(SimIo::new(), "verify");
         let result = IntentCapable::submit_intent(
             &store,
             &Intent {
@@ -92,7 +92,7 @@ fn main() {
     });
 
     check!("full intent lifecycle", {
-        let store = FihStorage::new(SimFihIo::new(), "verify");
+        let store = FihStorage::new(SimIo::new(), "verify");
         FactCapable::submit_fact(
             &store,
             &Fact {
@@ -128,7 +128,7 @@ fn main() {
     });
 
     check!("double claim rejected", {
-        let store = FihStorage::new(SimFihIo::new(), "verify");
+        let store = FihStorage::new(SimIo::new(), "verify");
         FactCapable::submit_fact(
             &store,
             &Fact {
@@ -163,7 +163,7 @@ fn main() {
     // ── 2. Hint operations ────────────────────────────────────────────
 
     check!("submit_hint + read_state", {
-        let store = FihStorage::new(SimFihIo::new(), "verify");
+        let store = FihStorage::new(SimIo::new(), "verify");
         HintCapable::submit_hint(
             &store,
             &Hint {
@@ -180,7 +180,7 @@ fn main() {
     // ── 3. Flush + rebuild ────────────────────────────────────────────
 
     check!("flush + rebuild preserves data", {
-        let io = SimFihIo::new();
+        let io = SimIo::new();
         let store = FihStorage::new(io.clone(), "verify");
         FactCapable::submit_fact(
             &store,
@@ -201,7 +201,7 @@ fn main() {
     });
 
     check!("flush_cursor advances", {
-        let store = FihStorage::new(SimFihIo::new(), "verify");
+        let store = FihStorage::new(SimIo::new(), "verify");
         FactCapable::submit_fact(
             &store,
             &Fact {
@@ -222,7 +222,7 @@ fn main() {
     });
 
     check!("flush_empty_delta", {
-        let store = FihStorage::new(SimFihIo::new(), "verify");
+        let store = FihStorage::new(SimIo::new(), "verify");
         let cursor = FlushCursor {
             last_flushed_at: u64::MAX,
             partition: "default".into(),
@@ -232,7 +232,7 @@ fn main() {
     });
 
     check!("flush writes to io", {
-        let io = SimFihIo::new();
+        let io = SimIo::new();
         let store = FihStorage::new(io.clone(), "verify");
         FactCapable::submit_fact(
             &store,
@@ -249,7 +249,7 @@ fn main() {
             partition: "default".into(),
         };
         FlushCapable::flush_since(&store, &cursor).unwrap();
-        let keys = BlockingFihIo::new(io).list("flush/").unwrap();
+        let keys = SyncFileIo::new(io).list("flush/").unwrap();
         assert!(!keys.is_empty(), "flush should write to io");
         assert!(
             keys.iter().any(|k| k.ends_with(".chain")),
@@ -260,7 +260,7 @@ fn main() {
     // ── 4. Filtering ──────────────────────────────────────────────────
 
     check!("time_index since filter", {
-        let store = FihStorage::new(SimFihIo::new(), "verify");
+        let store = FihStorage::new(SimIo::new(), "verify");
         FactCapable::submit_fact(
             &store,
             &Fact {
@@ -280,7 +280,7 @@ fn main() {
     });
 
     check!("time_index until filter (time travel)", {
-        let store = FihStorage::new(SimFihIo::new(), "verify");
+        let store = FihStorage::new(SimIo::new(), "verify");
         FactCapable::submit_fact(
             &store,
             &Fact {
@@ -302,7 +302,7 @@ fn main() {
     // ── 5. Eviction ───────────────────────────────────────────────────
 
     check!("evict_before removes old hints", {
-        let store = FihStorage::new(SimFihIo::new(), "verify");
+        let store = FihStorage::new(SimIo::new(), "verify");
         HintCapable::submit_hint(
             &store,
             &Hint {
@@ -321,7 +321,7 @@ fn main() {
     // ── 6. Concurrent access ──────────────────────────────────────────
 
     check!("concurrent submit and read", {
-        let store = Arc::new(FihStorage::new(SimFihIo::new(), "verify"));
+        let store = Arc::new(FihStorage::new(SimIo::new(), "verify"));
         let mut handles = Vec::new();
         for i in 0..10 {
             let s = Arc::clone(&store);
@@ -347,7 +347,7 @@ fn main() {
     // ── 7. Ref count / orphan detection ───────────────────────────────
 
     check!("ref_count orphan detection via conclude", {
-        let store = FihStorage::new(SimFihIo::new(), "verify");
+        let store = FihStorage::new(SimIo::new(), "verify");
         FactCapable::submit_fact(
             &store,
             &Fact {

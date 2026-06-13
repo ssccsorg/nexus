@@ -1,11 +1,11 @@
-// Full lifecycle test for FihStorage<SimFihIo>.
+// Full lifecycle test for FihStorage<SimIo>.
 
 use nex::{Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
-use nexus_storage_sim::{FihStorage, SimFihIo};
+use nexus_storage_sim::{FihStorage, SimIo};
 
 #[test]
 fn test_sim_fact_submit_and_read() {
-    let io = SimFihIo::new();
+    let io = SimIo::new();
     let storage = FihStorage::new(io, "test");
 
     storage
@@ -24,7 +24,7 @@ fn test_sim_fact_submit_and_read() {
 
 #[test]
 fn test_sim_full_lifecycle() {
-    let io = SimFihIo::new();
+    let io = SimIo::new();
     let storage = FihStorage::new(io, "test");
 
     storage

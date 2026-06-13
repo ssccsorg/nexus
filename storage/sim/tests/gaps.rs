@@ -1,13 +1,13 @@
-// Gap coverage tests for FihStorage<SimFihIo>.
+// Gap coverage tests for FihStorage<SimIo>.
 // Tests basic storage invariants not covered by existing scenario tests.
 
 mod common;
 
 use nexus_model::{FactCapable, FihHash, Hint, HintCapable, IntentCapable, StorageRead};
-use nexus_storage_sim::{FihStorage, SimFihIo};
+use nexus_storage_sim::{FihStorage, SimIo};
 
-fn store() -> FihStorage<SimFihIo> {
-    FihStorage::new(SimFihIo::new(), "test")
+fn store() -> FihStorage<SimIo> {
+    FihStorage::new(SimIo::new(), "test")
 }
 
 #[test]
