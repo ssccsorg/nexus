@@ -51,6 +51,16 @@ pub(crate) type OriginIndex = HashMap<String, Vec<String>>;
 /// Enables O(1) query: "which Intents depend on Fact f001?"
 pub(crate) type ByFromFact = HashMap<String, Vec<String>>;
 
+/// Chain entry format: serialized by flush_since, deserialized by import_chain_file.
+/// Named struct avoids postcard tuple field ordering ambiguity with empty vecs.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ChainEntry {
+    prev_cursor: u64,
+    records_flushed: u64,
+    facts: Vec<FactRecord>,
+    intents: Vec<IntentRecord>,
+}
+
 /// Unified FIH storage backended by an abstract IO layer.
 ///
 /// All FIH trait methods are sync. They enqueue WriteOps into a buffer
@@ -179,9 +189,7 @@ impl<I: AsyncFileIo> FihStorage<I> {
         Ok(())
     }
 
-    /// Flush pending writes to IO.
-    /// Return all Intent IDs that reference the given Fact.
-    /// O(1) via by_from_fact reverse index.
+/// Flush pending writes to IO.
     pub fn intents_by_fact(&self, fact_id: &str) -> Vec<String> {
         self.by_from_fact
             .read()
@@ -189,6 +197,41 @@ impl<I: AsyncFileIo> FihStorage<I> {
             .get(fact_id)
             .cloned()
             .unwrap_or_default()
+    }
+
+    /// Import a single delta chain file, restoring its records into the
+    /// in-memory cache. The chain file must have been created by flush_since.
+    /// Returns the number of records restored (facts + intents).
+    pub fn import_chain_file(&self, path: &str) -> Result<u64, String> {
+        let bytes = self
+            .io
+            .read(path)?
+            .ok_or_else(|| format!("chain file not found: {}", path))?;
+        let entry: ChainEntry =
+            postcard::from_bytes(&bytes).map_err(|e| format!("deserialize chain: {e}"))?;
+        // Reset Hot mode path: always write records to IO then rebuild.
+        // This unifies with rebuild_cache semantics and eliminates the
+        // fragile in-memory cache merge path.
+        for r in &entry.facts {
+            let bytes = postcard::to_allocvec(r).map_err(|e| e.to_string())?;
+            self.pending.lock().unwrap().push(WriteOp::Write {
+                path: r.key(),
+                data: bytes,
+            });
+        }
+        for r in &entry.intents {
+            let bytes = postcard::to_allocvec(r).map_err(|e| e.to_string())?;
+            self.pending.lock().unwrap().push(WriteOp::Write {
+                path: r.key(),
+                data: bytes,
+            });
+        }
+        let count = (entry.facts.len() + entry.intents.len()) as u64;
+        self.flush_pending()?;
+        if self.is_hotmemory_enabled && count > 0 {
+            self.rebuild_cache()?;
+        }
+        Ok(count)
     }
 
     /// Flush pending writes to IO.
@@ -785,6 +828,19 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
             }
         }
 
+        // Remove intent from by_from_fact reverse index
+        {
+            let cache = self.intent_cache.read().unwrap();
+            if let Some(r) = cache.get(intent_id) {
+                let mut by_ff = self.by_from_fact.write().unwrap();
+                for fid in &r.from_facts {
+                    if let Some(refs) = by_ff.get_mut(fid) {
+                        refs.retain(|i| i != intent_id);
+                    }
+                }
+            }
+        }
+
         let intent_bytes =
             postcard::to_allocvec(self.intent_cache.read().unwrap().get(intent_id).unwrap())
                 .map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -1043,10 +1099,15 @@ impl<I: AsyncFileIo> FlushCapable for FihStorage<I> {
             }
         }
 
-        // Serialize delta chain entry: (cursor_ts, records_flushed, facts, intents)
+        // Serialize delta chain entry
+        let entry = ChainEntry {
+            prev_cursor: cursor.last_flushed_at,
+            records_flushed,
+            facts,
+            intents,
+        };
         let chain_bytes =
-            postcard::to_allocvec(&(cursor.last_flushed_at, records_flushed, &facts, &intents))
-                .map_err(|e| format!("serialize chain: {e}"))?;
+            postcard::to_allocvec(&entry).map_err(|e| format!("serialize chain: {e}"))?;
 
         let chain_path = format!("flush/{}/cursor_{}.chain", cursor.partition, now_ts);
         self.pending.lock().unwrap().push(WriteOp::Write {
@@ -1481,17 +1542,94 @@ mod tests {
             "expected .chain files in flush output"
         );
         let chain_key = keys.iter().find(|k| k.ends_with(".chain")).unwrap();
-        let chain_data = SyncFileIo::new(io)
-            .read(chain_key)
+        let chain_data = SyncFileIo::new(io).read(chain_key).unwrap().expect("chain file");
+        let entry: super::ChainEntry = postcard::from_bytes(&chain_data).unwrap();
+        assert_eq!(entry.facts.len(), 1, "chain should contain 1 fact record");
+    }
+
+    #[test]
+    fn test_import_chain_file_after_full_lifecycle() {
+        // Reproduce: submit_fact → intent → claim → conclude → flush_since → import_chain_file
+        // Verifies that flush_since correctly captures all TimeIndex entries
+        // and import_chain_file restores them.
+        let io = SimIo::new();
+        let store = FihStorage::new(io.clone(), "test");
+
+        FactCapable::submit_fact(
+            &store,
+            &Fact {
+                id: FihHash("f_import".into()),
+                origin: "t".into(),
+                content: Content {
+                    mime_type: "text/plain".into(),
+                    data: b"import test".to_vec(),
+                },
+                creator: "t".into(),
+            },
+        )
+        .unwrap();
+
+        // Verify cache + index are populated before any flush
+        assert_eq!(store.fact_cache.read().unwrap().len(), 1);
+
+        IntentCapable::submit_intent(
+            &store,
+            &Intent {
+                id: FihHash("i_import".into()),
+                from_facts: vec!["f_import".into()],
+                description: "test".into(),
+                creator: "t".into(),
+                worker: None,
+                to_fact_id: None,
+                last_heartbeat_at: None,
+                created_at: None,
+                is_concluded: false,
+                concluded_at: None,
+            },
+        )
+        .unwrap();
+        IntentCapable::claim_intent(&store, "i_import", "alice").unwrap();
+        IntentCapable::conclude_intent(&store, "i_import", "done").unwrap();
+
+        assert_eq!(store.fact_cache.read().unwrap().len(), 2);
+
+        // Flush individual records to IO
+        store.flush_pending().unwrap();
+
+        // Flush chain — must find delta records
+        let result = FlushCapable::flush_since(
+            &store,
+            &FlushCursor {
+                last_flushed_at: 0,
+                partition: "chain_test".into(),
+            },
+        )
+        .unwrap();
+        assert!(
+            result.records_flushed > 0,
+            "flush_since must produce records, fact_cache has {} entries",
+            store.fact_cache.read().unwrap().len()
+        );
+
+        // Import chain into a fresh storage
+        let chain_path = SyncFileIo::new(io.clone())
+            .list("flush/")
             .unwrap()
-            .expect("chain file");
-        let (_prev_cursor, count, _facts, _intents): (
-            u64,
-            u64,
-            Vec<super::FactRecord>,
-            Vec<super::IntentRecord>,
-        ) = postcard::from_bytes(&chain_data).unwrap();
-        assert_eq!(count, 1, "chain should contain 1 record");
+            .into_iter()
+            .find(|p| p.ends_with(".chain"))
+            .expect("chain file must exist");
+
+        let imported = FihStorage::new(io, "test");
+        let count = imported.import_chain_file(&chain_path).unwrap();
+        assert!(
+            count > 0,
+            "import_chain_file must restore records, got {count}"
+        );
+
+        let state = imported.read_state();
+        assert_eq!(state.facts.len(), 2, "original + conclusion");
+        assert_eq!(state.intents.len(), 1);
+        assert!(state.intents[0].is_concluded);
     }
 
     #[test]
