@@ -189,7 +189,7 @@ impl<I: AsyncFileIo> FihStorage<I> {
         Ok(())
     }
 
-/// Flush pending writes to IO.
+    /// Flush pending writes to IO.
     pub fn intents_by_fact(&self, fact_id: &str) -> Vec<String> {
         self.by_from_fact
             .read()
@@ -1542,7 +1542,10 @@ mod tests {
             "expected .chain files in flush output"
         );
         let chain_key = keys.iter().find(|k| k.ends_with(".chain")).unwrap();
-        let chain_data = SyncFileIo::new(io).read(chain_key).unwrap().expect("chain file");
+        let chain_data = SyncFileIo::new(io)
+            .read(chain_key)
+            .unwrap()
+            .expect("chain file");
         let entry: super::ChainEntry = postcard::from_bytes(&chain_data).unwrap();
         assert_eq!(entry.facts.len(), 1, "chain should contain 1 fact record");
     }
