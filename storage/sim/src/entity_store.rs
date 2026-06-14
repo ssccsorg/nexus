@@ -32,6 +32,9 @@
 use std::collections::HashMap;
 use std::sync::RwLock;
 
+/// Type alias for retain predicate to suppress clippy::type_complexity.
+type RetainPredicate<V> = Box<dyn FnMut(&str, &mut V) -> bool + Send>;
+
 // ── EntityStore trait ────────────────────────────────────────────────────
 
 /// A replaceable key-value store for FIH records.
@@ -73,9 +76,10 @@ where
     fn clear(&self);
 
     /// Retain only entries matching a predicate.
-    fn retain<F>(&self, f: F)
-    where
-        F: FnMut(&str, &mut V) -> bool + Send;
+    fn retain(&self, f: RetainPredicate<V>);
+
+    /// Replace all contents. Atomically clears and inserts from a Vec.
+    fn replace_from(&self, entries: Vec<(String, V)>);
 }
 
 // ── MemoryEntityStore ────────────────────────────────────────────────────
@@ -95,13 +99,6 @@ where
         Self {
             inner: RwLock::new(HashMap::new()),
         }
-    }
-
-    /// Replace all contents from an iterator. Used by rebuild_cache.
-    pub fn replace_from(&self, iter: impl IntoIterator<Item = (String, V)>) {
-        let mut map = self.inner.write().unwrap();
-        map.clear();
-        map.extend(iter);
     }
 }
 
@@ -146,14 +143,17 @@ where
         self.inner.write().unwrap().clear();
     }
 
-    fn retain<F>(&self, mut f: F)
-    where
-        F: FnMut(&str, &mut V) -> bool + Send,
-    {
+    fn retain(&self, mut f: RetainPredicate<V>) {
         self.inner
             .write()
             .unwrap()
             .retain(|k, v| f(k.as_str(), v));
+    }
+
+    fn replace_from(&self, entries: Vec<(String, V)>) {
+        let mut map = self.inner.write().unwrap();
+        map.clear();
+        map.extend(entries);
     }
 }
 
@@ -230,7 +230,7 @@ mod tests {
         let store: MemoryEntityStore<String> = MemoryEntityStore::new();
         store.insert("f001".into(), "keep".into());
         store.insert("f002".into(), "remove".into());
-        store.retain(|k, _| k != "f002");
+        store.retain(Box::new(|k, _| k != "f002"));
         assert!(store.contains_key("f001"));
         assert!(!store.contains_key("f002"));
     }
