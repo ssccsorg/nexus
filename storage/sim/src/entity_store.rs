@@ -33,7 +33,7 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 
 /// Type alias for retain predicate to suppress clippy::type_complexity.
-type RetainPredicate<V> = Box<dyn FnMut(&str, &mut V) -> bool + Send>;
+pub(crate) type RetainPredicate<V> = Box<dyn FnMut(&str, &mut V) -> bool + Send>;
 
 // ── EntityStore trait ────────────────────────────────────────────────────
 
@@ -144,10 +144,7 @@ where
     }
 
     fn retain(&self, mut f: RetainPredicate<V>) {
-        self.inner
-            .write()
-            .unwrap()
-            .retain(|k, v| f(k.as_str(), v));
+        self.inner.write().unwrap().retain(|k, v| f(k.as_str(), v));
     }
 
     fn replace_from(&self, entries: Vec<(String, V)>) {

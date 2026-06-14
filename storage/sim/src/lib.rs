@@ -6,11 +6,11 @@
 // All FIH trait implementations are sync. IO is enqueued as WriteOps in a
 // buffer and flushed by the outer FihSession layer (see session.rs).
 
+pub mod entity_store;
 /// Filesystem-backed IO. Gated to non-wasm32 targets because walkdir and
 /// std::fs directory traversal are not available on wasm32-unknown-unknown.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod fs_io;
-pub mod entity_store;
 pub mod index;
 pub mod intent_status;
 pub mod io;

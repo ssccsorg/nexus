@@ -1706,7 +1706,6 @@ dependencies = [
 name = "nexus-storage-sim"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "cfg-if",
  "futures-executor",
  "nex",
