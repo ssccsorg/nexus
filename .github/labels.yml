@@ -1,0 +1,5 @@
+# Repository labels configuration
+# Managed manually. Used by issue/pr workflows.
+- name: development
+  color: "0e8a16"
+  description: Issues resolved by a merged PR
