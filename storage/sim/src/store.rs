@@ -131,9 +131,17 @@ impl<I: AsyncFileIo> FihStorage<I> {
     }
 
     /// Rebuild FihCoord indices from current EntityStore contents.
+    ///
+    /// Records are sorted by submitted_at before insertion to guarantee
+    /// monotonic ordering in by_time (required by OrderedIndex's binary
+    /// search). Other indices (by_origin, by_fact, ref_counts) are
+    /// order-independent and built during the same pass.
     fn rebuild_coord(&self) {
-        let facts = self.fact_store.values();
+        let mut facts = self.fact_store.values();
         let intents = self.intent_store.values();
+
+        // Sort facts by submitted_at to maintain OrderedIndex monotonicity
+        facts.sort_by_key(|r| r.submitted_at);
 
         for r in &facts {
             self.coord.by_time.record(r.submitted_at, &r.id);

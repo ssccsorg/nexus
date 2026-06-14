@@ -95,13 +95,18 @@ pub fn export_from_io<A: AsyncFileIo>(io: &SyncFileIo<A>) -> Result<Vec<u8>, Str
         }
     }
 
-    // Collect blob entries (pair .bin + .bin.meta)
+    // Collect blob entries (pair .bin + .bin.meta).
+    // Use a HashSet to find metadata regardless of list ordering,
+    // avoiding fragility across different IO backends.
     let blob_keys = sync.list("blob/")?;
+    let meta_keys: std::collections::HashSet<String> = blob_keys
+        .iter()
+        .filter(|k| k.ends_with(".bin.meta"))
+        .cloned()
+        .collect();
     let mut blobs: Vec<BlobEntry> = Vec::new();
-    let mut i = 0;
-    while i < blob_keys.len() {
-        let key = &blob_keys[i];
-        if key.ends_with(".bin") {
+    for key in &blob_keys {
+        if key.ends_with(".bin") && !key.ends_with(".bin.meta") {
             let hash = key
                 .strip_prefix("blob/")
                 .unwrap()
@@ -110,7 +115,7 @@ pub fn export_from_io<A: AsyncFileIo>(io: &SyncFileIo<A>) -> Result<Vec<u8>, Str
                 .to_string();
             let data = sync.read(key)?.unwrap_or_default();
             let meta_key = format!("blob/{}.bin.meta", hash);
-            let meta = if i + 1 < blob_keys.len() && blob_keys[i + 1] == meta_key {
+            let meta = if meta_keys.contains(&meta_key) {
                 if let Some(mbytes) = sync.read(&meta_key)? {
                     postcard::from_bytes::<ContentMeta>(&mbytes).unwrap_or(ContentMeta {
                         mime_type: "application/octet-stream".into(),
@@ -130,7 +135,6 @@ pub fn export_from_io<A: AsyncFileIo>(io: &SyncFileIo<A>) -> Result<Vec<u8>, Str
             };
             blobs.push(BlobEntry { hash, data, meta });
         }
-        i += 1;
     }
 
     // Serialize entire bundle as a single postcard struct
