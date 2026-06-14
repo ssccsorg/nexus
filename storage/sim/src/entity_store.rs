@@ -1,272 +1,159 @@
-// ── EntityStore: structured key-value persistence abstraction ──────────
+// ── EntityStore: replaceable HashMap backend for FihStorage caches ──────
 //
-// A higher-level persistence boundary than AsyncFileIo. While AsyncFileIo
-// operates on raw file paths in a flat key-space, EntityStore knows about
-// record kinds (facts, intents, hints) and stores serialized records.
+// The single abstraction point for replacing FihStorage's in-memory
+// HashMap caches (FactCache, IntentCache, HintCache) with alternative
+// backends. Every EntityStore method mirrors the HashMap operations
+// that FihStorage currently calls directly.
 //
 // Implementations:
-//   - MemoryEntityStore: HashMap-backed, same behavior as current FihStorage
-//     caches. All operations are immediate (no async).
-//   - TonboEntityStore: Maps to Tonbo's Arrow RecordBatch interface.
-//     Each kind maps to a Tonbo table query with kind+key columns.
-//     Write durability is guaranteed by Tonbo's WAL.
-//   - HybridEntityStore: Memory + Tonbo combined (hot data in memory,
-//     cold data persisted).
+//   - MemoryEntityStore: RwLock<HashMap> — current behavior, always available
+//   - TonboEntityStore: (future) Tonbo WAL + Parquet for durability
 //
-// Relationship with AsyncFileIo:
+// Design decisions:
 //
-//   EntityStore is NOT a replacement for AsyncFileIo. They serve different
-//   abstraction levels:
+//   Owned values (not references):
+//     The trait returns `Option<V>` rather than `Option<&V>`. This avoids
+//     lifetime complexity from borrowing across RwLock boundaries and keeps
+//     the trait simple enough for Tonbo (which deals in owned RecordBatches).
+//     FihStorage's hot-path reads already clone values from the caches, so
+//     the overhead is identical to the current implementation.
 //
-//   AsyncFileIo (io.rs):
-//     Flat key-space: paths like "facts/f_hash.fact"
-//     Operations: read(path), write(path, data), list(prefix), delete(path)
-//     Caller manages serialization and path construction
-//     Used for: blob storage, chain files, direct IO fallback
+//   Per-kind instances (not unified):
+//     FihStorage uses three caches (FactCache, IntentCache, HintCache) with
+//     different value types. A single unified EntityStore<HashMap<String, V>>
+//     would lose type safety. Instead, each cache is its own EntityStore
+//     instance with the correct value type.
 //
-//   EntityStore (this file):
-//     Structured: kind + key (e.g., kind="facts/", key="f_hash")
-//     Operations: get(kind, key), insert(kind, key, value), scan(kind)
-//     Values are opaque Vec<u8> (caller serializes/deserializes)
-//     Used for: record persistence (facts, intents, hints)
-//
-//   FihStorage uses BOTH:
-//     - EntityStore for persistent record storage (reads/writes records)
-//     - AsyncFileIo for blob storage, chain files, cold IO fallback
-//     - Typed in-memory caches (FactCache etc.) for hot-path reads
-//
-// Why async?
-//
-//   Storage backends like Tonbo require async I/O. The trait uses async
-//   methods via #[async_trait]. Sync callers use SyncEntityStore wrapper
-//   (same pattern as AsyncFileIo + SyncFileIo).
-//
-//   SyncEntityStore does NOT introduce significant overhead because
-//   FihStorage buffers writes in pending WriteOps and flushes in batch.
-//   Individual EntityStore calls are amortized over the flush window.
+//   Sync (not async):
+//     Tonbo integration can wrap this with async internally. The trait is
+//     deliberately sync to match FihStorage's synchronous trait impls
+//     (FactCapable, IntentCapable, etc.).
 
 use std::collections::HashMap;
 use std::sync::RwLock;
 
-use async_trait::async_trait;
+// ── EntityStore trait ────────────────────────────────────────────────────
 
-/// Result type alias for EntityStore operations.
-pub type EntityResult<T> = Result<T, String>;
+/// A replaceable key-value store for FIH records.
+///
+/// Each EntityStore instance manages one record kind with its specific type:
+///   - `Box<dyn EntityStore<FactRecord>>`   for facts
+///   - `Box<dyn EntityStore<IntentRecord>>` for intents
+///   - `Box<dyn EntityStore<HintRecord>>`   for hints
+///
+/// Methods return owned values to avoid lifetime coupling with internal locks.
+pub trait EntityStore<V>: Send + Sync
+where
+    V: Send + Sync,
+{
+    /// Returns the value for `key`, or None if missing.
+    fn get(&self, key: &str) -> Option<V>;
 
-/// Structured key-value store with kind-based namespacing.
-///
-/// # Kind convention
-///
-/// Kinds match the path prefix convention used by FihStorage:
-///   - `"facts/"`   for FactRecord
-///   - `"intents/"` for IntentRecord
-///   - `"hints/"`   for HintRecord
-///
-/// Each kind is a flat namespace. Keys are unique within a kind.
-///
-/// # Thread safety
-///
-/// Implementations must be Send + Sync. The trait is object-safe via
-/// #[async_trait], allowing dynamic dispatch (Box<dyn EntityStore>).
-///
-/// # Tonbo mapping
-///
-/// A TonboEntityStore would map this to a single table:
-///
-/// ```sql
-/// CREATE TABLE entity_store (
-///     kind  TEXT,  -- PRIMARY KEY
-///     key   TEXT,  -- PRIMARY KEY
-///     value BLOB,
-///     PRIMARY KEY (kind, key)
-/// );
-/// ```
-///
-/// scan("facts/") → SELECT key, value FROM entity_store WHERE kind = "facts/"
-#[async_trait]
-pub trait EntityStore: Send + Sync {
-    /// Read a single record by kind + key.
-    /// Returns None if the record does not exist.
-    async fn get(&self, kind: &str, key: &str) -> EntityResult<Option<Vec<u8>>>;
+    /// Insert `value` at `key`. Returns the previous value, if any.
+    fn insert(&self, key: String, value: V) -> Option<V>;
 
-    /// Insert or update a record.
-    /// Overwrites any existing record with the same kind + key.
-    async fn insert(&self, kind: &str, key: String, value: Vec<u8>) -> EntityResult<()>;
+    /// Remove `key`. Returns the removed value, if any.
+    fn remove(&self, key: &str) -> Option<V>;
 
-    /// Delete a record. Succeeds (no-op) if the record does not exist.
-    async fn remove(&self, kind: &str, key: &str) -> EntityResult<()>;
+    /// Returns true if `key` exists.
+    fn contains_key(&self, key: &str) -> bool;
 
-    /// List all records in a kind. Returns (key, value) pairs.
-    /// The kind prefix is stripped from returned keys.
-    async fn scan(&self, kind: &str) -> EntityResult<Vec<(String, Vec<u8>)>>;
+    /// Returns the number of entries.
+    fn len(&self) -> usize;
 
-    /// Ensure all pending writes are durable.
-    /// For MemoryEntityStore this is a no-op.
-    /// For TonboEntityStore this calls flush on the WAL.
-    async fn flush(&self) -> EntityResult<()>;
+    /// Returns true if the store is empty.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 
-    /// Clear all records of a specific kind.
-    /// For MemoryEntityStore this drops the inner HashMap entry.
-    async fn clear_kind(&self, kind: &str) -> EntityResult<()>;
+    /// Returns all values.
+    fn values(&self) -> Vec<V>;
 
-    /// Clear all records. For testing/cleanup.
-    async fn clear_all(&self) -> EntityResult<()>;
+    /// Clear all entries.
+    fn clear(&self);
+
+    /// Retain only entries matching a predicate.
+    fn retain<F>(&self, f: F)
+    where
+        F: FnMut(&str, &mut V) -> bool + Send;
 }
 
-// ── SyncEntityStore wrapper ──────────────────────────────────────────────
-//
-// Bridges async EntityStore to synchronous callers via futures_executor::block_on.
-// Same pattern as SyncFileIo in io.rs.
+// ── MemoryEntityStore ────────────────────────────────────────────────────
 
-/// Wraps an async EntityStore into a blocking/sync interface.
-pub struct SyncEntityStore {
-    inner: Box<dyn EntityStore>,
-}
-
-impl SyncEntityStore {
-    pub fn new(inner: Box<dyn EntityStore>) -> Self {
-        Self { inner }
-    }
-
-    pub fn get(&self, kind: &str, key: &str) -> EntityResult<Option<Vec<u8>>> {
-        futures_executor::block_on(self.inner.get(kind, key))
-    }
-
-    pub fn insert(&self, kind: &str, key: String, value: Vec<u8>) -> EntityResult<()> {
-        futures_executor::block_on(self.inner.insert(kind, key, value))
-    }
-
-    pub fn remove(&self, kind: &str, key: &str) -> EntityResult<()> {
-        futures_executor::block_on(self.inner.remove(kind, key))
-    }
-
-    pub fn scan(&self, kind: &str) -> EntityResult<Vec<(String, Vec<u8>)>> {
-        futures_executor::block_on(self.inner.scan(kind))
-    }
-
-    pub fn flush(&self) -> EntityResult<()> {
-        futures_executor::block_on(self.inner.flush())
-    }
-
-    pub fn clear_kind(&self, kind: &str) -> EntityResult<()> {
-        futures_executor::block_on(self.inner.clear_kind(kind))
-    }
-
-    pub fn clear_all(&self) -> EntityResult<()> {
-        futures_executor::block_on(self.inner.clear_all())
-    }
-
-    /// Consume the wrapper and return the inner boxed trait object.
-    pub fn into_inner(self) -> Box<dyn EntityStore> {
-        self.inner
-    }
-}
-
-// ── MemoryEntityStore: HashMap-backed implementation ─────────────────────
-//
-// All operations are synchronous and O(1) average.
-// Values are stored as Vec<u8> (postcard-serialized records).
-// Thread-safe via RwLock<HashMap<kind, HashMap<key, value>>>.
-
-/// In-memory EntityStore backed by a nested HashMap.
+/// In-memory EntityStore backed by `RwLock<HashMap<String, V>>`.
 ///
-/// Storage layout:
-///   data: HashMap<kind, HashMap<key, value>>
-///   kind = "facts/"    → { "f_hash" → bytes, ... }
-///   kind = "intents/"  → { "i_hash" → bytes, ... }
-///   kind = "hints/"    → { "h_hash" → bytes, ... }
-pub struct MemoryEntityStore {
-    data: RwLock<HashMap<String, HashMap<String, Vec<u8>>>>,
+/// Exactly mirrors FihStorage's current cache behavior. Thread-safe.
+pub struct MemoryEntityStore<V> {
+    inner: RwLock<HashMap<String, V>>,
 }
 
-impl MemoryEntityStore {
+impl<V> MemoryEntityStore<V>
+where
+    V: Clone + Send + Sync + 'static,
+{
     pub fn new() -> Self {
         Self {
-            data: RwLock::new(HashMap::new()),
+            inner: RwLock::new(HashMap::new()),
         }
     }
 
-    /// Number of entries across all kinds.
-    pub fn len(&self) -> usize {
-        self.data
-            .read()
-            .unwrap()
-            .values()
-            .map(|m| m.len())
-            .sum()
-    }
-
-    /// Returns true if no entries exist.
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
+    /// Replace all contents from an iterator. Used by rebuild_cache.
+    pub fn replace_from(&self, iter: impl IntoIterator<Item = (String, V)>) {
+        let mut map = self.inner.write().unwrap();
+        map.clear();
+        map.extend(iter);
     }
 }
 
-impl Default for MemoryEntityStore {
+impl<V> Default for MemoryEntityStore<V>
+where
+    V: Clone + Send + Sync + 'static,
+{
     fn default() -> Self {
         Self::new()
     }
 }
 
-#[async_trait]
-impl EntityStore for MemoryEntityStore {
-    async fn get(&self, kind: &str, key: &str) -> EntityResult<Option<Vec<u8>>> {
-        let map = self.data.read().map_err(|e| e.to_string())?;
-        Ok(map.get(kind).and_then(|m| m.get(key).cloned()))
+impl<V> EntityStore<V> for MemoryEntityStore<V>
+where
+    V: Clone + Send + Sync + 'static,
+{
+    fn get(&self, key: &str) -> Option<V> {
+        self.inner.read().unwrap().get(key).cloned()
     }
 
-    async fn insert(&self, kind: &str, key: String, value: Vec<u8>) -> EntityResult<()> {
-        let mut map = self.data.write().map_err(|e| e.to_string())?;
-        map.entry(kind.to_string())
-            .or_default()
-            .insert(key, value);
-        Ok(())
+    fn insert(&self, key: String, value: V) -> Option<V> {
+        self.inner.write().unwrap().insert(key, value)
     }
 
-    async fn remove(&self, kind: &str, key: &str) -> EntityResult<()> {
-        let mut map = self.data.write().map_err(|e| e.to_string())?;
-        if let Some(inner) = map.get_mut(kind) {
-            inner.remove(key);
-        }
-        Ok(())
+    fn remove(&self, key: &str) -> Option<V> {
+        self.inner.write().unwrap().remove(key)
     }
 
-    async fn scan(&self, kind: &str) -> EntityResult<Vec<(String, Vec<u8>)>> {
-        let map = self.data.read().map_err(|e| e.to_string())?;
-        Ok(map
-            .get(kind)
-            .map(|m| {
-                m.iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect()
-            })
-            .unwrap_or_default())
+    fn contains_key(&self, key: &str) -> bool {
+        self.inner.read().unwrap().contains_key(key)
     }
 
-    async fn flush(&self) -> EntityResult<()> {
-        // Memory store is always "durable" — no-op.
-        Ok(())
+    fn len(&self) -> usize {
+        self.inner.read().unwrap().len()
     }
 
-    async fn clear_kind(&self, kind: &str) -> EntityResult<()> {
-        let mut map = self.data.write().map_err(|e| e.to_string())?;
-        map.remove(kind);
-        Ok(())
+    fn values(&self) -> Vec<V> {
+        self.inner.read().unwrap().values().cloned().collect()
     }
 
-    async fn clear_all(&self) -> EntityResult<()> {
-        let mut map = self.data.write().map_err(|e| e.to_string())?;
-        map.clear();
-        Ok(())
+    fn clear(&self) {
+        self.inner.write().unwrap().clear();
     }
-}
 
-impl Clone for MemoryEntityStore {
-    fn clone(&self) -> Self {
-        let data = self.data.read().unwrap().clone();
-        Self {
-            data: RwLock::new(data),
-        }
+    fn retain<F>(&self, mut f: F)
+    where
+        F: FnMut(&str, &mut V) -> bool + Send,
+    {
+        self.inner
+            .write()
+            .unwrap()
+            .retain(|k, v| f(k.as_str(), v));
     }
 }
 
@@ -274,141 +161,86 @@ impl Clone for MemoryEntityStore {
 mod tests {
     use super::*;
 
-    fn setup() -> SyncEntityStore {
-        SyncEntityStore::new(Box::new(MemoryEntityStore::new()))
-    }
-
     #[test]
     fn test_insert_and_get() {
-        let store = setup();
-        store
-            .insert("facts/", "f001".into(), b"fact data".to_vec())
-            .unwrap();
-        let result = store.get("facts/", "f001").unwrap();
-        assert_eq!(result, Some(b"fact data".to_vec()));
+        let store: MemoryEntityStore<String> = MemoryEntityStore::new();
+        store.insert("f001".into(), "fact data".into());
+        assert_eq!(store.get("f001"), Some("fact data".into()));
     }
 
     #[test]
     fn test_get_nonexistent() {
-        let store = setup();
-        assert!(store.get("facts/", "nonexistent").unwrap().is_none());
-    }
-
-    #[test]
-    fn test_get_nonexistent_kind() {
-        let store = setup();
-        assert!(store.get("nonexistent_kind/", "k").unwrap().is_none());
+        let store: MemoryEntityStore<String> = MemoryEntityStore::new();
+        assert_eq!(store.get("nonexistent"), None);
     }
 
     #[test]
     fn test_insert_overwrite() {
-        let store = setup();
-        store
-            .insert("facts/", "f001".into(), b"original".to_vec())
-            .unwrap();
-        store
-            .insert("facts/", "f001".into(), b"updated".to_vec())
-            .unwrap();
-        let result = store.get("facts/", "f001").unwrap();
-        assert_eq!(result, Some(b"updated".to_vec()));
+        let store: MemoryEntityStore<String> = MemoryEntityStore::new();
+        store.insert("f001".into(), "original".into());
+        store.insert("f001".into(), "updated".into());
+        assert_eq!(store.get("f001"), Some("updated".into()));
     }
 
     #[test]
     fn test_remove() {
-        let store = setup();
-        store
-            .insert("facts/", "f001".into(), b"data".to_vec())
-            .unwrap();
-        store.remove("facts/", "f001").unwrap();
-        assert!(store.get("facts/", "f001").unwrap().is_none());
+        let store: MemoryEntityStore<String> = MemoryEntityStore::new();
+        store.insert("f001".into(), "data".into());
+        store.remove("f001");
+        assert_eq!(store.get("f001"), None);
     }
 
     #[test]
-    fn test_remove_nonexistent() {
-        let store = setup();
-        // Should not error
-        store.remove("facts/", "nonexistent").unwrap();
+    fn test_contains_key() {
+        let store: MemoryEntityStore<String> = MemoryEntityStore::new();
+        assert!(!store.contains_key("f001"));
+        store.insert("f001".into(), "data".into());
+        assert!(store.contains_key("f001"));
     }
 
     #[test]
-    fn test_scan_kind() {
-        let store = setup();
-        store
-            .insert("facts/", "f_a".into(), b"a".to_vec())
-            .unwrap();
-        store
-            .insert("facts/", "f_b".into(), b"b".to_vec())
-            .unwrap();
-        store
-            .insert("intents/", "i_a".into(), b"intent".to_vec())
-            .unwrap();
-
-        let facts = store.scan("facts/").unwrap();
-        assert_eq!(facts.len(), 2);
-        assert!(facts.iter().any(|(k, v)| k == "f_a" && v == b"a"));
-        assert!(facts.iter().any(|(k, v)| k == "f_b" && v == b"b"));
-
-        let intents = store.scan("intents/").unwrap();
-        assert_eq!(intents.len(), 1);
+    fn test_len() {
+        let store: MemoryEntityStore<String> = MemoryEntityStore::new();
+        assert_eq!(store.len(), 0);
+        store.insert("f001".into(), "a".into());
+        store.insert("f002".into(), "b".into());
+        assert_eq!(store.len(), 2);
     }
 
     #[test]
-    fn test_scan_empty_kind() {
-        let store = setup();
-        let result = store.scan("empty/").unwrap();
-        assert!(result.is_empty());
+    fn test_values() {
+        let store: MemoryEntityStore<String> = MemoryEntityStore::new();
+        store.insert("f001".into(), "a".into());
+        store.insert("f002".into(), "b".into());
+        let mut vals = store.values();
+        vals.sort();
+        assert_eq!(vals, vec!["a".to_string(), "b".to_string()]);
     }
 
     #[test]
-    fn test_clear_kind() {
-        let store = setup();
-        store
-            .insert("facts/", "f001".into(), b"data".to_vec())
-            .unwrap();
-        store
-            .insert("intents/", "i001".into(), b"intent".to_vec())
-            .unwrap();
-        store.clear_kind("facts/").unwrap();
-        assert!(store.scan("facts/").unwrap().is_empty());
-        assert_eq!(store.scan("intents/").unwrap().len(), 1);
+    fn test_clear() {
+        let store: MemoryEntityStore<String> = MemoryEntityStore::new();
+        store.insert("f001".into(), "a".into());
+        store.clear();
+        assert_eq!(store.len(), 0);
     }
 
     #[test]
-    fn test_clear_all() {
-        let store = setup();
-        store
-            .insert("facts/", "f001".into(), b"data".to_vec())
-            .unwrap();
-        store
-            .insert("intents/", "i001".into(), b"intent".to_vec())
-            .unwrap();
-        store.clear_all().unwrap();
-        assert!(store.scan("facts/").unwrap().is_empty());
-        assert!(store.scan("intents/").unwrap().is_empty());
+    fn test_retain() {
+        let store: MemoryEntityStore<String> = MemoryEntityStore::new();
+        store.insert("f001".into(), "keep".into());
+        store.insert("f002".into(), "remove".into());
+        store.retain(|k, _| k != "f002");
+        assert!(store.contains_key("f001"));
+        assert!(!store.contains_key("f002"));
     }
 
     #[test]
-    fn test_flush_noop() {
-        let store = setup();
-        store.insert("facts/", "f".into(), b"x".to_vec()).unwrap();
-        store.flush().unwrap(); // Should not error
-        assert_eq!(store.get("facts/", "f").unwrap(), Some(b"x".to_vec()));
-    }
-
-    #[test]
-    fn test_clone_independence() {
-        let original = MemoryEntityStore::new();
-        let sync_orig = SyncEntityStore::new(Box::new(original));
-        sync_orig
-            .insert("facts/", "f001".into(), b"original".to_vec())
-            .unwrap();
-
-        // Clone the inner store
-        let cloned_inner = sync_orig.into_inner();
-        // We can't downcast, but we can verify the trait works
-        // This is a basic sanity test of the clone infrastructure
-        let sync_clone = SyncEntityStore::new(cloned_inner);
-        let result = sync_clone.get("facts/", "f001").unwrap();
-        assert_eq!(result, Some(b"original".to_vec()));
+    fn test_replace_from() {
+        let store: MemoryEntityStore<String> = MemoryEntityStore::new();
+        store.insert("f_old".into(), "old".into());
+        store.replace_from(vec![("f_new".into(), "new".into())]);
+        assert!(!store.contains_key("f_old"));
+        assert_eq!(store.get("f_new"), Some("new".into()));
     }
 }
