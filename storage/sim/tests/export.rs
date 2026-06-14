@@ -7,9 +7,7 @@
 use nexus_storage_sim::export::{export_from_io, import_into_io};
 use nexus_storage_sim::intent_status::IntentStatus;
 use nexus_storage_sim::io::SyncFileIo;
-use nexus_storage_sim::record::{
-    ContentMeta, FactRecord, HintRecord, IntentRecord,
-};
+use nexus_storage_sim::record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
 use nexus_storage_sim::sim_io::SimIo;
 
 // ── Helper: seed a SimIo with sample records ─────────────────────────────
@@ -25,8 +23,7 @@ fn seeded_io() -> SimIo {
         creator: "alice".into(),
         submitted_at: 1000,
     };
-    sync
-        .write(&fact.key(), &postcard::to_allocvec(&fact).unwrap())
+    sync.write(&fact.key(), &postcard::to_allocvec(&fact).unwrap())
         .unwrap();
 
     let intent = IntentRecord {
@@ -37,8 +34,7 @@ fn seeded_io() -> SimIo {
         status: IntentStatus::Submitted,
         created_at: 1001,
     };
-    sync
-        .write(&intent.key(), &postcard::to_allocvec(&intent).unwrap())
+    sync.write(&intent.key(), &postcard::to_allocvec(&intent).unwrap())
         .unwrap();
 
     let hint = HintRecord {
@@ -48,8 +44,7 @@ fn seeded_io() -> SimIo {
         submitted_at: 1002,
         ttl_secs: None,
     };
-    sync
-        .write(&hint.key(), &postcard::to_allocvec(&hint).unwrap())
+    sync.write(&hint.key(), &postcard::to_allocvec(&hint).unwrap())
         .unwrap();
 
     sync.write("blob/deadbeef.bin", b"hello world").unwrap();
@@ -57,12 +52,11 @@ fn seeded_io() -> SimIo {
         mime_type: "text/plain".into(),
         size: 11,
     };
-    sync
-        .write(
-            "blob/deadbeef.bin.meta",
-            &postcard::to_allocvec(&meta).unwrap(),
-        )
-        .unwrap();
+    sync.write(
+        "blob/deadbeef.bin.meta",
+        &postcard::to_allocvec(&meta).unwrap(),
+    )
+    .unwrap();
 
     io
 }
@@ -84,10 +78,7 @@ fn test_export_round_trip() {
     assert!(dst_sync.read("intents/i_i001.intent").unwrap().is_some());
     assert!(dst_sync.read("hints/h_h001.hint").unwrap().is_some());
     assert!(dst_sync.read("blob/deadbeef.bin").unwrap().is_some());
-    assert!(dst_sync
-        .read("blob/deadbeef.bin.meta")
-        .unwrap()
-        .is_some());
+    assert!(dst_sync.read("blob/deadbeef.bin.meta").unwrap().is_some());
 }
 
 // ── Empty IO test ────────────────────────────────────────────────────────
@@ -119,8 +110,7 @@ fn test_invalid_magic_rejected() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_export_import_fs_to_sim() {
-    let dir =
-        std::env::temp_dir().join(format!("fih_export_test_{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("fih_export_test_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
 
     let fs_io = nexus_storage_sim::fs_io::FsIo::new(&dir).unwrap();
@@ -133,8 +123,7 @@ fn test_export_import_fs_to_sim() {
         creator: "fs_user".into(),
         submitted_at: 2000,
     };
-    sync
-        .write(&fact.key(), &postcard::to_allocvec(&fact).unwrap())
+    sync.write(&fact.key(), &postcard::to_allocvec(&fact).unwrap())
         .unwrap();
 
     let bundle = export_from_io(&sync).unwrap();
@@ -144,8 +133,7 @@ fn test_export_import_fs_to_sim() {
     import_into_io(&sim_sync, &bundle).unwrap();
 
     let loaded: FactRecord =
-        postcard::from_bytes(&sim_sync.read("facts/f_f_fs.fact").unwrap().unwrap())
-            .unwrap();
+        postcard::from_bytes(&sim_sync.read("facts/f_f_fs.fact").unwrap().unwrap()).unwrap();
     assert_eq!(loaded.id, "f_fs");
     assert_eq!(loaded.blob_hash, "cafe01");
 
@@ -170,8 +158,7 @@ fn test_export_full_fih_lifecycle() {
         creator: "tester".into(),
         submitted_at: 100,
     };
-    sync
-        .write(&fa.key(), &postcard::to_allocvec(&fa).unwrap())
+    sync.write(&fa.key(), &postcard::to_allocvec(&fa).unwrap())
         .unwrap();
 
     let fb = FactRecord {
@@ -181,8 +168,7 @@ fn test_export_full_fih_lifecycle() {
         creator: "tester".into(),
         submitted_at: 101,
     };
-    sync
-        .write(&fb.key(), &postcard::to_allocvec(&fb).unwrap())
+    sync.write(&fb.key(), &postcard::to_allocvec(&fb).unwrap())
         .unwrap();
 
     let fc = FactRecord {
@@ -192,8 +178,7 @@ fn test_export_full_fih_lifecycle() {
         creator: "tester".into(),
         submitted_at: 102,
     };
-    sync
-        .write(&fc.key(), &postcard::to_allocvec(&fc).unwrap())
+    sync.write(&fc.key(), &postcard::to_allocvec(&fc).unwrap())
         .unwrap();
 
     let intent1 = IntentRecord {
@@ -204,8 +189,7 @@ fn test_export_full_fih_lifecycle() {
         status: IntentStatus::Submitted,
         created_at: 200,
     };
-    sync
-        .write(&intent1.key(), &postcard::to_allocvec(&intent1).unwrap())
+    sync.write(&intent1.key(), &postcard::to_allocvec(&intent1).unwrap())
         .unwrap();
 
     let intent2 = IntentRecord {
@@ -216,8 +200,7 @@ fn test_export_full_fih_lifecycle() {
         status: IntentStatus::Submitted,
         created_at: 201,
     };
-    sync
-        .write(&intent2.key(), &postcard::to_allocvec(&intent2).unwrap())
+    sync.write(&intent2.key(), &postcard::to_allocvec(&intent2).unwrap())
         .unwrap();
 
     let hint1 = HintRecord {
@@ -227,8 +210,7 @@ fn test_export_full_fih_lifecycle() {
         submitted_at: 300,
         ttl_secs: None,
     };
-    sync
-        .write(&hint1.key(), &postcard::to_allocvec(&hint1).unwrap())
+    sync.write(&hint1.key(), &postcard::to_allocvec(&hint1).unwrap())
         .unwrap();
 
     // Export from the seeded IO.
