@@ -19,7 +19,7 @@ pub mod session;
 pub mod sim_io;
 pub mod store;
 
-pub use entity_store::{EntityStore, MemoryEntityStore, SyncEntityStore};
+pub use entity_store::{EntityStore, MemoryEntityStore};
 pub use io::{AsyncFileIo, SyncFileIo, WriteOp};
 pub use sim_io::SimIo;
 pub use store::FihStorage;
