@@ -93,3 +93,69 @@ fn test_submit_hint_then_read() {
     assert_eq!(state.hints.len(), 1);
     assert_eq!(state.hints[0].content, "test hint");
 }
+
+/// Minimal functionality test: submit facts 1,2,3, intents a,b,c referencing
+/// them, and a hint with random string content. Verify all stored and readable.
+///
+/// This is the simplest possible "does the whole thing work" test — no flush,
+/// no rebuild, no time travel. Just submit and read.
+#[test]
+fn test_minimal_fih_lifecycle() {
+    let s = store();
+
+    // Three facts
+    for id in &["f_1", "f_2", "f_3"] {
+        s.submit_fact(&common::fact(id)).unwrap();
+    }
+
+    // Three intents referencing facts in various combinations
+    s.submit_intent(&common::intent("i_a", vec!["f_1"]))
+        .unwrap();
+    s.submit_intent(&common::intent("i_b", vec!["f_2"]))
+        .unwrap();
+    s.submit_intent(&common::intent("i_c", vec!["f_1", "f_3"]))
+        .unwrap();
+
+    // A hint with arbitrary string content
+    s.submit_hint(&Hint {
+        id: FihHash("h_guide".into()),
+        content: "random constraint string: xkcd-934".into(),
+        creator: "tester".into(),
+    })
+    .unwrap();
+
+    // Verify everything stored
+    let state = s.read_state();
+    assert_eq!(state.facts.len(), 3, "facts 1,2,3");
+    assert_eq!(state.intents.len(), 3, "intents a,b,c");
+    assert_eq!(state.hints.len(), 1, "one hint");
+
+    // Verify reverse index: which intents reference f_1?
+    let refs = s.intents_by_fact("f_1");
+    assert_eq!(refs.len(), 2, "f_1 referenced by i_a and i_c");
+    assert!(refs.contains(&"i_a".to_string()));
+    assert!(refs.contains(&"i_c".to_string()));
+
+    // Verify non-referenced fact has empty reverse index
+    assert!(s.intents_by_fact("f_2").len() == 1);
+    assert!(s.intents_by_fact("nonexistent").is_empty());
+}
+
+/// Minimal lifecycle with claim → conclude: verify state machine works.
+#[test]
+fn test_minimal_claim_conclude() {
+    let s = store();
+
+    s.submit_fact(&common::fact("f_target")).unwrap();
+    s.submit_intent(&common::intent("i_work", vec!["f_target"]))
+        .unwrap();
+
+    s.claim_intent("i_work", "agent").unwrap();
+    let state = s.read_state();
+    assert_eq!(state.intents[0].worker.as_deref(), Some("agent"));
+
+    s.conclude_intent("i_work", "result achieved").unwrap();
+    let state = s.read_state();
+    assert_eq!(state.facts.len(), 2, "original + conclusion fact");
+    assert!(state.intents[0].is_concluded);
+}

@@ -140,3 +140,72 @@ fn test_fact_ids_filter_independent_of_time() {
     assert_eq!(filtered.facts.len(), 1);
     assert_eq!(filtered.facts[0].id.0, "f_a");
 }
+
+// ── TimeIndex unit tests ──────────────────────────────────────────────────
+
+use nexus_storage_sim::index::TimeIndex;
+
+#[test]
+fn test_record_and_as_of() {
+    let idx = TimeIndex::new();
+    idx.record(100, "f001");
+    idx.record(200, "f002");
+    idx.record(300, "f003");
+
+    let at_150 = idx.as_of(150);
+    assert_eq!(at_150.len(), 1);
+    assert_eq!(at_150[0].1, "f001");
+
+    let at_300 = idx.as_of(300);
+    assert_eq!(at_300.len(), 3);
+}
+
+#[test]
+fn test_since() {
+    let idx = TimeIndex::new();
+    idx.record(100, "f001");
+    idx.record(200, "f002");
+    idx.record(300, "f003");
+
+    let after_150 = idx.since(150);
+    assert_eq!(after_150.len(), 2);
+    assert_eq!(after_150[0].1, "f002");
+
+    let after_300 = idx.since(300);
+    assert_eq!(after_300.len(), 0);
+}
+
+#[test]
+fn test_range() {
+    let idx = TimeIndex::new();
+    idx.record(100, "f001");
+    idx.record(200, "f002");
+    idx.record(300, "f003");
+    idx.record(400, "f004");
+
+    let mid = idx.range(150, 350);
+    assert_eq!(mid.len(), 2);
+    assert_eq!(mid[0].1, "f002");
+    assert_eq!(mid[1].1, "f003");
+}
+
+#[test]
+fn test_empty() {
+    let idx = TimeIndex::new();
+    assert!(idx.is_empty());
+    assert_eq!(idx.as_of(999).len(), 0);
+    assert_eq!(idx.since(0).len(), 0);
+}
+
+#[test]
+fn test_monotonic_preserved() {
+    let idx = TimeIndex::new();
+    // Simulate sequential timestamps
+    for i in 0..1000 {
+        idx.record((i * 10) as u64, &format!("f{:04}", i));
+    }
+    assert_eq!(idx.len(), 1000);
+    // as_of at midpoint
+    let half = idx.as_of(5000);
+    assert_eq!(half.len(), 501); // 0..=500 inclusive
+}
