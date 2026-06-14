@@ -12,8 +12,8 @@
 // Memory: contiguous Vec — cache-friendly, no per-node allocation.
 
 use std::collections::HashMap;
-use std::sync::atomic::AtomicU64;
 use std::sync::RwLock;
+use std::sync::atomic::AtomicU64;
 
 /// Append-only ordered index. Thread-safe via RwLock.
 ///

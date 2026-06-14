@@ -12,8 +12,8 @@
 //   - conclude_intent() passes real to_fact/concluded_at to try_conclude()
 //   - all timestamps flow through Now trait, never SystemTime::now() directly
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use nexus_model::{
     BlackboardError, BoardState, Content, EvictCapable, Fact, FactCapable, FihHash, FilterCapable,
@@ -24,8 +24,6 @@ use crate::entity_store::{EntityStore, MemoryEntityStore};
 use crate::index::FihCoord;
 use crate::io::{AsyncFileIo, SyncFileIo, WriteOp};
 use crate::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
-
-
 
 /// Chain entry format: serialized by flush_since, deserialized by import_chain_file.
 /// Named struct avoids postcard tuple field ordering ambiguity with empty vecs.
