@@ -7,8 +7,7 @@
 mod common;
 
 use nexus_model::{
-    Content, Fact, FactCapable, FihHash, Hint, HintCapable, Intent,
-    IntentCapable, StorageRead,
+    Content, Fact, FactCapable, FihHash, Hint, HintCapable, Intent, IntentCapable, StorageRead,
 };
 use nexus_storage_sim::{FihStorage, SimIo};
 

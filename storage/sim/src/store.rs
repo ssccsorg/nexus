@@ -662,9 +662,10 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
     }
 
     fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let mut record = self.intent_store.get(intent_id).ok_or_else(|| {
-            BlackboardError::NotFound(format!("Intent {intent_id} not found"))
-        })?;
+        let mut record = self
+            .intent_store
+            .get(intent_id)
+            .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
 
         let now = self.clock.now_secs();
         let new_status = record.status.try_claim(agent, now).map_err(|e| {
@@ -689,9 +690,10 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
     }
 
     fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let mut record = self.intent_store.get(intent_id).ok_or_else(|| {
-            BlackboardError::NotFound(format!("Intent {intent_id} not found"))
-        })?;
+        let mut record = self
+            .intent_store
+            .get(intent_id)
+            .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
 
         let now = self.clock.now_secs();
         let new_status = record.status.try_heartbeat(agent, now).map_err(|e| {
@@ -716,9 +718,10 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
     }
 
     fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let mut record = self.intent_store.get(intent_id).ok_or_else(|| {
-            BlackboardError::NotFound(format!("Intent {intent_id} not found"))
-        })?;
+        let mut record = self
+            .intent_store
+            .get(intent_id)
+            .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
 
         match &record.status {
             IntentStatus::Claimed { worker, .. } if worker == agent => {
@@ -750,9 +753,10 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
 
     /// Conclude an intent: transition Claimed → Concluded, produce result Fact.
     fn conclude_intent(&self, intent_id: &str, result: &str) -> Result<Fact, BlackboardError> {
-        let mut record = self.intent_store.get(intent_id).ok_or_else(|| {
-            BlackboardError::NotFound(format!("Intent {intent_id} not found"))
-        })?;
+        let mut record = self
+            .intent_store
+            .get(intent_id)
+            .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
 
         // Extract worker before consuming status
         let worker = match &record.status {
