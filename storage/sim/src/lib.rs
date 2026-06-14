@@ -10,6 +10,7 @@
 /// std::fs directory traversal are not available on wasm32-unknown-unknown.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod fs_io;
+pub mod entity_store;
 pub mod index;
 pub mod intent_status;
 pub mod io;
@@ -18,6 +19,7 @@ pub mod session;
 pub mod sim_io;
 pub mod store;
 
+pub use entity_store::{EntityStore, MemoryEntityStore, SyncEntityStore};
 pub use io::{AsyncFileIo, SyncFileIo, WriteOp};
 pub use sim_io::SimIo;
 pub use store::FihStorage;
