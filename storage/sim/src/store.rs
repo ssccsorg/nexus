@@ -937,33 +937,61 @@ impl<I: AsyncFileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
     }
 
     async fn read_state(&self) -> BoardState {
-        // Direct async IO: list + read from R2, no block_on.
-        let fact_keys = match self.io.list("facts/").await {
-            Ok(keys) => keys,
-            Err(_) => Vec::new(),
-        };
+        // Direct async IO: list + read from backing store, no block_on.
         let mut facts = Vec::new();
-        for key in &fact_keys {
-            if let Ok(Some(bytes)) = self.io.read(key).await {
-                if let Ok(r) = postcard::from_bytes::<FactRecord>(&bytes) {
-                    facts.push(Fact {
-                        id: FihHash(r.id.clone()),
-                        origin: r.origin.clone(),
-                        content: Content {
-                            mime_type: "application/json".into(),
-                            data: Vec::new(),
-                        },
-                        creator: r.creator.clone(),
-                    });
+        if let Ok(keys) = self.io.list("facts/").await {
+            for key in &keys {
+                if let Ok(Some(bytes)) = self.io.read(key).await {
+                    if let Ok(r) = postcard::from_bytes::<FactRecord>(&bytes) {
+                        facts.push(Fact {
+                            id: FihHash(r.id.clone()),
+                            origin: r.origin.clone(),
+                            content: Content { mime_type: "application/json".into(), data: Vec::new() },
+                            creator: r.creator.clone(),
+                        });
+                    }
                 }
             }
         }
 
-        BoardState {
-            facts,
-            intents: Vec::new(),
-            hints: Vec::new(),
+        let mut intents = Vec::new();
+        if let Ok(keys) = self.io.list("intents/").await {
+            for key in &keys {
+                if let Ok(Some(bytes)) = self.io.read(key).await {
+                    if let Ok(r) = postcard::from_bytes::<IntentRecord>(&bytes) {
+                        intents.push(Intent {
+                            id: FihHash(r.id.clone()),
+                            from_facts: r.from_facts.clone(),
+                            description: r.id.clone(),
+                            creator: r.creator.clone(),
+                            worker: None,
+                            to_fact_id: None,
+                            last_heartbeat_at: None,
+                            created_at: Some(r.created_at),
+                            is_concluded: matches!(r.status, IntentStatus::Concluded { .. }),
+                            concluded_at: None,
+                        });
+                    }
+                }
+            }
         }
+
+        let mut hints = Vec::new();
+        if let Ok(keys) = self.io.list("hints/").await {
+            for key in &keys {
+                if let Ok(Some(bytes)) = self.io.read(key).await {
+                    if let Ok(r) = postcard::from_bytes::<HintRecord>(&bytes) {
+                        hints.push(Hint {
+                            id: FihHash(r.id.clone()),
+                            content: r.content.clone(),
+                            creator: r.creator.clone(),
+                        });
+                    }
+                }
+            }
+        }
+
+        BoardState { facts, intents, hints }
     }
 }
 
@@ -971,13 +999,21 @@ impl<I: AsyncFileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
 
 impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
     async fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
-        // Direct async IO: write fact and blob records to R2.
+        // Write to IO and update in-memory cache for sync impl consistency.
         let record = FactRecord::from_model(fact, String::new(), 0);
         let bytes = postcard::to_allocvec(&record)
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-
         self.io.write(&record.key(), &bytes).await
             .map_err(|e| BlackboardError::Internal(e))?;
+        self.fact_store.insert(record.id.clone(), record);
+
+        // Update indices for sync impl consistency (time_range, flush, filter).
+        let ts = self.clock.now_nanos();
+        self.coord.by_time.record(ts, &fact.id.0);
+        self.coord.by_origin.borrow_mut()
+            .entry(fact.origin.clone()).or_default().push(fact.id.0.clone());
+        self.coord.ref_counts.borrow_mut()
+            .entry(fact.id.0.clone()).or_insert_with(|| AtomicU64::new(0));
 
         Ok(fact.id.clone())
     }
@@ -998,6 +1034,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncHintCapable for FihStorage<I> {
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.io.write(&record.key(), &bytes).await
             .map_err(|e| BlackboardError::Internal(e))?;
+        self.hint_store.insert(record.id.clone(), record);
         Ok(())
     }
 }
@@ -1018,6 +1055,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.io.write(&record.key(), &bytes).await
             .map_err(|e| BlackboardError::Internal(e))?;
+        self.intent_store.insert(record.id.clone(), record);
         Ok(intent.id.clone())
     }
 
