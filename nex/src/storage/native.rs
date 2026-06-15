@@ -133,12 +133,12 @@ impl<I: nexus_storage_sim::io::AsyncFileIo> NativeBlackboard<I> {
     /// Rebuild in-memory cache from IO storage. Call on cold start
     /// to restore previous state from persistent backend (R2, fs, etc.).
     pub fn rebuild_cache(&self) -> Result<(), String> {
-        self.storage.rebuild_cache()
+        futures_executor::block_on(self.storage.rebuild_cache())
     }
 
     /// Flush pending writes to IO storage. Call after each write
     /// operation to ensure durability.
     pub fn flush_pending(&self) -> Result<(), String> {
-        self.storage.flush_pending()
+        futures_executor::block_on(self.storage.flush_pending())
     }
 }

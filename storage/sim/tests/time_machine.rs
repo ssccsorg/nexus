@@ -13,6 +13,7 @@ use nexus_model::{
     Content, EvictCapable, Fact, FactCapable, FihHash, FilterCapable, FlushCapable, FlushCursor,
     FlushResult, Hint, HintCapable, Intent, IntentCapable, StateFilter, StorageRead,
 };
+use futures_executor::block_on;
 use nexus_storage_sim::{FihStorage, SimIo, SyncFileIo};
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -104,7 +105,7 @@ fn test_delta_chain_reconstruction() {
 
     // Reconstruct from IO — all 3 facts should be present
     let store2 = FihStorage::new(io, "tm");
-    store2.rebuild_cache().unwrap();
+    block_on(store2.rebuild_cache()).unwrap();
     let state = StorageRead::read_state(&store2);
     assert_eq!(
         state.facts.len(),
@@ -131,11 +132,11 @@ fn test_storage_migration() {
     submit_fact(&src, "f1", "data1");
     submit_fact(&src, "f2", "data2");
     submit_intent(&src, "i1", &["f1", "f2"]);
-    src.flush_pending().unwrap();
+    block_on(src.flush_pending()).unwrap();
 
     // Destination store — reads from same io
     let dst = FihStorage::new(io, "tm");
-    dst.rebuild_cache().unwrap();
+    block_on(dst.rebuild_cache()).unwrap();
 
     let state = StorageRead::read_state(&dst);
     assert_eq!(state.facts.len(), 2);
@@ -191,7 +192,7 @@ fn test_content_dedup() {
 
     submit_fact(&store, "f_dup_a", "shared content");
     submit_fact(&store, "f_dup_b", "shared content");
-    store.flush_pending().unwrap();
+    block_on(store.flush_pending()).unwrap();
 
     let blob_keys = SyncFileIo::new(io).list("blob/").unwrap();
     // "shared content" hash → exactly 1 blob entry (not 2)
@@ -272,7 +273,7 @@ fn test_chain_order_preservation() {
 fn test_empty_statespace_is_valid() {
     let io = SimIo::new();
     let store = FihStorage::new(io.clone(), "tm");
-    store.flush_pending().unwrap();
+    block_on(store.flush_pending()).unwrap();
 
     let state = StorageRead::read_state(&store);
     assert!(state.facts.is_empty());

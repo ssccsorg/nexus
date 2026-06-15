@@ -190,9 +190,9 @@ fn main() {
             },
         )
         .unwrap();
-        store.flush_pending().unwrap();
+        futures_executor::block_on(store.flush_pending()).unwrap();
         let store2 = FihStorage::new(io, "verify");
-        store2.rebuild_cache().unwrap();
+        futures_executor::block_on(store2.rebuild_cache()).unwrap();
         let state = StorageRead::read_state(&store2);
         assert_eq!(state.facts.len(), 1);
         assert_eq!(state.facts[0].content.data, b"flush test");

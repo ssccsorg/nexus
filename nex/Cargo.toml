@@ -12,6 +12,7 @@ postcard = { version = "1", features = ["alloc"] }
 serde = { workspace = true }
 serde_json = "1"
 log = { workspace = true }
+futures-executor = "0.3"
 nexus-storage-sim = { path = "../storage/sim", optional = true }
 
 [features]

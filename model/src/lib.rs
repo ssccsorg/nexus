@@ -49,3 +49,4 @@ pub use error::BlackboardError;
 pub use fih::{BoardState, Content, Fact, FihHash, Hint, Intent};
 pub use interner::Interner;
 pub use storage::*;
+pub use storage::async_impl::{AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead};

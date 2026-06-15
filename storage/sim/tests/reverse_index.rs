@@ -10,6 +10,7 @@
 
 mod common;
 
+use futures_executor::block_on;
 use nexus_model::{Content, Fact, FactCapable, FihHash, Intent, IntentCapable};
 use nexus_storage_sim::{FihStorage, SimIo};
 
@@ -92,10 +93,10 @@ fn test_by_from_fact_rebuild_from_io() {
     FactCapable::submit_fact(&store, &fact("f_x")).unwrap();
     IntentCapable::submit_intent(&store, &intent("i_ref", vec!["f_x"])).unwrap();
 
-    store.flush_pending().unwrap();
+    block_on(store.flush_pending()).unwrap();
 
     let store2 = FihStorage::new(io, "test");
-    store2.rebuild_cache().unwrap();
+    block_on(store2.rebuild_cache()).unwrap();
 
     let refs = store2.intents_by_fact("f_x");
     assert_eq!(refs.len(), 1);
