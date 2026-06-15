@@ -11,9 +11,8 @@
 //
 // Memory: contiguous Vec — cache-friendly, no per-node allocation.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::sync::atomic::AtomicU64;
 
 /// Append-only ordered index. Thread-local via RefCell.
 ///
@@ -118,7 +117,8 @@ where
 //   ref_counts:  fact_id → number of referencing Intents
 
 /// Reference counts: fact_id → number of Intents referencing this Fact.
-pub(crate) type RefCounts = HashMap<String, AtomicU64>;
+/// Single-threaded: uses `Cell<u64>` (no atomic needed).
+pub(crate) type RefCounts = HashMap<String, Cell<u64>>;
 
 /// Origin index: origin → [fact_id, ...]
 pub(crate) type OriginIndex = HashMap<String, Vec<String>>;

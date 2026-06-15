@@ -12,9 +12,8 @@
 //   - conclude_intent() passes real to_fact/concluded_at to try_conclude()
 //   - all timestamps flow through Now trait, never SystemTime::now() directly
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::ops::Range;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use nexus_model::{
     BlackboardError, BoardState, Content, EvictCapable, Fact, FactCapable, FihHash, FilterCapable,
@@ -189,13 +188,13 @@ impl<I: AsyncFileIo> FihStorage<I> {
                 .ref_counts
                 .borrow_mut()
                 .entry(r.id.clone())
-                .or_insert_with(|| AtomicU64::new(0));
+                .or_insert_with(|| Cell::new(0));
         }
 
         for r in &intents {
             for fid in &r.from_facts {
                 if let Some(rc) = self.coord.ref_counts.borrow().get(fid) {
-                    rc.fetch_add(1, Ordering::Relaxed);
+                    rc.set(rc.get() + 1);
                 }
                 self.coord
                     .by_fact
@@ -227,6 +226,17 @@ impl<I: AsyncFileIo> FihStorage<I> {
     fn enqueue_content(&self, content: &Content) -> Result<String, String> {
         let blob_hash = content_hash(&content.data);
         let blob_path = format!("blob/{}.bin", blob_hash);
+
+        // Check pending buffer first to avoid duplicate PUTs.
+        // Cheap: linear scan over pending ops (typically < 100).
+        if self
+            .pending
+            .borrow()
+            .iter()
+            .any(|op| matches!(op, WriteOp::Write { path, .. } if *path == blob_path))
+        {
+            return Ok(blob_hash);
+        }
 
         self.pending.borrow_mut().push(WriteOp::Write {
             path: blob_path,
@@ -280,9 +290,12 @@ impl<I: AsyncFileIo> FihStorage<I> {
             };
         }
 
-        // No data in pending — return empty content. The actual blob
-        // lives in R2 but we avoid sync_read here because sync trait
-        // impls do not perform IO.
+        // No data in pending — return empty content.
+        // The async path (`AsyncStorageRead::read_state`) calls `load_blob`
+        // directly to fetch from IO. The sync path only has access to
+        // in-memory caches; after `flush_pending` + `rebuild_cache` the
+        // content lives in IO but `load_content` cannot reach it without
+        // performing synchronous IO, which is intentionally avoided.
         Content {
             mime_type: default_mime.to_string(),
             data: Vec::new(),
@@ -291,10 +304,13 @@ impl<I: AsyncFileIo> FihStorage<I> {
 }
 
 fn content_hash(data: &[u8]) -> String {
-    // WASM-safe: no hasher dependency, just use data length as identity.
-    // In production, use SHA-256. For append-only FIH this is fine
-    // because blob_hash is only used for file naming, not security.
-    format!("{}", data.len())
+    // Simple WASM-compatible hash. Uses std::hash::DefaultHasher which
+    // works on all targets including wasm32-unknown-unknown.
+    // In production, replace with SHA-256 or BLAKE3.
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    data.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
 }
 
 /// Load a content blob from IO by hash. Returns empty Content if not found.
@@ -428,7 +444,7 @@ impl<I: AsyncFileIo> FactCapable for FihStorage<I> {
             .ref_counts
             .borrow_mut()
             .entry(fact.id.0.clone())
-            .or_insert_with(|| AtomicU64::new(0));
+            .or_insert_with(|| Cell::new(0));
 
         Ok(fact.id.clone())
     }
@@ -482,7 +498,7 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
             let refs = self.coord.ref_counts.borrow();
             for fid in &intent.from_facts {
                 if let Some(rc) = refs.get(fid) {
-                    rc.fetch_add(1, Ordering::Relaxed);
+                    rc.set(rc.get() + 1);
                 }
             }
         }
@@ -660,7 +676,7 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
             if let Some(r) = self.intent_store.get(intent_id) {
                 for fid in &r.from_facts {
                     if let Some(rc) = refs.get(fid) {
-                        rc.fetch_sub(1, Ordering::Relaxed);
+                        rc.set(rc.get() - 1);
                     }
                 }
             }
@@ -703,38 +719,38 @@ impl<I: AsyncFileIo> EvictCapable for FihStorage<I> {
 
     fn evict_before(&self, before: &str) -> Result<u64, String> {
         let before_secs: u64 = before.parse().unwrap_or(0);
-        let removed = std::sync::Arc::new(AtomicU64::new(0));
-        let removed_clone = removed.clone();
+        let removed = std::rc::Rc::new(Cell::new(0u64));
+        let removed_clone = std::rc::Rc::clone(&removed);
 
         self.hint_store.retain(Box::new(move |_, r| {
             if r.submitted_at < before_secs {
-                removed_clone.fetch_add(1, Ordering::Relaxed);
+                removed_clone.set(removed_clone.get() + 1);
                 false
             } else {
                 true
             }
         }));
 
-        Ok(removed.load(Ordering::Relaxed))
+        Ok(removed.get())
     }
 
     fn evict_stale_intents(&self, older_than_secs: u64) -> Result<u64, String> {
         let now = self.clock.now_secs();
         let cutoff = now.saturating_sub(older_than_secs);
 
-        let removed = std::sync::Arc::new(AtomicU64::new(0));
-        let removed_clone = removed.clone();
+        let removed = std::rc::Rc::new(Cell::new(0u64));
+        let removed_clone = std::rc::Rc::clone(&removed);
 
         self.intent_store.retain(Box::new(move |_, r| {
             if matches!(r.status, IntentStatus::Submitted) && r.created_at < cutoff {
-                removed_clone.fetch_add(1, Ordering::Relaxed);
+                removed_clone.set(removed_clone.get() + 1);
                 false
             } else {
                 true
             }
         }));
 
-        Ok(removed.load(Ordering::Relaxed))
+        Ok(removed.get())
     }
 }
 // ── FilterCapable ────────────────────────────────────────────────────────
@@ -935,7 +951,11 @@ impl<I: AsyncFileIo> FlushCapable for FihStorage<I> {
         });
 
         // Write pending batch to IO via block_on since FlushCapable is sync.
+        // On WASM, pending ops are silently discarded (sync IO is not
+        // available; use AsyncFlushCapable instead).
+        #[allow(unused_variables)]
         let ops = std::mem::take(&mut *self.pending.try_borrow_mut().map_err(|e| e.to_string())?);
+        #[cfg(not(target_arch = "wasm32"))]
         if !ops.is_empty() {
             futures_executor::block_on(self.io.apply_batch(&ops))?;
         }
@@ -985,14 +1005,36 @@ impl<I: AsyncFileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
                     intents.push(Intent {
                         id: FihHash(r.id.clone()),
                         from_facts: r.from_facts.clone(),
-                        description: r.id.clone(),
+                        description: {
+                            if r.description_hash.is_empty() {
+                                r.id.clone()
+                            } else {
+                                let c = load_blob(&self.io, &r.description_hash).await;
+                                String::from_utf8_lossy(&c.data).to_string()
+                            }
+                        },
                         creator: r.creator.clone(),
-                        worker: None,
-                        to_fact_id: None,
-                        last_heartbeat_at: None,
+                        worker: match &r.status {
+                            IntentStatus::Claimed { worker, .. }
+                            | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
+                            IntentStatus::Submitted => None,
+                        },
+                        to_fact_id: match &r.status {
+                            IntentStatus::Concluded { to_fact, .. } => Some(to_fact.clone()),
+                            _ => None,
+                        },
+                        last_heartbeat_at: match &r.status {
+                            IntentStatus::Claimed {
+                                last_heartbeat_at, ..
+                            } => Some(*last_heartbeat_at),
+                            _ => None,
+                        },
                         created_at: Some(r.created_at),
-                        is_concluded: matches!(r.status, IntentStatus::Concluded { .. }),
-                        concluded_at: None,
+                        is_concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
+                        concluded_at: match &r.status {
+                            IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
+                            _ => None,
+                        },
                     });
                 }
             }
@@ -1055,7 +1097,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
             .ref_counts
             .borrow_mut()
             .entry(fact.id.0.clone())
-            .or_insert_with(|| AtomicU64::new(0));
+            .or_insert_with(|| Cell::new(0));
 
         Ok(fact.id.clone())
     }
