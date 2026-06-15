@@ -15,28 +15,7 @@
     }
   ],
 
-  "migrations": [
-    {
-      "tag": "v3",
-      "deleted_classes": ["FihDO"]
-    }
-  ],
-
-  "limits": {
-    "cpu_ms": 300000
-  },
-
   "observability": {
-    "logs": {
-      "enabled": true,
-      "invocation_logs": true
-    },
-    "traces": {
-      "enabled": true
-    }
-  },
-
-  "vars": {
-    "DEPLOYMENT_ENV": "dev"
+    "logs": { "enabled": true, "invocation_logs": true }
   }
 }

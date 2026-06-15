@@ -62,7 +62,7 @@ pub struct FihStorage<I: AsyncFileIo> {
 
 impl<I: AsyncFileIo> FihStorage<I> {
     pub fn new(io: I, project_id: &str) -> Self {
-        Self::with_clock(io, project_id, Box::new(nexus_model::SystemClock))
+        Self::with_clock(io, project_id, Box::new(crate::SystemClock))
     }
 
     pub fn with_clock(io: I, project_id: &str, clock: Box<dyn Now + Send + Sync>) -> Self {
@@ -73,7 +73,7 @@ impl<I: AsyncFileIo> FihStorage<I> {
     /// immediately flushes pending ops to IO for durability.
     /// Useful for R2-backed or direct-write deployments.
     pub fn with_auto_flush(io: I, project_id: &str) -> Self {
-        Self::with_all(io, project_id, Box::new(nexus_model::SystemClock), true)
+        Self::with_all(io, project_id, Box::new(crate::SystemClock), true)
     }
 
     /// Full constructor with all options.

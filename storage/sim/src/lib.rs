@@ -6,6 +6,7 @@
 // All FIH trait implementations are sync. IO is enqueued as WriteOps in a
 // buffer and flushed by the outer FihSession layer (see session.rs).
 
+pub mod clock;
 pub mod entity_store;
 pub mod export;
 /// Cloudflare R2-backed IO. Gated behind `cf` feature.
@@ -23,6 +24,7 @@ pub mod session;
 pub mod sim_io;
 pub mod store;
 
+pub use clock::SystemClock;
 pub use entity_store::{EntityStore, MemoryEntityStore};
 pub use io::{AsyncFileIo, SyncFileIo, WriteOp};
 pub use sim_io::SimIo;
