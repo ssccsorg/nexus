@@ -7,7 +7,7 @@
 use nexus_model::{
     AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable,
     AsyncHintCapable, AsyncIntentCapable, AsyncScanCapable, AsyncStorageRead,
-    AsyncTimeRangeCapable, Content, Fact, FihHash, FlushCursor, Hint, Intent, StateFilter,
+    AsyncTimeRangeCapable, FihHash, FlushCursor, Hint, StateFilter,
 };
 use nexus_storage_sim::FihStorage;
 use nexus_storage_sim::SimIo;
@@ -63,7 +63,50 @@ fn test_async_submit_hint() {
     assert_eq!(state.hints.len(), 1);
 }
 
-// ── AsyncIntentCapable ────────────────────────────────────────────────
+// ── AsyncIntentCapable lifecycle ──────────────────────────────────────
+
+#[test]
+fn test_async_claim_intent() {
+    let store = setup();
+    let f = common::fact("f_claim");
+    futures_executor::block_on(store.submit_fact(&f)).unwrap();
+    let intent = common::intent("i_claim", vec!["f_claim"]);
+    futures_executor::block_on(store.submit_intent(&intent)).unwrap();
+
+    futures_executor::block_on(store.claim_intent("i_claim", "agent1")).unwrap();
+
+    // Claimed by someone else should conflict
+    let err = futures_executor::block_on(store.claim_intent("i_claim", "agent2"));
+    assert!(err.is_err());
+}
+
+#[test]
+fn test_async_conclude_intent() {
+    let store = setup();
+    let f = common::fact("f_conc");
+    futures_executor::block_on(store.submit_fact(&f)).unwrap();
+    let intent = common::intent("i_conc", vec!["f_conc"]);
+    futures_executor::block_on(store.submit_intent(&intent)).unwrap();
+    futures_executor::block_on(store.claim_intent("i_conc", "agent1")).unwrap();
+
+    let result = futures_executor::block_on(store.conclude_intent("i_conc", "done"));
+    assert!(result.is_ok());
+    let fact = result.unwrap();
+    assert!(fact.id.0.starts_with("f_concl_"));
+}
+
+#[test]
+fn test_async_conclude_unclaimed_fails() {
+    let store = setup();
+    let f = common::fact("f_unc");
+    futures_executor::block_on(store.submit_fact(&f)).unwrap();
+    let intent = common::intent("i_unc", vec!["f_unc"]);
+    futures_executor::block_on(store.submit_intent(&intent)).unwrap();
+
+    // Not claimed → conclude should fail
+    let err = futures_executor::block_on(store.conclude_intent("i_unc", "done"));
+    assert!(err.is_err());
+}
 
 #[test]
 fn test_async_submit_intent() {

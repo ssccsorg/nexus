@@ -86,6 +86,24 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             }
         }
 
+        "/claim" => {
+            match s.claim_intent(&qv(&q, "id"), &qv(&q, "agent")).await {
+                Ok(()) => Response::from_json(&serde_json::json!({"status":"claimed"})),
+                Err(e) => {
+                    let msg = format!("{:?}", e);
+                    let code = if msg.contains("Conflict") { 409 } else if msg.contains("not found") { 404 } else { 500 };
+                    Response::error(msg, code)
+                }
+            }
+        }
+
+        "/conclude" => {
+            match s.conclude_intent(&qv(&q, "id"), &qv(&q, "result")).await {
+                Ok(fact) => Response::from_json(&serde_json::json!({"status":"concluded","fact_id": fact.id.0})),
+                Err(e) => Response::error(format!("{:?}", e), 500),
+            }
+        }
+
         "/state" => {
             let state = s.read_state().await;
             Response::from_json(&state)
