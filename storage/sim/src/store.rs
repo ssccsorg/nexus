@@ -1037,3 +1037,107 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
         Err(BlackboardError::Internal("conclude not implemented in async path".into()))
     }
 }
+
+// ── AsyncFilterCapable (delegates to sync, no IO) ────────────────────────
+
+impl<I: AsyncFileIo> nexus_model::AsyncFilterCapable for FihStorage<I> {
+    async fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
+        FilterCapable::read_state_filtered(self, filter)
+    }
+}
+
+// ── AsyncEvictCapable (delegates to sync, no IO) ─────────────────────────
+
+impl<I: AsyncFileIo> nexus_model::AsyncEvictCapable for FihStorage<I> {
+    async fn approximate_size(&self) -> usize {
+        EvictCapable::approximate_size(self)
+    }
+
+    async fn evict_before(&self, before: &str) -> Result<u64, String> {
+        EvictCapable::evict_before(self, before)
+    }
+
+    async fn evict_stale_intents(&self, older_than_secs: u64) -> Result<u64, String> {
+        EvictCapable::evict_stale_intents(self, older_than_secs)
+    }
+}
+
+// ── AsyncScanCapable (delegates to sync, no IO) ──────────────────────────
+
+impl<I: AsyncFileIo> nexus_model::AsyncScanCapable for FihStorage<I> {
+    async fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
+        ScanCapable::scan_partition(self, partition)
+    }
+}
+
+// ── AsyncTimeRangeCapable (delegates to sync, no IO) ─────────────────────
+
+impl<I: AsyncFileIo> nexus_model::AsyncTimeRangeCapable for FihStorage<I> {
+    async fn time_range(&self) -> Option<Range<String>> {
+        TimeRangeCapable::time_range(self)
+    }
+}
+
+// ── AsyncFlushCapable (IO: flush_pending via await) ──────────────────────
+
+impl<I: AsyncFileIo> nexus_model::AsyncFlushCapable for FihStorage<I> {
+    async fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
+        let since_ts = cursor.last_flushed_at;
+        let now_ts = self.clock.now_nanos();
+
+        let delta_ids: Vec<(String, u64)> = self
+            .coord
+            .by_time
+            .since(&since_ts)
+            .into_iter()
+            .map(|(ts, id)| (id, ts))
+            .collect();
+        let records_flushed = delta_ids.len() as u64;
+
+        if records_flushed == 0 {
+            return Ok(FlushResult {
+                records_flushed: 0,
+                new_cursor: FlushCursor {
+                    last_flushed_at: now_ts,
+                    partition: cursor.partition.clone(),
+                },
+            });
+        }
+
+        let mut facts = Vec::new();
+        let mut intents = Vec::new();
+        for (id, _) in &delta_ids {
+            if let Some(record) = self.fact_store.get(id) {
+                facts.push(record);
+            }
+            if let Some(record) = self.intent_store.get(id) {
+                intents.push(record);
+            }
+        }
+
+        let entry = ChainEntry {
+            prev_cursor: cursor.last_flushed_at,
+            records_flushed,
+            facts,
+            intents,
+        };
+        let chain_bytes =
+            postcard::to_allocvec(&entry).map_err(|e| format!("serialize chain: {e}"))?;
+
+        let chain_path = format!("flush/{}/cursor_{}.chain", cursor.partition, now_ts);
+        self.pending.borrow_mut().push(WriteOp::Write {
+            path: chain_path,
+            data: chain_bytes,
+        });
+
+        self.flush_pending().await?;
+
+        Ok(FlushResult {
+            records_flushed,
+            new_cursor: FlushCursor {
+                last_flushed_at: now_ts,
+                partition: cursor.partition.clone(),
+            },
+        })
+    }
+}

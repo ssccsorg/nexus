@@ -1,14 +1,13 @@
-// ── Async storage traits: async counterparts of FactCapable, StorageRead, etc.
+// ── Async storage traits: async counterparts of sync storage traits.
 //
-// These traits mirror the sync versions but use `async fn` (AFIT, Rust 1.75+).
-// Backends that implement these can be used directly in async contexts
-// (CF Workers, tokio, wasm-bindgen) without `futures_executor::block_on`.
-//
-// The sync traits (`FactCapable`, `StorageRead`, etc.) remain unchanged for
-// native/blocking use. A backend implements whichever set fits its runtime.
+// These traits mirror the sync versions but use `async fn` (AFIT).
+// Backends implement whichever set fits their runtime.
+// All memory-only methods delegate to the sync impl directly.
 
 use crate::error::BlackboardError;
 use crate::fih::{BoardState, Fact, FihHash, Hint, Intent};
+use crate::storage::{FlushCursor, FlushResult, PartitionData, StateFilter};
+use std::ops::Range;
 
 /// Async counterpart of [`super::read::StorageRead`].
 pub trait AsyncStorageRead {
@@ -33,4 +32,31 @@ pub trait AsyncIntentCapable: AsyncStorageRead {
     async fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
     async fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
     async fn conclude_intent(&self, intent_id: &str, result: &str) -> Result<crate::fih::Fact, BlackboardError>;
+}
+
+/// Async counterpart of [`super::filter::FilterCapable`].
+pub trait AsyncFilterCapable: AsyncStorageRead {
+    async fn read_state_filtered(&self, filter: &StateFilter) -> BoardState;
+}
+
+/// Async counterpart of [`super::evict::EvictCapable`].
+pub trait AsyncEvictCapable: AsyncStorageRead {
+    async fn approximate_size(&self) -> usize;
+    async fn evict_before(&self, before: &str) -> Result<u64, String>;
+    async fn evict_stale_intents(&self, older_than_secs: u64) -> Result<u64, String>;
+}
+
+/// Async counterpart of [`super::scan::ScanCapable`].
+pub trait AsyncScanCapable: AsyncStorageRead {
+    async fn scan_partition(&self, partition: &str) -> Result<PartitionData, String>;
+}
+
+/// Async counterpart of [`super::time_range::TimeRangeCapable`].
+pub trait AsyncTimeRangeCapable: AsyncStorageRead {
+    async fn time_range(&self) -> Option<Range<String>>;
+}
+
+/// Async counterpart of [`super::flush::FlushCapable`].
+pub trait AsyncFlushCapable: AsyncStorageRead {
+    async fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String>;
 }
