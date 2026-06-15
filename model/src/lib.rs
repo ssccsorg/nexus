@@ -40,7 +40,7 @@ pub mod interner;
 pub mod storage;
 
 pub use blackboard::Blackboard;
-pub use clock::{Now, SystemClock};
+pub use clock::Now;
 pub use detection::{
     ContradictionDetection, DetectionCapable, DetectionCheckpoint, DetectionOutput, FullDetection,
     GapDetection, StateChangeDetection, TaskStates,

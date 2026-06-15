@@ -50,7 +50,7 @@
 
 use super::flush_blob_prefix;
 use log;
-use nexus_model::{BlobStore, MetaStore, Now, ObjectStore, SystemClock};
+use nexus_model::{BlobStore, MetaStore, Now, ObjectStore};
 use nexus_model::{
     BoardState, ColdStorage, EvictCapable, FlushCapable, FlushCursor, FlushResult, PartitionData,
     ScanCapable, StorageRead, TimeRangeCapable,
@@ -80,7 +80,7 @@ use std::ops::Range;
 /// - `cursor` → JSON FlushCursor
 /// - `snapshot_ts` → timestamp string
 #[derive(Clone)]
-pub struct CompositeColdStorage<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now = SystemClock> {
+pub struct CompositeColdStorage<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> {
     blob: B,
     object: O,
     meta: M,
@@ -196,10 +196,10 @@ impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> CompositeColdStorage<B,
     }
 }
 
-// ── SystemClock convenience constructor ─────────────────────────────────────
+// ── SystemClock convenience constructor ───────────────────────────────
 
 impl<B: BlobStore + Clone, O: ObjectStore, M: MetaStore + Clone>
-    CompositeColdStorage<B, O, M, SystemClock>
+    CompositeColdStorage<B, O, M, nexus_storage_sim::SystemClock>
 {
     pub fn new_with_system_clock(
         blob: B,
@@ -211,7 +211,7 @@ impl<B: BlobStore + Clone, O: ObjectStore, M: MetaStore + Clone>
             blob,
             object,
             meta,
-            clock: SystemClock,
+            clock: nexus_storage_sim::SystemClock,
             project_id: project_id.into(),
         }
     }

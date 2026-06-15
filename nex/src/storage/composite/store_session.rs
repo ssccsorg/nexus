@@ -29,7 +29,7 @@ use nexus_model::SessionExecute;
 
 use super::cold::CompositeColdStorage;
 use super::{AsyncStoreBlob, AsyncStoreObject, AsyncStoreSessionMeta};
-use nexus_model::SystemClock;
+use nexus_storage_sim::SystemClock;
 
 /// Session backed by AsyncStore* + CompositeColdStorage.
 ///

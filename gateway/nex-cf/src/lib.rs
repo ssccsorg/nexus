@@ -4,37 +4,47 @@
 use std::cell::UnsafeCell;
 use worker::*;
 
-use nexus_model::{
-    AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead,
-    Content, Fact, FihHash, Intent,
-};
+use nexus_model::{AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead};
+use nexus_model::{Content, Fact, FihHash, Intent};
 use nexus_storage_sim::cf_io::CfFihIo;
 use nexus_storage_sim::FihStorage;
 
-// ── Static storage (single-threaded Workers isolate) ───────────────────
+// ── CF clock: real timestamps via worker::Date::now() ────────────────
+
+struct CfClock;
+impl nexus_model::Now for CfClock {
+    fn now_nanos(&self) -> u64 { (worker::Date::now().as_millis() as u64) * 1_000_000 }
+    fn now_secs(&self) -> u64  { (worker::Date::now().as_millis() / 1_000) as u64 }
+}
+
+// ── Static storage ───────────────────────────────────────────────────
 
 struct SyncCell(UnsafeCell<Option<FihStorage<CfFihIo>>>);
 unsafe impl Sync for SyncCell {}
 static STORE: SyncCell = SyncCell(UnsafeCell::new(None));
 
 fn store() -> &'static FihStorage<CfFihIo> {
-    unsafe { (&mut *STORE.0.get()).as_ref().expect("FihStorage not initialized") }
+    unsafe { (&*STORE.0.get()).as_ref().expect("FihStorage not initialized") }
 }
 
 fn init_store(bucket: worker::Bucket) {
     unsafe {
         let ptr = STORE.0.get();
         if (*ptr).is_none() {
-            *ptr = Some(FihStorage::new(CfFihIo::new(bucket), "cf-nexus"));
+            *ptr = Some(FihStorage::with_clock(
+                CfFihIo::new(bucket),
+                "cf-nexus",
+                Box::new(CfClock),
+            ));
         }
     }
 }
 
-// ── Request helpers ──────────────────────────────────────────────────
-
 fn qv(q: &[(String, String)], k: &str) -> String {
     q.iter().find(|(key, _)| key == k).map(|(_, v)| v.clone()).unwrap_or_default()
 }
+
+// ── Entrypoint ───────────────────────────────────────────────────────
 
 #[event(fetch)]
 pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
@@ -48,7 +58,6 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     match path.as_str() {
         "/" => Response::ok("nexus-cf"),
 
-        // ── Facts ──────────────────────────────────────────────────
         "/fact" => {
             let fact = Fact {
                 id: FihHash(qv(&q, "id")),
@@ -62,7 +71,6 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             }
         }
 
-        // ── Intents ────────────────────────────────────────────────
         "/intent" => {
             let intent = Intent {
                 id: FihHash(qv(&q, "id")),
@@ -78,34 +86,11 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             }
         }
 
-        "/claim" => {
-            match s.claim_intent(&qv(&q, "id"), &qv(&q, "agent")).await {
-                Ok(()) => Response::from_json(&serde_json::json!({"status":"claimed"})),
-                Err(e) => Response::error(format!("claim: {:?}", e), 409),
-            }
-        }
-
-        "/conclude" => {
-            match s.conclude_intent(&qv(&q, "id"), &qv(&q, "result")).await {
-                Ok(fact) => Response::from_json(&serde_json::json!({"status":"concluded","fact_id": fact.id.0})),
-                Err(e) => Response::error(format!("conclude: {:?}", e), 500),
-            }
-        }
-
-        // ── State ──────────────────────────────────────────────────
         "/state" => {
             let state = s.read_state().await;
             Response::from_json(&state)
         }
 
-        "/len" => {
-            let state = s.read_state().await;
-            Response::from_json(&serde_json::json!({
-                "facts": state.facts.len(), "intents": state.intents.len(), "hints": state.hints.len(),
-            }))
-        }
-
-        // ── IO persistence ─────────────────────────────────────────
         "/flush" => {
             match s.flush_pending().await {
                 Ok(()) => Response::from_json(&serde_json::json!({"status":"ok"})),
