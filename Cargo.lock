@@ -1635,6 +1635,7 @@ dependencies = [
  "cfg-if",
  "log",
  "nexus-model",
+ "nexus-storage-sim",
  "petgraph",
  "postcard",
  "serde",
