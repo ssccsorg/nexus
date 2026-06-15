@@ -6,12 +6,12 @@
 // All FIH trait implementations are sync. IO is enqueued as WriteOps in a
 // buffer and flushed by the outer FihSession layer (see session.rs).
 
-pub mod clock;
-pub mod entity_store;
-pub mod export;
 /// Cloudflare R2-backed IO. Gated behind `cf` feature.
 #[cfg(feature = "cf")]
 pub mod cf_io;
+pub mod clock;
+pub mod entity_store;
+pub mod export;
 /// Filesystem-backed IO. Gated to non-wasm32 targets because walkdir and
 /// std::fs directory traversal are not available on wasm32-unknown-unknown.
 #[cfg(not(target_arch = "wasm32"))]

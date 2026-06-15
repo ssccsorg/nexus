@@ -9,11 +9,11 @@
 
 mod common;
 
+use futures_executor::block_on;
 use nexus_model::{
     Content, EvictCapable, Fact, FactCapable, FihHash, FilterCapable, FlushCapable, FlushCursor,
     FlushResult, Hint, HintCapable, Intent, IntentCapable, StateFilter, StorageRead,
 };
-use futures_executor::block_on;
 use nexus_storage_sim::{FihStorage, SimIo, SyncFileIo};
 
 // ── Helpers ──────────────────────────────────────────────────────────────

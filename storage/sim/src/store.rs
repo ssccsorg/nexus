@@ -300,12 +300,21 @@ fn content_hash(data: &[u8]) -> String {
 /// Load a content blob from IO by hash. Returns empty Content if not found.
 async fn load_blob(io: &impl AsyncFileIo, blob_hash: &str) -> Content {
     if blob_hash.is_empty() {
-        return Content { mime_type: "application/json".into(), data: Vec::new() };
+        return Content {
+            mime_type: "application/json".into(),
+            data: Vec::new(),
+        };
     }
     let key = format!("blob/{}.bin", blob_hash);
     match io.read(&key).await {
-        Ok(Some(data)) => Content { mime_type: "application/json".into(), data },
-        _ => Content { mime_type: "application/json".into(), data: Vec::new() },
+        Ok(Some(data)) => Content {
+            mime_type: "application/json".into(),
+            data,
+        },
+        _ => Content {
+            mime_type: "application/json".into(),
+            data: Vec::new(),
+        },
     }
 }
 
@@ -953,16 +962,16 @@ impl<I: AsyncFileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
         let mut facts = Vec::new();
         if let Ok(keys) = self.io.list("facts/").await {
             for key in &keys {
-                if let Ok(Some(bytes)) = self.io.read(key).await {
-                    if let Ok(r) = postcard::from_bytes::<FactRecord>(&bytes) {
-                        let content = load_blob(&self.io, &r.blob_hash).await;
-                        facts.push(Fact {
-                            id: FihHash(r.id.clone()),
-                            origin: r.origin.clone(),
-                            content,
-                            creator: r.creator.clone(),
-                        });
-                    }
+                if let Ok(Some(bytes)) = self.io.read(key).await
+                    && let Ok(r) = postcard::from_bytes::<FactRecord>(&bytes)
+                {
+                    let content = load_blob(&self.io, &r.blob_hash).await;
+                    facts.push(Fact {
+                        id: FihHash(r.id.clone()),
+                        origin: r.origin.clone(),
+                        content,
+                        creator: r.creator.clone(),
+                    });
                 }
             }
         }
@@ -970,21 +979,21 @@ impl<I: AsyncFileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
         let mut intents = Vec::new();
         if let Ok(keys) = self.io.list("intents/").await {
             for key in &keys {
-                if let Ok(Some(bytes)) = self.io.read(key).await {
-                    if let Ok(r) = postcard::from_bytes::<IntentRecord>(&bytes) {
-                        intents.push(Intent {
-                            id: FihHash(r.id.clone()),
-                            from_facts: r.from_facts.clone(),
-                            description: r.id.clone(),
-                            creator: r.creator.clone(),
-                            worker: None,
-                            to_fact_id: None,
-                            last_heartbeat_at: None,
-                            created_at: Some(r.created_at),
-                            is_concluded: matches!(r.status, IntentStatus::Concluded { .. }),
-                            concluded_at: None,
-                        });
-                    }
+                if let Ok(Some(bytes)) = self.io.read(key).await
+                    && let Ok(r) = postcard::from_bytes::<IntentRecord>(&bytes)
+                {
+                    intents.push(Intent {
+                        id: FihHash(r.id.clone()),
+                        from_facts: r.from_facts.clone(),
+                        description: r.id.clone(),
+                        creator: r.creator.clone(),
+                        worker: None,
+                        to_fact_id: None,
+                        last_heartbeat_at: None,
+                        created_at: Some(r.created_at),
+                        is_concluded: matches!(r.status, IntentStatus::Concluded { .. }),
+                        concluded_at: None,
+                    });
                 }
             }
         }
@@ -992,19 +1001,23 @@ impl<I: AsyncFileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
         let mut hints = Vec::new();
         if let Ok(keys) = self.io.list("hints/").await {
             for key in &keys {
-                if let Ok(Some(bytes)) = self.io.read(key).await {
-                    if let Ok(r) = postcard::from_bytes::<HintRecord>(&bytes) {
-                        hints.push(Hint {
-                            id: FihHash(r.id.clone()),
-                            content: r.content.clone(),
-                            creator: r.creator.clone(),
-                        });
-                    }
+                if let Ok(Some(bytes)) = self.io.read(key).await
+                    && let Ok(r) = postcard::from_bytes::<HintRecord>(&bytes)
+                {
+                    hints.push(Hint {
+                        id: FihHash(r.id.clone()),
+                        content: r.content.clone(),
+                        creator: r.creator.clone(),
+                    });
                 }
             }
         }
 
-        BoardState { facts, intents, hints }
+        BoardState {
+            facts,
+            intents,
+            hints,
+        }
     }
 }
 
@@ -1014,24 +1027,35 @@ impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
     async fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         // Write content blob to R2
         let blob_hash = content_hash(&fact.content.data);
-        self.io.write(&format!("blob/{}.bin", blob_hash), &fact.content.data).await
-            .map_err(|e| BlackboardError::Internal(e))?;
+        self.io
+            .write(&format!("blob/{}.bin", blob_hash), &fact.content.data)
+            .await
+            .map_err(BlackboardError::Internal)?;
 
         // Write fact record with blob_hash reference
         let record = FactRecord::from_model(fact, blob_hash, 0);
-        let bytes = postcard::to_allocvec(&record)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.io.write(&record.key(), &bytes).await
-            .map_err(|e| BlackboardError::Internal(e))?;
+        let bytes =
+            postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.io
+            .write(&record.key(), &bytes)
+            .await
+            .map_err(BlackboardError::Internal)?;
         self.fact_store.insert(record.id.clone(), record);
 
         // Update indices for sync impl consistency
         let ts = self.clock.now_nanos();
         self.coord.by_time.record(ts, &fact.id.0);
-        self.coord.by_origin.borrow_mut()
-            .entry(fact.origin.clone()).or_default().push(fact.id.0.clone());
-        self.coord.ref_counts.borrow_mut()
-            .entry(fact.id.0.clone()).or_insert_with(|| AtomicU64::new(0));
+        self.coord
+            .by_origin
+            .borrow_mut()
+            .entry(fact.origin.clone())
+            .or_default()
+            .push(fact.id.0.clone());
+        self.coord
+            .ref_counts
+            .borrow_mut()
+            .entry(fact.id.0.clone())
+            .or_insert_with(|| AtomicU64::new(0));
 
         Ok(fact.id.clone())
     }
@@ -1048,10 +1072,12 @@ impl<I: AsyncFileIo> nexus_model::AsyncHintCapable for FihStorage<I> {
             submitted_at: 0,
             ttl_secs: None,
         };
-        let bytes = postcard::to_allocvec(&record)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.io.write(&record.key(), &bytes).await
-            .map_err(|e| BlackboardError::Internal(e))?;
+        let bytes =
+            postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.io
+            .write(&record.key(), &bytes)
+            .await
+            .map_err(BlackboardError::Internal)?;
         self.hint_store.insert(record.id.clone(), record);
         Ok(())
     }
@@ -1069,64 +1095,85 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
             status: crate::record::IntentStatus::Submitted,
             created_at: 0,
         };
-        let bytes = postcard::to_allocvec(&record)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.io.write(&record.key(), &bytes).await
-            .map_err(|e| BlackboardError::Internal(e))?;
+        let bytes =
+            postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.io
+            .write(&record.key(), &bytes)
+            .await
+            .map_err(BlackboardError::Internal)?;
         self.intent_store.insert(record.id.clone(), record);
         Ok(intent.id.clone())
     }
 
     async fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let key = format!("intents/i_{}.intent", intent_id);
-        let bytes = self.io.read(&key).await
-            .map_err(|e| BlackboardError::Internal(e))?
+        let bytes = self
+            .io
+            .read(&key)
+            .await
+            .map_err(BlackboardError::Internal)?
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
         let mut record = postcard::from_bytes::<IntentRecord>(&bytes)
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let now = self.clock.now_secs();
         let new_status = record.status.try_claim(agent, now).map_err(|e| {
-            if e.starts_with("already claimed") { BlackboardError::Conflict(e) }
-            else { BlackboardError::Internal(e) }
+            if e.starts_with("already claimed") {
+                BlackboardError::Conflict(e)
+            } else {
+                BlackboardError::Internal(e)
+            }
         })?;
         record.status = new_status;
 
-        let bytes = postcard::to_allocvec(&record)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.io.write(&key, &bytes).await
-            .map_err(|e| BlackboardError::Internal(e))?;
+        let bytes =
+            postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.io
+            .write(&key, &bytes)
+            .await
+            .map_err(BlackboardError::Internal)?;
         self.intent_store.insert(intent_id.to_string(), record);
         Ok(())
     }
 
     async fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let key = format!("intents/i_{}.intent", intent_id);
-        let bytes = self.io.read(&key).await
-            .map_err(|e| BlackboardError::Internal(e))?
+        let bytes = self
+            .io
+            .read(&key)
+            .await
+            .map_err(BlackboardError::Internal)?
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
         let mut record = postcard::from_bytes::<IntentRecord>(&bytes)
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let now = self.clock.now_secs();
         let new_status = record.status.try_heartbeat(agent, now).map_err(|e| {
-            if e.contains("not") { BlackboardError::Conflict(e) }
-            else { BlackboardError::Internal(e) }
+            if e.contains("not") {
+                BlackboardError::Conflict(e)
+            } else {
+                BlackboardError::Internal(e)
+            }
         })?;
         record.status = new_status;
 
-        let bytes = postcard::to_allocvec(&record)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.io.write(&key, &bytes).await
-            .map_err(|e| BlackboardError::Internal(e))?;
+        let bytes =
+            postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.io
+            .write(&key, &bytes)
+            .await
+            .map_err(BlackboardError::Internal)?;
         self.intent_store.insert(intent_id.to_string(), record);
         Ok(())
     }
 
     async fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let key = format!("intents/i_{}.intent", intent_id);
-        let bytes = self.io.read(&key).await
-            .map_err(|e| BlackboardError::Internal(e))?
+        let bytes = self
+            .io
+            .read(&key)
+            .await
+            .map_err(BlackboardError::Internal)?
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
         let mut record = postcard::from_bytes::<IntentRecord>(&bytes)
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -1148,18 +1195,27 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
             }
         }
 
-        let bytes = postcard::to_allocvec(&record)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.io.write(&key, &bytes).await
-            .map_err(|e| BlackboardError::Internal(e))?;
+        let bytes =
+            postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.io
+            .write(&key, &bytes)
+            .await
+            .map_err(BlackboardError::Internal)?;
         self.intent_store.insert(intent_id.to_string(), record);
         Ok(())
     }
 
-    async fn conclude_intent(&self, intent_id: &str, result: &str) -> Result<Fact, BlackboardError> {
+    async fn conclude_intent(
+        &self,
+        intent_id: &str,
+        result: &str,
+    ) -> Result<Fact, BlackboardError> {
         let key = format!("intents/i_{}.intent", intent_id);
-        let bytes = self.io.read(&key).await
-            .map_err(|e| BlackboardError::Internal(e))?
+        let bytes = self
+            .io
+            .read(&key)
+            .await
+            .map_err(BlackboardError::Internal)?
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
         let mut record = postcard::from_bytes::<IntentRecord>(&bytes)
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -1167,34 +1223,45 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
         let worker = match &record.status {
             IntentStatus::Claimed { worker, .. } => worker.clone(),
             IntentStatus::Submitted => return Err(BlackboardError::Internal("not claimed".into())),
-            IntentStatus::Concluded { .. } => return Err(BlackboardError::Internal("already concluded".into())),
+            IntentStatus::Concluded { .. } => {
+                return Err(BlackboardError::Internal("already concluded".into()));
+            }
         };
 
         let conclusion_id = format!("f_concl_{}", intent_id);
         let new_fact = Fact {
             id: FihHash(conclusion_id.clone()),
             origin: format!("conclusion:{}", intent_id),
-            content: Content { mime_type: "text/plain".into(), data: result.as_bytes().to_vec() },
+            content: Content {
+                mime_type: "text/plain".into(),
+                data: result.as_bytes().to_vec(),
+            },
             creator: worker.clone(),
         };
 
         let now_ns = self.clock.now_nanos();
-        record.status = record.status.try_conclude(&conclusion_id, now_ns)
+        record.status = record
+            .status
+            .try_conclude(&conclusion_id, now_ns)
             .map_err(BlackboardError::Internal)?;
 
         // Write conclusion fact to R2
         let fact_rec = FactRecord::from_model(&new_fact, String::new(), 0);
         let fact_bytes = postcard::to_allocvec(&fact_rec)
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.io.write(&fact_rec.key(), &fact_bytes).await
-            .map_err(|e| BlackboardError::Internal(e))?;
+        self.io
+            .write(&fact_rec.key(), &fact_bytes)
+            .await
+            .map_err(BlackboardError::Internal)?;
         self.fact_store.insert(fact_rec.id.clone(), fact_rec);
 
         // Write updated intent to R2
-        let intent_bytes = postcard::to_allocvec(&record)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.io.write(&key, &intent_bytes).await
-            .map_err(|e| BlackboardError::Internal(e))?;
+        let intent_bytes =
+            postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.io
+            .write(&key, &intent_bytes)
+            .await
+            .map_err(BlackboardError::Internal)?;
         self.intent_store.insert(intent_id.to_string(), record);
 
         Ok(new_fact)

@@ -80,7 +80,12 @@ use std::ops::Range;
 /// - `cursor` → JSON FlushCursor
 /// - `snapshot_ts` → timestamp string
 #[derive(Clone)]
-pub struct CompositeColdStorage<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> {
+pub struct CompositeColdStorage<
+    B: BlobStore,
+    O: ObjectStore,
+    M: MetaStore,
+    C: Now = nexus_storage_sim::SystemClock,
+> {
     blob: B,
     object: O,
     meta: M,

@@ -20,9 +20,8 @@ pub mod time_range;
 
 pub use aggregate::{ColdStorage, DeltaSet, FihPersistence, HotStorage, StorageSend};
 pub use async_impl::{
-    AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable,
-    AsyncHintCapable, AsyncIntentCapable, AsyncScanCapable, AsyncStorageRead,
-    AsyncTimeRangeCapable,
+    AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable, AsyncHintCapable,
+    AsyncIntentCapable, AsyncScanCapable, AsyncStorageRead, AsyncTimeRangeCapable,
 };
 pub use blob_store::BlobStore;
 pub use dual::DualStorage;
