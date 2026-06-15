@@ -12,9 +12,8 @@
 //   - conclude_intent() passes real to_fact/concluded_at to try_conclude()
 //   - all timestamps flow through Now trait, never SystemTime::now() directly
 
-use std::collections::HashMap;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, RwLock};
 
 use nexus_model::{
     BlackboardError, BoardState, Content, EvictCapable, Fact, FactCapable, FihHash, FilterCapable,
@@ -22,20 +21,9 @@ use nexus_model::{
 };
 
 use crate::entity_store::{EntityStore, MemoryEntityStore};
-use crate::index::TimeIndex;
+use crate::index::FihCoord;
 use crate::io::{AsyncFileIo, SyncFileIo, WriteOp};
 use crate::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
-
-/// Reference counts: fact_id → number of Intents referencing this Fact
-pub(crate) type RefCounts = HashMap<String, AtomicU64>;
-
-/// Origin index: origin → [fact_id, ...]
-pub(crate) type OriginIndex = HashMap<String, Vec<String>>;
-
-/// Reverse index: fact_id → intent_id list (Intents that reference this Fact).
-/// Updated in submit_intent (append) and conclude_intent (remove).
-/// Enables O(1) query: "which Intents depend on Fact f001?"
-pub(crate) type ByFromFact = HashMap<String, Vec<String>>;
 
 /// Chain entry format: serialized by flush_since, deserialized by import_chain_file.
 /// Named struct avoids postcard tuple field ordering ambiguity with empty vecs.
@@ -65,10 +53,7 @@ pub struct FihStorage<I: AsyncFileIo> {
     intent_store: Box<dyn EntityStore<IntentRecord>>,
     hint_store: Box<dyn EntityStore<HintRecord>>,
     // Indices (valid only when is_hotmemory_enabled)
-    time_index: TimeIndex,
-    ref_counts: RwLock<RefCounts>,
-    by_origin: RwLock<OriginIndex>,
-    by_from_fact: RwLock<ByFromFact>,
+    coord: FihCoord,
     // Pending writes (for FihSession coordination).
     pub(crate) pending: Mutex<Vec<WriteOp>>,
 }
@@ -99,10 +84,7 @@ impl<I: AsyncFileIo> FihStorage<I> {
             fact_store: Box::new(MemoryEntityStore::<FactRecord>::new()),
             intent_store: Box::new(MemoryEntityStore::<IntentRecord>::new()),
             hint_store: Box::new(MemoryEntityStore::<HintRecord>::new()),
-            time_index: TimeIndex::new(),
-            ref_counts: RwLock::new(RefCounts::new()),
-            by_origin: RwLock::new(OriginIndex::new()),
-            by_from_fact: RwLock::new(ByFromFact::new()),
+            coord: FihCoord::new(),
             pending: Mutex::new(Vec::new()),
         }
     }
@@ -143,46 +125,60 @@ impl<I: AsyncFileIo> FihStorage<I> {
         self.intent_store.replace_from(intents);
         self.hint_store.replace_from(hints);
 
-        // Rebuild indices from loaded records
-        {
-            let time_idx = &self.time_index;
-            let mut origin_idx = self.by_origin.write().map_err(|e| e.to_string())?;
-            let mut by_ff = self.by_from_fact.write().map_err(|e| e.to_string())?;
-            let mut refs = self.ref_counts.write().map_err(|e| e.to_string())?;
-            let facts = self.fact_store.values();
-            let intents = self.intent_store.values();
-
-            for r in &facts {
-                time_idx.record(r.submitted_at, &r.id);
-                origin_idx
-                    .entry(r.origin.clone())
-                    .or_default()
-                    .push(r.id.clone());
-                refs.entry(r.id.clone())
-                    .or_insert_with(|| AtomicU64::new(0));
-            }
-
-            for r in &intents {
-                for fid in &r.from_facts {
-                    if let Some(rc) = refs.get(fid) {
-                        rc.fetch_add(1, Ordering::Relaxed);
-                    }
-                    by_ff.entry(fid.clone()).or_default().push(r.id.clone());
-                }
-            }
-        }
+        self.rebuild_coord();
 
         Ok(())
     }
 
+    /// Rebuild FihCoord indices from current EntityStore contents.
+    ///
+    /// Records are sorted by submitted_at before insertion to guarantee
+    /// monotonic ordering in by_time (required by OrderedIndex's binary
+    /// search). Other indices (by_origin, by_fact, ref_counts) are
+    /// order-independent and built during the same pass.
+    fn rebuild_coord(&self) {
+        let mut facts = self.fact_store.values();
+        let intents = self.intent_store.values();
+
+        // Sort facts by submitted_at to maintain OrderedIndex monotonicity
+        facts.sort_by_key(|r| r.submitted_at);
+
+        for r in &facts {
+            self.coord.by_time.record(r.submitted_at, &r.id);
+            self.coord
+                .by_origin
+                .write()
+                .unwrap()
+                .entry(r.origin.clone())
+                .or_default()
+                .push(r.id.clone());
+            self.coord
+                .ref_counts
+                .write()
+                .unwrap()
+                .entry(r.id.clone())
+                .or_insert_with(|| AtomicU64::new(0));
+        }
+
+        for r in &intents {
+            for fid in &r.from_facts {
+                if let Some(rc) = self.coord.ref_counts.read().unwrap().get(fid) {
+                    rc.fetch_add(1, Ordering::Relaxed);
+                }
+                self.coord
+                    .by_fact
+                    .write()
+                    .unwrap()
+                    .entry(fid.clone())
+                    .or_default()
+                    .push(r.id.clone());
+            }
+        }
+    }
+
     /// Flush pending writes to IO.
     pub fn intents_by_fact(&self, fact_id: &str) -> Vec<String> {
-        self.by_from_fact
-            .read()
-            .unwrap()
-            .get(fact_id)
-            .cloned()
-            .unwrap_or_default()
+        self.coord.intents_by_fact(fact_id)
     }
 
     /// Import a single delta chain file, restoring its records into the
@@ -542,16 +538,17 @@ impl<I: AsyncFileIo> FactCapable for FihStorage<I> {
         if self.is_hotmemory_enabled {
             // Update indices
             let ts = self.clock.now_nanos();
-            self.time_index.record(ts, &fact.id.0);
+            self.coord.by_time.record(ts, &fact.id.0);
             {
-                let mut origin_map = self.by_origin.write().unwrap();
+                let mut origin_map = self.coord.by_origin.write().unwrap();
                 origin_map
                     .entry(fact.origin.clone())
                     .or_default()
                     .push(fact.id.0.clone());
             }
             // ref_count defaults to 0 — orphan unless referenced by an Intent
-            self.ref_counts
+            self.coord
+                .ref_counts
                 .write()
                 .unwrap()
                 .entry(fact.id.0.clone())
@@ -619,7 +616,7 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
             }
             // Increment ref_count for each from_fact
             {
-                let refs = self.ref_counts.read().unwrap();
+                let refs = self.coord.ref_counts.read().unwrap();
                 for fid in &intent.from_facts {
                     if let Some(rc) = refs.get(fid) {
                         rc.fetch_add(1, Ordering::Relaxed);
@@ -648,9 +645,9 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
         if self.is_hotmemory_enabled {
             self.intent_store.insert(record.id.clone(), record);
             // Update by_from_fact reverse index
-            let mut by_ff = self.by_from_fact.write().unwrap();
+            let mut by_fact = self.coord.by_fact.write().unwrap();
             for fid in &intent.from_facts {
-                by_ff
+                by_fact
                     .entry(fid.clone())
                     .or_default()
                     .push(intent.id.0.clone());
@@ -795,7 +792,7 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
 
         // Decrement ref_count for from_facts (intent no longer references them)
         {
-            let refs = self.ref_counts.read().unwrap();
+            let refs = self.coord.ref_counts.read().unwrap();
             if let Some(r) = self.intent_store.get(intent_id) {
                 for fid in &r.from_facts {
                     if let Some(rc) = refs.get(fid) {
@@ -808,9 +805,9 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
         // Remove intent from by_from_fact reverse index
         {
             if let Some(r) = self.intent_store.get(intent_id) {
-                let mut by_ff = self.by_from_fact.write().unwrap();
+                let mut by_fact = self.coord.by_fact.write().unwrap();
                 for fid in &r.from_facts {
-                    if let Some(refs) = by_ff.get_mut(fid) {
+                    if let Some(refs) = by_fact.get_mut(fid) {
                         refs.retain(|i| i != intent_id);
                     }
                 }
@@ -888,8 +885,9 @@ impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
                         (since_str.parse::<u64>(), until_str.parse::<u64>())
                     {
                         Some(
-                            self.time_index
-                                .range(since_ts, until_ts)
+                            self.coord
+                                .by_time
+                                .range(&since_ts, &until_ts)
                                 .into_iter()
                                 .map(|(_, id)| id)
                                 .collect(),
@@ -902,8 +900,9 @@ impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
                     // Lower bound only: since query
                     if let Ok(since_ts) = since_str.parse::<u64>() {
                         Some(
-                            self.time_index
-                                .since(since_ts)
+                            self.coord
+                                .by_time
+                                .since(&since_ts)
                                 .into_iter()
                                 .map(|(_, id)| id)
                                 .collect(),
@@ -916,8 +915,9 @@ impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
                     // Upper bound only: as_of query (time-travel)
                     if let Ok(until_ts) = until_str.parse::<u64>() {
                         Some(
-                            self.time_index
-                                .as_of(until_ts)
+                            self.coord
+                                .by_time
+                                .as_of(&until_ts)
                                 .into_iter()
                                 .map(|(_, id)| id)
                                 .collect(),
@@ -1011,8 +1011,8 @@ impl<I: AsyncFileIo> ScanCapable for FihStorage<I> {
 
 impl<I: AsyncFileIo> TimeRangeCapable for FihStorage<I> {
     fn time_range(&self) -> Option<Range<String>> {
-        let first = self.time_index.first_ts()?;
-        let last = self.time_index.last_ts()?;
+        let first = self.coord.by_time.first_key()?;
+        let last = self.coord.by_time.last_key()?;
         Some(first.to_string()..last.to_string())
     }
 }
@@ -1038,8 +1038,9 @@ impl<I: AsyncFileIo> FlushCapable for FihStorage<I> {
 
         // Collect delta IDs via TimeIndex (O(log N))
         let delta_ids: Vec<(String, u64)> = self
-            .time_index
-            .since(since_ts)
+            .coord
+            .by_time
+            .since(&since_ts)
             .into_iter()
             .map(|(ts, id)| (id, ts))
             .collect();

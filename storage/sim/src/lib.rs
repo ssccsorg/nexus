@@ -7,6 +7,7 @@
 // buffer and flushed by the outer FihSession layer (see session.rs).
 
 pub mod entity_store;
+pub mod export;
 /// Filesystem-backed IO. Gated to non-wasm32 targets because walkdir and
 /// std::fs directory traversal are not available on wasm32-unknown-unknown.
 #[cfg(not(target_arch = "wasm32"))]
