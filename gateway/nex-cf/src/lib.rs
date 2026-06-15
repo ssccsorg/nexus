@@ -1,7 +1,6 @@
 // gateway/nex-cf — Consumes FihStorage<CfFihIo> via async traits.
 // No block_on. No locks. Pure async over R2.
 
-use std::cell::UnsafeCell;
 use worker::*;
 
 use nexus_model::{AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead};
@@ -23,29 +22,25 @@ impl nexus_model::Now for CfClock {
 
 // ── Static storage ───────────────────────────────────────────────────
 
-struct SyncCell(UnsafeCell<Option<FihStorage<CfFihIo>>>);
-unsafe impl Sync for SyncCell {}
-static STORE: SyncCell = SyncCell(UnsafeCell::new(None));
+/// SAFETY: Only used on the single-threaded Workers isolate.
+/// `FihStorage` contains `RefCell` (from `EntityStore` and `pending`)
+/// and `Box<dyn EntityStore>` trait objects that are `!Send + !Sync`,
+/// but in the WASM isolate there is no true parallelism — only async
+/// concurrency on one thread — so treating the inner type as `Sync`
+/// is sound. The `OnceLock` eliminates the previous data race on
+/// initialization from the old `UnsafeCell`-based approach.
+struct SyncStore(std::sync::OnceLock<FihStorage<CfFihIo>>);
+unsafe impl Sync for SyncStore {}
+static STORE: SyncStore = SyncStore(std::sync::OnceLock::new());
 
 fn store() -> &'static FihStorage<CfFihIo> {
-    unsafe {
-        (&*STORE.0.get())
-            .as_ref()
-            .expect("FihStorage not initialized")
-    }
+    STORE.0.get().expect("FihStorage not initialized")
 }
 
 fn init_store(bucket: worker::Bucket) {
-    unsafe {
-        let ptr = STORE.0.get();
-        if (*ptr).is_none() {
-            *ptr = Some(FihStorage::with_clock(
-                CfFihIo::new(bucket),
-                "cf-nexus",
-                Box::new(CfClock),
-            ));
-        }
-    }
+    STORE.0.get_or_init(|| {
+        FihStorage::with_clock(CfFihIo::new(bucket), "cf-nexus", Box::new(CfClock))
+    });
 }
 
 fn qv(q: &[(String, String)], k: &str) -> String {
@@ -71,7 +66,6 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .map(|(k, v)| (k.into_owned(), v.into_owned()))
         .collect();
     let s = store();
-
     match path.as_str() {
         "/" => Response::ok("nexus-cf"),
 

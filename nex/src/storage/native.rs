@@ -132,12 +132,22 @@ impl<I: nexus_storage_sim::io::AsyncFileIo> ScanCapable for NativeBlackboard<I> 
 impl<I: nexus_storage_sim::io::AsyncFileIo> NativeBlackboard<I> {
     /// Rebuild in-memory cache from IO storage. Call on cold start
     /// to restore previous state from persistent backend (R2, fs, etc.).
+    ///
+    /// Panics on `wasm32-unknown-unknown` where `block_on` is
+    /// unavailable. Use the async methods directly on `FihStorage`
+    /// when targeting WASM.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn rebuild_cache(&self) -> Result<(), String> {
         futures_executor::block_on(self.storage.rebuild_cache())
     }
 
     /// Flush pending writes to IO storage. Call after each write
     /// operation to ensure durability.
+    ///
+    /// Panics on `wasm32-unknown-unknown` where `block_on` is
+    /// unavailable. Use the async methods directly on `FihStorage`
+    /// when targeting WASM.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn flush_pending(&self) -> Result<(), String> {
         futures_executor::block_on(self.storage.flush_pending())
     }
