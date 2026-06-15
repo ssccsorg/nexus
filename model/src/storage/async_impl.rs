@@ -1,8 +1,10 @@
 // ── Async storage traits: async counterparts of sync storage traits.
 //
-// These traits mirror the sync versions but use `async fn` (AFIT).
-// Backends implement whichever set fits their runtime.
-// All memory-only methods delegate to the sync impl directly.
+// These traits mirror the sync versions but use `async fn` (AFIT, Rust 1.75+).
+// The `async_fn_in_trait` lint is suppressed because AFIT is stable and
+// these traits are not used as trait objects.
+
+#![allow(async_fn_in_trait)]
 
 use crate::error::BlackboardError;
 use crate::fih::{BoardState, Fact, FihHash, Hint, Intent};
@@ -31,7 +33,11 @@ pub trait AsyncIntentCapable: AsyncStorageRead {
     async fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
     async fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
     async fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
-    async fn conclude_intent(&self, intent_id: &str, result: &str) -> Result<crate::fih::Fact, BlackboardError>;
+    async fn conclude_intent(
+        &self,
+        intent_id: &str,
+        result: &str,
+    ) -> Result<crate::fih::Fact, BlackboardError>;
 }
 
 /// Async counterpart of [`super::filter::FilterCapable`].

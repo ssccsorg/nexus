@@ -6,11 +6,11 @@
 
 mod common;
 
+use futures_executor::block_on;
 use nexus_model::{
     Content, Fact, FactCapable, FihHash, Hint, HintCapable, Intent, IntentCapable, StorageRead,
 };
 use nexus_storage_sim::{FihStorage, SimIo};
-use futures_executor::block_on;
 
 fn fact(id: &str, data: &str) -> Fact {
     Fact {

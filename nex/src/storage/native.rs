@@ -15,13 +15,13 @@
 
 use nexus_model::{
     BlackboardError, BoardState, EvictCapable, Fact, FactCapable, FihHash, FlushCapable,
-    FlushCursor, FlushResult, Hint, HintCapable, Intent, IntentCapable, PartitionData,
-    ScanCapable, StorageRead,
+    FlushCursor, FlushResult, Hint, HintCapable, Intent, IntentCapable, PartitionData, ScanCapable,
+    StorageRead,
 };
 
+use nexus_storage_sim::FihStorage;
 #[cfg(not(feature = "cf"))]
 use nexus_storage_sim::SimIo;
-use nexus_storage_sim::FihStorage;
 
 /// Blackboard implementation backed by FihStorage.
 ///

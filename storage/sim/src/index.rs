@@ -82,18 +82,12 @@ where
 
     /// First key in the index, or None if empty. O(1).
     pub fn first_key(&self) -> Option<K> {
-        self.entries
-            .borrow()
-            .first()
-            .map(|(k, _)| k.clone())
+        self.entries.borrow().first().map(|(k, _)| k.clone())
     }
 
     /// Last key in the index, or None if empty. O(1).
     pub fn last_key(&self) -> Option<K> {
-        self.entries
-            .borrow()
-            .last()
-            .map(|(k, _)| k.clone())
+        self.entries.borrow().last().map(|(k, _)| k.clone())
     }
 
     /// Drain all entries (for testing). O(1).

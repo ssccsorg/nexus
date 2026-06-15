@@ -5,9 +5,9 @@
 // to drive async in test context (native only, not WASM).
 
 use nexus_model::{
-    AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable,
-    AsyncHintCapable, AsyncIntentCapable, AsyncScanCapable, AsyncStorageRead,
-    AsyncTimeRangeCapable, FihHash, FlushCursor, Hint, StateFilter,
+    AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable, AsyncHintCapable,
+    AsyncIntentCapable, AsyncScanCapable, AsyncStorageRead, AsyncTimeRangeCapable, FihHash,
+    FlushCursor, Hint, StateFilter,
 };
 use nexus_storage_sim::FihStorage;
 use nexus_storage_sim::SimIo;
