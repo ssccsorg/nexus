@@ -21,14 +21,14 @@ use std::sync::atomic::AtomicU64;
 /// Binary search assumes this invariant.
 pub struct OrderedIndex<K = u64>
 where
-    K: Ord + Clone + Send + 'static,
+    K: Ord + Clone + 'static,
 {
     entries: RefCell<Vec<(K, String)>>,
 }
 
 impl<K> OrderedIndex<K>
 where
-    K: Ord + Clone + Send + 'static,
+    K: Ord + Clone + 'static,
 {
     pub fn new() -> Self {
         Self {
@@ -104,7 +104,7 @@ where
 
 impl<K> Default for OrderedIndex<K>
 where
-    K: Ord + Clone + Send + 'static,
+    K: Ord + Clone + 'static,
 {
     fn default() -> Self {
         Self::new()
