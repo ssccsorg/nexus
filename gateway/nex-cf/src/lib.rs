@@ -5,7 +5,7 @@ use std::cell::UnsafeCell;
 use worker::*;
 
 use nexus_model::{
-    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead,
+    AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead,
     Content, Fact, FihHash, Intent,
 };
 use nexus_storage_sim::cf_io::CfFihIo;
