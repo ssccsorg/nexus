@@ -880,12 +880,11 @@ impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
     }
 }
 
-// ── FlushCapable ───────────────────────────────────────────────────────────
+use std::ops::Range;
 
 use nexus_model::{
-    ColdStorage, FlushCapable, FlushCursor, FlushResult, ScanCapable, TimeRangeCapable,
+    FlushCapable, FlushCursor, FlushResult, ScanCapable, TimeRangeCapable,
 };
-use std::ops::Range;
 
 // ── FihStorage as HotStorage (standalone Blackboard) ───────────────
 //
@@ -934,20 +933,7 @@ impl<I: AsyncFileIo> TimeRangeCapable for FihStorage<I> {
     }
 }
 
-// ── ColdStorage ───────────────────────────────────────────────────────────
-
-impl<I: AsyncFileIo + Send> ColdStorage for FihStorage<I> {
-    fn write_blob(&self, key: &str, data: &[u8]) -> Result<(), String> {
-        self.pending.lock().unwrap().push(WriteOp::Write {
-            path: key.to_string(),
-            data: data.to_vec(),
-        });
-        Ok(())
-    }
-}
-
 // ── FlushCapable ───────────────────────────────────────────────────────────
-
 impl<I: AsyncFileIo> FlushCapable for FihStorage<I> {
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
         let since_ts = cursor.last_flushed_at;
