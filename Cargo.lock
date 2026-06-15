@@ -1633,6 +1633,7 @@ name = "nex"
 version = "0.1.0"
 dependencies = [
  "cfg-if",
+ "futures-executor",
  "log",
  "nexus-model",
  "nexus-storage-sim",
@@ -1665,6 +1666,9 @@ dependencies = [
 name = "nexus-gateway-nex-cf"
 version = "0.1.0"
 dependencies = [
+ "nex",
+ "nexus-model",
+ "nexus-storage-sim",
  "postcard",
  "serde",
  "serde_json",

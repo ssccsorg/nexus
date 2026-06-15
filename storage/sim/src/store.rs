@@ -12,12 +12,14 @@
 //   - conclude_intent() passes real to_fact/concluded_at to try_conclude()
 //   - all timestamps flow through Now trait, never SystemTime::now() directly
 
-use std::sync::Mutex;
+use std::cell::RefCell;
+use std::ops::Range;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use nexus_model::{
     BlackboardError, BoardState, Content, EvictCapable, Fact, FactCapable, FihHash, FilterCapable,
-    Hint, HintCapable, Intent, IntentCapable, Now, PartitionData, StateFilter, StorageRead,
+    FlushCapable, FlushCursor, FlushResult, Hint, HintCapable, Intent, IntentCapable, Now,
+    PartitionData, ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
 };
 
 use crate::entity_store::{EntityStore, MemoryEntityStore};
@@ -25,7 +27,7 @@ use crate::index::FihCoord;
 use crate::io::{AsyncFileIo, WriteOp};
 use crate::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
 
-/// Chain entry format: serialized by flush_since, deserialized by import_chain_file.
+/// Chain entry format: serialized by flush_since for delta chain files.
 /// Named struct avoids postcard tuple field ordering ambiguity with empty vecs.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct ChainEntry {
@@ -39,13 +41,14 @@ struct ChainEntry {
 ///
 /// All FIH trait methods are sync. They enqueue WriteOps into a buffer
 /// for batch commit by the outer FihSession layer.
-/// IO calls use inline futures_executor::block_on for sync bridging.
+/// IO-bound operations (flush_pending, rebuild_cache) are async.
 pub struct FihStorage<I: AsyncFileIo> {
     pub io: I,
     project_id: String,
     clock: Box<dyn Now + Send + Sync>,
     /// When true, every write operation also flushes pending ops to IO
     /// immediately, ensuring durability at the cost of batching.
+    #[expect(dead_code)]
     auto_flush: bool,
     // In-memory stores: rebuilt from IO on hydrate, kept in sync for reads.
     pub fact_store: Box<dyn EntityStore<FactRecord>>,
@@ -54,7 +57,7 @@ pub struct FihStorage<I: AsyncFileIo> {
     // Indices
     coord: FihCoord,
     // Pending writes (for FihSession coordination).
-    pub(crate) pending: Mutex<Vec<WriteOp>>,
+    pub(crate) pending: RefCell<Vec<WriteOp>>,
 }
 
 impl<I: AsyncFileIo> FihStorage<I> {
@@ -89,16 +92,7 @@ impl<I: AsyncFileIo> FihStorage<I> {
             intent_store: Box::new(MemoryEntityStore::<IntentRecord>::new()),
             hint_store: Box::new(MemoryEntityStore::<HintRecord>::new()),
             coord: FihCoord::new(),
-            pending: Mutex::new(Vec::new()),
-        }
-    }
-
-    /// Flush pending writes if auto_flush is enabled.
-    fn maybe_flush(&self) -> Result<(), String> {
-        if self.auto_flush {
-            self.flush_pending()
-        } else {
-            Ok(())
+            pending: RefCell::new(Vec::new()),
         }
     }
 
@@ -116,36 +110,45 @@ impl<I: AsyncFileIo> FihStorage<I> {
             intent_store: Box::new(MemoryEntityStore::<IntentRecord>::new()),
             hint_store: Box::new(MemoryEntityStore::<HintRecord>::new()),
             coord: FihCoord::new(),
-            pending: Mutex::new(Vec::new()),
+            pending: RefCell::new(Vec::new()),
         }
     }
 
+    /// Flush pending writes if auto_flush is enabled. No-op in the sync
+    /// path; auto-flush is only meaningful through the async trait impls
+    /// that call flush_pending directly.
+    fn maybe_flush(&self) -> Result<(), String> {
+        // Sync trait impls do not perform IO. Auto-flush is handled by
+        // the async trait impls which call flush_pending directly.
+        Ok(())
+    }
+
     /// Rebuild in-memory cache from IO storage.
-    pub fn rebuild_cache(&self) -> Result<(), String> {
-        let fact_keys = self.sync_list("facts/")?;
+    pub async fn rebuild_cache(&self) -> Result<(), String> {
+        let fact_keys = self.io.list("facts/").await?;
         let mut facts: Vec<(String, FactRecord)> = Vec::new();
         for key in fact_keys {
-            if let Some(bytes) = self.sync_read(&key)?
+            if let Some(bytes) = self.io.read(&key).await?
                 && let Ok(record) = postcard::from_bytes::<FactRecord>(&bytes)
             {
                 facts.push((record.id.clone(), record));
             }
         }
 
-        let intent_keys = self.sync_list("intents/")?;
+        let intent_keys = self.io.list("intents/").await?;
         let mut intents: Vec<(String, IntentRecord)> = Vec::new();
         for key in intent_keys {
-            if let Some(bytes) = self.sync_read(&key)?
+            if let Some(bytes) = self.io.read(&key).await?
                 && let Ok(record) = postcard::from_bytes::<IntentRecord>(&bytes)
             {
                 intents.push((record.id.clone(), record));
             }
         }
 
-        let hint_keys = self.sync_list("hints/")?;
+        let hint_keys = self.io.list("hints/").await?;
         let mut hints: Vec<(String, HintRecord)> = Vec::new();
         for key in hint_keys {
-            if let Some(bytes) = self.sync_read(&key)?
+            if let Some(bytes) = self.io.read(&key).await?
                 && let Ok(record) = postcard::from_bytes::<HintRecord>(&bytes)
             {
                 hints.push((record.id.clone(), record));
@@ -178,28 +181,25 @@ impl<I: AsyncFileIo> FihStorage<I> {
             self.coord.by_time.record(r.submitted_at, &r.id);
             self.coord
                 .by_origin
-                .write()
-                .unwrap()
+                .borrow_mut()
                 .entry(r.origin.clone())
                 .or_default()
                 .push(r.id.clone());
             self.coord
                 .ref_counts
-                .write()
-                .unwrap()
+                .borrow_mut()
                 .entry(r.id.clone())
                 .or_insert_with(|| AtomicU64::new(0));
         }
 
         for r in &intents {
             for fid in &r.from_facts {
-                if let Some(rc) = self.coord.ref_counts.read().unwrap().get(fid) {
+                if let Some(rc) = self.coord.ref_counts.borrow().get(fid) {
                     rc.fetch_add(1, Ordering::Relaxed);
                 }
                 self.coord
                     .by_fact
-                    .write()
-                    .unwrap()
+                    .borrow_mut()
                     .entry(fid.clone())
                     .or_default()
                     .push(r.id.clone());
@@ -207,79 +207,18 @@ impl<I: AsyncFileIo> FihStorage<I> {
         }
     }
 
-    /// Sync bridge: block_on wrapper for async IO read.
-    fn sync_read(&self, path: &str) -> Result<Option<Vec<u8>>, String> {
-        futures_executor::block_on(self.io.read(path))
-    }
-
-    /// Sync bridge: block_on wrapper for async IO write.
-    #[expect(dead_code)]
-    fn sync_write(&self, path: &str, data: &[u8]) -> Result<(), String> {
-        futures_executor::block_on(self.io.write(path, data))
-    }
-
-    /// Sync bridge: block_on wrapper for async IO list.
-    fn sync_list(&self, prefix: &str) -> Result<Vec<String>, String> {
-        futures_executor::block_on(self.io.list(prefix))
-    }
-
-    /// Sync bridge: block_on wrapper for async IO delete.
-    #[expect(dead_code)]
-    fn sync_delete(&self, path: &str) -> Result<(), String> {
-        futures_executor::block_on(self.io.delete(path))
-    }
-
-    /// Sync bridge: block_on wrapper for async IO apply_batch.
-    fn sync_apply_batch(&self, ops: &[WriteOp]) -> Result<(), String> {
-        futures_executor::block_on(self.io.apply_batch(ops))
-    }
-
     /// Flush pending writes to IO.
-    pub fn intents_by_fact(&self, fact_id: &str) -> Vec<String> {
-        self.coord.intents_by_fact(fact_id)
-    }
-
-    /// Import a single delta chain file, restoring its records into the
-    /// in-memory cache. The chain file must have been created by flush_since.
-    /// Returns the number of records restored (facts + intents).
-    pub fn import_chain_file(&self, path: &str) -> Result<u64, String> {
-        let bytes = self
-            .sync_read(path)?
-            .ok_or_else(|| format!("chain file not found: {}", path))?;
-        let entry: ChainEntry =
-            postcard::from_bytes(&bytes).map_err(|e| format!("deserialize chain: {e}"))?;
-        // Reset Hot mode path: always write records to IO then rebuild.
-        // This unifies with rebuild_cache semantics and eliminates the
-        // fragile in-memory cache merge path.
-        for r in &entry.facts {
-            let bytes = postcard::to_allocvec(r).map_err(|e| e.to_string())?;
-            self.pending.lock().unwrap().push(WriteOp::Write {
-                path: r.key(),
-                data: bytes,
-            });
-        }
-        for r in &entry.intents {
-            let bytes = postcard::to_allocvec(r).map_err(|e| e.to_string())?;
-            self.pending.lock().unwrap().push(WriteOp::Write {
-                path: r.key(),
-                data: bytes,
-            });
-        }
-        let count = (entry.facts.len() + entry.intents.len()) as u64;
-        self.flush_pending()?;
-        if count > 0 {
-            self.rebuild_cache()?;
-        }
-        Ok(count)
-    }
-
-    /// Flush pending writes to IO.
-    pub fn flush_pending(&self) -> Result<(), String> {
-        let ops = std::mem::take(&mut *self.pending.lock().map_err(|e| e.to_string())?);
+    pub async fn flush_pending(&self) -> Result<(), String> {
+        let ops = std::mem::take(&mut *self.pending.try_borrow_mut().map_err(|e| e.to_string())?);
         if !ops.is_empty() {
-            self.sync_apply_batch(&ops)?;
+            self.io.apply_batch(&ops).await?;
         }
         Ok(())
+    }
+
+    /// Query intents that reference a given fact.
+    pub fn intents_by_fact(&self, fact_id: &str) -> Vec<String> {
+        self.coord.intents_by_fact(fact_id)
     }
 
     /// Enqueue content as a blob write. FIH is append-only: no dedup
@@ -289,7 +228,7 @@ impl<I: AsyncFileIo> FihStorage<I> {
         let blob_hash = content_hash(&content.data);
         let blob_path = format!("blob/{}.bin", blob_hash);
 
-        self.pending.lock().unwrap().push(WriteOp::Write {
+        self.pending.borrow_mut().push(WriteOp::Write {
             path: blob_path,
             data: content.data.clone(),
         });
@@ -299,7 +238,7 @@ impl<I: AsyncFileIo> FihStorage<I> {
             size: content.data.len() as u64,
         };
         let meta_bytes = postcard::to_allocvec(&meta).map_err(|e| e.to_string())?;
-        self.pending.lock().unwrap().push(WriteOp::Write {
+        self.pending.borrow_mut().push(WriteOp::Write {
             path: format!("blob/{}.bin.meta", blob_hash),
             data: meta_bytes,
         });
@@ -316,7 +255,7 @@ impl<I: AsyncFileIo> FihStorage<I> {
         let meta_path = format!("blob/{}.bin.meta", blob_hash);
 
         // Check pending writes for blob data and mime
-        let pending = self.pending.lock().unwrap();
+        let pending = self.pending.borrow();
         let mut blob_data = None;
         let mut mime = None;
         for op in pending.iter() {
@@ -342,22 +281,11 @@ impl<I: AsyncFileIo> FihStorage<I> {
         }
 
         // No data in pending — return empty content. The actual blob
-        // lives in R2 but we avoid sync_read (block_on) here because
-        // WASM cannot drive async I/O through futures_executor.
+        // lives in R2 but we avoid sync_read here because sync trait
+        // impls do not perform IO.
         Content {
             mime_type: default_mime.to_string(),
             data: Vec::new(),
-        }
-    }
-
-    /// Read mime_type from blob meta file. Returns None if not found.
-    fn read_mime_type(&self, blob_hash: &str) -> Option<String> {
-        let meta_path = format!("blob/{}.bin.meta", blob_hash);
-        match self.sync_read(&meta_path) {
-            Ok(Some(bytes)) => postcard::from_bytes::<ContentMeta>(&bytes)
-                .ok()
-                .map(|m| m.mime_type),
-            _ => None,
         }
     }
 }
@@ -461,14 +389,14 @@ impl<I: AsyncFileIo> FactCapable for FihStorage<I> {
 
         // Update cache immediately for subsequent reads
         self.fact_store.insert(record.id.clone(), record);
-        self.pending.lock().unwrap().push(op);
+        self.pending.borrow_mut().push(op);
         self.maybe_flush().map_err(BlackboardError::Internal)?;
 
         // Update indices
         let ts = self.clock.now_nanos();
         self.coord.by_time.record(ts, &fact.id.0);
         {
-            let mut origin_map = self.coord.by_origin.write().unwrap();
+            let mut origin_map = self.coord.by_origin.borrow_mut();
             origin_map
                 .entry(fact.origin.clone())
                 .or_default()
@@ -477,8 +405,7 @@ impl<I: AsyncFileIo> FactCapable for FihStorage<I> {
         // ref_count defaults to 0 — orphan unless referenced by an Intent
         self.coord
             .ref_counts
-            .write()
-            .unwrap()
+            .borrow_mut()
             .entry(fact.id.0.clone())
             .or_insert_with(|| AtomicU64::new(0));
 
@@ -507,7 +434,7 @@ impl<I: AsyncFileIo> HintCapable for FihStorage<I> {
         };
 
         self.hint_store.insert(record.id.clone(), record);
-        self.pending.lock().unwrap().push(op);
+        self.pending.borrow_mut().push(op);
         self.maybe_flush().map_err(BlackboardError::Internal)?;
 
         Ok(())
@@ -531,7 +458,7 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
         }
         // Increment ref_count for each from_fact
         {
-            let refs = self.coord.ref_counts.read().unwrap();
+            let refs = self.coord.ref_counts.borrow();
             for fid in &intent.from_facts {
                 if let Some(rc) = refs.get(fid) {
                     rc.fetch_add(1, Ordering::Relaxed);
@@ -558,14 +485,14 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
 
         self.intent_store.insert(record.id.clone(), record);
         // Update by_from_fact reverse index
-        let mut by_fact = self.coord.by_fact.write().unwrap();
+        let mut by_fact = self.coord.by_fact.borrow_mut();
         for fid in &intent.from_facts {
             by_fact
                 .entry(fid.clone())
                 .or_default()
                 .push(intent.id.0.clone());
         }
-        self.pending.lock().unwrap().push(op);
+        self.pending.borrow_mut().push(op);
         self.maybe_flush().map_err(BlackboardError::Internal)?;
 
         Ok(intent.id.clone())
@@ -590,7 +517,7 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
 
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.pending.lock().unwrap().push(WriteOp::Write {
+        self.pending.borrow_mut().push(WriteOp::Write {
             path: record.key(),
             data: bytes,
         });
@@ -619,7 +546,7 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
 
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.pending.lock().unwrap().push(WriteOp::Write {
+        self.pending.borrow_mut().push(WriteOp::Write {
             path: record.key(),
             data: bytes,
         });
@@ -654,7 +581,7 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
 
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.pending.lock().unwrap().push(WriteOp::Write {
+        self.pending.borrow_mut().push(WriteOp::Write {
             path: record.key(),
             data: bytes,
         });
@@ -708,7 +635,7 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
 
         // Decrement ref_count for from_facts (intent no longer references them)
         {
-            let refs = self.coord.ref_counts.read().unwrap();
+            let refs = self.coord.ref_counts.borrow();
             if let Some(r) = self.intent_store.get(intent_id) {
                 for fid in &r.from_facts {
                     if let Some(rc) = refs.get(fid) {
@@ -721,7 +648,7 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
         // Remove intent from by_from_fact reverse index
         {
             if let Some(r) = self.intent_store.get(intent_id) {
-                let mut by_fact = self.coord.by_fact.write().unwrap();
+                let mut by_fact = self.coord.by_fact.borrow_mut();
                 for fid in &r.from_facts {
                     if let Some(refs) = by_fact.get_mut(fid) {
                         refs.retain(|i| i != intent_id);
@@ -732,7 +659,7 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
 
         let intent_bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.pending.lock().unwrap().push(WriteOp::Write {
+        self.pending.borrow_mut().push(WriteOp::Write {
             path: format!("intents/i_{}.intent", intent_id),
             data: intent_bytes,
         });
@@ -880,12 +807,6 @@ impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
     }
 }
 
-use std::ops::Range;
-
-use nexus_model::{
-    FlushCapable, FlushCursor, FlushResult, ScanCapable, TimeRangeCapable,
-};
-
 // ── FihStorage as HotStorage (standalone Blackboard) ───────────────
 //
 // StorageRead + FactCapable + IntentCapable + HintCapable + FilterCapable +
@@ -987,13 +908,16 @@ impl<I: AsyncFileIo> FlushCapable for FihStorage<I> {
             postcard::to_allocvec(&entry).map_err(|e| format!("serialize chain: {e}"))?;
 
         let chain_path = format!("flush/{}/cursor_{}.chain", cursor.partition, now_ts);
-        self.pending.lock().unwrap().push(WriteOp::Write {
+        self.pending.borrow_mut().push(WriteOp::Write {
             path: chain_path,
             data: chain_bytes,
         });
 
-        // Write pending batch to IO
-        self.flush_pending()?;
+        // Write pending batch to IO via block_on since FlushCapable is sync.
+        let ops = std::mem::take(&mut *self.pending.try_borrow_mut().map_err(|e| e.to_string())?);
+        if !ops.is_empty() {
+            futures_executor::block_on(self.io.apply_batch(&ops))?;
+        }
 
         Ok(FlushResult {
             records_flushed,
@@ -1002,5 +926,114 @@ impl<I: AsyncFileIo> FlushCapable for FihStorage<I> {
                 partition: cursor.partition.clone(),
             },
         })
+    }
+}
+
+// ── AsyncStorageRead ───────────────────────────────────────────────────────
+
+impl<I: AsyncFileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
+    fn project_id(&self) -> &str {
+        &self.project_id
+    }
+
+    async fn read_state(&self) -> BoardState {
+        // Direct async IO: list + read from R2, no block_on.
+        let fact_keys = match self.io.list("facts/").await {
+            Ok(keys) => keys,
+            Err(_) => Vec::new(),
+        };
+        let mut facts = Vec::new();
+        for key in &fact_keys {
+            if let Ok(Some(bytes)) = self.io.read(key).await {
+                if let Ok(r) = postcard::from_bytes::<FactRecord>(&bytes) {
+                    facts.push(Fact {
+                        id: FihHash(r.id.clone()),
+                        origin: r.origin.clone(),
+                        content: Content {
+                            mime_type: "application/json".into(),
+                            data: Vec::new(),
+                        },
+                        creator: r.creator.clone(),
+                    });
+                }
+            }
+        }
+
+        BoardState {
+            facts,
+            intents: Vec::new(),
+            hints: Vec::new(),
+        }
+    }
+}
+
+// ── AsyncFactCapable ───────────────────────────────────────────────────────
+
+impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
+    async fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
+        // Direct async IO: write fact and blob records to R2.
+        let record = FactRecord::from_model(fact, String::new(), 0);
+        let bytes = postcard::to_allocvec(&record)
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+
+        self.io.write(&record.key(), &bytes).await
+            .map_err(|e| BlackboardError::Internal(e))?;
+
+        Ok(fact.id.clone())
+    }
+}
+
+// ── AsyncHintCapable ───────────────────────────────────────────────────────
+
+impl<I: AsyncFileIo> nexus_model::AsyncHintCapable for FihStorage<I> {
+    async fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
+        let record = crate::record::HintRecord {
+            id: hint.id.0.clone(),
+            content: hint.content.clone(),
+            creator: hint.creator.clone(),
+            submitted_at: 0,
+            ttl_secs: None,
+        };
+        let bytes = postcard::to_allocvec(&record)
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.io.write(&record.key(), &bytes).await
+            .map_err(|e| BlackboardError::Internal(e))?;
+        Ok(())
+    }
+}
+
+// ── AsyncIntentCapable ─────────────────────────────────────────────────────
+
+impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
+    async fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+        let record = crate::record::IntentRecord {
+            id: intent.id.0.clone(),
+            from_facts: intent.from_facts.clone(),
+            description_hash: String::new(),
+            creator: intent.creator.clone(),
+            status: crate::record::IntentStatus::Submitted,
+            created_at: 0,
+        };
+        let bytes = postcard::to_allocvec(&record)
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.io.write(&record.key(), &bytes).await
+            .map_err(|e| BlackboardError::Internal(e))?;
+        Ok(intent.id.clone())
+    }
+
+    async fn claim_intent(&self, _intent_id: &str, _agent: &str) -> Result<(), BlackboardError> {
+        Err(BlackboardError::Internal("claim not implemented in async path".into()))
+    }
+
+    async fn heartbeat(&self, _intent_id: &str, _agent: &str) -> Result<(), BlackboardError> {
+        Err(BlackboardError::Internal("heartbeat not implemented in async path".into()))
+    }
+
+    async fn release_intent(&self, _intent_id: &str, _agent: &str) -> Result<(), BlackboardError> {
+        Err(BlackboardError::Internal("release not implemented in async path".into()))
+    }
+
+    async fn conclude_intent(&self, _intent_id: &str, _result: &str) -> Result<Fact, BlackboardError> {
+        Err(BlackboardError::Internal("conclude not implemented in async path".into()))
     }
 }
