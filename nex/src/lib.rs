@@ -13,6 +13,8 @@ pub use nexus_model::{
     TimeRangeCapable,
 };
 pub use process::{error::ProcessError, scheduler::Scheduler};
+#[cfg(feature = "native")]
+pub use storage::native::NativeBlackboard;
 pub use storage::composite::CompositeColdStorage;
 pub use storage::petgraph::{
     EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Snapshottable, StorageSnapshot,
