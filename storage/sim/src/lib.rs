@@ -8,6 +8,9 @@
 
 pub mod entity_store;
 pub mod export;
+/// Cloudflare R2-backed IO. Gated behind `cf` feature.
+#[cfg(feature = "cf")]
+pub mod cf_io;
 /// Filesystem-backed IO. Gated to non-wasm32 targets because walkdir and
 /// std::fs directory traversal are not available on wasm32-unknown-unknown.
 #[cfg(not(target_arch = "wasm32"))]
