@@ -8,14 +8,6 @@
   "routes": ["cf.nexgate.ssccs.org/*"],
   "workers_dev": true,
 
-  "kv_namespaces": [
-    {
-      "binding": "FIH_KV",
-      "id": "cbd9f4d943d9406a86855cd144b778fb",
-      "preview_id": "cbd9f4d943d9406a86855cd144b778fb"
-    }
-  ],
-
   "r2_buckets": [
     {
       "binding": "FIH_R2",
@@ -23,19 +15,10 @@
     }
   ],
 
-  "durable_objects": {
-    "bindings": [
-      {
-        "name": "INTENT_DO",
-        "class_name": "IntentClaimDO"
-      }
-    ]
-  },
-
   "migrations": [
     {
-      "tag": "v1",
-      "new_classes": ["IntentClaimDO"]
+      "tag": "v3",
+      "deleted_classes": ["FihDO"]
     }
   ],
 
