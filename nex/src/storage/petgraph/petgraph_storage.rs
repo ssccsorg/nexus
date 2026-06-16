@@ -132,7 +132,7 @@ impl PetgraphStorage {
             if #[cfg(target_arch = "wasm32")] {
                 Box::new(WasmClock)
             } else {
-                Box::new(nexus_storage_sim::SystemClock)
+                Box::new(crate::storage::io::SystemClock)
             }
         }
     }

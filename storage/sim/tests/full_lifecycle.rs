@@ -67,7 +67,7 @@ fn test_sim_full_lifecycle() {
 #[test]
 fn test_session_hydrate_flush() {
     use nexus_model::{Content, Fact, FactCapable, FihHash, StorageRead};
-    use nexus_storage_sim::session::FihSession;
+    use nexus_storage_sim::FihSession;
 
     let io = SimIo::new();
     let mut session = FihSession::new(io.clone(), "test");

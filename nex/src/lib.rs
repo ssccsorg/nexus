@@ -14,6 +14,13 @@ pub use nexus_model::{
 };
 pub use process::{error::ProcessError, scheduler::Scheduler};
 pub use storage::composite::CompositeColdStorage;
+pub use storage::io::export::{FihExport, FihImport, export_from_io, import_into_io};
+pub use storage::io::record::IntentStatus;
+pub use storage::io::session::FihSession;
+pub use storage::io::{
+    AsyncFileIo, EntityStore, FihStorage, MemoryEntityStore, SimIo, SyncFileIo, SystemClock,
+    WriteOp,
+};
 #[cfg(feature = "native")]
 pub use storage::native::NativeBlackboard;
 pub use storage::petgraph::{

@@ -4,11 +4,9 @@
 // encoding, decoding, corrupt/malformed input detection, version
 // handling, and end-to-end round trips with various storage backends.
 
-use nexus_storage_sim::export::{export_from_io, import_into_io};
-use nexus_storage_sim::intent_status::IntentStatus;
-use nexus_storage_sim::io::SyncFileIo;
-use nexus_storage_sim::record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
-use nexus_storage_sim::sim_io::SimIo;
+use nexus_storage_sim::SimIo;
+use nexus_storage_sim::{ContentMeta, FactRecord, HintRecord, IntentRecord, SyncFileIo};
+use nexus_storage_sim::{IntentStatus, export_from_io, import_into_io};
 
 // ── Helper: seed a SimIo with sample records ─────────────────────────────
 
