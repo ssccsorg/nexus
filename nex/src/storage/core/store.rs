@@ -179,10 +179,10 @@ impl<I: AsyncFileIo> FihStorage<I> {
         facts.sort_by_key(|r| r.submitted_at);
 
         for r in &facts {
-            self.coord.by_time.record(r.submitted_at, &r.id);
             let id_bytes = FihHash::from_hex(&r.id);
-            self.coord
-                .record_fact(&id_bytes.0, &r.origin, &r.creator, r.submitted_at);
+            let idx = self.coord.intern(&id_bytes.0);
+            self.coord.by_time.record(r.submitted_at, idx);
+            self.coord.record_fact(&id_bytes.0, &r.origin, &r.creator, r.submitted_at);
         }
 
         for r in &intents {
@@ -428,10 +428,7 @@ impl<I: AsyncFileIo> FactCapable for FihStorage<I> {
 
         // Update indices via FihCoord
         let ts = self.clock.now_nanos();
-        let fact_id_str = fact.id.to_string();
-        self.coord.by_time.record(ts, &fact_id_str);
-        self.coord.record_fact(
-            &FihHash::from_hex(&fact_id_str).0,
+        self.coord.record_fact(&fact.id.0,
             &fact.origin,
             &fact.creator,
             ts,
@@ -781,21 +778,21 @@ impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
                         .by_time
                         .range(&since_ns, &until_ns)
                         .into_iter()
-                        .map(|(_, id)| self.coord.intern_str(&id))
+                        .map(|(_, idx)| idx)
                         .collect(),
                     (Some(_), None) => self
                         .coord
                         .by_time
                         .since(&since_ns)
                         .into_iter()
-                        .map(|(_, id)| self.coord.intern_str(&id))
+                        .map(|(_, idx)| idx)
                         .collect(),
                     (None, Some(_)) => self
                         .coord
                         .by_time
                         .as_of(&until_ns)
                         .into_iter()
-                        .map(|(_, id)| self.coord.intern_str(&id))
+                        .map(|(_, idx)| idx)
                         .collect(),
                     (None, None) => unreachable!(),
                 };
@@ -1153,7 +1150,7 @@ impl<I: AsyncFileIo> FlushCapable for FihStorage<I> {
             .by_time
             .since(&since_ts)
             .into_iter()
-            .map(|(ts, id)| (id, ts))
+            .map(|(ts, idx)| (self.coord.resolve(idx), ts))
             .collect();
         let records_flushed = delta_ids.len() as u64;
 
@@ -1336,12 +1333,9 @@ impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
             .map_err(BlackboardError::Internal)?;
         self.fact_store.insert(record.id.clone(), record);
 
-        // Update indices via FihCoord
+        // Update indices via FihCoord (record_fact records by_time internally)
         let ts = self.clock.now_nanos();
-        let fact_id_str = fact.id.to_string();
-        self.coord.by_time.record(ts, &fact_id_str);
-        self.coord.record_fact(
-            &FihHash::from_hex(&fact_id_str).0,
+        self.coord.record_fact(&fact.id.0,
             &fact.origin,
             &fact.creator,
             ts,
@@ -1618,7 +1612,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncFlushCapable for FihStorage<I> {
             .by_time
             .since(&since_ts)
             .into_iter()
-            .map(|(ts, id)| (id, ts))
+            .map(|(_ts, idx)| (self.coord.resolve(idx), _ts))
             .collect();
         let records_flushed = delta_ids.len() as u64;
 
