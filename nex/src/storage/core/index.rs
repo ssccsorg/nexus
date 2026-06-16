@@ -5,14 +5,24 @@ use nexus_model::FihHash;
 
 /// Append-only ordered index. Stores compact u32 IDs (no String duplication).
 pub struct OrderedIndex<K = u64>
-where K: Ord + Clone + 'static,
+where
+    K: Ord + Clone + 'static,
 {
     entries: RefCell<Vec<(K, u32)>>,
 }
 
-impl<K> OrderedIndex<K> where K: Ord + Clone + 'static {
-    pub fn new() -> Self { Self { entries: RefCell::new(Vec::new()) } }
-    pub fn record(&self, key: K, id: u32) { self.entries.borrow_mut().push((key, id)); }
+impl<K> OrderedIndex<K>
+where
+    K: Ord + Clone + 'static,
+{
+    pub fn new() -> Self {
+        Self {
+            entries: RefCell::new(Vec::new()),
+        }
+    }
+    pub fn record(&self, key: K, id: u32) {
+        self.entries.borrow_mut().push((key, id));
+    }
     pub fn as_of(&self, bound: &K) -> Vec<(K, u32)> {
         let entries = self.entries.borrow();
         let end = entries.partition_point(|(k, _)| *k <= *bound);
@@ -29,14 +39,29 @@ impl<K> OrderedIndex<K> where K: Ord + Clone + 'static {
         let end_idx = entries.partition_point(|(k, _)| *k < *end);
         entries[start_idx..end_idx].to_vec()
     }
-    pub fn len(&self) -> usize { self.entries.borrow().len() }
-    pub fn is_empty(&self) -> bool { self.entries.borrow().is_empty() }
-    pub fn first_key(&self) -> Option<K> { self.entries.borrow().first().map(|(k, _)| k.clone()) }
-    pub fn last_key(&self) -> Option<K> { self.entries.borrow().last().map(|(k, _)| k.clone()) }
-    pub fn clear(&self) { self.entries.borrow_mut().clear(); }
+    pub fn len(&self) -> usize {
+        self.entries.borrow().len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.entries.borrow().is_empty()
+    }
+    pub fn first_key(&self) -> Option<K> {
+        self.entries.borrow().first().map(|(k, _)| k.clone())
+    }
+    pub fn last_key(&self) -> Option<K> {
+        self.entries.borrow().last().map(|(k, _)| k.clone())
+    }
+    pub fn clear(&self) {
+        self.entries.borrow_mut().clear();
+    }
 }
-impl<K> Default for OrderedIndex<K> where K: Ord + Clone + 'static {
-    fn default() -> Self { Self::new() }
+impl<K> Default for OrderedIndex<K>
+where
+    K: Ord + Clone + 'static,
+{
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// String interner: deduplicates strings into u32 IDs.
@@ -45,16 +70,28 @@ struct StringInterner {
     vec: Vec<String>,
 }
 impl StringInterner {
-    fn new() -> Self { Self { map: HashMap::new(), vec: Vec::new() } }
+    fn new() -> Self {
+        Self {
+            map: HashMap::new(),
+            vec: Vec::new(),
+        }
+    }
     fn intern(&mut self, s: &str) -> u32 {
-        if let Some(&id) = self.map.get(s) { return id; }
+        if let Some(&id) = self.map.get(s) {
+            return id;
+        }
         let id = self.vec.len() as u32;
         self.map.insert(s.to_string(), id);
         self.vec.push(s.to_string());
         id
     }
-    fn resolve(&self, id: u32) -> String { self.vec.get(id as usize).cloned().unwrap_or_default() }
-    fn clear(&mut self) { self.map.clear(); self.vec.clear(); }
+    fn resolve(&self, id: u32) -> String {
+        self.vec.get(id as usize).cloned().unwrap_or_default()
+    }
+    fn clear(&mut self) {
+        self.map.clear();
+        self.vec.clear();
+    }
 }
 
 // ── FihCoord ────────────────────────────────────────────────────────────
@@ -98,7 +135,9 @@ impl FihCoord {
 
     pub fn intern(&self, hash: &[u8; 32]) -> u32 {
         let mut map = self.id_to_idx.borrow_mut();
-        if let Some(&idx) = map.get(hash) { return idx; }
+        if let Some(&idx) = map.get(hash) {
+            return idx;
+        }
         let idx = self.next_idx.get();
         self.next_idx.set(idx + 1);
         map.insert(*hash, idx);
@@ -118,7 +157,11 @@ impl FihCoord {
     }
 
     pub fn resolve(&self, idx: u32) -> String {
-        self.idx_to_id.borrow().get(idx as usize).cloned().unwrap_or_default()
+        self.idx_to_id
+            .borrow()
+            .get(idx as usize)
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// Resolve an interned string key back to its original string.
@@ -146,25 +189,62 @@ impl FihCoord {
         let idx = self.intern(id);
         self.by_time.record(created_at, idx);
         let oid = self.intern_str_key(origin);
-        self.by_origin.borrow_mut().entry(oid).or_default().push(idx);
+        self.by_origin
+            .borrow_mut()
+            .entry(oid)
+            .or_default()
+            .push(idx);
         let cid = self.intern_str_key(creator);
-        self.by_creator.borrow_mut().entry(cid).or_default().push(idx);
+        self.by_creator
+            .borrow_mut()
+            .entry(cid)
+            .or_default()
+            .push(idx);
         let day = created_at - (created_at % 86_400_000_000_000);
-        self.by_created_at_day.borrow_mut().entry(day).or_default().push(idx);
-        self.ref_counts.borrow_mut().entry(idx).or_insert_with(|| Cell::new(0));
+        self.by_created_at_day
+            .borrow_mut()
+            .entry(day)
+            .or_default()
+            .push(idx);
+        self.ref_counts
+            .borrow_mut()
+            .entry(idx)
+            .or_insert_with(|| Cell::new(0));
     }
 
-    pub fn record_intent(&self, id: &[u8; 32], creator: &str, created_at: u64, from_facts: &[[u8; 32]]) {
+    pub fn record_intent(
+        &self,
+        id: &[u8; 32],
+        creator: &str,
+        created_at: u64,
+        from_facts: &[[u8; 32]],
+    ) {
         let idx = self.intern(id);
         let cid = self.intern_str_key(creator);
-        self.by_creator.borrow_mut().entry(cid).or_default().push(idx);
+        self.by_creator
+            .borrow_mut()
+            .entry(cid)
+            .or_default()
+            .push(idx);
         let sid = self.intern_str_key("submitted");
-        self.by_status.borrow_mut().entry(sid).or_default().push(idx);
+        self.by_status
+            .borrow_mut()
+            .entry(sid)
+            .or_default()
+            .push(idx);
         let day = created_at - (created_at % 86_400_000_000_000);
-        self.by_created_at_day.borrow_mut().entry(day).or_default().push(idx);
+        self.by_created_at_day
+            .borrow_mut()
+            .entry(day)
+            .or_default()
+            .push(idx);
         for fid in from_facts {
             let fact_idx = self.intern(fid);
-            self.by_fact.borrow_mut().entry(fact_idx).or_default().push(idx);
+            self.by_fact
+                .borrow_mut()
+                .entry(fact_idx)
+                .or_default()
+                .push(idx);
             if let Some(rc) = self.ref_counts.borrow().get(&fact_idx) {
                 rc.set(rc.get() + 1);
             }
@@ -181,7 +261,11 @@ impl FihCoord {
                 bucket.retain(|&i| i != idx);
             }
         }
-        self.by_status.borrow_mut().entry(new_sid).or_default().push(idx);
+        self.by_status
+            .borrow_mut()
+            .entry(new_sid)
+            .or_default()
+            .push(idx);
     }
 
     pub fn remove_intent_from_facts(&self, id: &[u8; 32], from_facts: &[[u8; 32]]) {
@@ -202,11 +286,19 @@ impl FihCoord {
 
     pub fn facts_by_creator(&self, creator: &str) -> Vec<u32> {
         let cid = self.intern_str_key(creator);
-        self.by_creator.borrow().get(&cid).cloned().unwrap_or_default()
+        self.by_creator
+            .borrow()
+            .get(&cid)
+            .cloned()
+            .unwrap_or_default()
     }
     pub fn intents_by_status(&self, status: &str) -> Vec<u32> {
         let sid = self.intern_str_key(status);
-        self.by_status.borrow().get(&sid).cloned().unwrap_or_default()
+        self.by_status
+            .borrow()
+            .get(&sid)
+            .cloned()
+            .unwrap_or_default()
     }
     pub fn ids_by_created_at_range(&self, start_day: u64, end_day: u64) -> Vec<u32> {
         let mut result = Vec::new();
@@ -216,12 +308,24 @@ impl FihCoord {
         result
     }
     pub fn intents_by_fact(&self, fact_idx: u32) -> Vec<u32> {
-        self.by_fact.borrow().get(&fact_idx).cloned().unwrap_or_default()
+        self.by_fact
+            .borrow()
+            .get(&fact_idx)
+            .cloned()
+            .unwrap_or_default()
     }
     pub fn fact_ids_by_origin(&self, origin: &str) -> Vec<u32> {
         let oid = self.intern_str_key(origin);
-        self.by_origin.borrow().get(&oid).cloned().unwrap_or_default()
+        self.by_origin
+            .borrow()
+            .get(&oid)
+            .cloned()
+            .unwrap_or_default()
     }
 }
 
-impl Default for FihCoord { fn default() -> Self { Self::new() } }
+impl Default for FihCoord {
+    fn default() -> Self {
+        Self::new()
+    }
+}

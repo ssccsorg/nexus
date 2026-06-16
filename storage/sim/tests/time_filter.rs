@@ -26,9 +26,15 @@ fn test_since_returns_newer_only() {
     assert_eq!(state.facts.len(), 2);
 
     let filtered = store.read_state_filtered(&StateFilter {
-        fact_ids: None, intent_ids: None, hint_ids: None,
-        since: Some("3000000000".into()), until: None,
-        limit: None, offset: None, creator: None, status: None,
+        fact_ids: None,
+        intent_ids: None,
+        hint_ids: None,
+        since: Some("3000000000".into()),
+        until: None,
+        limit: None,
+        offset: None,
+        creator: None,
+        status: None,
     });
     assert_eq!(filtered.facts.len(), 1);
     assert_eq!(filtered.facts[0].id, FihHash::from_hex("f_b"));
@@ -42,9 +48,15 @@ fn test_until_as_of_time_travel() {
     FactCapable::submit_fact(&store, &common::fact("f_c")).unwrap();
 
     let filtered = store.read_state_filtered(&StateFilter {
-        fact_ids: None, intent_ids: None, hint_ids: None,
-        since: None, until: Some("3000000000".into()),
-        limit: None, offset: None, creator: None, status: None,
+        fact_ids: None,
+        intent_ids: None,
+        hint_ids: None,
+        since: None,
+        until: Some("3000000000".into()),
+        limit: None,
+        offset: None,
+        creator: None,
+        status: None,
     });
     assert_eq!(filtered.facts.len(), 1);
     assert_eq!(filtered.facts[0].id, FihHash::from_hex("f_a"));
@@ -58,9 +70,15 @@ fn test_range_returns_mid_only() {
     FactCapable::submit_fact(&store, &common::fact("f_c")).unwrap();
 
     let filtered = store.read_state_filtered(&StateFilter {
-        fact_ids: None, intent_ids: None, hint_ids: None,
-        since: Some("3000000000".into()), until: Some("5000000000".into()),
-        limit: None, offset: None, creator: None, status: None,
+        fact_ids: None,
+        intent_ids: None,
+        hint_ids: None,
+        since: Some("3000000000".into()),
+        until: Some("5000000000".into()),
+        limit: None,
+        offset: None,
+        creator: None,
+        status: None,
     });
     assert_eq!(filtered.facts.len(), 1);
     assert_eq!(filtered.facts[0].id, FihHash::from_hex("f_b"));
@@ -71,9 +89,15 @@ fn test_since_after_all_returns_empty() {
     let store = make_clocked();
     FactCapable::submit_fact(&store, &common::fact("f_a")).unwrap();
     let filtered = store.read_state_filtered(&StateFilter {
-        fact_ids: None, intent_ids: None, hint_ids: None,
-        since: Some("7000000000".into()), until: None,
-        limit: None, offset: None, creator: None, status: None,
+        fact_ids: None,
+        intent_ids: None,
+        hint_ids: None,
+        since: Some("7000000000".into()),
+        until: None,
+        limit: None,
+        offset: None,
+        creator: None,
+        status: None,
     });
     assert_eq!(filtered.facts.len(), 0);
 }
@@ -83,9 +107,15 @@ fn test_until_before_all_returns_empty() {
     let store = make_clocked();
     FactCapable::submit_fact(&store, &common::fact("f_a")).unwrap();
     let filtered = store.read_state_filtered(&StateFilter {
-        fact_ids: None, intent_ids: None, hint_ids: None,
-        since: None, until: Some("1000000000".into()),
-        limit: None, offset: None, creator: None, status: None,
+        fact_ids: None,
+        intent_ids: None,
+        hint_ids: None,
+        since: None,
+        until: Some("1000000000".into()),
+        limit: None,
+        offset: None,
+        creator: None,
+        status: None,
     });
     assert_eq!(filtered.facts.len(), 0);
 }
@@ -98,9 +128,14 @@ fn test_fact_ids_filter_independent_of_time() {
 
     let filtered = store.read_state_filtered(&StateFilter {
         fact_ids: Some(vec!["f_a".into()]),
-        intent_ids: None, hint_ids: None,
-        since: None, until: None,
-        limit: None, offset: None, creator: None, status: None,
+        intent_ids: None,
+        hint_ids: None,
+        since: None,
+        until: None,
+        limit: None,
+        offset: None,
+        creator: None,
+        status: None,
     });
     assert_eq!(filtered.facts.len(), 1);
     assert_eq!(filtered.facts[0].id, FihHash::from_hex("f_a"));

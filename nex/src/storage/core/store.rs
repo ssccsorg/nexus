@@ -182,7 +182,8 @@ impl<I: AsyncFileIo> FihStorage<I> {
             let id_bytes = FihHash::from_hex(&r.id);
             let idx = self.coord.intern(&id_bytes.0);
             self.coord.by_time.record(r.submitted_at, idx);
-            self.coord.record_fact(&id_bytes.0, &r.origin, &r.creator, r.submitted_at);
+            self.coord
+                .record_fact(&id_bytes.0, &r.origin, &r.creator, r.submitted_at);
         }
 
         for r in &intents {
@@ -426,11 +427,8 @@ impl<I: AsyncFileIo> FactCapable for FihStorage<I> {
 
         // Update indices via FihCoord
         let ts = self.clock.now_nanos();
-        self.coord.record_fact(&fact.id.0,
-            &fact.origin,
-            &fact.creator,
-            ts,
-        );
+        self.coord
+            .record_fact(&fact.id.0, &fact.origin, &fact.creator, ts);
 
         Ok(fact.id)
     }
@@ -750,8 +748,7 @@ impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
 
             // By creator
             if let Some(creator) = &filter.creator {
-                let ids: HashSet<u32> =
-                    self.coord.facts_by_creator(creator).into_iter().collect();
+                let ids: HashSet<u32> = self.coord.facts_by_creator(creator).into_iter().collect();
                 c = Some(match c {
                     Some(existing) => existing.intersection(&ids).copied().collect(),
                     None => ids,
@@ -802,10 +799,7 @@ impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
 
             // By fact_ids (specific hex IDs)
             if let Some(ids) = &filter.fact_ids {
-                let id_set: HashSet<u32> = ids
-                    .iter()
-                    .map(|id| self.coord.intern_str(id))
-                    .collect();
+                let id_set: HashSet<u32> = ids.iter().map(|id| self.coord.intern_str(id)).collect();
                 c = Some(match c {
                     Some(existing) => existing.intersection(&id_set).copied().collect(),
                     None => id_set,
@@ -822,17 +816,15 @@ impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
         // Intent time filters (since/until) cannot use the day-precision
         // by_created_at_day index for nanosecond-accurate time-travel
         // queries. They are handled as post-filters in Phase 4 instead.
-        let has_intent_index = filter.creator.is_some()
-            || filter.status.is_some()
-            || filter.intent_ids.is_some();
+        let has_intent_index =
+            filter.creator.is_some() || filter.status.is_some() || filter.intent_ids.is_some();
 
         let intent_candidates: Option<HashSet<u32>> = if has_intent_index {
             let mut c: Option<HashSet<u32>> = None;
 
             // By status
             if let Some(status) = &filter.status {
-                let ids: HashSet<u32> =
-                    self.coord.intents_by_status(status).into_iter().collect();
+                let ids: HashSet<u32> = self.coord.intents_by_status(status).into_iter().collect();
                 c = Some(match c {
                     Some(existing) => existing.intersection(&ids).copied().collect(),
                     None => ids,
@@ -841,8 +833,7 @@ impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
 
             // By creator (intents are also indexed by creator)
             if let Some(creator) = &filter.creator {
-                let ids: HashSet<u32> =
-                    self.coord.facts_by_creator(creator).into_iter().collect();
+                let ids: HashSet<u32> = self.coord.facts_by_creator(creator).into_iter().collect();
                 c = Some(match c {
                     Some(existing) => existing.intersection(&ids).copied().collect(),
                     None => ids,
@@ -851,10 +842,7 @@ impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
 
             // By intent_ids (specific hex IDs)
             if let Some(ids) = &filter.intent_ids {
-                let id_set: HashSet<u32> = ids
-                    .iter()
-                    .map(|id| self.coord.intern_str(id))
-                    .collect();
+                let id_set: HashSet<u32> = ids.iter().map(|id| self.coord.intern_str(id)).collect();
                 c = Some(match c {
                     Some(existing) => existing.intersection(&id_set).copied().collect(),
                     None => id_set,
@@ -876,8 +864,7 @@ impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
                 .into_iter()
                 .filter(|r| ids.contains(&self.coord.intern_str(&r.id)))
                 .map(|r| {
-                    let content =
-                        self.load_content(&r.blob_hash, "application/octet-stream");
+                    let content = self.load_content(&r.blob_hash, "application/octet-stream");
                     Fact {
                         id: FihHash::from_hex(&r.id),
                         origin: r.origin,
@@ -889,8 +876,7 @@ impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
             None => all_facts
                 .into_iter()
                 .map(|r| {
-                    let content =
-                        self.load_content(&r.blob_hash, "application/octet-stream");
+                    let content = self.load_content(&r.blob_hash, "application/octet-stream");
                     Fact {
                         id: FihHash::from_hex(&r.id),
                         origin: r.origin,
@@ -914,18 +900,12 @@ impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
                     };
                     Intent {
                         id: FihHash::from_hex(&r.id),
-                        from_facts: r
-                            .from_facts
-                            .iter()
-                            .map(|s| FihHash::from_hex(s))
-                            .collect(),
+                        from_facts: r.from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
                         description,
                         creator: r.creator,
                         worker: match &r.status {
                             IntentStatus::Claimed { worker, .. }
-                            | IntentStatus::Concluded { worker, .. } => {
-                                Some(worker.clone())
-                            }
+                            | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
                             IntentStatus::Submitted => None,
                         },
                         to_fact_id: match &r.status {
@@ -943,9 +923,7 @@ impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
                         created_at: Some(r.created_at),
                         is_concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
                         concluded_at: match &r.status {
-                            IntentStatus::Concluded { concluded_at, .. } => {
-                                Some(*concluded_at)
-                            }
+                            IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
                             _ => None,
                         },
                     }
@@ -962,18 +940,12 @@ impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
                     };
                     Intent {
                         id: FihHash::from_hex(&r.id),
-                        from_facts: r
-                            .from_facts
-                            .iter()
-                            .map(|s| FihHash::from_hex(s))
-                            .collect(),
+                        from_facts: r.from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
                         description,
                         creator: r.creator,
                         worker: match &r.status {
                             IntentStatus::Claimed { worker, .. }
-                            | IntentStatus::Concluded { worker, .. } => {
-                                Some(worker.clone())
-                            }
+                            | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
                             IntentStatus::Submitted => None,
                         },
                         to_fact_id: match &r.status {
@@ -991,9 +963,7 @@ impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
                         created_at: Some(r.created_at),
                         is_concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
                         concluded_at: match &r.status {
-                            IntentStatus::Concluded { concluded_at, .. } => {
-                                Some(*concluded_at)
-                            }
+                            IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
                             _ => None,
                         },
                     }
@@ -1005,12 +975,11 @@ impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
             // Hints have no indexed filters beyond hint_ids
             let has_hint_filter = filter.hint_ids.is_some();
             if has_hint_filter {
-                let hint_ids_set: Option<HashSet<String>> =
-                    filter.hint_ids.as_ref().map(|ids| {
-                        ids.iter()
-                            .map(|id| FihHash::from_hex(id).to_string())
-                            .collect()
-                    });
+                let hint_ids_set: Option<HashSet<String>> = filter.hint_ids.as_ref().map(|ids| {
+                    ids.iter()
+                        .map(|id| FihHash::from_hex(id).to_string())
+                        .collect()
+                });
                 match hint_ids_set {
                     Some(ids) => all_hints
                         .into_iter()
@@ -1049,7 +1018,11 @@ impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
         // coarse for nanosecond-accurate time-travel queries. For intents
         // with status or creator indexes, those narrow the candidate set
         // in Phase 2; the time filter then runs on the reduced set here.
-        let mut state = BoardState { facts, intents, hints };
+        let mut state = BoardState {
+            facts,
+            intents,
+            hints,
+        };
 
         // Post-filter intents by since/until (nanosecond precision on created_at)
         let has_intent_time_filter = filter.since.is_some() || filter.until.is_some();
@@ -1333,11 +1306,8 @@ impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
 
         // Update indices via FihCoord (record_fact records by_time internally)
         let ts = self.clock.now_nanos();
-        self.coord.record_fact(&fact.id.0,
-            &fact.origin,
-            &fact.creator,
-            ts,
-        );
+        self.coord
+            .record_fact(&fact.id.0, &fact.origin, &fact.creator, ts);
 
         Ok(fact.id)
     }
