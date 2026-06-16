@@ -16,8 +16,7 @@ futures-executor = "0.3"
 
 [features]
 default = []
-native = []
-cf = ["native", "dep:worker"]
+cf = ["dep:worker"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 worker = { version = "0.8", optional = true }

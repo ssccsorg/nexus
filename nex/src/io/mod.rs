@@ -6,8 +6,8 @@
 // This layer is storage-agnostic. Multiple storage engines (FihStorage,
 // PetgraphStorage, etc.) can share the same IO interface.
 //
-// IO implementations (SimIo, CfFihIo, FsIo) live in the nexus-storage-sim
-// crate. This crate defines only the trait/type definitions.
+// IO implementations (SimIo, CfFihIo, FsIo) are provided by the
+// nexus-storage-sim crate. This crate defines only the trait/type definitions.
 
 pub mod async_file_io;
 

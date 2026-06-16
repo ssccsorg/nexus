@@ -7,7 +7,7 @@
 // Despite the name, this trait does NOT require `std::fs` or a local
 // filesystem. Implementations include:
 //   - SimIo: in-memory HashMap (no_std compatible)
-//   - FsIo: std::fs (native, WASI)
+//   - FsIo: std::fs
 //   - CfIo: Cloudflare R2 (WASM)
 //   - (your backend here): any flat key-space with read/write/list/delete
 // # Why async?
