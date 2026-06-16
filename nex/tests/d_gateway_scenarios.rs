@@ -1,27 +1,26 @@
-// Scenario tests routed through GatewayDriver.
+// Scenario tests routed through SerdeProxy.
 //
 // Validates that the FIH protocol produces identical results when all
 // primitives cross a JSON serialization boundary (simulating a real HTTP
 // transport). Each scenario here mirrors its counterpart in z_scenarios.rs
-// but communicates through GatewayDriver instead of calling CompositeBlackboard
+// but communicates through SerdeProxy instead of calling HybridBlackboard
 // directly.
 
-use nex::gateway_driver::GatewayDriver;
-use nex::{
-    Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead, create_blackboard,
-};
+use nex::create_blackboard;
+use nexus_gateway_serde_proxy::SerdeProxy;
+use nexus_model::{Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
 
-/// Contradiction Detection — via GatewayDriver (JSON transport boundary).
+/// Contradiction Detection — via SerdeProxy (JSON transport boundary).
 ///
 /// Two papers make contradictory claims about GNN oversmoothing.
 /// Agent-A and Agent-B each ingest a paper. Agent-C detects the
 /// contradiction and submits a reconciliation hypothesis.
 ///
 /// This is identical to scenario_contradiction_detection in z_scenarios.rs
-/// except all FIH operations pass through GatewayDriver's JSON round-trip.
+/// except all FIH operations pass through SerdeProxy's JSON round-trip.
 #[test]
 fn scenario_contradiction_detection_via_gateway() {
-    let gw = GatewayDriver::new(create_blackboard());
+    let gw = SerdeProxy::new(create_blackboard());
 
     // Agent-A: ingests paper claiming GNNs work fine at 50 layers
     gw.submit_fact(&Fact {
@@ -77,5 +76,5 @@ fn scenario_contradiction_detection_via_gateway() {
             .contains("Contradiction resolved")
     );
 
-    println!("  ✓ GatewayDriver: Contradiction Detection — 3 agents, JSON round-trip verified");
+    println!("  ✓ SerdeProxy: Contradiction Detection — 3 agents, JSON round-trip verified");
 }

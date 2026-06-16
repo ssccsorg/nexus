@@ -1637,6 +1637,7 @@ dependencies = [
  "cfg-if",
  "futures-executor",
  "log",
+ "nexus-gateway-serde-proxy",
  "nexus-model",
  "nexus-storage-composite",
  "nexus-storage-petgraph",
@@ -1677,6 +1678,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexus-gateway-serde-proxy"
+version = "0.1.0"
+dependencies = [
+ "nexus-model",
+ "serde_json",
+]
+
+[[package]]
 name = "nexus-model"
 version = "0.1.0"
 dependencies = [
@@ -1691,6 +1700,7 @@ version = "0.1.0"
 dependencies = [
  "interface-cypher",
  "nex",
+ "nexus-model",
  "serde_json",
 ]
 
@@ -1740,6 +1750,7 @@ dependencies = [
  "cfg-if",
  "futures-executor",
  "nex",
+ "nexus-gateway-serde-proxy",
  "nexus-model",
  "postcard",
  "serde",

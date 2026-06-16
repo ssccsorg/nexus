@@ -142,7 +142,7 @@ fn test_export_import_fs_to_sim() {
 
 #[test]
 fn test_export_full_fih_lifecycle() {
-    use nex::StorageRead;
+    use nexus_model::StorageRead;
     use nexus_storage_sim::FihStorage;
 
     // Seed a SimIo directly with records (not through FihStorage).

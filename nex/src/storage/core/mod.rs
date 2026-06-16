@@ -6,7 +6,6 @@
 // Uses crate::io::AsyncFileIo for all IO operations.
 // Can be swapped out for external storage engines.
 
-pub mod clock;
 pub mod entity_store;
 pub mod export;
 pub mod index;
@@ -15,7 +14,6 @@ pub mod record;
 pub mod session;
 pub mod store;
 
-pub use clock::SystemClock;
 pub use entity_store::{EntityStore, MemoryEntityStore};
 pub use export::{FihExport, FihImport, export_from_io, import_into_io};
 pub use index::OrderedIndex;

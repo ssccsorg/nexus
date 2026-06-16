@@ -27,15 +27,17 @@
 //   5. Document revision (v1 → detector facts → v2 arrives → state change)
 //      — knowledge evolution tracked through detector observations
 
+use nex::create_blackboard;
 use nex::process::scheduler::Scheduler;
 use nex::process::tasks::contradiction_detector::ContradictionDetector;
 use nex::process::tasks::gap_detector::GapDetector;
 use nex::process::tasks::new_document_analyzer::NewDocumentAnalyzer;
 use nex::process::tasks::state_change_detector::StateChangeDetector;
-use nex::{
-    Blackboard, BoardState, CompositeBlackboard, Content, EvictCapable, Fact, FactCapable, FihHash,
-    Intent, IntentCapable, StorageRead, create_blackboard,
+use nexus_model::{
+    Blackboard, BoardState, Content, EvictCapable, Fact, FactCapable, FihHash, Intent,
+    IntentCapable, StorageRead,
 };
+use nexus_storage_composite::HybridBlackboard;
 use nexus_storage_petgraph::{Snapshottable, StorageSnapshot};
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -864,7 +866,7 @@ fn scenario_document_revision() {
     let snapshot = Snapshottable::to_snapshot(&sched.bb);
     let json = serde_json::to_vec(&snapshot).expect("serialize");
     let restored: StorageSnapshot = serde_json::from_slice(&json).expect("deserialize");
-    let bb_restored = <CompositeBlackboard as Snapshottable>::from_snapshot(restored);
+    let bb_restored = <HybridBlackboard as Snapshottable>::from_snapshot(restored);
     let restored_state = StorageRead::read_state(&bb_restored);
     assert!(
         restored_state.facts.len() >= 6,

@@ -1,6 +1,6 @@
 // Full lifecycle test for FihStorage<SimIo>.
 
-use nex::{Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
+use nexus_model::{Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
 use nexus_storage_sim::{FihStorage, SimIo};
 
 #[test]
