@@ -14,6 +14,8 @@ pub use nexus_model::{
 };
 pub use process::{error::ProcessError, scheduler::Scheduler};
 pub use storage::composite::CompositeColdStorage;
+#[cfg(feature = "native")]
+pub use storage::native::NativeBlackboard;
 pub use storage::petgraph::{
     EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Snapshottable, StorageSnapshot,
 };

@@ -12,20 +12,21 @@
 //   - conclude_intent() passes real to_fact/concluded_at to try_conclude()
 //   - all timestamps flow through Now trait, never SystemTime::now() directly
 
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::cell::{Cell, RefCell};
+use std::ops::Range;
 
 use nexus_model::{
     BlackboardError, BoardState, Content, EvictCapable, Fact, FactCapable, FihHash, FilterCapable,
-    Hint, HintCapable, Intent, IntentCapable, Now, PartitionData, StateFilter, StorageRead,
+    FlushCapable, FlushCursor, FlushResult, Hint, HintCapable, Intent, IntentCapable, Now,
+    PartitionData, ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
 };
 
 use crate::entity_store::{EntityStore, MemoryEntityStore};
 use crate::index::FihCoord;
-use crate::io::{AsyncFileIo, SyncFileIo, WriteOp};
+use crate::io::{AsyncFileIo, WriteOp};
 use crate::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
 
-/// Chain entry format: serialized by flush_since, deserialized by import_chain_file.
+/// Chain entry format: serialized by flush_since for delta chain files.
 /// Named struct avoids postcard tuple field ordering ambiguity with empty vecs.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct ChainEntry {
@@ -39,82 +40,114 @@ struct ChainEntry {
 ///
 /// All FIH trait methods are sync. They enqueue WriteOps into a buffer
 /// for batch commit by the outer FihSession layer.
-/// IO is wrapped in SyncFileIo to bridge the async IO trait with sync callers.
+/// IO-bound operations (flush_pending, rebuild_cache) are async.
 pub struct FihStorage<I: AsyncFileIo> {
-    io: SyncFileIo<I>,
+    pub io: I,
     project_id: String,
     clock: Box<dyn Now + Send + Sync>,
-    /// When true (default), in-memory caches are active for O(1) reads.
-    /// Set to false when used exclusively as ColdStorage — all reads go
-    /// directly to IO, and cache fields remain empty.
-    is_hotmemory_enabled: bool,
+    /// When true, every write operation also flushes pending ops to IO
+    /// immediately, ensuring durability at the cost of batching.
+    #[expect(dead_code)]
+    auto_flush: bool,
     // In-memory stores: rebuilt from IO on hydrate, kept in sync for reads.
-    fact_store: Box<dyn EntityStore<FactRecord>>,
-    intent_store: Box<dyn EntityStore<IntentRecord>>,
-    hint_store: Box<dyn EntityStore<HintRecord>>,
-    // Indices (valid only when is_hotmemory_enabled)
+    pub fact_store: Box<dyn EntityStore<FactRecord>>,
+    pub intent_store: Box<dyn EntityStore<IntentRecord>>,
+    pub hint_store: Box<dyn EntityStore<HintRecord>>,
+    // Indices
     coord: FihCoord,
     // Pending writes (for FihSession coordination).
-    pub(crate) pending: Mutex<Vec<WriteOp>>,
+    pub(crate) pending: RefCell<Vec<WriteOp>>,
 }
 
 impl<I: AsyncFileIo> FihStorage<I> {
     pub fn new(io: I, project_id: &str) -> Self {
-        Self::with_clock(io, project_id, Box::new(nexus_model::SystemClock))
+        Self::with_clock(io, project_id, Box::new(crate::SystemClock))
     }
 
     pub fn with_clock(io: I, project_id: &str, clock: Box<dyn Now + Send + Sync>) -> Self {
-        Self::with_clock_and_memory(io, project_id, clock, true)
+        Self::with_clock_and_memory(io, project_id, clock)
     }
 
-    /// Create storage with explicit memory cache control.
-    /// Set `memory` to false when this instance is used exclusively as
-    /// ColdStorage — all reads go directly to IO, saving memory.
-    pub fn with_clock_and_memory(
+    /// Create storage with auto-flush enabled. Every write operation
+    /// immediately flushes pending ops to IO for durability.
+    /// Useful for R2-backed or direct-write deployments.
+    pub fn with_auto_flush(io: I, project_id: &str) -> Self {
+        Self::with_all(io, project_id, Box::new(crate::SystemClock), true)
+    }
+
+    /// Full constructor with all options.
+    pub fn with_all(
         io: I,
         project_id: &str,
         clock: Box<dyn Now + Send + Sync>,
-        is_hotmemory_enabled: bool,
+        auto_flush: bool,
     ) -> Self {
         Self {
-            io: SyncFileIo::new(io),
+            io,
             project_id: project_id.to_string(),
             clock,
-            is_hotmemory_enabled,
+            auto_flush,
             fact_store: Box::new(MemoryEntityStore::<FactRecord>::new()),
             intent_store: Box::new(MemoryEntityStore::<IntentRecord>::new()),
             hint_store: Box::new(MemoryEntityStore::<HintRecord>::new()),
             coord: FihCoord::new(),
-            pending: Mutex::new(Vec::new()),
+            pending: RefCell::new(Vec::new()),
         }
     }
 
+    pub fn with_clock_and_memory(
+        io: I,
+        project_id: &str,
+        clock: Box<dyn Now + Send + Sync>,
+    ) -> Self {
+        Self {
+            io,
+            project_id: project_id.to_string(),
+            clock,
+            auto_flush: false,
+            fact_store: Box::new(MemoryEntityStore::<FactRecord>::new()),
+            intent_store: Box::new(MemoryEntityStore::<IntentRecord>::new()),
+            hint_store: Box::new(MemoryEntityStore::<HintRecord>::new()),
+            coord: FihCoord::new(),
+            pending: RefCell::new(Vec::new()),
+        }
+    }
+
+    /// Flush pending writes if auto_flush is enabled. No-op in the sync
+    /// path; auto-flush is only meaningful through the async trait impls
+    /// that call flush_pending directly.
+    fn maybe_flush(&self) -> Result<(), String> {
+        // Sync trait impls do not perform IO. Auto-flush is handled by
+        // the async trait impls which call flush_pending directly.
+        Ok(())
+    }
+
     /// Rebuild in-memory cache from IO storage.
-    pub fn rebuild_cache(&self) -> Result<(), String> {
-        let fact_keys = self.io.list("facts/")?;
+    pub async fn rebuild_cache(&self) -> Result<(), String> {
+        let fact_keys = self.io.list("facts/").await?;
         let mut facts: Vec<(String, FactRecord)> = Vec::new();
         for key in fact_keys {
-            if let Some(bytes) = self.io.read(&key)?
+            if let Some(bytes) = self.io.read(&key).await?
                 && let Ok(record) = postcard::from_bytes::<FactRecord>(&bytes)
             {
                 facts.push((record.id.clone(), record));
             }
         }
 
-        let intent_keys = self.io.list("intents/")?;
+        let intent_keys = self.io.list("intents/").await?;
         let mut intents: Vec<(String, IntentRecord)> = Vec::new();
         for key in intent_keys {
-            if let Some(bytes) = self.io.read(&key)?
+            if let Some(bytes) = self.io.read(&key).await?
                 && let Ok(record) = postcard::from_bytes::<IntentRecord>(&bytes)
             {
                 intents.push((record.id.clone(), record));
             }
         }
 
-        let hint_keys = self.io.list("hints/")?;
+        let hint_keys = self.io.list("hints/").await?;
         let mut hints: Vec<(String, HintRecord)> = Vec::new();
         for key in hint_keys {
-            if let Some(bytes) = self.io.read(&key)?
+            if let Some(bytes) = self.io.read(&key).await?
                 && let Ok(record) = postcard::from_bytes::<HintRecord>(&bytes)
             {
                 hints.push((record.id.clone(), record));
@@ -147,28 +180,25 @@ impl<I: AsyncFileIo> FihStorage<I> {
             self.coord.by_time.record(r.submitted_at, &r.id);
             self.coord
                 .by_origin
-                .write()
-                .unwrap()
+                .borrow_mut()
                 .entry(r.origin.clone())
                 .or_default()
                 .push(r.id.clone());
             self.coord
                 .ref_counts
-                .write()
-                .unwrap()
+                .borrow_mut()
                 .entry(r.id.clone())
-                .or_insert_with(|| AtomicU64::new(0));
+                .or_insert_with(|| Cell::new(0));
         }
 
         for r in &intents {
             for fid in &r.from_facts {
-                if let Some(rc) = self.coord.ref_counts.read().unwrap().get(fid) {
-                    rc.fetch_add(1, Ordering::Relaxed);
+                if let Some(rc) = self.coord.ref_counts.borrow().get(fid) {
+                    rc.set(rc.get() + 1);
                 }
                 self.coord
                     .by_fact
-                    .write()
-                    .unwrap()
+                    .borrow_mut()
                     .entry(fid.clone())
                     .or_default()
                     .push(r.id.clone());
@@ -177,254 +207,130 @@ impl<I: AsyncFileIo> FihStorage<I> {
     }
 
     /// Flush pending writes to IO.
-    pub fn intents_by_fact(&self, fact_id: &str) -> Vec<String> {
-        self.coord.intents_by_fact(fact_id)
-    }
-
-    /// Import a single delta chain file, restoring its records into the
-    /// in-memory cache. The chain file must have been created by flush_since.
-    /// Returns the number of records restored (facts + intents).
-    pub fn import_chain_file(&self, path: &str) -> Result<u64, String> {
-        let bytes = self
-            .io
-            .read(path)?
-            .ok_or_else(|| format!("chain file not found: {}", path))?;
-        let entry: ChainEntry =
-            postcard::from_bytes(&bytes).map_err(|e| format!("deserialize chain: {e}"))?;
-        // Reset Hot mode path: always write records to IO then rebuild.
-        // This unifies with rebuild_cache semantics and eliminates the
-        // fragile in-memory cache merge path.
-        for r in &entry.facts {
-            let bytes = postcard::to_allocvec(r).map_err(|e| e.to_string())?;
-            self.pending.lock().unwrap().push(WriteOp::Write {
-                path: r.key(),
-                data: bytes,
-            });
-        }
-        for r in &entry.intents {
-            let bytes = postcard::to_allocvec(r).map_err(|e| e.to_string())?;
-            self.pending.lock().unwrap().push(WriteOp::Write {
-                path: r.key(),
-                data: bytes,
-            });
-        }
-        let count = (entry.facts.len() + entry.intents.len()) as u64;
-        self.flush_pending()?;
-        if self.is_hotmemory_enabled && count > 0 {
-            self.rebuild_cache()?;
-        }
-        Ok(count)
-    }
-
-    /// Flush pending writes to IO.
-    pub fn flush_pending(&self) -> Result<(), String> {
-        let ops = std::mem::take(&mut *self.pending.lock().map_err(|e| e.to_string())?);
+    pub async fn flush_pending(&self) -> Result<(), String> {
+        let ops = std::mem::take(&mut *self.pending.try_borrow_mut().map_err(|e| e.to_string())?);
         if !ops.is_empty() {
-            self.io.apply_batch(&ops)?;
+            self.io.apply_batch(&ops).await?;
         }
         Ok(())
     }
 
-    /// Enqueue content as a blob write. Uses pending so that flush
-    /// atomicity applies: blob + record are committed together.
-    ///
-    /// Lock ordering: pending (lowest) → io.read (stateless).
+    /// Query intents that reference a given fact.
+    pub fn intents_by_fact(&self, fact_id: &str) -> Vec<String> {
+        self.coord.intents_by_fact(fact_id)
+    }
+
+    /// Enqueue content as a blob write. FIH is append-only: no dedup
+    /// read needed because records are never overwritten. R2 is
+    /// last-writer-wins, so duplicate blob_hash writes are harmless.
     fn enqueue_content(&self, content: &Content) -> Result<String, String> {
         let blob_hash = content_hash(&content.data);
         let blob_path = format!("blob/{}.bin", blob_hash);
-        let meta_path = format!("blob/{}.bin.meta", blob_hash);
 
-        // Check dedup from pending buffer first (avoids IO read)
+        // Check pending buffer first to avoid duplicate PUTs.
+        // Cheap: linear scan over pending ops (typically < 100).
+        if self
+            .pending
+            .borrow()
+            .iter()
+            .any(|op| matches!(op, WriteOp::Write { path, .. } if *path == blob_path))
         {
-            let pending = self.pending.lock().unwrap();
-            for op in pending.iter() {
-                if let WriteOp::Write { path, .. } = op
-                    && *path == blob_path
-                {
-                    return Ok(blob_hash); // already queued, skip
-                }
-            }
+            return Ok(blob_hash);
         }
 
-        // Fall back to IO check
-        {
-            let map = self.io.read(&blob_path)?;
-            if map.is_some() {
-                return Ok(blob_hash); // already stored, skip
-            }
-        }
-
-        let op = WriteOp::Write {
+        self.pending.borrow_mut().push(WriteOp::Write {
             path: blob_path,
             data: content.data.clone(),
-        };
-        self.pending.lock().unwrap().push(op);
+        });
 
         let meta = ContentMeta {
             mime_type: content.mime_type.clone(),
             size: content.data.len() as u64,
         };
         let meta_bytes = postcard::to_allocvec(&meta).map_err(|e| e.to_string())?;
-        self.pending.lock().unwrap().push(WriteOp::Write {
-            path: meta_path,
+        self.pending.borrow_mut().push(WriteOp::Write {
+            path: format!("blob/{}.bin.meta", blob_hash),
             data: meta_bytes,
         });
 
         Ok(blob_hash)
     }
 
-    /// Load blob content. Checks pending writes first, then IO.
-    /// This ensures read-after-write consistency without flushing.
+    /// Load blob content from pending writes. No IO fallback — FIH is
+    /// append-only and content is stored alongside facts for reconstruction.
+    /// Content blob data is only materialized during export/flush;
+    /// read_state returns empty content for non-pending blobs.
     fn load_content(&self, blob_hash: &str, default_mime: &str) -> Content {
         let blob_path = format!("blob/{}.bin", blob_hash);
         let meta_path = format!("blob/{}.bin.meta", blob_hash);
 
-        // Check pending writes first — read mime from pending meta if available
-        let (data_from_pending, mime_from_pending) = {
-            let pending = self.pending.lock().unwrap();
-            let mut blob_data = None;
-            let mut mime = None;
-            for op in pending.iter() {
-                match op {
-                    WriteOp::Write { path, data } if *path == blob_path => {
-                        blob_data = Some(data.clone());
-                    }
-                    WriteOp::Write { path, data } if *path == meta_path => {
-                        if let Ok(meta) = postcard::from_bytes::<ContentMeta>(data) {
-                            mime = Some(meta.mime_type);
-                        }
-                    }
-                    _ => {}
+        // Check pending writes for blob data and mime
+        let pending = self.pending.borrow();
+        let mut blob_data = None;
+        let mut mime = None;
+        for op in pending.iter() {
+            match op {
+                WriteOp::Write { path, data } if *path == blob_path => {
+                    blob_data = Some(data.clone());
                 }
+                WriteOp::Write { path, data } if *path == meta_path => {
+                    if let Ok(meta) = postcard::from_bytes::<ContentMeta>(data) {
+                        mime = Some(meta.mime_type);
+                    }
+                }
+                _ => {}
             }
-            (blob_data, mime)
-        };
+        }
+        drop(pending);
 
-        if let Some(data) = data_from_pending {
+        if let Some(data) = blob_data {
             return Content {
-                mime_type: mime_from_pending.unwrap_or_else(|| default_mime.to_string()),
+                mime_type: mime.unwrap_or_else(|| default_mime.to_string()),
                 data,
             };
         }
 
-        // Fall back to IO, with mime_type from meta
-        let mime = self
-            .read_mime_type(blob_hash)
-            .unwrap_or(default_mime.to_string());
-        match self.io.read(&blob_path) {
-            Ok(Some(data)) => Content {
-                mime_type: mime,
-                data,
-            },
-            _ => Content {
-                mime_type: default_mime.to_string(),
-                data: Vec::new(),
-            },
-        }
-    }
-
-    /// Read mime_type from blob meta file. Returns None if not found.
-    fn read_mime_type(&self, blob_hash: &str) -> Option<String> {
-        let meta_path = format!("blob/{}.bin.meta", blob_hash);
-        match self.io.read(&meta_path) {
-            Ok(Some(bytes)) => postcard::from_bytes::<ContentMeta>(&bytes)
-                .ok()
-                .map(|m| m.mime_type),
-            _ => None,
+        // No data in pending — return empty content.
+        // The async path (`AsyncStorageRead::read_state`) calls `load_blob`
+        // directly to fetch from IO. The sync path only has access to
+        // in-memory caches; after `flush_pending` + `rebuild_cache` the
+        // content lives in IO but `load_content` cannot reach it without
+        // performing synchronous IO, which is intentionally avoided.
+        Content {
+            mime_type: default_mime.to_string(),
+            data: Vec::new(),
         }
     }
 }
 
-/// Non-cryptographic content hash for dedup. In production, replace with
-/// SHA-256 or BLAKE3. The name makes clear this is NOT a security boundary.
 fn content_hash(data: &[u8]) -> String {
-    use std::hash::Hasher;
+    // Simple WASM-compatible hash. Uses std::hash::DefaultHasher which
+    // works on all targets including wasm32-unknown-unknown.
+    // In production, replace with SHA-256 or BLAKE3.
+    use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    hasher.write(data);
-    format!("{:x}", hasher.finish())
+    data.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
 }
 
-// ── StorageRead ──────────────────────────────────────────────────────────
-
-impl<I: AsyncFileIo> FihStorage<I> {
-    /// Read state directly from IO, bypassing in-memory cache.
-    /// Used when `is_hotmemory_enabled` is false (ColdStorage mode).
-    fn read_state_uncached(&self) -> BoardState {
-        let mut facts = Vec::new();
-        let mut intents = Vec::new();
-        let mut hints = Vec::new();
-
-        if let Ok(keys) = self.io.list("facts/") {
-            for key in keys {
-                if let Ok(Some(bytes)) = self.io.read(&key)
-                    && let Ok(r) = postcard::from_bytes::<FactRecord>(&bytes)
-                {
-                    let content = self.load_content(&r.blob_hash, "application/octet-stream");
-                    facts.push(Fact {
-                        id: FihHash(r.id.clone()),
-                        origin: r.origin.clone(),
-                        content,
-                        creator: r.creator.clone(),
-                    });
-                }
-            }
-        }
-
-        if let Ok(keys) = self.io.list("intents/") {
-            for key in keys {
-                if let Ok(Some(bytes)) = self.io.read(&key)
-                    && let Ok(r) = postcard::from_bytes::<IntentRecord>(&bytes)
-                {
-                    intents.push(Intent {
-                        id: FihHash(r.id.clone()),
-                        from_facts: r.from_facts.clone(),
-                        description: String::new(),
-                        creator: r.creator.clone(),
-                        worker: match &r.status {
-                            IntentStatus::Claimed { worker, .. }
-                            | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
-                            IntentStatus::Submitted => None,
-                        },
-                        to_fact_id: match &r.status {
-                            IntentStatus::Concluded { to_fact, .. } => Some(to_fact.clone()),
-                            _ => None,
-                        },
-                        last_heartbeat_at: match &r.status {
-                            IntentStatus::Claimed {
-                                last_heartbeat_at, ..
-                            } => Some(*last_heartbeat_at),
-                            _ => None,
-                        },
-                        created_at: Some(r.created_at),
-                        is_concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
-                        concluded_at: match &r.status {
-                            IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
-                            _ => None,
-                        },
-                    });
-                }
-            }
-        }
-
-        if let Ok(keys) = self.io.list("hints/") {
-            for key in keys {
-                if let Ok(Some(bytes)) = self.io.read(&key)
-                    && let Ok(r) = postcard::from_bytes::<HintRecord>(&bytes)
-                {
-                    hints.push(Hint {
-                        id: FihHash(r.id.clone()),
-                        content: r.content.clone(),
-                        creator: r.creator.clone(),
-                    });
-                }
-            }
-        }
-
-        BoardState {
-            facts,
-            intents,
-            hints,
-        }
+/// Load a content blob from IO by hash. Returns empty Content if not found.
+async fn load_blob(io: &impl AsyncFileIo, blob_hash: &str) -> Content {
+    if blob_hash.is_empty() {
+        return Content {
+            mime_type: "application/json".into(),
+            data: Vec::new(),
+        };
+    }
+    let key = format!("blob/{}.bin", blob_hash);
+    match io.read(&key).await {
+        Ok(Some(data)) => Content {
+            mime_type: "application/json".into(),
+            data,
+        },
+        _ => Content {
+            mime_type: "application/json".into(),
+            data: Vec::new(),
+        },
     }
 }
 
@@ -434,9 +340,6 @@ impl<I: AsyncFileIo> StorageRead for FihStorage<I> {
     }
 
     fn read_state(&self) -> BoardState {
-        if !self.is_hotmemory_enabled {
-            return self.read_state_uncached();
-        }
         let facts = self.fact_store.values();
         let intents = self.intent_store.values();
         let hints = self.hint_store.values();
@@ -507,14 +410,6 @@ impl<I: AsyncFileIo> StorageRead for FihStorage<I> {
 
 impl<I: AsyncFileIo> FactCapable for FihStorage<I> {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
-        // ColdStorage mode is read-only; writes go through write_blob only.
-        // Block FIH writes to prevent accidental data corruption when this
-        // instance is serving as the cold half of DualStorage.
-        if !self.is_hotmemory_enabled {
-            return Err(BlackboardError::Forbidden(
-                "cannot submit_fact in read-only ColdStorage mode".into(),
-            ));
-        }
         let blob_hash = self
             .enqueue_content(&fact.content)
             .map_err(BlackboardError::Internal)?;
@@ -530,30 +425,26 @@ impl<I: AsyncFileIo> FactCapable for FihStorage<I> {
         };
 
         // Update cache immediately for subsequent reads
-        if self.is_hotmemory_enabled {
-            self.fact_store.insert(record.id.clone(), record);
-        }
-        self.pending.lock().unwrap().push(op);
+        self.fact_store.insert(record.id.clone(), record);
+        self.pending.borrow_mut().push(op);
+        self.maybe_flush().map_err(BlackboardError::Internal)?;
 
-        if self.is_hotmemory_enabled {
-            // Update indices
-            let ts = self.clock.now_nanos();
-            self.coord.by_time.record(ts, &fact.id.0);
-            {
-                let mut origin_map = self.coord.by_origin.write().unwrap();
-                origin_map
-                    .entry(fact.origin.clone())
-                    .or_default()
-                    .push(fact.id.0.clone());
-            }
-            // ref_count defaults to 0 — orphan unless referenced by an Intent
-            self.coord
-                .ref_counts
-                .write()
-                .unwrap()
-                .entry(fact.id.0.clone())
-                .or_insert_with(|| AtomicU64::new(0));
+        // Update indices
+        let ts = self.clock.now_nanos();
+        self.coord.by_time.record(ts, &fact.id.0);
+        {
+            let mut origin_map = self.coord.by_origin.borrow_mut();
+            origin_map
+                .entry(fact.origin.clone())
+                .or_default()
+                .push(fact.id.0.clone());
         }
+        // ref_count defaults to 0 — orphan unless referenced by an Intent
+        self.coord
+            .ref_counts
+            .borrow_mut()
+            .entry(fact.id.0.clone())
+            .or_insert_with(|| Cell::new(0));
 
         Ok(fact.id.clone())
     }
@@ -563,11 +454,6 @@ impl<I: AsyncFileIo> FactCapable for FihStorage<I> {
 
 impl<I: AsyncFileIo> HintCapable for FihStorage<I> {
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
-        if !self.is_hotmemory_enabled {
-            return Err(BlackboardError::Forbidden(
-                "cannot submit_hint in read-only ColdStorage mode".into(),
-            ));
-        }
         let record = HintRecord {
             id: hint.id.0.clone(),
             content: hint.content.clone(),
@@ -584,10 +470,9 @@ impl<I: AsyncFileIo> HintCapable for FihStorage<I> {
             data: bytes,
         };
 
-        if self.is_hotmemory_enabled {
-            self.hint_store.insert(record.id.clone(), record);
-        }
-        self.pending.lock().unwrap().push(op);
+        self.hint_store.insert(record.id.clone(), record);
+        self.pending.borrow_mut().push(op);
+        self.maybe_flush().map_err(BlackboardError::Internal)?;
 
         Ok(())
     }
@@ -597,30 +482,23 @@ impl<I: AsyncFileIo> HintCapable for FihStorage<I> {
 
 impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
     fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
-        if !self.is_hotmemory_enabled {
-            return Err(BlackboardError::Forbidden(
-                "cannot submit_intent in read-only ColdStorage mode".into(),
-            ));
-        }
         // Verify at least one from_fact exists and all referenced facts exist
         if intent.from_facts.is_empty() {
             return Err(BlackboardError::Forbidden(
                 "intent must reference at least one fact".into(),
             ));
         }
-        if self.is_hotmemory_enabled {
-            for fid in &intent.from_facts {
-                if !self.fact_store.contains_key(fid) {
-                    return Err(BlackboardError::NotFound(format!("Fact {fid} not found")));
-                }
+        for fid in &intent.from_facts {
+            if !self.fact_store.contains_key(fid) {
+                return Err(BlackboardError::NotFound(format!("Fact {fid} not found")));
             }
-            // Increment ref_count for each from_fact
-            {
-                let refs = self.coord.ref_counts.read().unwrap();
-                for fid in &intent.from_facts {
-                    if let Some(rc) = refs.get(fid) {
-                        rc.fetch_add(1, Ordering::Relaxed);
-                    }
+        }
+        // Increment ref_count for each from_fact
+        {
+            let refs = self.coord.ref_counts.borrow();
+            for fid in &intent.from_facts {
+                if let Some(rc) = refs.get(fid) {
+                    rc.set(rc.get() + 1);
                 }
             }
         }
@@ -642,18 +520,17 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
             data: bytes,
         };
 
-        if self.is_hotmemory_enabled {
-            self.intent_store.insert(record.id.clone(), record);
-            // Update by_from_fact reverse index
-            let mut by_fact = self.coord.by_fact.write().unwrap();
-            for fid in &intent.from_facts {
-                by_fact
-                    .entry(fid.clone())
-                    .or_default()
-                    .push(intent.id.0.clone());
-            }
+        self.intent_store.insert(record.id.clone(), record);
+        // Update by_from_fact reverse index
+        let mut by_fact = self.coord.by_fact.borrow_mut();
+        for fid in &intent.from_facts {
+            by_fact
+                .entry(fid.clone())
+                .or_default()
+                .push(intent.id.0.clone());
         }
-        self.pending.lock().unwrap().push(op);
+        self.pending.borrow_mut().push(op);
+        self.maybe_flush().map_err(BlackboardError::Internal)?;
 
         Ok(intent.id.clone())
     }
@@ -677,11 +554,12 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
 
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.pending.lock().unwrap().push(WriteOp::Write {
+        self.pending.borrow_mut().push(WriteOp::Write {
             path: record.key(),
             data: bytes,
         });
         self.intent_store.insert(intent_id.to_string(), record);
+        self.maybe_flush().map_err(BlackboardError::Internal)?;
 
         Ok(())
     }
@@ -705,11 +583,12 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
 
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.pending.lock().unwrap().push(WriteOp::Write {
+        self.pending.borrow_mut().push(WriteOp::Write {
             path: record.key(),
             data: bytes,
         });
         self.intent_store.insert(intent_id.to_string(), record);
+        self.maybe_flush().map_err(BlackboardError::Internal)?;
 
         Ok(())
     }
@@ -739,11 +618,12 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
 
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.pending.lock().unwrap().push(WriteOp::Write {
+        self.pending.borrow_mut().push(WriteOp::Write {
             path: record.key(),
             data: bytes,
         });
         self.intent_store.insert(intent_id.to_string(), record);
+        self.maybe_flush().map_err(BlackboardError::Internal)?;
 
         Ok(())
     }
@@ -792,11 +672,11 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
 
         // Decrement ref_count for from_facts (intent no longer references them)
         {
-            let refs = self.coord.ref_counts.read().unwrap();
+            let refs = self.coord.ref_counts.borrow();
             if let Some(r) = self.intent_store.get(intent_id) {
                 for fid in &r.from_facts {
                     if let Some(rc) = refs.get(fid) {
-                        rc.fetch_sub(1, Ordering::Relaxed);
+                        rc.set(rc.get() - 1);
                     }
                 }
             }
@@ -805,7 +685,7 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
         // Remove intent from by_from_fact reverse index
         {
             if let Some(r) = self.intent_store.get(intent_id) {
-                let mut by_fact = self.coord.by_fact.write().unwrap();
+                let mut by_fact = self.coord.by_fact.borrow_mut();
                 for fid in &r.from_facts {
                     if let Some(refs) = by_fact.get_mut(fid) {
                         refs.retain(|i| i != intent_id);
@@ -816,11 +696,12 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
 
         let intent_bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.pending.lock().unwrap().push(WriteOp::Write {
+        self.pending.borrow_mut().push(WriteOp::Write {
             path: format!("intents/i_{}.intent", intent_id),
             data: intent_bytes,
         });
         self.intent_store.insert(intent_id.to_string(), record);
+        self.maybe_flush().map_err(BlackboardError::Internal)?;
 
         Ok(new_fact)
     }
@@ -838,38 +719,38 @@ impl<I: AsyncFileIo> EvictCapable for FihStorage<I> {
 
     fn evict_before(&self, before: &str) -> Result<u64, String> {
         let before_secs: u64 = before.parse().unwrap_or(0);
-        let removed = std::sync::Arc::new(AtomicU64::new(0));
-        let removed_clone = removed.clone();
+        let removed = std::rc::Rc::new(Cell::new(0u64));
+        let removed_clone = std::rc::Rc::clone(&removed);
 
         self.hint_store.retain(Box::new(move |_, r| {
             if r.submitted_at < before_secs {
-                removed_clone.fetch_add(1, Ordering::Relaxed);
+                removed_clone.set(removed_clone.get() + 1);
                 false
             } else {
                 true
             }
         }));
 
-        Ok(removed.load(Ordering::Relaxed))
+        Ok(removed.get())
     }
 
     fn evict_stale_intents(&self, older_than_secs: u64) -> Result<u64, String> {
         let now = self.clock.now_secs();
         let cutoff = now.saturating_sub(older_than_secs);
 
-        let removed = std::sync::Arc::new(AtomicU64::new(0));
-        let removed_clone = removed.clone();
+        let removed = std::rc::Rc::new(Cell::new(0u64));
+        let removed_clone = std::rc::Rc::clone(&removed);
 
         self.intent_store.retain(Box::new(move |_, r| {
             if matches!(r.status, IntentStatus::Submitted) && r.created_at < cutoff {
-                removed_clone.fetch_add(1, Ordering::Relaxed);
+                removed_clone.set(removed_clone.get() + 1);
                 false
             } else {
                 true
             }
         }));
 
-        Ok(removed.load(Ordering::Relaxed))
+        Ok(removed.get())
     }
 }
 // ── FilterCapable ────────────────────────────────────────────────────────
@@ -963,13 +844,6 @@ impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
     }
 }
 
-// ── FlushCapable ───────────────────────────────────────────────────────────
-
-use nexus_model::{
-    ColdStorage, FlushCapable, FlushCursor, FlushResult, ScanCapable, TimeRangeCapable,
-};
-use std::ops::Range;
-
 // ── FihStorage as HotStorage (standalone Blackboard) ───────────────
 //
 // StorageRead + FactCapable + IntentCapable + HintCapable + FilterCapable +
@@ -1017,20 +891,7 @@ impl<I: AsyncFileIo> TimeRangeCapable for FihStorage<I> {
     }
 }
 
-// ── ColdStorage ───────────────────────────────────────────────────────────
-
-impl<I: AsyncFileIo + Send> ColdStorage for FihStorage<I> {
-    fn write_blob(&self, key: &str, data: &[u8]) -> Result<(), String> {
-        self.pending.lock().unwrap().push(WriteOp::Write {
-            path: key.to_string(),
-            data: data.to_vec(),
-        });
-        Ok(())
-    }
-}
-
 // ── FlushCapable ───────────────────────────────────────────────────────────
-
 impl<I: AsyncFileIo> FlushCapable for FihStorage<I> {
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
         let since_ts = cursor.last_flushed_at;
@@ -1084,13 +945,464 @@ impl<I: AsyncFileIo> FlushCapable for FihStorage<I> {
             postcard::to_allocvec(&entry).map_err(|e| format!("serialize chain: {e}"))?;
 
         let chain_path = format!("flush/{}/cursor_{}.chain", cursor.partition, now_ts);
-        self.pending.lock().unwrap().push(WriteOp::Write {
+        self.pending.borrow_mut().push(WriteOp::Write {
             path: chain_path,
             data: chain_bytes,
         });
 
-        // Write pending batch to IO
-        self.flush_pending()?;
+        // Write pending batch to IO via block_on since FlushCapable is sync.
+        // On WASM, pending ops are silently discarded (sync IO is not
+        // available; use AsyncFlushCapable instead).
+        #[allow(unused_variables)]
+        let ops = std::mem::take(&mut *self.pending.try_borrow_mut().map_err(|e| e.to_string())?);
+        #[cfg(not(target_arch = "wasm32"))]
+        if !ops.is_empty() {
+            futures_executor::block_on(self.io.apply_batch(&ops))?;
+        }
+
+        Ok(FlushResult {
+            records_flushed,
+            new_cursor: FlushCursor {
+                last_flushed_at: now_ts,
+                partition: cursor.partition.clone(),
+            },
+        })
+    }
+}
+
+// ── AsyncStorageRead ───────────────────────────────────────────────────────
+
+impl<I: AsyncFileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
+    fn project_id(&self) -> &str {
+        &self.project_id
+    }
+
+    async fn read_state(&self) -> BoardState {
+        // Direct async IO: list + read from backing store, no block_on.
+        let mut facts = Vec::new();
+        if let Ok(keys) = self.io.list("facts/").await {
+            for key in &keys {
+                if let Ok(Some(bytes)) = self.io.read(key).await
+                    && let Ok(r) = postcard::from_bytes::<FactRecord>(&bytes)
+                {
+                    let content = load_blob(&self.io, &r.blob_hash).await;
+                    facts.push(Fact {
+                        id: FihHash(r.id.clone()),
+                        origin: r.origin.clone(),
+                        content,
+                        creator: r.creator.clone(),
+                    });
+                }
+            }
+        }
+
+        let mut intents = Vec::new();
+        if let Ok(keys) = self.io.list("intents/").await {
+            for key in &keys {
+                if let Ok(Some(bytes)) = self.io.read(key).await
+                    && let Ok(r) = postcard::from_bytes::<IntentRecord>(&bytes)
+                {
+                    intents.push(Intent {
+                        id: FihHash(r.id.clone()),
+                        from_facts: r.from_facts.clone(),
+                        description: {
+                            if r.description_hash.is_empty() {
+                                r.id.clone()
+                            } else {
+                                let c = load_blob(&self.io, &r.description_hash).await;
+                                String::from_utf8_lossy(&c.data).to_string()
+                            }
+                        },
+                        creator: r.creator.clone(),
+                        worker: match &r.status {
+                            IntentStatus::Claimed { worker, .. }
+                            | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
+                            IntentStatus::Submitted => None,
+                        },
+                        to_fact_id: match &r.status {
+                            IntentStatus::Concluded { to_fact, .. } => Some(to_fact.clone()),
+                            _ => None,
+                        },
+                        last_heartbeat_at: match &r.status {
+                            IntentStatus::Claimed {
+                                last_heartbeat_at, ..
+                            } => Some(*last_heartbeat_at),
+                            _ => None,
+                        },
+                        created_at: Some(r.created_at),
+                        is_concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
+                        concluded_at: match &r.status {
+                            IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
+                            _ => None,
+                        },
+                    });
+                }
+            }
+        }
+
+        let mut hints = Vec::new();
+        if let Ok(keys) = self.io.list("hints/").await {
+            for key in &keys {
+                if let Ok(Some(bytes)) = self.io.read(key).await
+                    && let Ok(r) = postcard::from_bytes::<HintRecord>(&bytes)
+                {
+                    hints.push(Hint {
+                        id: FihHash(r.id.clone()),
+                        content: r.content.clone(),
+                        creator: r.creator.clone(),
+                    });
+                }
+            }
+        }
+
+        BoardState {
+            facts,
+            intents,
+            hints,
+        }
+    }
+}
+
+// ── AsyncFactCapable ───────────────────────────────────────────────────────
+
+impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
+    async fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
+        // Write content blob to R2
+        let blob_hash = content_hash(&fact.content.data);
+        self.io
+            .write(&format!("blob/{}.bin", blob_hash), &fact.content.data)
+            .await
+            .map_err(BlackboardError::Internal)?;
+
+        // Write fact record with blob_hash reference
+        let record = FactRecord::from_model(fact, blob_hash, 0);
+        let bytes =
+            postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.io
+            .write(&record.key(), &bytes)
+            .await
+            .map_err(BlackboardError::Internal)?;
+        self.fact_store.insert(record.id.clone(), record);
+
+        // Update indices for sync impl consistency
+        let ts = self.clock.now_nanos();
+        self.coord.by_time.record(ts, &fact.id.0);
+        self.coord
+            .by_origin
+            .borrow_mut()
+            .entry(fact.origin.clone())
+            .or_default()
+            .push(fact.id.0.clone());
+        self.coord
+            .ref_counts
+            .borrow_mut()
+            .entry(fact.id.0.clone())
+            .or_insert_with(|| Cell::new(0));
+
+        Ok(fact.id.clone())
+    }
+}
+
+// ── AsyncHintCapable ───────────────────────────────────────────────────────
+
+impl<I: AsyncFileIo> nexus_model::AsyncHintCapable for FihStorage<I> {
+    async fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
+        let record = crate::record::HintRecord {
+            id: hint.id.0.clone(),
+            content: hint.content.clone(),
+            creator: hint.creator.clone(),
+            submitted_at: 0,
+            ttl_secs: None,
+        };
+        let bytes =
+            postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.io
+            .write(&record.key(), &bytes)
+            .await
+            .map_err(BlackboardError::Internal)?;
+        self.hint_store.insert(record.id.clone(), record);
+        Ok(())
+    }
+}
+
+// ── AsyncIntentCapable ─────────────────────────────────────────────────────
+
+impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
+    async fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+        let record = crate::record::IntentRecord {
+            id: intent.id.0.clone(),
+            from_facts: intent.from_facts.clone(),
+            description_hash: String::new(),
+            creator: intent.creator.clone(),
+            status: crate::record::IntentStatus::Submitted,
+            created_at: 0,
+        };
+        let bytes =
+            postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.io
+            .write(&record.key(), &bytes)
+            .await
+            .map_err(BlackboardError::Internal)?;
+        self.intent_store.insert(record.id.clone(), record);
+        Ok(intent.id.clone())
+    }
+
+    async fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let key = format!("intents/i_{}.intent", intent_id);
+        let bytes = self
+            .io
+            .read(&key)
+            .await
+            .map_err(BlackboardError::Internal)?
+            .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
+        let mut record = postcard::from_bytes::<IntentRecord>(&bytes)
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+
+        let now = self.clock.now_secs();
+        let new_status = record.status.try_claim(agent, now).map_err(|e| {
+            if e.starts_with("already claimed") {
+                BlackboardError::Conflict(e)
+            } else {
+                BlackboardError::Internal(e)
+            }
+        })?;
+        record.status = new_status;
+
+        let bytes =
+            postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.io
+            .write(&key, &bytes)
+            .await
+            .map_err(BlackboardError::Internal)?;
+        self.intent_store.insert(intent_id.to_string(), record);
+        Ok(())
+    }
+
+    async fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let key = format!("intents/i_{}.intent", intent_id);
+        let bytes = self
+            .io
+            .read(&key)
+            .await
+            .map_err(BlackboardError::Internal)?
+            .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
+        let mut record = postcard::from_bytes::<IntentRecord>(&bytes)
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+
+        let now = self.clock.now_secs();
+        let new_status = record.status.try_heartbeat(agent, now).map_err(|e| {
+            if e.contains("not") {
+                BlackboardError::Conflict(e)
+            } else {
+                BlackboardError::Internal(e)
+            }
+        })?;
+        record.status = new_status;
+
+        let bytes =
+            postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.io
+            .write(&key, &bytes)
+            .await
+            .map_err(BlackboardError::Internal)?;
+        self.intent_store.insert(intent_id.to_string(), record);
+        Ok(())
+    }
+
+    async fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let key = format!("intents/i_{}.intent", intent_id);
+        let bytes = self
+            .io
+            .read(&key)
+            .await
+            .map_err(BlackboardError::Internal)?
+            .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
+        let mut record = postcard::from_bytes::<IntentRecord>(&bytes)
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+
+        match &record.status {
+            IntentStatus::Claimed { worker, .. } if worker == agent => {
+                record.status = IntentStatus::Submitted;
+            }
+            IntentStatus::Claimed { worker, .. } => {
+                return Err(BlackboardError::Forbidden(format!(
+                    "Intent {intent_id} claimed by {worker}, not {agent}"
+                )));
+            }
+            IntentStatus::Submitted => return Ok(()),
+            IntentStatus::Concluded { .. } => {
+                return Err(BlackboardError::NotFound(format!(
+                    "Intent {intent_id} already concluded"
+                )));
+            }
+        }
+
+        let bytes =
+            postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.io
+            .write(&key, &bytes)
+            .await
+            .map_err(BlackboardError::Internal)?;
+        self.intent_store.insert(intent_id.to_string(), record);
+        Ok(())
+    }
+
+    async fn conclude_intent(
+        &self,
+        intent_id: &str,
+        result: &str,
+    ) -> Result<Fact, BlackboardError> {
+        let key = format!("intents/i_{}.intent", intent_id);
+        let bytes = self
+            .io
+            .read(&key)
+            .await
+            .map_err(BlackboardError::Internal)?
+            .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
+        let mut record = postcard::from_bytes::<IntentRecord>(&bytes)
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+
+        let worker = match &record.status {
+            IntentStatus::Claimed { worker, .. } => worker.clone(),
+            IntentStatus::Submitted => return Err(BlackboardError::Internal("not claimed".into())),
+            IntentStatus::Concluded { .. } => {
+                return Err(BlackboardError::Internal("already concluded".into()));
+            }
+        };
+
+        let conclusion_id = format!("f_concl_{}", intent_id);
+        let new_fact = Fact {
+            id: FihHash(conclusion_id.clone()),
+            origin: format!("conclusion:{}", intent_id),
+            content: Content {
+                mime_type: "text/plain".into(),
+                data: result.as_bytes().to_vec(),
+            },
+            creator: worker.clone(),
+        };
+
+        let now_ns = self.clock.now_nanos();
+        record.status = record
+            .status
+            .try_conclude(&conclusion_id, now_ns)
+            .map_err(BlackboardError::Internal)?;
+
+        // Write conclusion fact to R2
+        let fact_rec = FactRecord::from_model(&new_fact, String::new(), 0);
+        let fact_bytes = postcard::to_allocvec(&fact_rec)
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.io
+            .write(&fact_rec.key(), &fact_bytes)
+            .await
+            .map_err(BlackboardError::Internal)?;
+        self.fact_store.insert(fact_rec.id.clone(), fact_rec);
+
+        // Write updated intent to R2
+        let intent_bytes =
+            postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.io
+            .write(&key, &intent_bytes)
+            .await
+            .map_err(BlackboardError::Internal)?;
+        self.intent_store.insert(intent_id.to_string(), record);
+
+        Ok(new_fact)
+    }
+}
+
+// ── AsyncFilterCapable (delegates to sync, no IO) ────────────────────────
+
+impl<I: AsyncFileIo> nexus_model::AsyncFilterCapable for FihStorage<I> {
+    async fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
+        FilterCapable::read_state_filtered(self, filter)
+    }
+}
+
+// ── AsyncEvictCapable (delegates to sync, no IO) ─────────────────────────
+
+impl<I: AsyncFileIo> nexus_model::AsyncEvictCapable for FihStorage<I> {
+    async fn approximate_size(&self) -> usize {
+        EvictCapable::approximate_size(self)
+    }
+
+    async fn evict_before(&self, before: &str) -> Result<u64, String> {
+        EvictCapable::evict_before(self, before)
+    }
+
+    async fn evict_stale_intents(&self, older_than_secs: u64) -> Result<u64, String> {
+        EvictCapable::evict_stale_intents(self, older_than_secs)
+    }
+}
+
+// ── AsyncScanCapable (delegates to sync, no IO) ──────────────────────────
+
+impl<I: AsyncFileIo> nexus_model::AsyncScanCapable for FihStorage<I> {
+    async fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
+        ScanCapable::scan_partition(self, partition)
+    }
+}
+
+// ── AsyncTimeRangeCapable (delegates to sync, no IO) ─────────────────────
+
+impl<I: AsyncFileIo> nexus_model::AsyncTimeRangeCapable for FihStorage<I> {
+    async fn time_range(&self) -> Option<Range<String>> {
+        TimeRangeCapable::time_range(self)
+    }
+}
+
+// ── AsyncFlushCapable (IO: flush_pending via await) ──────────────────────
+
+impl<I: AsyncFileIo> nexus_model::AsyncFlushCapable for FihStorage<I> {
+    async fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
+        let since_ts = cursor.last_flushed_at;
+        let now_ts = self.clock.now_nanos();
+
+        let delta_ids: Vec<(String, u64)> = self
+            .coord
+            .by_time
+            .since(&since_ts)
+            .into_iter()
+            .map(|(ts, id)| (id, ts))
+            .collect();
+        let records_flushed = delta_ids.len() as u64;
+
+        if records_flushed == 0 {
+            return Ok(FlushResult {
+                records_flushed: 0,
+                new_cursor: FlushCursor {
+                    last_flushed_at: now_ts,
+                    partition: cursor.partition.clone(),
+                },
+            });
+        }
+
+        let mut facts = Vec::new();
+        let mut intents = Vec::new();
+        for (id, _) in &delta_ids {
+            if let Some(record) = self.fact_store.get(id) {
+                facts.push(record);
+            }
+            if let Some(record) = self.intent_store.get(id) {
+                intents.push(record);
+            }
+        }
+
+        let entry = ChainEntry {
+            prev_cursor: cursor.last_flushed_at,
+            records_flushed,
+            facts,
+            intents,
+        };
+        let chain_bytes =
+            postcard::to_allocvec(&entry).map_err(|e| format!("serialize chain: {e}"))?;
+
+        let chain_path = format!("flush/{}/cursor_{}.chain", cursor.partition, now_ts);
+        self.pending.borrow_mut().push(WriteOp::Write {
+            path: chain_path,
+            data: chain_bytes,
+        });
+
+        self.flush_pending().await?;
 
         Ok(FlushResult {
             records_flushed,

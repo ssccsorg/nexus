@@ -11,28 +11,27 @@
 //
 // Memory: contiguous Vec — cache-friendly, no per-node allocation.
 
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::sync::RwLock;
-use std::sync::atomic::AtomicU64;
 
-/// Append-only ordered index. Thread-safe via RwLock.
+/// Append-only ordered index. Thread-local via RefCell.
 ///
 /// Entries must be pushed in monotonically non-decreasing order of K.
 /// Binary search assumes this invariant.
 pub struct OrderedIndex<K = u64>
 where
-    K: Ord + Clone + Send + 'static,
+    K: Ord + Clone + 'static,
 {
-    entries: RwLock<Vec<(K, String)>>,
+    entries: RefCell<Vec<(K, String)>>,
 }
 
 impl<K> OrderedIndex<K>
 where
-    K: Ord + Clone + Send + 'static,
+    K: Ord + Clone + 'static,
 {
     pub fn new() -> Self {
         Self {
-            entries: RwLock::new(Vec::new()),
+            entries: RefCell::new(Vec::new()),
         }
     }
 
@@ -43,13 +42,13 @@ where
     /// binary-search range methods will continue to work correctly, though
     /// the seek position may shift depending on the degree of disorder.
     pub fn record(&self, key: K, id: &str) {
-        self.entries.write().unwrap().push((key, id.to_string()));
+        self.entries.borrow_mut().push((key, id.to_string()));
     }
 
     /// Return all entries with key <= bound (time-travel "as of").
     /// O(log N) seek + O(K) output.
     pub fn as_of(&self, bound: &K) -> Vec<(K, String)> {
-        let entries = self.entries.read().unwrap();
+        let entries = self.entries.borrow();
         let end = entries.partition_point(|(k, _)| *k <= *bound);
         entries[..end].to_vec()
     }
@@ -57,7 +56,7 @@ where
     /// Return all entries with key > bound (delta since cursor).
     /// O(log N) seek + O(K) output.
     pub fn since(&self, bound: &K) -> Vec<(K, String)> {
-        let entries = self.entries.read().unwrap();
+        let entries = self.entries.borrow();
         let start = entries.partition_point(|(k, _)| *k <= *bound);
         entries[start..].to_vec()
     }
@@ -65,7 +64,7 @@ where
     /// Return all entries with start <= key < end.
     /// O(log N) seek + O(K) output.
     pub fn range(&self, start: &K, end: &K) -> Vec<(K, String)> {
-        let entries = self.entries.read().unwrap();
+        let entries = self.entries.borrow();
         let start_idx = entries.partition_point(|(k, _)| *k < *start);
         let end_idx = entries.partition_point(|(k, _)| *k < *end);
         entries[start_idx..end_idx].to_vec()
@@ -73,38 +72,32 @@ where
 
     /// Total number of recorded entries. O(1).
     pub fn len(&self) -> usize {
-        self.entries.read().unwrap().len()
+        self.entries.borrow().len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.entries.read().unwrap().is_empty()
+        self.entries.borrow().is_empty()
     }
 
     /// First key in the index, or None if empty. O(1).
     pub fn first_key(&self) -> Option<K> {
-        self.entries
-            .read()
-            .ok()
-            .and_then(|e| e.first().map(|(k, _)| k.clone()))
+        self.entries.borrow().first().map(|(k, _)| k.clone())
     }
 
     /// Last key in the index, or None if empty. O(1).
     pub fn last_key(&self) -> Option<K> {
-        self.entries
-            .read()
-            .ok()
-            .and_then(|e| e.last().map(|(k, _)| k.clone()))
+        self.entries.borrow().last().map(|(k, _)| k.clone())
     }
 
     /// Drain all entries (for testing). O(1).
     pub fn clear(&self) {
-        self.entries.write().unwrap().clear();
+        self.entries.borrow_mut().clear();
     }
 }
 
 impl<K> Default for OrderedIndex<K>
 where
-    K: Ord + Clone + Send + 'static,
+    K: Ord + Clone + 'static,
 {
     fn default() -> Self {
         Self::new()
@@ -124,7 +117,8 @@ where
 //   ref_counts:  fact_id → number of referencing Intents
 
 /// Reference counts: fact_id → number of Intents referencing this Fact.
-pub(crate) type RefCounts = HashMap<String, AtomicU64>;
+/// Single-threaded: uses `Cell<u64>` (no atomic needed).
+pub(crate) type RefCounts = HashMap<String, Cell<u64>>;
 
 /// Origin index: origin → [fact_id, ...]
 pub(crate) type OriginIndex = HashMap<String, Vec<String>>;
@@ -142,30 +136,29 @@ pub struct FihCoord {
     pub by_time: OrderedIndex<u64>,
 
     /// Origin projection: origin → [fact_id]
-    pub by_origin: RwLock<OriginIndex>,
+    pub by_origin: RefCell<OriginIndex>,
 
     /// Fact reverse index: fact_id → [intent_id]
-    pub by_fact: RwLock<ByFactIndex>,
+    pub by_fact: RefCell<ByFactIndex>,
 
     /// Reference count: fact_id → #referencing Intents
-    pub ref_counts: RwLock<RefCounts>,
+    pub ref_counts: RefCell<RefCounts>,
 }
 
 impl FihCoord {
     pub fn new() -> Self {
         Self {
             by_time: OrderedIndex::<u64>::new(),
-            by_origin: RwLock::new(OriginIndex::new()),
-            by_fact: RwLock::new(ByFactIndex::new()),
-            ref_counts: RwLock::new(RefCounts::new()),
+            by_origin: RefCell::new(OriginIndex::new()),
+            by_fact: RefCell::new(ByFactIndex::new()),
+            ref_counts: RefCell::new(RefCounts::new()),
         }
     }
 
     /// Return intent IDs referencing the given fact (reverse index lookup).
     pub fn intents_by_fact(&self, fact_id: &str) -> Vec<String> {
         self.by_fact
-            .read()
-            .unwrap()
+            .borrow()
             .get(fact_id)
             .cloned()
             .unwrap_or_default()

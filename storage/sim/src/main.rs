@@ -6,8 +6,6 @@
 // every verification step passes. Designed to be run as a smoke test in CI
 // or during development (cargo run, not cargo test).
 
-use std::sync::Arc;
-
 use nexus_model::{
     EvictCapable, Fact, FactCapable, FihHash, FilterCapable, FlushCapable, FlushCursor, Hint,
     HintCapable, Intent, IntentCapable, StateFilter, StorageRead,
@@ -192,9 +190,9 @@ fn main() {
             },
         )
         .unwrap();
-        store.flush_pending().unwrap();
+        futures_executor::block_on(store.flush_pending()).unwrap();
         let store2 = FihStorage::new(io, "verify");
-        store2.rebuild_cache().unwrap();
+        futures_executor::block_on(store2.rebuild_cache()).unwrap();
         let state = StorageRead::read_state(&store2);
         assert_eq!(state.facts.len(), 1);
         assert_eq!(state.facts[0].content.data, b"flush test");
@@ -318,33 +316,7 @@ fn main() {
         assert_eq!(state.hints.len(), 0);
     });
 
-    // ── 6. Concurrent access ──────────────────────────────────────────
-
-    check!("concurrent submit and read", {
-        let store = Arc::new(FihStorage::new(SimIo::new(), "verify"));
-        let mut handles = Vec::new();
-        for i in 0..10 {
-            let s = Arc::clone(&store);
-            handles.push(std::thread::spawn(move || {
-                FactCapable::submit_fact(
-                    &*s,
-                    &Fact {
-                        id: FihHash(format!("f_con_{i:04}")),
-                        origin: "concurrent".into(),
-                        content: format!("fact {i}").into(),
-                        creator: "t".into(),
-                    },
-                )
-            }));
-        }
-        for h in handles {
-            h.join().unwrap().unwrap();
-        }
-        let state = StorageRead::read_state(&*store);
-        assert_eq!(state.facts.len(), 10);
-    });
-
-    // ── 7. Ref count / orphan detection ───────────────────────────────
+    // ── 6. Ref count / orphan detection ───────────────────────────────
 
     check!("ref_count orphan detection via conclude", {
         let store = FihStorage::new(SimIo::new(), "verify");
@@ -393,7 +365,7 @@ fn main() {
         assert!(state.intents[0].is_concluded, "intent should be concluded");
     });
 
-    // ── 8. IntentStatus state machine ─────────────────────────────────
+    // ── 7. IntentStatus state machine ─────────────────────────────────
 
     check!("intent_status compile-time transitions", {
         let submitted = intent_status::IntentStatus::Submitted;

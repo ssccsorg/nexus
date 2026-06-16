@@ -6,6 +6,7 @@
 
 mod common;
 
+use futures_executor::block_on;
 use nexus_model::{
     Content, Fact, FactCapable, FihHash, Hint, HintCapable, Intent, IntentCapable, StorageRead,
 };
@@ -51,10 +52,10 @@ fn test_scenario_full_lifecycle_store_restore() {
     IntentCapable::claim_intent(&store, "i1", "alice").unwrap();
     IntentCapable::conclude_intent(&store, "i1", "result").unwrap();
 
-    store.flush_pending().unwrap();
+    block_on(store.flush_pending()).unwrap();
 
     let restored = FihStorage::new(io, "s");
-    restored.rebuild_cache().unwrap();
+    block_on(restored.rebuild_cache()).unwrap();
 
     let state = StorageRead::read_state(&restored);
     assert_eq!(state.facts.len(), 3, "2 originals + 1 conclusion");
@@ -74,10 +75,10 @@ fn test_scenario_reverse_index_survives_rebuild() {
     IntentCapable::submit_intent(&store, &intent("i_a", vec!["f_a"])).unwrap();
     IntentCapable::submit_intent(&store, &intent("i_both", vec!["f_a", "f_b"])).unwrap();
 
-    store.flush_pending().unwrap();
+    block_on(store.flush_pending()).unwrap();
 
     let restored = FihStorage::new(io, "s");
-    restored.rebuild_cache().unwrap();
+    block_on(restored.rebuild_cache()).unwrap();
 
     assert_eq!(restored.intents_by_fact("f_a").len(), 2);
     assert_eq!(restored.intents_by_fact("f_b").len(), 1);
@@ -97,10 +98,10 @@ fn test_scenario_concluded_intent_references_preserved() {
 
     assert!(store.intents_by_fact("f_base").is_empty());
 
-    store.flush_pending().unwrap();
+    block_on(store.flush_pending()).unwrap();
 
     let restored = FihStorage::new(io, "s");
-    restored.rebuild_cache().unwrap();
+    block_on(restored.rebuild_cache()).unwrap();
     assert_eq!(restored.intents_by_fact("f_base").len(), 1);
 }
 
@@ -138,10 +139,10 @@ fn test_scenario_hints_preserved_via_rebuild() {
     )
     .unwrap();
 
-    store.flush_pending().unwrap();
+    block_on(store.flush_pending()).unwrap();
 
     let restored = FihStorage::new(io, "s");
-    restored.rebuild_cache().unwrap();
+    block_on(restored.rebuild_cache()).unwrap();
 
     let state = StorageRead::read_state(&restored);
     assert_eq!(state.facts.len(), 1);
@@ -157,14 +158,14 @@ fn test_scenario_incremental_flushes() {
     let store = FihStorage::new(io.clone(), "s");
 
     FactCapable::submit_fact(&store, &fact("f1", "first")).unwrap();
-    store.flush_pending().unwrap();
+    block_on(store.flush_pending()).unwrap();
     FactCapable::submit_fact(&store, &fact("f2", "second")).unwrap();
-    store.flush_pending().unwrap();
+    block_on(store.flush_pending()).unwrap();
     FactCapable::submit_fact(&store, &fact("f3", "third")).unwrap();
-    store.flush_pending().unwrap();
+    block_on(store.flush_pending()).unwrap();
 
     let restored = FihStorage::new(io, "s");
-    restored.rebuild_cache().unwrap();
+    block_on(restored.rebuild_cache()).unwrap();
 
     let state = StorageRead::read_state(&restored);
     assert_eq!(state.facts.len(), 3);
@@ -188,10 +189,10 @@ fn test_scenario_hints_only() {
     )
     .unwrap();
 
-    store.flush_pending().unwrap();
+    block_on(store.flush_pending()).unwrap();
 
     let restored = FihStorage::new(io, "s");
-    restored.rebuild_cache().unwrap();
+    block_on(restored.rebuild_cache()).unwrap();
 
     let state = StorageRead::read_state(&restored);
     assert_eq!(state.facts.len(), 0);
@@ -205,10 +206,10 @@ fn test_scenario_hints_only() {
 fn test_scenario_empty_store() {
     let io = SimIo::new();
     let store = FihStorage::new(io.clone(), "s");
-    store.flush_pending().unwrap();
+    block_on(store.flush_pending()).unwrap();
 
     let restored = FihStorage::new(io, "s");
-    restored.rebuild_cache().unwrap();
+    block_on(restored.rebuild_cache()).unwrap();
 
     let state = StorageRead::read_state(&restored);
     assert!(state.facts.is_empty());
@@ -282,10 +283,10 @@ fn test_scenario_storage_migration() {
 
     FactCapable::submit_fact(&src, &fact("f_mig", "migrate me")).unwrap();
     IntentCapable::submit_intent(&src, &intent("i_mig", vec!["f_mig"])).unwrap();
-    src.flush_pending().unwrap();
+    block_on(src.flush_pending()).unwrap();
 
     let dst = FihStorage::new(io, "s");
-    dst.rebuild_cache().unwrap();
+    block_on(dst.rebuild_cache()).unwrap();
 
     let state = StorageRead::read_state(&dst);
     assert_eq!(state.facts.len(), 1);

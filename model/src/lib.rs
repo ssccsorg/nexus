@@ -40,7 +40,7 @@ pub mod interner;
 pub mod storage;
 
 pub use blackboard::Blackboard;
-pub use clock::{Now, SystemClock};
+pub use clock::Now;
 pub use detection::{
     ContradictionDetection, DetectionCapable, DetectionCheckpoint, DetectionOutput, FullDetection,
     GapDetection, StateChangeDetection, TaskStates,
@@ -48,4 +48,8 @@ pub use detection::{
 pub use error::BlackboardError;
 pub use fih::{BoardState, Content, Fact, FihHash, Hint, Intent};
 pub use interner::Interner;
+pub use storage::async_impl::{
+    AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable, AsyncHintCapable,
+    AsyncIntentCapable, AsyncScanCapable, AsyncStorageRead, AsyncTimeRangeCapable,
+};
 pub use storage::*;

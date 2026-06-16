@@ -1,164 +1,150 @@
-// gateway/nex-cf — Thin HTTP adapter. GET-only. No Router.
-//
-// Blackboard trait is &self throughout, so no Mutex/RefCell is needed.
-// DefaultBlackboard is Sync on both native (Arc<RwLock<>>) and wasm32
-// (single-threaded, OnceLock provides internal synchronization).
+// gateway/nex-cf — Consumes FihStorage<CfFihIo> via async traits.
+// No block_on. No locks. Pure async over R2.
 
-use nex::{
-    BlackboardError, Content, DefaultBlackboard, Fact, FactCapable, FihHash, Intent, IntentCapable,
-    StorageRead,
-};
 use worker::*;
 
-/// A once-cell wrapper that is unconditionally Sync.
-///
-/// On native: DefaultBlackboard contains Arc<RwLock<>>, so it is Sync.
-/// On wasm32: single-threaded runtime; Sync is a no-op.
-/// OnceLock::call_once already provides internal synchronization.
-struct SyncOnce<T> {
-    inner: std::sync::OnceLock<T>,
-}
+use nexus_model::{AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead};
+use nexus_model::{Content, Fact, FihHash, Intent};
+use nexus_storage_sim::FihStorage;
+use nexus_storage_sim::cf_io::CfFihIo;
 
-unsafe impl<T> Sync for SyncOnce<T> {}
+// ── CF clock: real timestamps via worker::Date::now() ────────────────
 
-impl<T> SyncOnce<T> {
-    const fn new() -> Self {
-        Self {
-            inner: std::sync::OnceLock::new(),
-        }
+struct CfClock;
+impl nexus_model::Now for CfClock {
+    fn now_nanos(&self) -> u64 {
+        worker::Date::now().as_millis() * 1_000_000
     }
-
-    fn get_or_init<F: FnOnce() -> T>(&self, f: F) -> &T {
-        self.inner.get_or_init(f)
+    fn now_secs(&self) -> u64 {
+        worker::Date::now().as_millis() / 1_000
     }
 }
 
-static BB: SyncOnce<DefaultBlackboard> = SyncOnce::new();
+// ── Static storage ───────────────────────────────────────────────────
 
-fn bb() -> &'static DefaultBlackboard {
-    BB.get_or_init(DefaultBlackboard::new)
+/// SAFETY: Only used on the single-threaded Workers isolate.
+/// `FihStorage` contains `RefCell` (from `EntityStore` and `pending`)
+/// and `Box<dyn EntityStore>` trait objects that are `!Send + !Sync`,
+/// but in the WASM isolate there is no true parallelism — only async
+/// concurrency on one thread — so treating the inner type as `Sync`
+/// is sound. The `OnceLock` eliminates the previous data race on
+/// initialization from the old `UnsafeCell`-based approach.
+struct SyncStore(std::sync::OnceLock<FihStorage<CfFihIo>>);
+unsafe impl Sync for SyncStore {}
+static STORE: SyncStore = SyncStore(std::sync::OnceLock::new());
+
+fn store() -> &'static FihStorage<CfFihIo> {
+    STORE.0.get().expect("FihStorage not initialized")
 }
+
+fn init_store(bucket: worker::Bucket) {
+    STORE.0.get_or_init(|| {
+        FihStorage::with_clock(CfFihIo::new(bucket), "cf-nexus", Box::new(CfClock))
+    });
+}
+
+fn qv(q: &[(String, String)], k: &str) -> String {
+    q.iter()
+        .find(|(key, _)| key == k)
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+}
+
+// ── Entrypoint ───────────────────────────────────────────────────────
 
 #[event(fetch)]
-pub async fn main(req: Request, _env: Env, _ctx: Context) -> Result<Response> {
+pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
+    init_store(
+        env.bucket("FIH_R2")
+            .expect("FIH_R2 bucket binding required"),
+    );
+
     let url = req.url()?;
     let path = url.path().to_string();
     let q: Vec<(String, String)> = url
         .query_pairs()
         .map(|(k, v)| (k.into_owned(), v.into_owned()))
         .collect();
+    let s = store();
+    match path.as_str() {
+        "/" => Response::ok("nexus-cf"),
 
-    fn qv(q: &[(String, String)], k: &str) -> String {
-        for (key, val) in q {
-            if key == k {
-                return val.clone();
+        "/fact" => {
+            let fact = Fact {
+                id: FihHash(qv(&q, "id")),
+                origin: qv(&q, "origin"),
+                content: Content {
+                    mime_type: "text/plain".into(),
+                    data: qv(&q, "content").into_bytes(),
+                },
+                creator: qv(&q, "creator"),
+            };
+            match s.submit_fact(&fact).await {
+                Ok(hash) => Response::from_json(&serde_json::json!({"id": hash.0})),
+                Err(e) => Response::error(format!("submit_fact: {:?}", e), 500),
             }
         }
-        String::new()
-    }
 
-    // Root
-    if path == "/" || path.len() <= 1 {
-        return Response::ok("nexus-gateway-nex-cf");
-    }
-
-    // State
-    if path == "/state" {
-        return Response::from_json(&bb().read_state());
-    }
-
-    // Fact
-    if path == "/fact" {
-        let fact = Fact {
-            id: FihHash(qv(&q, "id")),
-            origin: qv(&q, "origin"),
-            content: Content {
-                mime_type: "application/json".into(),
-                data: qv(&q, "content").into_bytes(),
-            },
-            creator: qv(&q, "creator"),
-        };
-        let hash = bb()
-            .submit_fact(&fact)
-            .map_err(|e| Error::RustError(e.to_string()))?;
-        return Response::from_json(&serde_json::json!({"id": hash.0}));
-    }
-
-    // Intent
-    if path == "/intent" {
-        let intent = Intent {
-            id: FihHash(qv(&q, "id")),
-            from_facts: qv(&q, "from")
-                .split(',')
-                .filter(|s| !s.is_empty())
-                .map(String::from)
-                .collect(),
-            description: qv(&q, "desc"),
-            creator: qv(&q, "creator"),
-            worker: None,
-            to_fact_id: None,
-            last_heartbeat_at: None,
-            created_at: None,
-            is_concluded: false,
-            concluded_at: None,
-        };
-        bb().submit_intent(&intent)
-            .map_err(|e| Error::RustError(e.to_string()))?;
-        return Response::from_json(&serde_json::json!({"id": intent.id.0}));
-    }
-
-    // Claim
-    if path == "/claim" {
-        match bb().claim_intent(&qv(&q, "id"), &qv(&q, "agent")) {
-            Ok(()) => {
-                return Response::from_json(&serde_json::json!({"status":"claimed"}));
+        "/intent" => {
+            let intent = Intent {
+                id: FihHash(qv(&q, "id")),
+                from_facts: qv(&q, "from")
+                    .split(',')
+                    .filter(|s| !s.is_empty())
+                    .map(String::from)
+                    .collect(),
+                description: qv(&q, "desc"),
+                creator: qv(&q, "creator"),
+                worker: None,
+                to_fact_id: None,
+                last_heartbeat_at: None,
+                created_at: None,
+                is_concluded: false,
+                concluded_at: None,
+            };
+            match s.submit_intent(&intent).await {
+                Ok(hash) => Response::from_json(&serde_json::json!({"id": hash.0})),
+                Err(e) => Response::error(format!("submit_intent: {:?}", e), 500),
             }
-            Err(BlackboardError::Conflict(m)) => {
-                return Ok(Response::from_json(&serde_json::json!({"error":m}))?.with_status(409));
-            }
-            Err(BlackboardError::NotFound(m)) => {
-                return Ok(Response::from_json(&serde_json::json!({"error":m}))?.with_status(404));
-            }
-            Err(BlackboardError::Forbidden(m)) => {
-                return Ok(Response::from_json(&serde_json::json!({"error":m}))?.with_status(403));
-            }
+        }
+
+        "/claim" => match s.claim_intent(&qv(&q, "id"), &qv(&q, "agent")).await {
+            Ok(()) => Response::from_json(&serde_json::json!({"status":"claimed"})),
             Err(e) => {
-                return Err(Error::RustError(e.to_string()));
+                let msg = format!("{:?}", e);
+                let code = if msg.contains("Conflict") {
+                    409
+                } else if msg.contains("not found") {
+                    404
+                } else {
+                    500
+                };
+                Response::error(msg, code)
             }
+        },
+
+        "/conclude" => match s.conclude_intent(&qv(&q, "id"), &qv(&q, "result")).await {
+            Ok(fact) => {
+                Response::from_json(&serde_json::json!({"status":"concluded","fact_id": fact.id.0}))
+            }
+            Err(e) => Response::error(format!("{:?}", e), 500),
+        },
+
+        "/state" => {
+            let state = s.read_state().await;
+            Response::from_json(&state)
         }
-    }
 
-    // Conclude
-    if path == "/conclude" {
-        match bb().conclude_intent(&qv(&q, "id"), &qv(&q, "result")) {
-            Ok(f) => {
-                return Response::from_json(&serde_json::json!({"status":"concluded","fact":f}));
-            }
-            Err(BlackboardError::NotFound(m)) => {
-                return Ok(Response::from_json(&serde_json::json!({"error":m}))?.with_status(404));
-            }
-            Err(BlackboardError::Conflict(m)) => {
-                return Ok(Response::from_json(&serde_json::json!({"error":m}))?.with_status(409));
-            }
-            Err(e) => {
-                return Err(Error::RustError(e.to_string()));
-            }
-        }
-    }
+        "/flush" => match s.flush_pending().await {
+            Ok(()) => Response::from_json(&serde_json::json!({"status":"ok"})),
+            Err(e) => Response::error(format!("flush: {}", e), 500),
+        },
 
-    Response::error("not found", 404)
-}
+        "/rebuild" => match s.rebuild_cache().await {
+            Ok(()) => Response::from_json(&serde_json::json!({"status":"ok"})),
+            Err(e) => Response::error(format!("rebuild: {}", e), 500),
+        },
 
-#[durable_object]
-pub struct IntentClaimDO {
-    #[allow(unused)]
-    state: State,
-}
-impl worker::DurableObject for IntentClaimDO {
-    fn new(state: State, _env: Env) -> Self {
-        Self { state }
-    }
-    async fn fetch(&self, _req: Request) -> Result<Response> {
-        Response::ok("stub")
+        _ => Response::error("not found", 404),
     }
 }
