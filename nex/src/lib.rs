@@ -1,11 +1,13 @@
 pub mod blackboard;
 pub mod helper;
+pub mod io;
 pub mod mock_gateway;
 pub mod process;
 pub mod storage;
 
 // Re-export key types for convenience
 pub use blackboard::{DefaultBlackboard, Record};
+pub use io::{AsyncFileIo, SimIo, SyncFileIo, WriteOp};
 pub use mock_gateway::MockGateway;
 pub use nexus_model::{
     Blackboard, BlackboardError, BoardState, Content, EvictCapable, Fact, FactCapable, FihHash,
@@ -14,12 +16,9 @@ pub use nexus_model::{
 };
 pub use process::{error::ProcessError, scheduler::Scheduler};
 pub use storage::composite::CompositeColdStorage;
-pub use storage::io::export::{FihExport, FihImport, export_from_io, import_into_io};
-pub use storage::io::record::IntentStatus;
-pub use storage::io::session::FihSession;
-pub use storage::io::{
-    AsyncFileIo, EntityStore, FihStorage, MemoryEntityStore, SimIo, SyncFileIo, SystemClock,
-    WriteOp,
+pub use storage::core::export::{FihExport, FihImport, export_from_io, import_into_io};
+pub use storage::core::{
+    EntityStore, FihSession, FihStorage, IntentStatus, MemoryEntityStore, SystemClock,
 };
 #[cfg(feature = "native")]
 pub use storage::native::NativeBlackboard;

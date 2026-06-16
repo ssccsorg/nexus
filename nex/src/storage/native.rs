@@ -19,8 +19,9 @@ use nexus_model::{
     StorageRead,
 };
 
-use crate::storage::io::sim_io::SimIo;
-use crate::storage::io::{AsyncFileIo, FihStorage};
+use crate::io::AsyncFileIo;
+use crate::io::sim_io::SimIo;
+use crate::storage::core::FihStorage;
 
 /// Blackboard implementation backed by FihStorage.
 ///

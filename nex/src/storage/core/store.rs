@@ -21,10 +21,10 @@ use nexus_model::{
     PartitionData, ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
 };
 
-use super::async_file_io::{AsyncFileIo, WriteOp};
 use super::entity_store::{EntityStore, MemoryEntityStore};
 use super::index::FihCoord;
 use super::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
+use crate::io::async_file_io::{AsyncFileIo, WriteOp};
 
 /// Chain entry format: serialized by flush_since for delta chain files.
 /// Named struct avoids postcard tuple field ordering ambiguity with empty vecs.
