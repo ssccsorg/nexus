@@ -742,96 +742,343 @@ impl<I: AsyncFileIo> EvictCapable for FihStorage<I> {
 
 impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
     fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
-        // Determine time range using TimeIndex (O(log N) seek)
-        let time_filtered_ids: Option<std::collections::HashSet<String>> =
-            match (&filter.since, &filter.until) {
-                (Some(since_str), Some(until_str)) => {
-                    // Both bounds: range query
-                    if let (Ok(since_ts), Ok(until_ts)) =
-                        (since_str.parse::<u64>(), until_str.parse::<u64>())
-                    {
-                        Some(
-                            self.coord
-                                .by_time
-                                .range(&since_ts, &until_ts)
-                                .into_iter()
-                                .map(|(_, id)| id)
-                                .collect(),
-                        )
-                    } else {
-                        None
+        use std::collections::HashSet;
+
+        // ── Phase 1: Resolve candidate fact IDs from indexes ────────────
+        let has_fact_index = filter.creator.is_some()
+            || filter.since.is_some()
+            || filter.until.is_some()
+            || filter.fact_ids.is_some();
+
+        let fact_candidates: Option<HashSet<u32>> = if has_fact_index {
+            let mut c: Option<HashSet<u32>> = None;
+
+            // By creator
+            if let Some(creator) = &filter.creator {
+                let ids: HashSet<u32> =
+                    self.coord.facts_by_creator(creator).into_iter().collect();
+                c = Some(match c {
+                    Some(existing) => existing.intersection(&ids).copied().collect(),
+                    None => ids,
+                });
+            }
+
+            // By time (nanosecond precision via OrderedIndex)
+            if filter.since.is_some() || filter.until.is_some() {
+                let since_ns = filter
+                    .since
+                    .as_ref()
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .unwrap_or(0);
+                let until_ns = filter
+                    .until
+                    .as_ref()
+                    .and_then(|u| u.parse::<u64>().ok())
+                    .unwrap_or(u64::MAX);
+                let time_ids: HashSet<u32> = match (&filter.since, &filter.until) {
+                    (Some(_), Some(_)) => self
+                        .coord
+                        .by_time
+                        .range(&since_ns, &until_ns)
+                        .into_iter()
+                        .map(|(_, id)| self.coord.intern_str(&id))
+                        .collect(),
+                    (Some(_), None) => self
+                        .coord
+                        .by_time
+                        .since(&since_ns)
+                        .into_iter()
+                        .map(|(_, id)| self.coord.intern_str(&id))
+                        .collect(),
+                    (None, Some(_)) => self
+                        .coord
+                        .by_time
+                        .as_of(&until_ns)
+                        .into_iter()
+                        .map(|(_, id)| self.coord.intern_str(&id))
+                        .collect(),
+                    (None, None) => unreachable!(),
+                };
+                c = Some(match c {
+                    Some(existing) => existing.intersection(&time_ids).copied().collect(),
+                    None => time_ids,
+                });
+            }
+
+            // By fact_ids (specific hex IDs)
+            if let Some(ids) = &filter.fact_ids {
+                let id_set: HashSet<u32> = ids
+                    .iter()
+                    .map(|id| self.coord.intern_str(id))
+                    .collect();
+                c = Some(match c {
+                    Some(existing) => existing.intersection(&id_set).copied().collect(),
+                    None => id_set,
+                });
+            }
+
+            c
+        } else {
+            None
+        };
+
+        // ── Phase 2: Resolve candidate intent IDs from indexes ──────────
+        //
+        // Intent time filters (since/until) cannot use the day-precision
+        // by_created_at_day index for nanosecond-accurate time-travel
+        // queries. They are handled as post-filters in Phase 4 instead.
+        let has_intent_index = filter.creator.is_some()
+            || filter.status.is_some()
+            || filter.intent_ids.is_some();
+
+        let intent_candidates: Option<HashSet<u32>> = if has_intent_index {
+            let mut c: Option<HashSet<u32>> = None;
+
+            // By status
+            if let Some(status) = &filter.status {
+                let ids: HashSet<u32> =
+                    self.coord.intents_by_status(status).into_iter().collect();
+                c = Some(match c {
+                    Some(existing) => existing.intersection(&ids).copied().collect(),
+                    None => ids,
+                });
+            }
+
+            // By creator (intents are also indexed by creator)
+            if let Some(creator) = &filter.creator {
+                let ids: HashSet<u32> =
+                    self.coord.facts_by_creator(creator).into_iter().collect();
+                c = Some(match c {
+                    Some(existing) => existing.intersection(&ids).copied().collect(),
+                    None => ids,
+                });
+            }
+
+            // By intent_ids (specific hex IDs)
+            if let Some(ids) = &filter.intent_ids {
+                let id_set: HashSet<u32> = ids
+                    .iter()
+                    .map(|id| self.coord.intern_str(id))
+                    .collect();
+                c = Some(match c {
+                    Some(existing) => existing.intersection(&id_set).copied().collect(),
+                    None => id_set,
+                });
+            }
+
+            c
+        } else {
+            None
+        };
+
+        // ── Phase 3: Selective materialization ──────────────────────────
+        let all_facts = self.fact_store.values();
+        let all_intents = self.intent_store.values();
+        let all_hints = self.hint_store.values();
+
+        let facts: Vec<Fact> = match fact_candidates {
+            Some(ids) => all_facts
+                .into_iter()
+                .filter(|r| ids.contains(&self.coord.intern_str(&r.id)))
+                .map(|r| {
+                    let content =
+                        self.load_content(&r.blob_hash, "application/octet-stream");
+                    Fact {
+                        id: FihHash::from_hex(&r.id),
+                        origin: r.origin,
+                        content,
+                        creator: r.creator,
                     }
-                }
-                (Some(since_str), None) => {
-                    // Lower bound only: since query
-                    if let Ok(since_ts) = since_str.parse::<u64>() {
-                        Some(
-                            self.coord
-                                .by_time
-                                .since(&since_ts)
-                                .into_iter()
-                                .map(|(_, id)| id)
-                                .collect(),
-                        )
-                    } else {
-                        None
+                })
+                .collect(),
+            None => all_facts
+                .into_iter()
+                .map(|r| {
+                    let content =
+                        self.load_content(&r.blob_hash, "application/octet-stream");
+                    Fact {
+                        id: FihHash::from_hex(&r.id),
+                        origin: r.origin,
+                        content,
+                        creator: r.creator,
                     }
-                }
-                (None, Some(until_str)) => {
-                    // Upper bound only: as_of query (time-travel)
-                    if let Ok(until_ts) = until_str.parse::<u64>() {
-                        Some(
-                            self.coord
-                                .by_time
-                                .as_of(&until_ts)
-                                .into_iter()
-                                .map(|(_, id)| id)
-                                .collect(),
-                        )
+                })
+                .collect(),
+        };
+
+        let intents: Vec<Intent> = match intent_candidates {
+            Some(ids) => all_intents
+                .into_iter()
+                .filter(|r| ids.contains(&self.coord.intern_str(&r.id)))
+                .map(|r| {
+                    let description = if r.description_hash.is_empty() {
+                        r.id.clone()
                     } else {
-                        None
+                        let c = self.load_content(&r.description_hash, "text/plain");
+                        String::from_utf8_lossy(&c.data).to_string()
+                    };
+                    Intent {
+                        id: FihHash::from_hex(&r.id),
+                        from_facts: r
+                            .from_facts
+                            .iter()
+                            .map(|s| FihHash::from_hex(s))
+                            .collect(),
+                        description,
+                        creator: r.creator,
+                        worker: match &r.status {
+                            IntentStatus::Claimed { worker, .. }
+                            | IntentStatus::Concluded { worker, .. } => {
+                                Some(worker.clone())
+                            }
+                            IntentStatus::Submitted => None,
+                        },
+                        to_fact_id: match &r.status {
+                            IntentStatus::Concluded { to_fact, .. } => {
+                                Some(FihHash::from_hex(to_fact))
+                            }
+                            _ => None,
+                        },
+                        last_heartbeat_at: match &r.status {
+                            IntentStatus::Claimed {
+                                last_heartbeat_at, ..
+                            } => Some(*last_heartbeat_at),
+                            _ => None,
+                        },
+                        created_at: Some(r.created_at),
+                        is_concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
+                        concluded_at: match &r.status {
+                            IntentStatus::Concluded { concluded_at, .. } => {
+                                Some(*concluded_at)
+                            }
+                            _ => None,
+                        },
                     }
+                })
+                .collect(),
+            None => all_intents
+                .into_iter()
+                .map(|r| {
+                    let description = if r.description_hash.is_empty() {
+                        r.id.clone()
+                    } else {
+                        let c = self.load_content(&r.description_hash, "text/plain");
+                        String::from_utf8_lossy(&c.data).to_string()
+                    };
+                    Intent {
+                        id: FihHash::from_hex(&r.id),
+                        from_facts: r
+                            .from_facts
+                            .iter()
+                            .map(|s| FihHash::from_hex(s))
+                            .collect(),
+                        description,
+                        creator: r.creator,
+                        worker: match &r.status {
+                            IntentStatus::Claimed { worker, .. }
+                            | IntentStatus::Concluded { worker, .. } => {
+                                Some(worker.clone())
+                            }
+                            IntentStatus::Submitted => None,
+                        },
+                        to_fact_id: match &r.status {
+                            IntentStatus::Concluded { to_fact, .. } => {
+                                Some(FihHash::from_hex(to_fact))
+                            }
+                            _ => None,
+                        },
+                        last_heartbeat_at: match &r.status {
+                            IntentStatus::Claimed {
+                                last_heartbeat_at, ..
+                            } => Some(*last_heartbeat_at),
+                            _ => None,
+                        },
+                        created_at: Some(r.created_at),
+                        is_concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
+                        concluded_at: match &r.status {
+                            IntentStatus::Concluded { concluded_at, .. } => {
+                                Some(*concluded_at)
+                            }
+                            _ => None,
+                        },
+                    }
+                })
+                .collect(),
+        };
+
+        let hints: Vec<Hint> = {
+            // Hints have no indexed filters beyond hint_ids
+            let has_hint_filter = filter.hint_ids.is_some();
+            if has_hint_filter {
+                let hint_ids_set: Option<HashSet<String>> =
+                    filter.hint_ids.as_ref().map(|ids| {
+                        ids.iter()
+                            .map(|id| FihHash::from_hex(id).to_string())
+                            .collect()
+                    });
+                match hint_ids_set {
+                    Some(ids) => all_hints
+                        .into_iter()
+                        .filter(|r| ids.contains(&r.id))
+                        .map(|r| Hint {
+                            id: FihHash::from_hex(&r.id),
+                            content: r.content,
+                            creator: r.creator,
+                        })
+                        .collect(),
+                    None => all_hints
+                        .into_iter()
+                        .map(|r| Hint {
+                            id: FihHash::from_hex(&r.id),
+                            content: r.content,
+                            creator: r.creator,
+                        })
+                        .collect(),
                 }
-                (None, None) => None,
-            };
+            } else {
+                all_hints
+                    .into_iter()
+                    .map(|r| Hint {
+                        id: FihHash::from_hex(&r.id),
+                        content: r.content,
+                        creator: r.creator,
+                    })
+                    .collect()
+            }
+        };
 
-        let mut state = StorageRead::read_state(self);
+        // ── Phase 4: Post-filtering ─────────────────────────────────────
+        //
+        // Intent time filters (since/until) are applied here because
+        // by_created_at_day provides only day precision, which is too
+        // coarse for nanosecond-accurate time-travel queries. For intents
+        // with status or creator indexes, those narrow the candidate set
+        // in Phase 2; the time filter then runs on the reduced set here.
+        let mut state = BoardState { facts, intents, hints };
 
-        // Apply time filter if active
-        if let Some(ids) = &time_filtered_ids {
-            state.facts.retain(|f| ids.contains(&f.id.to_string()));
-            state.intents.retain(|i| ids.contains(&i.id.to_string()));
-            state.hints.retain(|h| ids.contains(&h.id.to_string()));
+        // Post-filter intents by since/until (nanosecond precision on created_at)
+        let has_intent_time_filter = filter.since.is_some() || filter.until.is_some();
+        if has_intent_time_filter {
+            let since_ns = filter
+                .since
+                .as_ref()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(0);
+            let until_ns = filter
+                .until
+                .as_ref()
+                .and_then(|u| u.parse::<u64>().ok())
+                .unwrap_or(u64::MAX);
+            state.intents.retain(|i| {
+                // created_at is in seconds; convert to nanoseconds for comparison.
+                // since: created_at > bound (strict, matching OrderedIndex::since).
+                // until: created_at <= bound (inclusive, matching OrderedIndex::as_of).
+                let created_ns = i.created_at.unwrap_or(0) * 1_000_000_000;
+                created_ns > since_ns && created_ns <= until_ns
+            });
         }
 
-        if let Some(ids) = &filter.fact_ids {
-            let normalized: Vec<String> = ids
-                .iter()
-                .map(|id| FihHash::from_hex(id).to_string())
-                .collect();
-            state
-                .facts
-                .retain(|f| normalized.contains(&f.id.to_string()));
-        }
-        if let Some(ids) = &filter.intent_ids {
-            let normalized: Vec<String> = ids
-                .iter()
-                .map(|id| FihHash::from_hex(id).to_string())
-                .collect();
-            state
-                .intents
-                .retain(|i| normalized.contains(&i.id.to_string()));
-        }
-        if let Some(ids) = &filter.hint_ids {
-            let normalized: Vec<String> = ids
-                .iter()
-                .map(|id| FihHash::from_hex(id).to_string())
-                .collect();
-            state
-                .hints
-                .retain(|h| normalized.contains(&h.id.to_string()));
-        }
-
+        // Apply limit and offset
         let offset = filter.offset.unwrap_or(0);
         if let Some(limit) = filter.limit {
             state.facts = state.facts.into_iter().skip(offset).take(limit).collect();
