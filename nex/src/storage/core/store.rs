@@ -301,13 +301,11 @@ impl<I: AsyncFileIo> FihStorage<I> {
 }
 
 fn content_hash(data: &[u8]) -> String {
-    // Simple WASM-compatible hash. Uses std::hash::DefaultHasher which
-    // works on all targets including wasm32-unknown-unknown.
-    // In production, replace with SHA-256 or BLAKE3.
-    use std::hash::{Hash, Hasher};
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    data.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    // SHA-256 content hash. WASM-compatible (sha2 crate works on wasm32).
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(data);
+    format!("{:x}", h.finalize())
 }
 
 /// Load a content blob from IO by hash. Returns empty Content if not found.
