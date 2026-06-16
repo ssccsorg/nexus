@@ -247,13 +247,7 @@ impl FihCoord {
     }
 
     /// Record an intent in all applicable indexes.
-    pub fn record_intent(
-        &self,
-        id: &str,
-        creator: &str,
-        created_at: u64,
-        from_facts: &[String],
-    ) {
+    pub fn record_intent(&self, id: &str, creator: &str, created_at: u64, from_facts: &[String]) {
         let idx = self.intern(id);
 
         // Creator projection

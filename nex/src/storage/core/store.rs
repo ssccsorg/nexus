@@ -180,11 +180,13 @@ impl<I: AsyncFileIo> FihStorage<I> {
 
         for r in &facts {
             self.coord.by_time.record(r.submitted_at, &r.id);
-            self.coord.record_fact(&r.id, &r.origin, &r.creator, r.submitted_at);
+            self.coord
+                .record_fact(&r.id, &r.origin, &r.creator, r.submitted_at);
         }
 
         for r in &intents {
-            self.coord.record_intent(&r.id, &r.creator, r.created_at, &r.from_facts);
+            self.coord
+                .record_intent(&r.id, &r.creator, r.created_at, &r.from_facts);
         }
     }
 
@@ -419,7 +421,8 @@ impl<I: AsyncFileIo> FactCapable for FihStorage<I> {
         // Update indices via FihCoord
         let ts = self.clock.now_nanos();
         self.coord.by_time.record(ts, &fact.id.0);
-        self.coord.record_fact(&fact.id.0, &fact.origin, &fact.creator, ts);
+        self.coord
+            .record_fact(&fact.id.0, &fact.origin, &fact.creator, ts);
 
         Ok(fact.id.clone())
     }
@@ -489,7 +492,12 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
         };
 
         // Record intent in coordinator (handles by_fact, ref_counts, by_status, by_creator)
-        self.coord.record_intent(&intent.id.0, &intent.creator, record.created_at, &intent.from_facts);
+        self.coord.record_intent(
+            &intent.id.0,
+            &intent.creator,
+            record.created_at,
+            &intent.from_facts,
+        );
 
         self.intent_store.insert(record.id.clone(), record);
         self.pending.borrow_mut().push(op);
@@ -522,7 +530,8 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
             data: bytes,
         });
         self.intent_store.insert(intent_id.to_string(), record);
-        self.coord.update_intent_status(intent_id, "submitted", "claimed");
+        self.coord
+            .update_intent_status(intent_id, "submitted", "claimed");
         self.maybe_flush().map_err(BlackboardError::Internal)?;
 
         Ok(())
@@ -587,7 +596,8 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
             data: bytes,
         });
         self.intent_store.insert(intent_id.to_string(), record);
-        self.coord.update_intent_status(intent_id, "claimed", "submitted");
+        self.coord
+            .update_intent_status(intent_id, "claimed", "submitted");
         self.maybe_flush().map_err(BlackboardError::Internal)?;
 
         Ok(())
@@ -637,9 +647,11 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
 
         // Remove intent from from_facts references and update status
         if let Some(r) = self.intent_store.get(intent_id) {
-            self.coord.remove_intent_from_facts(intent_id, &r.from_facts);
+            self.coord
+                .remove_intent_from_facts(intent_id, &r.from_facts);
         }
-        self.coord.update_intent_status(intent_id, "claimed", "concluded");
+        self.coord
+            .update_intent_status(intent_id, "claimed", "concluded");
 
         let intent_bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -1034,7 +1046,8 @@ impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
         // Update indices via FihCoord
         let ts = self.clock.now_nanos();
         self.coord.by_time.record(ts, &fact.id.0);
-        self.coord.record_fact(&fact.id.0, &fact.origin, &fact.creator, ts);
+        self.coord
+            .record_fact(&fact.id.0, &fact.origin, &fact.creator, ts);
 
         Ok(fact.id.clone())
     }
@@ -1112,7 +1125,8 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
             .await
             .map_err(BlackboardError::Internal)?;
         self.intent_store.insert(intent_id.to_string(), record);
-        self.coord.update_intent_status(intent_id, "submitted", "claimed");
+        self.coord
+            .update_intent_status(intent_id, "submitted", "claimed");
         Ok(())
     }
 
@@ -1243,7 +1257,8 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
             .await
             .map_err(BlackboardError::Internal)?;
         self.intent_store.insert(intent_id.to_string(), record);
-        self.coord.update_intent_status(intent_id, "claimed", "concluded");
+        self.coord
+            .update_intent_status(intent_id, "claimed", "concluded");
 
         Ok(new_fact)
     }
