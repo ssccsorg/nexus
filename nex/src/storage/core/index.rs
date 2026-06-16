@@ -12,7 +12,7 @@
 // Memory: contiguous Vec — cache-friendly, no per-node allocation.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// Append-only ordered index. Thread-local via RefCell.
 ///
@@ -106,60 +106,275 @@ where
 
 // ── FihCoord: composite coordinate/index for FIH StateSpace ────────────
 //
-// Groups all derived projections (time, origin, fact→intent, ref_count)
-// into a single structure. Always in-memory, rebuilt from EntityStore on
-// hydrate. NOT persisted — indices are reconstructed from Record data.
+// Uses a unified u32 ID mapping internally so that all indexes
+// (exact-match, range, and future vector indexes) share the same
+// compact ID space. The mapping is rebuilt from record data on hydrate.
+//
+// Always in-memory, rebuilt from EntityStore on hydrate. NOT persisted
+// — indices are reconstructed from Record data.
 //
 // Each field represents one axis or relationship in the Sparse StateSpace:
-//   by_time:     temporal axis (4th dimension)
-//   by_origin:   origin → [fact_id] projection (fact space)
-//   by_fact:     fact_id → [intent_id] reverse index (fact→intent relation)
-//   ref_counts:  fact_id → number of referencing Intents
+//   by_time:            temporal axis (4th dimension)
+//   by_origin:          origin → [compact_id] projection (fact space)
+//   by_fact:            fact_id → [intent compact_id] reverse index
+//   by_creator:         creator → [compact_id]
+//   by_status:          status_string → [intent compact_id]
+//   by_created_at_day:  day-precision key → [compact_id] (range queries)
+//   ref_counts:         compact_id → reference count
 
-/// Reference counts: fact_id → number of Intents referencing this Fact.
-/// Single-threaded: uses `Cell<u64>` (no atomic needed).
-pub(crate) type RefCounts = HashMap<String, Cell<u64>>;
-
-/// Origin index: origin → [fact_id, ...]
-pub(crate) type OriginIndex = HashMap<String, Vec<String>>;
-
-/// Reverse index: fact_id → intent_id list.
-pub(crate) type ByFactIndex = HashMap<String, Vec<String>>;
-
-/// FIH StateSpace coordinate: composite index over all non-record axes.
+/// FIH StateSpace coordinate: composite index over all record axes.
 ///
-/// Replaces the previous four separate fields (time_index, ref_counts,
-/// by_origin, by_from_fact) in FihStorage. Each field is an in-memory
-/// projection of the Record data, rebuilt via rebuild_coord().
+/// Uses a unified u32 ID mapping internally so that all indexes
+/// (exact-match, range, and future vector indexes) share the same
+/// compact ID space. The mapping is rebuilt from record data on hydrate.
 pub struct FihCoord {
+    // ── Unified ID mapping (shared by all indexes) ─────────────────
+    /// String ID → compact u32 index
+    pub(crate) id_to_idx: RefCell<HashMap<String, u32>>,
+    /// u32 index → String ID (reverse lookup)
+    pub(crate) idx_to_id: RefCell<Vec<String>>,
+    /// Next available u32 ID (monotonic)
+    next_idx: Cell<u32>,
+
+    // ── Indexes ────────────────────────────────────────────────────
     /// Temporal axis: timestamp → id (monotonic, append-only)
     pub by_time: OrderedIndex<u64>,
 
-    /// Origin projection: origin → [fact_id]
-    pub by_origin: RefCell<OriginIndex>,
+    /// Origin projection: origin → [compact_id]
+    pub by_origin: RefCell<HashMap<String, Vec<u32>>>,
 
-    /// Fact reverse index: fact_id → [intent_id]
-    pub by_fact: RefCell<ByFactIndex>,
+    /// Fact reverse index: fact_id → [intent compact_id]
+    pub by_fact: RefCell<HashMap<u32, Vec<u32>>>,
 
-    /// Reference count: fact_id → #referencing Intents
-    pub ref_counts: RefCell<RefCounts>,
+    /// Creator projection: creator → [compact_id]
+    pub by_creator: RefCell<HashMap<String, Vec<u32>>>,
+
+    /// Intent status projection: status_string → [intent compact_id]
+    pub by_status: RefCell<HashMap<String, Vec<u32>>>,
+
+    /// Day-precision timestamp index: day → [compact_id] (range queries)
+    pub by_created_at_day: RefCell<BTreeMap<u64, Vec<u32>>>,
+
+    /// Reference count: compact_id → count
+    pub ref_counts: RefCell<HashMap<u32, Cell<u64>>>,
 }
 
 impl FihCoord {
     pub fn new() -> Self {
         Self {
+            id_to_idx: RefCell::new(HashMap::new()),
+            idx_to_id: RefCell::new(Vec::new()),
+            next_idx: Cell::new(0),
             by_time: OrderedIndex::<u64>::new(),
-            by_origin: RefCell::new(OriginIndex::new()),
-            by_fact: RefCell::new(ByFactIndex::new()),
-            ref_counts: RefCell::new(RefCounts::new()),
+            by_origin: RefCell::new(HashMap::new()),
+            by_fact: RefCell::new(HashMap::new()),
+            by_creator: RefCell::new(HashMap::new()),
+            by_status: RefCell::new(HashMap::new()),
+            by_created_at_day: RefCell::new(BTreeMap::new()),
+            ref_counts: RefCell::new(HashMap::new()),
         }
     }
 
-    /// Return intent IDs referencing the given fact (reverse index lookup).
-    pub fn intents_by_fact(&self, fact_id: &str) -> Vec<String> {
+    /// Get or create a compact ID for a string ID.
+    pub fn intern(&self, id: &str) -> u32 {
+        let mut map = self.id_to_idx.borrow_mut();
+        if let Some(&idx) = map.get(id) {
+            return idx;
+        }
+        let idx = self.next_idx.get();
+        self.next_idx.set(idx + 1);
+        map.insert(id.to_string(), idx);
+        self.idx_to_id.borrow_mut().push(id.to_string());
+        idx
+    }
+
+    /// Resolve a compact ID back to its string ID.
+    pub fn resolve(&self, idx: u32) -> String {
+        self.idx_to_id
+            .borrow()
+            .get(idx as usize)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Clear all indexes and ID mapping (for rebuild).
+    pub fn clear(&self) {
+        self.id_to_idx.borrow_mut().clear();
+        self.idx_to_id.borrow_mut().clear();
+        self.next_idx.set(0);
+        self.by_time.clear();
+        self.by_origin.borrow_mut().clear();
+        self.by_fact.borrow_mut().clear();
+        self.by_creator.borrow_mut().clear();
+        self.by_status.borrow_mut().clear();
+        self.by_created_at_day.borrow_mut().clear();
+        self.ref_counts.borrow_mut().clear();
+    }
+
+    // ── Index update methods (called by FihStorage) ────────────────
+
+    /// Record a fact in all applicable indexes.
+    pub fn record_fact(&self, id: &str, origin: &str, creator: &str, created_at: u64) {
+        let idx = self.intern(id);
+
+        // Origin projection
+        self.by_origin
+            .borrow_mut()
+            .entry(origin.to_string())
+            .or_default()
+            .push(idx);
+
+        // Creator projection
+        self.by_creator
+            .borrow_mut()
+            .entry(creator.to_string())
+            .or_default()
+            .push(idx);
+
+        // Day-precision timestamp index (truncate to day boundary)
+        let day = created_at - (created_at % 86_400_000_000_000);
+        self.by_created_at_day
+            .borrow_mut()
+            .entry(day)
+            .or_default()
+            .push(idx);
+
+        // Initialize reference count (0 — orphan unless referenced by an Intent)
+        self.ref_counts
+            .borrow_mut()
+            .entry(idx)
+            .or_insert_with(|| Cell::new(0));
+    }
+
+    /// Record an intent in all applicable indexes.
+    pub fn record_intent(
+        &self,
+        id: &str,
+        creator: &str,
+        created_at: u64,
+        from_facts: &[String],
+    ) {
+        let idx = self.intern(id);
+
+        // Creator projection
+        self.by_creator
+            .borrow_mut()
+            .entry(creator.to_string())
+            .or_default()
+            .push(idx);
+
+        // Status projection (intents start as "submitted")
+        self.by_status
+            .borrow_mut()
+            .entry("submitted".to_string())
+            .or_default()
+            .push(idx);
+
+        // Day-precision timestamp index (truncate to day boundary)
+        let day = created_at - (created_at % 86_400_000_000_000);
+        self.by_created_at_day
+            .borrow_mut()
+            .entry(day)
+            .or_default()
+            .push(idx);
+
+        // Fact reverse index: for each referenced fact, record this intent
+        for fid in from_facts {
+            let fact_idx = self.intern(fid);
+            self.by_fact
+                .borrow_mut()
+                .entry(fact_idx)
+                .or_default()
+                .push(idx);
+
+            // Increment reference count on the fact
+            if let Some(rc) = self.ref_counts.borrow().get(&fact_idx) {
+                rc.set(rc.get() + 1);
+            }
+        }
+    }
+
+    /// Update intent status index (called on claim/conclude).
+    pub fn update_intent_status(&self, id: &str, old_status: &str, new_status: &str) {
+        let idx = self.intern(id);
+
+        // Remove from old status bucket
+        {
+            let mut by_status = self.by_status.borrow_mut();
+            if let Some(bucket) = by_status.get_mut(old_status) {
+                bucket.retain(|&i| i != idx);
+            }
+        }
+
+        // Add to new status bucket
+        self.by_status
+            .borrow_mut()
+            .entry(new_status.to_string())
+            .or_default()
+            .push(idx);
+    }
+
+    /// Remove intent from old from_facts references (called on conclude).
+    pub fn remove_intent_from_facts(&self, id: &str, from_facts: &[String]) {
+        let idx = self.intern(id);
+        let mut by_fact = self.by_fact.borrow_mut();
+        for fid in from_facts {
+            let fact_idx = self.intern(fid);
+            if let Some(bucket) = by_fact.get_mut(&fact_idx) {
+                bucket.retain(|&i| i != idx);
+            }
+
+            // Decrement reference count on the fact
+            if let Some(rc) = self.ref_counts.borrow().get(&fact_idx) {
+                rc.set(rc.get() - 1);
+            }
+        }
+    }
+
+    // ── Query methods ──────────────────────────────────────────────
+
+    /// Return compact IDs for facts created by a given creator.
+    pub fn facts_by_creator(&self, creator: &str) -> Vec<u32> {
+        self.by_creator
+            .borrow()
+            .get(creator)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Return compact IDs for intents with a given status.
+    pub fn intents_by_status(&self, status: &str) -> Vec<u32> {
+        self.by_status
+            .borrow()
+            .get(status)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Return compact IDs for records created within a day range (inclusive of start, exclusive of end).
+    pub fn ids_by_created_at_range(&self, start_day: u64, end_day: u64) -> Vec<u32> {
+        let map = self.by_created_at_day.borrow();
+        let mut result = Vec::new();
+        for (_day, ids) in map.range(start_day..end_day) {
+            result.extend(ids.iter().copied());
+        }
+        result
+    }
+
+    /// Return compact IDs for intents referencing a given fact (by its compact ID).
+    pub fn intents_by_fact(&self, fact_idx: u32) -> Vec<u32> {
         self.by_fact
             .borrow()
-            .get(fact_id)
+            .get(&fact_idx)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Return compact IDs for facts with a given origin.
+    pub fn fact_ids_by_origin(&self, origin: &str) -> Vec<u32> {
+        self.by_origin
+            .borrow()
+            .get(origin)
             .cloned()
             .unwrap_or_default()
     }
