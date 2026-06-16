@@ -1,9 +1,4 @@
-use serde::{Deserialize, Serialize};
-
-/// Returns true if the character is a valid hex digit (0-9, a-f, A-F).
-fn is_hex_char(c: char) -> bool {
-    c.is_ascii_hexdigit()
-}
+use serde::{Deserialize, Serializer, Serialize};
 use sha2::{Digest, Sha256};
 
 // ── Content-addressable identifier ───────────────────────────────────────
@@ -32,40 +27,37 @@ impl FihHash {
 
     pub fn chain(a: &FihHash, b: &FihHash, c: &FihHash) -> FihHash {
         let mut h = Sha256::new();
-        h.update(a.0);
-        h.update(b.0);
-        h.update(c.0);
+        h.update(&a.0);
+        h.update(&b.0);
+        h.update(&c.0);
         Self(h.finalize().into())
     }
-}
 
-/// Allow constructing FihHash from a hex string literal in tests.
-impl FihHash {
-    /// Create from a hex string (64 hex chars = 32 bytes).
-    /// If the string is shorter than 64 chars, it's left-padded with zeros.
-    /// Non-hex characters are filtered out.
+    /// Create a FihHash from a hex string (64 hex chars = 32 bytes).
+    /// Non-hex characters are filtered out first.
+    /// For short IDs like "f001" that are not valid 64-char hex, falls back
+    /// to SHA256 hashing (same as `From<&str>`).
     pub fn from_hex(hex: &str) -> Self {
-        let mut bytes = [0u8; 32];
-        let hex_clean: String = hex.chars().filter(|c| is_hex_char(*c)).collect();
-        let start = if hex_clean.len() > 64 {
-            hex_clean.len() - 64
-        } else {
-            0
-        };
-        let relevant = &hex_clean[start..];
-        let padding = 64 - relevant.len().min(64);
-        for i in 0..relevant.len().min(64) / 2 {
-            if let Ok(v) = u8::from_str_radix(&relevant[i * 2..=i * 2 + 1], 16) {
-                bytes[(padding / 2) + i] = v;
+        let hex_clean: String = hex.chars().filter(|c| c.is_ascii_hexdigit()).collect();
+        if hex_clean.len() == 64 {
+            let mut bytes = [0u8; 32];
+            for i in 0..32 {
+                if let Ok(v) = u8::from_str_radix(&hex_clean[i * 2..=i * 2 + 1], 16) {
+                    bytes[i] = v;
+                }
             }
+            return Self(bytes);
         }
-        Self(bytes)
+        // Fallback: hash the input to produce a deterministic FihHash.
+        Self::from(hex)
     }
 }
 
 impl From<&str> for FihHash {
     fn from(s: &str) -> Self {
-        Self::from_hex(s)
+        let mut h = Sha256::new();
+        h.update(s.as_bytes());
+        Self(h.finalize().into())
     }
 }
 

@@ -251,9 +251,9 @@ fn scenario_cross_domain_discovery() {
         let iid = sched.bb.submit_intent(&intent).expect("submit");
         sched
             .bb
-            .claim_intent(&iid.0, "research-agent")
+            .claim_intent(&iid.to_string(), "research-agent")
             .expect("claim");
-        sched.bb.conclude_intent(&iid.0, &serde_json::to_string(&serde_json::json!({
+        sched.bb.conclude_intent(&iid.to_string(), &serde_json::to_string(&serde_json::json!({
             "resolution": "Data movement is zero for input Segments; projection results move as structured dataflow bounded by Spatz balance condition"
         })).unwrap()).expect("conclude");
     }
@@ -447,8 +447,8 @@ fn scenario_peer_review_challenge() {
             concluded_at: None,
         };
         let iid = sched.bb.submit_intent(&intent).expect("submit");
-        sched.bb.claim_intent(&iid.0, "reviewer").expect("claim");
-        sched.bb.conclude_intent(&iid.0, &serde_json::to_string(&serde_json::json!({
+        sched.bb.claim_intent(&iid.to_string(), "reviewer").expect("claim");
+        sched.bb.conclude_intent(&iid.to_string(), &serde_json::to_string(&serde_json::json!({
             "verdict": "Rust is the practical stepping stone; SSCCS manifesto describes the destination. Both are correct in their domains"
         })).unwrap()).expect("conclude");
     }
@@ -548,11 +548,11 @@ fn scenario_incremental_knowledge_growth() {
                 concluded_at: None,
             };
             let iid = sched.bb.submit_intent(&intent).expect("submit");
-            sched.bb.claim_intent(&iid.0, "agent-loop").expect("claim");
+            sched.bb.claim_intent(&iid.to_string(), "agent-loop").expect("claim");
             sched
                 .bb
                 .conclude_intent(
-                    &iid.0,
+                    &iid.to_string(),
                     &serde_json::to_string(&serde_json::json!({
                         "resolution": format!("Resolved {} in iteration {}", topic, iteration),
                         "iteration": iteration,
@@ -626,11 +626,11 @@ fn scenario_multi_agent_collaboration() {
             concluded_at: None,
         };
         let iid = sched.bb.submit_intent(&intent).expect("submit");
-        sched.bb.claim_intent(&iid.0, "agent-alpha").expect("claim");
+        sched.bb.claim_intent(&iid.to_string(), "agent-alpha").expect("claim");
         sched
             .bb
             .conclude_intent(
-                &iid.0,
+                &iid.to_string(),
                 &serde_json::to_string(&serde_json::json!({
                     "analysis": "Spatz balance condition validates SSCCS structural model",
                     "domain": "hardware",
@@ -662,11 +662,11 @@ fn scenario_multi_agent_collaboration() {
             concluded_at: None,
         };
         let iid = sched.bb.submit_intent(&intent).expect("submit");
-        sched.bb.claim_intent(&iid.0, "agent-beta").expect("claim");
+        sched.bb.claim_intent(&iid.to_string(), "agent-beta").expect("claim");
         sched
             .bb
             .conclude_intent(
-                &iid.0,
+                &iid.to_string(),
                 &serde_json::to_string(&serde_json::json!({
                     "analysis": "MLIR Transform Dialect aligns with SSCCS Field composition",
                     "domain": "compiler",
@@ -698,8 +698,8 @@ fn scenario_multi_agent_collaboration() {
             concluded_at: None,
         };
         let iid = sched.bb.submit_intent(&intent).expect("submit");
-        sched.bb.claim_intent(&iid.0, "agent-gamma").expect("claim");
-        sched.bb.conclude_intent(&iid.0, &serde_json::to_string(&serde_json::json!({
+        sched.bb.claim_intent(&iid.to_string(), "agent-gamma").expect("claim");
+        sched.bb.conclude_intent(&iid.to_string(), &serde_json::to_string(&serde_json::json!({
             "synthesis": "SSCCS theory + Spatz measurement + MLIR implementation are complementary layers",
             "domain": "philosophy",
             "agent": "gamma",

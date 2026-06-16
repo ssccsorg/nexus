@@ -1,7 +1,7 @@
 use interface_cypher::capable::CypherCapable;
 use interface_query::{ColdFilter, ColdQuery};
 use nexus_model::{
-    Content, FilterCapable, ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
+    Content, FilterCapable, FihHash, ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
 };
 use nexus_storage_duckdb::DuckDbStorage;
 use tempfile::TempDir;
@@ -147,7 +147,7 @@ fn test_read_intents_from_parquet() {
     assert_eq!(intent_2.description, "do more");
     assert_eq!(intent_2.creator, "admin");
     assert_eq!(intent_2.worker, None);
-    assert_eq!(intent_2.to_fact_id, Some("fact_3".to_string()));
+    assert_eq!(intent_2.to_fact_id, Some(FihHash::from_hex("fact_3")));
     assert_eq!(intent_2.last_heartbeat_at, None);
     assert_eq!(intent_2.created_at, Some(1782000000));
     assert_eq!(intent_2.concluded_at, Some(1782086400));

@@ -18,7 +18,7 @@
 //!
 //! All existing `nexus-storage-duckdb` tests (82 tests) pass unchanged.
 
-use nexus_model::{FlushCapable, FlushCursor, StorageRead}; // project_id via StorageRead
+use nexus_model::{FihHash, FlushCapable, FlushCursor, StorageRead}; // project_id via StorageRead
 use nexus_storage_duckdb::DuckDbStorage;
 use tempfile::TempDir;
 

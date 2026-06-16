@@ -12,7 +12,7 @@ fn test_serde_proxy_submit_fact() {
         creator: "tester".into(),
     };
     let hash = gw.submit_fact(&fact).unwrap();
-    assert_eq!(hash.0, "f_gw_001");
+    assert_eq!(hash, FihHash::from_hex("f_gw_001"));
 
     let state = gw.read_state();
     assert_eq!(state.facts.len(), 1);
