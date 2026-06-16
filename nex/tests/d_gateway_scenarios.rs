@@ -24,7 +24,7 @@ fn scenario_contradiction_detection_via_gateway() {
 
     // Agent-A: ingests paper claiming GNNs work fine at 50 layers
     gw.submit_fact(&Fact {
-        id: FihHash("f_gnn_deep".into()),
+        id: FihHash::from_hex("f_gnn_deep"),
         origin: "paper_iclr_2024".into(),
         content: Content::from(
             "Residual GNNs maintain accuracy at 50 layers with skip connections",
@@ -35,7 +35,7 @@ fn scenario_contradiction_detection_via_gateway() {
 
     // Agent-B: ingests paper claiming GNNs oversmooth at 6 layers
     gw.submit_fact(&Fact {
-        id: FihHash("f_gnn_shallow".into()),
+        id: FihHash::from_hex("f_gnn_shallow"),
         origin: "paper_neurips_2023".into(),
         content: Content::from(
             "Message-passing GNNs oversmooth beyond 6 layers without normalization",
@@ -46,8 +46,8 @@ fn scenario_contradiction_detection_via_gateway() {
 
     // Agent-C: detects the contradiction, submits hypothesis
     gw.submit_intent(&Intent {
-        id: FihHash("i_reconcile".into()),
-        from_facts: vec!["f_gnn_deep".into(), "f_gnn_shallow".into()],
+        id: FihHash::from_hex("i_reconcile"),
+        from_facts: vec![FihHash::from_hex("f_gnn_deep"), FihHash::from_hex("f_gnn_shallow")],
         description: "Test whether normalization technique determines oversmoothing depth".into(),
         creator: "agent-c".into(),
         worker: None,

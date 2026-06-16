@@ -21,7 +21,7 @@ fn scenario_contradiction_detection() {
 
     // Agent-A: ingests paper claiming GNNs work fine at 50 layers
     bb.submit_fact(&Fact {
-        id: FihHash("f_gnn_deep".into()),
+        id: FihHash::from_hex("f_gnn_deep"),
         origin: "paper_iclr_2024".into(),
         content: "Residual GNNs maintain accuracy at 50 layers with skip connections".into(),
         creator: "agent-a".into(),
@@ -30,7 +30,7 @@ fn scenario_contradiction_detection() {
 
     // Agent-B: ingests paper claiming GNNs oversmooth at 6 layers
     bb.submit_fact(&Fact {
-        id: FihHash("f_gnn_shallow".into()),
+        id: FihHash::from_hex("f_gnn_shallow"),
         origin: "paper_neurips_2023".into(),
         content: "Message-passing GNNs oversmooth beyond 6 layers without normalization".into(),
         creator: "agent-b".into(),
@@ -39,7 +39,7 @@ fn scenario_contradiction_detection() {
 
     // Agent-C: detects the contradiction, submits hypothesis
     bb.submit_intent(&Intent {
-        id: FihHash("i_reconcile".into()),
+        id: FihHash::from_hex("i_reconcile"),
         from_facts: vec!["f_gnn_deep".into(), "f_gnn_shallow".into()],
         description: "Test whether normalization technique determines oversmoothing depth".into(),
         creator: "agent-c".into(),
@@ -88,7 +88,7 @@ fn scenario_peer_review() {
 
     // Phase 1: Agent-A submits hypothesis as Intent
     let hypothesis = Intent {
-        id: FihHash("i_hypothesis".into()),
+        id: FihHash::from_hex("i_hypothesis"),
         from_facts: vec!["f_background".into()],
         description: "Quantum error correction with surface codes achieves fault tolerance at 0.1% error rate".into(),
         creator: "agent-a".into(),
@@ -101,7 +101,7 @@ fn scenario_peer_review() {
     };
     // Need a grounding fact first
     bb.submit_fact(&Fact {
-        id: FihHash("f_background".into()),
+        id: FihHash::from_hex("f_background"),
         origin: "background".into(),
         content: "Surface codes are the leading QEC candidate".into(),
         creator: "system".into(),
@@ -111,13 +111,13 @@ fn scenario_peer_review() {
 
     // Phase 2: Reviewer agents submit Hints (review comments)
     bb.submit_hint(&Hint {
-        id: FihHash("h_reviewer1".into()),
+        id: FihHash::from_hex("h_reviewer1"),
         content: "The 0.1% threshold seems optimistic — reference recent experiments".into(),
         creator: "agent-b".into(),
     })
     .unwrap();
     bb.submit_hint(&Hint {
-        id: FihHash("h_reviewer2".into()),
+        id: FihHash::from_hex("h_reviewer2"),
         content: "Need to specify distance-3 vs distance-5 surface code constraints".into(),
         creator: "agent-c".into(),
     })
@@ -186,7 +186,7 @@ fn scenario_knowledge_synthesis() {
     ];
     for (id, creator, content) in &pieces {
         bb.submit_fact(&Fact {
-            id: FihHash(id.to_string()),
+            id: FihHash::from_hex(id),
             origin: "experiment".into(),
             content: (*content).into(),
             creator: creator.to_string(),
@@ -200,7 +200,7 @@ fn scenario_knowledge_synthesis() {
 
     // Agent-D recognizes the pattern: cold + high rate = lithium plating
     bb.submit_fact(&Fact {
-        id: FihHash("f_synthesis".into()),
+        id: FihHash::from_hex("f_synthesis"),
         origin: "synthesis".into(),
         content: "SYNTHESIS: Low temperature (-10°C) increases electrolyte viscosity, reducing ion mobility. High discharge rate (2C) generates heat (15°C rise). Combined high charge rate (>1C) below 0°C causes anode lithium plating. Solution: preheat battery to 10°C before fast charging in cold environments.".into(),
         creator: "agent-delta".into(),
@@ -225,7 +225,7 @@ fn scenario_knowledge_synthesis() {
 
     // Agent-D's synthesis should be propositional — others can build on it
     bb.submit_intent(&Intent {
-        id: FihHash("i_validate_synthesis".into()),
+        id: FihHash::from_hex("i_validate_synthesis"),
         from_facts: vec!["f_synthesis".into()],
         description:
             "Experimental validation: test preheat to 10°C before 2C charging at -10°C ambient"
@@ -285,7 +285,7 @@ fn scenario_emergency_response() {
     ];
     for (id, creator, content) in &alerts {
         bb.submit_fact(&Fact {
-            id: FihHash(id.to_string()),
+            id: FihHash::from_hex(id),
             origin: "sensor".into(),
             content: (*content).into(),
             creator: creator.to_string(),
@@ -295,7 +295,7 @@ fn scenario_emergency_response() {
 
     // Coordinator submits prioritized response plan as Intent
     bb.submit_intent(&Intent {
-        id: FihHash("i_respond_fire".into()),
+        id: FihHash::from_hex("i_respond_fire"),
         from_facts: vec![
             "f_alarm_smoke".into(),
             "f_alarm_temp".into(),
@@ -371,7 +371,7 @@ fn scenario_bug_fix_pipeline() {
 
     // Reporter submits the bug as a Fact
     bb.submit_fact(&Fact {
-        id: FihHash("f_bug_1337".into()),
+        id: FihHash::from_hex("f_bug_1337"),
         origin: "production".into(),
         content: "CRITICAL: Payment API returns 500 for amounts > $10,000 since deploy v2.3.1 at 2026-06-15T14:32Z. Affects 12% of enterprise transactions.".into(),
         creator: "reporter".into(),
@@ -379,13 +379,13 @@ fn scenario_bug_fix_pipeline() {
 
     // Triager reads the bug, adds metadata as Hint, files a triage Intent
     bb.submit_hint(&Hint {
-        id: FihHash("h_severity".into()),
+        id: FihHash::from_hex("h_severity"),
         content: "severity=P0, component=payment-api, regression=true".into(),
         creator: "triager".into(),
     })
     .unwrap();
     bb.submit_intent(&Intent {
-        id: FihHash("i_triage".into()),
+        id: FihHash::from_hex("i_triage"),
         from_facts: vec!["f_bug_1337".into()],
         description: "TRIAGE: Payment API overflow on large amounts — check decimal handling"
             .into(),
@@ -408,8 +408,8 @@ fn scenario_bug_fix_pipeline() {
 
     // Developer submits a fix Intent
     bb.submit_intent(&Intent {
-        id: FihHash("i_fix_1337".into()),
-        from_facts: vec!["f_bug_1337".into(), analysis.id.0],
+        id: FihHash::from_hex("i_fix_1337"),
+        from_facts: vec!["f_bug_1337".into(), analysis.id],
         description: "FIX: Change payment amount from uint32 to uint64 in api/src/payment.rs"
             .into(),
         creator: "dev-alice".into(),
@@ -430,7 +430,7 @@ fn scenario_bug_fix_pipeline() {
 
     // Reviewer submits a review Intent to validate
     bb.submit_intent(&Intent {
-        id: FihHash("i_review_1337".into()),
+        id: FihHash::from_hex("i_review_1337"),
         from_facts: vec!["f_bug_1337".into()],
         description: "REVIEW: Verify fix covers edge cases — negative amounts, fractional cents, max uint64 boundary".into(),
         creator: "reviewer-bob".into(),
@@ -455,7 +455,7 @@ fn scenario_bug_fix_pipeline() {
     );
     assert_eq!(state.hints.len(), 1, "severity hint from triager");
     assert!(
-        state.intents.iter().any(|i| i.id.0 == "i_fix_1337"),
+        state.intents.iter().any(|i| i.id == FihHash::from_hex("i_fix_1337")),
         "fix intent present"
     );
 
@@ -478,7 +478,7 @@ fn scenario_ci_failure_investigation() {
 
     // CI system reports build failure
     bb.submit_fact(&Fact {
-        id: FihHash("f_build_404".into()),
+        id: FihHash::from_hex("f_build_404"),
         origin: "ci".into(),
         content: "BUILD FAILED: main branch, commit a1b2c3d, pipeline #8421. 23 test failures, 5 compile errors, 3 dependency warnings.".into(),
         creator: "ci-bot".into(),
@@ -486,7 +486,7 @@ fn scenario_ci_failure_investigation() {
 
     // Agent-A investigates compile errors
     bb.submit_fact(&Fact {
-        id: FihHash("f_compile".into()),
+        id: FihHash::from_hex("f_compile"),
         origin: "investigation".into(),
         content: "Compile errors: all 5 are in protocol/buffer.rs — 'PacketHeader' struct size mismatch after adding new field. Missing #[repr(C)] attribute.".into(),
         creator: "agent-a".into(),
@@ -494,7 +494,7 @@ fn scenario_ci_failure_investigation() {
 
     // Agent-B investigates test failures (independently, same time)
     bb.submit_fact(&Fact {
-        id: FihHash("f_tests".into()),
+        id: FihHash::from_hex("f_tests"),
         origin: "investigation".into(),
         content: "Test failures: 23/23 are serialization round-trip tests. All fail with 'buffer size mismatch'. Consistent with struct layout change.".into(),
         creator: "agent-b".into(),
@@ -502,7 +502,7 @@ fn scenario_ci_failure_investigation() {
 
     // Agent-C checks dependencies
     bb.submit_fact(&Fact {
-        id: FihHash("f_deps".into()),
+        id: FihHash::from_hex("f_deps"),
         origin: "investigation".into(),
         content: "Dependencies: proto-rs v2.4.0 released yesterday — includes automated PacketHeader generator that changed alignment. No API change, but layout differs.".into(),
         creator: "agent-c".into(),
@@ -515,7 +515,7 @@ fn scenario_ci_failure_investigation() {
     // Agent-D triangulates: compile error (repr(C)) + test failure (size) + dep update (alignment)
     // = root cause: proto-rs v2.4.0 changed struct alignment
     bb.submit_intent(&Intent {
-        id: FihHash("i_root_cause".into()),
+        id: FihHash::from_hex("i_root_cause"),
         from_facts: vec!["f_compile".into(), "f_tests".into(), "f_deps".into()],
         description: "ROOT CAUSE: proto-rs v2.4.0 automated PacketHeader generator produces different alignment than manual #[repr(C)] struct. 3 independent signals converge.".into(),
         creator: "agent-d".into(),
@@ -559,7 +559,7 @@ fn scenario_supply_chain_incident() {
 
     // Security advisory published (external trigger)
     bb.submit_fact(&Fact {
-        id: FihHash("f_advisory_GHSA".into()),
+        id: FihHash::from_hex("f_advisory_GHSA"),
         origin: "github-advisory".into(),
         content: "CRITICAL: CVE-2026-4413 in openssl-sys v0.9.100 — remote buffer overflow in TLS handshake. CVSS 9.8. Affects all services using TLS.".into(),
         creator: "security-bot".into(),
@@ -567,7 +567,7 @@ fn scenario_supply_chain_incident() {
 
     // Security team assesses blast radius
     bb.submit_intent(&Intent {
-        id: FihHash("i_assess".into()),
+        id: FihHash::from_hex("i_assess"),
         from_facts: vec!["f_advisory_GHSA".into()],
         description: "ASSESS: Inventory all services using openssl-sys < 0.9.101".into(),
         creator: "sec-lead".into(),
@@ -593,8 +593,8 @@ fn scenario_supply_chain_incident() {
 
     // SRE team plans mitigation (parallel track, reads sec-lead's conclusion)
     bb.submit_intent(&Intent {
-        id: FihHash("i_mitigate".into()),
-        from_facts: vec!["f_advisory_GHSA".into(), impact.id.0.clone()],
+        id: FihHash::from_hex("i_mitigate"),
+        from_facts: vec!["f_advisory_GHSA".into(), impact.id.clone()],
         description: "MITIGATE: Update openssl-sys to 0.9.101 across all services".into(),
         creator: "sre-lead".into(),
         worker: None,
@@ -619,8 +619,8 @@ fn scenario_supply_chain_incident() {
 
     // Communications team drafts announcement
     bb.submit_intent(&Intent {
-        id: FihHash("i_comms".into()),
-        from_facts: vec!["f_advisory_GHSA".into(), impact.id.0.clone(), patch.id.0],
+        id: FihHash::from_hex("i_comms"),
+        from_facts: vec!["f_advisory_GHSA".into(), impact.id.clone(), patch.id],
         description: "COMMS: Draft security advisory for customers".into(),
         creator: "comms-lead".into(),
         worker: None,
@@ -639,7 +639,7 @@ fn scenario_supply_chain_incident() {
 
     // Post-mortem lead submits findings
     bb.submit_hint(&Hint {
-        id: FihHash("h_postmortem".into()),
+        id: FihHash::from_hex("h_postmortem"),
         content: "Post-mortem action: add openssl-sys to automated dependency vulnerability scanner. ETA: 1 week.".into(),
         creator: "pm-lead".into(),
     }).unwrap();
@@ -679,7 +679,7 @@ fn scenario_ssccs_primitive_discovery() {
 
     // Agent-A analyzes memory access patterns in LLVM IR
     bb.submit_fact(&Fact {
-        id: FihHash("f_memory_pattern".into()),
+        id: FihHash::from_hex("f_memory_pattern"),
         origin: "llvm-ir".into(),
         content: "OBSERVATION: 73% of loads/stores in hot loops access consecutive addresses (stride=1). 18% show strided access (stride=4/8). 9% are gather/scatter. Spatial locality is the dominant pattern, not random access.".into(),
         creator: "agent-a".into(),
@@ -687,7 +687,7 @@ fn scenario_ssccs_primitive_discovery() {
 
     // Agent-B analyzes data flow graphs in MLIR
     bb.submit_fact(&Fact {
-        id: FihHash("f_dataflow_pattern".into()),
+        id: FihHash::from_hex("f_dataflow_pattern"),
         origin: "mlir".into(),
         content: "OBSERVATION: Data flow subgraphs show strong temporal locality — 89% of SSA values are used within 12 instructions of definition. Def-use chains form natural clusters: compute kernels, memory fences, control boundaries.".into(),
         creator: "agent-b".into(),
@@ -695,7 +695,7 @@ fn scenario_ssccs_primitive_discovery() {
 
     // Agent-C analyzes control flow structure (CFG)
     bb.submit_fact(&Fact {
-        id: FihHash("f_cfg_pattern".into()),
+        id: FihHash::from_hex("f_cfg_pattern"),
         origin: "cfg-analysis".into(),
         content: "OBSERVATION: CFG natural loops have clear entry/exit points. 94% of basic blocks belong to exactly one loop nest. Loop boundaries are stable across optimization passes — they are structural invariants of the computation, not artifacts.".into(),
         creator: "agent-c".into(),
@@ -709,21 +709,21 @@ fn scenario_ssccs_primitive_discovery() {
 
     // Agent-A notes: memory stride patterns match loop boundaries from Agent-C
     bb.submit_hint(&Hint {
-        id: FihHash("h_convergence_1".into()),
+        id: FihHash::from_hex("h_convergence_1"),
         content: "CROSS-REF: Memory stride=1 patterns align with innermost loops (Agent-C's observation). The memory access unit IS the loop body — a natural computational boundary.".into(),
         creator: "agent-a".into(),
     }).unwrap();
 
     // Agent-B notes: SSA def-use clusters match memory regions from Agent-A
     bb.submit_hint(&Hint {
-        id: FihHash("h_convergence_2".into()),
+        id: FihHash::from_hex("h_convergence_2"),
         content: "CROSS-REF: SSA value clusters (12-instruction window) correspond to memory stride-1 regions (Agent-A). The data flow cluster and memory access region share the same boundary — this is NOT coincidence.".into(),
         creator: "agent-b".into(),
     }).unwrap();
 
     // Agent-C notes: all three dimensions converge on the same structural unit
     bb.submit_fact(&Fact {
-        id: FihHash("f_convergence".into()),
+        id: FihHash::from_hex("f_convergence"),
         origin: "cross-reference".into(),
         content: "CONVERGENCE: Memory (spatial), data flow (temporal), and control flow (structural) all identify the same atomic unit: a self-contained loop nest with bounded memory access and localized def-use chains. This unit is universal across the three IRs.".into(),
         creator: "agent-c".into(),
@@ -735,7 +735,7 @@ fn scenario_ssccs_primitive_discovery() {
 
     // Agent-D reads all observations and convergence hints, then submits a formalization Intent
     bb.submit_intent(&Intent {
-        id: FihHash("i_formalize_segment".into()),
+        id: FihHash::from_hex("i_formalize_segment"),
         from_facts: vec![
             "f_memory_pattern".into(),
             "f_dataflow_pattern".into(),
@@ -795,8 +795,8 @@ that the von Neumann architecture can be redesigned around.",
 
     // Agent-A validates the Segment definition against known memory patterns
     bb.submit_intent(&Intent {
-        id: FihHash("i_validate_segment".into()),
-        from_facts: vec!["f_memory_pattern".into(), segment_def.id.0.clone()],
+        id: FihHash::from_hex("i_validate_segment"),
+        from_facts: vec!["f_memory_pattern".into(), segment_def.id.clone()],
         description: "VALIDATE: Does the Segment definition predict the 73/18/9 memory access distribution? If M is a contiguous stride-1 region, it should also explain strided and gather/scatter cases.".into(),
         creator: "agent-a".into(),
         worker: None,
@@ -814,8 +814,8 @@ that the von Neumann architecture can be redesigned around.",
 
     // Agent-E (new observer) reads the full thread and proposes a Scheme
     bb.submit_intent(&Intent {
-        id: FihHash("i_scheme_definition".into()),
-        from_facts: vec![segment_def.id.0],
+        id: FihHash::from_hex("i_scheme_definition"),
+        from_facts: vec![segment_def.id],
         description: "SCHEME: Define 'Scheme' as a typed transformation between Segments. Scheme(S1, S2, T) where T is the transformation type (map, reduce, shuffle, broadcast). This enables algebraic reasoning about Segment compositions.".into(),
         creator: "agent-e".into(),
         worker: None,

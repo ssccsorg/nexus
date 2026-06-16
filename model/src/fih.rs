@@ -1,15 +1,22 @@
 use serde::{Deserialize, Serialize};
+
+/// Returns true if the character is a valid hex digit (0-9, a-f, A-F).
+fn is_hex_char(c: char) -> bool {
+    matches!(c, '0'..='9' | 'a'..='f' | 'A'..='F')
+}
 use sha2::{Digest, Sha256};
 
 // ── Content-addressable identifier ───────────────────────────────────────
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct FihHash(pub String);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct FihHash(pub [u8; 32]);
 
 impl std::fmt::Display for FihHash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        for byte in &self.0 {
+            write!(f, "{:02x}", byte)?;
+        }
+        Ok(())
     }
 }
 
@@ -20,15 +27,41 @@ impl FihHash {
             h.update(f.as_bytes());
         }
         h.update(type_tag.as_bytes());
-        Self(format!("{:x}", h.finalize()))
+        Self(h.finalize().into())
     }
 
     pub fn chain(a: &FihHash, b: &FihHash, c: &FihHash) -> FihHash {
         let mut h = Sha256::new();
-        h.update(a.0.as_bytes());
-        h.update(b.0.as_bytes());
-        h.update(c.0.as_bytes());
-        Self(format!("{:x}", h.finalize()))
+        h.update(&a.0);
+        h.update(&b.0);
+        h.update(&c.0);
+        Self(h.finalize().into())
+    }
+}
+
+/// Allow constructing FihHash from a hex string literal in tests.
+impl FihHash {
+    /// Create from a hex string (64 hex chars = 32 bytes).
+    /// If the string is shorter than 64 chars, it's left-padded with zeros.
+    /// Non-hex characters are filtered out.
+    pub fn from_hex(hex: &str) -> Self {
+        let mut bytes = [0u8; 32];
+        let hex_clean: String = hex.chars().filter(|c| is_hex_char(*c)).collect();
+        let start = if hex_clean.len() > 64 { hex_clean.len() - 64 } else { 0 };
+        let relevant = &hex_clean[start..];
+        let padding = 64 - relevant.len().min(64);
+        for i in 0..relevant.len().min(64) / 2 {
+            if let Ok(v) = u8::from_str_radix(&relevant[i * 2..=i * 2 + 1], 16) {
+                bytes[(padding / 2) + i] = v;
+            }
+        }
+        Self(bytes)
+    }
+}
+
+impl From<&str> for FihHash {
+    fn from(s: &str) -> Self {
+        Self::from_hex(s)
     }
 }
 
@@ -101,8 +134,8 @@ pub struct Fact {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Intent {
     pub id: FihHash,
-    pub from_facts: Vec<String>,
-    pub to_fact_id: Option<String>,
+    pub from_facts: Vec<FihHash>,
+    pub to_fact_id: Option<FihHash>,
     pub description: String,
     pub creator: String,
     pub worker: Option<String>,

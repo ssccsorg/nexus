@@ -201,7 +201,8 @@ impl<I: AsyncFileIo> FihStorage<I> {
 
     /// Query intents that reference a given fact.
     pub fn intents_by_fact(&self, fact_id: &str) -> Vec<String> {
-        let fidx = self.coord.intern(fact_id);
+        let norm_id = FihHash::from_hex(fact_id).to_string();
+        let fidx = self.coord.intern(&norm_id);
         self.coord
             .intents_by_fact(fidx)
             .into_iter()
@@ -339,7 +340,7 @@ impl<I: AsyncFileIo> StorageRead for FihStorage<I> {
                 .map(|r| {
                     let content = self.load_content(&r.blob_hash, "application/octet-stream");
                     Fact {
-                        id: FihHash(r.id.clone()),
+                        id: FihHash::from_hex(&r.id),
                         origin: r.origin.clone(),
                         content,
                         creator: r.creator.clone(),
@@ -349,8 +350,8 @@ impl<I: AsyncFileIo> StorageRead for FihStorage<I> {
             intents: intents
                 .into_iter()
                 .map(|r| Intent {
-                    id: FihHash(r.id.clone()),
-                    from_facts: r.from_facts.clone(),
+                    id: FihHash::from_hex(&r.id),
+                    from_facts: r.from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
                     description: {
                         if r.description_hash.is_empty() {
                             r.id.clone()
@@ -366,7 +367,7 @@ impl<I: AsyncFileIo> StorageRead for FihStorage<I> {
                         IntentStatus::Submitted => None,
                     },
                     to_fact_id: match &r.status {
-                        IntentStatus::Concluded { to_fact, .. } => Some(to_fact.clone()),
+                        IntentStatus::Concluded { to_fact, .. } => Some(FihHash::from_hex(to_fact)),
                         _ => None,
                     },
                     last_heartbeat_at: match &r.status {
@@ -386,7 +387,7 @@ impl<I: AsyncFileIo> StorageRead for FihStorage<I> {
             hints: hints
                 .into_iter()
                 .map(|r| Hint {
-                    id: FihHash(r.id.clone()),
+                    id: FihHash::from_hex(&r.id),
                     content: r.content.clone(),
                     creator: r.creator.clone(),
                 })
@@ -420,9 +421,10 @@ impl<I: AsyncFileIo> FactCapable for FihStorage<I> {
 
         // Update indices via FihCoord
         let ts = self.clock.now_nanos();
-        self.coord.by_time.record(ts, &fact.id.0);
+        let fact_id_str = fact.id.to_string();
+        self.coord.by_time.record(ts, &fact_id_str);
         self.coord
-            .record_fact(&fact.id.0, &fact.origin, &fact.creator, ts);
+            .record_fact(&fact_id_str, &fact.origin, &fact.creator, ts);
 
         Ok(fact.id.clone())
     }
@@ -433,7 +435,7 @@ impl<I: AsyncFileIo> FactCapable for FihStorage<I> {
 impl<I: AsyncFileIo> HintCapable for FihStorage<I> {
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         let record = HintRecord {
-            id: hint.id.0.clone(),
+            id: hint.id.to_string(),
             content: hint.content.clone(),
             creator: hint.creator.clone(),
             submitted_at: self.clock.now_secs(),
@@ -467,16 +469,17 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
             ));
         }
         for fid in &intent.from_facts {
-            if !self.fact_store.contains_key(fid) {
-                return Err(BlackboardError::NotFound(format!("Fact {fid} not found")));
+            let fid_str = fid.to_string();
+            if !self.fact_store.contains_key(&fid_str) {
+                return Err(BlackboardError::NotFound(format!("Fact {fid_str} not found")));
             }
         }
         // Intentionally left blank — ref_count and by_fact updates
         // are handled inside record_intent below after the record is built.
 
         let record = IntentRecord {
-            id: intent.id.0.clone(),
-            from_facts: intent.from_facts.clone(),
+            id: intent.id.to_string(),
+            from_facts: intent.from_facts.iter().map(|f| f.to_string()).collect(),
             description_hash: String::new(),
             creator: intent.creator.clone(),
             status: IntentStatus::Submitted,
@@ -492,24 +495,27 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
         };
 
         // Record intent in coordinator (handles by_fact, ref_counts, by_status, by_creator)
+        let intent_id_str = intent.id.to_string();
+        let from_facts_str: Vec<String> = intent.from_facts.iter().map(|f| f.to_string()).collect();
         self.coord.record_intent(
-            &intent.id.0,
+            &intent_id_str,
             &intent.creator,
             record.created_at,
-            &intent.from_facts,
+            &from_facts_str,
         );
 
         self.intent_store.insert(record.id.clone(), record);
         self.pending.borrow_mut().push(op);
         self.maybe_flush().map_err(BlackboardError::Internal)?;
 
-        Ok(intent.id.clone())
+        Ok(intent.id)
     }
 
-    fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+    fn claim_intent(&self, raw_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let intent_id = FihHash::from_hex(raw_id).to_string();
         let mut record = self
             .intent_store
-            .get(intent_id)
+            .get(&intent_id)
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
 
         let now = self.clock.now_secs();
@@ -531,16 +537,17 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
         });
         self.intent_store.insert(intent_id.to_string(), record);
         self.coord
-            .update_intent_status(intent_id, "submitted", "claimed");
+            .update_intent_status(&intent_id, "submitted", "claimed");
         self.maybe_flush().map_err(BlackboardError::Internal)?;
 
         Ok(())
     }
 
-    fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+    fn heartbeat(&self, raw_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let intent_id = FihHash::from_hex(raw_id).to_string();
         let mut record = self
             .intent_store
-            .get(intent_id)
+            .get(&intent_id)
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
 
         let now = self.clock.now_secs();
@@ -566,10 +573,11 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
         Ok(())
     }
 
-    fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+    fn release_intent(&self, raw_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let intent_id = FihHash::from_hex(raw_id).to_string();
         let mut record = self
             .intent_store
-            .get(intent_id)
+            .get(&intent_id)
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
 
         match &record.status {
@@ -597,17 +605,18 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
         });
         self.intent_store.insert(intent_id.to_string(), record);
         self.coord
-            .update_intent_status(intent_id, "claimed", "submitted");
+            .update_intent_status(&intent_id, "claimed", "submitted");
         self.maybe_flush().map_err(BlackboardError::Internal)?;
 
         Ok(())
     }
 
     /// Conclude an intent: transition Claimed → Concluded, produce result Fact.
-    fn conclude_intent(&self, intent_id: &str, result: &str) -> Result<Fact, BlackboardError> {
+    fn conclude_intent(&self, raw_id: &str, result: &str) -> Result<Fact, BlackboardError> {
+        let intent_id = FihHash::from_hex(raw_id).to_string();
         let mut record = self
             .intent_store
-            .get(intent_id)
+            .get(&intent_id)
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
 
         // Extract worker before consuming status
@@ -624,7 +633,7 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
         // Create conclusion Fact first (its ID becomes to_fact)
         let conclusion_fact_id = format!("f_concl_{}", intent_id);
         let new_fact = Fact {
-            id: FihHash(conclusion_fact_id.clone()),
+            id: FihHash::from_hex(&conclusion_fact_id),
             origin: format!("conclusion:{}", intent_id),
             content: Content {
                 mime_type: "text/plain".into(),
@@ -646,12 +655,12 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
         FactCapable::submit_fact(self, &new_fact)?;
 
         // Remove intent from from_facts references and update status
-        if let Some(r) = self.intent_store.get(intent_id) {
+        if let Some(r) = self.intent_store.get(&intent_id) {
             self.coord
-                .remove_intent_from_facts(intent_id, &r.from_facts);
+                .remove_intent_from_facts(&intent_id, &r.from_facts.iter().map(|s| s.to_string()).collect::<Vec<_>>());
         }
         self.coord
-            .update_intent_status(intent_id, "claimed", "concluded");
+            .update_intent_status(&intent_id, "claimed", "concluded");
 
         let intent_bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -773,19 +782,19 @@ impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
 
         // Apply time filter if active
         if let Some(ids) = &time_filtered_ids {
-            state.facts.retain(|f| ids.contains(&f.id.0));
-            state.intents.retain(|i| ids.contains(&i.id.0));
-            state.hints.retain(|h| ids.contains(&h.id.0));
+            state.facts.retain(|f| ids.contains(&f.id.to_string()));
+            state.intents.retain(|i| ids.contains(&i.id.to_string()));
+            state.hints.retain(|h| ids.contains(&h.id.to_string()));
         }
 
         if let Some(ids) = &filter.fact_ids {
-            state.facts.retain(|f| ids.contains(&f.id.0));
+            state.facts.retain(|f| ids.contains(&f.id.to_string()));
         }
         if let Some(ids) = &filter.intent_ids {
-            state.intents.retain(|i| ids.contains(&i.id.0));
+            state.intents.retain(|i| ids.contains(&i.id.to_string()));
         }
         if let Some(ids) = &filter.hint_ids {
-            state.hints.retain(|h| ids.contains(&h.id.0));
+            state.hints.retain(|h| ids.contains(&h.id.to_string()));
         }
 
         let offset = filter.offset.unwrap_or(0);
@@ -946,7 +955,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
                 {
                     let content = load_blob(&self.io, &r.blob_hash).await;
                     facts.push(Fact {
-                        id: FihHash(r.id.clone()),
+                        id: FihHash::from_hex(&r.id),
                         origin: r.origin.clone(),
                         content,
                         creator: r.creator.clone(),
@@ -962,8 +971,8 @@ impl<I: AsyncFileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
                     && let Ok(r) = postcard::from_bytes::<IntentRecord>(&bytes)
                 {
                     intents.push(Intent {
-                        id: FihHash(r.id.clone()),
-                        from_facts: r.from_facts.clone(),
+                        id: FihHash::from_hex(&r.id),
+                        from_facts: r.from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
                         description: {
                             if r.description_hash.is_empty() {
                                 r.id.clone()
@@ -979,7 +988,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
                             IntentStatus::Submitted => None,
                         },
                         to_fact_id: match &r.status {
-                            IntentStatus::Concluded { to_fact, .. } => Some(to_fact.clone()),
+                            IntentStatus::Concluded { to_fact, .. } => Some(FihHash::from_hex(to_fact)),
                             _ => None,
                         },
                         last_heartbeat_at: match &r.status {
@@ -1006,7 +1015,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
                     && let Ok(r) = postcard::from_bytes::<HintRecord>(&bytes)
                 {
                     hints.push(Hint {
-                        id: FihHash(r.id.clone()),
+                        id: FihHash::from_hex(&r.id),
                         content: r.content.clone(),
                         creator: r.creator.clone(),
                     });
@@ -1045,11 +1054,12 @@ impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
 
         // Update indices via FihCoord
         let ts = self.clock.now_nanos();
-        self.coord.by_time.record(ts, &fact.id.0);
+        let fact_id_str = fact.id.to_string();
+        self.coord.by_time.record(ts, &fact_id_str);
         self.coord
-            .record_fact(&fact.id.0, &fact.origin, &fact.creator, ts);
+            .record_fact(&fact_id_str, &fact.origin, &fact.creator, ts);
 
-        Ok(fact.id.clone())
+        Ok(fact.id)
     }
 }
 
@@ -1058,7 +1068,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
 impl<I: AsyncFileIo> nexus_model::AsyncHintCapable for FihStorage<I> {
     async fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         let record = super::record::HintRecord {
-            id: hint.id.0.clone(),
+            id: hint.id.to_string(),
             content: hint.content.clone(),
             creator: hint.creator.clone(),
             submitted_at: 0,
@@ -1080,8 +1090,8 @@ impl<I: AsyncFileIo> nexus_model::AsyncHintCapable for FihStorage<I> {
 impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
     async fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
         let record = super::record::IntentRecord {
-            id: intent.id.0.clone(),
-            from_facts: intent.from_facts.clone(),
+            id: intent.id.to_string(),
+            from_facts: intent.from_facts.iter().map(|f| f.to_string()).collect(),
             description_hash: String::new(),
             creator: intent.creator.clone(),
             status: super::record::IntentStatus::Submitted,
@@ -1094,7 +1104,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
             .await
             .map_err(BlackboardError::Internal)?;
         self.intent_store.insert(record.id.clone(), record);
-        Ok(intent.id.clone())
+        Ok(intent.id)
     }
 
     async fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
@@ -1224,7 +1234,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
 
         let conclusion_id = format!("f_concl_{}", intent_id);
         let new_fact = Fact {
-            id: FihHash(conclusion_id.clone()),
+            id: FihHash::from_hex(&conclusion_id),
             origin: format!("conclusion:{}", intent_id),
             content: Content {
                 mime_type: "text/plain".into(),

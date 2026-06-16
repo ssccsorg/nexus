@@ -28,11 +28,11 @@ fn test_async_submit_and_read_fact() {
     let fact = common::fact("f1");
 
     let hash = futures_executor::block_on(store.submit_fact(&fact)).unwrap();
-    assert_eq!(hash.0, "f1");
+    assert_eq!(hash, FihHash::from_hex("f1"));
 
     let state = futures_executor::block_on(store.read_state());
     assert_eq!(state.facts.len(), 1);
-    assert_eq!(state.facts[0].id.0, "f1");
+    assert_eq!(state.facts[0].id, FihHash::from_hex("f1"));
 }
 
 #[test]
@@ -53,7 +53,7 @@ fn test_async_submit_multiple_facts() {
 fn test_async_submit_hint() {
     let store = setup();
     let hint = Hint {
-        id: FihHash("h1".into()),
+        id: FihHash::from_hex("h1"),
         content: "test hint".into(),
         creator: "t".into(),
     };
@@ -92,7 +92,7 @@ fn test_async_conclude_intent() {
     let result = futures_executor::block_on(store.conclude_intent("i_conc", "done"));
     assert!(result.is_ok());
     let fact = result.unwrap();
-    assert!(fact.id.0.starts_with("f_concl_"));
+    assert!(fact.id.to_string().starts_with("f_concl_"));
 }
 
 #[test]
@@ -117,7 +117,7 @@ fn test_async_submit_intent() {
 
     let intent = common::intent("i1", vec!["f_base"]);
     let hash = futures_executor::block_on(store.submit_intent(&intent)).unwrap();
-    assert_eq!(hash.0, "i1");
+    assert_eq!(hash, FihHash::from_hex("i1"));
 }
 
 // ── AsyncFilterCapable (delegates to sync) ────────────────────────────
@@ -145,7 +145,7 @@ fn test_async_filter() {
 fn test_async_evict() {
     let store = setup();
     let hint = Hint {
-        id: FihHash("h_old".into()),
+        id: FihHash::from_hex("h_old"),
         content: "old".into(),
         creator: "t".into(),
     };

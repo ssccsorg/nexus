@@ -4,7 +4,7 @@ use nexus_model::{BoardState, Content, DetectionCapable, Fact, FihHash};
 
 fn make_fact(id: &str, origin: &str) -> Fact {
     Fact {
-        id: FihHash(id.to_string()),
+        id: FihHash::from_hex(id),
         origin: origin.to_string(),
         content: Content::from_json(&serde_json::json!({"topic": "test"})),
         creator: "test".into(),

@@ -111,7 +111,7 @@ impl FactRecord {
     /// blob_hash and submitted_at timestamp.
     pub fn from_model(fact: &nexus_model::Fact, blob_hash: BlobHash, submitted_at: u64) -> Self {
         Self {
-            id: fact.id.0.clone(),
+            id: fact.id.to_string(),
             blob_hash,
             origin: fact.origin.clone(),
             creator: fact.creator.clone(),

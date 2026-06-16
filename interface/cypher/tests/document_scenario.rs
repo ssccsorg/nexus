@@ -59,7 +59,7 @@ use nexus_storage_petgraph::{Snapshottable, StorageSnapshot};
 
 fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) -> Fact {
     Fact {
-        id: FihHash(id.to_string()),
+        id: FihHash::from_hex(id),
         origin: origin.to_string(),
         content: Content {
             mime_type: "application/json".into(),
@@ -364,8 +364,8 @@ fn agent_resolve_contradictions(
             continue;
         }
         let intent = Intent {
-            id: FihHash::new(&[&fact.id.0, agent_name], "resolve"),
-            from_facts: vec![fact.id.0.clone()],
+            id: FihHash::new(&[&fact.id.to_string(), agent_name], "resolve"),
+            from_facts: vec![fact.id],
             description: format!("Resolve {}: {}", t, agent_name),
             creator: agent_name.into(),
             worker: None,
@@ -376,12 +376,13 @@ fn agent_resolve_contradictions(
             concluded_at: None,
         };
         let iid = sched.bb.submit_intent(&intent).expect("submit intent");
-        sched.bb.claim_intent(&iid.0, agent_name).expect("claim");
-        sched.bb.heartbeat(&iid.0, agent_name).expect("heartbeat");
+        let iid_str = iid.to_string();
+        sched.bb.claim_intent(&iid_str, agent_name).expect("claim");
+        sched.bb.heartbeat(&iid_str, agent_name).expect("heartbeat");
         sched
             .bb
             .conclude_intent(
-                &iid.0,
+                &iid_str,
                 &serde_json::to_string(&serde_json::json!({
                     "resolution": conclusion,
                     "agent": agent_name,

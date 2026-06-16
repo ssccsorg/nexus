@@ -54,7 +54,7 @@ fn main() {
         FactCapable::submit_fact(
             &store,
             &Fact {
-                id: FihHash("f001".into()),
+                id: FihHash::from_hex("f001"),
                 origin: "verify".into(),
                 content: "hello world".into(),
                 creator: "v".into(),
@@ -63,7 +63,7 @@ fn main() {
         .unwrap();
         let state = StorageRead::read_state(&store);
         assert_eq!(state.facts.len(), 1, "expected 1 fact");
-        assert_eq!(state.facts[0].id.0, "f001");
+        assert_eq!(state.facts[0].id.to_string(), "f001");
     });
 
     check!("submit_intent requires existing fact", {
@@ -71,7 +71,7 @@ fn main() {
         let result = IntentCapable::submit_intent(
             &store,
             &Intent {
-                id: FihHash("i001".into()),
+                id: FihHash::from_hex("i001"),
                 from_facts: vec!["f_nonexistent".into()],
                 description: "test".into(),
                 creator: "v".into(),
@@ -94,7 +94,7 @@ fn main() {
         FactCapable::submit_fact(
             &store,
             &Fact {
-                id: FihHash("f_base".into()),
+                id: FihHash::from_hex("f_base"),
                 origin: "verify".into(),
                 content: "base data".into(),
                 creator: "v".into(),
@@ -104,7 +104,7 @@ fn main() {
         IntentCapable::submit_intent(
             &store,
             &Intent {
-                id: FihHash("i001".into()),
+                id: FihHash::from_hex("i001"),
                 from_facts: vec!["f_base".into()],
                 description: "analyze base".into(),
                 creator: "v".into(),
@@ -120,7 +120,7 @@ fn main() {
         IntentCapable::claim_intent(&store, "i001", "alice").unwrap();
         IntentCapable::heartbeat(&store, "i001", "alice").unwrap();
         let concl = IntentCapable::conclude_intent(&store, "i001", "result data").unwrap();
-        assert!(concl.id.0.starts_with("f_concl_"));
+        assert!(concl.id.to_string().starts_with("f_concl_"));
         let state = StorageRead::read_state(&store);
         assert_eq!(state.facts.len(), 2, "base + conclusion");
     });
@@ -130,7 +130,7 @@ fn main() {
         FactCapable::submit_fact(
             &store,
             &Fact {
-                id: FihHash("f_base".into()),
+                id: FihHash::from_hex("f_base"),
                 origin: "v".into(),
                 content: "x".into(),
                 creator: "v".into(),
@@ -140,7 +140,7 @@ fn main() {
         IntentCapable::submit_intent(
             &store,
             &Intent {
-                id: FihHash("i001".into()),
+                id: FihHash::from_hex("i001"),
                 from_facts: vec!["f_base".into()],
                 description: "test".into(),
                 creator: "v".into(),
@@ -165,7 +165,7 @@ fn main() {
         HintCapable::submit_hint(
             &store,
             &Hint {
-                id: FihHash("h001".into()),
+                id: FihHash::from_hex("h001"),
                 content: "ephemeral note".into(),
                 creator: "v".into(),
             },
@@ -183,7 +183,7 @@ fn main() {
         FactCapable::submit_fact(
             &store,
             &Fact {
-                id: FihHash("f001".into()),
+                id: FihHash::from_hex("f001"),
                 origin: "v".into(),
                 content: "flush test".into(),
                 creator: "v".into(),
@@ -203,7 +203,7 @@ fn main() {
         FactCapable::submit_fact(
             &store,
             &Fact {
-                id: FihHash("f001".into()),
+                id: FihHash::from_hex("f001"),
                 origin: "v".into(),
                 content: "a".into(),
                 creator: "v".into(),
@@ -235,7 +235,7 @@ fn main() {
         FactCapable::submit_fact(
             &store,
             &Fact {
-                id: FihHash("f001".into()),
+                id: FihHash::from_hex("f001"),
                 origin: "v".into(),
                 content: "data".into(),
                 creator: "v".into(),
@@ -262,7 +262,7 @@ fn main() {
         FactCapable::submit_fact(
             &store,
             &Fact {
-                id: FihHash("f001".into()),
+                id: FihHash::from_hex("f001"),
                 origin: "v".into(),
                 content: "data".into(),
                 creator: "v".into(),
@@ -282,7 +282,7 @@ fn main() {
         FactCapable::submit_fact(
             &store,
             &Fact {
-                id: FihHash("f001".into()),
+                id: FihHash::from_hex("f001"),
                 origin: "v".into(),
                 content: "data".into(),
                 creator: "v".into(),
@@ -304,7 +304,7 @@ fn main() {
         HintCapable::submit_hint(
             &store,
             &Hint {
-                id: FihHash("h001".into()),
+                id: FihHash::from_hex("h001"),
                 content: "old hint".into(),
                 creator: "v".into(),
             },
@@ -323,7 +323,7 @@ fn main() {
         FactCapable::submit_fact(
             &store,
             &Fact {
-                id: FihHash("f_orphan".into()),
+                id: FihHash::from_hex("f_orphan"),
                 origin: "v".into(),
                 content: "orphan".into(),
                 creator: "v".into(),
@@ -333,7 +333,7 @@ fn main() {
         FactCapable::submit_fact(
             &store,
             &Fact {
-                id: FihHash("f_refd".into()),
+                id: FihHash::from_hex("f_refd"),
                 origin: "v".into(),
                 content: "refd".into(),
                 creator: "v".into(),
@@ -343,7 +343,7 @@ fn main() {
         IntentCapable::submit_intent(
             &store,
             &Intent {
-                id: FihHash("i001".into()),
+                id: FihHash::from_hex("i001"),
                 from_facts: vec!["f_refd".into()],
                 description: "test".into(),
                 creator: "v".into(),
@@ -379,7 +379,7 @@ fn main() {
         );
         let concluded = hb.try_conclude("f_result", 300).unwrap();
         assert!(
-            matches!(&concluded, intent_status::IntentStatus::Concluded{ to_fact, .. } if to_fact == "f_result")
+            matches!(&concluded, intent_status::IntentStatus::Concluded{ to_fact, .. } if to_fact == &FihHash::from_hex("f_result").to_string())
         );
         assert!(!concluded.is_active());
     });

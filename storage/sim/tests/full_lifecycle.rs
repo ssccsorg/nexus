@@ -10,7 +10,7 @@ fn test_sim_fact_submit_and_read() {
 
     storage
         .submit_fact(&Fact {
-            id: FihHash("f001".into()),
+            id: FihHash::from_hex("f001"),
             origin: "sim".into(),
             content: Content::from("hello from sim"),
             creator: "tester".into(),
@@ -29,7 +29,7 @@ fn test_sim_full_lifecycle() {
 
     storage
         .submit_fact(&Fact {
-            id: FihHash("f_base".into()),
+            id: FihHash::from_hex("f_base"),
             origin: "sim".into(),
             content: Content::from("base"),
             creator: "alice".into(),
@@ -38,7 +38,7 @@ fn test_sim_full_lifecycle() {
 
     storage
         .submit_intent(&Intent {
-            id: FihHash("i001".into()),
+            id: FihHash::from_hex("i001"),
             from_facts: vec!["f_base".into()],
             description: "test intent".into(),
             creator: "bob".into(),
@@ -55,7 +55,7 @@ fn test_sim_full_lifecycle() {
     storage.heartbeat("i001", "alice").unwrap();
     let result = storage.conclude_intent("i001", "done").unwrap();
 
-    assert!(result.id.0.starts_with("f_concl_"));
+    assert!(result.id.to_string().starts_with("f_concl_"));
     let state = storage.read_state();
     assert_eq!(state.facts.len(), 2);
     assert_eq!(state.intents.len(), 1);
@@ -74,7 +74,7 @@ fn test_session_hydrate_flush() {
 
     // Write a fact via storage
     let fact = Fact {
-        id: FihHash("f001".into()),
+        id: FihHash::from_hex("f001"),
         origin: "test".into(),
         content: Content {
             mime_type: "text/plain".into(),
@@ -96,5 +96,5 @@ fn test_session_hydrate_flush() {
     session2.hydrate().unwrap();
     let state = session2.storage.read_state();
     assert_eq!(state.facts.len(), 1);
-    assert_eq!(state.facts[0].id.0, "f001");
+    assert_eq!(state.facts[0].id.to_string(), "f001");
 }

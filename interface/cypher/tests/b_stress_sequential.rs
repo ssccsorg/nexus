@@ -32,7 +32,7 @@ impl Ant {
             0 | 1 | 2 => {
                 let id = format!("f_{}_{}", self.name, step);
                 let fact = Fact {
-                    id: FihHash(id.clone()),
+                    id: FihHash::from_hex(&id),
                     origin: self.name.clone(),
                     content: format!("observation at step {step} by {}", self.name).into(),
                     creator: self.name.clone(),
@@ -53,15 +53,16 @@ impl Ant {
                 for _ in 0..n {
                     loop {
                         let idx = rng.gen_range(state.facts.len());
-                        let fid = &state.facts[idx].id.0;
-                        if chosen.insert(fid.clone()) {
-                            fact_ids.push(fid.clone());
+                        let fid = state.facts[idx].id;
+                        let fid_str = fid.to_string();
+                        if chosen.insert(fid_str.clone()) {
+                            fact_ids.push(fid);
                             break;
                         }
                     }
                 }
                 let intent = Intent {
-                    id: FihHash(format!("i_{}_{}", self.name, step)),
+                    id: FihHash::from_hex(&format!("i_{}_{}", self.name, step)),
                     from_facts: fact_ids.clone(),
                     description: format!("hypothesis by {} at step {step}", self.name),
                     creator: self.name.clone(),
@@ -90,12 +91,13 @@ impl Ant {
                 }
                 let idx = rng.gen_range(unclaimed.len());
                 let target = &unclaimed[idx];
-                match bb.claim_intent(&target.id.0, &self.name) {
+                let target_id = target.id.to_string();
+            match bb.claim_intent(&target_id, &self.name) {
                     Ok(()) => {
-                        self.claimed = Some(target.id.0.clone());
-                        format!("{:<12} claim {} ✓", self.name, target.id.0)
+                        self.claimed = Some(target_id.clone());
+                        format!("{:<12} claim {} ✓", self.name, target_id)
                     }
-                    Err(e) => format!("{:<12} claim {} failed: {e}", self.name, target.id.0),
+                    Err(e) => format!("{:<12} claim {} failed: {e}", self.name, target_id),
                 }
             }
             // 5: heartbeat on claimed intent
@@ -216,7 +218,7 @@ fn test_stress_many_ants() {
     ];
     for (id, origin, content) in &seed_facts {
         let fact = Fact {
-            id: FihHash(id.to_string()),
+            id: FihHash::from_hex(id),
             origin: origin.to_string(),
             content: (*content).into(),
             creator: "corpus".into(),
@@ -254,27 +256,27 @@ fn test_stress_many_ants() {
         if intent.concluded_at.is_some() {
             assert!(
                 intent.worker.is_none(),
-                "concluded intent {} still has worker='{:?}' (from_facts={:?})",
-                intent.id.0,
+                "concluded intent {} still has worker='{:?}'",
+                intent.id,
                 intent.worker,
-                intent.from_facts
             );
         }
     }
 
     // Invariant 3: every intent is grounded in at least one existing fact
-    let fact_names: HashSet<&str> = state.facts.iter().map(|f| f.id.0.as_str()).collect();
+    let fact_names: HashSet<String> = state.facts.iter().map(|f| f.id.to_string()).collect();
     for intent in &state.intents {
         assert!(
             !intent.from_facts.is_empty(),
             "intent {} has no grounding facts",
-            intent.id.0
+            intent.id
         );
         for fid in &intent.from_facts {
+            let fid_str = fid.to_string();
             assert!(
-                fact_names.contains(fid.as_str()) || fid.starts_with("fact_"),
-                "intent {} references non-existent fact {fid}",
-                intent.id.0
+                fact_names.contains(&fid_str),
+                "intent {} references non-existent fact {fid_str}",
+                intent.id
             );
         }
     }

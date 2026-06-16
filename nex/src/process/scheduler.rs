@@ -132,7 +132,7 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
             {
                 let elapsed = now_secs.saturating_sub(hb_secs);
                 if elapsed > self.config.heartbeat_ttl.as_secs() {
-                    let _ = self.bb.release_intent(&intent.id.0, worker);
+                    let _ = self.bb.release_intent(&intent.id.to_string(), worker);
                 }
             }
         }

@@ -146,7 +146,7 @@ fn make_bb() -> HybridBlackboard {
 
 fn fact(id: &str) -> Fact {
     Fact {
-        id: FihHash(id.to_string()),
+        id: FihHash::from_hex(id),
         origin: "integration".into(),
         content: Content {
             mime_type: "application/json".into(),
@@ -182,7 +182,7 @@ fn test_dual_storage_writes_to_both_backends() {
     // Fact is still readable from hot (Petgraph)
     let state = <_ as StorageRead>::read_state(&guard);
     assert!(
-        state.facts.iter().any(|f| f.id.0 == "f_dual_1"),
+        state.facts.iter().any(|f| f.id.to_string() == "f_dual_1"),
         "fact survives in hot"
     );
 }
@@ -246,7 +246,7 @@ fn test_snapshot_roundtrip_with_composite_cold() {
     let restored = HybridBlackboard::from_snapshot(_snap);
     let state = <_ as StorageRead>::read_state(&restored);
     assert!(
-        state.facts.iter().any(|f| f.id.0 == "f_snap_1"),
+        state.facts.iter().any(|f| f.id.to_string() == "f_snap_1"),
         "fact survives snapshot roundtrip"
     );
 }
@@ -299,8 +299,8 @@ fn test_multi_entity_persistence_through_dual_storage() {
     <_ as FactCapable>::submit_fact(&mut guard, &fact("f_persist")).unwrap();
 
     let intent = Intent {
-        id: FihHash("i_persist".into()),
-        from_facts: vec!["f_persist".into()],
+        id: FihHash::from_hex("i_persist"),
+        from_facts: vec![FihHash::from_hex("f_persist")],
         to_fact_id: None,
         description: "test intent".into(),
         creator: "tester".into(),
@@ -317,7 +317,7 @@ fn test_multi_entity_persistence_through_dual_storage() {
 
     let state = <_ as StorageRead>::read_state(&guard);
     assert!(
-        state.intents.iter().any(|i| i.id.0 == "i_persist"),
+        state.intents.iter().any(|i| i.id.to_string() == "i_persist"),
         "intent exists"
     );
 
@@ -326,7 +326,7 @@ fn test_multi_entity_persistence_through_dual_storage() {
 
     let state = <_ as StorageRead>::read_state(&guard);
     assert!(
-        state.facts.iter().any(|f| f.id.0 == concluded_fact.id.0),
+        state.facts.iter().any(|f| f.id == concluded_fact.id),
         "concluded fact readable"
     );
 
@@ -406,8 +406,8 @@ fn test_fih_scenario_submit_flush_read() {
     <_ as FactCapable>::submit_fact(&mut guard, &fact("scn_f3")).unwrap();
 
     let intent = nexus_model::Intent {
-        id: FihHash("scn_i1".into()),
-        from_facts: vec!["scn_f1".into(), "scn_f2".into()],
+        id: FihHash::from_hex("scn_i1"),
+        from_facts: vec![FihHash::from_hex("scn_f1"), FihHash::from_hex("scn_f2")],
         to_fact_id: None,
         description: "scenario intent".into(),
         creator: "tester".into(),
@@ -421,7 +421,7 @@ fn test_fih_scenario_submit_flush_read() {
     <_ as HintCapable>::submit_hint(
         &mut guard,
         &nexus_model::Hint {
-            id: FihHash("scn_h1".into()),
+            id: FihHash::from_hex("scn_h1"),
             content: "scenario hint".into(),
             creator: "tester".into(),
         },
@@ -504,8 +504,8 @@ fn test_fih_scenario_petgraph_blob_identity() {
 
     // Claim and heartbeat an intent
     let intent = nexus_model::Intent {
-        id: FihHash("id_i1".into()),
-        from_facts: vec!["id_f1".into()],
+        id: FihHash::from_hex("id_i1"),
+        from_facts: vec![FihHash::from_hex("id_f1")],
         to_fact_id: None,
         description: "identity test intent".into(),
         creator: "tester".into(),
@@ -521,8 +521,8 @@ fn test_fih_scenario_petgraph_blob_identity() {
 
     // Read from Petgraph
     let state = <_ as StorageRead>::read_state(&guard);
-    let petgraph_fact_ids: Vec<String> = state.facts.iter().map(|f| f.id.0.clone()).collect();
-    let petgraph_intent_ids: Vec<String> = state.intents.iter().map(|i| i.id.0.clone()).collect();
+    let petgraph_fact_ids: Vec<String> = state.facts.iter().map(|f| f.id.to_string()).collect();
+    let petgraph_intent_ids: Vec<String> = state.intents.iter().map(|i| i.id.to_string()).collect();
 
     // Flush
     let cursor = FlushCursor {
@@ -534,8 +534,8 @@ fn test_fih_scenario_petgraph_blob_identity() {
 
     // Read from scan_partition (hot + cold merged)
     let scanned = <_ as ScanCapable>::scan_partition(&guard, "default").unwrap();
-    let scanned_fact_ids: Vec<String> = scanned.facts.iter().map(|f| f.id.0.clone()).collect();
-    let scanned_intent_ids: Vec<String> = scanned.intents.iter().map(|i| i.id.0.clone()).collect();
+    let scanned_fact_ids: Vec<String> = scanned.facts.iter().map(|f| f.id.to_string()).collect();
+    let scanned_intent_ids: Vec<String> = scanned.intents.iter().map(|i| i.id.to_string()).collect();
 
     // Identity: Petgraph and scan_partition must return same entities
     assert_eq!(

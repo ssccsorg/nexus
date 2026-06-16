@@ -192,7 +192,7 @@ impl PetgraphStorage {
             match w.label.as_str() {
                 "Fact" => {
                     if let Ok(line) = postcard::to_allocvec(&Fact {
-                        id: FihHash(w.name.clone()),
+                        id: FihHash::from_hex(&w.name),
                         origin: w
                             .properties
                             .get("origin")
@@ -229,9 +229,10 @@ impl PetgraphStorage {
                             Some(sn.name.clone())
                         })
                         .collect();
+                    let from_facts_fih: Vec<FihHash> = from_facts.iter().map(|s| FihHash::from_hex(s)).collect();
                     if let Ok(line) = postcard::to_allocvec(&Intent {
-                        id: FihHash(w.name.clone()),
-                        from_facts,
+                        id: FihHash::from_hex(&w.name),
+                        from_facts: from_facts_fih,
                         description: w
                             .properties
                             .get("description")
@@ -256,7 +257,7 @@ impl PetgraphStorage {
                                         n.label == "Fact" && n.name.starts_with("f_concl_")
                                     })
                                 })
-                                .and_then(|e| g.node_weight(e.target()).map(|n| n.name.clone()))
+                                .and_then(|e| g.node_weight(e.target()).map(|n| FihHash::from_hex(&n.name)))
                         },
                         last_heartbeat_at: w
                             .properties
@@ -276,7 +277,7 @@ impl PetgraphStorage {
                 }
                 "Hint" => {
                     if let Ok(line) = postcard::to_allocvec(&Hint {
-                        id: FihHash(w.name.clone()),
+                        id: FihHash::from_hex(&w.name),
                         content: w
                             .properties
                             .get("content")
@@ -322,7 +323,7 @@ impl StorageRead for PetgraphStorage {
                 match w.label.as_str() {
                     "Fact" => {
                         facts.push(Fact {
-                            id: FihHash(w.name.clone()),
+                                                    id: FihHash::from_hex(&w.name),
                             origin: w
                                 .properties
                                 .get("origin")
@@ -359,8 +360,8 @@ impl StorageRead for PetgraphStorage {
                             .collect();
 
                         intents.push(Intent {
-                            id: FihHash(w.name.clone()),
-                            from_facts,
+                                                    id: FihHash::from_hex(&w.name),
+                                                    from_facts: from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
                             description: w
                                 .properties
                                 .get("description")
@@ -385,7 +386,7 @@ impl StorageRead for PetgraphStorage {
                                             n.label == "Fact" && n.name.starts_with("f_concl_")
                                         })
                                     })
-                                    .and_then(|e| g.node_weight(e.target()).map(|n| n.name.clone()))
+                                    .and_then(|e| g.node_weight(e.target()).map(|n| FihHash::from_hex(&n.name)))
                             },
                             last_heartbeat_at: w
                                 .properties
@@ -416,7 +417,7 @@ impl StorageRead for PetgraphStorage {
                     }
                     "Hint" => {
                         hints.push(Hint {
-                            id: FihHash(w.name.clone()),
+                                                    id: FihHash::from_hex(&w.name),
                             content: w
                                 .properties
                                 .get("content")
@@ -450,7 +451,7 @@ impl FactCapable for PetgraphStorage {
         let now = self.clock.now_nanos().to_string();
         let content_val = String::from_utf8_lossy(&fact.content.data).into_owned();
         g.add_node(NodeWeight {
-            name: fact.id.0.clone(),
+            name: fact.id.to_string(),
             label: "Fact".into(),
             properties: {
                 let mut m = HashMap::new();
@@ -485,7 +486,7 @@ impl FactCapable for PetgraphStorage {
                 m
             },
         });
-        Ok(fact.id.clone())
+        Ok(fact.id)
     }
 }
 
@@ -493,7 +494,7 @@ impl HintCapable for PetgraphStorage {
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         let mut g = write_graph(&self.graph);
         g.add_node(NodeWeight {
-            name: hint.id.0.clone(),
+            name: hint.id.to_string(),
             label: "Hint".into(),
             properties: {
                 let mut m = HashMap::new();
@@ -533,14 +534,14 @@ impl IntentCapable for PetgraphStorage {
         for fid in &intent.from_facts {
             let found = g
                 .node_indices()
-                .any(|i| g.node_weight(i).is_some_and(|w| w.name == *fid));
+                .any(|i| g.node_weight(i).is_some_and(|w| w.name == fid.to_string()));
             if !found {
                 return Err(BlackboardError::NotFound(format!("Fact {fid} not found")));
             }
         }
 
         let idx = g.add_node(NodeWeight {
-            name: intent.id.0.clone(),
+            name: intent.id.to_string(),
             label: "Intent".into(),
             properties: {
                 let mut m = HashMap::new();
@@ -581,7 +582,7 @@ impl IntentCapable for PetgraphStorage {
         for fid in &intent.from_facts {
             if let Some(src) = g
                 .node_indices()
-                .find(|i| g.node_weight(*i).is_some_and(|w| w.name == *fid))
+                .find(|i| g.node_weight(*i).is_some_and(|w| w.name == fid.to_string()))
             {
                 g.add_edge(
                     src,
@@ -594,7 +595,7 @@ impl IntentCapable for PetgraphStorage {
             }
         }
 
-        Ok(intent.id.clone())
+        Ok(intent.id)
     }
 
     fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
@@ -764,7 +765,7 @@ impl IntentCapable for PetgraphStorage {
         };
         let new_fact_id = format!("f_concl_{}", intent_id);
         let new_fact = Fact {
-            id: FihHash(new_fact_id.clone()),
+            id: FihHash::from_hex(&new_fact_id),
             origin: format!("conclusion:{}", intent_id),
             content: content_for_fact,
             creator: worker,
@@ -971,13 +972,13 @@ impl FilterCapable for PetgraphStorage {
         let mut state = self.read_state();
 
         if let Some(ids) = &filter.fact_ids {
-            state.facts.retain(|f| ids.contains(&f.id.0));
+            state.facts.retain(|f| ids.contains(&f.id.to_string()));
         }
         if let Some(ids) = &filter.intent_ids {
-            state.intents.retain(|i| ids.contains(&i.id.0));
+            state.intents.retain(|i| ids.contains(&i.id.to_string()));
         }
         if let Some(ids) = &filter.hint_ids {
-            state.hints.retain(|h| ids.contains(&h.id.0));
+            state.hints.retain(|h| ids.contains(&h.id.to_string()));
         }
 
         if let Some(since_str) = &filter.since

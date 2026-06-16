@@ -38,13 +38,13 @@ impl StorageRead for NullStorage {
 
 impl FactCapable for NullStorage {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
-        Ok(fact.id.clone())
+        Ok(fact.id)
     }
 }
 
 impl IntentCapable for NullStorage {
     fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
-        Ok(intent.id.clone())
+        Ok(intent.id)
     }
     fn claim_intent(&self, _id: &str, _agent: &str) -> Result<(), BlackboardError> {
         Ok(())
@@ -57,7 +57,7 @@ impl IntentCapable for NullStorage {
     }
     fn conclude_intent(&self, _id: &str, _result: &str) -> Result<Fact, BlackboardError> {
         Ok(Fact {
-            id: FihHash("null".into()),
+            id: FihHash::from_hex("null"),
             origin: String::new(),
             content: Content::from("null"),
             creator: String::new(),

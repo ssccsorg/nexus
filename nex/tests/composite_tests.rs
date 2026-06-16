@@ -103,7 +103,7 @@ fn test_flush_persists_data_to_blob() {
     // Manually write data to blob, then flush should count it.
     let s = storage();
     let fact = nexus_model::Fact {
-        id: nexus_model::FihHash("f1".into()),
+        id: nexus_model::FihHash::from_hex("f1"),
         origin: "t".into(),
         content: Content {
             mime_type: "text/plain".into(),
@@ -147,7 +147,7 @@ fn test_scan_partition_empty() {
 fn test_scan_partition_with_data() {
     let s = storage();
     let fact = nexus_model::Fact {
-        id: nexus_model::FihHash("f1".into()),
+        id: nexus_model::FihHash::from_hex("f1"),
         origin: "t".into(),
         content: Content {
             mime_type: "text/plain".into(),
@@ -162,7 +162,7 @@ fn test_scan_partition_with_data() {
 
     let data = s.scan_partition("default").expect("scan");
     assert_eq!(data.facts.len(), 1, "one fact from blob");
-    assert_eq!(data.facts[0].id.0, "f1");
+    assert_eq!(data.facts[0].id.to_string(), "f1");
 }
 
 // EvictCapable
