@@ -795,16 +795,31 @@ impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
         }
 
         if let Some(ids) = &filter.fact_ids {
-            let normalized: Vec<String> = ids.iter().map(|id| FihHash::from_hex(id).to_string()).collect();
-            state.facts.retain(|f| normalized.contains(&f.id.to_string()));
+            let normalized: Vec<String> = ids
+                .iter()
+                .map(|id| FihHash::from_hex(id).to_string())
+                .collect();
+            state
+                .facts
+                .retain(|f| normalized.contains(&f.id.to_string()));
         }
         if let Some(ids) = &filter.intent_ids {
-            let normalized: Vec<String> = ids.iter().map(|id| FihHash::from_hex(id).to_string()).collect();
-            state.intents.retain(|i| normalized.contains(&i.id.to_string()));
+            let normalized: Vec<String> = ids
+                .iter()
+                .map(|id| FihHash::from_hex(id).to_string())
+                .collect();
+            state
+                .intents
+                .retain(|i| normalized.contains(&i.id.to_string()));
         }
         if let Some(ids) = &filter.hint_ids {
-            let normalized: Vec<String> = ids.iter().map(|id| FihHash::from_hex(id).to_string()).collect();
-            state.hints.retain(|h| normalized.contains(&h.id.to_string()));
+            let normalized: Vec<String> = ids
+                .iter()
+                .map(|id| FihHash::from_hex(id).to_string())
+                .collect();
+            state
+                .hints
+                .retain(|h| normalized.contains(&h.id.to_string()));
         }
 
         let offset = filter.offset.unwrap_or(0);

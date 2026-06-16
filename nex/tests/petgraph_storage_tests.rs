@@ -56,7 +56,10 @@ fn test_submit_and_read_fact() {
 
     let state = s.read_state();
     assert_eq!(state.facts.len(), 1);
-    assert_eq!(state.facts[0].id.to_string(), nexus_model::FihHash::from_hex("f_001").to_string());
+    assert_eq!(
+        state.facts[0].id.to_string(),
+        nexus_model::FihHash::from_hex("f_001").to_string()
+    );
     assert_eq!(state.facts[0].origin, "test");
 }
 

@@ -55,7 +55,11 @@ fn test_sim_full_lifecycle() {
     storage.heartbeat("i001", "alice").unwrap();
     let result = storage.conclude_intent("i001", "done").unwrap();
 
-    assert_eq!(result.id.to_string().len(), 64, "FihHash should be 64-char hex");
+    assert_eq!(
+        result.id.to_string().len(),
+        64,
+        "FihHash should be 64-char hex"
+    );
     let state = storage.read_state();
     assert_eq!(state.facts.len(), 2);
     assert_eq!(state.intents.len(), 1);
@@ -96,5 +100,8 @@ fn test_session_hydrate_flush() {
     session2.hydrate().unwrap();
     let state = session2.storage.read_state();
     assert_eq!(state.facts.len(), 1);
-    assert_eq!(state.facts[0].id.to_string(), FihHash::from_hex("f001").to_string());
+    assert_eq!(
+        state.facts[0].id.to_string(),
+        FihHash::from_hex("f001").to_string()
+    );
 }
