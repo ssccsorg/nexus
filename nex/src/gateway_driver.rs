@@ -1,4 +1,4 @@
-/// Mock gateway for transport-layer testing.
+/// Transport gateway driver for cross-boundary FIH communication.
 ///
 /// A transparent proxy that round-trips structured FIH types (Fact, Intent,
 /// Hint, BoardState) through JSON serialisation before reaching the inner
@@ -12,11 +12,11 @@ use nexus_model::{
     IntentCapable, StorageRead,
 };
 
-pub struct MockGateway<B: Blackboard> {
+pub struct GatewayDriver<B: Blackboard> {
     inner: B,
 }
 
-impl<B: Blackboard> MockGateway<B> {
+impl<B: Blackboard> GatewayDriver<B> {
     pub fn new(inner: B) -> Self {
         Self { inner }
     }
@@ -24,7 +24,7 @@ impl<B: Blackboard> MockGateway<B> {
 
 // ── StorageRead — delegates to inner ─────────────────────────────────────
 
-impl<B: Blackboard> StorageRead for MockGateway<B> {
+impl<B: Blackboard> StorageRead for GatewayDriver<B> {
     fn project_id(&self) -> &str {
         self.inner.project_id()
     }
@@ -37,7 +37,7 @@ impl<B: Blackboard> StorageRead for MockGateway<B> {
 
 // ── FactCapable — JSON round-trip before delegate ───────────────────────
 
-impl<B: Blackboard> FactCapable for MockGateway<B> {
+impl<B: Blackboard> FactCapable for GatewayDriver<B> {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         let decoded: Fact = serde_json::from_slice(&serde_json::to_vec(fact).unwrap()).unwrap();
         self.inner.submit_fact(&decoded)
@@ -46,7 +46,7 @@ impl<B: Blackboard> FactCapable for MockGateway<B> {
 
 // ── HintCapable — JSON round-trip before delegate ───────────────────────
 
-impl<B: Blackboard> HintCapable for MockGateway<B> {
+impl<B: Blackboard> HintCapable for GatewayDriver<B> {
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         let decoded: Hint = serde_json::from_slice(&serde_json::to_vec(hint).unwrap()).unwrap();
         self.inner.submit_hint(&decoded)
@@ -55,7 +55,7 @@ impl<B: Blackboard> HintCapable for MockGateway<B> {
 
 // ── IntentCapable — JSON round-trip for submit, pass-through otherwise ──
 
-impl<B: Blackboard> IntentCapable for MockGateway<B> {
+impl<B: Blackboard> IntentCapable for GatewayDriver<B> {
     fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
         let decoded: Intent = serde_json::from_slice(&serde_json::to_vec(intent).unwrap()).unwrap();
         self.inner.submit_intent(&decoded)

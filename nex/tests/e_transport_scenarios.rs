@@ -1,9 +1,9 @@
 // Multi-transport scenario tests.
 //
 // Each scenario simulates a different real-world transport and agent type,
-// all communicating through the FIH protocol via MockGateway's JSON boundary.
+// all communicating through the FIH protocol via GatewayDriver's JSON boundary.
 
-use nex::mock_gateway::MockGateway;
+use nex::gateway_driver::GatewayDriver;
 use nex::{
     BlackboardError, Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead,
     create_blackboard,
@@ -22,7 +22,7 @@ fn scenario_intermittent_sensor_agent() {
 
     // Session 1: agent connects, submits a fact, disconnects
     {
-        let gw = MockGateway::new(&bb);
+        let gw = GatewayDriver::new(&bb);
         gw.submit_fact(&Fact {
             id: FihHash("f_temp_001".into()),
             origin: "sensor-alpha".into(),
@@ -45,7 +45,7 @@ fn scenario_intermittent_sensor_agent() {
 
     // Session 2: same agent reconnects after offline period
     {
-        let gw = MockGateway::new(&bb);
+        let gw = GatewayDriver::new(&bb);
 
         let state = gw.read_state();
         assert_eq!(state.facts.len(), 1, "fact persisted across sessions");
@@ -84,7 +84,7 @@ fn scenario_intermittent_sensor_agent() {
 
 #[test]
 fn scenario_satellite_burst_agent() {
-    let gw = MockGateway::new(create_blackboard());
+    let gw = GatewayDriver::new(create_blackboard());
 
     let readings = [
         (
@@ -154,7 +154,7 @@ fn scenario_satellite_burst_agent() {
 
 #[test]
 fn scenario_browser_agent() {
-    let gw = MockGateway::new(create_blackboard());
+    let gw = GatewayDriver::new(create_blackboard());
 
     gw.submit_fact(&Fact {
         id: FihHash("f_background".into()),
@@ -208,7 +208,7 @@ fn scenario_browser_agent() {
 // ── Scenario: Multi-language agents (heterogeneous clients) ─────────────
 //
 // Three agents built in different languages (simulated by separate
-// MockGateway instances sharing the same DefaultBlackboard) communicate
+// GatewayDriver instances sharing the same DefaultBlackboard) communicate
 // through JSON. Each gateway drops its borrow before the next acquires it.
 
 #[test]
@@ -217,7 +217,7 @@ fn scenario_multi_language_agents() {
 
     // Python agent submits a fact
     {
-        let gw = MockGateway::new(&bb);
+        let gw = GatewayDriver::new(&bb);
         gw.submit_fact(&Fact {
             id: FihHash("f_py_001".into()),
             origin: "python-etl".into(),
@@ -232,7 +232,7 @@ fn scenario_multi_language_agents() {
 
     // Rust agent submits a fact
     {
-        let gw = MockGateway::new(&bb);
+        let gw = GatewayDriver::new(&bb);
         gw.submit_fact(&Fact {
             id: FihHash("f_rs_001".into()),
             origin: "rust-analyzer".into(),
@@ -253,7 +253,7 @@ fn scenario_multi_language_agents() {
 
     // TypeScript agent reads both and submits an intent
     {
-        let gw = MockGateway::new(&bb);
+        let gw = GatewayDriver::new(&bb);
 
         let state = gw.read_state();
         assert_eq!(
@@ -279,7 +279,7 @@ fn scenario_multi_language_agents() {
 
     // Rust agent claims and concludes
     {
-        let gw = MockGateway::new(&bb);
+        let gw = GatewayDriver::new(&bb);
         gw.claim_intent("i_cross_lang", "rs-agent").unwrap();
         gw
             .conclude_intent(
@@ -291,7 +291,7 @@ fn scenario_multi_language_agents() {
 
     // Python agent sees the result
     {
-        let gw = MockGateway::new(&bb);
+        let gw = GatewayDriver::new(&bb);
         let state = gw.read_state();
         assert_eq!(state.facts.len(), 3, "py agent sees concluded fact");
         assert_eq!(state.intents.len(), 1, "py agent sees original intent only");
@@ -310,7 +310,7 @@ fn scenario_multi_language_agents() {
 
 #[test]
 fn scenario_conflicting_claims() {
-    let gw = MockGateway::new(create_blackboard());
+    let gw = GatewayDriver::new(create_blackboard());
 
     gw.submit_fact(&Fact {
         id: FihHash("f_conflict".into()),
