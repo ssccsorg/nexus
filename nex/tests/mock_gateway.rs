@@ -1,10 +1,10 @@
-use nex::DefaultBlackboard;
+use nex::CompositeBlackboard;
 use nex::gateway_driver::GatewayDriver;
 use nexus_model::{Fact, FactCapable, FihHash, StorageRead};
 
 #[test]
 fn test_gateway_driver_submit_fact() {
-    let gw = GatewayDriver::new(DefaultBlackboard::new());
+    let gw = GatewayDriver::new(CompositeBlackboard::new());
     let fact = Fact {
         id: FihHash("f_gw_001".into()),
         origin: "gateway-test".into(),

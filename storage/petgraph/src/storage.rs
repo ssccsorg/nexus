@@ -7,7 +7,7 @@
 // Implements StorageRead, FactCapable, HintCapable, IntentCapable,
 // TimeRangeCapable, EvictCapable, FilterCapable, and CypherCapable.
 
-use super::weight::{EdgeWeight, NodeWeight};
+use crate::weight::{EdgeWeight, NodeWeight};
 use cfg_if::cfg_if;
 use nexus_model::{
     BlackboardError, BoardState, Content, DeltaSet, EvictCapable, Fact, FactCapable, FihHash,
@@ -16,7 +16,6 @@ use nexus_model::{
 };
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
-use postcard;
 use std::collections::HashMap;
 use std::ops::Range;
 
@@ -64,7 +63,7 @@ cfg_if! {
 /// In-memory petgraph-backed storage.
 ///
 /// On native, the underlying `petgraph::Graph` is shared through an
-/// `Arc<RwLock<...>>` so that `DefaultBlackboard` can access the same graph
+/// `Arc<RwLock<...>>` so that `CompositeBlackboard` can access the same graph
 /// for Cypher queries while `PetgraphStorage` handles FIH persistence.
 /// On WASM, uses `Rc<RefCell<...>>` since WASM is single-threaded.
 pub struct PetgraphStorage {
@@ -132,7 +131,7 @@ impl PetgraphStorage {
             if #[cfg(target_arch = "wasm32")] {
                 Box::new(WasmClock)
             } else {
-                Box::new(crate::storage::core::SystemClock)
+                Box::new(nexus_model::SystemClock)
             }
         }
     }

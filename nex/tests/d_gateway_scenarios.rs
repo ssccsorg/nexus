@@ -3,7 +3,7 @@
 // Validates that the FIH protocol produces identical results when all
 // primitives cross a JSON serialization boundary (simulating a real HTTP
 // transport). Each scenario here mirrors its counterpart in z_scenarios.rs
-// but communicates through GatewayDriver instead of calling DefaultBlackboard
+// but communicates through GatewayDriver instead of calling CompositeBlackboard
 // directly.
 
 use nex::gateway_driver::GatewayDriver;

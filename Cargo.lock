@@ -1339,6 +1339,8 @@ dependencies = [
  "interface-query",
  "nex",
  "nexus-model",
+ "nexus-storage-composite",
+ "nexus-storage-petgraph",
  "petgraph",
  "serde",
  "serde_json",
@@ -1636,6 +1638,8 @@ dependencies = [
  "futures-executor",
  "log",
  "nexus-model",
+ "nexus-storage-composite",
+ "nexus-storage-petgraph",
  "petgraph",
  "postcard",
  "serde",
@@ -1667,7 +1671,6 @@ version = "0.1.0"
 dependencies = [
  "nex",
  "nexus-model",
- "nexus-storage-sim",
  "serde_json",
  "worker",
 ]
@@ -1691,6 +1694,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexus-storage-composite"
+version = "0.1.0"
+dependencies = [
+ "cfg-if",
+ "log",
+ "nexus-model",
+ "nexus-storage-petgraph",
+ "petgraph",
+ "postcard",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nexus-storage-duckdb"
 version = "0.1.0"
 dependencies = [
@@ -1702,6 +1719,17 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "nexus-storage-petgraph"
+version = "0.1.0"
+dependencies = [
+ "cfg-if",
+ "nexus-model",
+ "petgraph",
+ "postcard",
+ "serde",
 ]
 
 [[package]]
@@ -1717,22 +1745,6 @@ dependencies = [
  "serde_json",
  "tempfile",
  "walkdir",
- "worker",
-]
-
-[[package]]
-name = "nexus-ve-composite"
-version = "0.1.0"
-dependencies = [
- "axum",
- "nex",
- "nexus-model",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
- "tower-http",
- "tracing",
 ]
 
 [[package]]

@@ -23,8 +23,8 @@ fn submit_fact(bb: &impl Blackboard, id: &str, origin: &str, content: &str, crea
     bb.submit_fact(&fact).unwrap();
 }
 
-/// Helper: run a Cypher query on a DefaultBlackboard and count results.
-fn cypher_count(bb: &nex::DefaultBlackboard, query: &str) -> usize {
+/// Helper: run a Cypher query on a CompositeBlackboard and count results.
+fn cypher_count(bb: &nex::CompositeBlackboard, query: &str) -> usize {
     bb.with_graph(|g| {
         let plan = cypher::Plan::from_internal(query).expect("parse failed");
         cypher::execute(g, &plan).expect("execute failed").len()
@@ -196,7 +196,7 @@ fn test_petgraph_time_range() {
     .unwrap();
 
     let state = bb.read_state();
-    assert_eq!(state.facts.len(), 1, "fact submitted to DefaultBlackboard");
+    assert_eq!(state.facts.len(), 1, "fact submitted to CompositeBlackboard");
     // PetgraphStorage::time_range is None (unbounded).
     // Direct access to DualStorage's time_range is not exposed through
     // the Blackboard trait — this is by design (#51 will add routing).
