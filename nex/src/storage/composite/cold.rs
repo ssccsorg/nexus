@@ -84,7 +84,7 @@ pub struct CompositeColdStorage<
     B: BlobStore,
     O: ObjectStore,
     M: MetaStore,
-    C: Now = crate::storage::io::SystemClock,
+    C: Now = crate::storage::core::SystemClock,
 > {
     blob: B,
     object: O,
@@ -204,7 +204,7 @@ impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> CompositeColdStorage<B,
 // ── SystemClock convenience constructor ───────────────────────────────
 
 impl<B: BlobStore + Clone, O: ObjectStore, M: MetaStore + Clone>
-    CompositeColdStorage<B, O, M, crate::storage::io::SystemClock>
+    CompositeColdStorage<B, O, M, crate::storage::core::SystemClock>
 {
     pub fn new_with_system_clock(
         blob: B,
@@ -216,7 +216,7 @@ impl<B: BlobStore + Clone, O: ObjectStore, M: MetaStore + Clone>
             blob,
             object,
             meta,
-            clock: crate::storage::io::SystemClock,
+            clock: crate::storage::core::SystemClock,
             project_id: project_id.into(),
         }
     }

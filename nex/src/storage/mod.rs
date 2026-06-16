@@ -1,5 +1,5 @@
 pub mod composite;
-pub mod io;
+pub mod core;
 pub mod petgraph;
 
 /// Native FihStorage-backed Blackboard. Requires `native` feature.
