@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serializer, Serialize};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 // ── Content-addressable identifier ───────────────────────────────────────
@@ -27,36 +27,32 @@ impl FihHash {
 
     pub fn chain(a: &FihHash, b: &FihHash, c: &FihHash) -> FihHash {
         let mut h = Sha256::new();
-        h.update(&a.0);
-        h.update(&b.0);
-        h.update(&c.0);
+        h.update(a.0);
+        h.update(b.0);
+        h.update(c.0);
         Self(h.finalize().into())
     }
 
-    /// Create a FihHash from a hex string (64 hex chars = 32 bytes).
-    /// Non-hex characters are filtered out first.
-    /// For short IDs like "f001" that are not valid 64-char hex, falls back
-    /// to SHA256 hashing (same as `From<&str>`).
+    /// Reconstruct FihHash from a hex string or a short semantic ID.
+    ///
+    /// If `hex` is exactly 64 lowercase hex characters, it is parsed
+    /// directly into `[u8; 32]` (round-trip with `Display`).
+    /// Otherwise, the input is SHA256-hashed to produce a deterministic
+    /// FihHash. This allows short test IDs like `"f001"` via SHA256.
     pub fn from_hex(hex: &str) -> Self {
-        let hex_clean: String = hex.chars().filter(|c| c.is_ascii_hexdigit()).collect();
-        if hex_clean.len() == 64 {
+        let hex_lower: String = hex.chars().filter(|c| c.is_ascii_hexdigit()).collect();
+        if hex_lower.len() == 64 {
             let mut bytes = [0u8; 32];
             for i in 0..32 {
-                if let Ok(v) = u8::from_str_radix(&hex_clean[i * 2..=i * 2 + 1], 16) {
+                if let Ok(v) = u8::from_str_radix(&hex_lower[i * 2..=i * 2 + 1], 16) {
                     bytes[i] = v;
                 }
             }
             return Self(bytes);
         }
         // Fallback: hash the input to produce a deterministic FihHash.
-        Self::from(hex)
-    }
-}
-
-impl From<&str> for FihHash {
-    fn from(s: &str) -> Self {
         let mut h = Sha256::new();
-        h.update(s.as_bytes());
+        h.update(hex.as_bytes());
         Self(h.finalize().into())
     }
 }

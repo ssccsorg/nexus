@@ -447,7 +447,10 @@ fn scenario_peer_review_challenge() {
             concluded_at: None,
         };
         let iid = sched.bb.submit_intent(&intent).expect("submit");
-        sched.bb.claim_intent(&iid.to_string(), "reviewer").expect("claim");
+        sched
+            .bb
+            .claim_intent(&iid.to_string(), "reviewer")
+            .expect("claim");
         sched.bb.conclude_intent(&iid.to_string(), &serde_json::to_string(&serde_json::json!({
             "verdict": "Rust is the practical stepping stone; SSCCS manifesto describes the destination. Both are correct in their domains"
         })).unwrap()).expect("conclude");
@@ -548,7 +551,10 @@ fn scenario_incremental_knowledge_growth() {
                 concluded_at: None,
             };
             let iid = sched.bb.submit_intent(&intent).expect("submit");
-            sched.bb.claim_intent(&iid.to_string(), "agent-loop").expect("claim");
+            sched
+                .bb
+                .claim_intent(&iid.to_string(), "agent-loop")
+                .expect("claim");
             sched
                 .bb
                 .conclude_intent(
@@ -626,7 +632,10 @@ fn scenario_multi_agent_collaboration() {
             concluded_at: None,
         };
         let iid = sched.bb.submit_intent(&intent).expect("submit");
-        sched.bb.claim_intent(&iid.to_string(), "agent-alpha").expect("claim");
+        sched
+            .bb
+            .claim_intent(&iid.to_string(), "agent-alpha")
+            .expect("claim");
         sched
             .bb
             .conclude_intent(
@@ -662,7 +671,10 @@ fn scenario_multi_agent_collaboration() {
             concluded_at: None,
         };
         let iid = sched.bb.submit_intent(&intent).expect("submit");
-        sched.bb.claim_intent(&iid.to_string(), "agent-beta").expect("claim");
+        sched
+            .bb
+            .claim_intent(&iid.to_string(), "agent-beta")
+            .expect("claim");
         sched
             .bb
             .conclude_intent(
@@ -698,7 +710,10 @@ fn scenario_multi_agent_collaboration() {
             concluded_at: None,
         };
         let iid = sched.bb.submit_intent(&intent).expect("submit");
-        sched.bb.claim_intent(&iid.to_string(), "agent-gamma").expect("claim");
+        sched
+            .bb
+            .claim_intent(&iid.to_string(), "agent-gamma")
+            .expect("claim");
         sched.bb.conclude_intent(&iid.to_string(), &serde_json::to_string(&serde_json::json!({
             "synthesis": "SSCCS theory + Spatz measurement + MLIR implementation are complementary layers",
             "domain": "philosophy",
