@@ -1,28 +1,28 @@
-// Scenario tests routed through MockGateway, backed by FihStorage<SimIo>.
+// Scenario tests routed through SerdeProxy, backed by FihStorage<SimIo>.
 //
 // Validates that the FIH protocol produces identical results when all
 // primitives cross a JSON serialization boundary (simulating a real HTTP
 // transport). Each scenario here mirrors its counterpart in z_scenarios.rs
-// but communicates through MockGateway instead of calling DefaultBlackboard
+// but communicates through SerdeProxy instead of calling HybridBlackboard
 // directly.
 
-use nex::mock_gateway::MockGateway;
-use nex::{Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
+use nexus_gateway_serde_proxy::SerdeProxy;
+use nexus_model::{Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
 use nexus_storage_sim::{FihStorage, SimIo};
 
-/// Contradiction Detection — via MockGateway (JSON transport boundary).
+/// Contradiction Detection — via SerdeProxy (JSON transport boundary).
 ///
 /// Two papers make contradictory claims about GNN oversmoothing.
 /// Agent-A and Agent-B each ingest a paper. Agent-C detects the
 /// contradiction and submits a reconciliation hypothesis.
 ///
 /// This is identical to scenario_contradiction_detection in z_scenarios.rs
-/// except all FIH operations pass through MockGateway's JSON round-trip.
+/// except all FIH operations pass through SerdeProxy's JSON round-trip.
 #[test]
 fn scenario_contradiction_detection_via_gateway() {
     let io = SimIo::new();
     let storage = FihStorage::new(io, "test");
-    let gw = MockGateway::new(storage);
+    let gw = SerdeProxy::new(storage);
 
     // Agent-A: ingests paper claiming GNNs work fine at 50 layers
     gw.submit_fact(&Fact {
@@ -85,5 +85,5 @@ fn scenario_contradiction_detection_via_gateway() {
         "conclusion fact should contain result text"
     );
 
-    println!("  v MockGateway: Contradiction Detection -- 3 agents, JSON round-trip verified");
+    println!("  v SerdeProxy: Contradiction Detection -- 3 agents, JSON round-trip verified");
 }

@@ -10,18 +10,19 @@
 // These tests validate that it composes correctly with Petgraph via
 // DualStorage, matching the same trait contracts as DuckDbStorage.
 
-use nex::storage::composite::{
-    AsyncStoreBlob, AsyncStoreKv, AsyncStoreObject, CompositeColdStorage,
-};
-use nex::storage::petgraph::PetgraphStorage;
-use nex::{
-    Content, DefaultBlackboard, Fact, FactCapable, FihHash, HintCapable, IntentCapable,
-    ScanCapable, Snapshottable, StorageRead,
-};
 use nexus_model::{
     BlobStore, ColdStorage, DualStorage, EvictCapable, FlushCapable, FlushCursor, MetaStore,
     ObjectStore,
 };
+use nexus_model::{
+    Content, Fact, FactCapable, FihHash, HintCapable, IntentCapable, ScanCapable, StorageRead,
+};
+use nexus_storage_composite::HybridBlackboard;
+use nexus_storage_composite::{
+    AsyncStoreBlob, AsyncStoreKv, AsyncStoreObject, CompositeColdStorage,
+};
+use nexus_storage_petgraph::PetgraphStorage;
+use nexus_storage_petgraph::Snapshottable;
 use serde_json::json;
 
 // ── Inline mock implementations for integration tests ───────────────────────
@@ -137,10 +138,10 @@ fn make_composite_cold() -> CompositeColdStorage<MockBlob, MockObject, MockKv> {
     )
 }
 
-fn make_bb() -> DefaultBlackboard {
+fn make_bb() -> HybridBlackboard {
     let hot = PetgraphStorage::new();
     let cold: Box<dyn ColdStorage> = Box::new(make_composite_cold());
-    DefaultBlackboard::with_storage(hot, cold)
+    HybridBlackboard::with_storage(hot, cold)
 }
 
 fn fact(id: &str) -> Fact {
@@ -242,7 +243,7 @@ fn test_snapshot_roundtrip_with_composite_cold() {
     <_ as FactCapable>::submit_fact(&mut guard, &fact("f_snap_1")).unwrap();
 
     let _snap = <_ as Snapshottable>::to_snapshot(&guard);
-    let restored = DefaultBlackboard::from_snapshot(_snap);
+    let restored = HybridBlackboard::from_snapshot(_snap);
     let state = <_ as StorageRead>::read_state(&restored);
     assert!(
         state.facts.iter().any(|f| f.id.0 == "f_snap_1"),
@@ -273,7 +274,7 @@ fn test_multi_lifetime_data_preservation_across_restart() {
 
     let hot = PetgraphStorage::with_project_id("default");
     let cold: Box<dyn ColdStorage> = Box::new(make_composite_cold());
-    let _bb2 = DefaultBlackboard::with_storage(hot, cold);
+    let _bb2 = HybridBlackboard::with_storage(hot, cold);
 
     <_ as FactCapable>::submit_fact(&mut guard, &fact("f_life_4")).unwrap();
     <_ as FactCapable>::submit_fact(&mut guard, &fact("f_life_5")).unwrap();
@@ -290,7 +291,7 @@ fn test_multi_lifetime_data_preservation_across_restart() {
 
 #[test]
 fn test_multi_entity_persistence_through_dual_storage() {
-    use nex::Intent;
+    use nexus_model::Intent;
 
     let bb = make_bb();
     let mut guard = bb;
@@ -380,7 +381,7 @@ fn test_flush_then_snapshot_roundtrip_null_cold_is_noop() {
     assert_eq!(r_before.records_flushed, 2, "initial flush exports 2 facts");
 
     let snapshot = <_ as Snapshottable>::to_snapshot(&guard);
-    let mut restored = DefaultBlackboard::from_snapshot(snapshot);
+    let mut restored = HybridBlackboard::from_snapshot(snapshot);
 
     let state = <_ as StorageRead>::read_state(&restored);
     assert_eq!(state.facts.len(), 2, "facts survive snapshot roundtrip");
@@ -404,7 +405,7 @@ fn test_fih_scenario_submit_flush_read() {
     <_ as FactCapable>::submit_fact(&mut guard, &fact("scn_f2")).unwrap();
     <_ as FactCapable>::submit_fact(&mut guard, &fact("scn_f3")).unwrap();
 
-    let intent = nex::Intent {
+    let intent = nexus_model::Intent {
         id: FihHash("scn_i1".into()),
         from_facts: vec!["scn_f1".into(), "scn_f2".into()],
         to_fact_id: None,
@@ -419,7 +420,7 @@ fn test_fih_scenario_submit_flush_read() {
     <_ as IntentCapable>::submit_intent(&mut guard, &intent).unwrap();
     <_ as HintCapable>::submit_hint(
         &mut guard,
-        &nex::Hint {
+        &nexus_model::Hint {
             id: FihHash("scn_h1".into()),
             content: "scenario hint".into(),
             creator: "tester".into(),
@@ -502,7 +503,7 @@ fn test_fih_scenario_petgraph_blob_identity() {
     <_ as FactCapable>::submit_fact(&mut guard, &fact("id_f2")).unwrap();
 
     // Claim and heartbeat an intent
-    let intent = nex::Intent {
+    let intent = nexus_model::Intent {
         id: FihHash("id_i1".into()),
         from_facts: vec!["id_f1".into()],
         to_fact_id: None,

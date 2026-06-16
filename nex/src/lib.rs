@@ -1,27 +1,17 @@
-pub mod blackboard;
 pub mod helper;
-pub mod mock_gateway;
+pub mod io;
 pub mod process;
 pub mod storage;
 
-// Re-export key types for convenience
-pub use blackboard::{DefaultBlackboard, Record};
-pub use mock_gateway::MockGateway;
-pub use nexus_model::{
-    Blackboard, BlackboardError, BoardState, Content, EvictCapable, Fact, FactCapable, FihHash,
-    FlushCapable, FlushCursor, Hint, HintCapable, Intent, IntentCapable, ScanCapable, StorageRead,
-    TimeRangeCapable,
-};
+#[cfg(not(target_arch = "wasm32"))]
+pub use io::FsIo;
+pub use io::{AsyncFileIo, SyncFileIo, WriteOp};
 pub use process::{error::ProcessError, scheduler::Scheduler};
-pub use storage::composite::CompositeColdStorage;
-#[cfg(feature = "native")]
-pub use storage::native::NativeBlackboard;
-pub use storage::petgraph::{
-    EdgeWeight, GraphRead, GraphWrite, NodeWeight, PetgraphStorage, Snapshottable, StorageSnapshot,
-};
+pub use storage::core::export::{FihExport, FihImport, export_from_io, import_into_io};
+pub use storage::core::{EntityStore, FihSession, FihStorage, IntentStatus, MemoryEntityStore};
+pub use storage::fih::FihBlackboard;
 
-/// Create a default blackboard with in-memory petgraph hot storage
-/// and no cold backend.
-pub fn create_blackboard() -> DefaultBlackboard {
-    DefaultBlackboard::new()
+/// Shortcut to create a default blackboard (hot petgraph + no cold backend).
+pub fn create_blackboard() -> nexus_storage_composite::HybridBlackboard {
+    nexus_storage_composite::HybridBlackboard::new()
 }

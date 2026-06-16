@@ -1,14 +1,14 @@
-use nex::blackboard::DefaultBlackboard;
-use nex::storage::petgraph::write_graph;
-use nex::*;
-use nexus_model::{Fact, FihHash, FlushCapable, FlushCursor, Intent};
+use nexus_model::{Fact, FactCapable, FihHash, FlushCapable, FlushCursor, Intent, IntentCapable};
+use nexus_storage_composite::HybridBlackboard;
+use nexus_storage_petgraph::Snapshottable;
+use nexus_storage_petgraph::write_graph;
 
 fn tick() {
     std::thread::sleep(std::time::Duration::from_millis(1));
 }
 
-fn bb_with_facts() -> DefaultBlackboard {
-    let bb = DefaultBlackboard::new();
+fn bb_with_facts() -> HybridBlackboard {
+    let bb = HybridBlackboard::new();
     for i in 0..5 {
         let fact = Fact {
             id: FihHash(format!("f{i}")),
@@ -23,7 +23,7 @@ fn bb_with_facts() -> DefaultBlackboard {
 
 #[test]
 fn test_fresh_blackboard_has_empty_cursor() {
-    let bb = DefaultBlackboard::new();
+    let bb = HybridBlackboard::new();
     assert_eq!(bb.flush_cursor, FlushCursor::default());
 }
 
@@ -72,7 +72,7 @@ fn test_cursor_survives_snapshot_roundtrip() {
     let cursor_before = bb.flush_cursor.clone();
 
     let snap = bb.to_snapshot();
-    let restored = DefaultBlackboard::from_snapshot(snap);
+    let restored = HybridBlackboard::from_snapshot(snap);
     assert_eq!(
         restored.flush_cursor, cursor_before,
         "flush cursor should survive snapshot roundtrip"
@@ -84,7 +84,7 @@ fn test_old_snapshot_without_cursor_gets_default() {
     // Simulate a snapshot created by older code that did not include flush_cursor.
     // The default FlushCursor is the epoch -- a fresh blackboard with no cursor
     // should start from the beginning.
-    let bb = DefaultBlackboard::new();
+    let bb = HybridBlackboard::new();
     assert_eq!(bb.flush_cursor, FlushCursor::default());
 }
 
@@ -95,7 +95,7 @@ fn test_flush_after_restore_continues_from_cursor() {
     let cursor1 = bb.flush_cursor.clone();
 
     let snap = bb.to_snapshot();
-    let mut restored = DefaultBlackboard::from_snapshot(snap);
+    let mut restored = HybridBlackboard::from_snapshot(snap);
     assert_eq!(restored.flush_cursor, cursor1);
 
     // Add more facts to the original, restore to fresh instance.
@@ -120,10 +120,10 @@ fn test_flush_after_restore_continues_from_cursor() {
 
 #[test]
 fn test_cursor_independent_of_graph_mutations() {
-    use nex::storage::petgraph::NodeWeight;
+    use nexus_storage_petgraph::NodeWeight;
     use std::collections::HashMap;
 
-    let mut bb = DefaultBlackboard::new();
+    let mut bb = HybridBlackboard::new();
     let fact = Fact {
         id: FihHash("f1".into()),
         origin: "test".into(),
@@ -186,7 +186,7 @@ fn test_flush_cycle_with_facts() {
 
 #[test]
 fn test_flush_empty_blackboard() {
-    let mut bb = DefaultBlackboard::new();
+    let mut bb = HybridBlackboard::new();
     bb.flush().unwrap();
 }
 
@@ -201,7 +201,7 @@ fn test_cursor_timestamp_numeric() {
 
 #[test]
 fn test_storage_snapshot_roundtrip() {
-    use nex::storage::petgraph::Snapshottable;
+    use nexus_storage_petgraph::Snapshottable;
 
     let bb = bb_with_facts();
     // Add intents
@@ -222,10 +222,10 @@ fn test_storage_snapshot_roundtrip() {
     let snapshot = bb.to_snapshot();
 
     // Reconstruct
-    let restored = DefaultBlackboard::from_snapshot(snapshot);
+    let restored = HybridBlackboard::from_snapshot(snapshot);
 
     // Verify graph data
-    let state = <DefaultBlackboard as nexus_model::StorageRead>::read_state(&restored);
+    let state = <HybridBlackboard as nexus_model::StorageRead>::read_state(&restored);
     assert_eq!(state.facts.len(), 5);
     assert_eq!(state.intents.len(), 1);
 

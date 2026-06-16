@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use crate::io::{AsyncFileIo, IoFuture};
+use nex::io::file_io::{AsyncFileIo, IoFuture};
 
 /// Deterministic in-memory IO. No filesystem, no network, no async.
 /// On wasm32, uses Rc<RefCell<>> internally; on native, Arc<RwLock<>>.
@@ -78,7 +78,6 @@ impl AsyncFileIo for SimIo {
 
     fn write<'a>(&'a self, path: &'a str, data: &'a [u8]) -> IoFuture<'a, ()> {
         Box::pin(async move {
-            // Failure injection
             if self.failure_rate > 0.0 {
                 let mut count = self.op_count.write().map_err(|e| e.to_string())?;
                 *count += 1;

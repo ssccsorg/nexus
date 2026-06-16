@@ -3,7 +3,7 @@
 // Format: postcard (compact binary, serde-based, no_std compatible).
 // Version: top-level `version` field enables forward migration.
 
-use super::weight::{EdgeWeight, NodeWeight};
+use crate::weight::{EdgeWeight, NodeWeight};
 use nexus_model::{FlushCursor, TaskStates};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
