@@ -167,9 +167,11 @@ impl<I: AsyncFileIo> FihStorage<I> {
     ///
     /// Records are sorted by submitted_at before insertion to guarantee
     /// monotonic ordering in by_time (required by OrderedIndex's binary
-    /// search). Other indices (by_origin, by_fact, ref_counts) are
-    /// order-independent and built during the same pass.
+    /// search). Other indices are order-independent and built during the
+    /// same pass via FihCoord methods.
     fn rebuild_coord(&self) {
+        self.coord.clear();
+
         let mut facts = self.fact_store.values();
         let intents = self.intent_store.values();
 
@@ -178,31 +180,11 @@ impl<I: AsyncFileIo> FihStorage<I> {
 
         for r in &facts {
             self.coord.by_time.record(r.submitted_at, &r.id);
-            self.coord
-                .by_origin
-                .borrow_mut()
-                .entry(r.origin.clone())
-                .or_default()
-                .push(r.id.clone());
-            self.coord
-                .ref_counts
-                .borrow_mut()
-                .entry(r.id.clone())
-                .or_insert_with(|| Cell::new(0));
+            self.coord.record_fact(&r.id, &r.origin, &r.creator, r.submitted_at);
         }
 
         for r in &intents {
-            for fid in &r.from_facts {
-                if let Some(rc) = self.coord.ref_counts.borrow().get(fid) {
-                    rc.set(rc.get() + 1);
-                }
-                self.coord
-                    .by_fact
-                    .borrow_mut()
-                    .entry(fid.clone())
-                    .or_default()
-                    .push(r.id.clone());
-            }
+            self.coord.record_intent(&r.id, &r.creator, r.created_at, &r.from_facts);
         }
     }
 
@@ -217,7 +199,12 @@ impl<I: AsyncFileIo> FihStorage<I> {
 
     /// Query intents that reference a given fact.
     pub fn intents_by_fact(&self, fact_id: &str) -> Vec<String> {
-        self.coord.intents_by_fact(fact_id)
+        let fidx = self.coord.intern(fact_id);
+        self.coord
+            .intents_by_fact(fidx)
+            .into_iter()
+            .map(|idx| self.coord.resolve(idx))
+            .collect()
     }
 
     /// Enqueue content as a blob write. FIH is append-only: no dedup
@@ -429,22 +416,10 @@ impl<I: AsyncFileIo> FactCapable for FihStorage<I> {
         self.pending.borrow_mut().push(op);
         self.maybe_flush().map_err(BlackboardError::Internal)?;
 
-        // Update indices
+        // Update indices via FihCoord
         let ts = self.clock.now_nanos();
         self.coord.by_time.record(ts, &fact.id.0);
-        {
-            let mut origin_map = self.coord.by_origin.borrow_mut();
-            origin_map
-                .entry(fact.origin.clone())
-                .or_default()
-                .push(fact.id.0.clone());
-        }
-        // ref_count defaults to 0 — orphan unless referenced by an Intent
-        self.coord
-            .ref_counts
-            .borrow_mut()
-            .entry(fact.id.0.clone())
-            .or_insert_with(|| Cell::new(0));
+        self.coord.record_fact(&fact.id.0, &fact.origin, &fact.creator, ts);
 
         Ok(fact.id.clone())
     }
@@ -493,15 +468,8 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
                 return Err(BlackboardError::NotFound(format!("Fact {fid} not found")));
             }
         }
-        // Increment ref_count for each from_fact
-        {
-            let refs = self.coord.ref_counts.borrow();
-            for fid in &intent.from_facts {
-                if let Some(rc) = refs.get(fid) {
-                    rc.set(rc.get() + 1);
-                }
-            }
-        }
+        // Intentionally left blank — ref_count and by_fact updates
+        // are handled inside record_intent below after the record is built.
 
         let record = IntentRecord {
             id: intent.id.0.clone(),
@@ -520,15 +488,10 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
             data: bytes,
         };
 
+        // Record intent in coordinator (handles by_fact, ref_counts, by_status, by_creator)
+        self.coord.record_intent(&intent.id.0, &intent.creator, record.created_at, &intent.from_facts);
+
         self.intent_store.insert(record.id.clone(), record);
-        // Update by_from_fact reverse index
-        let mut by_fact = self.coord.by_fact.borrow_mut();
-        for fid in &intent.from_facts {
-            by_fact
-                .entry(fid.clone())
-                .or_default()
-                .push(intent.id.0.clone());
-        }
         self.pending.borrow_mut().push(op);
         self.maybe_flush().map_err(BlackboardError::Internal)?;
 
@@ -559,6 +522,7 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
             data: bytes,
         });
         self.intent_store.insert(intent_id.to_string(), record);
+        self.coord.update_intent_status(intent_id, "submitted", "claimed");
         self.maybe_flush().map_err(BlackboardError::Internal)?;
 
         Ok(())
@@ -623,6 +587,7 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
             data: bytes,
         });
         self.intent_store.insert(intent_id.to_string(), record);
+        self.coord.update_intent_status(intent_id, "claimed", "submitted");
         self.maybe_flush().map_err(BlackboardError::Internal)?;
 
         Ok(())
@@ -670,29 +635,11 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
         // Submit conclusion fact via FactCapable, then re-serialize intent
         FactCapable::submit_fact(self, &new_fact)?;
 
-        // Decrement ref_count for from_facts (intent no longer references them)
-        {
-            let refs = self.coord.ref_counts.borrow();
-            if let Some(r) = self.intent_store.get(intent_id) {
-                for fid in &r.from_facts {
-                    if let Some(rc) = refs.get(fid) {
-                        rc.set(rc.get() - 1);
-                    }
-                }
-            }
+        // Remove intent from from_facts references and update status
+        if let Some(r) = self.intent_store.get(intent_id) {
+            self.coord.remove_intent_from_facts(intent_id, &r.from_facts);
         }
-
-        // Remove intent from by_from_fact reverse index
-        {
-            if let Some(r) = self.intent_store.get(intent_id) {
-                let mut by_fact = self.coord.by_fact.borrow_mut();
-                for fid in &r.from_facts {
-                    if let Some(refs) = by_fact.get_mut(fid) {
-                        refs.retain(|i| i != intent_id);
-                    }
-                }
-            }
-        }
+        self.coord.update_intent_status(intent_id, "claimed", "concluded");
 
         let intent_bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -1084,20 +1031,10 @@ impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
             .map_err(BlackboardError::Internal)?;
         self.fact_store.insert(record.id.clone(), record);
 
-        // Update indices for sync impl consistency
+        // Update indices via FihCoord
         let ts = self.clock.now_nanos();
         self.coord.by_time.record(ts, &fact.id.0);
-        self.coord
-            .by_origin
-            .borrow_mut()
-            .entry(fact.origin.clone())
-            .or_default()
-            .push(fact.id.0.clone());
-        self.coord
-            .ref_counts
-            .borrow_mut()
-            .entry(fact.id.0.clone())
-            .or_insert_with(|| Cell::new(0));
+        self.coord.record_fact(&fact.id.0, &fact.origin, &fact.creator, ts);
 
         Ok(fact.id.clone())
     }
@@ -1175,6 +1112,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
             .await
             .map_err(BlackboardError::Internal)?;
         self.intent_store.insert(intent_id.to_string(), record);
+        self.coord.update_intent_status(intent_id, "submitted", "claimed");
         Ok(())
     }
 
@@ -1305,6 +1243,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
             .await
             .map_err(BlackboardError::Internal)?;
         self.intent_store.insert(intent_id.to_string(), record);
+        self.coord.update_intent_status(intent_id, "claimed", "concluded");
 
         Ok(new_fact)
     }
