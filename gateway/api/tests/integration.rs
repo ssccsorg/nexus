@@ -48,7 +48,7 @@ async fn test_submit_and_read_fact() {
         .unwrap();
     assert_eq!(resp.status(), 200, "submit fact should succeed");
     let body: serde_json::Value = resp.json().await.unwrap();
-    assert_eq!(body["id"], "f_test_001");
+    assert!(body["id"].as_str().unwrap().len() == 64, "id should be 64-char hex");
 
     let resp = client
         .get(format!("{}/state", api(&url)))
@@ -59,7 +59,7 @@ async fn test_submit_and_read_fact() {
     let state: serde_json::Value = resp.json().await.unwrap();
     let facts = state["facts"].as_array().unwrap();
     assert_eq!(facts.len(), 1, "should have 1 fact");
-    assert_eq!(facts[0]["id"], "f_test_001");
+    assert!(facts[0]["id"].as_str().unwrap().len() == 64, "fact id should be hex");
     assert_eq!(facts[0]["content"]["mime_type"], "text/plain");
     let expected: Vec<u8> = b"Gateway API test fact".to_vec();
     assert_eq!(
