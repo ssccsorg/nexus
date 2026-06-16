@@ -2,6 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 
 use nexus_model::FihHash;
+use crate::storage::vector::VectorStore;
 
 /// Append-only ordered index. Stores compact u32 IDs (no String duplication).
 pub struct OrderedIndex<K = u64>
@@ -114,6 +115,8 @@ pub struct FihCoord {
     pub by_status: RefCell<HashMap<u32, Vec<u32>>>,
     pub by_created_at_day: RefCell<BTreeMap<u64, Vec<u32>>>,
     pub ref_counts: RefCell<HashMap<u32, Cell<u64>>>,
+    /// ANN vector storage for semantic similarity search (plug-in).
+    pub by_vector: RefCell<Option<Box<dyn VectorStore>>>,
 }
 
 impl FihCoord {
@@ -130,6 +133,7 @@ impl FihCoord {
             by_status: RefCell::new(HashMap::new()),
             by_created_at_day: RefCell::new(BTreeMap::new()),
             ref_counts: RefCell::new(HashMap::new()),
+            by_vector: RefCell::new(None),
         }
     }
 
@@ -186,6 +190,7 @@ impl FihCoord {
         self.by_status.borrow_mut().clear();
         self.by_created_at_day.borrow_mut().clear();
         self.ref_counts.borrow_mut().clear();
+        *self.by_vector.borrow_mut() = None;
     }
 
     // ── Index update ───────────────────────────────────────────────
