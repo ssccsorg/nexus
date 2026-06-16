@@ -187,7 +187,11 @@ impl<I: AsyncFileIo> FihStorage<I> {
 
         for r in &intents {
             let id_bytes = FihHash::from_hex(&r.id);
-            let from_bytes: Vec<[u8; 32]> = r.from_facts.iter().map(|f| FihHash::from_hex(f).0).collect();
+            let from_bytes: Vec<[u8; 32]> = r
+                .from_facts
+                .iter()
+                .map(|f| FihHash::from_hex(f).0)
+                .collect();
             self.coord
                 .record_intent(&id_bytes.0, &r.creator, r.created_at, &from_bytes);
         }
@@ -426,8 +430,12 @@ impl<I: AsyncFileIo> FactCapable for FihStorage<I> {
         let ts = self.clock.now_nanos();
         let fact_id_str = fact.id.to_string();
         self.coord.by_time.record(ts, &fact_id_str);
-        self.coord
-            .record_fact(&FihHash::from_hex(&fact_id_str).0, &fact.origin, &fact.creator, ts);
+        self.coord.record_fact(
+            &FihHash::from_hex(&fact_id_str).0,
+            &fact.origin,
+            &fact.creator,
+            ts,
+        );
 
         Ok(fact.id)
     }
@@ -660,11 +668,13 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
 
         // Remove intent from from_facts references and update status
         if let Some(r) = self.intent_store.get(&intent_id) {
-            let from_bytes: Vec<[u8; 32]> = r.from_facts.iter().map(|f| FihHash::from_hex(f).0).collect();
-            self.coord.remove_intent_from_facts(
-                &FihHash::from_hex(&intent_id).0,
-                &from_bytes,
-            );
+            let from_bytes: Vec<[u8; 32]> = r
+                .from_facts
+                .iter()
+                .map(|f| FihHash::from_hex(f).0)
+                .collect();
+            self.coord
+                .remove_intent_from_facts(&FihHash::from_hex(&intent_id).0, &from_bytes);
         }
         self.coord
             .update_intent_status(&FihHash::from_hex(&intent_id).0, "claimed", "concluded");
@@ -1083,8 +1093,12 @@ impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
         let ts = self.clock.now_nanos();
         let fact_id_str = fact.id.to_string();
         self.coord.by_time.record(ts, &fact_id_str);
-        self.coord
-            .record_fact(&FihHash::from_hex(&fact_id_str).0, &fact.origin, &fact.creator, ts);
+        self.coord.record_fact(
+            &FihHash::from_hex(&fact_id_str).0,
+            &fact.origin,
+            &fact.creator,
+            ts,
+        );
 
         Ok(fact.id)
     }
