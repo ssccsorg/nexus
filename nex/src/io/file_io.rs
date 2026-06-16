@@ -1,6 +1,6 @@
 // ── AsyncFileIo: flat key-space file IO abstraction ────────────────
 //
-// The single IO boundary. Every storage backend (local fs, remote object
+// The single IO boundary. Every IO backend (local fs, remote object
 // store, in-memory HashMap, bare-metal flash) implements this trait.
 // The core never calls IO directly.
 //
@@ -10,9 +10,10 @@
 //   - FsIo: std::fs
 //   - CfIo: Cloudflare R2 (WASM)
 //   - (your backend here): any flat key-space with read/write/list/delete
+//
 // # Why async?
 //
-// Storage is inherently asynchronous. At the hardware level, every I/O
+// I/O is inherently asynchronous. At the hardware level, every I/O
 // operation (DRAM read, DMA transfer, NVMe queue, network round-trip)
 // involves pipelining, interrupts, or completion queues. None of it is
 // truly synchronous. "Sync" is a programmer convenience abstraction over
@@ -23,15 +24,9 @@
 //   - tokio: spawn + await on async fs/network
 //   - wasm32: single-threaded, cooperative multitasking via await
 //
-// Sync callers (FihStorage, FactCapable, etc.) use SyncFileIo wrapper,
-// which calls futures_executor::block_on internally. This is NOT an adapter
-// layer. Async is the design center; sync is the extension.
-//
-// SyncFileIo does NOT introduce significant overhead because FihStorage
-// buffers all writes into pending WriteOps and only flushes in batch.
-// Individual IO calls are amortized over the flush window.
-//
-// AsyncFileIo is the design center. Sync is the extension.
+// Sync callers use SyncFileIo wrapper, which calls
+// futures_executor::block_on internally. Async is the design center;
+// sync is the extension.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -42,8 +37,8 @@ use std::pin::Pin;
 /// Keeping Box for now is acceptable for this abstraction layer.
 pub type IoFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, String>> + 'a>>;
 
-/// A single storage operation that can be committed or rolled back.
-/// The core enqueues these; FihSession flushes them as a batch.
+/// A single IO operation that can be committed or rolled back.
+/// The caller enqueues these; the flush layer commits them as a batch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WriteOp {
     /// Write a record file: path -> bytes.
@@ -54,7 +49,7 @@ pub enum WriteOp {
 
 /// Async IO operations on a flat key-space.
 ///
-/// The key-space is flat (`facts/f_{hash}.fact`, `blob/{hash}.bin`).
+/// The key-space is flat (e.g., `facts/f_{hash}.fact`, `blob/{hash}.bin`).
 /// Directory structure is an implementation detail of the IO layer.
 pub trait AsyncFileIo {
     /// Read a single file. Returns None if not found.

@@ -1,14 +1,16 @@
 // ── IO abstraction layer ──────────────────────────────────────────────
 //
 // Pure IO interface for the nexus runtime. Defines the AsyncFileIo trait
-// that storage engines use to read/write/list/delete data.
+// that IO backends implement for read/write/list/delete operations.
 //
-// This layer is storage-agnostic. Multiple storage engines (FihStorage,
-// PetgraphStorage, etc.) can share the same IO interface.
-//
-// IO implementations (SimIo, CfFihIo, FsIo) are provided by the
-// nexus-storage-sim crate. This crate defines only the trait/type definitions.
+// IO backends implement this trait. Higher layers (storage engines, etc.)
+// consume it without the IO layer knowing about them.
 
 pub mod file_io;
+/// Filesystem-backed IO. Not available on wasm32-unknown-unknown.
+#[cfg(not(target_arch = "wasm32"))]
+pub mod fs_io;
 
 pub use file_io::{AsyncFileIo, IoFuture, SyncFileIo, WriteOp};
+#[cfg(not(target_arch = "wasm32"))]
+pub use fs_io::FsIo;
