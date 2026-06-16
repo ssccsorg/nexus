@@ -1,0 +1,9 @@
+[package]
+name = "nexus-gateway-serde-proxy"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+nexus-model = { path = "../../model" }
+serde_json = "1"

@@ -5,7 +5,7 @@ mod session_server;
 mod store_session;
 
 pub use async_store::{AsyncStoreBlob, AsyncStoreKv, AsyncStoreObject, AsyncStoreSessionMeta};
-pub use blackboard::CompositeBlackboard;
+pub use blackboard::HybridBlackboard;
 pub use cold::CompositeColdStorage;
 pub use session_server::{SessionHandle, SessionServer};
 pub use store_session::AsyncStoreSession;

@@ -5,8 +5,8 @@
 /// always cyrs_plan; internal path exists for robustness.
 ///
 /// All query functions take `&impl GraphRead`, so callers can pass
-/// either a `CompositeBlackboard` directly or an `RwLockReadGuard`
-/// obtained via `CompositeBlackboard::snapshot()`. The latter is
+/// either a `HybridBlackboard` directly or an `RwLockReadGuard`
+/// obtained via `HybridBlackboard::snapshot()`. The latter is
 /// preferred for batch operations since it acquires the graph read
 /// lock only once for the entire query execution.
 use petgraph::graph::NodeIndex;

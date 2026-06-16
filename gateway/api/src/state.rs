@@ -1,6 +1,7 @@
 // Shared application state for the gateway API server.
 
-use nex::{Blackboard, create_blackboard};
+use nex::create_blackboard;
+use nexus_model::Blackboard;
 use std::sync::{Arc, Mutex};
 
 /// Thread-safe shared state wrapping a Blackboard.

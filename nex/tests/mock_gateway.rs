@@ -1,10 +1,10 @@
-use nex::CompositeBlackboard;
-use nex::gateway_driver::GatewayDriver;
+use nexus_gateway_serde_proxy::SerdeProxy;
 use nexus_model::{Fact, FactCapable, FihHash, StorageRead};
+use nexus_storage_composite::HybridBlackboard;
 
 #[test]
-fn test_gateway_driver_submit_fact() {
-    let gw = GatewayDriver::new(CompositeBlackboard::new());
+fn test_serde_proxy_submit_fact() {
+    let gw = SerdeProxy::new(HybridBlackboard::new());
     let fact = Fact {
         id: FihHash("f_gw_001".into()),
         origin: "gateway-test".into(),

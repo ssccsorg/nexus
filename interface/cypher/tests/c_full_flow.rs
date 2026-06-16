@@ -7,10 +7,11 @@
 //   4. Read_state + unit assertions verify correctness (Cypher is for portability)
 
 use interface_cypher as cypher;
-use nex::{
+use nex::create_blackboard;
+use nexus_model::{
     Blackboard, BlackboardError, Content, Fact, FihHash, Intent, IntentCapable, StorageRead,
-    create_blackboard,
 };
+use nexus_storage_composite::HybridBlackboard;
 
 /// Helper: submit a fact with minimal boilerplate.
 fn submit_fact(bb: &impl Blackboard, id: &str, origin: &str, content: &str, creator: &str) {
@@ -23,8 +24,8 @@ fn submit_fact(bb: &impl Blackboard, id: &str, origin: &str, content: &str, crea
     bb.submit_fact(&fact).unwrap();
 }
 
-/// Helper: run a Cypher query on a CompositeBlackboard and count results.
-fn cypher_count(bb: &nex::CompositeBlackboard, query: &str) -> usize {
+/// Helper: run a Cypher query on a HybridBlackboard and count results.
+fn cypher_count(bb: &HybridBlackboard, query: &str) -> usize {
     bb.with_graph(|g| {
         let plan = cypher::Plan::from_internal(query).expect("parse failed");
         cypher::execute(g, &plan).expect("execute failed").len()
@@ -168,10 +169,9 @@ fn test_full_agent_collaboration_flow() {
 
 #[test]
 fn test_petgraph_time_range() {
-    use nex::{
-        Fact, FactCapable, FihHash, PetgraphStorage, StorageRead, TimeRangeCapable,
-        create_blackboard,
-    };
+    use nex::create_blackboard;
+    use nexus_model::{Fact, FactCapable, FihHash, StorageRead, TimeRangeCapable};
+    use nexus_storage_petgraph::PetgraphStorage;
 
     // PetgraphStorage::time_range() returns None (unbounded in-memory store).
     // This test verifies the trait is wired correctly.
@@ -196,11 +196,7 @@ fn test_petgraph_time_range() {
     .unwrap();
 
     let state = bb.read_state();
-    assert_eq!(
-        state.facts.len(),
-        1,
-        "fact submitted to CompositeBlackboard"
-    );
+    assert_eq!(state.facts.len(), 1, "fact submitted to HybridBlackboard");
     // PetgraphStorage::time_range is None (unbounded).
     // Direct access to DualStorage's time_range is not exposed through
     // the Blackboard trait — this is by design (#51 will add routing).

@@ -7,11 +7,9 @@
 //   storage.rs — PetgraphStorage: core implementation
 //   weight.rs — EdgeWeight, NodeWeight: petgraph weight types
 //   snapshot.rs — StorageSnapshot, Snapshottable: snapshot/restore
-//   graph_access.rs — GraphRead, GraphWrite: re-exported from model
 
 pub use nexus_model::storage::{GraphRead, GraphWrite};
 
-pub mod graph_access;
 mod snapshot;
 mod storage;
 mod weight;

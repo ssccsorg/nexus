@@ -1,4 +1,4 @@
-// nexus-storage-composite — CompositeBlackboard: the composite blackboard struct.
+// nexus-storage-composite — HybridBlackboard: the composite blackboard struct.
 //
 // Part of the graph runtime. Combines a hot petgraph (for low-latency
 // access and Cypher queries) with a cold storage backend for durability.
@@ -109,8 +109,8 @@ impl ClaimsTracker {
 /// `Arc<RwLock<>>` for thread safety; on WASM it uses `Rc<RefCell<>>`
 /// since WASM is single-threaded.
 ///
-/// For multi-worker thread-safe access, wrap in `Arc<Mutex<CompositeBlackboard>>`.
-pub struct CompositeBlackboard {
+/// For multi-worker thread-safe access, wrap in `Arc<Mutex<HybridBlackboard>>`.
+pub struct HybridBlackboard {
     pub storage: DualStorage,
     pub hot_graph: SharedGraph,
     claims: Mutex<ClaimsTracker>,
@@ -121,7 +121,7 @@ pub struct CompositeBlackboard {
 }
 
 #[allow(dead_code)]
-impl CompositeBlackboard {
+impl HybridBlackboard {
     pub fn new() -> Self {
         let hot = PetgraphStorage::with_project_id("default");
         let hot_graph = hot.graph.clone();
@@ -229,7 +229,7 @@ impl CompositeBlackboard {
         }
     }
 
-    /// Reconstruct a `CompositeBlackboard` from a previously saved snapshot.
+    /// Reconstruct a `HybridBlackboard` from a previously saved snapshot.
     ///
     /// Internal helper used by `Snapshottable::from_snapshot`.
     /// Creates a fresh `PetgraphStorage + NullStorage` pair; the caller may
@@ -271,18 +271,18 @@ impl CompositeBlackboard {
     }
 }
 
-impl Default for CompositeBlackboard {
+impl Default for HybridBlackboard {
     fn default() -> Self {
         Self::new()
     }
 }
 
-// GraphRead / GraphWrite are NOT implemented for CompositeBlackboard.
+// GraphRead / GraphWrite are NOT implemented for HybridBlackboard.
 // Use snapshot() or graph() for a guard that implements GraphRead.
 
 // ── StorageRead — delegates to hot storage ────────────────────────────────
 
-impl StorageRead for CompositeBlackboard {
+impl StorageRead for HybridBlackboard {
     fn project_id(&self) -> &str {
         &self.project_id
     }
@@ -294,7 +294,7 @@ impl StorageRead for CompositeBlackboard {
 
 // ── Eviction support — delegates to storage ───────────────────────────────
 
-impl EvictCapable for CompositeBlackboard {
+impl EvictCapable for HybridBlackboard {
     fn approximate_size(&self) -> usize {
         EvictCapable::approximate_size(&self.storage)
     }
@@ -310,13 +310,13 @@ impl EvictCapable for CompositeBlackboard {
 
 // ── Flush — delegates to storage (DualStorage → cold) ────────────────────
 
-impl FlushCapable for CompositeBlackboard {
+impl FlushCapable for HybridBlackboard {
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
         self.storage.flush_since(cursor)
     }
 }
 
-impl ScanCapable for CompositeBlackboard {
+impl ScanCapable for HybridBlackboard {
     fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
         self.storage.scan_partition(partition)
     }
@@ -324,7 +324,7 @@ impl ScanCapable for CompositeBlackboard {
 
 // ── FactCapable — delegates to storage ───────────────────────────────────
 
-impl FactCapable for CompositeBlackboard {
+impl FactCapable for HybridBlackboard {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         self.storage.submit_fact(fact)
     }
@@ -332,7 +332,7 @@ impl FactCapable for CompositeBlackboard {
 
 // ── HintCapable — delegates to storage ───────────────────────────────────
 
-impl HintCapable for CompositeBlackboard {
+impl HintCapable for HybridBlackboard {
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         self.storage.submit_hint(hint)
     }
@@ -340,7 +340,7 @@ impl HintCapable for CompositeBlackboard {
 
 // ── IntentCapable — full lifecycle with local claims tracking ────────────
 
-impl IntentCapable for CompositeBlackboard {
+impl IntentCapable for HybridBlackboard {
     fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
         self.storage.submit_intent(intent)
     }
@@ -372,12 +372,12 @@ impl IntentCapable for CompositeBlackboard {
     }
 }
 
-impl Snapshottable for CompositeBlackboard {
+impl Snapshottable for HybridBlackboard {
     fn to_snapshot(&self) -> StorageSnapshot {
-        CompositeBlackboard::to_snapshot(self)
+        HybridBlackboard::to_snapshot(self)
     }
 
     fn from_snapshot(snapshot: StorageSnapshot) -> Self {
-        CompositeBlackboard::from_snapshot_inner(&snapshot)
+        HybridBlackboard::from_snapshot_inner(&snapshot)
     }
 }

@@ -3,10 +3,10 @@
 // Verifies that the Blackboard trait contract holds under concurrent access.
 // All tests wrap the blackboard in Arc<Mutex<>> to simulate multi-worker
 // access patterns. Uses create_blackboard() factory — never depends on
-// CompositeBlackboard directly.
+// HybridBlackboard directly.
 
 use nex::create_blackboard;
-use nex::{Blackboard, BlackboardError, Content, Fact, FihHash, Intent};
+use nexus_model::{Blackboard, BlackboardError, Content, Fact, FihHash, Intent};
 use std::sync::{Arc, Mutex};
 use std::thread;
 

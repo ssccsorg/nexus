@@ -1,22 +1,25 @@
-/// Transport gateway driver for cross-boundary FIH communication.
+/// Serialization boundary proxy for cross-boundary FIH communication.
 ///
 /// A transparent proxy that round-trips structured FIH types (Fact, Intent,
-/// Hint, BoardState) through JSON serialisation before reaching the inner
-/// Blackboard. Primitive types (strings, Value) pass through directly since
-/// they are JSON-safe.
+/// Hint, BoardState) through serde serialisation before reaching the inner
+/// Blackboard. This simulates the serialization boundary of an HTTP transport
+/// or RPC call without requiring actual network I/O.
 ///
-/// Implements `Blackboard` trait so it can be used wherever `&mut dyn Blackboard`
-/// is expected.
+/// Currently uses JSON (serde_json). The encoding is an implementation detail
+/// and may switch to bincode or other binary formats in the future.
+///
+/// Implements `Blackboard` trait so it can be used wherever a Blackboard
+/// reference is expected.
 use nexus_model::{
     Blackboard, BlackboardError, BoardState, Fact, FactCapable, FihHash, Hint, HintCapable, Intent,
     IntentCapable, StorageRead,
 };
 
-pub struct GatewayDriver<B: Blackboard> {
+pub struct SerdeProxy<B: Blackboard> {
     inner: B,
 }
 
-impl<B: Blackboard> GatewayDriver<B> {
+impl<B: Blackboard> SerdeProxy<B> {
     pub fn new(inner: B) -> Self {
         Self { inner }
     }
@@ -24,7 +27,7 @@ impl<B: Blackboard> GatewayDriver<B> {
 
 // ── StorageRead — delegates to inner ─────────────────────────────────────
 
-impl<B: Blackboard> StorageRead for GatewayDriver<B> {
+impl<B: Blackboard> StorageRead for SerdeProxy<B> {
     fn project_id(&self) -> &str {
         self.inner.project_id()
     }
@@ -35,27 +38,27 @@ impl<B: Blackboard> StorageRead for GatewayDriver<B> {
     }
 }
 
-// ── FactCapable — JSON round-trip before delegate ───────────────────────
+// ── FactCapable — serde round-trip before delegate ───────────────────────
 
-impl<B: Blackboard> FactCapable for GatewayDriver<B> {
+impl<B: Blackboard> FactCapable for SerdeProxy<B> {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         let decoded: Fact = serde_json::from_slice(&serde_json::to_vec(fact).unwrap()).unwrap();
         self.inner.submit_fact(&decoded)
     }
 }
 
-// ── HintCapable — JSON round-trip before delegate ───────────────────────
+// ── HintCapable — serde round-trip before delegate ───────────────────────
 
-impl<B: Blackboard> HintCapable for GatewayDriver<B> {
+impl<B: Blackboard> HintCapable for SerdeProxy<B> {
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         let decoded: Hint = serde_json::from_slice(&serde_json::to_vec(hint).unwrap()).unwrap();
         self.inner.submit_hint(&decoded)
     }
 }
 
-// ── IntentCapable — JSON round-trip for submit, pass-through otherwise ──
+// ── IntentCapable — serde round-trip for submit, pass-through otherwise ──
 
-impl<B: Blackboard> IntentCapable for GatewayDriver<B> {
+impl<B: Blackboard> IntentCapable for SerdeProxy<B> {
     fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
         let decoded: Intent = serde_json::from_slice(&serde_json::to_vec(intent).unwrap()).unwrap();
         self.inner.submit_intent(&decoded)

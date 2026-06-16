@@ -63,7 +63,7 @@ cfg_if! {
 /// In-memory petgraph-backed storage.
 ///
 /// On native, the underlying `petgraph::Graph` is shared through an
-/// `Arc<RwLock<...>>` so that `CompositeBlackboard` can access the same graph
+/// `Arc<RwLock<...>>` so that `HybridBlackboard` can access the same graph
 /// for Cypher queries while `PetgraphStorage` handles FIH persistence.
 /// On WASM, uses `Rc<RefCell<...>>` since WASM is single-threaded.
 pub struct PetgraphStorage {
