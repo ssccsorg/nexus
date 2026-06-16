@@ -40,7 +40,10 @@ fn scenario_contradiction_detection() {
     // Agent-C: detects the contradiction, submits hypothesis
     bb.submit_intent(&Intent {
         id: FihHash::from_hex("i_reconcile"),
-        from_facts: vec![FihHash::from_hex("f_gnn_deep"), FihHash::from_hex("f_gnn_shallow")],
+        from_facts: vec![
+            FihHash::from_hex("f_gnn_deep"),
+            FihHash::from_hex("f_gnn_shallow"),
+        ],
         description: "Test whether normalization technique determines oversmoothing depth".into(),
         creator: "agent-c".into(),
         worker: None,
@@ -623,7 +626,11 @@ fn scenario_supply_chain_incident() {
     // Communications team drafts announcement
     bb.submit_intent(&Intent {
         id: FihHash::from_hex("i_comms"),
-        from_facts: vec![FihHash::from_hex("f_advisory_GHSA"), impact.id.clone(), patch.id],
+        from_facts: vec![
+            FihHash::from_hex("f_advisory_GHSA"),
+            impact.id.clone(),
+            patch.id,
+        ],
         description: "COMMS: Draft security advisory for customers".into(),
         creator: "comms-lead".into(),
         worker: None,

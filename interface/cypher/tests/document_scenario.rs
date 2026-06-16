@@ -461,7 +461,10 @@ fn scenario_full_document_lifecycle() {
 
     let r3 = do_tick(&mut sched);
     let nda_facts = count_detector_facts(&r3.state, "new-document-analyzer", "doc_analysis");
-    assert_eq!(nda_facts, 27, "Phase 4: new facts analyzed (SHA256-based IDs)");
+    assert_eq!(
+        nda_facts, 27,
+        "Phase 4: new facts analyzed (SHA256-based IDs)"
+    );
 
     // Phase 5: Contradiction detector finds tensions with new documents
     let r4 = do_tick(&mut sched);
