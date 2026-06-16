@@ -20,8 +20,8 @@ use nexus_model::{
 };
 
 use crate::io::AsyncFileIo;
-use crate::io::sim_io::SimIo;
 use crate::storage::core::FihStorage;
+use nexus_storage_sim::SimIo;
 
 /// Blackboard implementation backed by FihStorage.
 ///

@@ -7,7 +7,7 @@ pub mod storage;
 
 // Re-export key types for convenience
 pub use blackboard::{DefaultBlackboard, Record};
-pub use io::{AsyncFileIo, SimIo, SyncFileIo, WriteOp};
+pub use io::{AsyncFileIo, SyncFileIo, WriteOp};
 pub use mock_gateway::MockGateway;
 pub use nexus_model::{
     Blackboard, BlackboardError, BoardState, Content, EvictCapable, Fact, FactCapable, FihHash,
