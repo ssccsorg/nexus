@@ -162,7 +162,7 @@ fn test_scan_partition_with_data() {
 
     let data = s.scan_partition("default").expect("scan");
     assert_eq!(data.facts.len(), 1, "one fact from blob");
-    assert_eq!(data.facts[0].id.to_string(), "f1");
+    assert_eq!(data.facts[0].id.to_string(), nexus_model::FihHash::from_hex("f1").to_string());
 }
 
 // EvictCapable
