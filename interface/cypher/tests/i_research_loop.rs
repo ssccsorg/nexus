@@ -453,7 +453,7 @@ fn scenario_full_research_loop() {
     let remaining = state
         .intents
         .iter()
-        .find(|i| i.id == FihHash::from("i_unified_roadmap"));
+        .find(|i| i.id == FihHash::from_hex("i_unified_roadmap"));
     assert!(remaining.is_some(), "unified roadmap intent still open");
     assert_eq!(
         state.intents.len(),
@@ -525,7 +525,7 @@ fn scenario_full_research_loop() {
     let gap_intent = state
         .intents
         .iter()
-        .find(|i| i.id == FihHash::from("i_accuracy_ceiling"))
+        .find(|i| i.id == FihHash::from_hex("i_accuracy_ceiling"))
         .expect("new gap intent exists");
     assert!(
         gap_intent.from_facts.contains(&conclusion_fact.id),

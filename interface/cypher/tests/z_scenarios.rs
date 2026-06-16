@@ -40,7 +40,7 @@ fn scenario_contradiction_detection() {
     // Agent-C: detects the contradiction, submits hypothesis
     bb.submit_intent(&Intent {
         id: FihHash::from_hex("i_reconcile"),
-        from_facts: vec!["f_gnn_deep".into(), "f_gnn_shallow".into()],
+        from_facts: vec![FihHash::from_hex("f_gnn_deep"), FihHash::from_hex("f_gnn_shallow")],
         description: "Test whether normalization technique determines oversmoothing depth".into(),
         creator: "agent-c".into(),
         worker: None,
@@ -89,7 +89,7 @@ fn scenario_peer_review() {
     // Phase 1: Agent-A submits hypothesis as Intent
     let hypothesis = Intent {
         id: FihHash::from_hex("i_hypothesis"),
-        from_facts: vec!["f_background".into()],
+        from_facts: vec![FihHash::from_hex("f_background")],
         description: "Quantum error correction with surface codes achieves fault tolerance at 0.1% error rate".into(),
         creator: "agent-a".into(),
         worker: None,
@@ -226,7 +226,7 @@ fn scenario_knowledge_synthesis() {
     // Agent-D's synthesis should be propositional — others can build on it
     bb.submit_intent(&Intent {
         id: FihHash::from_hex("i_validate_synthesis"),
-        from_facts: vec!["f_synthesis".into()],
+        from_facts: vec![FihHash::from_hex("f_synthesis")],
         description:
             "Experimental validation: test preheat to 10°C before 2C charging at -10°C ambient"
                 .into(),
@@ -297,9 +297,9 @@ fn scenario_emergency_response() {
     bb.submit_intent(&Intent {
         id: FihHash::from_hex("i_respond_fire"),
         from_facts: vec![
-            "f_alarm_smoke".into(),
-            "f_alarm_temp".into(),
-            "f_alarm_power".into(),
+            FihHash::from_hex("f_alarm_smoke"),
+            FihHash::from_hex("f_alarm_temp"),
+            FihHash::from_hex("f_alarm_power"),
         ],
         description: "FIRE_RESPONSE: Evacuate sector 7, activate fire suppression, isolate power"
             .into(),
@@ -386,7 +386,7 @@ fn scenario_bug_fix_pipeline() {
     .unwrap();
     bb.submit_intent(&Intent {
         id: FihHash::from_hex("i_triage"),
-        from_facts: vec!["f_bug_1337".into()],
+        from_facts: vec![FihHash::from_hex("f_bug_1337")],
         description: "TRIAGE: Payment API overflow on large amounts — check decimal handling"
             .into(),
         creator: "triager".into(),
@@ -409,7 +409,7 @@ fn scenario_bug_fix_pipeline() {
     // Developer submits a fix Intent
     bb.submit_intent(&Intent {
         id: FihHash::from_hex("i_fix_1337"),
-        from_facts: vec!["f_bug_1337".into(), analysis.id],
+        from_facts: vec![FihHash::from_hex("f_bug_1337"), analysis.id],
         description: "FIX: Change payment amount from uint32 to uint64 in api/src/payment.rs"
             .into(),
         creator: "dev-alice".into(),
@@ -431,7 +431,7 @@ fn scenario_bug_fix_pipeline() {
     // Reviewer submits a review Intent to validate
     bb.submit_intent(&Intent {
         id: FihHash::from_hex("i_review_1337"),
-        from_facts: vec!["f_bug_1337".into()],
+        from_facts: vec![FihHash::from_hex("f_bug_1337")],
         description: "REVIEW: Verify fix covers edge cases — negative amounts, fractional cents, max uint64 boundary".into(),
         creator: "reviewer-bob".into(),
         worker: None,
@@ -519,7 +519,7 @@ fn scenario_ci_failure_investigation() {
     // = root cause: proto-rs v2.4.0 changed struct alignment
     bb.submit_intent(&Intent {
         id: FihHash::from_hex("i_root_cause"),
-        from_facts: vec!["f_compile".into(), "f_tests".into(), "f_deps".into()],
+        from_facts: vec![FihHash::from_hex("f_compile"), FihHash::from_hex("f_tests"), FihHash::from_hex("f_deps")],
         description: "ROOT CAUSE: proto-rs v2.4.0 automated PacketHeader generator produces different alignment than manual #[repr(C)] struct. 3 independent signals converge.".into(),
         creator: "agent-d".into(),
         worker: None,
@@ -571,7 +571,7 @@ fn scenario_supply_chain_incident() {
     // Security team assesses blast radius
     bb.submit_intent(&Intent {
         id: FihHash::from_hex("i_assess"),
-        from_facts: vec!["f_advisory_GHSA".into()],
+        from_facts: vec![FihHash::from_hex("f_advisory_GHSA")],
         description: "ASSESS: Inventory all services using openssl-sys < 0.9.101".into(),
         creator: "sec-lead".into(),
         worker: None,
@@ -597,7 +597,7 @@ fn scenario_supply_chain_incident() {
     // SRE team plans mitigation (parallel track, reads sec-lead's conclusion)
     bb.submit_intent(&Intent {
         id: FihHash::from_hex("i_mitigate"),
-        from_facts: vec!["f_advisory_GHSA".into(), impact.id.clone()],
+        from_facts: vec![FihHash::from_hex("f_advisory_GHSA"), impact.id.clone()],
         description: "MITIGATE: Update openssl-sys to 0.9.101 across all services".into(),
         creator: "sre-lead".into(),
         worker: None,
@@ -623,7 +623,7 @@ fn scenario_supply_chain_incident() {
     // Communications team drafts announcement
     bb.submit_intent(&Intent {
         id: FihHash::from_hex("i_comms"),
-        from_facts: vec!["f_advisory_GHSA".into(), impact.id.clone(), patch.id],
+        from_facts: vec![FihHash::from_hex("f_advisory_GHSA"), impact.id.clone(), patch.id],
         description: "COMMS: Draft security advisory for customers".into(),
         creator: "comms-lead".into(),
         worker: None,
@@ -740,10 +740,10 @@ fn scenario_ssccs_primitive_discovery() {
     bb.submit_intent(&Intent {
         id: FihHash::from_hex("i_formalize_segment"),
         from_facts: vec![
-            "f_memory_pattern".into(),
-            "f_dataflow_pattern".into(),
-            "f_cfg_pattern".into(),
-            "f_convergence".into(),
+            FihHash::from_hex("f_memory_pattern"),
+            FihHash::from_hex("f_dataflow_pattern"),
+            FihHash::from_hex("f_cfg_pattern"),
+            FihHash::from_hex("f_convergence"),
         ],
         description: "FORMALIZE: Define 'Segment' as the universal atomic computation unit with typed boundaries (spatial: memory stride, temporal: def-use window, structural: loop entry/exit).".into(),
         creator: "agent-d".into(),
@@ -799,7 +799,7 @@ that the von Neumann architecture can be redesigned around.",
     // Agent-A validates the Segment definition against known memory patterns
     bb.submit_intent(&Intent {
         id: FihHash::from_hex("i_validate_segment"),
-        from_facts: vec!["f_memory_pattern".into(), segment_def.id.clone()],
+        from_facts: vec![FihHash::from_hex("f_memory_pattern"), segment_def.id.clone()],
         description: "VALIDATE: Does the Segment definition predict the 73/18/9 memory access distribution? If M is a contiguous stride-1 region, it should also explain strided and gather/scatter cases.".into(),
         creator: "agent-a".into(),
         worker: None,

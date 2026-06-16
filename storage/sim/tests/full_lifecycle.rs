@@ -39,7 +39,7 @@ fn test_sim_full_lifecycle() {
     storage
         .submit_intent(&Intent {
             id: FihHash::from_hex("i001"),
-            from_facts: vec!["f_base".into()],
+            from_facts: vec![FihHash::from_hex("f_base")],
             description: "test intent".into(),
             creator: "bob".into(),
             worker: None,

@@ -1,7 +1,7 @@
 use interface_cypher::capable::CypherCapable;
 use interface_query::{ColdFilter, ColdQuery};
 use nexus_model::{
-    Content, FilterCapable, FihHash, ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
+    Content, FihHash, FilterCapable, ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
 };
 use nexus_storage_duckdb::DuckDbStorage;
 use tempfile::TempDir;

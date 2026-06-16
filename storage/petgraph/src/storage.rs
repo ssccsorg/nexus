@@ -229,8 +229,10 @@ impl PetgraphStorage {
                             Some(sn.name.clone())
                         })
                         .collect();
-                    let from_facts_fih: Vec<FihHash> =
-                        from_facts.iter().map(|s| FihHash::from_hex(s.as_str())).collect();
+                    let from_facts_fih: Vec<FihHash> = from_facts
+                        .iter()
+                        .map(|s| FihHash::from_hex(s.as_str()))
+                        .collect();
                     if let Ok(line) = postcard::to_allocvec(&Intent {
                         id: FihHash::from_hex(w.name.as_str()),
                         from_facts: from_facts_fih,
@@ -365,7 +367,10 @@ impl StorageRead for PetgraphStorage {
 
                         intents.push(Intent {
                             id: FihHash::from_hex(w.name.as_str()),
-                            from_facts: from_facts.iter().map(|s| FihHash::from(s.as_str())).collect(),
+                            from_facts: from_facts
+                                .iter()
+                                .map(|s| FihHash::from_hex(s.as_str()))
+                                .collect(),
                             description: w
                                 .properties
                                 .get("description")
@@ -607,7 +612,14 @@ impl IntentCapable for PetgraphStorage {
 
     fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let mut g = write_graph(&self.graph);
-        let lookup = FihHash::from(intent_id).to_string();
+        // intent_id may be a 64-char hex dump (from FihHash::to_string())
+        // or a short semantic ID like "i001" (from test code).
+        // Compare directly against stored node names (always 64-char hex).
+        let lookup = if intent_id.len() == 64 && intent_id.chars().all(|c| c.is_ascii_hexdigit()) {
+            intent_id.to_string()
+        } else {
+            FihHash::from_hex(intent_id).to_string()
+        };
         for idx in g.node_indices() {
             if let Some(w) = g.node_weight_mut(idx)
                 && w.name == lookup
@@ -652,7 +664,7 @@ impl IntentCapable for PetgraphStorage {
 
     fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let mut g = write_graph(&self.graph);
-        let lookup = FihHash::from(intent_id).to_string();
+        let lookup = FihHash::from_hex(intent_id).to_string();
         for idx in g.node_indices() {
             if let Some(w) = g.node_weight_mut(idx)
                 && w.name == lookup
@@ -701,7 +713,7 @@ impl IntentCapable for PetgraphStorage {
 
     fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let mut g = write_graph(&self.graph);
-        let lookup = FihHash::from(intent_id).to_string();
+        let lookup = FihHash::from_hex(intent_id).to_string();
         for idx in g.node_indices() {
             if let Some(w) = g.node_weight_mut(idx)
                 && w.name == lookup
@@ -745,8 +757,9 @@ impl IntentCapable for PetgraphStorage {
         let intent_idx = g
             .node_indices()
             .find(|i| {
-                g.node_weight(*i)
-                    .is_some_and(|w| w.name == FihHash::from(intent_id).to_string() && w.label == "Intent")
+                g.node_weight(*i).is_some_and(|w| {
+                    w.name == FihHash::from_hex(intent_id).to_string() && w.label == "Intent"
+                })
             })
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
 
@@ -775,7 +788,7 @@ impl IntentCapable for PetgraphStorage {
         };
         let new_fact_id = format!("f_concl_{}", intent_id);
         let new_fact = Fact {
-            id: FihHash::from(new_fact_id.as_str()),
+            id: FihHash::from_hex(new_fact_id.as_str()),
             origin: format!("conclusion:{}", intent_id),
             content: content_for_fact,
             creator: worker,

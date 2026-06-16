@@ -125,7 +125,7 @@ fn test_submit_intent_requires_existing_fact() {
     let s = storage();
     let intent = Intent {
         id: FihHash::from_hex("i_no_fact"),
-        from_facts: vec!["f_nonexistent".into()],
+        from_facts: vec![FihHash::from_hex("f_nonexistent")],
         description: "missing ref".into(),
         creator: "tester".into(),
         worker: None,
@@ -151,7 +151,7 @@ fn test_conclude_intent_creates_fact() {
 
     let intent = Intent {
         id: FihHash::from_hex("i_concl"),
-        from_facts: vec!["f_base".into()],
+        from_facts: vec![FihHash::from_hex("f_base")],
         description: "test conclusion".into(),
         creator: "tester".into(),
         worker: None,
@@ -192,7 +192,7 @@ fn test_evict_before_removes_old_concluded_intents() {
     // Submit an intent and immediately conclude it
     let intent = Intent {
         id: FihHash::from_hex("i_old"),
-        from_facts: vec!["f_ev".into()],
+        from_facts: vec![FihHash::from_hex("f_ev")],
         description: "old intent".into(),
         creator: "tester".into(),
         worker: None,

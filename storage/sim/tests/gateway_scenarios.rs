@@ -49,7 +49,7 @@ fn scenario_contradiction_detection_via_gateway() {
     // Agent-C: detects the contradiction, submits hypothesis
     gw.submit_intent(&Intent {
         id: FihHash::from_hex("i_reconcile"),
-        from_facts: vec!["f_gnn_deep".into(), "f_gnn_shallow".into()],
+        from_facts: vec![FihHash::from_hex("f_gnn_deep"), FihHash::from_hex("f_gnn_shallow")],
         description: "Test whether normalization technique determines oversmoothing depth".into(),
         creator: "agent-c".into(),
         worker: None,

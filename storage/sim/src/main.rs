@@ -72,7 +72,7 @@ fn main() {
             &store,
             &Intent {
                 id: FihHash::from_hex("i001"),
-                from_facts: vec!["f_nonexistent".into()],
+                from_facts: vec![FihHash::from_hex("f_nonexistent")],
                 description: "test".into(),
                 creator: "v".into(),
                 worker: None,
@@ -105,7 +105,7 @@ fn main() {
             &store,
             &Intent {
                 id: FihHash::from_hex("i001"),
-                from_facts: vec!["f_base".into()],
+                from_facts: vec![FihHash::from_hex("f_base")],
                 description: "analyze base".into(),
                 creator: "v".into(),
                 worker: None,
@@ -141,7 +141,7 @@ fn main() {
             &store,
             &Intent {
                 id: FihHash::from_hex("i001"),
-                from_facts: vec!["f_base".into()],
+                from_facts: vec![FihHash::from_hex("f_base")],
                 description: "test".into(),
                 creator: "v".into(),
                 worker: None,
@@ -344,7 +344,7 @@ fn main() {
             &store,
             &Intent {
                 id: FihHash::from_hex("i001"),
-                from_facts: vec!["f_refd".into()],
+                from_facts: vec![FihHash::from_hex("f_refd")],
                 description: "test".into(),
                 creator: "v".into(),
                 worker: None,
