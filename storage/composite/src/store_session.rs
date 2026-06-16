@@ -25,11 +25,10 @@
 // CompositeColdStorage itself is pure sync, never touches async code.
 // AsyncStoreSession is pure sync, never touches external I/O.
 
-use nexus_model::SessionExecute;
+use nexus_model::{SessionExecute, SystemClock};
 
-use super::cold::CompositeColdStorage;
-use super::{AsyncStoreBlob, AsyncStoreObject, AsyncStoreSessionMeta};
-use crate::storage::core::SystemClock;
+use crate::cold::CompositeColdStorage;
+use crate::{AsyncStoreBlob, AsyncStoreObject, AsyncStoreSessionMeta};
 
 /// Session backed by AsyncStore* + CompositeColdStorage.
 ///

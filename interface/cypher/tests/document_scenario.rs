@@ -48,11 +48,11 @@ use nex::process::tasks::contradiction_detector::ContradictionDetector;
 use nex::process::tasks::gap_detector::GapDetector;
 use nex::process::tasks::new_document_analyzer::NewDocumentAnalyzer;
 use nex::process::tasks::state_change_detector::StateChangeDetector;
-use nex::storage::petgraph::{Snapshottable, StorageSnapshot};
 use nex::{
-    Blackboard, BoardState, Content, DefaultBlackboard, EvictCapable, Fact, FihHash, Intent,
+    Blackboard, BoardState, CompositeBlackboard, Content, EvictCapable, Fact, FihHash, Intent,
     StorageRead, create_blackboard,
 };
+use nexus_storage_petgraph::{Snapshottable, StorageSnapshot};
 
 // ── Helper: construct a claim Fact with {claim, topic, position} content ─
 
@@ -503,7 +503,7 @@ fn scenario_full_document_lifecycle() {
     let snapshot = Snapshottable::to_snapshot(&sched.bb);
     let json = serde_json::to_vec(&snapshot).expect("serialize");
     let restored: StorageSnapshot = serde_json::from_slice(&json).expect("deserialize");
-    let bb_restored = <DefaultBlackboard as Snapshottable>::from_snapshot(restored);
+    let bb_restored = <CompositeBlackboard as Snapshottable>::from_snapshot(restored);
     let state_restored = StorageRead::read_state(&bb_restored);
     assert_eq!(
         state_restored.facts.len(),
@@ -661,7 +661,7 @@ fn scenario_detector_state_snapshot_roundtrip() {
         "Checkpoint preserved in snapshot"
     );
 
-    let bb_b = <DefaultBlackboard as Snapshottable>::from_snapshot(restored.clone());
+    let bb_b = <CompositeBlackboard as Snapshottable>::from_snapshot(restored.clone());
     let mut sched_b = Scheduler::new(bb_b);
     sched_b.register(Box::new(StateChangeDetector::new()));
     sched_b.register(Box::new(GapDetector::new()));
@@ -697,7 +697,7 @@ fn scenario_detector_state_snapshot_roundtrip() {
 //  Verifies that eviction respects the flush-first contract.
 //  Uses tick_with_flush() which requires FlushCapable backend.
 //
-//  The DefaultBlackboard (DualStorage) delegates FlushCapable to
+//  The CompositeBlackboard (DualStorage) delegates FlushCapable to
 //  the cold backend (NullStorage by default, which is a no-op).
 //  This test verifies the coordination logic, not the actual
 //  persistence — that belongs in storage-layer tests.

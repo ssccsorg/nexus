@@ -1,6 +1,6 @@
 // Parallel stress test: many threads concurrently reading/writing the Blackboard.
 //
-// Uses Arc<Mutex<DefaultBlackboard>> to allow true concurrent access.
+// Uses Arc<Mutex<CompositeBlackboard>> to allow true concurrent access.
 // Tests FIH invariants under interleaved read-write contention:
 //   - submit_fact while another thread reads_state
 //   - claim_intent while another thread concludes

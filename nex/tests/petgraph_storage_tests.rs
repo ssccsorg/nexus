@@ -1,12 +1,12 @@
 // nexus-storage-petgraph — Unit tests for PetgraphStorage.
 //
 // Covers GraphRead/GraphWrite trait implementations, EvictCapable,
-// and storage-level FIH operations directly (not via DefaultBlackboard).
+// and storage-level FIH operations directly (not via CompositeBlackboard).
 
-use nex::storage::petgraph::{PetgraphStorage, read_graph};
 use nexus_model::{
     Content, EvictCapable, Fact, FactCapable, FihHash, Hint, HintCapable, StorageRead,
 };
+use nexus_storage_petgraph::{PetgraphStorage, read_graph};
 
 fn storage() -> PetgraphStorage {
     PetgraphStorage::with_project_id("test")

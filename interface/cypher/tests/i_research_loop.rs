@@ -10,7 +10,7 @@
 
 use interface_cypher as cypher;
 use nex::{
-    Blackboard, BlackboardError, DefaultBlackboard, Fact, FactCapable, FihHash, Intent,
+    Blackboard, BlackboardError, CompositeBlackboard, Fact, FactCapable, FihHash, Intent,
     IntentCapable, StorageRead, create_blackboard,
 };
 use serde_json;
@@ -88,7 +88,7 @@ fn ingest_document(bb: &mut impl Blackboard, chunks: &[MdDocumentChunk]) {
 
 // ── Helper: run a Cypher query and return record count ───────────────────
 
-fn cypher_count(bb: &DefaultBlackboard, query: &str) -> usize {
+fn cypher_count(bb: &CompositeBlackboard, query: &str) -> usize {
     bb.with_graph(|g| {
         let plan = cypher::Plan::from_internal(query).expect("plan parse failed");
         cypher::execute(g, &plan).expect("execute failed").len()

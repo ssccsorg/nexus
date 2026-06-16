@@ -10,18 +10,18 @@
 // These tests validate that it composes correctly with Petgraph via
 // DualStorage, matching the same trait contracts as DuckDbStorage.
 
-use nex::storage::composite::{
-    AsyncStoreBlob, AsyncStoreKv, AsyncStoreObject, CompositeColdStorage,
-};
-use nex::storage::petgraph::PetgraphStorage;
 use nex::{
-    Content, DefaultBlackboard, Fact, FactCapable, FihHash, HintCapable, IntentCapable,
+    CompositeBlackboard, Content, Fact, FactCapable, FihHash, HintCapable, IntentCapable,
     ScanCapable, Snapshottable, StorageRead,
 };
 use nexus_model::{
     BlobStore, ColdStorage, DualStorage, EvictCapable, FlushCapable, FlushCursor, MetaStore,
     ObjectStore,
 };
+use nexus_storage_composite::{
+    AsyncStoreBlob, AsyncStoreKv, AsyncStoreObject, CompositeColdStorage,
+};
+use nexus_storage_petgraph::PetgraphStorage;
 use serde_json::json;
 
 // ── Inline mock implementations for integration tests ───────────────────────
@@ -137,10 +137,10 @@ fn make_composite_cold() -> CompositeColdStorage<MockBlob, MockObject, MockKv> {
     )
 }
 
-fn make_bb() -> DefaultBlackboard {
+fn make_bb() -> CompositeBlackboard {
     let hot = PetgraphStorage::new();
     let cold: Box<dyn ColdStorage> = Box::new(make_composite_cold());
-    DefaultBlackboard::with_storage(hot, cold)
+    CompositeBlackboard::with_storage(hot, cold)
 }
 
 fn fact(id: &str) -> Fact {
@@ -242,7 +242,7 @@ fn test_snapshot_roundtrip_with_composite_cold() {
     <_ as FactCapable>::submit_fact(&mut guard, &fact("f_snap_1")).unwrap();
 
     let _snap = <_ as Snapshottable>::to_snapshot(&guard);
-    let restored = DefaultBlackboard::from_snapshot(_snap);
+    let restored = CompositeBlackboard::from_snapshot(_snap);
     let state = <_ as StorageRead>::read_state(&restored);
     assert!(
         state.facts.iter().any(|f| f.id.0 == "f_snap_1"),
@@ -273,7 +273,7 @@ fn test_multi_lifetime_data_preservation_across_restart() {
 
     let hot = PetgraphStorage::with_project_id("default");
     let cold: Box<dyn ColdStorage> = Box::new(make_composite_cold());
-    let _bb2 = DefaultBlackboard::with_storage(hot, cold);
+    let _bb2 = CompositeBlackboard::with_storage(hot, cold);
 
     <_ as FactCapable>::submit_fact(&mut guard, &fact("f_life_4")).unwrap();
     <_ as FactCapable>::submit_fact(&mut guard, &fact("f_life_5")).unwrap();
@@ -380,7 +380,7 @@ fn test_flush_then_snapshot_roundtrip_null_cold_is_noop() {
     assert_eq!(r_before.records_flushed, 2, "initial flush exports 2 facts");
 
     let snapshot = <_ as Snapshottable>::to_snapshot(&guard);
-    let mut restored = DefaultBlackboard::from_snapshot(snapshot);
+    let mut restored = CompositeBlackboard::from_snapshot(snapshot);
 
     let state = <_ as StorageRead>::read_state(&restored);
     assert_eq!(state.facts.len(), 2, "facts survive snapshot roundtrip");

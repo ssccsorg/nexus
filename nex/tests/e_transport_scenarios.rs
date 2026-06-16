@@ -208,7 +208,7 @@ fn scenario_browser_agent() {
 // ── Scenario: Multi-language agents (heterogeneous clients) ─────────────
 //
 // Three agents built in different languages (simulated by separate
-// GatewayDriver instances sharing the same DefaultBlackboard) communicate
+// GatewayDriver instances sharing the same CompositeBlackboard) communicate
 // through JSON. Each gateway drops its borrow before the next acquires it.
 
 #[test]
