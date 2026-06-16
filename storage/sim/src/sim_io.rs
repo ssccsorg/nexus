@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use nex::io::async_file_io::{AsyncFileIo, IoFuture};
+use nex::io::file_io::{AsyncFileIo, IoFuture};
 
 /// Deterministic in-memory IO. No filesystem, no network, no async.
 /// On wasm32, uses Rc<RefCell<>> internally; on native, Arc<RwLock<>>.

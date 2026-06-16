@@ -7,7 +7,7 @@
 // and does not require separate MetaStore/BlobStore/ObjectStore instances.
 
 use super::store::FihStorage;
-use crate::io::async_file_io::AsyncFileIo;
+use crate::io::file_io::AsyncFileIo;
 use futures_executor::block_on;
 
 /// Session wrapper around FihStorage that manages the
