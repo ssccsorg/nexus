@@ -223,7 +223,7 @@ fn test_export_full_fih_lifecycle() {
 
     // Rebuild a FihStorage on top of the fresh IO and verify.
     let storage = FihStorage::new(fresh_io, "lifecycle");
-    storage.rebuild_cache().unwrap();
+    futures_executor::block_on(storage.rebuild_cache()).unwrap();
 
     let state = storage.read_state();
     assert_eq!(state.facts.len(), 3, "should have 3 facts");
