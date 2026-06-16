@@ -180,13 +180,16 @@ impl<I: AsyncFileIo> FihStorage<I> {
 
         for r in &facts {
             self.coord.by_time.record(r.submitted_at, &r.id);
+            let id_bytes = FihHash::from_hex(&r.id);
             self.coord
-                .record_fact(&r.id, &r.origin, &r.creator, r.submitted_at);
+                .record_fact(&id_bytes.0, &r.origin, &r.creator, r.submitted_at);
         }
 
         for r in &intents {
+            let id_bytes = FihHash::from_hex(&r.id);
+            let from_bytes: Vec<[u8; 32]> = r.from_facts.iter().map(|f| FihHash::from_hex(f).0).collect();
             self.coord
-                .record_intent(&r.id, &r.creator, r.created_at, &r.from_facts);
+                .record_intent(&id_bytes.0, &r.creator, r.created_at, &from_bytes);
         }
     }
 
@@ -200,9 +203,9 @@ impl<I: AsyncFileIo> FihStorage<I> {
     }
 
     /// Query intents that reference a given fact.
+    /// Query intents that reference a given fact.
     pub fn intents_by_fact(&self, fact_id: &str) -> Vec<String> {
-        let norm_id = FihHash::from_hex(fact_id).to_string();
-        let fidx = self.coord.intern(&norm_id);
+        let fidx = self.coord.intern_str(fact_id);
         self.coord
             .intents_by_fact(fidx)
             .into_iter()
@@ -424,7 +427,7 @@ impl<I: AsyncFileIo> FactCapable for FihStorage<I> {
         let fact_id_str = fact.id.to_string();
         self.coord.by_time.record(ts, &fact_id_str);
         self.coord
-            .record_fact(&fact_id_str, &fact.origin, &fact.creator, ts);
+            .record_fact(&FihHash::from_hex(&fact_id_str).0, &fact.origin, &fact.creator, ts);
 
         Ok(fact.id)
     }
@@ -497,13 +500,12 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
         };
 
         // Record intent in coordinator (handles by_fact, ref_counts, by_status, by_creator)
-        let intent_id_str = intent.id.to_string();
-        let from_facts_str: Vec<String> = intent.from_facts.iter().map(|f| f.to_string()).collect();
         self.coord.record_intent(
-            &intent_id_str,
+            &intent.id.0,
             &intent.creator,
             record.created_at,
-            &from_facts_str,
+            // Convert from_facts FihHashs to raw bytes
+            &intent.from_facts.iter().map(|f| f.0).collect::<Vec<_>>(),
         );
 
         self.intent_store.insert(record.id.clone(), record);
@@ -539,7 +541,7 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
         });
         self.intent_store.insert(intent_id.to_string(), record);
         self.coord
-            .update_intent_status(&intent_id, "submitted", "claimed");
+            .update_intent_status(&FihHash::from_hex(&intent_id).0, "submitted", "claimed");
         self.maybe_flush().map_err(BlackboardError::Internal)?;
 
         Ok(())
@@ -607,7 +609,7 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
         });
         self.intent_store.insert(intent_id.to_string(), record);
         self.coord
-            .update_intent_status(&intent_id, "claimed", "submitted");
+            .update_intent_status(&FihHash::from_hex(&intent_id).0, "claimed", "submitted");
         self.maybe_flush().map_err(BlackboardError::Internal)?;
 
         Ok(())
@@ -658,16 +660,14 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
 
         // Remove intent from from_facts references and update status
         if let Some(r) = self.intent_store.get(&intent_id) {
+            let from_bytes: Vec<[u8; 32]> = r.from_facts.iter().map(|f| FihHash::from_hex(f).0).collect();
             self.coord.remove_intent_from_facts(
-                &intent_id,
-                &r.from_facts
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect::<Vec<_>>(),
+                &FihHash::from_hex(&intent_id).0,
+                &from_bytes,
             );
         }
         self.coord
-            .update_intent_status(&intent_id, "claimed", "concluded");
+            .update_intent_status(&FihHash::from_hex(&intent_id).0, "claimed", "concluded");
 
         let intent_bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -1084,7 +1084,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
         let fact_id_str = fact.id.to_string();
         self.coord.by_time.record(ts, &fact_id_str);
         self.coord
-            .record_fact(&fact_id_str, &fact.origin, &fact.creator, ts);
+            .record_fact(&FihHash::from_hex(&fact_id_str).0, &fact.origin, &fact.creator, ts);
 
         Ok(fact.id)
     }
@@ -1164,7 +1164,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
             .map_err(BlackboardError::Internal)?;
         self.intent_store.insert(normalized.clone(), record);
         self.coord
-            .update_intent_status(&normalized, "submitted", "claimed");
+            .update_intent_status(&FihHash::from_hex(&normalized).0, "submitted", "claimed");
         Ok(())
     }
 
@@ -1299,7 +1299,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
             .map_err(BlackboardError::Internal)?;
         self.intent_store.insert(intent_id.to_string(), record);
         self.coord
-            .update_intent_status(intent_id, "claimed", "concluded");
+            .update_intent_status(&FihHash::from_hex(intent_id).0, "claimed", "concluded");
 
         Ok(new_fact)
     }
