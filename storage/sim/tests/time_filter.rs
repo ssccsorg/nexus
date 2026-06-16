@@ -143,7 +143,7 @@ fn test_fact_ids_filter_independent_of_time() {
 
 // ── OrderedIndex unit tests ────────────────────────────────────────────────
 
-use nexus_storage_sim::index::OrderedIndex;
+use nexus_storage_sim::OrderedIndex;
 
 #[test]
 fn test_record_and_as_of() {

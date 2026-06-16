@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::io::{AsyncFileIo, IoFuture};
+use nex::storage::io::{AsyncFileIo, IoFuture};
 
 /// Filesystem-backed FihIo. Root directory is created on construction.
 ///

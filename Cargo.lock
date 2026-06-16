@@ -1636,7 +1636,6 @@ dependencies = [
  "futures-executor",
  "log",
  "nexus-model",
- "nexus-storage-sim",
  "petgraph",
  "postcard",
  "serde",
@@ -1666,6 +1665,7 @@ dependencies = [
 name = "nexus-gateway-nex-cf"
 version = "0.1.0"
 dependencies = [
+ "nex",
  "nexus-model",
  "nexus-storage-sim",
  "serde_json",

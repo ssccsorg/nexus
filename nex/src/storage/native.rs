@@ -3,7 +3,7 @@
 // A drop-in replacement for DefaultBlackboard that uses FihStorage
 // instead of PetgraphStorage + DualStorage. No petgraph dependency.
 //
-// Feature-gated behind `native` feature (enables nexus-storage-sim).
+// Feature-gated behind `native` feature.
 //
 // On native: uses SimIo (in-memory) for testing.
 // On CF Workers: use CfFihIo (R2-backed) via `cf` feature.
@@ -19,9 +19,8 @@ use nexus_model::{
     StorageRead,
 };
 
-use nexus_storage_sim::FihStorage;
-#[cfg(not(feature = "cf"))]
-use nexus_storage_sim::SimIo;
+use crate::storage::io::sim_io::SimIo;
+use crate::storage::io::{AsyncFileIo, FihStorage};
 
 /// Blackboard implementation backed by FihStorage.
 ///
@@ -30,11 +29,10 @@ use nexus_storage_sim::SimIo;
 ///
 /// All Blackboard trait methods delegate directly to FihStorage.
 /// No petgraph, no DualStorage, no claims tracker (FihStorage handles it).
-pub struct NativeBlackboard<I: nexus_storage_sim::io::AsyncFileIo> {
+pub struct NativeBlackboard<I: AsyncFileIo> {
     pub storage: FihStorage<I>,
 }
 
-#[cfg(not(feature = "cf"))]
 impl NativeBlackboard<SimIo> {
     /// Create a new in-memory NativeBlackboard (SimIo-backed).
     /// Auto-flush is enabled for standalone use (not FihSession).
@@ -45,21 +43,7 @@ impl NativeBlackboard<SimIo> {
     }
 }
 
-#[cfg(feature = "cf")]
-impl NativeBlackboard<nexus_storage_sim::cf_io::CfFihIo> {
-    /// Create a new R2-backed NativeBlackboard (CfFihIo).
-    /// Auto-flush ensures each write is immediately durable to R2.
-    pub fn new(project_id: &str, bucket: worker::Bucket) -> Self {
-        Self {
-            storage: FihStorage::with_auto_flush(
-                nexus_storage_sim::cf_io::CfFihIo::new(bucket),
-                project_id,
-            ),
-        }
-    }
-}
-
-impl<I: nexus_storage_sim::io::AsyncFileIo> StorageRead for NativeBlackboard<I> {
+impl<I: AsyncFileIo> StorageRead for NativeBlackboard<I> {
     fn project_id(&self) -> &str {
         self.storage.project_id()
     }
@@ -69,19 +53,19 @@ impl<I: nexus_storage_sim::io::AsyncFileIo> StorageRead for NativeBlackboard<I> 
     }
 }
 
-impl<I: nexus_storage_sim::io::AsyncFileIo> FactCapable for NativeBlackboard<I> {
+impl<I: AsyncFileIo> FactCapable for NativeBlackboard<I> {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         self.storage.submit_fact(fact)
     }
 }
 
-impl<I: nexus_storage_sim::io::AsyncFileIo> HintCapable for NativeBlackboard<I> {
+impl<I: AsyncFileIo> HintCapable for NativeBlackboard<I> {
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         self.storage.submit_hint(hint)
     }
 }
 
-impl<I: nexus_storage_sim::io::AsyncFileIo> IntentCapable for NativeBlackboard<I> {
+impl<I: AsyncFileIo> IntentCapable for NativeBlackboard<I> {
     fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
         self.storage.submit_intent(intent)
     }
@@ -103,7 +87,7 @@ impl<I: nexus_storage_sim::io::AsyncFileIo> IntentCapable for NativeBlackboard<I
     }
 }
 
-impl<I: nexus_storage_sim::io::AsyncFileIo> EvictCapable for NativeBlackboard<I> {
+impl<I: AsyncFileIo> EvictCapable for NativeBlackboard<I> {
     fn approximate_size(&self) -> usize {
         self.storage.approximate_size()
     }
@@ -117,19 +101,19 @@ impl<I: nexus_storage_sim::io::AsyncFileIo> EvictCapable for NativeBlackboard<I>
     }
 }
 
-impl<I: nexus_storage_sim::io::AsyncFileIo> FlushCapable for NativeBlackboard<I> {
+impl<I: AsyncFileIo> FlushCapable for NativeBlackboard<I> {
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
         self.storage.flush_since(cursor)
     }
 }
 
-impl<I: nexus_storage_sim::io::AsyncFileIo> ScanCapable for NativeBlackboard<I> {
+impl<I: AsyncFileIo> ScanCapable for NativeBlackboard<I> {
     fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
         self.storage.scan_partition(partition)
     }
 }
 
-impl<I: nexus_storage_sim::io::AsyncFileIo> NativeBlackboard<I> {
+impl<I: AsyncFileIo> NativeBlackboard<I> {
     /// Rebuild in-memory cache from IO storage. Call on cold start
     /// to restore previous state from persistent backend (R2, fs, etc.).
     ///

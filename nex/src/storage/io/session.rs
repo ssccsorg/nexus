@@ -6,8 +6,8 @@
 // Unlike StoreSession, FihSession is generic over any FihIo implementation
 // and does not require separate MetaStore/BlobStore/ObjectStore instances.
 
-use crate::io::AsyncFileIo;
-use crate::store::FihStorage;
+use super::async_file_io::AsyncFileIo;
+use super::store::FihStorage;
 use futures_executor::block_on;
 
 /// Session wrapper around FihStorage that manages the

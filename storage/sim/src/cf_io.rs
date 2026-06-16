@@ -15,7 +15,7 @@
 // Limitations:
 //   - R2 list-after-write is eventually consistent (may miss recent writes)
 
-use crate::io::{AsyncFileIo, IoFuture, WriteOp};
+use nex::storage::io::{AsyncFileIo, IoFuture, WriteOp};
 use worker::{Bucket, Data};
 
 pub struct CfFihIo {
