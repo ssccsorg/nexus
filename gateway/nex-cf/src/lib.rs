@@ -82,7 +82,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                 creator: qv(&q, "creator"),
             };
             match s.submit_fact(&fact).await {
-                Ok(hash) => Response::from_json(&serde_json::json!({"id": hash.0})),
+                Ok(hash) => Response::from_json(&serde_json::json!({"id": hash.to_string()})),
                 Err(e) => Response::error(format!("submit_fact: {:?}", e), 500),
             }
         }

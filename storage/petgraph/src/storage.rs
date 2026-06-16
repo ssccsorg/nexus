@@ -795,7 +795,7 @@ impl IntentCapable for PetgraphStorage {
         };
 
         let fact_idx = g.add_node(NodeWeight {
-            name: new_fact_id,
+            name: new_fact.id.to_string(),
             label: "Fact".into(),
             properties: {
                 let mut m = HashMap::new();

@@ -795,13 +795,16 @@ impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
         }
 
         if let Some(ids) = &filter.fact_ids {
-            state.facts.retain(|f| ids.contains(&f.id.to_string()));
+            let normalized: Vec<String> = ids.iter().map(|id| FihHash::from_hex(id).to_string()).collect();
+            state.facts.retain(|f| normalized.contains(&f.id.to_string()));
         }
         if let Some(ids) = &filter.intent_ids {
-            state.intents.retain(|i| ids.contains(&i.id.to_string()));
+            let normalized: Vec<String> = ids.iter().map(|id| FihHash::from_hex(id).to_string()).collect();
+            state.intents.retain(|i| normalized.contains(&i.id.to_string()));
         }
         if let Some(ids) = &filter.hint_ids {
-            state.hints.retain(|h| ids.contains(&h.id.to_string()));
+            let normalized: Vec<String> = ids.iter().map(|id| FihHash::from_hex(id).to_string()).collect();
+            state.hints.retain(|h| normalized.contains(&h.id.to_string()));
         }
 
         let offset = filter.offset.unwrap_or(0);
@@ -1117,7 +1120,8 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
     }
 
     async fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let key = format!("intents/i_{}.intent", intent_id);
+        let normalized = FihHash::from_hex(intent_id).to_string();
+        let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
             .io
             .read(&key)
@@ -1143,14 +1147,15 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
             .write(&key, &bytes)
             .await
             .map_err(BlackboardError::Internal)?;
-        self.intent_store.insert(intent_id.to_string(), record);
+        self.intent_store.insert(normalized.clone(), record);
         self.coord
-            .update_intent_status(intent_id, "submitted", "claimed");
+            .update_intent_status(&normalized, "submitted", "claimed");
         Ok(())
     }
 
     async fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let key = format!("intents/i_{}.intent", intent_id);
+        let normalized = FihHash::from_hex(intent_id).to_string();
+        let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
             .io
             .read(&key)
@@ -1181,7 +1186,8 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
     }
 
     async fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let key = format!("intents/i_{}.intent", intent_id);
+        let normalized = FihHash::from_hex(intent_id).to_string();
+        let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
             .io
             .read(&key)
@@ -1223,7 +1229,8 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
         intent_id: &str,
         result: &str,
     ) -> Result<Fact, BlackboardError> {
-        let key = format!("intents/i_{}.intent", intent_id);
+        let normalized = FihHash::from_hex(intent_id).to_string();
+        let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
             .io
             .read(&key)

@@ -92,7 +92,7 @@ fn test_async_conclude_intent() {
     let result = futures_executor::block_on(store.conclude_intent("i_conc", "done"));
     assert!(result.is_ok());
     let fact = result.unwrap();
-    assert!(fact.id.to_string().starts_with("f_concl_"));
+    assert_eq!(fact.id.to_string().len(), 64, "FihHash should be 64-char hex");
 }
 
 #[test]
