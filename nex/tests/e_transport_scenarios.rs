@@ -118,7 +118,10 @@ fn scenario_satellite_burst_agent() {
 
     gw.submit_intent(&Intent {
         id: FihHash::from_hex("i_sat_analysis"),
-        from_facts: vec![FihHash::from_hex("f_sat_001"), FihHash::from_hex("f_sat_002")],
+        from_facts: vec![
+            FihHash::from_hex("f_sat_001"),
+            FihHash::from_hex("f_sat_002"),
+        ],
         description: "Analyze band-x SNR degradation trend".into(),
         creator: "ground-station".into(),
         worker: None,

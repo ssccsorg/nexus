@@ -450,7 +450,10 @@ fn scenario_full_research_loop() {
 
     // Verify data completeness: the unified roadmap intent remains open
     let state = bb.read_state();
-    let remaining = state.intents.iter().find(|i| i.id.to_string() == "i_unified_roadmap");
+    let remaining = state
+        .intents
+        .iter()
+        .find(|i| i.id.to_string() == "i_unified_roadmap");
     assert!(remaining.is_some(), "unified roadmap intent still open");
     assert_eq!(
         state.intents.len(),

@@ -455,7 +455,10 @@ fn scenario_bug_fix_pipeline() {
     );
     assert_eq!(state.hints.len(), 1, "severity hint from triager");
     assert!(
-        state.intents.iter().any(|i| i.id == FihHash::from_hex("i_fix_1337")),
+        state
+            .intents
+            .iter()
+            .any(|i| i.id == FihHash::from_hex("i_fix_1337")),
         "fix intent present"
     );
 

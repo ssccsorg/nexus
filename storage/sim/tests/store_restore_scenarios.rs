@@ -236,10 +236,7 @@ fn test_scenario_multi_agent_collaboration() {
     let state = StorageRead::read_state(&store);
     assert_eq!(state.facts.len(), 2);
     assert_eq!(state.intents.len(), 1);
-    assert_eq!(
-        state.intents[0].to_fact_id,
-        Some(result.id)
-    );
+    assert_eq!(state.intents[0].to_fact_id, Some(result.id));
     assert!(state.intents[0].is_concluded);
 }
 

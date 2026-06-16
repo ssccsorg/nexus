@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Returns true if the character is a valid hex digit (0-9, a-f, A-F).
 fn is_hex_char(c: char) -> bool {
-    matches!(c, '0'..='9' | 'a'..='f' | 'A'..='F')
+    c.is_ascii_hexdigit()
 }
 use sha2::{Digest, Sha256};
 
@@ -32,9 +32,9 @@ impl FihHash {
 
     pub fn chain(a: &FihHash, b: &FihHash, c: &FihHash) -> FihHash {
         let mut h = Sha256::new();
-        h.update(&a.0);
-        h.update(&b.0);
-        h.update(&c.0);
+        h.update(a.0);
+        h.update(b.0);
+        h.update(c.0);
         Self(h.finalize().into())
     }
 }
@@ -47,7 +47,11 @@ impl FihHash {
     pub fn from_hex(hex: &str) -> Self {
         let mut bytes = [0u8; 32];
         let hex_clean: String = hex.chars().filter(|c| is_hex_char(*c)).collect();
-        let start = if hex_clean.len() > 64 { hex_clean.len() - 64 } else { 0 };
+        let start = if hex_clean.len() > 64 {
+            hex_clean.len() - 64
+        } else {
+            0
+        };
         let relevant = &hex_clean[start..];
         let padding = 64 - relevant.len().min(64);
         for i in 0..relevant.len().min(64) / 2 {

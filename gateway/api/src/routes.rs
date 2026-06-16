@@ -128,7 +128,9 @@ pub async fn submit_fact(
         let bb = state.blackboard.lock().unwrap();
         bb.submit_fact(&fact).map_err(err_response)?
     };
-    Ok(Json(SubmitFactResponse { id: hash.to_string() }))
+    Ok(Json(SubmitFactResponse {
+        id: hash.to_string(),
+    }))
 }
 
 /// GET /fih/state
@@ -151,7 +153,11 @@ pub async fn submit_intent(
     }
     let intent = Intent {
         id: FihHash::from_hex(&id),
-        from_facts: req.from_facts.into_iter().map(|s| FihHash::from_hex(&s)).collect(),
+        from_facts: req
+            .from_facts
+            .into_iter()
+            .map(|s| FihHash::from_hex(&s))
+            .collect(),
         description: req.description,
         creator: req.creator,
         worker: None,
@@ -165,7 +171,9 @@ pub async fn submit_intent(
         let bb = state.blackboard.lock().unwrap();
         bb.submit_intent(&intent).map_err(err_response)?
     };
-    Ok(Json(SubmitIntentResponse { id: hash.to_string() }))
+    Ok(Json(SubmitIntentResponse {
+        id: hash.to_string(),
+    }))
 }
 
 /// POST /fih/intents/{id}/claim

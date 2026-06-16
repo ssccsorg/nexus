@@ -92,7 +92,7 @@ impl Ant {
                 let idx = rng.gen_range(unclaimed.len());
                 let target = &unclaimed[idx];
                 let target_id = target.id.to_string();
-            match bb.claim_intent(&target_id, &self.name) {
+                match bb.claim_intent(&target_id, &self.name) {
                     Ok(()) => {
                         self.claimed = Some(target_id.clone());
                         format!("{:<12} claim {} ✓", self.name, target_id)

@@ -382,7 +382,10 @@ fn test_flush_preserves_original_data() {
     // Read state after flush — original data unchanged
     let after = storage.read_state();
     assert!(
-        after.facts.iter().any(|f| f.id == FihHash::from_hex("f_orig")),
+        after
+            .facts
+            .iter()
+            .any(|f| f.id == FihHash::from_hex("f_orig")),
         "original fact still present after flush"
     );
     assert_eq!(
