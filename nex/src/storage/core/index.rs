@@ -32,7 +32,9 @@ where
     K: Ord + Clone + 'static,
 {
     pub fn new() -> Self {
-        Self { entries: RefCell::new(Vec::new()) }
+        Self {
+            entries: RefCell::new(Vec::new()),
+        }
     }
     pub fn record(&self, key: K, id: &str) {
         self.entries.borrow_mut().push((key, id.to_string()));
@@ -53,20 +55,31 @@ where
         let end_idx = entries.partition_point(|(k, _)| *k < *end);
         entries[start_idx..end_idx].to_vec()
     }
-    pub fn len(&self) -> usize { self.entries.borrow().len() }
-    pub fn is_empty(&self) -> bool { self.entries.borrow().is_empty() }
+    pub fn len(&self) -> usize {
+        self.entries.borrow().len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.entries.borrow().is_empty()
+    }
     pub fn first_key(&self) -> Option<K> {
         self.entries.borrow().first().map(|(k, _)| k.clone())
     }
     pub fn last_key(&self) -> Option<K> {
         self.entries.borrow().last().map(|(k, _)| k.clone())
     }
-    pub fn clear(&self) { self.entries.borrow_mut().clear(); }
+    pub fn clear(&self) {
+        self.entries.borrow_mut().clear();
+    }
 }
 
 impl<K> Default for OrderedIndex<K>
-where K: Ord + Clone + 'static,
-{ fn default() -> Self { Self::new() } }
+where
+    K: Ord + Clone + 'static,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 // ── FihCoord: composite coordinate/index for FIH StateSpace ────────────
 //
@@ -136,7 +149,11 @@ impl FihCoord {
     }
 
     pub fn resolve(&self, idx: u32) -> String {
-        self.idx_to_id.borrow().get(idx as usize).cloned().unwrap_or_default()
+        self.idx_to_id
+            .borrow()
+            .get(idx as usize)
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub fn clear(&self) {
@@ -156,22 +173,59 @@ impl FihCoord {
 
     pub fn record_fact(&self, id: &[u8; 32], origin: &str, creator: &str, created_at: u64) {
         let idx = self.intern(id);
-        self.by_origin.borrow_mut().entry(origin.to_string()).or_default().push(idx);
-        self.by_creator.borrow_mut().entry(creator.to_string()).or_default().push(idx);
+        self.by_origin
+            .borrow_mut()
+            .entry(origin.to_string())
+            .or_default()
+            .push(idx);
+        self.by_creator
+            .borrow_mut()
+            .entry(creator.to_string())
+            .or_default()
+            .push(idx);
         let day = created_at - (created_at % 86_400_000_000_000);
-        self.by_created_at_day.borrow_mut().entry(day).or_default().push(idx);
-        self.ref_counts.borrow_mut().entry(idx).or_insert_with(|| Cell::new(0));
+        self.by_created_at_day
+            .borrow_mut()
+            .entry(day)
+            .or_default()
+            .push(idx);
+        self.ref_counts
+            .borrow_mut()
+            .entry(idx)
+            .or_insert_with(|| Cell::new(0));
     }
 
-    pub fn record_intent(&self, id: &[u8; 32], creator: &str, created_at: u64, from_facts: &[[u8; 32]]) {
+    pub fn record_intent(
+        &self,
+        id: &[u8; 32],
+        creator: &str,
+        created_at: u64,
+        from_facts: &[[u8; 32]],
+    ) {
         let idx = self.intern(id);
-        self.by_creator.borrow_mut().entry(creator.to_string()).or_default().push(idx);
-        self.by_status.borrow_mut().entry("submitted".to_string()).or_default().push(idx);
+        self.by_creator
+            .borrow_mut()
+            .entry(creator.to_string())
+            .or_default()
+            .push(idx);
+        self.by_status
+            .borrow_mut()
+            .entry("submitted".to_string())
+            .or_default()
+            .push(idx);
         let day = created_at - (created_at % 86_400_000_000_000);
-        self.by_created_at_day.borrow_mut().entry(day).or_default().push(idx);
+        self.by_created_at_day
+            .borrow_mut()
+            .entry(day)
+            .or_default()
+            .push(idx);
         for fid in from_facts {
             let fact_idx = self.intern(fid);
-            self.by_fact.borrow_mut().entry(fact_idx).or_default().push(idx);
+            self.by_fact
+                .borrow_mut()
+                .entry(fact_idx)
+                .or_default()
+                .push(idx);
             if let Some(rc) = self.ref_counts.borrow().get(&fact_idx) {
                 rc.set(rc.get() + 1);
             }
@@ -186,7 +240,11 @@ impl FihCoord {
                 bucket.retain(|&i| i != idx);
             }
         }
-        self.by_status.borrow_mut().entry(new_status.to_string()).or_default().push(idx);
+        self.by_status
+            .borrow_mut()
+            .entry(new_status.to_string())
+            .or_default()
+            .push(idx);
     }
 
     pub fn remove_intent_from_facts(&self, id: &[u8; 32], from_facts: &[[u8; 32]]) {
@@ -206,10 +264,18 @@ impl FihCoord {
     // ── Query methods ──────────────────────────────────────────────
 
     pub fn facts_by_creator(&self, creator: &str) -> Vec<u32> {
-        self.by_creator.borrow().get(creator).cloned().unwrap_or_default()
+        self.by_creator
+            .borrow()
+            .get(creator)
+            .cloned()
+            .unwrap_or_default()
     }
     pub fn intents_by_status(&self, status: &str) -> Vec<u32> {
-        self.by_status.borrow().get(status).cloned().unwrap_or_default()
+        self.by_status
+            .borrow()
+            .get(status)
+            .cloned()
+            .unwrap_or_default()
     }
     pub fn ids_by_created_at_range(&self, start_day: u64, end_day: u64) -> Vec<u32> {
         let map = self.by_created_at_day.borrow();
@@ -220,13 +286,23 @@ impl FihCoord {
         result
     }
     pub fn intents_by_fact(&self, fact_idx: u32) -> Vec<u32> {
-        self.by_fact.borrow().get(&fact_idx).cloned().unwrap_or_default()
+        self.by_fact
+            .borrow()
+            .get(&fact_idx)
+            .cloned()
+            .unwrap_or_default()
     }
     pub fn fact_ids_by_origin(&self, origin: &str) -> Vec<u32> {
-        self.by_origin.borrow().get(origin).cloned().unwrap_or_default()
+        self.by_origin
+            .borrow()
+            .get(origin)
+            .cloned()
+            .unwrap_or_default()
     }
 }
 
 impl Default for FihCoord {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
