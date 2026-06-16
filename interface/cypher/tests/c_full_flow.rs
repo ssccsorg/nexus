@@ -196,7 +196,11 @@ fn test_petgraph_time_range() {
     .unwrap();
 
     let state = bb.read_state();
-    assert_eq!(state.facts.len(), 1, "fact submitted to CompositeBlackboard");
+    assert_eq!(
+        state.facts.len(),
+        1,
+        "fact submitted to CompositeBlackboard"
+    );
     // PetgraphStorage::time_range is None (unbounded).
     // Direct access to DualStorage's time_range is not exposed through
     // the Blackboard trait — this is by design (#51 will add routing).

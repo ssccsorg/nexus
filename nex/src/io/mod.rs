@@ -9,6 +9,6 @@
 // IO implementations (SimIo, CfFihIo, FsIo) are provided by the
 // nexus-storage-sim crate. This crate defines only the trait/type definitions.
 
-pub mod async_file_io;
+pub mod file_io;
 
-pub use async_file_io::{AsyncFileIo, IoFuture, SyncFileIo, WriteOp};
+pub use file_io::{AsyncFileIo, IoFuture, SyncFileIo, WriteOp};
