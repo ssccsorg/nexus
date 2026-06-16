@@ -1,7 +1,2 @@
-use nex::process::scheduler::Scheduler;
-use nex::process::tasks::gap_detector::GapDetector;
-use nex::{
-    Blackboard, BoardState, CompositeBlackboard, Content, EvictCapable, Fact, FactCapable, FihHash,
-    Intent, IntentCapable, StorageRead, create_blackboard,
-};
-use nexus_storage_petgraph::{Snapshottable, StorageSnapshot};
+// Integration tests have been migrated to scenario-specific test files.
+// See: found_scenarios.rs, real_world_scenarios.rs, cursor_commit_tests.rs, etc.

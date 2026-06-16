@@ -10,7 +10,6 @@ nex = { path = "../../nex" }
 serde = { version = "1", features = ["derive"] }
 postcard = { version = "1", features = ["alloc"] }
 cfg-if = "1"
-walkdir = "2"
 futures-executor = "0.3"
 
 [dev-dependencies]

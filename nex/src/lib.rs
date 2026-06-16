@@ -6,6 +6,8 @@ pub mod storage;
 
 // Re-export key types for convenience
 pub use gateway_driver::GatewayDriver;
+#[cfg(not(target_arch = "wasm32"))]
+pub use io::FsIo;
 pub use io::{AsyncFileIo, SyncFileIo, WriteOp};
 pub use nexus_model::{
     Blackboard, BlackboardError, BoardState, Content, EvictCapable, Fact, FactCapable, FihHash,
