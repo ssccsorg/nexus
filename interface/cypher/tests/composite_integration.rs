@@ -182,7 +182,7 @@ fn test_dual_storage_writes_to_both_backends() {
     // Fact is still readable from hot (Petgraph)
     let state = <_ as StorageRead>::read_state(&guard);
     assert!(
-        state.facts.iter().any(|f| f.id.to_string() == "f_dual_1"),
+        state.facts.iter().any(|f| f.id == FihHash::from("f_dual_1")),
         "fact survives in hot"
     );
 }
@@ -246,7 +246,7 @@ fn test_snapshot_roundtrip_with_composite_cold() {
     let restored = HybridBlackboard::from_snapshot(_snap);
     let state = <_ as StorageRead>::read_state(&restored);
     assert!(
-        state.facts.iter().any(|f| f.id.to_string() == "f_snap_1"),
+        state.facts.iter().any(|f| f.id == FihHash::from("f_snap_1")),
         "fact survives snapshot roundtrip"
     );
 }
@@ -320,7 +320,7 @@ fn test_multi_entity_persistence_through_dual_storage() {
         state
             .intents
             .iter()
-            .any(|i| i.id.to_string() == "i_persist"),
+            .any(|i| i.id == FihHash::from("i_persist")),
         "intent exists"
     );
 

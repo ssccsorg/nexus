@@ -469,9 +469,9 @@ fn scenario_formal_revision_of_philosophy() {
         let iid = sched.bb.submit_intent(&intent).expect("submit");
         sched
             .bb
-            .claim_intent(&iid.0, "formal-reviewer")
+            .claim_intent(&iid.to_string(), "formal-reviewer")
             .expect("claim");
-        sched.bb.conclude_intent(&iid.0, &serde_json::to_string(&serde_json::json!({
+        sched.bb.conclude_intent(&iid.to_string(), &serde_json::to_string(&serde_json::json!({
             "synthesis": "Manifesto declares what Field IS (admissibility conditions). Epistemology explains what Field DOES (bounds observation). Whitepaper §2 defines Field formally as (C,T). All three are consistent layers of the same concept."
         })).unwrap()).expect("conclude");
     }
