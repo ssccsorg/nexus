@@ -229,7 +229,8 @@ impl PetgraphStorage {
                             Some(sn.name.clone())
                         })
                         .collect();
-                    let from_facts_fih: Vec<FihHash> = from_facts.iter().map(|s| FihHash::from_hex(s)).collect();
+                    let from_facts_fih: Vec<FihHash> =
+                        from_facts.iter().map(|s| FihHash::from_hex(s)).collect();
                     if let Ok(line) = postcard::to_allocvec(&Intent {
                         id: FihHash::from_hex(&w.name),
                         from_facts: from_facts_fih,
@@ -257,7 +258,10 @@ impl PetgraphStorage {
                                         n.label == "Fact" && n.name.starts_with("f_concl_")
                                     })
                                 })
-                                .and_then(|e| g.node_weight(e.target()).map(|n| FihHash::from_hex(&n.name)))
+                                .and_then(|e| {
+                                    g.node_weight(e.target())
+                                        .map(|n| FihHash::from_hex(&n.name))
+                                })
                         },
                         last_heartbeat_at: w
                             .properties
@@ -323,7 +327,7 @@ impl StorageRead for PetgraphStorage {
                 match w.label.as_str() {
                     "Fact" => {
                         facts.push(Fact {
-                                                    id: FihHash::from_hex(&w.name),
+                            id: FihHash::from_hex(&w.name),
                             origin: w
                                 .properties
                                 .get("origin")
@@ -360,8 +364,8 @@ impl StorageRead for PetgraphStorage {
                             .collect();
 
                         intents.push(Intent {
-                                                    id: FihHash::from_hex(&w.name),
-                                                    from_facts: from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
+                            id: FihHash::from_hex(&w.name),
+                            from_facts: from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
                             description: w
                                 .properties
                                 .get("description")
@@ -386,7 +390,10 @@ impl StorageRead for PetgraphStorage {
                                             n.label == "Fact" && n.name.starts_with("f_concl_")
                                         })
                                     })
-                                    .and_then(|e| g.node_weight(e.target()).map(|n| FihHash::from_hex(&n.name)))
+                                    .and_then(|e| {
+                                        g.node_weight(e.target())
+                                            .map(|n| FihHash::from_hex(&n.name))
+                                    })
                             },
                             last_heartbeat_at: w
                                 .properties
@@ -417,7 +424,7 @@ impl StorageRead for PetgraphStorage {
                     }
                     "Hint" => {
                         hints.push(Hint {
-                                                    id: FihHash::from_hex(&w.name),
+                            id: FihHash::from_hex(&w.name),
                             content: w
                                 .properties
                                 .get("content")

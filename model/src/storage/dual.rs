@@ -150,9 +150,15 @@ impl ScanCapable for DualStorage {
                 cold_data.hints.push(hint);
             }
         }
-        cold_data.facts.sort_by(|a, b| a.id.to_string().cmp(&b.id.to_string()));
-        cold_data.intents.sort_by(|a, b| a.id.to_string().cmp(&b.id.to_string()));
-        cold_data.hints.sort_by(|a, b| a.id.to_string().cmp(&b.id.to_string()));
+        cold_data
+            .facts
+            .sort_by_key(|a| a.id.to_string());
+        cold_data
+            .intents
+            .sort_by_key(|a| a.id.to_string());
+        cold_data
+            .hints
+            .sort_by_key(|a| a.id.to_string());
 
         Ok(cold_data)
     }

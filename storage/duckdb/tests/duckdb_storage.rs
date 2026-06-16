@@ -56,7 +56,11 @@ fn test_read_facts_from_parquet() {
 
     assert_eq!(state.facts.len(), 2, "expected 2 facts");
 
-    let fact_1 = state.facts.iter().find(|f| f.id == FihHash::from_hex("fact_1")).unwrap();
+    let fact_1 = state
+        .facts
+        .iter()
+        .find(|f| f.id == FihHash::from_hex("fact_1"))
+        .unwrap();
     assert_eq!(fact_1.origin, "origin_a");
     assert_eq!(
         fact_1.content,
@@ -67,7 +71,11 @@ fn test_read_facts_from_parquet() {
     );
     assert_eq!(fact_1.creator, "tester");
 
-    let fact_2 = state.facts.iter().find(|f| f.id == FihHash::from_hex("fact_2")).unwrap();
+    let fact_2 = state
+        .facts
+        .iter()
+        .find(|f| f.id == FihHash::from_hex("fact_2"))
+        .unwrap();
     assert_eq!(fact_2.origin, "origin_b");
     assert_eq!(
         fact_2.content,
@@ -112,7 +120,11 @@ fn test_read_intents_from_parquet() {
     assert_eq!(state.intents.len(), 2, "expected 2 intents");
 
     // intent_1 — all optional fields populated except to_fact_id / concluded_at
-    let intent_1 = state.intents.iter().find(|i| i.id == FihHash::from_hex("intent_1")).unwrap();
+    let intent_1 = state
+        .intents
+        .iter()
+        .find(|i| i.id == FihHash::from_hex("intent_1"))
+        .unwrap();
     assert_eq!(intent_1.from_facts, vec![FihHash::from_hex("fact_1")]);
     assert_eq!(intent_1.description, "do something");
     assert_eq!(intent_1.creator, "tester");
@@ -123,7 +135,11 @@ fn test_read_intents_from_parquet() {
     assert_eq!(intent_1.concluded_at, None);
 
     // intent_2 — different optional fields populated
-    let intent_2 = state.intents.iter().find(|i| i.id == FihHash::from_hex("intent_2")).unwrap();
+    let intent_2 = state
+        .intents
+        .iter()
+        .find(|i| i.id == FihHash::from_hex("intent_2"))
+        .unwrap();
     assert_eq!(
         intent_2.from_facts,
         vec![FihHash::from_hex("fact_1"), FihHash::from_hex("fact_2")]
@@ -161,11 +177,19 @@ fn test_read_hints_from_parquet() {
 
     assert_eq!(state.hints.len(), 2, "expected 2 hints");
 
-    let hint_1 = state.hints.iter().find(|h| h.id == FihHash::from_hex("hint_1")).unwrap();
+    let hint_1 = state
+        .hints
+        .iter()
+        .find(|h| h.id == FihHash::from_hex("hint_1"))
+        .unwrap();
     assert_eq!(hint_1.content, "content one");
     assert_eq!(hint_1.creator, "tester");
 
-    let hint_2 = state.hints.iter().find(|h| h.id == FihHash::from_hex("hint_2")).unwrap();
+    let hint_2 = state
+        .hints
+        .iter()
+        .find(|h| h.id == FihHash::from_hex("hint_2"))
+        .unwrap();
     assert_eq!(hint_2.content, "content two");
     assert_eq!(hint_2.creator, "admin");
 
@@ -200,15 +224,24 @@ fn test_filter_by_since() {
 
     assert_eq!(state.facts.len(), 2, "expected 2 facts after since filter");
     assert!(
-        state.facts.iter().any(|f| f.id == FihHash::from_hex("fact_2")),
+        state
+            .facts
+            .iter()
+            .any(|f| f.id == FihHash::from_hex("fact_2")),
         "fact_2 should be included"
     );
     assert!(
-        state.facts.iter().any(|f| f.id == FihHash::from_hex("fact_3")),
+        state
+            .facts
+            .iter()
+            .any(|f| f.id == FihHash::from_hex("fact_3")),
         "fact_3 should be included"
     );
     assert!(
-        !state.facts.iter().any(|f| f.id == FihHash::from_hex("fact_1")),
+        !state
+            .facts
+            .iter()
+            .any(|f| f.id == FihHash::from_hex("fact_1")),
         "fact_1 should be excluded"
     );
 }
@@ -345,8 +378,18 @@ fn test_read_multiple_parquet_files() {
     let state = storage.read_state();
 
     assert_eq!(state.facts.len(), 2, "expected 2 facts from 2 files");
-    assert!(state.facts.iter().any(|f| f.id == FihHash::from_hex("fact_a")));
-    assert!(state.facts.iter().any(|f| f.id == FihHash::from_hex("fact_b")));
+    assert!(
+        state
+            .facts
+            .iter()
+            .any(|f| f.id == FihHash::from_hex("fact_a"))
+    );
+    assert!(
+        state
+            .facts
+            .iter()
+            .any(|f| f.id == FihHash::from_hex("fact_b"))
+    );
 }
 
 // ── Test 10: full BoardState (all three types) ──────────────────────────
@@ -549,7 +592,11 @@ fn test_complex_json_content() {
     let storage = DuckDbStorage::new(tempdir.path().to_str().unwrap(), "test").unwrap();
     let state = storage.read_state();
 
-    let nested = state.facts.iter().find(|f| f.id == FihHash::from_hex("f_nested")).unwrap();
+    let nested = state
+        .facts
+        .iter()
+        .find(|f| f.id == FihHash::from_hex("f_nested"))
+        .unwrap();
     let cv: serde_json::Value = serde_json::from_str(nested.content.as_str().unwrap_or(""))
         .unwrap_or(serde_json::Value::Null);
     assert_eq!(cv["nested"]["array"][0], serde_json::json!(1));
@@ -603,8 +650,18 @@ fn test_stress_1000_facts() {
     let state = storage.read_state();
 
     assert_eq!(state.facts.len(), 1000, "expected 1000 facts");
-    assert!(state.facts.iter().any(|f| f.id == FihHash::from_hex("fact_0")));
-    assert!(state.facts.iter().any(|f| f.id == FihHash::from_hex("fact_999")));
+    assert!(
+        state
+            .facts
+            .iter()
+            .any(|f| f.id == FihHash::from_hex("fact_0"))
+    );
+    assert!(
+        state
+            .facts
+            .iter()
+            .any(|f| f.id == FihHash::from_hex("fact_999"))
+    );
 }
 
 // ── Test 19: CypherCapable — DuckDB Cypher→SQL query execution ───────

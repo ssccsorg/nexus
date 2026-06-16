@@ -93,7 +93,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                 from_facts: qv(&q, "from")
                     .split(',')
                     .filter(|s| !s.is_empty())
-                    .map(|s| FihHash::from_hex(s))
+                    .map(FihHash::from_hex)
                     .collect(),
                 description: qv(&q, "desc"),
                 creator: qv(&q, "creator"),
@@ -126,9 +126,9 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         },
 
         "/conclude" => match s.conclude_intent(&qv(&q, "id"), &qv(&q, "result")).await {
-            Ok(fact) => {
-                Response::from_json(&serde_json::json!({"status":"concluded","fact_id": fact.id.to_string()}))
-            }
+            Ok(fact) => Response::from_json(
+                &serde_json::json!({"status":"concluded","fact_id": fact.id.to_string()}),
+            ),
             Err(e) => Response::error(format!("{:?}", e), 500),
         },
 

@@ -533,7 +533,10 @@ fn scenario_incremental_knowledge_growth() {
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
             let intent = Intent {
-                id: FihHash::new(&[&cf.id.to_string(), &format!("iter-{}", iteration)], "intent"),
+                id: FihHash::new(
+                    &[&cf.id.to_string(), &format!("iter-{}", iteration)],
+                    "intent",
+                ),
                 from_facts: vec![cf.id.clone()],
                 description: format!("Iteration {}: resolve {}", iteration, topic),
                 creator: "agent-loop".into(),

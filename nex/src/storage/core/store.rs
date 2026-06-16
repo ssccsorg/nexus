@@ -426,7 +426,7 @@ impl<I: AsyncFileIo> FactCapable for FihStorage<I> {
         self.coord
             .record_fact(&fact_id_str, &fact.origin, &fact.creator, ts);
 
-        Ok(fact.id.clone())
+        Ok(fact.id)
     }
 }
 
@@ -471,7 +471,9 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
         for fid in &intent.from_facts {
             let fid_str = fid.to_string();
             if !self.fact_store.contains_key(&fid_str) {
-                return Err(BlackboardError::NotFound(format!("Fact {fid_str} not found")));
+                return Err(BlackboardError::NotFound(format!(
+                    "Fact {fid_str} not found"
+                )));
             }
         }
         // Intentionally left blank — ref_count and by_fact updates
@@ -656,8 +658,13 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
 
         // Remove intent from from_facts references and update status
         if let Some(r) = self.intent_store.get(&intent_id) {
-            self.coord
-                .remove_intent_from_facts(&intent_id, &r.from_facts.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+            self.coord.remove_intent_from_facts(
+                &intent_id,
+                &r.from_facts
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>(),
+            );
         }
         self.coord
             .update_intent_status(&intent_id, "claimed", "concluded");
@@ -988,7 +995,9 @@ impl<I: AsyncFileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
                             IntentStatus::Submitted => None,
                         },
                         to_fact_id: match &r.status {
-                            IntentStatus::Concluded { to_fact, .. } => Some(FihHash::from_hex(to_fact)),
+                            IntentStatus::Concluded { to_fact, .. } => {
+                                Some(FihHash::from_hex(to_fact))
+                            }
                             _ => None,
                         },
                         last_heartbeat_at: match &r.status {

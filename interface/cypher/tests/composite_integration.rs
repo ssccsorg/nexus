@@ -317,7 +317,10 @@ fn test_multi_entity_persistence_through_dual_storage() {
 
     let state = <_ as StorageRead>::read_state(&guard);
     assert!(
-        state.intents.iter().any(|i| i.id.to_string() == "i_persist"),
+        state
+            .intents
+            .iter()
+            .any(|i| i.id.to_string() == "i_persist"),
         "intent exists"
     );
 
@@ -535,7 +538,8 @@ fn test_fih_scenario_petgraph_blob_identity() {
     // Read from scan_partition (hot + cold merged)
     let scanned = <_ as ScanCapable>::scan_partition(&guard, "default").unwrap();
     let scanned_fact_ids: Vec<String> = scanned.facts.iter().map(|f| f.id.to_string()).collect();
-    let scanned_intent_ids: Vec<String> = scanned.intents.iter().map(|i| i.id.to_string()).collect();
+    let scanned_intent_ids: Vec<String> =
+        scanned.intents.iter().map(|i| i.id.to_string()).collect();
 
     // Identity: Petgraph and scan_partition must return same entities
     assert_eq!(
