@@ -48,14 +48,12 @@
 // handled by PetgraphStorage (hot storage), NOT by CompositeColdStorage.
 // CompositeColdStorage only manages durable persistence.
 
-use super::flush_blob_prefix;
-use log;
+use crate::flush_blob_prefix;
 use nexus_model::{BlobStore, MetaStore, Now, ObjectStore};
 use nexus_model::{
     BoardState, ColdStorage, EvictCapable, FlushCapable, FlushCursor, FlushResult, PartitionData,
     ScanCapable, StorageRead, TimeRangeCapable,
 };
-use postcard;
 use std::ops::Range;
 
 // ── CompositeColdStorage ──────────────────────────────────────────────────────
@@ -84,7 +82,7 @@ pub struct CompositeColdStorage<
     B: BlobStore,
     O: ObjectStore,
     M: MetaStore,
-    C: Now = nexus_storage_sim::SystemClock,
+    C: Now = nexus_model::SystemClock,
 > {
     blob: B,
     object: O,
@@ -204,7 +202,7 @@ impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> CompositeColdStorage<B,
 // ── SystemClock convenience constructor ───────────────────────────────
 
 impl<B: BlobStore + Clone, O: ObjectStore, M: MetaStore + Clone>
-    CompositeColdStorage<B, O, M, nexus_storage_sim::SystemClock>
+    CompositeColdStorage<B, O, M, nexus_model::SystemClock>
 {
     pub fn new_with_system_clock(
         blob: B,
@@ -216,7 +214,7 @@ impl<B: BlobStore + Clone, O: ObjectStore, M: MetaStore + Clone>
             blob,
             object,
             meta,
-            clock: nexus_storage_sim::SystemClock,
+            clock: nexus_model::SystemClock,
             project_id: project_id.into(),
         }
     }

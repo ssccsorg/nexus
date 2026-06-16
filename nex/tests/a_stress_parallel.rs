@@ -1,14 +1,13 @@
 // Parallel stress test: many threads concurrently reading/writing the Blackboard.
 //
-// Uses Arc<Mutex<DefaultBlackboard>> to allow true concurrent access.
+// Uses Arc<Mutex<HybridBlackboard>> to allow true concurrent access.
 // Tests FIH invariants under interleaved read-write contention:
 //   - submit_fact while another thread reads_state
 //   - claim_intent while another thread concludes
 //   - heartbeat while another thread releases
 
-use nex::{
-    Blackboard, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead, create_blackboard,
-};
+use nex::create_blackboard;
+use nexus_model::{Blackboard, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicU64, Ordering},

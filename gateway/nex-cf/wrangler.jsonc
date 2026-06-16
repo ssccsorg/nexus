@@ -1,5 +1,4 @@
 {
-  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
   "name": "nexus-gateway-nex-cf",
   "main": "build/worker/shim.mjs",
   "compatibility_date": "2026-01-14",

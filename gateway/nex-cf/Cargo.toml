@@ -13,5 +13,5 @@ binding = "NexusGatewayNexCf"
 [dependencies]
 worker = "0.8"
 serde_json = "1"
-nexus-storage-sim = { path = "../../storage/sim", features = ["cf"] }
+nex = { path = "../../nex" }
 nexus-model = { path = "../../model" }

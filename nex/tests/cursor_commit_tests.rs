@@ -6,10 +6,10 @@
 //   3. Parallel reads/writes do not race
 //   4. MetaStore (KV) stores cursor and snapshot pointers
 
-use nex::storage::composite::{
+use nexus_model::{FlushCapable, FlushCursor, MetaStore};
+use nexus_storage_composite::{
     AsyncStoreBlob, AsyncStoreObject, AsyncStoreSessionMeta, CompositeColdStorage,
 };
-use nexus_model::{FlushCapable, FlushCursor, MetaStore};
 use std::sync::Arc;
 use std::thread;
 

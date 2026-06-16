@@ -21,10 +21,10 @@ use nexus_model::{
     PartitionData, ScanCapable, StateFilter, StorageRead, TimeRangeCapable,
 };
 
-use crate::entity_store::{EntityStore, MemoryEntityStore};
-use crate::index::FihCoord;
-use crate::io::{AsyncFileIo, WriteOp};
-use crate::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
+use super::entity_store::{EntityStore, MemoryEntityStore};
+use super::index::FihCoord;
+use super::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
+use crate::io::file_io::{AsyncFileIo, WriteOp};
 
 /// Chain entry format: serialized by flush_since for delta chain files.
 /// Named struct avoids postcard tuple field ordering ambiguity with empty vecs.
@@ -61,7 +61,7 @@ pub struct FihStorage<I: AsyncFileIo> {
 
 impl<I: AsyncFileIo> FihStorage<I> {
     pub fn new(io: I, project_id: &str) -> Self {
-        Self::with_clock(io, project_id, Box::new(crate::SystemClock))
+        Self::with_clock(io, project_id, Box::new(nexus_model::SystemClock))
     }
 
     pub fn with_clock(io: I, project_id: &str, clock: Box<dyn Now + Send + Sync>) -> Self {
@@ -72,7 +72,7 @@ impl<I: AsyncFileIo> FihStorage<I> {
     /// immediately flushes pending ops to IO for durability.
     /// Useful for R2-backed or direct-write deployments.
     pub fn with_auto_flush(io: I, project_id: &str) -> Self {
-        Self::with_all(io, project_id, Box::new(crate::SystemClock), true)
+        Self::with_all(io, project_id, Box::new(nexus_model::SystemClock), true)
     }
 
     /// Full constructor with all options.
@@ -1107,7 +1107,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
 
 impl<I: AsyncFileIo> nexus_model::AsyncHintCapable for FihStorage<I> {
     async fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
-        let record = crate::record::HintRecord {
+        let record = super::record::HintRecord {
             id: hint.id.0.clone(),
             content: hint.content.clone(),
             creator: hint.creator.clone(),
@@ -1129,12 +1129,12 @@ impl<I: AsyncFileIo> nexus_model::AsyncHintCapable for FihStorage<I> {
 
 impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
     async fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
-        let record = crate::record::IntentRecord {
+        let record = super::record::IntentRecord {
             id: intent.id.0.clone(),
             from_facts: intent.from_facts.clone(),
             description_hash: String::new(),
             creator: intent.creator.clone(),
-            status: crate::record::IntentStatus::Submitted,
+            status: super::record::IntentStatus::Submitted,
             created_at: 0,
         };
         let bytes =

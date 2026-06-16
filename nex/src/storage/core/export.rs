@@ -15,8 +15,8 @@
 //   - SimIo-based: export/import in-memory (for testing)
 //   - CfFihIo: (future) export/import over R2
 
-use crate::io::{AsyncFileIo, SyncFileIo};
-use crate::record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
+use super::record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
+use crate::io::file_io::{AsyncFileIo, SyncFileIo};
 
 /// Magic bytes for .fihbundle format identification.
 const BUNDLE_MAGIC: &[u8; 8] = b"FIHBUNDL";

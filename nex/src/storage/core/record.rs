@@ -104,7 +104,7 @@ impl HintRecord {
     }
 }
 
-// ── Conversions between nexus_model types and sim record types ──────────
+// ── Conversions between nexus_model types and storage record types ──────
 
 impl FactRecord {
     /// Build a FactRecord from a nexus_model::Fact, given a pre-computed

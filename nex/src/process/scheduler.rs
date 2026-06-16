@@ -87,7 +87,7 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
             if size > threshold {
                 // Use empty cursor (full flush) at scheduler level.
                 // The gateway or higher-level orchestrator should
-                // call DefaultBlackboard::flush() directly to get
+                // call HybridBlackboard::flush() directly to get
                 // incremental flush with cursor persistence.
                 let cursor = nexus_model::FlushCursor {
                     last_flushed_at: 0,

@@ -1339,6 +1339,8 @@ dependencies = [
  "interface-query",
  "nex",
  "nexus-model",
+ "nexus-storage-composite",
+ "nexus-storage-petgraph",
  "petgraph",
  "serde",
  "serde_json",
@@ -1635,13 +1637,16 @@ dependencies = [
  "cfg-if",
  "futures-executor",
  "log",
+ "nexus-gateway-serde-proxy",
  "nexus-model",
- "nexus-storage-sim",
+ "nexus-storage-composite",
+ "nexus-storage-petgraph",
  "petgraph",
  "postcard",
  "serde",
  "serde_json",
  "tempfile",
+ "walkdir",
  "worker",
 ]
 
@@ -1666,10 +1671,18 @@ dependencies = [
 name = "nexus-gateway-nex-cf"
 version = "0.1.0"
 dependencies = [
+ "nex",
  "nexus-model",
- "nexus-storage-sim",
  "serde_json",
  "worker",
+]
+
+[[package]]
+name = "nexus-gateway-serde-proxy"
+version = "0.1.0"
+dependencies = [
+ "nexus-model",
+ "serde_json",
 ]
 
 [[package]]
@@ -1687,6 +1700,21 @@ version = "0.1.0"
 dependencies = [
  "interface-cypher",
  "nex",
+ "nexus-model",
+ "serde_json",
+]
+
+[[package]]
+name = "nexus-storage-composite"
+version = "0.1.0"
+dependencies = [
+ "cfg-if",
+ "log",
+ "nexus-model",
+ "nexus-storage-petgraph",
+ "petgraph",
+ "postcard",
+ "serde",
  "serde_json",
 ]
 
@@ -1705,34 +1733,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexus-storage-petgraph"
+version = "0.1.0"
+dependencies = [
+ "cfg-if",
+ "nexus-model",
+ "petgraph",
+ "postcard",
+ "serde",
+]
+
+[[package]]
 name = "nexus-storage-sim"
 version = "0.1.0"
 dependencies = [
  "cfg-if",
  "futures-executor",
  "nex",
+ "nexus-gateway-serde-proxy",
  "nexus-model",
  "postcard",
  "serde",
  "serde_json",
  "tempfile",
- "walkdir",
- "worker",
-]
-
-[[package]]
-name = "nexus-ve-composite"
-version = "0.1.0"
-dependencies = [
- "axum",
- "nex",
- "nexus-model",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
- "tower-http",
- "tracing",
 ]
 
 [[package]]

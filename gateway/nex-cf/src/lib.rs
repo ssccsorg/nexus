@@ -1,12 +1,14 @@
 // gateway/nex-cf — Consumes FihStorage<CfFihIo> via async traits.
 // No block_on. No locks. Pure async over R2.
 
+pub mod cf_io;
+
 use worker::*;
 
+use crate::cf_io::CfFihIo;
+use nex::FihStorage;
 use nexus_model::{AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead};
 use nexus_model::{Content, Fact, FihHash, Intent};
-use nexus_storage_sim::FihStorage;
-use nexus_storage_sim::cf_io::CfFihIo;
 
 // ── CF clock: real timestamps via worker::Date::now() ────────────────
 

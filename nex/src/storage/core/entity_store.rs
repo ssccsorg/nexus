@@ -5,7 +5,7 @@
 // mutability instead of `RwLock`/`Mutex`, which are not supported on
 // `wasm32-unknown-unknown`.
 //
-// For multi-threaded native servers, wrap in `Arc<Mutex<dyn EntityStore>>`
+// For multi-threaded servers, wrap in `Arc<Mutex<dyn EntityStore>>`
 // externally or implement a dedicated `ThreadSafeEntityStore` trait.
 
 use std::cell::RefCell;

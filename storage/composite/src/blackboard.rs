@@ -1,17 +1,17 @@
-// nexus-graph — DefaultBlackboard: the single blackboard struct.
+// nexus-storage-composite — HybridBlackboard: the composite blackboard struct.
 //
 // Part of the graph runtime. Combines a hot petgraph (for low-latency
 // access and Cypher queries) with a cold storage backend for durability.
 // Storage is swappable via DualStorage.
 
-use crate::storage::petgraph::{
-    PetgraphStorage, SharedGraph, Snapshottable, StorageSnapshot, read_graph,
-};
 use cfg_if::cfg_if;
 use nexus_model::{
     BlackboardError, BoardState, ColdStorage, DualStorage, EvictCapable, Fact, FactCapable,
     FihHash, FlushCapable, FlushCursor, FlushResult, Hint, HintCapable, Intent, IntentCapable,
     NullStorage, PartitionData, ScanCapable, StorageRead,
+};
+use nexus_storage_petgraph::{
+    PetgraphStorage, SharedGraph, Snapshottable, StorageSnapshot, read_graph,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -23,11 +23,11 @@ cfg_if! {
     if #[cfg(target_arch = "wasm32")] {
         use std::cell::Ref;
         /// WASM: read guard for the shared graph.
-        pub(crate) type ReadGuard<'a> = Ref<'a, petgraph::Graph<NodeWeight, EdgeWeight>>;
+        pub type ReadGuard<'a> = Ref<'a, petgraph::Graph<NodeWeight, EdgeWeight>>;
     } else {
         use std::sync::RwLockReadGuard;
         /// Native: read guard for the shared graph.
-        pub(crate) type ReadGuard<'a> = RwLockReadGuard<'a, petgraph::Graph<NodeWeight, EdgeWeight>>;
+        pub type ReadGuard<'a> = RwLockReadGuard<'a, petgraph::Graph<NodeWeight, EdgeWeight>>;
     }
 }
 
@@ -101,7 +101,7 @@ impl ClaimsTracker {
     }
 }
 
-/// The single Blackboard struct. Combines a hot petgraph (for low-latency
+/// The composite Blackboard struct. Combines a hot petgraph (for low-latency
 /// access and Cypher queries) with a cold storage backend for durability.
 ///
 /// **Lock-free by default**: `claims` has no Mutex — single-worker ownership.
@@ -109,8 +109,8 @@ impl ClaimsTracker {
 /// `Arc<RwLock<>>` for thread safety; on WASM it uses `Rc<RefCell<>>`
 /// since WASM is single-threaded.
 ///
-/// For multi-worker thread-safe access, wrap in `Arc<Mutex<DefaultBlackboard>>`.
-pub struct DefaultBlackboard {
+/// For multi-worker thread-safe access, wrap in `Arc<Mutex<HybridBlackboard>>`.
+pub struct HybridBlackboard {
     pub storage: DualStorage,
     pub hot_graph: SharedGraph,
     claims: Mutex<ClaimsTracker>,
@@ -121,7 +121,7 @@ pub struct DefaultBlackboard {
 }
 
 #[allow(dead_code)]
-impl DefaultBlackboard {
+impl HybridBlackboard {
     pub fn new() -> Self {
         let hot = PetgraphStorage::with_project_id("default");
         let hot_graph = hot.graph.clone();
@@ -229,7 +229,7 @@ impl DefaultBlackboard {
         }
     }
 
-    /// Reconstruct a `DefaultBlackboard` from a previously saved snapshot.
+    /// Reconstruct a `HybridBlackboard` from a previously saved snapshot.
     ///
     /// Internal helper used by `Snapshottable::from_snapshot`.
     /// Creates a fresh `PetgraphStorage + NullStorage` pair; the caller may
@@ -271,18 +271,18 @@ impl DefaultBlackboard {
     }
 }
 
-impl Default for DefaultBlackboard {
+impl Default for HybridBlackboard {
     fn default() -> Self {
         Self::new()
     }
 }
 
-// GraphRead / GraphWrite are NOT implemented for DefaultBlackboard.
+// GraphRead / GraphWrite are NOT implemented for HybridBlackboard.
 // Use snapshot() or graph() for a guard that implements GraphRead.
 
 // ── StorageRead — delegates to hot storage ────────────────────────────────
 
-impl StorageRead for DefaultBlackboard {
+impl StorageRead for HybridBlackboard {
     fn project_id(&self) -> &str {
         &self.project_id
     }
@@ -294,7 +294,7 @@ impl StorageRead for DefaultBlackboard {
 
 // ── Eviction support — delegates to storage ───────────────────────────────
 
-impl EvictCapable for DefaultBlackboard {
+impl EvictCapable for HybridBlackboard {
     fn approximate_size(&self) -> usize {
         EvictCapable::approximate_size(&self.storage)
     }
@@ -310,13 +310,13 @@ impl EvictCapable for DefaultBlackboard {
 
 // ── Flush — delegates to storage (DualStorage → cold) ────────────────────
 
-impl FlushCapable for DefaultBlackboard {
+impl FlushCapable for HybridBlackboard {
     fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
         self.storage.flush_since(cursor)
     }
 }
 
-impl ScanCapable for DefaultBlackboard {
+impl ScanCapable for HybridBlackboard {
     fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
         self.storage.scan_partition(partition)
     }
@@ -324,7 +324,7 @@ impl ScanCapable for DefaultBlackboard {
 
 // ── FactCapable — delegates to storage ───────────────────────────────────
 
-impl FactCapable for DefaultBlackboard {
+impl FactCapable for HybridBlackboard {
     fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         self.storage.submit_fact(fact)
     }
@@ -332,7 +332,7 @@ impl FactCapable for DefaultBlackboard {
 
 // ── HintCapable — delegates to storage ───────────────────────────────────
 
-impl HintCapable for DefaultBlackboard {
+impl HintCapable for HybridBlackboard {
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         self.storage.submit_hint(hint)
     }
@@ -340,7 +340,7 @@ impl HintCapable for DefaultBlackboard {
 
 // ── IntentCapable — full lifecycle with local claims tracking ────────────
 
-impl IntentCapable for DefaultBlackboard {
+impl IntentCapable for HybridBlackboard {
     fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
         self.storage.submit_intent(intent)
     }
@@ -372,12 +372,12 @@ impl IntentCapable for DefaultBlackboard {
     }
 }
 
-impl Snapshottable for DefaultBlackboard {
+impl Snapshottable for HybridBlackboard {
     fn to_snapshot(&self) -> StorageSnapshot {
-        DefaultBlackboard::to_snapshot(self)
+        HybridBlackboard::to_snapshot(self)
     }
 
     fn from_snapshot(snapshot: StorageSnapshot) -> Self {
-        DefaultBlackboard::from_snapshot_inner(&snapshot)
+        HybridBlackboard::from_snapshot_inner(&snapshot)
     }
 }

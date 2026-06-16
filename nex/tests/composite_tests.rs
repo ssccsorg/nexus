@@ -11,10 +11,10 @@
 //   - StorageRead (minimal, returns empty state)
 //   - MetaStore (cursor position, snapshot pointers)
 
-use nex::storage::composite::CompositeColdStorage;
 use nexus_model::{
     BlobStore, Content, EvictCapable, FlushCapable, FlushCursor, ScanCapable, StorageRead,
 };
+use nexus_storage_composite::CompositeColdStorage;
 
 mod common;
 use common::{MockBlob, MockKv, MockObject};
