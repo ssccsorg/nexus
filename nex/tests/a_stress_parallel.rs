@@ -71,9 +71,9 @@ impl ParallelAnt {
         match action {
             0 | 1 if step < 50 => {
                 // Submit fact (high prob early on)
-                let id = format!("pf_{}_{}", self.name, step);
+                let id = format!("fact_{}", step);
                 bb.submit_fact(&Fact {
-                    id: FihHash(id.clone()),
+                    id: FihHash::from_hex(&id),
                     origin: self.name.clone(),
                     content: format!("parallel observation at step {step}").into(),
                     creator: self.name.clone(),
@@ -91,11 +91,11 @@ impl ParallelAnt {
                 let mut fact_ids = Vec::new();
                 for _ in 0..n {
                     let idx = self.rng.range(state.facts.len());
-                    fact_ids.push(state.facts[idx].id.0.clone());
+                    fact_ids.push(state.facts[idx].id);
                 }
                 let id = format!("pi_{}_{}", self.name, step);
                 match bb.submit_intent(&Intent {
-                    id: FihHash(id.clone()),
+                    id: FihHash::from_hex(&id),
                     from_facts: fact_ids,
                     description: format!("hypothesis at step {step}"),
                     creator: self.name.clone(),
@@ -126,12 +126,13 @@ impl ParallelAnt {
                 }
                 let idx = self.rng.range(unclaimed.len());
                 let target = &unclaimed[idx];
-                match bb.claim_intent(&target.id.0, &self.name) {
+                let target_id = target.id.to_string();
+                match bb.claim_intent(&target_id, &self.name) {
                     Ok(()) => {
-                        self.claimed = Some(target.id.0.clone());
-                        format!("{:<16} claim {} ✓", self.name, target.id.0)
+                        self.claimed = Some(target_id.clone());
+                        format!("{:<16} claim {} ✓", self.name, target_id)
                     }
-                    Err(e) => format!("{:<16} claim {}: {e}", self.name, target.id.0),
+                    Err(e) => format!("{:<16} claim {}: {e}", self.name, target_id),
                 }
             }
             5 => {
@@ -209,7 +210,7 @@ fn test_parallel_many_ants() {
         for (id, content) in &seeds {
             guard
                 .submit_fact(&Fact {
-                    id: FihHash(id.to_string()),
+                    id: FihHash::from_hex(id),
                     origin: "corpus".into(),
                     content: (*content).into(),
                     creator: "system".into(),
@@ -289,7 +290,7 @@ fn test_parallel_many_ants() {
             assert!(
                 intent.worker.is_none(),
                 "concluded intent {} still has worker {:?}",
-                intent.id.0,
+                intent.id,
                 intent.worker
             );
         }
@@ -299,21 +300,20 @@ fn test_parallel_many_ants() {
     assert!(state.facts.len() >= 5, "lost seed facts");
 
     // Invariant 3: all intents have proper grounding
-    let fact_names: std::collections::HashSet<&str> =
-        state.facts.iter().map(|f| f.id.0.as_str()).collect();
+    let fact_names: std::collections::HashSet<String> =
+        state.facts.iter().map(|f| f.id.to_string()).collect();
     for intent in &state.intents {
         assert!(
             !intent.from_facts.is_empty(),
             "intent {} has no grounding",
-            intent.id.0
+            intent.id
         );
         for fid in &intent.from_facts {
+            let fid_str = fid.to_string();
             assert!(
-                fact_names.contains(fid.as_str())
-                    || fid.starts_with("fact_")
-                    || fid.starts_with("p_"),
-                "intent {} references missing fact {fid}",
-                intent.id.0
+                fact_names.contains(&fid_str),
+                "intent {} references missing fact {fid_str}",
+                intent.id
             );
         }
     }

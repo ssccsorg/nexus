@@ -50,7 +50,7 @@ impl DetectionCapable for NewDocumentAnalyzer {
         let new_facts: Vec<&Fact> = state
             .facts
             .iter()
-            .filter(|f| !self.seen_ids.contains(&f.id.0))
+            .filter(|f| !self.seen_ids.contains(&f.id.to_string()))
             .collect();
 
         if new_facts.is_empty() {
@@ -60,7 +60,7 @@ impl DetectionCapable for NewDocumentAnalyzer {
         let existing_facts: Vec<&Fact> = state
             .facts
             .iter()
-            .filter(|f| self.seen_ids.contains(&f.id.0))
+            .filter(|f| self.seen_ids.contains(&f.id.to_string()))
             .collect();
 
         let mut existing_positions: HashMap<String, HashSet<String>> = HashMap::new();
@@ -73,7 +73,7 @@ impl DetectionCapable for NewDocumentAnalyzer {
         let mut output = DetectionOutput::default();
 
         for fact in &new_facts {
-            let tid = &fact.id.0;
+            let tid = fact.id.to_string();
             self.seen_ids.insert(tid.clone());
 
             let Some(topic) = topic_of(fact) else {
@@ -115,7 +115,7 @@ impl DetectionCapable for NewDocumentAnalyzer {
                 };
 
             output.facts.push(Fact {
-                id: FihHash::new(&[tid, factor], "doc-analysis"),
+                id: FihHash::new(&[&tid, factor], "doc-analysis"),
                 origin: "new-document-analyzer".into(),
                 content: Content::from_json(&serde_json::json!({
                     "type": "doc_analysis",

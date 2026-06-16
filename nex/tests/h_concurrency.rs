@@ -20,7 +20,7 @@ fn bb() -> SharedBlackboard {
 
 fn fact(id: &str) -> Fact {
     Fact {
-        id: FihHash(id.into()),
+        id: FihHash::from_hex(id),
         origin: "test".into(),
         content: Content {
             mime_type: "application/json".into(),
@@ -32,8 +32,8 @@ fn fact(id: &str) -> Fact {
 
 fn intent(id: &str, from: Vec<&str>) -> Intent {
     Intent {
-        id: FihHash(id.into()),
-        from_facts: from.into_iter().map(|s| s.to_string()).collect(),
+        id: FihHash::from_hex(id),
+        from_facts: from.into_iter().map(|s| FihHash::from_hex(s)).collect(),
         description: format!("intent {}", id),
         creator: "tester".into(),
         worker: None,

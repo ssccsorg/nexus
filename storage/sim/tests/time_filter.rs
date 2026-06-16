@@ -36,7 +36,7 @@ fn test_since_returns_newer_only() {
         offset: None,
     });
     assert_eq!(filtered.facts.len(), 1);
-    assert_eq!(filtered.facts[0].id.0, "f_b");
+    assert_eq!(filtered.facts[0].id, FihHash::from_hex("f_b"));
 }
 
 #[test]
@@ -58,7 +58,7 @@ fn test_until_as_of_time_travel() {
         offset: None,
     });
     assert_eq!(filtered.facts.len(), 1);
-    assert_eq!(filtered.facts[0].id.0, "f_a");
+    assert_eq!(filtered.facts[0].id, FihHash::from_hex("f_a"));
 }
 
 #[test]
@@ -80,7 +80,7 @@ fn test_range_returns_mid_only() {
         offset: None,
     });
     assert_eq!(filtered.facts.len(), 1);
-    assert_eq!(filtered.facts[0].id.0, "f_b");
+    assert_eq!(filtered.facts[0].id, FihHash::from_hex("f_b"));
 }
 
 #[test]
@@ -138,7 +138,7 @@ fn test_fact_ids_filter_independent_of_time() {
         offset: None,
     });
     assert_eq!(filtered.facts.len(), 1);
-    assert_eq!(filtered.facts[0].id.0, "f_a");
+    assert_eq!(filtered.facts[0].id, FihHash::from_hex("f_a"));
 }
 
 // ── OrderedIndex unit tests ────────────────────────────────────────────────

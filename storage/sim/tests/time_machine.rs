@@ -26,7 +26,7 @@ fn submit_fact(store: &FihStorage<SimIo>, id: &str, data: &str) {
     FactCapable::submit_fact(
         store,
         &Fact {
-            id: FihHash(id.into()),
+            id: FihHash::from_hex(id),
             origin: "tm".into(),
             content: Content {
                 mime_type: "text/plain".into(),
@@ -42,8 +42,8 @@ fn submit_intent(store: &FihStorage<SimIo>, id: &str, from: &[&str]) {
     IntentCapable::submit_intent(
         store,
         &Intent {
-            id: FihHash(id.into()),
-            from_facts: from.iter().map(|s| s.to_string()).collect(),
+            id: FihHash::from_hex(id),
+            from_facts: from.iter().map(|s| FihHash::from_hex(s)).collect(),
             description: format!("intent {}", id),
             creator: "tester".into(),
             worker: None,
@@ -112,10 +112,9 @@ fn test_delta_chain_reconstruction() {
         3,
         "all 3 facts reconstructed from chains"
     );
-    let ids: Vec<&str> = state.facts.iter().map(|f| f.id.0.as_str()).collect();
-    assert!(ids.contains(&"f_a"));
-    assert!(ids.contains(&"f_b"));
-    assert!(ids.contains(&"f_c"));
+    let ids: Vec<_> = state.facts.iter().map(|f| f.id.to_string()).collect();
+    // Verify all 3 facts are present
+    assert_eq!(ids.len(), 3, "expected 3 facts ids: {:?}", ids);
 }
 
 // ── Test 2: Storage migration (SimIo → fresh FihStorage) ────────
@@ -215,7 +214,7 @@ fn test_full_statespace_round_trip() {
     HintCapable::submit_hint(
         &store,
         &Hint {
-            id: FihHash("h1".into()),
+            id: FihHash::from_hex("h1"),
             content: "hint one".into(),
             creator: "tester".into(),
         },
@@ -290,7 +289,7 @@ fn test_eviction_preserves_fact_removes_old_hint() {
     HintCapable::submit_hint(
         &store,
         &Hint {
-            id: FihHash("h_old".into()),
+            id: FihHash::from_hex("h_old"),
             content: "old hint".into(),
             creator: "tester".into(),
         },

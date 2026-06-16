@@ -14,7 +14,7 @@ use nexus_storage_sim::{FihStorage, SimIo};
 
 fn fact(id: &str, data: &str) -> Fact {
     Fact {
-        id: FihHash(id.into()),
+        id: FihHash::from_hex(id),
         origin: "s".into(),
         content: Content {
             mime_type: "text/plain".into(),
@@ -26,8 +26,8 @@ fn fact(id: &str, data: &str) -> Fact {
 
 fn intent(id: &str, from: Vec<&str>) -> Intent {
     Intent {
-        id: FihHash(id.into()),
-        from_facts: from.into_iter().map(|s| s.to_string()).collect(),
+        id: FihHash::from_hex(id),
+        from_facts: from.into_iter().map(|s| FihHash::from_hex(s)).collect(),
         description: format!("intent {}", id),
         creator: "t".into(),
         worker: None,
@@ -132,7 +132,7 @@ fn test_scenario_hints_preserved_via_rebuild() {
     HintCapable::submit_hint(
         &store,
         &Hint {
-            id: FihHash("h1".into()),
+            id: FihHash::from_hex("h1"),
             content: "ephemeral hint".into(),
             creator: "t".into(),
         },
@@ -182,7 +182,7 @@ fn test_scenario_hints_only() {
     HintCapable::submit_hint(
         &store,
         &Hint {
-            id: FihHash("h_feature".into()),
+            id: FihHash::from_hex("h_feature"),
             content: "consider adding time travel".into(),
             creator: "reviewer".into(),
         },
@@ -237,8 +237,8 @@ fn test_scenario_multi_agent_collaboration() {
     assert_eq!(state.facts.len(), 2);
     assert_eq!(state.intents.len(), 1);
     assert_eq!(
-        state.intents[0].to_fact_id.as_deref(),
-        Some(result.id.0.as_str())
+        state.intents[0].to_fact_id,
+        Some(result.id)
     );
     assert!(state.intents[0].is_concluded);
 }
