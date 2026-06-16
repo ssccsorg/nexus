@@ -742,67 +742,272 @@ impl<I: AsyncFileIo> EvictCapable for FihStorage<I> {
 
 impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
     fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
-        // Determine time range using TimeIndex (O(log N) seek)
-        let time_filtered_ids: Option<std::collections::HashSet<String>> =
-            match (&filter.since, &filter.until) {
-                (Some(since_str), Some(until_str)) => {
-                    // Both bounds: range query
-                    if let (Ok(since_ts), Ok(until_ts)) =
-                        (since_str.parse::<u64>(), until_str.parse::<u64>())
-                    {
-                        Some(
-                            self.coord
-                                .by_time
-                                .range(&since_ts, &until_ts)
-                                .into_iter()
-                                .map(|(_, id)| id)
-                                .collect(),
-                        )
-                    } else {
-                        None
-                    }
-                }
-                (Some(since_str), None) => {
-                    // Lower bound only: since query
-                    if let Ok(since_ts) = since_str.parse::<u64>() {
-                        Some(
-                            self.coord
-                                .by_time
-                                .since(&since_ts)
-                                .into_iter()
-                                .map(|(_, id)| id)
-                                .collect(),
-                        )
-                    } else {
-                        None
-                    }
-                }
-                (None, Some(until_str)) => {
-                    // Upper bound only: as_of query (time-travel)
-                    if let Ok(until_ts) = until_str.parse::<u64>() {
-                        Some(
-                            self.coord
-                                .by_time
-                                .as_of(&until_ts)
-                                .into_iter()
-                                .map(|(_, id)| id)
-                                .collect(),
-                        )
-                    } else {
-                        None
-                    }
-                }
-                (None, None) => None,
-            };
+        use std::collections::HashSet;
 
-        let mut state = StorageRead::read_state(self);
+        // Phase 1: Resolve candidate IDs from FihCoord indexes.
+        // Each candidate set starts as None (unbounded). Index lookups
+        // narrow it via intersection, so only records matching ALL active
+        // indexed filters are materialized.
 
-        // Apply time filter if active
-        if let Some(ids) = &time_filtered_ids {
-            state.facts.retain(|f| ids.contains(&f.id.to_string()));
-            state.intents.retain(|i| ids.contains(&i.id.to_string()));
-            state.hints.retain(|h| ids.contains(&h.id.to_string()));
-        }
+        // ── Fact candidates via indexes ────────────────────────────────
+        let fact_candidates: Option<HashSet<u32>> = {
+            let mut c: Option<HashSet<u32>> = None;
+
+            // by_creator: shared index returns both fact + intent compact IDs.
+            // We store them as candidates; non-fact IDs will be filtered out
+            // when we fetch from fact_store (they won't be found there).
+            if let Some(creator) = &filter.creator {
+                let ids: HashSet<u32> = self.coord.facts_by_creator(creator).into_iter().collect();
+                c = match c {
+                    Some(existing) => Some(existing.intersection(&ids).copied().collect()),
+                    None => Some(ids),
+                };
+            }
+
+            // by_time: nanosecond-precision time range for facts.
+            // Uses OrderedIndex for O(log N) seek via range/since/as_of.
+            if filter.since.is_some() || filter.until.is_some() {
+                let since_ns = filter
+                    .since
+                    .as_ref()
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .unwrap_or(0);
+                let until_ns = filter
+                    .until
+                    .as_ref()
+                    .and_then(|u| u.parse::<u64>().ok())
+                    .unwrap_or(u64::MAX);
+                let time_ids: HashSet<u32> = match (&filter.since, &filter.until) {
+                    (Some(_), Some(_)) => self
+                        .coord
+                        .by_time
+                        .range(&since_ns, &until_ns)
+                        .into_iter()
+                        .map(|(_, id)| self.coord.intern_str(&id))
+                        .collect(),
+                    (Some(_), None) => self
+                        .coord
+                        .by_time
+                        .since(&since_ns)
+                        .into_iter()
+                        .map(|(_, id)| self.coord.intern_str(&id))
+                        .collect(),
+                    (None, Some(_)) => self
+                        .coord
+                        .by_time
+                        .as_of(&until_ns)
+                        .into_iter()
+                        .map(|(_, id)| self.coord.intern_str(&id))
+                        .collect(),
+                    (None, None) => HashSet::new(),
+                };
+                c = match c {
+                    Some(existing) => Some(existing.intersection(&time_ids).copied().collect()),
+                    None => Some(time_ids),
+                };
+            }
+
+            c
+        };
+
+        // ── Intent candidates via indexes ──────────────────────────────
+        let intent_candidates: Option<HashSet<u32>> = {
+            let mut c: Option<HashSet<u32>> = None;
+
+            // by_creator: shared index; non-intent IDs filtered at fetch time.
+            if let Some(creator) = &filter.creator {
+                let ids: HashSet<u32> = self.coord.facts_by_creator(creator).into_iter().collect();
+                c = match c {
+                    Some(existing) => Some(existing.intersection(&ids).copied().collect()),
+                    None => Some(ids),
+                };
+            }
+
+            // by_status: intent-specific status index.
+            if let Some(status) = &filter.status {
+                let ids: HashSet<u32> = self.coord.intents_by_status(status).into_iter().collect();
+                c = match c {
+                    Some(existing) => Some(existing.intersection(&ids).copied().collect()),
+                    None => Some(ids),
+                };
+            }
+
+            // by_created_at_day: day-granularity time range.
+            if filter.since.is_some() || filter.until.is_some() {
+                let since_ns = filter
+                    .since
+                    .as_ref()
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .unwrap_or(0);
+                let until_ns = filter
+                    .until
+                    .as_ref()
+                    .and_then(|u| u.parse::<u64>().ok())
+                    .unwrap_or(u64::MAX);
+                let start_day = since_ns - (since_ns % 86_400_000_000_000);
+                let end_day = until_ns - (until_ns % 86_400_000_000_000);
+                let ids: HashSet<u32> = self
+                    .coord
+                    .ids_by_created_at_range(start_day, end_day + 86_400_000_000_000)
+                    .into_iter()
+                    .collect();
+                c = match c {
+                    Some(existing) => Some(existing.intersection(&ids).copied().collect()),
+                    None => Some(ids),
+                };
+            }
+
+            c
+        };
+
+        // Phase 2: Fetch records matching candidates from EntityStores.
+        // When no index-based filter is active, candidates is None and we
+        // fall back to full materialization via values().
+
+        let facts: Vec<Fact> = match fact_candidates {
+            Some(ids) => {
+                let id_set: HashSet<String> =
+                    ids.iter().map(|idx| self.coord.resolve(*idx)).collect();
+                self.fact_store
+                    .values()
+                    .into_iter()
+                    .filter(|r| id_set.contains(&r.id))
+                    .map(|r| {
+                        let content = self.load_content(&r.blob_hash, "application/octet-stream");
+                        Fact {
+                            id: FihHash::from_hex(&r.id),
+                            origin: r.origin.clone(),
+                            content,
+                            creator: r.creator.clone(),
+                        }
+                    })
+                    .collect()
+            }
+            None => self
+                .fact_store
+                .values()
+                .into_iter()
+                .map(|r| {
+                    let content = self.load_content(&r.blob_hash, "application/octet-stream");
+                    Fact {
+                        id: FihHash::from_hex(&r.id),
+                        origin: r.origin.clone(),
+                        content,
+                        creator: r.creator.clone(),
+                    }
+                })
+                .collect(),
+        };
+
+        let intents: Vec<Intent> = match intent_candidates {
+            Some(ids) => {
+                let id_set: HashSet<String> =
+                    ids.iter().map(|idx| self.coord.resolve(*idx)).collect();
+                self.intent_store
+                    .values()
+                    .into_iter()
+                    .filter(|r| id_set.contains(&r.id))
+                    .map(|r| {
+                        let description = if r.description_hash.is_empty() {
+                            r.id.clone()
+                        } else {
+                            let c = self.load_content(&r.description_hash, "text/plain");
+                            String::from_utf8_lossy(&c.data).to_string()
+                        };
+                        Intent {
+                            id: FihHash::from_hex(&r.id),
+                            from_facts: r.from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
+                            description,
+                            creator: r.creator.clone(),
+                            worker: match &r.status {
+                                IntentStatus::Claimed { worker, .. }
+                                | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
+                                IntentStatus::Submitted => None,
+                            },
+                            to_fact_id: match &r.status {
+                                IntentStatus::Concluded { to_fact, .. } => {
+                                    Some(FihHash::from_hex(to_fact))
+                                }
+                                _ => None,
+                            },
+                            last_heartbeat_at: match &r.status {
+                                IntentStatus::Claimed {
+                                    last_heartbeat_at, ..
+                                } => Some(*last_heartbeat_at),
+                                _ => None,
+                            },
+                            created_at: Some(r.created_at),
+                            is_concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
+                            concluded_at: match &r.status {
+                                IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
+                                _ => None,
+                            },
+                        }
+                    })
+                    .collect()
+            }
+            None => self
+                .intent_store
+                .values()
+                .into_iter()
+                .map(|r| {
+                    let description = if r.description_hash.is_empty() {
+                        r.id.clone()
+                    } else {
+                        let c = self.load_content(&r.description_hash, "text/plain");
+                        String::from_utf8_lossy(&c.data).to_string()
+                    };
+                    Intent {
+                        id: FihHash::from_hex(&r.id),
+                        from_facts: r.from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
+                        description,
+                        creator: r.creator.clone(),
+                        worker: match &r.status {
+                            IntentStatus::Claimed { worker, .. }
+                            | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
+                            IntentStatus::Submitted => None,
+                        },
+                        to_fact_id: match &r.status {
+                            IntentStatus::Concluded { to_fact, .. } => {
+                                Some(FihHash::from_hex(to_fact))
+                            }
+                            _ => None,
+                        },
+                        last_heartbeat_at: match &r.status {
+                            IntentStatus::Claimed {
+                                last_heartbeat_at, ..
+                            } => Some(*last_heartbeat_at),
+                            _ => None,
+                        },
+                        created_at: Some(r.created_at),
+                        is_concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
+                        concluded_at: match &r.status {
+                            IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
+                            _ => None,
+                        },
+                    }
+                })
+                .collect(),
+        };
+
+        let hints: Vec<Hint> = self
+            .hint_store
+            .values()
+            .into_iter()
+            .map(|r| Hint {
+                id: FihHash::from_hex(&r.id),
+                content: r.content.clone(),
+                creator: r.creator.clone(),
+            })
+            .collect();
+
+        // Phase 3: Apply non-indexed filters (explicit ID lists) on the
+        // already index-narrowed result.
+        let mut state = BoardState {
+            facts,
+            intents,
+            hints,
+        };
 
         if let Some(ids) = &filter.fact_ids {
             let normalized: Vec<String> = ids
