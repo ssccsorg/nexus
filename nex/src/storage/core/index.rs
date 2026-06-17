@@ -301,17 +301,13 @@ impl FihCoord {
         if stores.is_empty() {
             return Err("no semantic stores configured".into());
         }
-        let mut errors = Vec::new();
+        let num_stores = stores.len();
         for store in stores.iter_mut() {
-            if let Err(e) = store.insert(id, load) {
-                errors.push(e);
-            }
+            store.insert(id, load).map_err(|e| {
+                format!("semantic insert failed (store {num_stores}): {e}")
+            })?;
         }
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(format!("semantic insert errors: {:?}", errors))
-        }
+        Ok(())
     }
 
     /// Search the semantic store using the provided query handle.

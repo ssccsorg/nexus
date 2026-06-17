@@ -1349,6 +1349,23 @@ impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
             .await
             .map_err(BlackboardError::Internal)?;
 
+        // Also enqueue in pending buffer so FihLoad::content() can find it.
+        // R2 is last-writer-wins, so the duplicate write on flush is harmless.
+        let blob_path = format!("blob/{}.bin", blob_hash);
+        let meta = ContentMeta {
+            mime_type: fact.content.mime_type.clone(),
+            size: fact.content.data.len() as u64,
+        };
+        let meta_bytes = postcard::to_allocvec(&meta).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.pending.borrow_mut().push(WriteOp::Write {
+            path: blob_path,
+            data: fact.content.data.clone(),
+        });
+        self.pending.borrow_mut().push(WriteOp::Write {
+            path: format!("blob/{}.bin.meta", blob_hash),
+            data: meta_bytes,
+        });
+
         // Write fact record with blob_hash reference
         let record = FactRecord::from_model(fact, blob_hash, 0);
         let bytes =
