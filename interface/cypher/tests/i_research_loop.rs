@@ -71,7 +71,7 @@ fn chunk_document(source: &str, title: &str, text: &str) -> Vec<MdDocumentChunk>
 /// Submit each chunk as a Fact with content-addressable ID.
 fn ingest_document(bb: &mut impl Blackboard, chunks: &[MdDocumentChunk]) {
     for chunk in chunks {
-        let id = FihHash(format!("{}::{}", chunk.source, chunk.section));
+        let id = FihHash::from_hex(&format!("{}::{}", chunk.source, chunk.section));
         let fact = Fact {
             id,
             origin: chunk.source.clone(),
@@ -301,25 +301,25 @@ fn scenario_full_research_loop() {
     // Hypothesis 1: Hybrid architectures can simultaneously solve GNN
     // oversmoothing and transformer quadratic complexity.
 
-    let gnn_benchmark_id = FihHash("arxiv_gnn_2024::Benchmark Results".to_string());
-    let transformer_benchmark_id = FihHash("arxiv_transformer_2024::Benchmark Results".to_string());
-    let hybrid_benchmark_id = FihHash("arxiv_hybrid_2024::Benchmark Results".to_string());
-    let gnn_limitations_id = FihHash("arxiv_gnn_2024::Limitations".to_string());
-    let transformer_limitations_id = FihHash("arxiv_transformer_2024::Limitations".to_string());
-    let gnn_future_id = FihHash("arxiv_gnn_2024::Future Directions".to_string());
-    let transformer_future_id = FihHash("arxiv_transformer_2024::Future Directions".to_string());
-    let hybrid_future_id = FihHash("arxiv_hybrid_2024::Future Directions".to_string());
+    let gnn_benchmark_id = FihHash::from_hex("arxiv_gnn_2024::Benchmark Results");
+    let transformer_benchmark_id = FihHash::from_hex("arxiv_transformer_2024::Benchmark Results");
+    let hybrid_benchmark_id = FihHash::from_hex("arxiv_hybrid_2024::Benchmark Results");
+    let gnn_limitations_id = FihHash::from_hex("arxiv_gnn_2024::Limitations");
+    let transformer_limitations_id = FihHash::from_hex("arxiv_transformer_2024::Limitations");
+    let gnn_future_id = FihHash::from_hex("arxiv_gnn_2024::Future Directions");
+    let transformer_future_id = FihHash::from_hex("arxiv_transformer_2024::Future Directions");
+    let hybrid_future_id = FihHash::from_hex("arxiv_hybrid_2024::Future Directions");
 
     // Agent-Analyst creates a hypothesis that hybrid architectures resolve
     // both GNN oversmoothing and transformer complexity issues.
     let intent_hybrid_synthesis = Intent {
-        id: FihHash("i_hybrid_synthesis".to_string()),
+        id: FihHash::from_hex("i_hybrid_synthesis"),
         from_facts: vec![
-            gnn_benchmark_id.0.clone(),
-            transformer_benchmark_id.0.clone(),
-            hybrid_benchmark_id.0.clone(),
-            gnn_limitations_id.0.clone(),
-            transformer_limitations_id.0.clone(),
+            gnn_benchmark_id,
+            transformer_benchmark_id,
+            hybrid_benchmark_id,
+            gnn_limitations_id,
+            transformer_limitations_id,
         ],
         description: "HYPOTHESIS: Hybrid GNN-Transformer architectures resolve both GNN oversmoothing (by replacing deep message passing with attention) and transformer quadratic complexity (by using GNN to reduce sequence length via graph pooling).".into(),
         creator: "agent-analyst".into(),
@@ -337,11 +337,11 @@ fn scenario_full_research_loop() {
     // Hypothesis 2: The 3 Future Directions sections collectively describe
     // a unified research roadmap, but are siloed by document origin.
     let intent_unified_roadmap = Intent {
-        id: FihHash("i_unified_roadmap".to_string()),
+        id: FihHash::from_hex("i_unified_roadmap"),
         from_facts: vec![
-            gnn_future_id.0.clone(),
-            transformer_future_id.0.clone(),
-            hybrid_future_id.0.clone(),
+            gnn_future_id,
+            transformer_future_id,
+            hybrid_future_id,
         ],
         description: "HYPOTHESIS: The Future Directions from GNN, Transformer, and Hybrid documents converge on 3 shared research priorities: (1) 3D molecular geometry, (2) linear-complexity architectures, (3) theoretical understanding of architecture choice.".into(),
         creator: "agent-analyst".into(),
@@ -450,7 +450,10 @@ fn scenario_full_research_loop() {
 
     // Verify data completeness: the unified roadmap intent remains open
     let state = bb.read_state();
-    let remaining = state.intents.iter().find(|i| i.id.0 == "i_unified_roadmap");
+    let remaining = state
+        .intents
+        .iter()
+        .find(|i| i.id == FihHash::from_hex("i_unified_roadmap"));
     assert!(remaining.is_some(), "unified roadmap intent still open");
     assert_eq!(
         state.intents.len(),
@@ -479,17 +482,17 @@ fn scenario_full_research_loop() {
     // only a 1% improvement. A new hypothesis emerges: is 93% the ceiling,
     // or can the gap be widened?
 
-    let gnn_benchmark_id_str = gnn_benchmark_id.0.clone();
-    let hybrid_benchmark_id_str = hybrid_benchmark_id.0.clone();
-    let conclusion_fact_id_str = conclusion_fact.id.0.clone();
+    let gnn_benchmark_id_str = gnn_benchmark_id.to_string();
+    let hybrid_benchmark_id_str = hybrid_benchmark_id.to_string();
+    let conclusion_fact_id_str = conclusion_fact.id.to_string();
 
     // New hypothesis: investigate whether the accuracy ceiling can be broken
     let intent_new_gap = Intent {
-        id: FihHash("i_accuracy_ceiling".to_string()),
+        id: FihHash::from_hex("i_accuracy_ceiling"),
         from_facts: vec![
-            gnn_benchmark_id_str,
-            hybrid_benchmark_id_str,
-            conclusion_fact_id_str,
+            FihHash::from_hex(&gnn_benchmark_id_str),
+            FihHash::from_hex(&hybrid_benchmark_id_str),
+            FihHash::from_hex(&conclusion_fact_id_str),
         ],
         description: "HYPOTHESIS: The 93% accuracy on ZINC-250k is not a ceiling — incorporating 3D molecular geometry into hybrid architectures will push accuracy beyond 95%. This requires a new model class: geometric GNN-Transformer hybrids.".into(),
         creator: "agent-analyst".into(),
@@ -522,10 +525,10 @@ fn scenario_full_research_loop() {
     let gap_intent = state
         .intents
         .iter()
-        .find(|i| i.id.0 == "i_accuracy_ceiling")
+        .find(|i| i.id == FihHash::from_hex("i_accuracy_ceiling"))
         .expect("new gap intent exists");
     assert!(
-        gap_intent.from_facts.contains(&conclusion_fact.id.0),
+        gap_intent.from_facts.contains(&conclusion_fact.id),
         "new gap references the bridging conclusion fact"
     );
 

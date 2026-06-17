@@ -182,7 +182,7 @@ impl DuckDbStorage {
             let content_str: String = row.get(2)?;
             let creator: String = row.get(3)?;
             Ok(Fact {
-                id: FihHash(id),
+                id: FihHash::from_hex(&id),
                 origin,
                 content: match serde_json::from_str::<serde_json::Value>(&content_str) {
                     Ok(v) => match v {
@@ -230,12 +230,12 @@ impl DuckDbStorage {
                 .and_then(|j| serde_json::from_str(&j).ok())
                 .unwrap_or_default();
             Ok(Intent {
-                id: FihHash(id),
-                from_facts,
+                id: FihHash::from_hex(&id),
+                from_facts: from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
                 description,
                 creator,
                 worker,
-                to_fact_id,
+                to_fact_id: to_fact_id.map(|s| FihHash::from_hex(&s)),
                 last_heartbeat_at: last_hb.and_then(|s| s.parse::<u64>().ok()),
                 created_at: created_at_str.and_then(|s| s.parse::<u64>().ok()),
                 is_concluded: concluded_at_str
@@ -261,7 +261,7 @@ impl DuckDbStorage {
             let content: String = row.get(1)?;
             let creator: String = row.get(2)?;
             Ok(Hint {
-                id: FihHash(id),
+                id: FihHash::from_hex(&id),
                 content,
                 creator,
             })

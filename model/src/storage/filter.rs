@@ -12,6 +12,8 @@ pub struct StateFilter {
     pub until: Option<String>,
     pub limit: Option<usize>,
     pub offset: Option<usize>,
+    pub creator: Option<String>,
+    pub status: Option<String>,
 }
 
 /// Backend supports filtered/partial reads.

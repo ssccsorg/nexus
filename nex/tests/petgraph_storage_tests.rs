@@ -14,7 +14,7 @@ fn storage() -> PetgraphStorage {
 
 fn fact(id: &str) -> Fact {
     Fact {
-        id: FihHash(id.into()),
+        id: FihHash::from_hex(id),
         origin: "test".into(),
         content: "data".into(),
         creator: "tester".into(),
@@ -23,7 +23,7 @@ fn fact(id: &str) -> Fact {
 
 fn hint(id: &str) -> Hint {
     Hint {
-        id: FihHash(id.into()),
+        id: FihHash::from_hex(id),
         content: format!("content_{}", id),
         creator: "tester".into(),
     }
@@ -56,7 +56,10 @@ fn test_submit_and_read_fact() {
 
     let state = s.read_state();
     assert_eq!(state.facts.len(), 1);
-    assert_eq!(state.facts[0].id.0, "f_001");
+    assert_eq!(
+        state.facts[0].id.to_string(),
+        nexus_model::FihHash::from_hex("f_001").to_string()
+    );
     assert_eq!(state.facts[0].origin, "test");
 }
 
@@ -124,8 +127,8 @@ fn test_submit_intent_requires_existing_fact() {
 
     let s = storage();
     let intent = Intent {
-        id: FihHash("i_no_fact".into()),
-        from_facts: vec!["f_nonexistent".into()],
+        id: FihHash::from_hex("i_no_fact"),
+        from_facts: vec![FihHash::from_hex("f_nonexistent")],
         description: "missing ref".into(),
         creator: "tester".into(),
         worker: None,
@@ -150,8 +153,8 @@ fn test_conclude_intent_creates_fact() {
     s.submit_fact(&fact("f_base")).unwrap();
 
     let intent = Intent {
-        id: FihHash("i_concl".into()),
-        from_facts: vec!["f_base".into()],
+        id: FihHash::from_hex("i_concl"),
+        from_facts: vec![FihHash::from_hex("f_base")],
         description: "test conclusion".into(),
         creator: "tester".into(),
         worker: None,
@@ -191,8 +194,8 @@ fn test_evict_before_removes_old_concluded_intents() {
 
     // Submit an intent and immediately conclude it
     let intent = Intent {
-        id: FihHash("i_old".into()),
-        from_facts: vec!["f_ev".into()],
+        id: FihHash::from_hex("i_old"),
+        from_facts: vec![FihHash::from_hex("f_ev")],
         description: "old intent".into(),
         creator: "tester".into(),
         worker: None,

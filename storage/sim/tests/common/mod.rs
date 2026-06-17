@@ -48,7 +48,7 @@ impl nexus_model::Now for FakeClock {
 #[allow(dead_code)]
 pub fn fact(id: &str) -> Fact {
     Fact {
-        id: FihHash(id.into()),
+        id: FihHash::from_hex(id),
         origin: "t".into(),
         content: Content {
             mime_type: "text/plain".into(),
@@ -61,8 +61,8 @@ pub fn fact(id: &str) -> Fact {
 #[allow(dead_code)]
 pub fn intent(id: &str, from: Vec<&str>) -> Intent {
     Intent {
-        id: FihHash(id.into()),
-        from_facts: from.into_iter().map(|s| s.to_string()).collect(),
+        id: FihHash::from_hex(id),
+        from_facts: from.into_iter().map(|s| FihHash::from_hex(s)).collect(),
         description: format!("intent {}", id),
         creator: "t".into(),
         worker: None,

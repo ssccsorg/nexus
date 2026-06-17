@@ -60,15 +60,15 @@ impl DetectionCapable for GapDetector {
             })
             .collect();
 
-        let referenced: HashSet<&str> = state
+        let referenced: HashSet<String> = state
             .intents
             .iter()
-            .flat_map(|i| i.from_facts.iter().map(|s| s.as_str()))
+            .flat_map(|i| i.from_facts.iter().map(|f| f.to_string()))
             .collect();
 
         let orphaned: Vec<&Fact> = doc_facts
             .iter()
-            .filter(|f| !referenced.contains(f.id.0.as_str()))
+            .filter(|f| !referenced.contains(&f.id.to_string()))
             .copied()
             .collect();
 
@@ -86,7 +86,7 @@ impl DetectionCapable for GapDetector {
 
         for (origin, facts) in &by_origin {
             if facts.len() >= 2 {
-                let mut ids: Vec<&str> = facts.iter().map(|f| f.id.0.as_str()).collect();
+                let mut ids: Vec<String> = facts.iter().map(|f| f.id.to_string()).collect();
                 ids.sort();
                 let key = ((*origin).to_string(), ids.join(","));
                 if self.seen_origin.contains(&key) {
@@ -102,7 +102,7 @@ impl DetectionCapable for GapDetector {
                         "subtype": "origin-orphan",
                         "origin": origin,
                         "orphan_count": facts.len(),
-                        "fact_ids": facts.iter().map(|f| &f.id.0).collect::<Vec<_>>(),
+                        "fact_ids": facts.iter().map(|f| f.id.to_string()).collect::<Vec<_>>(),
                     })),
                     creator: "gap-detector".into(),
                 });

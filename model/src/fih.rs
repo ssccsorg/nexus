@@ -1,15 +1,43 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha256};
 
 // ── Content-addressable identifier ───────────────────────────────────────
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct FihHash(pub String);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FihHash(pub [u8; 32]);
+
+impl Serialize for FihHash {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for FihHash {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let hex: String = Deserialize::deserialize(d)?;
+        // Serialization always produces 64-char hex from Display.
+        // Reject anything else to fail fast on data corruption.
+        if hex.len() != 64 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(serde::de::Error::custom(format!(
+                "FihHash deserialize: expected 64 hex chars, got {}",
+                hex.len()
+            )));
+        }
+        let mut bytes = [0u8; 32];
+        for i in 0..32 {
+            bytes[i] = u8::from_str_radix(&hex[i * 2..=i * 2 + 1], 16)
+                .map_err(|e| serde::de::Error::custom(format!("invalid hex: {e}")))?;
+        }
+        Ok(Self(bytes))
+    }
+}
 
 impl std::fmt::Display for FihHash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        for byte in &self.0 {
+            write!(f, "{:02x}", byte)?;
+        }
+        Ok(())
     }
 }
 
@@ -20,15 +48,50 @@ impl FihHash {
             h.update(f.as_bytes());
         }
         h.update(type_tag.as_bytes());
-        Self(format!("{:x}", h.finalize()))
+        Self(h.finalize().into())
     }
 
     pub fn chain(a: &FihHash, b: &FihHash, c: &FihHash) -> FihHash {
         let mut h = Sha256::new();
-        h.update(a.0.as_bytes());
-        h.update(b.0.as_bytes());
-        h.update(c.0.as_bytes());
-        Self(format!("{:x}", h.finalize()))
+        h.update(a.0);
+        h.update(b.0);
+        h.update(c.0);
+        Self(h.finalize().into())
+    }
+
+    /// Parse exactly 64 hex characters into a FihHash. Panics on invalid input.
+    /// For tests, use `FihHash::from_hex` which falls back to SHA256 for short IDs.
+    fn parse_hex_strict(hex: &str) -> Self {
+        assert!(
+            hex.len() == 64 && hex.chars().all(|c| c.is_ascii_hexdigit()),
+            "FihHash::parse_hex_strict: expected 64 hex chars, got `{}`",
+            hex
+        );
+        let mut bytes = [0u8; 32];
+        for i in 0..32 {
+            bytes[i] = u8::from_str_radix(&hex[i * 2..=i * 2 + 1], 16).expect("valid hex digit");
+        }
+        Self(bytes)
+    }
+
+    /// Reconstruct FihHash from a hex string or a short semantic ID.
+    ///
+    /// If `hex` is exactly 64 lowercase hex characters, it is parsed
+    /// directly into `[u8; 32]` (round-trip with `Display`).
+    /// Otherwise, the input is SHA256-hashed to produce a deterministic
+    /// FihHash. This allows short test IDs like `"f001"` via SHA256.
+    ///
+    /// For strict parsing (e.g., deserialization), use `parse_hex_strict`.
+    pub fn from_hex(hex: &str) -> Self {
+        let hex_clean: String = hex.chars().filter(|c| c.is_ascii_hexdigit()).collect();
+        if hex_clean.len() == 64 {
+            Self::parse_hex_strict(&hex_clean)
+        } else {
+            // Fallback: hash the input to produce a deterministic FihHash.
+            let mut h = Sha256::new();
+            h.update(hex.as_bytes());
+            Self(h.finalize().into())
+        }
     }
 }
 
@@ -101,8 +164,8 @@ pub struct Fact {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Intent {
     pub id: FihHash,
-    pub from_facts: Vec<String>,
-    pub to_fact_id: Option<String>,
+    pub from_facts: Vec<FihHash>,
+    pub to_fact_id: Option<FihHash>,
     pub description: String,
     pub creator: String,
     pub worker: Option<String>,

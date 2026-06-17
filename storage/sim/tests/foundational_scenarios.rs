@@ -26,7 +26,7 @@ use nexus_storage_sim::{FihStorage, SimIo};
 
 fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) -> Fact {
     Fact {
-        id: FihHash(id.to_string()),
+        id: FihHash::from_hex(id),
         origin: origin.to_string(),
         content: serde_json::to_string(
             &serde_json::json!({ "claim": claim_text, "topic": topic, "position": position }),
@@ -242,7 +242,7 @@ fn seed_foundational(bb: &impl Blackboard) -> Vec<String> {
             "data-movement-cost",
         ),
     ];
-    let ids: Vec<String> = facts.iter().map(|f| f.id.0.clone()).collect();
+    let ids: Vec<String> = facts.iter().map(|f| f.id.to_string()).collect();
     for f in &facts {
         bb.submit_fact(f).unwrap();
     }
@@ -367,7 +367,7 @@ fn scenario_formal_revision_of_philosophy() {
             "constraint-primary",
         ),
     ];
-    let phil_ids: Vec<String> = phil_facts.iter().map(|f| f.id.0.clone()).collect();
+    let phil_ids: Vec<String> = phil_facts.iter().map(|f| f.id.to_string()).collect();
     for f in &phil_facts {
         bb.submit_fact(f).unwrap();
     }
@@ -457,8 +457,8 @@ fn scenario_formal_revision_of_philosophy() {
     });
     if let Some(cf) = field_contradiction {
         let intent = Intent {
-            id: FihHash::new(&[&cf.id.0, "resolve"], "intent"),
-            from_facts: vec![cf.id.0.clone()],
+            id: FihHash::new(&[&cf.id.to_string(), "resolve"], "intent"),
+            from_facts: vec![cf.id.clone()],
             description: "Resolve field-definition across layers".into(),
             creator: "formal-reviewer".into(),
             worker: None,
@@ -471,9 +471,9 @@ fn scenario_formal_revision_of_philosophy() {
         let iid = sched.bb.submit_intent(&intent).expect("submit");
         sched
             .bb
-            .claim_intent(&iid.0, "formal-reviewer")
+            .claim_intent(&iid.to_string(), "formal-reviewer")
             .expect("claim");
-        sched.bb.conclude_intent(&iid.0, &serde_json::to_string(&serde_json::json!({
+        sched.bb.conclude_intent(&iid.to_string(), &serde_json::to_string(&serde_json::json!({
             "synthesis": "Manifesto declares what Field IS (admissibility conditions). Epistemology explains what Field DOES (bounds observation). Whitepaper .2 defines Field formally as (C,T). All three are consistent layers of the same concept."
         })).unwrap()).expect("conclude");
     }
@@ -528,7 +528,7 @@ fn scenario_theory_practice_gap() {
             "fully-auditable",
         ),
     ];
-    let theory_ids: Vec<String> = theory.iter().map(|f| f.id.0.clone()).collect();
+    let theory_ids: Vec<String> = theory.iter().map(|f| f.id.to_string()).collect();
     for f in &theory {
         bb.submit_fact(f).unwrap();
     }
@@ -675,7 +675,7 @@ fn scenario_epistemology_as_bridge() {
             "immutable-concurrent",
         ),
     ];
-    let baseline: Vec<String> = claims.iter().map(|f| f.id.0.clone()).collect();
+    let baseline: Vec<String> = claims.iter().map(|f| f.id.to_string()).collect();
     for f in &claims {
         bb.submit_fact(f).unwrap();
     }
