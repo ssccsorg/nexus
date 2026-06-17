@@ -15,7 +15,20 @@ impl Serialize for FihHash {
 impl<'de> Deserialize<'de> for FihHash {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let hex: String = Deserialize::deserialize(d)?;
-        Ok(Self::from_hex(&hex))
+        // Serialization always produces 64-char hex from Display.
+        // Reject anything else to fail fast on data corruption.
+        if hex.len() != 64 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(serde::de::Error::custom(format!(
+                "FihHash deserialize: expected 64 hex chars, got {}",
+                hex.len()
+            )));
+        }
+        let mut bytes = [0u8; 32];
+        for i in 0..32 {
+            bytes[i] = u8::from_str_radix(&hex[i * 2..=i * 2 + 1], 16)
+                .map_err(|e| serde::de::Error::custom(format!("invalid hex: {e}")))?;
+        }
+        Ok(Self(bytes))
     }
 }
 
@@ -40,10 +53,23 @@ impl FihHash {
 
     pub fn chain(a: &FihHash, b: &FihHash, c: &FihHash) -> FihHash {
         let mut h = Sha256::new();
-        h.update(a.0);
-        h.update(b.0);
-        h.update(c.0);
+        h.update(&a.0);
+        h.update(&b.0);
+        h.update(&c.0);
         Self(h.finalize().into())
+    }
+
+    /// Parse exactly 64 hex characters into a FihHash. Panics on invalid input.
+    /// For tests, use `FihHash::from_hex` which falls back to SHA256 for short IDs.
+    fn parse_hex_strict(hex: &str) -> Self {
+        assert!(hex.len() == 64 && hex.chars().all(|c| c.is_ascii_hexdigit()),
+            "FihHash::parse_hex_strict: expected 64 hex chars, got `{}`", hex);
+        let mut bytes = [0u8; 32];
+        for i in 0..32 {
+            bytes[i] = u8::from_str_radix(&hex[i * 2..=i * 2 + 1], 16)
+                .expect("valid hex digit");
+        }
+        Self(bytes)
     }
 
     /// Reconstruct FihHash from a hex string or a short semantic ID.
@@ -52,21 +78,18 @@ impl FihHash {
     /// directly into `[u8; 32]` (round-trip with `Display`).
     /// Otherwise, the input is SHA256-hashed to produce a deterministic
     /// FihHash. This allows short test IDs like `"f001"` via SHA256.
+    ///
+    /// For strict parsing (e.g., deserialization), use `parse_hex_strict`.
     pub fn from_hex(hex: &str) -> Self {
-        let hex_lower: String = hex.chars().filter(|c| c.is_ascii_hexdigit()).collect();
-        if hex_lower.len() == 64 {
-            let mut bytes = [0u8; 32];
-            for i in 0..32 {
-                if let Ok(v) = u8::from_str_radix(&hex_lower[i * 2..=i * 2 + 1], 16) {
-                    bytes[i] = v;
-                }
-            }
-            return Self(bytes);
+        let hex_clean: String = hex.chars().filter(|c| c.is_ascii_hexdigit()).collect();
+        if hex_clean.len() == 64 {
+            Self::parse_hex_strict(&hex_clean)
+        } else {
+            // Fallback: hash the input to produce a deterministic FihHash.
+            let mut h = Sha256::new();
+            h.update(hex.as_bytes());
+            Self(h.finalize().into())
         }
-        // Fallback: hash the input to produce a deterministic FihHash.
-        let mut h = Sha256::new();
-        h.update(hex.as_bytes());
-        Self(h.finalize().into())
     }
 }
 
