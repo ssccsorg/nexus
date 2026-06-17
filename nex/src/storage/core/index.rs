@@ -156,6 +156,11 @@ impl FihCoord {
         self.str_interner.borrow_mut().intern(s)
     }
 
+    /// Look up an interned string key without inserting. Returns None if not found.
+    pub fn lookup_str_key(&self, s: &str) -> Option<u32> {
+        self.str_interner.borrow().map.get(s).copied()
+    }
+
     pub fn resolve(&self, idx: u32) -> String {
         self.idx_to_id
             .borrow()
@@ -285,20 +290,16 @@ impl FihCoord {
     // ── Query ──────────────────────────────────────────────────────
 
     pub fn facts_by_creator(&self, creator: &str) -> Vec<u32> {
-        let cid = self.intern_str_key(creator);
-        self.by_creator
-            .borrow()
-            .get(&cid)
-            .cloned()
-            .unwrap_or_default()
+        match self.lookup_str_key(creator) {
+            Some(cid) => self.by_creator.borrow().get(&cid).cloned().unwrap_or_default(),
+            None => Vec::new(),
+        }
     }
     pub fn intents_by_status(&self, status: &str) -> Vec<u32> {
-        let sid = self.intern_str_key(status);
-        self.by_status
-            .borrow()
-            .get(&sid)
-            .cloned()
-            .unwrap_or_default()
+        match self.lookup_str_key(status) {
+            Some(sid) => self.by_status.borrow().get(&sid).cloned().unwrap_or_default(),
+            None => Vec::new(),
+        }
     }
     pub fn ids_by_created_at_range(&self, start_day: u64, end_day: u64) -> Vec<u32> {
         let mut result = Vec::new();
