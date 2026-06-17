@@ -303,9 +303,9 @@ impl FihCoord {
         }
         let num_stores = stores.len();
         for store in stores.iter_mut() {
-            store.insert(id, load).map_err(|e| {
-                format!("semantic insert failed (store {num_stores}): {e}")
-            })?;
+            store
+                .insert(id, load)
+                .map_err(|e| format!("semantic insert failed (store {num_stores}): {e}"))?;
         }
         Ok(())
     }

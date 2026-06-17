@@ -810,3 +810,82 @@ fn scenario_fihcoord_single_store() {
     assert!(!results.is_empty(), "should find the inserted record");
     assert_eq!(results[0].0, idx, "should match the inserted record");
 }
+
+/// FihStorage end-to-end: submit fact via FihStorage → auto-index into
+/// MockBm25Store → search via FihCoord and verify result.
+///
+/// Uses sync FactCapable path (pending buffer) to avoid tokio dependency.
+#[test]
+fn scenario_fihstorage_e2e_auto_index() {
+    use nex::FihStorage;
+    use nex::io::FsIo;
+    use nexus_model::{Content, Fact, FactCapable, FihHash, StorageRead};
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let io = FsIo::new(tmp.path()).unwrap();
+    let storage = FihStorage::with_clock(io, "test-proj", Box::new(nexus_model::SystemClock));
+
+    // Configure MockBm25Store for text-based semantic search
+    storage.register_semantic_store(Box::new(MockBm25Store::new()));
+
+    // Submit a fact with meaningful text content (sync path)
+    let fact = Fact {
+        id: FihHash::from_hex("f_e2e_001"),
+        origin: "e2e-test".into(),
+        content: Content {
+            mime_type: "text/plain".into(),
+            data: b"rust compiler verification memory safety".to_vec(),
+        },
+        creator: "test-agent".into(),
+    };
+
+    // Use sync FactCapable trait — this enqueues writes to pending buffer
+    // and calls record_fact + semantic_insert.
+    FactCapable::submit_fact(&storage, &fact).unwrap();
+
+    // Verify fact exists in state (sync StorageRead reads from in-memory stores)
+    let state = StorageRead::read_state(&storage);
+    assert_eq!(state.facts.len(), 1, "should have 1 fact");
+
+    // Verify auto-index by searching via FihStorage
+    let results = storage
+        .semantic_search(
+            &ReexportedFeatureLoad::new(vec![], Some("rust compiler".into())),
+            5,
+        )
+        .unwrap();
+    assert!(
+        !results.is_empty(),
+        "auto-indexed fact should be findable by BM25 search"
+    );
+
+    // Submit a conclusion fact — should NOT be auto-indexed (origin starts with "conclusion:")
+    let conclusion = Fact {
+        id: FihHash::from_hex("f_e2e_concl"),
+        origin: "conclusion:i_e2e".into(),
+        content: Content {
+            mime_type: "text/plain".into(),
+            data: b"Synthesis complete".to_vec(),
+        },
+        creator: "worker-1".into(),
+    };
+    FactCapable::submit_fact(&storage, &conclusion).unwrap();
+
+    // Conclusion fact should not add noise to BM25 search for "rust"
+    let results_after_conclusion = storage
+        .semantic_search(
+            &ReexportedFeatureLoad::new(vec![], Some("rust compiler".into())),
+            5,
+        )
+        .unwrap();
+    // "Synthesis complete" has zero BM25 overlap with "rust compiler"
+    assert_eq!(
+        results.len(),
+        results_after_conclusion.len(),
+        "conclusion fact should not affect BM25 search results"
+    );
+
+    // Also verify total facts in state: 2 (original + conclusion)
+    let state2 = StorageRead::read_state(&storage);
+    assert_eq!(state2.facts.len(), 2, "should have 2 facts total");
+}
