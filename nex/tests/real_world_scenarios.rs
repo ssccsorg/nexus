@@ -44,7 +44,7 @@ use nexus_storage_petgraph::{Snapshottable, StorageSnapshot};
 
 fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) -> Fact {
     Fact {
-        id: FihHash(id.to_string()),
+        id: FihHash::from_hex(id),
         origin: origin.to_string(),
         content: Content {
             mime_type: "application/json".into(),
@@ -178,7 +178,7 @@ fn seed_cross_domain(bb: &mut impl Blackboard) -> Vec<String> {
             "static-verification",
         ),
     ];
-    let ids: Vec<String> = facts.iter().map(|f| f.id.0.clone()).collect();
+    let ids: Vec<String> = facts.iter().map(|f| f.id.to_string()).collect();
     for f in &facts {
         bb.submit_fact(f).unwrap();
     }
@@ -231,8 +231,8 @@ fn scenario_cross_domain_discovery() {
         .collect();
     for cf in &contradiction_facts {
         let intent = Intent {
-            id: FihHash::new(&[&cf.id.0, "resolve"], "intent"),
-            from_facts: vec![cf.id.0.clone()],
+            id: FihHash::new(&[&cf.id.to_string(), "resolve"], "intent"),
+            from_facts: vec![cf.id.clone()],
             description: format!(
                 "Resolve: {}",
                 content_val_of(cf)
@@ -251,9 +251,9 @@ fn scenario_cross_domain_discovery() {
         let iid = sched.bb.submit_intent(&intent).expect("submit");
         sched
             .bb
-            .claim_intent(&iid.0, "research-agent")
+            .claim_intent(&iid.to_string(), "research-agent")
             .expect("claim");
-        sched.bb.conclude_intent(&iid.0, &serde_json::to_string(&serde_json::json!({
+        sched.bb.conclude_intent(&iid.to_string(), &serde_json::to_string(&serde_json::json!({
             "resolution": "Data movement is zero for input Segments; projection results move as structured dataflow bounded by Spatz balance condition"
         })).unwrap()).expect("conclude");
     }
@@ -309,7 +309,7 @@ fn seed_manifesto_base(bb: &mut impl Blackboard) -> Vec<String> {
             "fidelity-first",
         ),
     ];
-    let ids: Vec<String> = facts.iter().map(|f| f.id.0.clone()).collect();
+    let ids: Vec<String> = facts.iter().map(|f| f.id.to_string()).collect();
     for f in &facts {
         bb.submit_fact(f).unwrap();
     }
@@ -435,8 +435,8 @@ fn scenario_peer_review_challenge() {
     });
     if let Some(cf) = contradiction_fact {
         let intent = Intent {
-            id: FihHash::new(&[&cf.id.0, "peer-review"], "intent"),
-            from_facts: vec![cf.id.0.clone()],
+            id: FihHash::new(&[&cf.id.to_string(), "peer-review"], "intent"),
+            from_facts: vec![cf.id.clone()],
             description: "Peer review: resolve computation-ontology contradiction".into(),
             creator: "reviewer".into(),
             worker: None,
@@ -447,8 +447,11 @@ fn scenario_peer_review_challenge() {
             concluded_at: None,
         };
         let iid = sched.bb.submit_intent(&intent).expect("submit");
-        sched.bb.claim_intent(&iid.0, "reviewer").expect("claim");
-        sched.bb.conclude_intent(&iid.0, &serde_json::to_string(&serde_json::json!({
+        sched
+            .bb
+            .claim_intent(&iid.to_string(), "reviewer")
+            .expect("claim");
+        sched.bb.conclude_intent(&iid.to_string(), &serde_json::to_string(&serde_json::json!({
             "verdict": "Rust is the practical stepping stone; SSCCS manifesto describes the destination. Both are correct in their domains"
         })).unwrap()).expect("conclude");
     }
@@ -518,7 +521,7 @@ fn scenario_incremental_knowledge_growth() {
             .filter(|f| f.creator == "contradiction-detector")
             .filter(|f| {
                 // Check if any intent already references this contradiction fact
-                !state.intents.iter().any(|i| i.from_facts.contains(&f.id.0))
+                !state.intents.iter().any(|i| i.from_facts.contains(&f.id))
             })
             .collect();
 
@@ -533,8 +536,11 @@ fn scenario_incremental_knowledge_growth() {
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
             let intent = Intent {
-                id: FihHash::new(&[&cf.id.0, &format!("iter-{}", iteration)], "intent"),
-                from_facts: vec![cf.id.0.clone()],
+                id: FihHash::new(
+                    &[&cf.id.to_string(), &format!("iter-{}", iteration)],
+                    "intent",
+                ),
+                from_facts: vec![cf.id.clone()],
                 description: format!("Iteration {}: resolve {}", iteration, topic),
                 creator: "agent-loop".into(),
                 worker: None,
@@ -545,11 +551,14 @@ fn scenario_incremental_knowledge_growth() {
                 concluded_at: None,
             };
             let iid = sched.bb.submit_intent(&intent).expect("submit");
-            sched.bb.claim_intent(&iid.0, "agent-loop").expect("claim");
+            sched
+                .bb
+                .claim_intent(&iid.to_string(), "agent-loop")
+                .expect("claim");
             sched
                 .bb
                 .conclude_intent(
-                    &iid.0,
+                    &iid.to_string(),
                     &serde_json::to_string(&serde_json::json!({
                         "resolution": format!("Resolved {} in iteration {}", topic, iteration),
                         "iteration": iteration,
@@ -611,8 +620,8 @@ fn scenario_multi_agent_collaboration() {
         .collect();
     for gf in &gap_facts {
         let intent = Intent {
-            id: FihHash::new(&[&gf.id.0, "alpha"], "intent"),
-            from_facts: vec![gf.id.0.clone()],
+            id: FihHash::new(&[&gf.id.to_string(), "alpha"], "intent"),
+            from_facts: vec![gf.id.clone()],
             description: "Hardware gap analysis".into(),
             creator: "agent-alpha".into(),
             worker: None,
@@ -623,11 +632,14 @@ fn scenario_multi_agent_collaboration() {
             concluded_at: None,
         };
         let iid = sched.bb.submit_intent(&intent).expect("submit");
-        sched.bb.claim_intent(&iid.0, "agent-alpha").expect("claim");
+        sched
+            .bb
+            .claim_intent(&iid.to_string(), "agent-alpha")
+            .expect("claim");
         sched
             .bb
             .conclude_intent(
-                &iid.0,
+                &iid.to_string(),
                 &serde_json::to_string(&serde_json::json!({
                     "analysis": "Spatz balance condition validates SSCCS structural model",
                     "domain": "hardware",
@@ -647,8 +659,8 @@ fn scenario_multi_agent_collaboration() {
         .collect();
     for gf in &compiler_gaps {
         let intent = Intent {
-            id: FihHash::new(&[&gf.id.0, "beta"], "intent"),
-            from_facts: vec![gf.id.0.clone()],
+            id: FihHash::new(&[&gf.id.to_string(), "beta"], "intent"),
+            from_facts: vec![gf.id.clone()],
             description: "Compiler gap analysis".into(),
             creator: "agent-beta".into(),
             worker: None,
@@ -659,11 +671,14 @@ fn scenario_multi_agent_collaboration() {
             concluded_at: None,
         };
         let iid = sched.bb.submit_intent(&intent).expect("submit");
-        sched.bb.claim_intent(&iid.0, "agent-beta").expect("claim");
+        sched
+            .bb
+            .claim_intent(&iid.to_string(), "agent-beta")
+            .expect("claim");
         sched
             .bb
             .conclude_intent(
-                &iid.0,
+                &iid.to_string(),
                 &serde_json::to_string(&serde_json::json!({
                     "analysis": "MLIR Transform Dialect aligns with SSCCS Field composition",
                     "domain": "compiler",
@@ -683,8 +698,8 @@ fn scenario_multi_agent_collaboration() {
         .collect();
     for cf in &contradiction_facts {
         let intent = Intent {
-            id: FihHash::new(&[&cf.id.0, "gamma"], "intent"),
-            from_facts: vec![cf.id.0.clone()],
+            id: FihHash::new(&[&cf.id.to_string(), "gamma"], "intent"),
+            from_facts: vec![cf.id.clone()],
             description: "Philosophical resolution".into(),
             creator: "agent-gamma".into(),
             worker: None,
@@ -695,8 +710,11 @@ fn scenario_multi_agent_collaboration() {
             concluded_at: None,
         };
         let iid = sched.bb.submit_intent(&intent).expect("submit");
-        sched.bb.claim_intent(&iid.0, "agent-gamma").expect("claim");
-        sched.bb.conclude_intent(&iid.0, &serde_json::to_string(&serde_json::json!({
+        sched
+            .bb
+            .claim_intent(&iid.to_string(), "agent-gamma")
+            .expect("claim");
+        sched.bb.conclude_intent(&iid.to_string(), &serde_json::to_string(&serde_json::json!({
             "synthesis": "SSCCS theory + Spatz measurement + MLIR implementation are complementary layers",
             "domain": "philosophy",
             "agent": "gamma",
@@ -770,7 +788,7 @@ fn scenario_document_revision() {
             "software-only",
         ),
     ];
-    let v1_ids: Vec<String> = v1.iter().map(|f| f.id.0.clone()).collect();
+    let v1_ids: Vec<String> = v1.iter().map(|f| f.id.to_string()).collect();
 
     let mut sched = Scheduler::new(bb);
     sched.register(Box::new(GapDetector::new()));

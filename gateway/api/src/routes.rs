@@ -108,7 +108,7 @@ pub async fn submit_fact(
 ) -> Result<Json<SubmitFactResponse>, (StatusCode, Json<ApiError>)> {
     let id = req.id.unwrap_or_else(|| format!("fact_{}", uuid_v4()));
     let fact = Fact {
-        id: FihHash(id.clone()),
+        id: FihHash::from_hex(&id),
         origin: req.origin,
         content: match &req.content {
             serde_json::Value::String(s) => Content {
@@ -128,7 +128,9 @@ pub async fn submit_fact(
         let bb = state.blackboard.lock().unwrap();
         bb.submit_fact(&fact).map_err(err_response)?
     };
-    Ok(Json(SubmitFactResponse { id: hash.0 }))
+    Ok(Json(SubmitFactResponse {
+        id: hash.to_string(),
+    }))
 }
 
 /// GET /fih/state
@@ -150,8 +152,12 @@ pub async fn submit_intent(
         )));
     }
     let intent = Intent {
-        id: FihHash(id.clone()),
-        from_facts: req.from_facts,
+        id: FihHash::from_hex(&id),
+        from_facts: req
+            .from_facts
+            .into_iter()
+            .map(|s| FihHash::from_hex(&s))
+            .collect(),
         description: req.description,
         creator: req.creator,
         worker: None,
@@ -165,7 +171,9 @@ pub async fn submit_intent(
         let bb = state.blackboard.lock().unwrap();
         bb.submit_intent(&intent).map_err(err_response)?
     };
-    Ok(Json(SubmitIntentResponse { id: hash.0 }))
+    Ok(Json(SubmitIntentResponse {
+        id: hash.to_string(),
+    }))
 }
 
 /// POST /fih/intents/{id}/claim
@@ -227,7 +235,7 @@ pub async fn submit_hint(
 ) -> Result<Json<()>, (StatusCode, Json<ApiError>)> {
     let id = req.id.unwrap_or_else(|| format!("hint_{}", uuid_v4()));
     let hint = Hint {
-        id: FihHash(id),
+        id: FihHash::from_hex(&id),
         content: req.content,
         creator: req.creator,
     };

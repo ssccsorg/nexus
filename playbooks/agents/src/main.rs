@@ -59,7 +59,7 @@ fn main() {
     let intent_id = bb
         .submit_intent(&Intent {
             id: FihHash::new(&["test-hypothesis"], "intent"),
-            from_facts: vec![f1.0.clone(), f2.0.clone()],
+            from_facts: vec![f1, f2],
             description: "Test shallow (3-layer) vs deep GNN on molecular benchmark".into(),
             creator: "agent-c".into(),
             worker: None,
@@ -75,17 +75,17 @@ fn main() {
     // ── Phase 3: Claim → Heartbeat → Conclude ───────────────────────
 
     println!("\n3. Claiming...");
-    bb.claim_intent(&intent_id.0, "agent-c").unwrap();
+    bb.claim_intent(&intent_id.to_string(), "agent-c").unwrap();
     println!("   Claimed by agent-c");
 
     println!("\n4. Heartbeat...");
-    bb.heartbeat(&intent_id.0, "agent-c").unwrap();
+    bb.heartbeat(&intent_id.to_string(), "agent-c").unwrap();
     println!("   OK");
 
     println!("\n5. Concluding...");
     let new_fact = bb
         .conclude_intent(
-            &intent_id.0,
+            &intent_id.to_string(),
             &serde_json::to_string(&serde_json::json!({
                 "result": "Shallow GNN (3 layers): 94% accuracy. Deep GNN (10 layers): 89%.",
                 "winner": "shallow",

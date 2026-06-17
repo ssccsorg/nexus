@@ -167,9 +167,11 @@ impl<I: AsyncFileIo> FihStorage<I> {
     ///
     /// Records are sorted by submitted_at before insertion to guarantee
     /// monotonic ordering in by_time (required by OrderedIndex's binary
-    /// search). Other indices (by_origin, by_fact, ref_counts) are
-    /// order-independent and built during the same pass.
+    /// search). Other indices are order-independent and built during the
+    /// same pass via FihCoord methods.
     fn rebuild_coord(&self) {
+        self.coord.clear();
+
         let mut facts = self.fact_store.values();
         let intents = self.intent_store.values();
 
@@ -177,32 +179,22 @@ impl<I: AsyncFileIo> FihStorage<I> {
         facts.sort_by_key(|r| r.submitted_at);
 
         for r in &facts {
-            self.coord.by_time.record(r.submitted_at, &r.id);
+            let id_bytes = FihHash::from_hex(&r.id);
+            let idx = self.coord.intern(&id_bytes.0);
+            self.coord.by_time.record(r.submitted_at, idx);
             self.coord
-                .by_origin
-                .borrow_mut()
-                .entry(r.origin.clone())
-                .or_default()
-                .push(r.id.clone());
-            self.coord
-                .ref_counts
-                .borrow_mut()
-                .entry(r.id.clone())
-                .or_insert_with(|| Cell::new(0));
+                .record_fact(&id_bytes.0, &r.origin, &r.creator, r.submitted_at);
         }
 
         for r in &intents {
-            for fid in &r.from_facts {
-                if let Some(rc) = self.coord.ref_counts.borrow().get(fid) {
-                    rc.set(rc.get() + 1);
-                }
-                self.coord
-                    .by_fact
-                    .borrow_mut()
-                    .entry(fid.clone())
-                    .or_default()
-                    .push(r.id.clone());
-            }
+            let id_bytes = FihHash::from_hex(&r.id);
+            let from_bytes: Vec<[u8; 32]> = r
+                .from_facts
+                .iter()
+                .map(|f| FihHash::from_hex(f).0)
+                .collect();
+            self.coord
+                .record_intent(&id_bytes.0, &r.creator, r.created_at, &from_bytes);
         }
     }
 
@@ -216,8 +208,17 @@ impl<I: AsyncFileIo> FihStorage<I> {
     }
 
     /// Query intents that reference a given fact.
+    /// Returns Vec<String> (hex IDs). Each call allocates O(k) strings
+    /// where k is the number of referencing intents — acceptable for
+    /// expected fan-out sizes (< 100).
+    /// Query intents that reference a given fact.
     pub fn intents_by_fact(&self, fact_id: &str) -> Vec<String> {
-        self.coord.intents_by_fact(fact_id)
+        let fidx = self.coord.intern_str(fact_id);
+        self.coord
+            .intents_by_fact(fidx)
+            .into_iter()
+            .map(|idx| self.coord.resolve(idx))
+            .collect()
     }
 
     /// Enqueue content as a blob write. FIH is append-only: no dedup
@@ -304,13 +305,11 @@ impl<I: AsyncFileIo> FihStorage<I> {
 }
 
 fn content_hash(data: &[u8]) -> String {
-    // Simple WASM-compatible hash. Uses std::hash::DefaultHasher which
-    // works on all targets including wasm32-unknown-unknown.
-    // In production, replace with SHA-256 or BLAKE3.
-    use std::hash::{Hash, Hasher};
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    data.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    // SHA-256 content hash. WASM-compatible (sha2 crate works on wasm32).
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(data);
+    format!("{:x}", h.finalize())
 }
 
 /// Load a content blob from IO by hash. Returns empty Content if not found.
@@ -350,7 +349,7 @@ impl<I: AsyncFileIo> StorageRead for FihStorage<I> {
                 .map(|r| {
                     let content = self.load_content(&r.blob_hash, "application/octet-stream");
                     Fact {
-                        id: FihHash(r.id.clone()),
+                        id: FihHash::from_hex(&r.id),
                         origin: r.origin.clone(),
                         content,
                         creator: r.creator.clone(),
@@ -360,8 +359,8 @@ impl<I: AsyncFileIo> StorageRead for FihStorage<I> {
             intents: intents
                 .into_iter()
                 .map(|r| Intent {
-                    id: FihHash(r.id.clone()),
-                    from_facts: r.from_facts.clone(),
+                    id: FihHash::from_hex(&r.id),
+                    from_facts: r.from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
                     description: {
                         if r.description_hash.is_empty() {
                             r.id.clone()
@@ -377,7 +376,7 @@ impl<I: AsyncFileIo> StorageRead for FihStorage<I> {
                         IntentStatus::Submitted => None,
                     },
                     to_fact_id: match &r.status {
-                        IntentStatus::Concluded { to_fact, .. } => Some(to_fact.clone()),
+                        IntentStatus::Concluded { to_fact, .. } => Some(FihHash::from_hex(to_fact)),
                         _ => None,
                     },
                     last_heartbeat_at: match &r.status {
@@ -397,7 +396,7 @@ impl<I: AsyncFileIo> StorageRead for FihStorage<I> {
             hints: hints
                 .into_iter()
                 .map(|r| Hint {
-                    id: FihHash(r.id.clone()),
+                    id: FihHash::from_hex(&r.id),
                     content: r.content.clone(),
                     creator: r.creator.clone(),
                 })
@@ -429,24 +428,12 @@ impl<I: AsyncFileIo> FactCapable for FihStorage<I> {
         self.pending.borrow_mut().push(op);
         self.maybe_flush().map_err(BlackboardError::Internal)?;
 
-        // Update indices
+        // Update indices via FihCoord
         let ts = self.clock.now_nanos();
-        self.coord.by_time.record(ts, &fact.id.0);
-        {
-            let mut origin_map = self.coord.by_origin.borrow_mut();
-            origin_map
-                .entry(fact.origin.clone())
-                .or_default()
-                .push(fact.id.0.clone());
-        }
-        // ref_count defaults to 0 — orphan unless referenced by an Intent
         self.coord
-            .ref_counts
-            .borrow_mut()
-            .entry(fact.id.0.clone())
-            .or_insert_with(|| Cell::new(0));
+            .record_fact(&fact.id.0, &fact.origin, &fact.creator, ts);
 
-        Ok(fact.id.clone())
+        Ok(fact.id)
     }
 }
 
@@ -455,7 +442,7 @@ impl<I: AsyncFileIo> FactCapable for FihStorage<I> {
 impl<I: AsyncFileIo> HintCapable for FihStorage<I> {
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         let record = HintRecord {
-            id: hint.id.0.clone(),
+            id: hint.id.to_string(),
             content: hint.content.clone(),
             creator: hint.creator.clone(),
             submitted_at: self.clock.now_secs(),
@@ -489,23 +476,19 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
             ));
         }
         for fid in &intent.from_facts {
-            if !self.fact_store.contains_key(fid) {
-                return Err(BlackboardError::NotFound(format!("Fact {fid} not found")));
+            let fid_str = fid.to_string();
+            if !self.fact_store.contains_key(&fid_str) {
+                return Err(BlackboardError::NotFound(format!(
+                    "Fact {fid_str} not found"
+                )));
             }
         }
-        // Increment ref_count for each from_fact
-        {
-            let refs = self.coord.ref_counts.borrow();
-            for fid in &intent.from_facts {
-                if let Some(rc) = refs.get(fid) {
-                    rc.set(rc.get() + 1);
-                }
-            }
-        }
+        // Intentionally left blank — ref_count and by_fact updates
+        // are handled inside record_intent below after the record is built.
 
         let record = IntentRecord {
-            id: intent.id.0.clone(),
-            from_facts: intent.from_facts.clone(),
+            id: intent.id.to_string(),
+            from_facts: intent.from_facts.iter().map(|f| f.to_string()).collect(),
             description_hash: String::new(),
             creator: intent.creator.clone(),
             status: IntentStatus::Submitted,
@@ -520,25 +503,27 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
             data: bytes,
         };
 
+        // Record intent in coordinator (handles by_fact, ref_counts, by_status, by_creator)
+        self.coord.record_intent(
+            &intent.id.0,
+            &intent.creator,
+            record.created_at,
+            // Convert from_facts FihHashs to raw bytes
+            &intent.from_facts.iter().map(|f| f.0).collect::<Vec<_>>(),
+        );
+
         self.intent_store.insert(record.id.clone(), record);
-        // Update by_from_fact reverse index
-        let mut by_fact = self.coord.by_fact.borrow_mut();
-        for fid in &intent.from_facts {
-            by_fact
-                .entry(fid.clone())
-                .or_default()
-                .push(intent.id.0.clone());
-        }
         self.pending.borrow_mut().push(op);
         self.maybe_flush().map_err(BlackboardError::Internal)?;
 
-        Ok(intent.id.clone())
+        Ok(intent.id)
     }
 
-    fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+    fn claim_intent(&self, raw_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let intent_id = FihHash::from_hex(raw_id).to_string();
         let mut record = self
             .intent_store
-            .get(intent_id)
+            .get(&intent_id)
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
 
         let now = self.clock.now_secs();
@@ -559,15 +544,18 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
             data: bytes,
         });
         self.intent_store.insert(intent_id.to_string(), record);
+        self.coord
+            .update_intent_status(&FihHash::from_hex(&intent_id).0, "submitted", "claimed");
         self.maybe_flush().map_err(BlackboardError::Internal)?;
 
         Ok(())
     }
 
-    fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+    fn heartbeat(&self, raw_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let intent_id = FihHash::from_hex(raw_id).to_string();
         let mut record = self
             .intent_store
-            .get(intent_id)
+            .get(&intent_id)
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
 
         let now = self.clock.now_secs();
@@ -593,10 +581,11 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
         Ok(())
     }
 
-    fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+    fn release_intent(&self, raw_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let intent_id = FihHash::from_hex(raw_id).to_string();
         let mut record = self
             .intent_store
-            .get(intent_id)
+            .get(&intent_id)
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
 
         match &record.status {
@@ -623,16 +612,19 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
             data: bytes,
         });
         self.intent_store.insert(intent_id.to_string(), record);
+        self.coord
+            .update_intent_status(&FihHash::from_hex(&intent_id).0, "claimed", "submitted");
         self.maybe_flush().map_err(BlackboardError::Internal)?;
 
         Ok(())
     }
 
     /// Conclude an intent: transition Claimed → Concluded, produce result Fact.
-    fn conclude_intent(&self, intent_id: &str, result: &str) -> Result<Fact, BlackboardError> {
+    fn conclude_intent(&self, raw_id: &str, result: &str) -> Result<Fact, BlackboardError> {
+        let intent_id = FihHash::from_hex(raw_id).to_string();
         let mut record = self
             .intent_store
-            .get(intent_id)
+            .get(&intent_id)
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
 
         // Extract worker before consuming status
@@ -649,7 +641,7 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
         // Create conclusion Fact first (its ID becomes to_fact)
         let conclusion_fact_id = format!("f_concl_{}", intent_id);
         let new_fact = Fact {
-            id: FihHash(conclusion_fact_id.clone()),
+            id: FihHash::from_hex(&conclusion_fact_id),
             origin: format!("conclusion:{}", intent_id),
             content: Content {
                 mime_type: "text/plain".into(),
@@ -670,29 +662,18 @@ impl<I: AsyncFileIo> IntentCapable for FihStorage<I> {
         // Submit conclusion fact via FactCapable, then re-serialize intent
         FactCapable::submit_fact(self, &new_fact)?;
 
-        // Decrement ref_count for from_facts (intent no longer references them)
-        {
-            let refs = self.coord.ref_counts.borrow();
-            if let Some(r) = self.intent_store.get(intent_id) {
-                for fid in &r.from_facts {
-                    if let Some(rc) = refs.get(fid) {
-                        rc.set(rc.get() - 1);
-                    }
-                }
-            }
+        // Remove intent from from_facts references and update status
+        if let Some(r) = self.intent_store.get(&intent_id) {
+            let from_bytes: Vec<[u8; 32]> = r
+                .from_facts
+                .iter()
+                .map(|f| FihHash::from_hex(f).0)
+                .collect();
+            self.coord
+                .remove_intent_from_facts(&FihHash::from_hex(&intent_id).0, &from_bytes);
         }
-
-        // Remove intent from by_from_fact reverse index
-        {
-            if let Some(r) = self.intent_store.get(intent_id) {
-                let mut by_fact = self.coord.by_fact.borrow_mut();
-                for fid in &r.from_facts {
-                    if let Some(refs) = by_fact.get_mut(fid) {
-                        refs.retain(|i| i != intent_id);
-                    }
-                }
-            }
-        }
+        self.coord
+            .update_intent_status(&FihHash::from_hex(&intent_id).0, "claimed", "concluded");
 
         let intent_bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -757,78 +738,318 @@ impl<I: AsyncFileIo> EvictCapable for FihStorage<I> {
 
 impl<I: AsyncFileIo> FilterCapable for FihStorage<I> {
     fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
-        // Determine time range using TimeIndex (O(log N) seek)
-        let time_filtered_ids: Option<std::collections::HashSet<String>> =
-            match (&filter.since, &filter.until) {
-                (Some(since_str), Some(until_str)) => {
-                    // Both bounds: range query
-                    if let (Ok(since_ts), Ok(until_ts)) =
-                        (since_str.parse::<u64>(), until_str.parse::<u64>())
-                    {
-                        Some(
-                            self.coord
-                                .by_time
-                                .range(&since_ts, &until_ts)
-                                .into_iter()
-                                .map(|(_, id)| id)
-                                .collect(),
-                        )
-                    } else {
-                        None
+        use std::collections::HashSet;
+
+        // ── Phase 1: Resolve candidate fact IDs from indexes ────────────
+        let has_fact_index = filter.creator.is_some()
+            || filter.since.is_some()
+            || filter.until.is_some()
+            || filter.fact_ids.is_some();
+
+        let fact_candidates: Option<HashSet<u32>> = if has_fact_index {
+            let mut c: Option<HashSet<u32>> = None;
+
+            // By creator
+            if let Some(creator) = &filter.creator {
+                let ids: HashSet<u32> = self.coord.facts_by_creator(creator).into_iter().collect();
+                c = Some(match c {
+                    Some(existing) => existing.intersection(&ids).copied().collect(),
+                    None => ids,
+                });
+            }
+
+            // By time (nanosecond precision via OrderedIndex)
+            if filter.since.is_some() || filter.until.is_some() {
+                let since_ns = filter
+                    .since
+                    .as_ref()
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .unwrap_or(0);
+                let until_ns = filter
+                    .until
+                    .as_ref()
+                    .and_then(|u| u.parse::<u64>().ok())
+                    .unwrap_or(u64::MAX);
+                let time_ids: HashSet<u32> = match (&filter.since, &filter.until) {
+                    (Some(_), Some(_)) => self
+                        .coord
+                        .by_time
+                        .range(&since_ns, &until_ns)
+                        .into_iter()
+                        .map(|(_, idx)| idx)
+                        .collect(),
+                    (Some(_), None) => self
+                        .coord
+                        .by_time
+                        .since(&since_ns)
+                        .into_iter()
+                        .map(|(_, idx)| idx)
+                        .collect(),
+                    (None, Some(_)) => self
+                        .coord
+                        .by_time
+                        .as_of(&until_ns)
+                        .into_iter()
+                        .map(|(_, idx)| idx)
+                        .collect(),
+                    (None, None) => unreachable!(),
+                };
+                c = Some(match c {
+                    Some(existing) => existing.intersection(&time_ids).copied().collect(),
+                    None => time_ids,
+                });
+            }
+
+            // By fact_ids (specific hex IDs)
+            if let Some(ids) = &filter.fact_ids {
+                let id_set: HashSet<u32> = ids.iter().map(|id| self.coord.intern_str(id)).collect();
+                c = Some(match c {
+                    Some(existing) => existing.intersection(&id_set).copied().collect(),
+                    None => id_set,
+                });
+            }
+
+            c
+        } else {
+            None
+        };
+
+        // ── Phase 2: Resolve candidate intent IDs from indexes ──────────
+        //
+        // Intent time filters (since/until) cannot use the day-precision
+        // by_created_at_day index for nanosecond-accurate time-travel
+        // queries. They are handled as post-filters in Phase 4 instead.
+        let has_intent_index =
+            filter.creator.is_some() || filter.status.is_some() || filter.intent_ids.is_some();
+
+        let intent_candidates: Option<HashSet<u32>> = if has_intent_index {
+            let mut c: Option<HashSet<u32>> = None;
+
+            // By status
+            if let Some(status) = &filter.status {
+                let ids: HashSet<u32> = self.coord.intents_by_status(status).into_iter().collect();
+                c = Some(match c {
+                    Some(existing) => existing.intersection(&ids).copied().collect(),
+                    None => ids,
+                });
+            }
+
+            // By creator (intents are also indexed by creator)
+            if let Some(creator) = &filter.creator {
+                let ids: HashSet<u32> = self.coord.facts_by_creator(creator).into_iter().collect();
+                c = Some(match c {
+                    Some(existing) => existing.intersection(&ids).copied().collect(),
+                    None => ids,
+                });
+            }
+
+            // By intent_ids (specific hex IDs)
+            if let Some(ids) = &filter.intent_ids {
+                let id_set: HashSet<u32> = ids.iter().map(|id| self.coord.intern_str(id)).collect();
+                c = Some(match c {
+                    Some(existing) => existing.intersection(&id_set).copied().collect(),
+                    None => id_set,
+                });
+            }
+
+            c
+        } else {
+            None
+        };
+
+        // ── Phase 3: Selective materialization ──────────────────────────
+        let all_facts = self.fact_store.values();
+        let all_intents = self.intent_store.values();
+        let all_hints = self.hint_store.values();
+
+        let facts: Vec<Fact> = match fact_candidates {
+            Some(ids) => all_facts
+                .into_iter()
+                .filter(|r| ids.contains(&self.coord.intern_str(&r.id)))
+                .map(|r| {
+                    let content = self.load_content(&r.blob_hash, "application/octet-stream");
+                    Fact {
+                        id: FihHash::from_hex(&r.id),
+                        origin: r.origin,
+                        content,
+                        creator: r.creator,
                     }
-                }
-                (Some(since_str), None) => {
-                    // Lower bound only: since query
-                    if let Ok(since_ts) = since_str.parse::<u64>() {
-                        Some(
-                            self.coord
-                                .by_time
-                                .since(&since_ts)
-                                .into_iter()
-                                .map(|(_, id)| id)
-                                .collect(),
-                        )
-                    } else {
-                        None
+                })
+                .collect(),
+            None => all_facts
+                .into_iter()
+                .map(|r| {
+                    let content = self.load_content(&r.blob_hash, "application/octet-stream");
+                    Fact {
+                        id: FihHash::from_hex(&r.id),
+                        origin: r.origin,
+                        content,
+                        creator: r.creator,
                     }
-                }
-                (None, Some(until_str)) => {
-                    // Upper bound only: as_of query (time-travel)
-                    if let Ok(until_ts) = until_str.parse::<u64>() {
-                        Some(
-                            self.coord
-                                .by_time
-                                .as_of(&until_ts)
-                                .into_iter()
-                                .map(|(_, id)| id)
-                                .collect(),
-                        )
+                })
+                .collect(),
+        };
+
+        let intents: Vec<Intent> = match intent_candidates {
+            Some(ids) => all_intents
+                .into_iter()
+                .filter(|r| ids.contains(&self.coord.intern_str(&r.id)))
+                .map(|r| {
+                    let description = if r.description_hash.is_empty() {
+                        r.id.clone()
                     } else {
-                        None
+                        let c = self.load_content(&r.description_hash, "text/plain");
+                        String::from_utf8_lossy(&c.data).to_string()
+                    };
+                    Intent {
+                        id: FihHash::from_hex(&r.id),
+                        from_facts: r.from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
+                        description,
+                        creator: r.creator,
+                        worker: match &r.status {
+                            IntentStatus::Claimed { worker, .. }
+                            | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
+                            IntentStatus::Submitted => None,
+                        },
+                        to_fact_id: match &r.status {
+                            IntentStatus::Concluded { to_fact, .. } => {
+                                Some(FihHash::from_hex(to_fact))
+                            }
+                            _ => None,
+                        },
+                        last_heartbeat_at: match &r.status {
+                            IntentStatus::Claimed {
+                                last_heartbeat_at, ..
+                            } => Some(*last_heartbeat_at),
+                            _ => None,
+                        },
+                        created_at: Some(r.created_at),
+                        is_concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
+                        concluded_at: match &r.status {
+                            IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
+                            _ => None,
+                        },
                     }
+                })
+                .collect(),
+            None => all_intents
+                .into_iter()
+                .map(|r| {
+                    let description = if r.description_hash.is_empty() {
+                        r.id.clone()
+                    } else {
+                        let c = self.load_content(&r.description_hash, "text/plain");
+                        String::from_utf8_lossy(&c.data).to_string()
+                    };
+                    Intent {
+                        id: FihHash::from_hex(&r.id),
+                        from_facts: r.from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
+                        description,
+                        creator: r.creator,
+                        worker: match &r.status {
+                            IntentStatus::Claimed { worker, .. }
+                            | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
+                            IntentStatus::Submitted => None,
+                        },
+                        to_fact_id: match &r.status {
+                            IntentStatus::Concluded { to_fact, .. } => {
+                                Some(FihHash::from_hex(to_fact))
+                            }
+                            _ => None,
+                        },
+                        last_heartbeat_at: match &r.status {
+                            IntentStatus::Claimed {
+                                last_heartbeat_at, ..
+                            } => Some(*last_heartbeat_at),
+                            _ => None,
+                        },
+                        created_at: Some(r.created_at),
+                        is_concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
+                        concluded_at: match &r.status {
+                            IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
+                            _ => None,
+                        },
+                    }
+                })
+                .collect(),
+        };
+
+        let hints: Vec<Hint> = {
+            // Hints have no indexed filters beyond hint_ids
+            let has_hint_filter = filter.hint_ids.is_some();
+            if has_hint_filter {
+                let hint_ids_set: Option<HashSet<String>> = filter.hint_ids.as_ref().map(|ids| {
+                    ids.iter()
+                        .map(|id| FihHash::from_hex(id).to_string())
+                        .collect()
+                });
+                match hint_ids_set {
+                    Some(ids) => all_hints
+                        .into_iter()
+                        .filter(|r| ids.contains(&r.id))
+                        .map(|r| Hint {
+                            id: FihHash::from_hex(&r.id),
+                            content: r.content,
+                            creator: r.creator,
+                        })
+                        .collect(),
+                    None => all_hints
+                        .into_iter()
+                        .map(|r| Hint {
+                            id: FihHash::from_hex(&r.id),
+                            content: r.content,
+                            creator: r.creator,
+                        })
+                        .collect(),
                 }
-                (None, None) => None,
-            };
+            } else {
+                all_hints
+                    .into_iter()
+                    .map(|r| Hint {
+                        id: FihHash::from_hex(&r.id),
+                        content: r.content,
+                        creator: r.creator,
+                    })
+                    .collect()
+            }
+        };
 
-        let mut state = StorageRead::read_state(self);
+        // ── Phase 4: Post-filtering ─────────────────────────────────────
+        //
+        // Intent time filters (since/until) are applied here because
+        // by_created_at_day provides only day precision, which is too
+        // coarse for nanosecond-accurate time-travel queries. For intents
+        // with status or creator indexes, those narrow the candidate set
+        // in Phase 2; the time filter then runs on the reduced set here.
+        let mut state = BoardState {
+            facts,
+            intents,
+            hints,
+        };
 
-        // Apply time filter if active
-        if let Some(ids) = &time_filtered_ids {
-            state.facts.retain(|f| ids.contains(&f.id.0));
-            state.intents.retain(|i| ids.contains(&i.id.0));
-            state.hints.retain(|h| ids.contains(&h.id.0));
+        // Post-filter intents by since/until (nanosecond precision on created_at)
+        let has_intent_time_filter = filter.since.is_some() || filter.until.is_some();
+        if has_intent_time_filter {
+            let since_ns = filter
+                .since
+                .as_ref()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(0);
+            let until_ns = filter
+                .until
+                .as_ref()
+                .and_then(|u| u.parse::<u64>().ok())
+                .unwrap_or(u64::MAX);
+            state.intents.retain(|i| {
+                // created_at is in seconds; convert to nanoseconds for comparison.
+                // since: created_at > bound (strict, matching OrderedIndex::since).
+                // until: created_at <= bound (inclusive, matching OrderedIndex::as_of).
+                let created_ns = i.created_at.unwrap_or(0) * 1_000_000_000;
+                created_ns > since_ns && created_ns <= until_ns
+            });
         }
 
-        if let Some(ids) = &filter.fact_ids {
-            state.facts.retain(|f| ids.contains(&f.id.0));
-        }
-        if let Some(ids) = &filter.intent_ids {
-            state.intents.retain(|i| ids.contains(&i.id.0));
-        }
-        if let Some(ids) = &filter.hint_ids {
-            state.hints.retain(|h| ids.contains(&h.id.0));
-        }
-
+        // Apply limit and offset
         let offset = filter.offset.unwrap_or(0);
         if let Some(limit) = filter.limit {
             state.facts = state.facts.into_iter().skip(offset).take(limit).collect();
@@ -903,7 +1124,7 @@ impl<I: AsyncFileIo> FlushCapable for FihStorage<I> {
             .by_time
             .since(&since_ts)
             .into_iter()
-            .map(|(ts, id)| (id, ts))
+            .map(|(ts, idx)| (self.coord.resolve(idx), ts))
             .collect();
         let records_flushed = delta_ids.len() as u64;
 
@@ -987,7 +1208,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
                 {
                     let content = load_blob(&self.io, &r.blob_hash).await;
                     facts.push(Fact {
-                        id: FihHash(r.id.clone()),
+                        id: FihHash::from_hex(&r.id),
                         origin: r.origin.clone(),
                         content,
                         creator: r.creator.clone(),
@@ -1003,8 +1224,8 @@ impl<I: AsyncFileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
                     && let Ok(r) = postcard::from_bytes::<IntentRecord>(&bytes)
                 {
                     intents.push(Intent {
-                        id: FihHash(r.id.clone()),
-                        from_facts: r.from_facts.clone(),
+                        id: FihHash::from_hex(&r.id),
+                        from_facts: r.from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
                         description: {
                             if r.description_hash.is_empty() {
                                 r.id.clone()
@@ -1020,7 +1241,9 @@ impl<I: AsyncFileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
                             IntentStatus::Submitted => None,
                         },
                         to_fact_id: match &r.status {
-                            IntentStatus::Concluded { to_fact, .. } => Some(to_fact.clone()),
+                            IntentStatus::Concluded { to_fact, .. } => {
+                                Some(FihHash::from_hex(to_fact))
+                            }
                             _ => None,
                         },
                         last_heartbeat_at: match &r.status {
@@ -1047,7 +1270,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
                     && let Ok(r) = postcard::from_bytes::<HintRecord>(&bytes)
                 {
                     hints.push(Hint {
-                        id: FihHash(r.id.clone()),
+                        id: FihHash::from_hex(&r.id),
                         content: r.content.clone(),
                         creator: r.creator.clone(),
                     });
@@ -1084,22 +1307,12 @@ impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
             .map_err(BlackboardError::Internal)?;
         self.fact_store.insert(record.id.clone(), record);
 
-        // Update indices for sync impl consistency
+        // Update indices via FihCoord (record_fact records by_time internally)
         let ts = self.clock.now_nanos();
-        self.coord.by_time.record(ts, &fact.id.0);
         self.coord
-            .by_origin
-            .borrow_mut()
-            .entry(fact.origin.clone())
-            .or_default()
-            .push(fact.id.0.clone());
-        self.coord
-            .ref_counts
-            .borrow_mut()
-            .entry(fact.id.0.clone())
-            .or_insert_with(|| Cell::new(0));
+            .record_fact(&fact.id.0, &fact.origin, &fact.creator, ts);
 
-        Ok(fact.id.clone())
+        Ok(fact.id)
     }
 }
 
@@ -1108,7 +1321,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
 impl<I: AsyncFileIo> nexus_model::AsyncHintCapable for FihStorage<I> {
     async fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         let record = super::record::HintRecord {
-            id: hint.id.0.clone(),
+            id: hint.id.to_string(),
             content: hint.content.clone(),
             creator: hint.creator.clone(),
             submitted_at: 0,
@@ -1130,8 +1343,8 @@ impl<I: AsyncFileIo> nexus_model::AsyncHintCapable for FihStorage<I> {
 impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
     async fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
         let record = super::record::IntentRecord {
-            id: intent.id.0.clone(),
-            from_facts: intent.from_facts.clone(),
+            id: intent.id.to_string(),
+            from_facts: intent.from_facts.iter().map(|f| f.to_string()).collect(),
             description_hash: String::new(),
             creator: intent.creator.clone(),
             status: super::record::IntentStatus::Submitted,
@@ -1144,11 +1357,12 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
             .await
             .map_err(BlackboardError::Internal)?;
         self.intent_store.insert(record.id.clone(), record);
-        Ok(intent.id.clone())
+        Ok(intent.id)
     }
 
     async fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let key = format!("intents/i_{}.intent", intent_id);
+        let normalized = FihHash::from_hex(intent_id).to_string();
+        let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
             .io
             .read(&key)
@@ -1174,12 +1388,15 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
             .write(&key, &bytes)
             .await
             .map_err(BlackboardError::Internal)?;
-        self.intent_store.insert(intent_id.to_string(), record);
+        self.intent_store.insert(normalized.clone(), record);
+        self.coord
+            .update_intent_status(&FihHash::from_hex(&normalized).0, "submitted", "claimed");
         Ok(())
     }
 
     async fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let key = format!("intents/i_{}.intent", intent_id);
+        let normalized = FihHash::from_hex(intent_id).to_string();
+        let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
             .io
             .read(&key)
@@ -1210,7 +1427,8 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
     }
 
     async fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let key = format!("intents/i_{}.intent", intent_id);
+        let normalized = FihHash::from_hex(intent_id).to_string();
+        let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
             .io
             .read(&key)
@@ -1252,7 +1470,8 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
         intent_id: &str,
         result: &str,
     ) -> Result<Fact, BlackboardError> {
-        let key = format!("intents/i_{}.intent", intent_id);
+        let normalized = FihHash::from_hex(intent_id).to_string();
+        let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
             .io
             .read(&key)
@@ -1272,7 +1491,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
 
         let conclusion_id = format!("f_concl_{}", intent_id);
         let new_fact = Fact {
-            id: FihHash(conclusion_id.clone()),
+            id: FihHash::from_hex(&conclusion_id),
             origin: format!("conclusion:{}", intent_id),
             content: Content {
                 mime_type: "text/plain".into(),
@@ -1305,6 +1524,8 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
             .await
             .map_err(BlackboardError::Internal)?;
         self.intent_store.insert(intent_id.to_string(), record);
+        self.coord
+            .update_intent_status(&FihHash::from_hex(intent_id).0, "claimed", "concluded");
 
         Ok(new_fact)
     }
@@ -1362,7 +1583,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncFlushCapable for FihStorage<I> {
             .by_time
             .since(&since_ts)
             .into_iter()
-            .map(|(ts, id)| (id, ts))
+            .map(|(_ts, idx)| (self.coord.resolve(idx), _ts))
             .collect();
         let records_flushed = delta_ids.len() as u64;
 

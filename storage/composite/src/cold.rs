@@ -156,7 +156,7 @@ impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> CompositeColdStorage<B,
                 Err(e) => log::warn!("read_flushed_facts: blob {key}: {e}"),
             }
         }
-        facts.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+        facts.sort_by_key(|a| a.id.0);
         Ok(facts)
     }
 
@@ -175,7 +175,7 @@ impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> CompositeColdStorage<B,
                 Err(e) => log::warn!("read_flushed_intents: blob {key}: {e}"),
             }
         }
-        intents.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+        intents.sort_by_key(|a| a.id.0);
         Ok(intents)
     }
 
@@ -194,7 +194,7 @@ impl<B: BlobStore, O: ObjectStore, M: MetaStore, C: Now> CompositeColdStorage<B,
                 Err(e) => log::warn!("read_flushed_hints: blob {key}: {e}"),
             }
         }
-        hints.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+        hints.sort_by_key(|a| a.id.0);
         Ok(hints)
     }
 }

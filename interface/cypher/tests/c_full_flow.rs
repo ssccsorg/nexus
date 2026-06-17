@@ -16,7 +16,7 @@ use nexus_storage_composite::HybridBlackboard;
 /// Helper: submit a fact with minimal boilerplate.
 fn submit_fact(bb: &impl Blackboard, id: &str, origin: &str, content: &str, creator: &str) {
     let fact = Fact {
-        id: FihHash(id.into()),
+        id: FihHash::from_hex(id),
         origin: origin.into(),
         content: content.into(),
         creator: creator.into(),
@@ -77,8 +77,8 @@ fn test_full_agent_collaboration_flow() {
 
     // Agent-B submits an Intent grounded in facts
     let intent = Intent {
-        id: FihHash("i001".into()),
-        from_facts: vec!["f001".into(), "f002".into()],
+        id: FihHash::from_hex("i001"),
+        from_facts: vec![FihHash::from_hex("f001"), FihHash::from_hex("f002")],
         description: "Test shallow GNN (3 layers) vs deep GNN (10 layers) on molecular benchmark"
             .into(),
         creator: "agent-b".into(),
@@ -185,7 +185,7 @@ fn test_petgraph_time_range() {
     // PetgraphStorage is the hot layer, NullStorage is the cold layer.
     let bb = create_blackboard();
     bb.submit_fact(&Fact {
-        id: FihHash("f_001".into()),
+        id: FihHash::from_hex("f_001"),
         origin: "test".into(),
         content: Content {
             mime_type: "application/json".into(),

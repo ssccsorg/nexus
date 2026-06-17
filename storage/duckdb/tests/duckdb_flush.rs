@@ -18,7 +18,7 @@
 //!
 //! All existing `nexus-storage-duckdb` tests (82 tests) pass unchanged.
 
-use nexus_model::{FlushCapable, FlushCursor, StorageRead}; // project_id via StorageRead
+use nexus_model::{FihHash, FlushCapable, FlushCursor, StorageRead}; // project_id via StorageRead
 use nexus_storage_duckdb::DuckDbStorage;
 use tempfile::TempDir;
 
@@ -369,7 +369,7 @@ fn test_flush_preserves_original_data() {
     // Read state before flush
     let before = storage.read_state();
     assert_eq!(before.facts.len(), 1);
-    assert_eq!(before.facts[0].id.0, "f_orig");
+    assert_eq!(before.facts[0].id, FihHash::from_hex("f_orig"));
 
     tick();
     let _ = storage
@@ -382,7 +382,10 @@ fn test_flush_preserves_original_data() {
     // Read state after flush — original data unchanged
     let after = storage.read_state();
     assert!(
-        after.facts.iter().any(|f| f.id.0 == "f_orig"),
+        after
+            .facts
+            .iter()
+            .any(|f| f.id == FihHash::from_hex("f_orig")),
         "original fact still present after flush"
     );
     assert_eq!(

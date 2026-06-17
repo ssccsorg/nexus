@@ -11,7 +11,7 @@ fn bb_with_facts() -> HybridBlackboard {
     let bb = HybridBlackboard::new();
     for i in 0..5 {
         let fact = Fact {
-            id: FihHash(format!("f{i}")),
+            id: FihHash::from_hex(&format!("f{i}")),
             origin: "test".into(),
             content: format!("fact #{i}").into(),
             creator: "tester".into(),
@@ -48,7 +48,7 @@ fn test_consecutive_flushes_advance_cursor() {
     // add more facts
     for i in 5..10 {
         let fact = Fact {
-            id: FihHash(format!("f{i}")),
+            id: FihHash::from_hex(&format!("f{i}")),
             origin: "test".into(),
             content: format!("fact #{i}").into(),
             creator: "tester".into(),
@@ -101,7 +101,7 @@ fn test_flush_after_restore_continues_from_cursor() {
     // Add more facts to the original, restore to fresh instance.
     for i in 10..15 {
         let fact = Fact {
-            id: FihHash(format!("f{i}")),
+            id: FihHash::from_hex(&format!("f{i}")),
             origin: "test".into(),
             content: format!("fact #{i}").into(),
             creator: "tester".into(),
@@ -125,7 +125,7 @@ fn test_cursor_independent_of_graph_mutations() {
 
     let mut bb = HybridBlackboard::new();
     let fact = Fact {
-        id: FihHash("f1".into()),
+        id: FihHash::from_hex("f1"),
         origin: "test".into(),
         content: "test".into(),
         creator: "tester".into(),
@@ -206,7 +206,7 @@ fn test_storage_snapshot_roundtrip() {
     let bb = bb_with_facts();
     // Add intents
     let intent = Intent {
-        id: FihHash("i1".into()),
+        id: FihHash::from_hex("i1"),
         from_facts: vec![],
         to_fact_id: None,
         description: "test goal".into(),

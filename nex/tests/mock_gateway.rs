@@ -6,13 +6,13 @@ use nexus_storage_composite::HybridBlackboard;
 fn test_serde_proxy_submit_fact() {
     let gw = SerdeProxy::new(HybridBlackboard::new());
     let fact = Fact {
-        id: FihHash("f_gw_001".into()),
+        id: FihHash::from_hex("f_gw_001"),
         origin: "gateway-test".into(),
         content: "Gateway driver test".into(),
         creator: "tester".into(),
     };
     let hash = gw.submit_fact(&fact).unwrap();
-    assert_eq!(hash.0, "f_gw_001");
+    assert_eq!(hash, FihHash::from_hex("f_gw_001"));
 
     let state = gw.read_state();
     assert_eq!(state.facts.len(), 1);
