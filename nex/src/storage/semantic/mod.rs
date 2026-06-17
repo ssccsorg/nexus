@@ -20,10 +20,10 @@
 
 use std::fmt::Debug;
 
-/// Lookup handle provided by FihCoord for retrieving Fih data.
+/// Lookup handle for loading Fih data by record ID.
 ///
-/// Each `SemanticStore` implementation uses this handle to load only the
-/// data it actually needs (text, feature vectors, content bytes, etc.).
+/// Used by `SemanticStore::insert()` to retrieve the data it needs
+/// (feature vectors, text, origin, etc.) for a given record.
 pub trait FihLoad {
     /// Load content bytes for a record by its coord index.
     fn content(&self, id: u32) -> Option<Vec<u8>>;
@@ -44,6 +44,20 @@ pub trait FihLoad {
     fn creator(&self, id: u32) -> Option<String>;
 }
 
+/// Query handle for similarity search.
+///
+/// Used by `SemanticStore::search()`. Unlike `FihLoad`, it carries no
+/// record ID — only the query data needed to find similar records.
+/// Each implementation calls only the accessor it needs (e.g.
+/// `features()` for vector search, `text()` for BM25).
+pub trait FihQuery {
+    /// Query as f32 feature vector.
+    fn features(&self) -> Option<Vec<f32>>;
+
+    /// Query as UTF-8 text.
+    fn text(&self) -> Option<String>;
+}
+
 /// Semantic feature store for similarity search.
 ///
 /// Maps semantic features to record IDs. Used by FihCoord as another
@@ -55,9 +69,8 @@ pub trait SemanticStore: Debug {
     /// `load` to retrieve only the data it needs.
     fn insert(&mut self, id: u32, load: &dyn FihLoad) -> Result<(), String>;
 
-    /// Search for the top_k most similar records. The implementation
-    /// may use `load` to refine search parameters or fetch comparison data.
-    fn search(&self, query: &dyn FihLoad, top_k: usize) -> Result<Vec<(u32, f32)>, String>;
+    /// Search for the top_k most similar records using the query handle.
+    fn search(&self, query: &dyn FihQuery, top_k: usize) -> Result<Vec<(u32, f32)>, String>;
 
     /// Remove a record ID from the store.
     fn remove(&mut self, id: u32) -> Result<(), String>;
@@ -102,9 +115,9 @@ impl SemanticStore for MockSemanticStore {
         Ok(())
     }
 
-    fn search(&self, query: &dyn FihLoad, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
+    fn search(&self, query: &dyn FihQuery, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
         let query_vec = query
-            .features(0)
+            .features()
             .ok_or_else(|| "no query features".to_string())?;
         if query_vec.len()
             != self
