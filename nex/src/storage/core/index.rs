@@ -1,8 +1,8 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 
+use crate::storage::semantic::{FihLoad, SemanticStore};
 use nexus_model::FihHash;
-use crate::storage::vector::VectorStore;
 
 /// Append-only ordered index. Stores compact u32 IDs (no String duplication).
 pub struct OrderedIndex<K = u64>
@@ -115,8 +115,8 @@ pub struct FihCoord {
     pub by_status: RefCell<HashMap<u32, Vec<u32>>>,
     pub by_created_at_day: RefCell<BTreeMap<u64, Vec<u32>>>,
     pub ref_counts: RefCell<HashMap<u32, Cell<u64>>>,
-    /// ANN vector storage for semantic similarity search (plug-in).
-    pub by_vector: RefCell<Option<Box<dyn VectorStore>>>,
+    /// Semantic feature store for similarity search (plug-in).
+    pub by_semantic: RefCell<Option<Box<dyn SemanticStore>>>,
 }
 
 impl FihCoord {
@@ -133,7 +133,7 @@ impl FihCoord {
             by_status: RefCell::new(HashMap::new()),
             by_created_at_day: RefCell::new(BTreeMap::new()),
             ref_counts: RefCell::new(HashMap::new()),
-            by_vector: RefCell::new(None),
+            by_semantic: RefCell::new(None),
         }
     }
 
@@ -190,7 +190,7 @@ impl FihCoord {
         self.by_status.borrow_mut().clear();
         self.by_created_at_day.borrow_mut().clear();
         self.ref_counts.borrow_mut().clear();
-        *self.by_vector.borrow_mut() = None;
+        *self.by_semantic.borrow_mut() = None;
     }
 
     // ── Index update ───────────────────────────────────────────────
@@ -289,6 +289,30 @@ impl FihCoord {
             if let Some(rc) = self.ref_counts.borrow().get(&fact_idx) {
                 rc.set(rc.get() - 1);
             }
+        }
+    }
+
+    // ── Semantic store interaction ────────────────────────────────
+
+    /// Insert a record into the semantic store using the provided `FihLoad`.
+    pub fn semantic_insert(&self, id: u32, load: &dyn FihLoad) -> Result<(), String> {
+        let mut store = self.by_semantic.borrow_mut();
+        match store.as_mut() {
+            Some(s) => s.insert(id, load),
+            None => Err("no semantic store configured".into()),
+        }
+    }
+
+    /// Search the semantic store using the provided `FihLoad` as query.
+    pub fn semantic_search(
+        &self,
+        query: &dyn FihLoad,
+        top_k: usize,
+    ) -> Result<Vec<(u32, f32)>, String> {
+        let store = self.by_semantic.borrow();
+        match store.as_ref() {
+            Some(s) => s.search(query, top_k),
+            None => Err("no semantic store configured".into()),
         }
     }
 

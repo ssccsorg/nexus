@@ -1,3 +1,3 @@
 pub mod core;
 pub mod fih;
-pub mod vector;
+pub mod semantic;
