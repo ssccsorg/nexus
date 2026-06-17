@@ -291,13 +291,23 @@ impl FihCoord {
 
     pub fn facts_by_creator(&self, creator: &str) -> Vec<u32> {
         match self.lookup_str_key(creator) {
-            Some(cid) => self.by_creator.borrow().get(&cid).cloned().unwrap_or_default(),
+            Some(cid) => self
+                .by_creator
+                .borrow()
+                .get(&cid)
+                .cloned()
+                .unwrap_or_default(),
             None => Vec::new(),
         }
     }
     pub fn intents_by_status(&self, status: &str) -> Vec<u32> {
         match self.lookup_str_key(status) {
-            Some(sid) => self.by_status.borrow().get(&sid).cloned().unwrap_or_default(),
+            Some(sid) => self
+                .by_status
+                .borrow()
+                .get(&sid)
+                .cloned()
+                .unwrap_or_default(),
             None => Vec::new(),
         }
     }

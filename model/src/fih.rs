@@ -53,21 +53,23 @@ impl FihHash {
 
     pub fn chain(a: &FihHash, b: &FihHash, c: &FihHash) -> FihHash {
         let mut h = Sha256::new();
-        h.update(&a.0);
-        h.update(&b.0);
-        h.update(&c.0);
+        h.update(a.0);
+        h.update(b.0);
+        h.update(c.0);
         Self(h.finalize().into())
     }
 
     /// Parse exactly 64 hex characters into a FihHash. Panics on invalid input.
     /// For tests, use `FihHash::from_hex` which falls back to SHA256 for short IDs.
     fn parse_hex_strict(hex: &str) -> Self {
-        assert!(hex.len() == 64 && hex.chars().all(|c| c.is_ascii_hexdigit()),
-            "FihHash::parse_hex_strict: expected 64 hex chars, got `{}`", hex);
+        assert!(
+            hex.len() == 64 && hex.chars().all(|c| c.is_ascii_hexdigit()),
+            "FihHash::parse_hex_strict: expected 64 hex chars, got `{}`",
+            hex
+        );
         let mut bytes = [0u8; 32];
         for i in 0..32 {
-            bytes[i] = u8::from_str_radix(&hex[i * 2..=i * 2 + 1], 16)
-                .expect("valid hex digit");
+            bytes[i] = u8::from_str_radix(&hex[i * 2..=i * 2 + 1], 16).expect("valid hex digit");
         }
         Self(bytes)
     }
