@@ -85,8 +85,8 @@ impl StringInterner {
         self.vec.push(s.to_string());
         id
     }
-    fn resolve(&self, id: u32) -> String {
-        self.vec.get(id as usize).cloned().unwrap_or_default()
+    fn get(&self, s: &str) -> Option<u32> {
+        self.map.get(s).copied()
     }
     fn clear(&mut self) {
         self.map.clear();
@@ -153,12 +153,17 @@ impl FihCoord {
 
     /// Intern an origin/creator/status string → u32.
     pub fn intern_str_key(&self, s: &str) -> u32 {
+        // Fast path: already interned (read-only borrow)
+        if let Some(id) = self.str_interner.borrow().get(s) {
+            return id;
+        }
+        // Slow path: new string (mutable borrow)
         self.str_interner.borrow_mut().intern(s)
     }
 
     /// Look up an interned string key without inserting. Returns None if not found.
     pub fn lookup_str_key(&self, s: &str) -> Option<u32> {
-        self.str_interner.borrow().map.get(s).copied()
+        self.str_interner.borrow().get(s)
     }
 
     pub fn resolve(&self, idx: u32) -> String {
@@ -167,11 +172,6 @@ impl FihCoord {
             .get(idx as usize)
             .cloned()
             .unwrap_or_default()
-    }
-
-    /// Resolve an interned string key back to its original string.
-    pub fn resolve_str_key(&self, idx: u32) -> String {
-        self.str_interner.borrow().resolve(idx)
     }
 
     pub fn clear(&self) {
