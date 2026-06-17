@@ -1,7 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 
-use crate::storage::semantic::{FihLoad, SemanticStore};
+use crate::storage::semantic::{FihLoad, FihQuery, SemanticStore};
 use nexus_model::FihHash;
 
 /// Append-only ordered index. Stores compact u32 IDs (no String duplication).
@@ -138,13 +138,14 @@ impl FihCoord {
     }
 
     pub fn intern(&self, hash: &[u8; 32]) -> u32 {
-        let mut map = self.id_to_idx.borrow_mut();
-        if let Some(&idx) = map.get(hash) {
+        // Fast path: already interned (read-only borrow)
+        if let Some(&idx) = self.id_to_idx.borrow().get(hash) {
             return idx;
         }
+        // Slow path: new hash (mutable borrow)
         let idx = self.next_idx.get();
         self.next_idx.set(idx + 1);
-        map.insert(*hash, idx);
+        self.id_to_idx.borrow_mut().insert(*hash, idx);
         let hex: String = hash.iter().map(|b| format!("{:02x}", b)).collect();
         self.idx_to_id.borrow_mut().push(hex);
         idx
@@ -303,10 +304,10 @@ impl FihCoord {
         }
     }
 
-    /// Search the semantic store using the provided `FihLoad` as query.
+    /// Search the semantic store using the provided query handle.
     pub fn semantic_search(
         &self,
-        query: &dyn FihLoad,
+        query: &dyn FihQuery,
         top_k: usize,
     ) -> Result<Vec<(u32, f32)>, String> {
         let store = self.by_semantic.borrow();

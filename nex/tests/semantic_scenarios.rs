@@ -16,7 +16,7 @@
 //   9. Dimension mismatch error
 //  10. FihCoord integration: semantic_insert / semantic_search via store
 
-use nex::storage::semantic::{FihLoad, MockSemanticStore, SemanticStore};
+use nex::storage::semantic::{FihLoad, FihQuery, MockSemanticStore, SemanticStore};
 
 // ── Test FihLoad implementations ────────────────────────────────────────
 
@@ -42,6 +42,15 @@ impl FihLoad for FeatureLoad {
         None
     }
     fn creator(&self, _id: u32) -> Option<String> {
+        None
+    }
+}
+
+impl FihQuery for FeatureLoad {
+    fn features(&self) -> Option<Vec<f32>> {
+        Some(self.features.clone())
+    }
+    fn text(&self) -> Option<String> {
         None
     }
 }
