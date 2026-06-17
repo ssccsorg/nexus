@@ -16,11 +16,22 @@
 //   9. Dimension mismatch error
 //  10. FihCoord integration: semantic_insert / semantic_search via store
 
-use nex::storage::semantic::{FihLoad, FihQuery, MockSemanticStore, SemanticStore};
+use nex::storage::semantic::{
+    FeatureLoad as ReexportedFeatureLoad, FihLoad, FihQuery, SemanticStore,
+};
+
+mod common;
+use common::semantic::{MockBm25Store, MockSemanticStore};
 
 // ── Test FihLoad implementations ────────────────────────────────────────
 
 /// A FihLoad that returns feature vectors (simulating a vector store).
+///
+/// Note: FeatureLoad is now defined and re-exported from
+/// `ReexportedFeatureLoad`. It carries both a feature
+/// vector and an optional text string. The local re-definition below
+/// is kept for backward compatibility with existing tests; new tests
+/// should use the re-exported `FeatureLoad`.
 struct FeatureLoad {
     features: Vec<f32>,
 }
@@ -658,4 +669,144 @@ fn scenario_manual_score_verification() {
     // Manually verify id=1 score
     let manual_score = score_semantic(&[1.0, 0.0, 0.0], &[1.0, 0.0, 0.0]);
     assert!((results[0].1 - manual_score).abs() < 1e-6);
+}
+
+// ── FihCoord integration tests ──────────────────────────────────────────
+
+/// Full integration: FihCoord + multiple semantic stores (vector + text)
+#[test]
+fn scenario_fihcoord_integration() {
+    use nex::storage::core::index::FihCoord;
+
+    let coord = FihCoord::new();
+
+    // Configure two semantic stores: vector (MockSemanticStore) + text (MockBm25Store)
+    coord
+        .by_semantic
+        .borrow_mut()
+        .push(Box::new(MockSemanticStore::new()));
+    coord
+        .by_semantic
+        .borrow_mut()
+        .push(Box::new(MockBm25Store::new()));
+
+    // Record facts with different content
+    // Fact 1: vector [1,0,0] + text "rust compiler verification"
+    let f1_id = nexus_model::FihHash::from_hex("f_sem_001");
+    coord.record_fact(&f1_id.0, "origin-a", "creator-a", 1000);
+    let idx1 = coord.intern(&f1_id.0);
+    coord
+        .semantic_insert(
+            idx1,
+            &ReexportedFeatureLoad::new(
+                vec![1.0, 0.0, 0.0],
+                Some("rust compiler verification".into()),
+            ),
+        )
+        .unwrap();
+
+    // Fact 2: vector [0,1,0] + text "energy memory constraint"
+    let f2_id = nexus_model::FihHash::from_hex("f_sem_002");
+    coord.record_fact(&f2_id.0, "origin-a", "creator-b", 2000);
+    let idx2 = coord.intern(&f2_id.0);
+    coord
+        .semantic_insert(
+            idx2,
+            &ReexportedFeatureLoad::new(
+                vec![0.0, 1.0, 0.0],
+                Some("energy memory constraint".into()),
+            ),
+        )
+        .unwrap();
+
+    // Fact 3: vector [0.9,0.1,0] + text "rust memory safety"
+    let f3_id = nexus_model::FihHash::from_hex("f_sem_003");
+    coord.record_fact(&f3_id.0, "origin-b", "creator-a", 3000);
+    let idx3 = coord.intern(&f3_id.0);
+    coord
+        .semantic_insert(
+            idx3,
+            &ReexportedFeatureLoad::new(vec![0.9, 0.1, 0.0], Some("rust memory safety".into())),
+        )
+        .unwrap();
+
+    // Search by vector [1,0,0] — should find f_sem_001 first (cosine ~1.0), then f_sem_003 (~0.9)
+    let results = coord
+        .semantic_search(&ReexportedFeatureLoad::new(vec![1.0, 0.0, 0.0], None), 3)
+        .unwrap();
+    assert_eq!(results.len(), 3, "should return results from both stores");
+    // First result should be f_sem_001 (from MockSemanticStore, score ~1.0)
+    assert_eq!(results[0].0, idx1, "most similar should be f_sem_001");
+
+    // Verify that Bm25Store contributed results too (text overlap with "rust")
+    let bm25_results: Vec<(u32, f32)> = results
+        .iter()
+        .filter(|(id, _)| *id == idx1 || *id == idx2 || *id == idx3)
+        .copied()
+        .collect();
+    assert!(
+        !bm25_results.is_empty(),
+        "BM25 store should have contributed results"
+    );
+}
+
+/// FihCoord with a single MockSemanticStore — basic sanity check
+#[test]
+fn scenario_fihcoord_single_store() {
+    use nex::storage::core::index::FihCoord;
+
+    struct InlineLoad {
+        feats: Vec<f32>,
+    }
+    impl FihLoad for InlineLoad {
+        fn content(&self, _id: u32) -> Option<Vec<u8>> {
+            None
+        }
+        fn features(&self, _id: u32) -> Option<Vec<f32>> {
+            Some(self.feats.clone())
+        }
+        fn origin(&self, _id: u32) -> Option<String> {
+            None
+        }
+        fn creator(&self, _id: u32) -> Option<String> {
+            None
+        }
+    }
+    impl FihQuery for InlineLoad {
+        fn features(&self) -> Option<Vec<f32>> {
+            Some(self.feats.clone())
+        }
+        fn text(&self) -> Option<String> {
+            None
+        }
+    }
+
+    let coord = FihCoord::new();
+    coord
+        .by_semantic
+        .borrow_mut()
+        .push(Box::new(MockSemanticStore::new()));
+
+    let f_id = nexus_model::FihHash::from_hex("f_inline_001");
+    coord.record_fact(&f_id.0, "test", "tester", 100);
+    let idx = coord.intern(&f_id.0);
+    coord
+        .semantic_insert(
+            idx,
+            &InlineLoad {
+                feats: vec![1.0, 0.0],
+            },
+        )
+        .unwrap();
+
+    let results = coord
+        .semantic_search(
+            &InlineLoad {
+                feats: vec![1.0, 0.0],
+            },
+            5,
+        )
+        .unwrap();
+    assert!(!results.is_empty(), "should find the inserted record");
+    assert_eq!(results[0].0, idx, "should match the inserted record");
 }

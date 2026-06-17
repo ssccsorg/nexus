@@ -25,6 +25,7 @@ use super::entity_store::{EntityStore, MemoryEntityStore};
 use super::index::FihCoord;
 use super::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
 use crate::io::file_io::{AsyncFileIo, WriteOp};
+use crate::storage::semantic::FihLoad as SemanticFihLoad;
 
 /// Chain entry format: serialized by flush_since for delta chain files.
 /// Named struct avoids postcard tuple field ordering ambiguity with empty vecs.
@@ -432,6 +433,10 @@ impl<I: AsyncFileIo> FactCapable for FihStorage<I> {
         let ts = self.clock.now_nanos();
         self.coord
             .record_fact(&fact.id.0, &fact.origin, &fact.creator, ts);
+
+        // Auto-index into semantic stores
+        let fact_idx = self.coord.intern(&fact.id.0);
+        let _ = self.coord.semantic_insert(fact_idx, self);
 
         Ok(fact.id)
     }
@@ -1191,6 +1196,53 @@ impl<I: AsyncFileIo> FlushCapable for FihStorage<I> {
     }
 }
 
+// ── FihStorage as FihLoad ──────────────────────────────────────────
+//
+// Implements the flashlight handle that SemanticStore implementations
+// use to load record data. FihStorage has access to both the in-memory
+// EntityStore (for fact/intent/hint records) and the coord index (for
+// ID resolution), making it the natural FihLoad provider.
+
+impl<I: AsyncFileIo> SemanticFihLoad for FihStorage<I> {
+    fn content(&self, id: u32) -> Option<Vec<u8>> {
+        let id_str = self.coord.resolve(id);
+        if id_str.is_empty() {
+            return None;
+        }
+        let record = self.fact_store.get(&id_str)?;
+        let content = self.load_content(&record.blob_hash, "application/octet-stream");
+        if content.data.is_empty() {
+            None
+        } else {
+            Some(content.data)
+        }
+    }
+
+    fn features(&self, _id: u32) -> Option<Vec<f32>> {
+        // Feature vectors are not stored in FihStorage directly.
+        // External embedding services should set up FihLoad wrappers.
+        None
+    }
+
+    fn origin(&self, id: u32) -> Option<String> {
+        let id_str = self.coord.resolve(id);
+        if id_str.is_empty() {
+            return None;
+        }
+        let record = self.fact_store.get(&id_str)?;
+        Some(record.origin.clone())
+    }
+
+    fn creator(&self, id: u32) -> Option<String> {
+        let id_str = self.coord.resolve(id);
+        if id_str.is_empty() {
+            return None;
+        }
+        let record = self.fact_store.get(&id_str)?;
+        Some(record.creator.clone())
+    }
+}
+
 // ── AsyncStorageRead ───────────────────────────────────────────────────────
 
 impl<I: AsyncFileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
@@ -1311,6 +1363,10 @@ impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
         let ts = self.clock.now_nanos();
         self.coord
             .record_fact(&fact.id.0, &fact.origin, &fact.creator, ts);
+
+        // Auto-index into semantic stores
+        let fact_idx = self.coord.intern(&fact.id.0);
+        let _ = self.coord.semantic_insert(fact_idx, self);
 
         Ok(fact.id)
     }

@@ -116,7 +116,7 @@ pub struct FihCoord {
     pub by_created_at_day: RefCell<BTreeMap<u64, Vec<u32>>>,
     pub ref_counts: RefCell<HashMap<u32, Cell<u64>>>,
     /// Semantic feature store for similarity search (plug-in).
-    pub by_semantic: RefCell<Option<Box<dyn SemanticStore>>>,
+    pub by_semantic: RefCell<Vec<Box<dyn SemanticStore>>>,
 }
 
 impl FihCoord {
@@ -133,7 +133,7 @@ impl FihCoord {
             by_status: RefCell::new(HashMap::new()),
             by_created_at_day: RefCell::new(BTreeMap::new()),
             ref_counts: RefCell::new(HashMap::new()),
-            by_semantic: RefCell::new(None),
+            by_semantic: RefCell::new(Vec::new()),
         }
     }
 
@@ -191,7 +191,7 @@ impl FihCoord {
         self.by_status.borrow_mut().clear();
         self.by_created_at_day.borrow_mut().clear();
         self.ref_counts.borrow_mut().clear();
-        *self.by_semantic.borrow_mut() = None;
+        self.by_semantic.borrow_mut().clear();
     }
 
     // ── Index update ───────────────────────────────────────────────
@@ -297,10 +297,20 @@ impl FihCoord {
 
     /// Insert a record into the semantic store using the provided `FihLoad`.
     pub fn semantic_insert(&self, id: u32, load: &dyn FihLoad) -> Result<(), String> {
-        let mut store = self.by_semantic.borrow_mut();
-        match store.as_mut() {
-            Some(s) => s.insert(id, load),
-            None => Err("no semantic store configured".into()),
+        let mut stores = self.by_semantic.borrow_mut();
+        if stores.is_empty() {
+            return Err("no semantic stores configured".into());
+        }
+        let mut errors = Vec::new();
+        for store in stores.iter_mut() {
+            if let Err(e) = store.insert(id, load) {
+                errors.push(e);
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(format!("semantic insert errors: {:?}", errors))
         }
     }
 
@@ -310,11 +320,20 @@ impl FihCoord {
         query: &dyn FihQuery,
         top_k: usize,
     ) -> Result<Vec<(u32, f32)>, String> {
-        let store = self.by_semantic.borrow();
-        match store.as_ref() {
-            Some(s) => s.search(query, top_k),
-            None => Err("no semantic store configured".into()),
+        let stores = self.by_semantic.borrow();
+        if stores.is_empty() {
+            return Err("no semantic stores configured".into());
         }
+        let mut all_results = Vec::new();
+        for store in stores.iter() {
+            if let Ok(results) = store.search(query, top_k) {
+                all_results.extend(results);
+            }
+        }
+        // Sort by score descending and take top_k
+        all_results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        all_results.truncate(top_k);
+        Ok(all_results)
     }
 
     // ── Query ──────────────────────────────────────────────────────
