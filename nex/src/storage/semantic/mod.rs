@@ -35,6 +35,11 @@ pub trait FihLoad {
     }
 
     /// Load f32 feature vector, if the record has one stored.
+    ///
+    /// The core `FihStorage` implementation returns `None` because feature
+    /// vectors are not stored inline. External embedding services (agent layer)
+    /// should override this via a custom `FihLoad` wrapper that calls an
+    /// embedding API and caches the result.
     fn features(&self, id: u32) -> Option<Vec<f32>>;
 
     /// Load the origin string for a fact record.

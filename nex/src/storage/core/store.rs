@@ -208,6 +208,29 @@ impl<I: AsyncFileIo> FihStorage<I> {
         Ok(())
     }
 
+    /// Register a semantic store for auto-indexing on fact submission.
+    pub fn register_semantic_store(&self, store: Box<dyn crate::storage::semantic::SemanticStore>) {
+        self.coord.by_semantic.borrow_mut().push(store);
+    }
+
+    /// Search semantic stores with the given query.
+    pub fn semantic_search(
+        &self,
+        query: &dyn crate::storage::semantic::FihQuery,
+        top_k: usize,
+    ) -> Result<Vec<(u32, f32)>, String> {
+        self.coord.semantic_search(query, top_k)
+    }
+
+    /// Insert a record into semantic stores with the given load handle.
+    pub fn semantic_insert(
+        &self,
+        id: u32,
+        load: &dyn crate::storage::semantic::FihLoad,
+    ) -> Result<(), String> {
+        self.coord.semantic_insert(id, load)
+    }
+
     /// Query intents that reference a given fact.
     /// Returns Vec<String> (hex IDs). Each call allocates O(k) strings
     /// where k is the number of referencing intents — acceptable for
@@ -434,9 +457,11 @@ impl<I: AsyncFileIo> FactCapable for FihStorage<I> {
         self.coord
             .record_fact(&fact.id.0, &fact.origin, &fact.creator, ts);
 
-        // Auto-index into semantic stores
-        let fact_idx = self.coord.intern(&fact.id.0);
-        let _ = self.coord.semantic_insert(fact_idx, self);
+        // Auto-index into semantic stores (skip conclusion facts to reduce noise)
+        if !fact.origin.starts_with("conclusion:") {
+            let fact_idx = self.coord.intern(&fact.id.0);
+            let _ = self.coord.semantic_insert(fact_idx, self);
+        }
 
         Ok(fact.id)
     }
@@ -1356,7 +1381,8 @@ impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
             mime_type: fact.content.mime_type.clone(),
             size: fact.content.data.len() as u64,
         };
-        let meta_bytes = postcard::to_allocvec(&meta).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let meta_bytes =
+            postcard::to_allocvec(&meta).map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.pending.borrow_mut().push(WriteOp::Write {
             path: blob_path,
             data: fact.content.data.clone(),
@@ -1381,9 +1407,11 @@ impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
         self.coord
             .record_fact(&fact.id.0, &fact.origin, &fact.creator, ts);
 
-        // Auto-index into semantic stores
-        let fact_idx = self.coord.intern(&fact.id.0);
-        let _ = self.coord.semantic_insert(fact_idx, self);
+        // Auto-index into semantic stores (skip conclusion facts to reduce noise)
+        if !fact.origin.starts_with("conclusion:") {
+            let fact_idx = self.coord.intern(&fact.id.0);
+            let _ = self.coord.semantic_insert(fact_idx, self);
+        }
 
         Ok(fact.id)
     }
