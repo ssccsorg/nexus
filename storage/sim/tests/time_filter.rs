@@ -155,10 +155,7 @@ fn idx() -> OrderedIndex<u64> {
 
 #[test]
 fn test_record_and_as_of() {
-    let idx = OrderedIndex::new();
-    idx.record(100, 1);
-    idx.record(200, 2);
-    idx.record(300, 3);
+    let idx = idx();
 
     let at_150 = idx.as_of(&150);
     assert_eq!(at_150.len(), 1);
@@ -170,10 +167,7 @@ fn test_record_and_as_of() {
 
 #[test]
 fn test_since() {
-    let idx = OrderedIndex::new();
-    idx.record(100, 1);
-    idx.record(200, 2);
-    idx.record(300, 3);
+    let idx = idx();
 
     let after_150 = idx.since(&150);
     assert_eq!(after_150.len(), 2);
@@ -185,10 +179,7 @@ fn test_since() {
 
 #[test]
 fn test_range() {
-    let idx = OrderedIndex::new();
-    idx.record(100, 1);
-    idx.record(200, 2);
-    idx.record(300, 3);
+    let idx = idx();
     idx.record(400, 4);
 
     let mid = idx.range(&150, &350);

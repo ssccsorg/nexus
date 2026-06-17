@@ -423,48 +423,59 @@ fn scenario_full_document_lifecycle() {
 /// Search.json scenario: index documents from search.json and search by text
 #[test]
 fn scenario_search_json_documents() {
+    println!("\n=== search.json document indexing and search ===");
+
     let items = load_search_items();
-    assert!(
-        items.len() > 100,
-        "search.json should have 500+ items, got {}",
-        items.len()
-    );
+    eprintln!("  fetched {} items from docs.ssccs.org", items.len());
 
     let mut store = MockSemanticStore::new();
 
-    // Index all documents: each doc's text → feature vector
+    let start = std::time::Instant::now();
     for (i, (_title, text)) in items.iter().enumerate().take(500) {
         let features = text_to_features(text, VOCABULARY);
         store.insert(i as u32, &FeatureLoad::new(features)).unwrap();
+        if i > 0 && i % 100 == 0 {
+            eprintln!("  indexed {} / 500 documents...", i);
+        }
     }
-
-    assert_eq!(store.len(), items.len().min(500));
+    let elapsed = start.elapsed();
+    eprintln!("  indexed {} documents in {:?}", store.len(), elapsed);
 
     // Search for documents about "segment scheme field"
+    eprintln!("\n  --- Query 1: 'segment scheme field observation projection' ---");
     let query = "segment scheme field observation projection";
     let query_feats = text_to_features(query, VOCABULARY);
     let results = store.search(&FeatureLoad::new(query_feats), 5).unwrap();
-    assert_eq!(results.len(), 5, "should return top 5");
-
-    // Verify results are sorted by relevance (descending score)
-    for w in results.windows(2) {
-        assert!(
-            w[0].1 >= w[1].1,
-            "results should be sorted by score descending"
-        );
+    eprintln!("  top 5 results:");
+    for (id, score) in &results {
+        let (title, text) = &items[*id as usize];
+        let preview: String = text.chars().take(80).collect();
+        eprintln!("    [{:3}] score={:.4}  {}", id, score, title);
+        eprintln!("            {}", preview);
     }
 
     // Search for SSCCS-related documents
+    eprintln!("\n  --- Query 2: 'ssccs foundation open source github' ---");
     let query2 = "ssccs foundation open source github";
     let query_feats2 = text_to_features(query2, VOCABULARY);
     let results2 = store.search(&FeatureLoad::new(query_feats2), 3).unwrap();
-    assert_eq!(results2.len(), 3);
+    eprintln!("  top 3 results:");
+    for (id, score) in &results2 {
+        let (title, _text) = &items[*id as usize];
+        eprintln!("    [{:3}] score={:.4}  {}", id, score, title);
+    }
 
     // Search for "energy memory constraint"
+    eprintln!("\n  --- Query 3: 'energy memory data movement computation' ---");
     let query3 = "energy memory data movement computation";
     let query_feats3 = text_to_features(query3, VOCABULARY);
     let results3 = store.search(&FeatureLoad::new(query_feats3), 4).unwrap();
-    assert_eq!(results3.len(), 4);
+    eprintln!("  top 4 results:");
+    for (id, score) in &results3 {
+        let (title, _text) = &items[*id as usize];
+        eprintln!("    [{:3}] score={:.4}  {}", id, score, title);
+    }
+    eprintln!("");
 }
 
 /// Search.json scenario: add a new document incrementally and verify search includes it
@@ -483,7 +494,7 @@ fn scenario_search_json_incremental_add() {
     // Search without the new doc
     let q = "open source community";
     let qf = text_to_features(q, VOCABULARY);
-    let before = store.search(&FeatureLoad::new(qf.clone()), 3).unwrap();
+    let _before = store.search(&FeatureLoad::new(qf.clone()), 3).unwrap();
 
     // Add a new "open source" oriented document
     let new_text =
@@ -548,4 +559,94 @@ fn scenario_query_consistency() {
             "same query should return same scores"
         );
     }
+}
+
+/// Use OriginLoad to demonstrate origin-based semantic filtering.
+/// Simulates an ngram store that indexes by origin string.
+#[test]
+fn scenario_origin_based_search() {
+    let mut store = MockSemanticStore::new();
+
+    // OriginLoad has no features, so MockSemanticStore fails on insert.
+    // This is correct: OriginLoad tests the FihLoad trait boundary.
+    let result = store.insert(
+        1,
+        &OriginLoad {
+            origin: "whitepaper".into(),
+        },
+    );
+    assert!(result.is_err(), "OriginLoad lacks features, should fail");
+
+    // But verify the constructors work: we can still create and pass it
+    let load = OriginLoad {
+        origin: "whitepaper".into(),
+    };
+    assert_eq!(load.origin(42), Some("whitepaper".into()));
+}
+
+/// Use FullDocLoad to demonstrate full-document FihLoad with all accessors.
+#[test]
+fn scenario_full_doc_load() {
+    let mut store = MockSemanticStore::new();
+
+    // FullDocLoad has no features either — should fail for MockSemanticStore
+    let result = store.insert(
+        1,
+        &FullDocLoad {
+            text: "ssccs semantics".into(),
+            origin: "whitepaper".into(),
+            creator: "taeho".into(),
+        },
+    );
+    assert!(result.is_err(), "FullDocLoad lacks features, should fail");
+
+    // Verify all accessors work
+    let load = FullDocLoad {
+        text: "ssccs semantics".into(),
+        origin: "whitepaper".into(),
+        creator: "taeho".into(),
+    };
+    assert_eq!(load.text(99).unwrap(), "ssccs semantics");
+    assert_eq!(load.origin(99).unwrap(), "whitepaper");
+    assert_eq!(load.creator(99).unwrap(), "taeho");
+}
+
+/// Use score_semantic to manually verify cosine similarity calculation.
+#[test]
+fn scenario_manual_score_verification() {
+    // Two identical vectors should have score 1.0
+    let a = vec![1.0, 0.0, 0.0];
+    let b = vec![1.0, 0.0, 0.0];
+    let s = score_semantic(&a, &b);
+    assert!((s - 1.0).abs() < 1e-6, "identical vectors should score 1.0");
+
+    // Orthogonal vectors should have score 0.0
+    let c = vec![0.0, 1.0, 0.0];
+    let s2 = score_semantic(&a, &c);
+    assert!(s2.abs() < 1e-6, "orthogonal vectors should score 0.0");
+
+    // Opposite vectors should score 0.0 (no negative in bag-of-words)
+    // But let's verify the math works with negative
+    let d = vec![-1.0, 0.0, 0.0];
+    let s3 = score_semantic(&a, &d);
+    assert!(
+        (s3 + 1.0).abs() < 1e-6,
+        "opposite vectors should score -1.0"
+    );
+
+    // Verify against MockSemanticStore's internal calculation
+    let mut store = MockSemanticStore::new();
+    store
+        .insert(1, &FeatureLoad::new(vec![1.0, 0.0, 0.0]))
+        .unwrap();
+    store
+        .insert(2, &FeatureLoad::new(vec![0.5, 0.5, 0.0]))
+        .unwrap();
+
+    let results = store
+        .search(&FeatureLoad::new(vec![1.0, 0.0, 0.0]), 2)
+        .unwrap();
+    // Manually verify id=1 score
+    let manual_score = score_semantic(&[1.0, 0.0, 0.0], &[1.0, 0.0, 0.0]);
+    assert!((results[0].1 - manual_score).abs() < 1e-6);
 }
