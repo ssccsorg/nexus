@@ -208,6 +208,9 @@ impl<I: AsyncFileIo> FihStorage<I> {
     }
 
     /// Query intents that reference a given fact.
+    /// Returns Vec<String> (hex IDs). Each call allocates O(k) strings
+    /// where k is the number of referencing intents — acceptable for
+    /// expected fan-out sizes (< 100).
     /// Query intents that reference a given fact.
     pub fn intents_by_fact(&self, fact_id: &str) -> Vec<String> {
         let fidx = self.coord.intern_str(fact_id);
