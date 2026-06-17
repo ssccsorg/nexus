@@ -185,6 +185,14 @@ mod tests {
             None
         }
     }
+    impl FihQuery for TestLoad {
+        fn features(&self) -> Option<Vec<f32>> {
+            Some(self.features.clone())
+        }
+        fn text(&self) -> Option<String> {
+            None
+        }
+    }
 
     #[test]
     fn test_mock_insert_and_search() {
