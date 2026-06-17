@@ -95,6 +95,10 @@ pub trait SemanticStore: Debug {
 /// This is a testing utility available to both the crate's own tests and
 /// external integration tests, demonstrating the flashlight pattern with
 /// both vector and text data.
+///
+/// Hidden from public documentation to avoid external consumers depending
+/// on what is ultimately a test helper.
+#[doc(hidden)]
 #[derive(Debug, Clone)]
 pub struct FeatureLoad {
     features: Vec<f32>,
