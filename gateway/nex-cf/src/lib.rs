@@ -76,8 +76,16 @@ pub async fn handle_path<I: nex::io::AsyncFileIo>(
                 creator: qv(q, "creator"),
             };
             match s.submit_fact(&fact).await {
-                Ok(hash) => (200, "application/json".into(), serde_json::json!({"id": hash.to_string()}).to_string()),
-                Err(e) => (500, "application/json".into(), serde_json::json!({"error": format!("submit_fact: {:?}", e)}).to_string()),
+                Ok(hash) => (
+                    200,
+                    "application/json".into(),
+                    serde_json::json!({"id": hash.to_string()}).to_string(),
+                ),
+                Err(e) => (
+                    500,
+                    "application/json".into(),
+                    serde_json::json!({"error": format!("submit_fact: {:?}", e)}).to_string(),
+                ),
             }
         }
 
@@ -99,51 +107,96 @@ pub async fn handle_path<I: nex::io::AsyncFileIo>(
                 concluded_at: None,
             };
             match s.submit_intent(&intent).await {
-                Ok(hash) => (200, "application/json".into(), serde_json::json!({"id": hash.to_string()}).to_string()),
-                Err(e) => (500, "application/json".into(), serde_json::json!({"error": format!("submit_intent: {:?}", e)}).to_string()),
+                Ok(hash) => (
+                    200,
+                    "application/json".into(),
+                    serde_json::json!({"id": hash.to_string()}).to_string(),
+                ),
+                Err(e) => (
+                    500,
+                    "application/json".into(),
+                    serde_json::json!({"error": format!("submit_intent: {:?}", e)}).to_string(),
+                ),
             }
         }
 
-        "/claim" => {
-            match s.claim_intent(&qv(q, "id"), &qv(q, "agent")).await {
-                Ok(()) => (200, "application/json".into(), serde_json::json!({"status":"claimed"}).to_string()),
-                Err(e) => {
-                    let msg = format!("{:?}", e);
-                    let code = if msg.contains("Conflict") { 409 }
-                        else if msg.contains("not found") { 404 }
-                        else { 500 };
-                    (code, "application/json".into(), serde_json::json!({"error": msg}).to_string())
-                }
+        "/claim" => match s.claim_intent(&qv(q, "id"), &qv(q, "agent")).await {
+            Ok(()) => (
+                200,
+                "application/json".into(),
+                serde_json::json!({"status":"claimed"}).to_string(),
+            ),
+            Err(e) => {
+                let msg = format!("{:?}", e);
+                let code = if msg.contains("Conflict") {
+                    409
+                } else if msg.contains("not found") {
+                    404
+                } else {
+                    500
+                };
+                (
+                    code,
+                    "application/json".into(),
+                    serde_json::json!({"error": msg}).to_string(),
+                )
             }
-        }
+        },
 
-        "/conclude" => {
-            match s.conclude_intent(&qv(q, "id"), &qv(q, "result")).await {
-                Ok(fact) => (200, "application/json".into(), serde_json::json!({"status":"concluded","fact_id": fact.id.to_string()}).to_string()),
-                Err(e) => (500, "application/json".into(), serde_json::json!({"error": format!("{:?}", e)}).to_string()),
-            }
-        }
+        "/conclude" => match s.conclude_intent(&qv(q, "id"), &qv(q, "result")).await {
+            Ok(fact) => (
+                200,
+                "application/json".into(),
+                serde_json::json!({"status":"concluded","fact_id": fact.id.to_string()})
+                    .to_string(),
+            ),
+            Err(e) => (
+                500,
+                "application/json".into(),
+                serde_json::json!({"error": format!("{:?}", e)}).to_string(),
+            ),
+        },
 
         "/state" => {
             let state = s.read_state().await;
-            (200, "application/json".into(), serde_json::to_string(&state).unwrap_or_else(|_| "{}".into()))
+            (
+                200,
+                "application/json".into(),
+                serde_json::to_string(&state).unwrap_or_else(|_| "{}".into()),
+            )
         }
 
-        "/flush" => {
-            match s.flush_pending().await {
-                Ok(()) => (200, "application/json".into(), serde_json::json!({"status":"ok"}).to_string()),
-                Err(e) => (500, "application/json".into(), serde_json::json!({"error": format!("flush: {}", e)}).to_string()),
-            }
-        }
+        "/flush" => match s.flush_pending().await {
+            Ok(()) => (
+                200,
+                "application/json".into(),
+                serde_json::json!({"status":"ok"}).to_string(),
+            ),
+            Err(e) => (
+                500,
+                "application/json".into(),
+                serde_json::json!({"error": format!("flush: {}", e)}).to_string(),
+            ),
+        },
 
-        "/rebuild" => {
-            match s.rebuild_cache().await {
-                Ok(()) => (200, "application/json".into(), serde_json::json!({"status":"ok"}).to_string()),
-                Err(e) => (500, "application/json".into(), serde_json::json!({"error": format!("rebuild: {}", e)}).to_string()),
-            }
-        }
+        "/rebuild" => match s.rebuild_cache().await {
+            Ok(()) => (
+                200,
+                "application/json".into(),
+                serde_json::json!({"status":"ok"}).to_string(),
+            ),
+            Err(e) => (
+                500,
+                "application/json".into(),
+                serde_json::json!({"error": format!("rebuild: {}", e)}).to_string(),
+            ),
+        },
 
-        _ => (404, "application/json".into(), serde_json::json!({"error": "not found"}).to_string()),
+        _ => (
+            404,
+            "application/json".into(),
+            serde_json::json!({"error": "not found"}).to_string(),
+        ),
     }
 }
 
@@ -190,7 +243,13 @@ pub async fn ingest_document<I: nex::io::AsyncFileIo>(
 
 fn sanitize_id(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -224,7 +283,11 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             if text.is_empty() {
                 return Response::error("missing 'text' parameter", 400);
             }
-            let origin = if origin.is_empty() { "ingest".into() } else { origin };
+            let origin = if origin.is_empty() {
+                "ingest".into()
+            } else {
+                origin
+            };
             match ingest_document(s, &text, &origin).await {
                 Ok(id) => Response::from_json(&serde_json::json!({"status":"ingested","id": id})),
                 Err(e) => Response::error(e, 500),
