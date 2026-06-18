@@ -38,7 +38,10 @@ impl MockBucket {
     }
 
     pub fn put(&self, key: &str, value: &[u8]) {
-        self.data.lock().unwrap().insert(key.to_string(), value.to_vec());
+        self.data
+            .lock()
+            .unwrap()
+            .insert(key.to_string(), value.to_vec());
     }
 
     pub fn delete(&self, key: &str) {
@@ -157,7 +160,10 @@ pub struct MockVecStore {
 
 impl MockVecStore {
     pub fn new() -> Self {
-        Self { ids: Vec::new(), vectors: Vec::new() }
+        Self {
+            ids: Vec::new(),
+            vectors: Vec::new(),
+        }
     }
 }
 
@@ -169,19 +175,26 @@ impl SemanticStore for MockVecStore {
         Ok(())
     }
     fn search(&self, query: &dyn FihQuery, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
-        let qv = query.features().ok_or_else(|| "no query features".to_string())?;
+        let qv = query
+            .features()
+            .ok_or_else(|| "no query features".to_string())?;
         if self.ids.is_empty() {
             return Ok(Vec::new());
         }
         if qv.len() != self.vectors[0].len() {
             return Err("dimension mismatch".into());
         }
-        let mut scores: Vec<(u32, f32)> = self.ids.iter().zip(self.vectors.iter()).map(|(&id, vec)| {
-            let dot: f32 = qv.iter().zip(vec.iter()).map(|(a, b)| a * b).sum();
-            let nq = qv.iter().map(|x| x * x).sum::<f32>().sqrt();
-            let nv = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
-            (id, dot / (nq * nv).max(f32::EPSILON))
-        }).collect();
+        let mut scores: Vec<(u32, f32)> = self
+            .ids
+            .iter()
+            .zip(self.vectors.iter())
+            .map(|(&id, vec)| {
+                let dot: f32 = qv.iter().zip(vec.iter()).map(|(a, b)| a * b).sum();
+                let nq = qv.iter().map(|x| x * x).sum::<f32>().sqrt();
+                let nv = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
+                (id, dot / (nq * nv).max(f32::EPSILON))
+            })
+            .collect();
         scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
         scores.truncate(top_k);
         Ok(scores)
@@ -193,8 +206,12 @@ impl SemanticStore for MockVecStore {
         }
         Ok(())
     }
-    fn len(&self) -> usize { self.ids.len() }
-    fn is_empty(&self) -> bool { self.ids.is_empty() }
+    fn len(&self) -> usize {
+        self.ids.len()
+    }
+    fn is_empty(&self) -> bool {
+        self.ids.is_empty()
+    }
 }
 
 #[derive(Debug)]
@@ -205,7 +222,10 @@ pub struct MockBm25Store {
 
 impl MockBm25Store {
     pub fn new() -> Self {
-        Self { ids: Vec::new(), texts: Vec::new() }
+        Self {
+            ids: Vec::new(),
+            texts: Vec::new(),
+        }
     }
 }
 
@@ -224,36 +244,59 @@ impl SemanticStore for MockBm25Store {
         if self.ids.is_empty() {
             return Ok(Vec::new());
         }
-        let terms: Vec<String> = qt.to_lowercase().split_whitespace().map(|s| s.to_string()).collect();
+        let terms: Vec<String> = qt
+            .to_lowercase()
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
         if terms.is_empty() {
             return Ok(Vec::new());
         }
         let n = self.texts.len();
-        let avg_len: f64 = self.texts.iter()
+        let avg_len: f64 = self
+            .texts
+            .iter()
             .map(|t| t.split_whitespace().count() as f64)
-            .sum::<f64>() / n.max(1) as f64;
+            .sum::<f64>()
+            / n.max(1) as f64;
 
         let mut df: HashMap<String, usize> = HashMap::new();
         for t in &terms {
-            df.insert(t.clone(), self.texts.iter()
-                .filter(|doc| doc.to_lowercase().split_whitespace().any(|w| w == t))
-                .count());
+            df.insert(
+                t.clone(),
+                self.texts
+                    .iter()
+                    .filter(|doc| doc.to_lowercase().split_whitespace().any(|w| w == t))
+                    .count(),
+            );
         }
 
         let k1 = 1.2;
         let b = 0.75;
-        let mut scores: Vec<(u32, f32)> = self.ids.iter().zip(self.texts.iter()).map(|(&id, doc)| {
-            let dl = doc.split_whitespace().count() as f64;
-            let mut score = 0.0;
-            for t in &terms {
-                let tf = doc.to_lowercase().split_whitespace().filter(|w| w == t).count() as f64;
-                if tf == 0.0 { continue; }
-                let d = *df.get(t).unwrap_or(&0) as f64;
-                let idf = ((n as f64 - d + 0.5) / (d + 0.5) + 1.0).ln();
-                score += idf * (tf * (k1 + 1.0)) / (tf + k1 * (1.0 - b + b * dl / avg_len.max(1.0)));
-            }
-            (id, score as f32)
-        }).collect();
+        let mut scores: Vec<(u32, f32)> = self
+            .ids
+            .iter()
+            .zip(self.texts.iter())
+            .map(|(&id, doc)| {
+                let dl = doc.split_whitespace().count() as f64;
+                let mut score = 0.0;
+                for t in &terms {
+                    let tf = doc
+                        .to_lowercase()
+                        .split_whitespace()
+                        .filter(|w| w == t)
+                        .count() as f64;
+                    if tf == 0.0 {
+                        continue;
+                    }
+                    let d = *df.get(t).unwrap_or(&0) as f64;
+                    let idf = ((n as f64 - d + 0.5) / (d + 0.5) + 1.0).ln();
+                    score +=
+                        idf * (tf * (k1 + 1.0)) / (tf + k1 * (1.0 - b + b * dl / avg_len.max(1.0)));
+                }
+                (id, score as f32)
+            })
+            .collect();
 
         scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
         scores.truncate(top_k);
@@ -266,8 +309,12 @@ impl SemanticStore for MockBm25Store {
         }
         Ok(())
     }
-    fn len(&self) -> usize { self.ids.len() }
-    fn is_empty(&self) -> bool { self.ids.is_empty() }
+    fn len(&self) -> usize {
+        self.ids.len()
+    }
+    fn is_empty(&self) -> bool {
+        self.ids.is_empty()
+    }
 }
 
 // ── TextQuery ───────────────────────────────────────────────────────────
@@ -287,10 +334,7 @@ impl FihQuery for TextQuery {
 
 // ── HTTP server ─────────────────────────────────────────────────────────
 
-async fn handle_client(
-    mut stream: TcpStream,
-    storage: &nex::FihStorage<MockIo>,
-) {
+async fn handle_client(mut stream: TcpStream, storage: &nex::FihStorage<MockIo>) {
     let (reader, mut writer) = stream.split();
     let mut buf_reader = BufReader::new(reader);
     let mut request_line = String::new();
@@ -321,9 +365,9 @@ async fn handle_client(
     let (path, query_map) = parse_path(path_with_query);
 
     let response = match path.as_str() {
-        "/" | "/fact" | "/intent" | "/claim" | "/conclude"
-        | "/state" | "/flush" | "/rebuild" => {
-            let q_vec: Vec<(String, String)> = query_map.iter()
+        "/" | "/fact" | "/intent" | "/claim" | "/conclude" | "/state" | "/flush" | "/rebuild" => {
+            let q_vec: Vec<(String, String)> = query_map
+                .iter()
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect();
             // Reuse the generic handler from nexus-gateway-nex-cf
@@ -334,15 +378,28 @@ async fn handle_client(
 
         "/ingest" => {
             let text = query_map.get("text").cloned().unwrap_or_default();
-            let origin = query_map.get("origin").cloned().unwrap_or_else(|| "ingest".into());
+            let origin = query_map
+                .get("origin")
+                .cloned()
+                .unwrap_or_else(|| "ingest".into());
             if text.is_empty() {
-                http_response(400, "application/json", r#"{"error":"missing 'text' parameter"}"#)
+                http_response(
+                    400,
+                    "application/json",
+                    r#"{"error":"missing 'text' parameter"}"#,
+                )
             } else {
                 match nexus_gateway_nex_cf::ingest_document(storage, &text, &origin).await {
-                    Ok(id) => http_response(200, "application/json",
-                        &serde_json::json!({"status":"ingested","id": id}).to_string()),
-                    Err(e) => http_response(500, "application/json",
-                        &serde_json::json!({"error": e}).to_string()),
+                    Ok(id) => http_response(
+                        200,
+                        "application/json",
+                        &serde_json::json!({"status":"ingested","id": id}).to_string(),
+                    ),
+                    Err(e) => http_response(
+                        500,
+                        "application/json",
+                        &serde_json::json!({"error": e}).to_string(),
+                    ),
                 }
             }
         }
@@ -350,23 +407,36 @@ async fn handle_client(
         "/search" => {
             let q = query_map.get("q").cloned().unwrap_or_default();
             if q.is_empty() {
-                http_response(400, "application/json", r#"{"error":"missing 'q' parameter"}"#)
+                http_response(
+                    400,
+                    "application/json",
+                    r#"{"error":"missing 'q' parameter"}"#,
+                )
             } else {
                 let query = TextQuery { text: q };
                 match storage.semantic_search(&query, 10) {
                     Ok(results) => {
-                        let items: Vec<serde_json::Value> = results.iter().map(|(idx, score)| {
-                            serde_json::json!({
-                                "index": idx,
-                                "score": score,
-                                "id": storage.resolve_semantic_idx(*idx),
+                        let items: Vec<serde_json::Value> = results
+                            .iter()
+                            .map(|(idx, score)| {
+                                serde_json::json!({
+                                    "index": idx,
+                                    "score": score,
+                                    "id": storage.resolve_semantic_idx(*idx),
+                                })
                             })
-                        }).collect();
-                        http_response(200, "application/json",
-                            &serde_json::json!({"results": items}).to_string())
+                            .collect();
+                        http_response(
+                            200,
+                            "application/json",
+                            &serde_json::json!({"results": items}).to_string(),
+                        )
                     }
-                    Err(e) => http_response(500, "application/json",
-                        &serde_json::json!({"error": format!("search: {e}")}).to_string()),
+                    Err(e) => http_response(
+                        500,
+                        "application/json",
+                        &serde_json::json!({"error": format!("search: {e}")}).to_string(),
+                    ),
                 }
             }
         }
