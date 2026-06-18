@@ -7,6 +7,7 @@ pub mod cf_io;
 
 use worker::*;
 
+use crate::batch_io::BatchIo;
 use crate::cf_io::CfFihIo;
 use nex::FihStorage;
 use nex::io::AsyncFileIo;
@@ -263,6 +264,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
 
     let docs_bucket = env.bucket("DOCS_R2").ok();
     let docs_bucket_test = env.bucket("DOCS_R2_TEST").ok();
+    let ingest_queue = env.queue("INGEST_QUEUE").ok();
 
     let url = req.url()?;
     let path = url.path().to_string();
@@ -340,68 +342,153 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             let prefix = qv(&q, "prefix");
             let filter_suffix = qv(&q, "suffix");
             let filter_suffix = if filter_suffix.is_empty() { ".llms.md".into() } else { filter_suffix };
+            let cursor = qv(&q, "cursor");
 
-            // R2 문서 목록 조회
-            let objects = match bucket.list().prefix(&prefix).execute().await {
+            // R2 문서 목록 조회 (커서 지원: 25개씩)
+            let mut list_op = bucket.list().prefix(&prefix).limit(25);
+            if !cursor.is_empty() {
+                list_op = list_op.cursor(&cursor);
+            }
+            let objects = match list_op.execute().await {
                 Ok(o) => o,
                 Err(e) => return Response::error(format!("list docs: {e}"), 500),
             };
             let keys: Vec<String> = objects.objects().iter().map(|o| o.key()).collect();
+            let next_cursor: Option<String> = if objects.truncated() {
+                objects.cursor().map(|c| c.to_string())
+            } else {
+                None
+            };
 
-            // BatchIo로 감싼 storage — submit_fact에서 R2 쓰기를 enqueue만 함
-            let batch_io = crate::batch_io::BatchIo::new(CfFihIo::new(
-                env.bucket("FIH_R2").expect("FIH_R2 required"),
-            ));
-            let batch_storage = nex::FihStorage::with_clock(
-                batch_io,
-                s.project_id(),
-                Box::new(CfClock),
-            );
-            batch_storage.register_semantic_store(Box::new(crate::stores::bm25::InMemoryBm25::new()));
+            // BatchIo로 감싼 ingest: 키 목록을 큐에 전송, consumer가 각각 처리
+            let queue = match &ingest_queue {
+                Some(q) => q,
+                None => return Response::error("INGEST_QUEUE not bound", 500),
+            };
 
             let mut total = 0usize;
             let mut errors: Vec<String> = Vec::new();
 
+            // 각 .llms.md 키를 Queue 메시지로 전송
             for key in &keys {
                 if !key.ends_with(&filter_suffix) {
                     continue;
                 }
-                let obj = match bucket.get(key).execute().await {
-                    Ok(Some(o)) => o,
-                    Ok(None) => { errors.push(format!("{key}: empty")); continue; }
-                    Err(e) => { errors.push(format!("{key}: {e}")); continue; }
-                };
-                let data = match obj.body() {
-                    Some(b) => match b.bytes().await {
-                        Ok(bytes) => bytes.to_vec(),
-                        Err(e) => { errors.push(format!("{key}: {e}")); continue; }
-                    },
-                    None => { errors.push(format!("{key}: no body")); continue; }
-                };
-                let text = match String::from_utf8(data) {
-                    Ok(t) => t,
-                    Err(_) => { errors.push(format!("{key}: not UTF-8")); continue; }
-                };
-                let origin = key
-                    .trim_end_matches(".llms.md")
-                    .trim_start_matches("_llms/")
-                    .to_string();
-                match crate::ingest_document(&batch_storage, &text, &origin).await {
-                    Ok(_) => total += 1,
-                    Err(e) => errors.push(format!("{key}: {e}")),
+                let msg = serde_json::json!({"key": key, "is_test": is_test});
+                if let Err(e) = queue.send(msg).await {
+                    errors.push(format!("{key}: queue send error: {e}"));
+                } else {
+                    total += 1;
                 }
             }
 
-            // 모든 pending R2 쓰기를 한 번에 flush (BatchIo가 apply_batch에서 자체 pending도 처리)
-            if let Err(e) = batch_storage.flush_pending().await {
-                errors.push(format!("flush: {e}"));
-            }
-
             Response::from_json(&serde_json::json!({
-                "status": "ok", "total": total, "errors": errors,
+                "status": "ok",
+                "total": total,
+                "errors": errors,
+                "cursor": next_cursor,
+                "has_more": next_cursor.is_some(),
             }))
         }
 
         _ => Response::error("not found", 404),
     }
+}
+
+// ── Queue consumer: ingest one .llms.md file per message ──────────────
+
+#[event(queue)]
+pub async fn queue_handler(batch: worker::MessageBatch<String>, env: Env, _ctx: Context) -> Result<()> {
+    for msg_result in batch.iter() {
+        let msg = match msg_result {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        let body: serde_json::Value = match serde_json::from_str(msg.body()) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let key = match body.get("key").and_then(|k| k.as_str()) {
+            Some(k) => k.to_string(),
+            None => continue,
+        };
+        let is_test = body.get("is_test").and_then(|t| t.as_bool()).unwrap_or(false);
+
+        let fih_bucket = if is_test {
+            match env.bucket("FIH_R2_TEST") {
+                Ok(b) => b,
+                Err(e) => {
+                    worker::console_log!("[ingest-queue] FIH_R2_TEST: {e}");
+                    continue;
+                }
+            }
+        } else {
+            match env.bucket("FIH_R2") {
+                Ok(b) => b,
+                Err(e) => {
+                    worker::console_log!("[ingest-queue] FIH_R2: {e}");
+                    continue;
+                }
+            }
+        };
+
+        let docs_bucket = if is_test {
+            match env.bucket("DOCS_R2_TEST") {
+                Ok(b) => b,
+                Err(_) => continue,
+            }
+        } else {
+            match env.bucket("DOCS_R2") {
+                Ok(b) => b,
+                Err(_) => continue,
+            }
+        };
+
+        // R2에서 문서 읽기
+        let obj = match docs_bucket.get(&key).execute().await {
+            Ok(Some(o)) => o,
+            _ => {
+                worker::console_log!("[ingest-queue] {key}: not found");
+                continue;
+            }
+        };
+        let data = match obj.body() {
+            Some(body) => match body.bytes().await {
+                Ok(bytes) => bytes.to_vec(),
+                Err(e) => {
+                    worker::console_log!("[ingest-queue] {key}: read error {e}");
+                    continue;
+                }
+            },
+            None => continue,
+        };
+        let text = match String::from_utf8(data) {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        let origin = key
+            .trim_end_matches(".llms.md")
+            .trim_start_matches("_llms/")
+            .to_string();
+
+        // BatchIo로 ingest
+        let batch_io = BatchIo::new(CfFihIo::new(fih_bucket));
+        let storage = FihStorage::with_clock(
+            batch_io,
+            "cf-nexus",
+            Box::new(CfClock),
+        );
+        storage.register_semantic_store(Box::new(crate::stores::bm25::InMemoryBm25::new()));
+
+        if let Err(e) = ingest_document(&storage, &text, &origin).await {
+            worker::console_log!("[ingest-queue] {key}: ingest error {e}");
+            continue;
+        }
+        if let Err(e) = storage.flush_pending().await {
+            worker::console_log!("[ingest-queue] {key}: flush error {e}");
+        }
+    }
+
+    batch.ack_all();
+    Ok(())
 }
