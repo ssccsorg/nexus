@@ -7,11 +7,17 @@ use std::rc::Rc;
 ///
 /// FIH fields like `Fact::origin` and `Fact::creator` often repeat across many facts.
 /// Using interned strings avoids `String` allocation per fact for common values.
+///
+/// Deprecated: Superseded by `FihCoord`'s internal `StringInterner` (u32-based)
+/// in `nex/src/storage/core/index.rs`. This type is no longer used anywhere in
+/// the codebase and will be removed in a future cleanup pass.
+#[deprecated(note = "use FihCoord's internal StringInterner (u32-based) instead")]
 pub struct Interner {
     to_id: RefCell<HashMap<Rc<str>, u32>>,
     to_str: RefCell<Vec<Rc<str>>>,
 }
 
+#[allow(deprecated)]
 impl Interner {
     pub fn new() -> Self {
         Self {
@@ -36,6 +42,7 @@ impl Interner {
     }
 }
 
+#[allow(deprecated)]
 impl Default for Interner {
     fn default() -> Self {
         Self::new()

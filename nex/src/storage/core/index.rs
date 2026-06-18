@@ -1,6 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 
+use crate::storage::semantic::{FihLoad, FihQuery, SemanticStore};
 use nexus_model::FihHash;
 
 /// Append-only ordered index. Stores compact u32 IDs (no String duplication).
@@ -114,6 +115,8 @@ pub struct FihCoord {
     pub by_status: RefCell<HashMap<u32, Vec<u32>>>,
     pub by_created_at_day: RefCell<BTreeMap<u64, Vec<u32>>>,
     pub ref_counts: RefCell<HashMap<u32, Cell<u64>>>,
+    /// Semantic feature store for similarity search (plug-in).
+    pub by_semantic: RefCell<Vec<Box<dyn SemanticStore>>>,
 }
 
 impl FihCoord {
@@ -130,17 +133,19 @@ impl FihCoord {
             by_status: RefCell::new(HashMap::new()),
             by_created_at_day: RefCell::new(BTreeMap::new()),
             ref_counts: RefCell::new(HashMap::new()),
+            by_semantic: RefCell::new(Vec::new()),
         }
     }
 
     pub fn intern(&self, hash: &[u8; 32]) -> u32 {
-        let mut map = self.id_to_idx.borrow_mut();
-        if let Some(&idx) = map.get(hash) {
+        // Fast path: already interned (read-only borrow)
+        if let Some(&idx) = self.id_to_idx.borrow().get(hash) {
             return idx;
         }
+        // Slow path: new hash (mutable borrow)
         let idx = self.next_idx.get();
         self.next_idx.set(idx + 1);
-        map.insert(*hash, idx);
+        self.id_to_idx.borrow_mut().insert(*hash, idx);
         let hex: String = hash.iter().map(|b| format!("{:02x}", b)).collect();
         self.idx_to_id.borrow_mut().push(hex);
         idx
@@ -186,6 +191,7 @@ impl FihCoord {
         self.by_status.borrow_mut().clear();
         self.by_created_at_day.borrow_mut().clear();
         self.ref_counts.borrow_mut().clear();
+        self.by_semantic.borrow_mut().clear();
     }
 
     // ── Index update ───────────────────────────────────────────────
@@ -285,6 +291,45 @@ impl FihCoord {
                 rc.set(rc.get() - 1);
             }
         }
+    }
+
+    // ── Semantic store interaction ────────────────────────────────
+
+    /// Insert a record into the semantic store using the provided `FihLoad`.
+    pub fn semantic_insert(&self, id: u32, load: &dyn FihLoad) -> Result<(), String> {
+        let mut stores = self.by_semantic.borrow_mut();
+        if stores.is_empty() {
+            return Err("no semantic stores configured".into());
+        }
+        let num_stores = stores.len();
+        for store in stores.iter_mut() {
+            store
+                .insert(id, load)
+                .map_err(|e| format!("semantic insert failed (store {num_stores}): {e}"))?;
+        }
+        Ok(())
+    }
+
+    /// Search the semantic store using the provided query handle.
+    pub fn semantic_search(
+        &self,
+        query: &dyn FihQuery,
+        top_k: usize,
+    ) -> Result<Vec<(u32, f32)>, String> {
+        let stores = self.by_semantic.borrow();
+        if stores.is_empty() {
+            return Err("no semantic stores configured".into());
+        }
+        let mut all_results = Vec::new();
+        for store in stores.iter() {
+            if let Ok(results) = store.search(query, top_k) {
+                all_results.extend(results);
+            }
+        }
+        // Sort by score descending and take top_k
+        all_results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        all_results.truncate(top_k);
+        Ok(all_results)
     }
 
     // ── Query ──────────────────────────────────────────────────────

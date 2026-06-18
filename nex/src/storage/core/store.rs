@@ -25,6 +25,7 @@ use super::entity_store::{EntityStore, MemoryEntityStore};
 use super::index::FihCoord;
 use super::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
 use crate::io::file_io::{AsyncFileIo, WriteOp};
+use crate::storage::semantic::FihLoad as SemanticFihLoad;
 
 /// Chain entry format: serialized by flush_since for delta chain files.
 /// Named struct avoids postcard tuple field ordering ambiguity with empty vecs.
@@ -205,6 +206,29 @@ impl<I: AsyncFileIo> FihStorage<I> {
             self.io.apply_batch(&ops).await?;
         }
         Ok(())
+    }
+
+    /// Register a semantic store for auto-indexing on fact submission.
+    pub fn register_semantic_store(&self, store: Box<dyn crate::storage::semantic::SemanticStore>) {
+        self.coord.by_semantic.borrow_mut().push(store);
+    }
+
+    /// Search semantic stores with the given query.
+    pub fn semantic_search(
+        &self,
+        query: &dyn crate::storage::semantic::FihQuery,
+        top_k: usize,
+    ) -> Result<Vec<(u32, f32)>, String> {
+        self.coord.semantic_search(query, top_k)
+    }
+
+    /// Insert a record into semantic stores with the given load handle.
+    pub fn semantic_insert(
+        &self,
+        id: u32,
+        load: &dyn crate::storage::semantic::FihLoad,
+    ) -> Result<(), String> {
+        self.coord.semantic_insert(id, load)
     }
 
     /// Query intents that reference a given fact.
@@ -432,6 +456,12 @@ impl<I: AsyncFileIo> FactCapable for FihStorage<I> {
         let ts = self.clock.now_nanos();
         self.coord
             .record_fact(&fact.id.0, &fact.origin, &fact.creator, ts);
+
+        // Auto-index into semantic stores (skip conclusion facts to reduce noise)
+        if !fact.origin.starts_with("conclusion:") {
+            let fact_idx = self.coord.intern(&fact.id.0);
+            let _ = self.coord.semantic_insert(fact_idx, self);
+        }
 
         Ok(fact.id)
     }
@@ -1191,6 +1221,53 @@ impl<I: AsyncFileIo> FlushCapable for FihStorage<I> {
     }
 }
 
+// ── FihStorage as FihLoad ──────────────────────────────────────────
+//
+// Implements the flashlight handle that SemanticStore implementations
+// use to load record data. FihStorage has access to both the in-memory
+// EntityStore (for fact/intent/hint records) and the coord index (for
+// ID resolution), making it the natural FihLoad provider.
+
+impl<I: AsyncFileIo> SemanticFihLoad for FihStorage<I> {
+    fn content(&self, id: u32) -> Option<Vec<u8>> {
+        let id_str = self.coord.resolve(id);
+        if id_str.is_empty() {
+            return None;
+        }
+        let record = self.fact_store.get(&id_str)?;
+        let content = self.load_content(&record.blob_hash, "application/octet-stream");
+        if content.data.is_empty() {
+            None
+        } else {
+            Some(content.data)
+        }
+    }
+
+    fn features(&self, _id: u32) -> Option<Vec<f32>> {
+        // Feature vectors are not stored in FihStorage directly.
+        // External embedding services should set up FihLoad wrappers.
+        None
+    }
+
+    fn origin(&self, id: u32) -> Option<String> {
+        let id_str = self.coord.resolve(id);
+        if id_str.is_empty() {
+            return None;
+        }
+        let record = self.fact_store.get(&id_str)?;
+        Some(record.origin.clone())
+    }
+
+    fn creator(&self, id: u32) -> Option<String> {
+        let id_str = self.coord.resolve(id);
+        if id_str.is_empty() {
+            return None;
+        }
+        let record = self.fact_store.get(&id_str)?;
+        Some(record.creator.clone())
+    }
+}
+
 // ── AsyncStorageRead ───────────────────────────────────────────────────────
 
 impl<I: AsyncFileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
@@ -1297,6 +1374,24 @@ impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
             .await
             .map_err(BlackboardError::Internal)?;
 
+        // Also enqueue in pending buffer so FihLoad::content() can find it.
+        // R2 is last-writer-wins, so the duplicate write on flush is harmless.
+        let blob_path = format!("blob/{}.bin", blob_hash);
+        let meta = ContentMeta {
+            mime_type: fact.content.mime_type.clone(),
+            size: fact.content.data.len() as u64,
+        };
+        let meta_bytes =
+            postcard::to_allocvec(&meta).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.pending.borrow_mut().push(WriteOp::Write {
+            path: blob_path,
+            data: fact.content.data.clone(),
+        });
+        self.pending.borrow_mut().push(WriteOp::Write {
+            path: format!("blob/{}.bin.meta", blob_hash),
+            data: meta_bytes,
+        });
+
         // Write fact record with blob_hash reference
         let record = FactRecord::from_model(fact, blob_hash, 0);
         let bytes =
@@ -1311,6 +1406,12 @@ impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
         let ts = self.clock.now_nanos();
         self.coord
             .record_fact(&fact.id.0, &fact.origin, &fact.creator, ts);
+
+        // Auto-index into semantic stores (skip conclusion facts to reduce noise)
+        if !fact.origin.starts_with("conclusion:") {
+            let fact_idx = self.coord.intern(&fact.id.0);
+            let _ = self.coord.semantic_insert(fact_idx, self);
+        }
 
         Ok(fact.id)
     }
