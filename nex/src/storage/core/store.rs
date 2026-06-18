@@ -25,7 +25,8 @@ use super::entity_store::{EntityStore, MemoryEntityStore};
 use super::index::FihCoord;
 use super::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
 use crate::io::file_io::{AsyncFileIo, WriteOp};
-use crate::storage::semantic::FihLoad as SemanticFihLoad;
+use crate::storage::semantic::fih::FihRecordLoad;
+use crate::storage::semantic::record::{Query, RecordLoad};
 
 /// Chain entry format: serialized by flush_since for delta chain files.
 /// Named struct avoids postcard tuple field ordering ambiguity with empty vecs.
@@ -216,7 +217,7 @@ impl<I: AsyncFileIo> FihStorage<I> {
     /// Search semantic stores with the given query.
     pub fn semantic_search(
         &self,
-        query: &dyn crate::storage::semantic::FihQuery,
+        query: &dyn Query,
         top_k: usize,
     ) -> Result<Vec<(u32, f32)>, String> {
         self.coord.semantic_search(query, top_k)
@@ -226,7 +227,7 @@ impl<I: AsyncFileIo> FihStorage<I> {
     pub fn semantic_insert(
         &self,
         id: u32,
-        load: &dyn crate::storage::semantic::FihLoad,
+        load: &dyn RecordLoad,
     ) -> Result<(), String> {
         self.coord.semantic_insert(id, load)
     }
@@ -1226,14 +1227,14 @@ impl<I: AsyncFileIo> FlushCapable for FihStorage<I> {
     }
 }
 
-// ── FihStorage as FihLoad ──────────────────────────────────────────
+// ── FihStorage as RecordLoad ────────────────────────────────────────
 //
-// Implements the flashlight handle that SemanticStore implementations
-// use to load record data. FihStorage has access to both the in-memory
+// Implements the pure semantic RecordLoad trait for SemanticStore
+// implementations. FihStorage has access to both the in-memory
 // EntityStore (for fact/intent/hint records) and the coord index (for
-// ID resolution), making it the natural FihLoad provider.
+// ID resolution), making it the natural RecordLoad provider.
 
-impl<I: AsyncFileIo> SemanticFihLoad for FihStorage<I> {
+impl<I: AsyncFileIo> RecordLoad for FihStorage<I> {
     fn content(&self, id: u32) -> Option<Vec<u8>> {
         let id_str = self.coord.resolve(id);
         if id_str.is_empty() {
@@ -1250,10 +1251,16 @@ impl<I: AsyncFileIo> SemanticFihLoad for FihStorage<I> {
 
     fn features(&self, _id: u32) -> Option<Vec<f32>> {
         // Feature vectors are not stored in FihStorage directly.
-        // External embedding services should set up FihLoad wrappers.
+        // External embedding services should set up RecordLoad wrappers.
         None
     }
+}
 
+// ── FihStorage as FihRecordLoad ────────────────────────────────────
+//
+// Extends RecordLoad with FIH-specific accessors for origin and creator.
+
+impl<I: AsyncFileIo> FihRecordLoad for FihStorage<I> {
     fn origin(&self, id: u32) -> Option<String> {
         let id_str = self.coord.resolve(id);
         if id_str.is_empty() {
@@ -1379,7 +1386,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
             .await
             .map_err(BlackboardError::Internal)?;
 
-        // Also enqueue in pending buffer so FihLoad::content() can find it.
+        // Also enqueue in pending buffer so RecordLoad::content() can find it.
         // R2 is last-writer-wins, so the duplicate write on flush is harmless.
         let blob_path = format!("blob/{}.bin", blob_hash);
         let meta = ContentMeta {

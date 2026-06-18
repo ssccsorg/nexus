@@ -16,7 +16,7 @@
 //   - R2 list-after-write is eventually consistent (may miss recent writes)
 
 use nex::io::{AsyncFileIo, IoFuture, WriteOp};
-use nex::storage::semantic::FihQuery;
+use nex::storage::semantic::Query;
 use worker::{Bucket, Data};
 
 pub struct CfFihIo {
@@ -129,16 +129,16 @@ impl AsyncFileIo for CfFihIo {
     }
 }
 
-// ── TextQuery: text-only FihQuery for search endpoint ──────────────────
+// ── TextQuery: text-only Query for search endpoint ──────────────────
 
-/// A minimal `FihQuery` implementation that carries only text.
+/// A minimal `Query` implementation that carries only text.
 /// Used by the `/search` endpoint to query registered SemanticStore
 /// backends that operate on text (BM25, etc.).
 pub struct TextQuery {
     pub text: String,
 }
 
-impl FihQuery for TextQuery {
+impl Query for TextQuery {
     fn features(&self) -> Option<Vec<f32>> {
         None
     }

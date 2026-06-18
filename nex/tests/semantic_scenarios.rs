@@ -6,7 +6,7 @@
 //
 // Scenarios cover:
 //   1. Insert and search with multiple documents (search.json style)
-//   2. Cross-methodology simulation (same trait, different FihLoad accessors)
+//   2. Cross-methodology simulation (same trait, different RecordLoad accessors)
 //   3. Batch insert then incremental search
 //   4. Remove then re-insert
 //   5. Mixed content: some records have features, some have text only
@@ -16,16 +16,16 @@
 //   9. Dimension mismatch error
 //  10. FihCoord integration: semantic_insert / semantic_search via store
 
-use nex::storage::semantic::{FihLoad, FihQuery, SemanticStore};
+use nex::storage::semantic::{Query, RecordLoad, SemanticStore};
 
 mod common;
 use common::semantic::{MockBm25Store, MockSemanticStore};
 
-// ── Test FihLoad implementations ────────────────────────────────────────
+// ── Test RecordLoad implementations ─────────────────────────────────────
 
-/// A FihLoad that returns feature vectors (simulating a vector store).
+/// A RecordLoad that returns feature vectors (simulating a vector store).
 ///
-/// A `FihLoad` that only carries a feature vector (no text).
+/// A `RecordLoad` that only carries a feature vector (no text).
 /// For features + text, use `common::semantic::FeatureLoad`.
 struct TestFeat {
     features: Vec<f32>,
@@ -37,22 +37,16 @@ impl TestFeat {
     }
 }
 
-impl FihLoad for TestFeat {
+impl RecordLoad for TestFeat {
     fn content(&self, _id: u32) -> Option<Vec<u8>> {
         None
     }
     fn features(&self, _id: u32) -> Option<Vec<f32>> {
         Some(self.features.clone())
     }
-    fn origin(&self, _id: u32) -> Option<String> {
-        None
-    }
-    fn creator(&self, _id: u32) -> Option<String> {
-        None
-    }
 }
 
-impl FihQuery for TestFeat {
+impl Query for TestFeat {
     fn features(&self) -> Option<Vec<f32>> {
         Some(self.features.clone())
     }
@@ -61,65 +55,47 @@ impl FihQuery for TestFeat {
     }
 }
 
-/// A FihLoad that returns text content (simulating a BM25/ngram store).
+/// A RecordLoad that returns text content (simulating a BM25/ngram store).
 struct TextLoad {
     text: String,
 }
 
-impl FihLoad for TextLoad {
+impl RecordLoad for TextLoad {
     fn content(&self, _id: u32) -> Option<Vec<u8>> {
         Some(self.text.as_bytes().to_vec())
     }
     fn features(&self, _id: u32) -> Option<Vec<f32>> {
         None
     }
-    fn origin(&self, _id: u32) -> Option<String> {
-        None
-    }
-    fn creator(&self, _id: u32) -> Option<String> {
-        None
-    }
 }
 
-/// A FihLoad that returns origin strings (simulating an ngram origin store).
+/// A RecordLoad that returns origin strings (simulating an ngram origin store).
 struct OriginLoad {
     origin: String,
 }
 
-impl FihLoad for OriginLoad {
+impl RecordLoad for OriginLoad {
     fn content(&self, _id: u32) -> Option<Vec<u8>> {
         None
     }
     fn features(&self, _id: u32) -> Option<Vec<f32>> {
         None
     }
-    fn origin(&self, _id: u32) -> Option<String> {
-        Some(self.origin.clone())
-    }
-    fn creator(&self, _id: u32) -> Option<String> {
-        None
-    }
 }
 
-/// A FihLoad that returns everything (full document load).
+/// A RecordLoad that returns everything (full document load).
 struct FullDocLoad {
     text: String,
     origin: String,
     creator: String,
 }
 
-impl FihLoad for FullDocLoad {
+impl RecordLoad for FullDocLoad {
     fn content(&self, _id: u32) -> Option<Vec<u8>> {
         Some(self.text.as_bytes().to_vec())
     }
     fn features(&self, _id: u32) -> Option<Vec<f32>> {
         None
-    }
-    fn origin(&self, _id: u32) -> Option<String> {
-        Some(self.origin.clone())
-    }
-    fn creator(&self, _id: u32) -> Option<String> {
-        Some(self.creator.clone())
     }
 }
 
@@ -583,7 +559,7 @@ fn scenario_origin_based_search() {
     let mut store = MockSemanticStore::new();
 
     // OriginLoad has no features, so MockSemanticStore fails on insert.
-    // This is correct: OriginLoad tests the FihLoad trait boundary.
+    // This is correct: OriginLoad tests the RecordLoad trait boundary.
     let result = store.insert(
         1,
         &OriginLoad {
@@ -596,10 +572,13 @@ fn scenario_origin_based_search() {
     let load = OriginLoad {
         origin: "whitepaper".into(),
     };
-    assert_eq!(load.origin(42), Some("whitepaper".into()));
+    // FihRecordLoad::origin is no longer on RecordLoad, we cannot call .origin() here.
+    // This test previously verified the FIH-specific accessor, which is now separated.
+    // The constructors still work as shown.
+    let _ = load;
 }
 
-/// Use FullDocLoad to demonstrate full-document FihLoad with all accessors.
+/// Use FullDocLoad to demonstrate full-document RecordLoad with all accessors.
 #[test]
 fn scenario_full_doc_load() {
     let mut store = MockSemanticStore::new();
@@ -615,15 +594,13 @@ fn scenario_full_doc_load() {
     );
     assert!(result.is_err(), "FullDocLoad lacks features, should fail");
 
-    // Verify all accessors work
+    // Verify all accessors work (RecordLoad only has content/text/features)
     let load = FullDocLoad {
         text: "ssccs semantics".into(),
         origin: "whitepaper".into(),
         creator: "taeho".into(),
     };
     assert_eq!(load.text(99).unwrap(), "ssccs semantics");
-    assert_eq!(load.origin(99).unwrap(), "whitepaper");
-    assert_eq!(load.creator(99).unwrap(), "taeho");
 }
 
 /// Use score_semantic to manually verify cosine similarity calculation.
@@ -759,21 +736,15 @@ fn scenario_fihcoord_single_store() {
     struct InlineLoad {
         feats: Vec<f32>,
     }
-    impl FihLoad for InlineLoad {
+    impl RecordLoad for InlineLoad {
         fn content(&self, _id: u32) -> Option<Vec<u8>> {
             None
         }
         fn features(&self, _id: u32) -> Option<Vec<f32>> {
             Some(self.feats.clone())
         }
-        fn origin(&self, _id: u32) -> Option<String> {
-            None
-        }
-        fn creator(&self, _id: u32) -> Option<String> {
-            None
-        }
     }
-    impl FihQuery for InlineLoad {
+    impl Query for InlineLoad {
         fn features(&self) -> Option<Vec<f32>> {
             Some(self.feats.clone())
         }

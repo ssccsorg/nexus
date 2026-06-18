@@ -5,7 +5,7 @@
 // similarity-based retrieval.
 //
 // The trait is designed as a thin "flashlight" interface: the core (FihCoord)
-// provides only a lookup handle (`FihLoad`), and each external implementation
+// provides only a lookup handle (`RecordLoad`), and each external implementation
 // decides which data it needs (text, embeddings, graph relations, etc.)
 // by requesting it through the handle. This keeps the core agnostic to
 // any specific methodology — vector, BM25, ngram, hypergraph, LLM reranker.
@@ -19,58 +19,19 @@
 // External crates provide production impls (CfVectorizeStore, HNSW, etc.).
 
 pub mod bm25;
+pub mod fih;
+pub mod record;
+
+pub use record::{Query, RecordLoad};
 
 use std::fmt::Debug;
-
-/// Lookup handle for loading Fih data by record ID.
-///
-/// Used by `SemanticStore::insert()` to retrieve the data it needs
-/// (feature vectors, text, origin, etc.) for a given record.
-pub trait FihLoad {
-    /// Load content bytes for a record by its coord index.
-    fn content(&self, id: u32) -> Option<Vec<u8>>;
-
-    /// Load content decoded as UTF-8 text.
-    fn text(&self, id: u32) -> Option<String> {
-        self.content(id)
-            .and_then(|bytes| String::from_utf8(bytes).ok())
-    }
-
-    /// Load f32 feature vector, if the record has one stored.
-    ///
-    /// The core `FihStorage` implementation returns `None` because feature
-    /// vectors are not stored inline. External embedding services (agent layer)
-    /// should override this via a custom `FihLoad` wrapper that calls an
-    /// embedding API and caches the result.
-    fn features(&self, id: u32) -> Option<Vec<f32>>;
-
-    /// Load the origin string for a fact record.
-    fn origin(&self, id: u32) -> Option<String>;
-
-    /// Load the creator string for a fact or intent record.
-    fn creator(&self, id: u32) -> Option<String>;
-}
-
-/// Query handle for similarity search.
-///
-/// Used by `SemanticStore::search()`. Unlike `FihLoad`, it carries no
-/// record ID — only the query data needed to find similar records.
-/// Each implementation calls only the accessor it needs (e.g.
-/// `features()` for vector search, `text()` for BM25).
-pub trait FihQuery {
-    /// Query as f32 feature vector.
-    fn features(&self) -> Option<Vec<f32>>;
-
-    /// Query as UTF-8 text.
-    fn text(&self) -> Option<String>;
-}
 
 /// Semantic feature store for similarity search.
 ///
 /// Maps semantic features to record IDs. Used by FihCoord as another
 /// index axis alongside by_origin, by_creator, by_status, etc.
 ///
-/// Each implementation decides which data to extract via `FihLoad`.
+/// Each implementation decides which data to extract via `RecordLoad`.
 ///
 /// Multiple store implementations can coexist in the same binary,
 /// each using a different strategy (vector cosine, BM25 text, ngram,
@@ -78,10 +39,10 @@ pub trait FihQuery {
 pub trait SemanticStore: Debug {
     /// Insert a record into the store. The implementation calls
     /// `load` to retrieve only the data it needs.
-    fn insert(&mut self, id: u32, load: &dyn FihLoad) -> Result<(), String>;
+    fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String>;
 
     /// Search for the top_k most similar records using the query handle.
-    fn search(&self, query: &dyn FihQuery, top_k: usize) -> Result<Vec<(u32, f32)>, String>;
+    fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String>;
 
     /// Remove a record ID from the store.
     fn remove(&mut self, id: u32) -> Result<(), String>;
