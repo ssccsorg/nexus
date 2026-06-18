@@ -18,12 +18,13 @@ impl<I: AsyncFileIo> BatchIo<I> {
 
     /// Flush pending writes to inner IO via apply_batch.
     pub async fn flush(&self) -> Result<(), String> {
-        let mut ops = self.pending.borrow_mut();
-        if ops.is_empty() {
-            return Ok(());
-        }
-        let batch = std::mem::take(&mut *ops);
-        drop(ops);
+        let batch = {
+            let mut ops = self.pending.borrow_mut();
+            if ops.is_empty() {
+                return Ok(());
+            }
+            std::mem::take(&mut *ops)
+        };
         self.inner.apply_batch(&batch).await
     }
 
