@@ -6,6 +6,7 @@ members = [
     "storage/duckdb",
     "gateway/api",
     "gateway/nex-cf",
+    "gateway/nex-cf/mock",
     "gateway/serde-proxy",
     "playbooks/agents",
     "interface/query",
