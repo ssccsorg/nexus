@@ -199,3 +199,46 @@ impl SemanticStore for MockBm25Store {
         self.ids.len()
     }
 }
+
+// ── FeatureLoad: test/utility FihLoad+FihQuery implementation ───────────
+
+/// A `FihLoad` + `FihQuery` implementation that carries a feature vector
+/// and an optional text string.
+#[derive(Debug, Clone)]
+pub struct FeatureLoad {
+    features: Vec<f32>,
+    text: Option<String>,
+}
+
+impl FeatureLoad {
+    pub fn new(features: Vec<f32>, text: Option<String>) -> Self {
+        Self { features, text }
+    }
+}
+
+impl FihLoad for FeatureLoad {
+    fn content(&self, _id: u32) -> Option<Vec<u8>> {
+        self.text.as_ref().map(|t| t.as_bytes().to_vec())
+    }
+    fn text(&self, _id: u32) -> Option<String> {
+        self.text.clone()
+    }
+    fn features(&self, _id: u32) -> Option<Vec<f32>> {
+        Some(self.features.clone())
+    }
+    fn origin(&self, _id: u32) -> Option<String> {
+        None
+    }
+    fn creator(&self, _id: u32) -> Option<String> {
+        None
+    }
+}
+
+impl FihQuery for FeatureLoad {
+    fn features(&self) -> Option<Vec<f32>> {
+        Some(self.features.clone())
+    }
+    fn text(&self) -> Option<String> {
+        self.text.clone()
+    }
+}
