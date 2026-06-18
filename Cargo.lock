@@ -1737,6 +1737,8 @@ dependencies = [
  "nex",
  "nexus-model",
  "serde_json",
+ "tempfile",
+ "tokio",
  "worker",
 ]
 

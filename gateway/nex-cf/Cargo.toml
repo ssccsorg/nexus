@@ -16,4 +16,8 @@ serde_json = "1"
 nex = { path = "../../nex" }
 nexus-model = { path = "../../model" }
 
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
+
 
