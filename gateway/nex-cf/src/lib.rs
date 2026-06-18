@@ -2,7 +2,7 @@
 // No block_on. No locks. Pure async over R2.
 
 pub mod stores;
-
+pub mod batch_io;
 pub mod cf_io;
 
 use worker::*;
@@ -10,8 +10,9 @@ use worker::*;
 use crate::cf_io::CfFihIo;
 use nex::FihStorage;
 use nex::io::AsyncFileIo;
-use nexus_model::{AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead};
-use nexus_model::{Content, Fact, FihHash, Intent};
+use nexus_model::{
+    AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead, Content, Fact, FihHash, Intent,
+};
 use std::sync::OnceLock;
 
 // ── CF clock: real timestamps via worker::Date::now() ────────────────
@@ -337,17 +338,26 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                 None => return Response::error("DOCS_R2 bucket not bound", 500),
             };
             let prefix = qv(&q, "prefix");
-            // 기본 프리픽스 없음 — 빈 문자열이면 전체 버킷 스캔
-
             let filter_suffix = qv(&q, "suffix");
             let filter_suffix = if filter_suffix.is_empty() { ".llms.md".into() } else { filter_suffix };
 
-            // Bucket의 list + get을 직접 사용 (Bucket은 Clone 불가)
+            // R2 문서 목록 조회
             let objects = match bucket.list().prefix(&prefix).execute().await {
                 Ok(o) => o,
                 Err(e) => return Response::error(format!("list docs: {e}"), 500),
             };
             let keys: Vec<String> = objects.objects().iter().map(|o| o.key()).collect();
+
+            // BatchIo로 감싼 storage — submit_fact에서 R2 쓰기를 enqueue만 함
+            let batch_io = crate::batch_io::BatchIo::new(CfFihIo::new(
+                env.bucket("FIH_R2").expect("FIH_R2 required"),
+            ));
+            let batch_storage = nex::FihStorage::with_clock(
+                batch_io,
+                s.project_id(),
+                Box::new(CfClock),
+            );
+            batch_storage.register_semantic_store(Box::new(crate::stores::bm25::InMemoryBm25::new()));
 
             let mut total = 0usize;
             let mut errors: Vec<String> = Vec::new();
@@ -376,10 +386,15 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                     .trim_end_matches(".llms.md")
                     .trim_start_matches("_llms/")
                     .to_string();
-                match ingest_document(s, &text, &origin).await {
+                match crate::ingest_document(&batch_storage, &text, &origin).await {
                     Ok(_) => total += 1,
                     Err(e) => errors.push(format!("{key}: {e}")),
                 }
+            }
+
+            // 모든 pending R2 쓰기를 한 번에 flush (BatchIo가 apply_batch에서 자체 pending도 처리)
+            if let Err(e) = batch_storage.flush_pending().await {
+                errors.push(format!("flush: {e}"));
             }
 
             Response::from_json(&serde_json::json!({
