@@ -262,6 +262,9 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             .expect("FIH_R2 bucket binding required"),
     );
 
+    // DOCS_R2 바인딩 (문서 아티팩트 버킷) — 선택 사항
+    let docs_bucket = env.bucket("DOCS_R2").ok();
+
     let url = req.url()?;
     let path = url.path().to_string();
     let q: Vec<(String, String)> = url
