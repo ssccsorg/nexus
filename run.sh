@@ -3,14 +3,14 @@ set -euo pipefail
 #
 # nexus — Unified CI runner
 #
-# By default runs everything (core checks + consumer playbooks).
+# By default runs everything (core checks + gateway + playbooks).
 # Sub-commands for focused tasks.
 #
 # Usage:
-#   ./run.sh              # Everything (default)
-#   ./run.sh --core       # Core checks only
-#   ./run.sh --playbooks  # Consumer playbooks only
-#   ./run.sh --gateway    # Start gateway server only
+#   ./run.sh               # Everything (default)
+#   ./run.sh --core        # Core checks only (nex, storage/*)
+#   ./run.sh --gateway     # Gateway layer checks (api, nex-cf, serde-proxy)
+#   ./run.sh --playbooks   # Consumer playbooks only
 #
 
 cd "$(dirname "$0")"
@@ -20,45 +20,34 @@ case "${1:-}" in
         shift
         exec ./scripts/run-core.sh "$@"
         ;;
-    --gateway-api)
-        cd gateway/api && cargo test
-        ;;
-    --nex-cf)
+    --gateway)
         shift
-        exec ./scripts/run-nex-cf.sh "$@"
+        exec ./scripts/run-gateway.sh "$@"
         ;;
     --playbooks)
         exec ./playbooks/run.sh
         ;;
-    --gateway)
-        exec ./scripts/run-gateway.sh
-        ;;
     --help|-h)
         echo "Usage: $0 [OPTION]"
-        echo "  (no arg)     Core checks + playbooks [default]"
-        echo "  --core        Core checks only"
-        echo "  --gateway-api Gateway API unit tests"
-        echo "  --nex-cf      Nexus CF Worker WASM check"
+        echo "  (no arg)      Core + gateway + playbooks [default]"
+        echo "  --core        Core checks only (nex, storage/*)"
+        echo "  --gateway     Gateway layer checks (api, nex-cf, serde-proxy)"
         echo "  --playbooks   Consumer playbooks only"
-        echo "  --gateway     Start gateway API server"
         ;;
     "")
         # Default: run everything
         echo "=== Core ==="
         ./scripts/run-core.sh
         echo ""
-        echo "=== Gateway API ==="
-        (cd gateway/api && cargo test)
-        echo ""
-        echo "=== Nexus CF Worker ==="
-        ./scripts/run-nex-cf.sh
+        echo "=== Gateway ==="
+        ./scripts/run-gateway.sh
         echo ""
         echo "=== Playbooks ==="
         ./playbooks/run.sh
         ;;
     *)
         echo "Unknown: $1"
-        echo "Usage: $0 [--core|--playbooks|--gateway]"
+        echo "Usage: $0 [--core|--gateway|--playbooks]"
         exit 1
         ;;
 esac

@@ -52,7 +52,11 @@ fn init_stores(prod_bucket: worker::Bucket, test_bucket: worker::Bucket) {
         s
     });
     TEST_STORE.0.get_or_init(|| {
-        let s = FihStorage::with_clock(CfFihIo::new(test_bucket), "cf-nexus-test", Box::new(CfClock));
+        let s = FihStorage::with_clock(
+            CfFihIo::new(test_bucket),
+            "cf-nexus-test",
+            Box::new(CfClock),
+        );
         s.register_semantic_store(Box::new(crate::stores::bm25::InMemoryBm25::new()));
         s
     });
@@ -60,15 +64,19 @@ fn init_stores(prod_bucket: worker::Bucket, test_bucket: worker::Bucket) {
 
 /// `/test/...` → true, 나머지 path 반환
 fn split_test_prefix(path: &str) -> (bool, &str) {
-    if path.len() >= 6 && path.as_bytes()[0] == b'/' && path.as_bytes()[1] == b't'
-        && path.as_bytes()[2] == b'e' && path.as_bytes()[3] == b's' && path.as_bytes()[4] == b't'
+    if path.len() >= 6
+        && path.as_bytes()[0] == b'/'
+        && path.as_bytes()[1] == b't'
+        && path.as_bytes()[2] == b'e'
+        && path.as_bytes()[3] == b's'
+        && path.as_bytes()[4] == b't'
     {
         // `/test` 또는 `/test/...`
-        let rest = &path[5..];  // skip "/test"
+        let rest = &path[5..]; // skip "/test"
         if rest.is_empty() || rest == "/" {
             (true, "/")
         } else {
-            (true, rest)  // "/fact", "/ingest?x=1", etc.
+            (true, rest) // "/fact", "/ingest?x=1", etc.
         }
     } else {
         (false, path)
@@ -309,11 +317,20 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     let (is_test, path_stripped) = split_test_prefix(&path);
 
     // 디버그: path 확인 (wrangler tail에서 볼 수 있음)
-    worker::console_log!("[nex-cf] path={}, is_test={}, stripped={}", path, is_test, path_stripped);
+    worker::console_log!(
+        "[nex-cf] path={}, is_test={}, stripped={}",
+        path,
+        is_test,
+        path_stripped
+    );
     worker::console_log!("[nex-cf] path_bytes_len={}, first_5=", path.len());
 
     let s = store(is_test);
-    let _docs = if is_test { docs_bucket_test.as_ref() } else { docs_bucket.as_ref() };
+    let _docs = if is_test {
+        docs_bucket_test.as_ref()
+    } else {
+        docs_bucket.as_ref()
+    };
 
     match path_stripped {
         "/" => {
@@ -321,7 +338,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             Ok(Response::from_bytes(body.into_bytes())?.with_status(code))
         }
         "/version" => {
-            Response::ok("2")  // 배포 버전 확인용
+            Response::ok("2") // 배포 버전 확인용
         }
         // Standard FIH endpoints — delegated to generic handle_path
         "/fact" | "/intent" | "/claim" | "/conclude" | "/state" | "/flush" | "/rebuild" => {
@@ -335,7 +352,11 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             if text.is_empty() {
                 return Response::error("missing 'text' parameter", 400);
             }
-            let origin = if origin.is_empty() { "ingest".into() } else { origin };
+            let origin = if origin.is_empty() {
+                "ingest".into()
+            } else {
+                origin
+            };
             match ingest_document(s, &text, &origin).await {
                 Ok(id) => Response::from_json(&serde_json::json!({"status":"ingested","id": id})),
                 Err(e) => Response::error(e, 500),
