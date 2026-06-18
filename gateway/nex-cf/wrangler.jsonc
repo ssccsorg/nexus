@@ -26,6 +26,24 @@
     }
   ],
 
+  "queues": {
+    "producers": [
+      {
+        "binding": "INGEST_QUEUE",
+        "queue": "nex-cf-ingest-queue"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "nex-cf-ingest-queue",
+        "max_batch_size": 5,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "dead_letter_queue": "nex-cf-ingest-dlq"
+      }
+    ]
+  },
+
   "observability": {
     "logs": { "enabled": true, "invocation_logs": true }
   }
