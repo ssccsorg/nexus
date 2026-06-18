@@ -28,3 +28,4 @@ worker = { version = "0.8", optional = true }
 [dev-dependencies]
 tempfile = "3"
 nexus-gateway-serde-proxy = { path = "../gateway/serde-proxy" }
+ureq = { version = "3", features = ["json"] }

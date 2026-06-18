@@ -17,7 +17,7 @@ use nexus_model::{
 use nexus_storage_composite::CompositeColdStorage;
 
 mod common;
-use common::{MockBlob, MockKv, MockObject};
+use common::store::{MockBlob, MockKv, MockObject};
 
 fn storage() -> CompositeColdStorage<MockBlob, MockObject, MockKv> {
     CompositeColdStorage::new_with_system_clock(
