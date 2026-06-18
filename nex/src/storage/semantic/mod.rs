@@ -11,12 +11,14 @@
 // any specific methodology — vector, BM25, ngram, hypergraph, LLM reranker.
 //
 // Implementations (plug-in via USB hub pattern, living outside nex core):
-//   - storage/semantic/vector/  — HNSW-based ANN vector search
-//   - storage/semantic/bm25/    — BM25 string similarity (no LLM)
-//   - storage/semantic/ngram/   — ngram-based fuzzy matching
+//   - storage/semantic/bm25/    — BM25 string similarity (bundled in nex)
+//   - storage/semantic/vector/  — HNSW-based ANN vector search (external)
+//   - storage/semantic/ngram/   — ngram-based fuzzy matching (external)
 //
-// nex core defines only the trait. External crates provide impls.
-// Mock implementations live in `tests/common/mod.rs`.
+// nex core bundles InMemoryBm25 for development and CF Workers without Vectorize.
+// External crates provide production impls (CfVectorizeStore, HNSW, etc.).
+
+pub mod bm25;
 
 use std::fmt::Debug;
 
