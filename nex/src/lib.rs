@@ -11,6 +11,7 @@ pub use storage::core::export::{FihExport, FihImport, export_from_io, import_int
 pub use storage::core::{EntityStore, FihSession, FihStorage, IntentStatus, MemoryEntityStore};
 pub use storage::fih::FihBlackboard;
 pub use storage::semantic::bm25::InMemoryBm25;
+pub use storage::semantic::record::{Query, RecordLoad};
 pub use storage::semantic::SemanticStore;
 
 /// Shortcut to create a default blackboard (hot petgraph + no cold backend).

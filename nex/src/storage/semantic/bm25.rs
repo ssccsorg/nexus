@@ -4,7 +4,7 @@
 // Intended for local development, testing, and CF Workers without Vectorize.
 // Replace with CfVectorizeStore for production-scale deployments.
 
-use crate::storage::semantic::{FihLoad, FihQuery, SemanticStore};
+use crate::storage::semantic::{Query, RecordLoad, SemanticStore};
 use std::collections::HashMap;
 
 /// In-memory BM25 semantic store.
@@ -33,14 +33,14 @@ impl Default for InMemoryBm25 {
 }
 
 impl SemanticStore for InMemoryBm25 {
-    fn insert(&mut self, id: u32, load: &dyn FihLoad) -> Result<(), String> {
+    fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
         let text = load.text(id).ok_or_else(|| "no text available".to_string())?;
         self.ids.push(id);
         self.texts.push(text);
         Ok(())
     }
 
-    fn search(&self, query: &dyn FihQuery, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
+    fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
         let qt = match query.text() {
             Some(t) if !t.trim().is_empty() => t,
             _ => return Ok(Vec::new()),

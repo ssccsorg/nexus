@@ -17,7 +17,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 
 use nex::io::{AsyncFileIo, IoFuture, WriteOp};
-use nex::storage::semantic::{FihLoad, FihQuery, SemanticStore};
+use nex::storage::semantic::{Query, RecordLoad, SemanticStore};
 
 // ── MockBucket: in-memory HashMap mimicking R2 ──────────────────────────
 
@@ -56,6 +56,12 @@ impl MockBucket {
             .filter(|k| k.starts_with(prefix))
             .cloned()
             .collect()
+    }
+}
+
+impl Default for MockBucket {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -167,14 +173,20 @@ impl MockVecStore {
     }
 }
 
+impl Default for MockVecStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SemanticStore for MockVecStore {
-    fn insert(&mut self, id: u32, load: &dyn FihLoad) -> Result<(), String> {
+    fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
         let feats = load.features(id).ok_or_else(|| "no features".to_string())?;
         self.ids.push(id);
         self.vectors.push(feats);
         Ok(())
     }
-    fn search(&self, query: &dyn FihQuery, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
+    fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
         let qv = query
             .features()
             .ok_or_else(|| "no query features".to_string())?;
@@ -229,14 +241,20 @@ impl MockBm25Store {
     }
 }
 
+impl Default for MockBm25Store {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SemanticStore for MockBm25Store {
-    fn insert(&mut self, id: u32, load: &dyn FihLoad) -> Result<(), String> {
+    fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
         let text = load.text(id).ok_or_else(|| "no text".to_string())?;
         self.ids.push(id);
         self.texts.push(text);
         Ok(())
     }
-    fn search(&self, query: &dyn FihQuery, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
+    fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
         let qt = match query.text() {
             Some(t) if !t.trim().is_empty() => t,
             _ => return Ok(Vec::new()),
@@ -323,7 +341,7 @@ struct TextQuery {
     text: String,
 }
 
-impl FihQuery for TextQuery {
+impl Query for TextQuery {
     fn features(&self) -> Option<Vec<f32>> {
         None
     }
@@ -343,7 +361,7 @@ async fn handle_client(mut stream: TcpStream, storage: &nex::FihStorage<MockIo>)
         return;
     }
 
-    let parts: Vec<&str> = request_line.trim().split_whitespace().collect();
+    let parts: Vec<&str> = request_line.split_whitespace().collect();
     if parts.len() < 2 {
         let _ = writer
             .write_all(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")
@@ -515,7 +533,6 @@ async fn main() {
 
     println!("─── nex-cf Mock Simulation Server ───");
     println!("Listening on http://localhost:8080");
-    println!("");
     println!("Endpoints:");
     println!("  GET  /             — service info");
     println!("  GET  /state        — read board state");
@@ -527,7 +544,6 @@ async fn main() {
     println!("  POST /rebuild      — rebuild from mock R2");
     println!("  POST /ingest       — ingest document (?text, ?origin)");
     println!("  GET  /search       — semantic search (?q)");
-    println!("");
     println!("Try: curl 'http://localhost:8080/ingest?text=Hello+semantic+world&origin=test'");
     println!("     curl 'http://localhost:8080/search?q=semantic'");
     println!("────────────────────────────────────────");

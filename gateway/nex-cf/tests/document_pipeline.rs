@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 
-use nex::storage::semantic::{FihLoad, FihQuery, SemanticStore};
+use nex::storage::semantic::{Query, RecordLoad, SemanticStore};
 use nexus_model::AsyncStorageRead;
 
 // ── Mock Semantic Stores ────────────────────────────────────────────────
@@ -33,13 +33,13 @@ impl MockVecStore {
 }
 
 impl SemanticStore for MockVecStore {
-    fn insert(&mut self, id: u32, load: &dyn FihLoad) -> Result<(), String> {
+    fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
         let feats = load.features(id).ok_or_else(|| "no features".to_string())?;
         self.ids.push(id);
         self.vectors.push(feats);
         Ok(())
     }
-    fn search(&self, query: &dyn FihQuery, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
+    fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
         let qv = query
             .features()
             .ok_or_else(|| "no query features".to_string())?;
@@ -94,13 +94,13 @@ impl MockBm25Store {
 }
 
 impl SemanticStore for MockBm25Store {
-    fn insert(&mut self, id: u32, load: &dyn FihLoad) -> Result<(), String> {
+    fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
         let text = load.text(id).ok_or_else(|| "no text".to_string())?;
         self.ids.push(id);
         self.texts.push(text);
         Ok(())
     }
-    fn search(&self, query: &dyn FihQuery, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
+    fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
         let qt = match query.text() {
             Some(t) if !t.trim().is_empty() => t,
             _ => return Ok(Vec::new()),
@@ -182,7 +182,7 @@ impl SemanticStore for MockBm25Store {
 
 struct TextQuery(String);
 
-impl FihQuery for TextQuery {
+impl Query for TextQuery {
     fn features(&self) -> Option<Vec<f32>> {
         None
     }

@@ -1,7 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 
-use crate::storage::semantic::{FihLoad, FihQuery, SemanticStore};
+use crate::storage::semantic::{Query, RecordLoad, SemanticStore};
 use nexus_model::FihHash;
 
 /// Append-only ordered index. Stores compact u32 IDs (no String duplication).
@@ -295,8 +295,8 @@ impl FihCoord {
 
     // ── Semantic store interaction ────────────────────────────────
 
-    /// Insert a record into the semantic store using the provided `FihLoad`.
-    pub fn semantic_insert(&self, id: u32, load: &dyn FihLoad) -> Result<(), String> {
+    /// Insert a record into the semantic store using the provided `RecordLoad`.
+    pub fn semantic_insert(&self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
         let mut stores = self.by_semantic.borrow_mut();
         if stores.is_empty() {
             return Err("no semantic stores configured".into());
@@ -313,7 +313,7 @@ impl FihCoord {
     /// Search the semantic store using the provided query handle.
     pub fn semantic_search(
         &self,
-        query: &dyn FihQuery,
+        query: &dyn Query,
         top_k: usize,
     ) -> Result<Vec<(u32, f32)>, String> {
         let stores = self.by_semantic.borrow();
