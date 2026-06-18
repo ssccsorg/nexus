@@ -17,7 +17,6 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 
 use nex::io::{AsyncFileIo, IoFuture, WriteOp};
-use nex::storage::semantic::{Query, RecordLoad, SemanticStore};
 
 // ── MockBucket: in-memory HashMap mimicking R2 ──────────────────────────
 
@@ -156,199 +155,11 @@ impl nexus_model::Now for MockClock {
     }
 }
 
-// ── Mock Semantic Stores ────────────────────────────────────────────────
+// ── Semantic Stores ────────────────────────────────────────────────────
 
-#[derive(Debug)]
-pub struct MockVecStore {
-    ids: Vec<u32>,
-    vectors: Vec<Vec<f32>>,
-}
+use nexus_gateway_nex_cf::stores::bm25::InMemoryBm25;
 
-impl MockVecStore {
-    pub fn new() -> Self {
-        Self {
-            ids: Vec::new(),
-            vectors: Vec::new(),
-        }
-    }
-}
-
-impl Default for MockVecStore {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl SemanticStore for MockVecStore {
-    fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
-        let feats = load.features(id).ok_or_else(|| "no features".to_string())?;
-        self.ids.push(id);
-        self.vectors.push(feats);
-        Ok(())
-    }
-    fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
-        let qv = query
-            .features()
-            .ok_or_else(|| "no query features".to_string())?;
-        if self.ids.is_empty() {
-            return Ok(Vec::new());
-        }
-        if qv.len() != self.vectors[0].len() {
-            return Err("dimension mismatch".into());
-        }
-        let mut scores: Vec<(u32, f32)> = self
-            .ids
-            .iter()
-            .zip(self.vectors.iter())
-            .map(|(&id, vec)| {
-                let dot: f32 = qv.iter().zip(vec.iter()).map(|(a, b)| a * b).sum();
-                let nq = qv.iter().map(|x| x * x).sum::<f32>().sqrt();
-                let nv = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
-                (id, dot / (nq * nv).max(f32::EPSILON))
-            })
-            .collect();
-        scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-        scores.truncate(top_k);
-        Ok(scores)
-    }
-    fn remove(&mut self, id: u32) -> Result<(), String> {
-        if let Some(pos) = self.ids.iter().position(|&i| i == id) {
-            self.ids.remove(pos);
-            self.vectors.remove(pos);
-        }
-        Ok(())
-    }
-    fn len(&self) -> usize {
-        self.ids.len()
-    }
-    fn is_empty(&self) -> bool {
-        self.ids.is_empty()
-    }
-}
-
-#[derive(Debug)]
-pub struct MockBm25Store {
-    ids: Vec<u32>,
-    texts: Vec<String>,
-}
-
-impl MockBm25Store {
-    pub fn new() -> Self {
-        Self {
-            ids: Vec::new(),
-            texts: Vec::new(),
-        }
-    }
-}
-
-impl Default for MockBm25Store {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl SemanticStore for MockBm25Store {
-    fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
-        let text = load.text(id).ok_or_else(|| "no text".to_string())?;
-        self.ids.push(id);
-        self.texts.push(text);
-        Ok(())
-    }
-    fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
-        let qt = match query.text() {
-            Some(t) if !t.trim().is_empty() => t,
-            _ => return Ok(Vec::new()),
-        };
-        if self.ids.is_empty() {
-            return Ok(Vec::new());
-        }
-        let terms: Vec<String> = qt
-            .to_lowercase()
-            .split_whitespace()
-            .map(|s| s.to_string())
-            .collect();
-        if terms.is_empty() {
-            return Ok(Vec::new());
-        }
-        let n = self.texts.len();
-        let avg_len: f64 = self
-            .texts
-            .iter()
-            .map(|t| t.split_whitespace().count() as f64)
-            .sum::<f64>()
-            / n.max(1) as f64;
-
-        let mut df: HashMap<String, usize> = HashMap::new();
-        for t in &terms {
-            df.insert(
-                t.clone(),
-                self.texts
-                    .iter()
-                    .filter(|doc| doc.to_lowercase().split_whitespace().any(|w| w == t))
-                    .count(),
-            );
-        }
-
-        let k1 = 1.2;
-        let b = 0.75;
-        let mut scores: Vec<(u32, f32)> = self
-            .ids
-            .iter()
-            .zip(self.texts.iter())
-            .map(|(&id, doc)| {
-                let dl = doc.split_whitespace().count() as f64;
-                let mut score = 0.0;
-                for t in &terms {
-                    let tf = doc
-                        .to_lowercase()
-                        .split_whitespace()
-                        .filter(|w| w == t)
-                        .count() as f64;
-                    if tf == 0.0 {
-                        continue;
-                    }
-                    let d = *df.get(t).unwrap_or(&0) as f64;
-                    let idf = ((n as f64 - d + 0.5) / (d + 0.5) + 1.0).ln();
-                    score +=
-                        idf * (tf * (k1 + 1.0)) / (tf + k1 * (1.0 - b + b * dl / avg_len.max(1.0)));
-                }
-                (id, score as f32)
-            })
-            .collect();
-
-        scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-        scores.truncate(top_k);
-        Ok(scores)
-    }
-    fn remove(&mut self, id: u32) -> Result<(), String> {
-        if let Some(pos) = self.ids.iter().position(|&i| i == id) {
-            self.ids.remove(pos);
-            self.texts.remove(pos);
-        }
-        Ok(())
-    }
-    fn len(&self) -> usize {
-        self.ids.len()
-    }
-    fn is_empty(&self) -> bool {
-        self.ids.is_empty()
-    }
-}
-
-// ── TextQuery ───────────────────────────────────────────────────────────
-
-struct TextQuery {
-    text: String,
-}
-
-impl Query for TextQuery {
-    fn features(&self) -> Option<Vec<f32>> {
-        None
-    }
-    fn text(&self) -> Option<String> {
-        Some(self.text.clone())
-    }
-}
+// ── TextQuery ────────────────────────
 
 // ── HTTP server ─────────────────────────────────────────────────────────
 
@@ -431,7 +242,7 @@ async fn handle_client(mut stream: TcpStream, storage: &nex::FihStorage<MockIo>)
                     r#"{"error":"missing 'q' parameter"}"#,
                 )
             } else {
-                let query = TextQuery { text: q };
+                let query = nexus_gateway_nex_cf::cf_io::TextQuery { text: q };
                 match storage.semantic_search(&query, 10) {
                     Ok(results) => {
                         let items: Vec<serde_json::Value> = results
@@ -528,8 +339,7 @@ async fn main() {
     );
 
     // Register semantic stores
-    storage.register_semantic_store(Box::new(MockBm25Store::new()));
-    storage.register_semantic_store(Box::new(MockVecStore::new()));
+    storage.register_semantic_store(Box::new(InMemoryBm25::new()));
 
     println!("─── nex-cf Mock Simulation Server ───");
     println!("Listening on http://localhost:8080");
