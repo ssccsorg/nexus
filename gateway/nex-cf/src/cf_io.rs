@@ -17,7 +17,7 @@
 
 use nex::io::{AsyncFileIo, IoFuture, WriteOp};
 use nex::storage::semantic::Query;
-use worker::{Bucket, Data};
+use worker::Bucket;
 
 pub struct CfFihIo {
     bucket: Bucket,
@@ -55,8 +55,9 @@ impl AsyncFileIo for CfFihIo {
 
     fn write<'a>(&'a self, path: &'a str, data: &'a [u8]) -> IoFuture<'a, ()> {
         Box::pin(async move {
+            let d: Vec<u8> = data.to_vec();
             self.bucket
-                .put(path, Data::Bytes(data.to_vec()))
+                .put(path, worker::Data::Bytes(d))
                 .execute()
                 .await
                 .map_err(|e| format!("R2 put {path}: {e}"))?;
@@ -111,7 +112,7 @@ impl AsyncFileIo for CfFihIo {
                 match op {
                     WriteOp::Write { path, data } => {
                         self.bucket
-                            .put(path.as_str(), Data::Bytes(data.clone()))
+                            .put(path.as_str(), worker::Data::Bytes(data.clone()))
                             .execute()
                             .await
                             .map_err(|e| format!("R2 put {path}: {e}"))?;

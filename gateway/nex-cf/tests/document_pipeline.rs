@@ -1,7 +1,7 @@
 // Document pipeline integration tests for gateway/nex-cf.
 //
 // These tests run under `cargo test --workspace` and verify the full
-// document ingestion → semantic search pipeline using FsIo (tempfile)
+// document ingestion -> semantic search pipeline using FsIo (tempfile)
 // and InMemoryBm25. No Cloudflare bindings required.
 //
 // The tests exercise the same generic `handle_path()` and
@@ -12,7 +12,7 @@ use nexus_gateway_nex_cf::cf_io::TextQuery;
 use nexus_gateway_nex_cf::stores::bm25::InMemoryBm25;
 use nexus_model::AsyncStorageRead;
 
-// ── Tests ───────────────────────────────────────────────────────────────
+// -- Tests -------------------------------------------------------------------
 
 #[test]
 fn document_ingestion_pipeline_e2e() {
@@ -24,68 +24,42 @@ fn document_ingestion_pipeline_e2e() {
 
     let rt = tokio::runtime::Runtime::new().unwrap();
 
-    // Step 1: Ingest a document
     let doc = "Graph Neural Networks process graph-structured data \
                through message-passing between nodes";
     let result = rt.block_on(nexus_gateway_nex_cf::ingest_document(
-        &storage,
-        doc,
-        "gnn-paper",
+        &storage, doc, "gnn-paper",
     ));
     assert!(result.is_ok());
 
-    // Step 2: State has the fact
     let state = rt.block_on(storage.read_state());
     assert_eq!(state.facts.len(), 1);
     assert_eq!(state.facts[0].origin, "document:gnn-paper");
 
-    // Step 3: Search matching terms
     let results = storage
-        .semantic_search(
-            &TextQuery {
-                text: "Graph Neural".into(),
-            },
-            5,
-        )
+        .semantic_search(&TextQuery { text: "Graph Neural".into() }, 5)
         .expect("search should succeed");
     assert!(!results.is_empty());
     assert!(results[0].1 > 0.5, "BM25 score: {}", results[0].1);
 
-    // Step 4: Non-matching query
     let no_match = storage
-        .semantic_search(
-            &TextQuery {
-                text: "quantum physics".into(),
-            },
-            5,
-        )
+        .semantic_search(&TextQuery { text: "quantum physics".into() }, 5)
         .expect("search should succeed");
     assert!(
         no_match.is_empty() || no_match[0].1.abs() < f32::EPSILON,
         "non-matching should return zero or empty"
     );
 
-    // Step 5: Ingest second document
     let doc2 = "Transformer architectures use self-attention mechanisms \
                 for sequence processing";
     rt.block_on(nexus_gateway_nex_cf::ingest_document(
-        &storage,
-        doc2,
-        "transformer-paper",
+        &storage, doc2, "transformer-paper",
     ))
     .expect("second ingest should succeed");
-
     let state2 = rt.block_on(storage.read_state());
     assert_eq!(state2.facts.len(), 2);
 
-    // Step 6: "self-attention" matches transformer doc
     let attn = storage
-        .semantic_search(
-            &TextQuery {
-                text: "self-attention".into(),
-            },
-            5,
-        )
+        .semantic_search(&TextQuery { text: "self-attention".into() }, 5)
         .expect("search should succeed");
     assert!(attn[0].1 > 0.5, "self-attention score: {}", attn[0].1);
 }
@@ -96,14 +70,9 @@ fn document_ingestion_empty_text_fails() {
     let io = nex::FsIo::new(tmp.path()).unwrap();
     let storage = nex::FihStorage::with_clock(io, "test-empty", Box::new(nexus_model::SystemClock));
 
-    let result =
-        tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(nexus_gateway_nex_cf::ingest_document(
-                &storage,
-                "",
-                "empty-doc",
-            ));
+    let result = tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(nexus_gateway_nex_cf::ingest_document(&storage, "", "empty-doc"));
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("empty"));
 }
@@ -122,16 +91,13 @@ fn document_ingestion_multiple_paragraphs() {
                 Second paragraph about gradient descent.\n\n\
                 Third paragraph about backpropagation.";
     rt.block_on(nexus_gateway_nex_cf::ingest_document(
-        &storage,
-        text,
-        "multi-para",
+        &storage, text, "multi-para",
     ))
     .expect("ingest should succeed");
 
     let state = rt.block_on(storage.read_state());
     assert_eq!(state.facts.len(), 3);
 
-    // Each paragraph independently searchable
     for (query, label) in [
         ("neural networks", "para 1"),
         ("gradient descent", "para 2"),
@@ -157,11 +123,8 @@ fn handle_path_round_trip() {
     assert_eq!(code, 200);
     assert_eq!(body, "nexus-cf");
 
-    let (code, _, _) = rt.block_on(nexus_gateway_nex_cf::handle_path(
-        &storage,
-        "/nonexistent",
-        &[],
-    ));
+    let (code, _, _) =
+        rt.block_on(nexus_gateway_nex_cf::handle_path(&storage, "/nonexistent", &[]));
     assert_eq!(code, 404);
 
     let q = vec![
@@ -209,11 +172,7 @@ fn handle_path_intent_lifecycle() {
         ("id".into(), "i_test_001".into()),
         ("result".into(), "done".into()),
     ];
-    let (code, _, _) = rt.block_on(nexus_gateway_nex_cf::handle_path(
-        &storage,
-        "/conclude",
-        &qd,
-    ));
+    let (code, _, _) = rt.block_on(nexus_gateway_nex_cf::handle_path(&storage, "/conclude", &qd));
     assert_eq!(code, 200);
 
     let (code, _, body) = rt.block_on(nexus_gateway_nex_cf::handle_path(&storage, "/state", &[]));
@@ -223,11 +182,6 @@ fn handle_path_intent_lifecycle() {
 
 #[test]
 fn split_test_prefix_works() {
-    // split_test_prefix is not pub, but we can test indirectly via handle_path
-    // since handle_path matches paths without /test/ prefix.
-    // The actual /test/ prefix stripping happens in #[event(fetch)] which is
-    // not testable without worker-rs. This test verifies that handle_path
-    // itself works with paths that come from split_test_prefix output.
     let tmp = tempfile::TempDir::new().unwrap();
     let io = nex::FsIo::new(tmp.path()).unwrap();
     let storage =
@@ -235,43 +189,31 @@ fn split_test_prefix_works() {
 
     let rt = tokio::runtime::Runtime::new().unwrap();
 
-    // These are the paths that split_test_prefix("/test/...") produces
-    let (code, _, _) = rt.block_on(nexus_gateway_nex_cf::handle_path(&storage, "/", &[]));
-    assert_eq!(code, 200);
-
-    let (code, _, _) = rt.block_on(nexus_gateway_nex_cf::handle_path(&storage, "/fact", &[]));
-    assert_eq!(code, 200); // missing params but still should route
-
-    let (code, _, _) = rt.block_on(nexus_gateway_nex_cf::handle_path(&storage, "/state", &[]));
-    assert_eq!(code, 200);
-
-    let (code, _, _) = rt.block_on(nexus_gateway_nex_cf::handle_path(&storage, "/flush", &[]));
-    assert_eq!(code, 200);
-
-    let (code, _, _) = rt.block_on(nexus_gateway_nex_cf::handle_path(&storage, "/rebuild", &[]));
-    assert_eq!(code, 200);
+    for route in &["/", "/fact", "/state", "/flush", "/rebuild"] {
+        let (code, _, _) =
+            rt.block_on(nexus_gateway_nex_cf::handle_path(&storage, route, &[]));
+        assert_eq!(code, 200, "route {route} should be handled");
+    }
 }
 
 #[test]
 fn ingest_document_large_paragraph_does_not_truncate() {
     let tmp = tempfile::TempDir::new().unwrap();
     let io = nex::FsIo::new(tmp.path()).unwrap();
-    let storage = nex::FihStorage::with_clock(io, "test-large", Box::new(nexus_model::SystemClock));
+    let storage =
+        nex::FihStorage::with_clock(io, "test-large", Box::new(nexus_model::SystemClock));
     storage.register_semantic_store(Box::new(InMemoryBm25::new()));
 
     let rt = tokio::runtime::Runtime::new().unwrap();
 
-    // Single long paragraph — should stay as one fact (no split)
     let long_text = "Rust ".repeat(100);
     rt.block_on(nexus_gateway_nex_cf::ingest_document(
-        &storage,
-        &long_text,
-        "long-para",
+        &storage, &long_text, "long-para",
     ))
     .expect("long paragraph should succeed");
 
     let state = rt.block_on(storage.read_state());
-    assert_eq!(state.facts.len(), 1, "single long paragraph → one fact");
+    assert_eq!(state.facts.len(), 1, "single long paragraph -> one fact");
 }
 
 #[test]
@@ -294,7 +236,7 @@ fn multiple_ingest_calls_accumulate() {
     }
 
     let state = rt.block_on(storage.read_state());
-    assert_eq!(state.facts.len(), 5, "5 ingests → 5 facts");
+    assert_eq!(state.facts.len(), 5, "5 ingests -> 5 facts");
 }
 
 #[test]
@@ -309,7 +251,6 @@ fn handle_path_claim_conflict_returns_409() {
 
     let rt = tokio::runtime::Runtime::new().unwrap();
 
-    // Submit intent
     let qi = vec![
         ("id".into(), "i_conflict_001".into()),
         ("desc".into(), "conflict test".into()),
@@ -317,7 +258,6 @@ fn handle_path_claim_conflict_returns_409() {
     ];
     rt.block_on(nexus_gateway_nex_cf::handle_path(&storage, "/intent", &qi));
 
-    // Claim by agent-a
     let qc1 = vec![
         ("id".into(), "i_conflict_001".into()),
         ("agent".into(), "agent-a".into()),
@@ -325,7 +265,6 @@ fn handle_path_claim_conflict_returns_409() {
     let (code, _, _) = rt.block_on(nexus_gateway_nex_cf::handle_path(&storage, "/claim", &qc1));
     assert_eq!(code, 200);
 
-    // Claim by agent-b — should conflict
     let qc2 = vec![
         ("id".into(), "i_conflict_001".into()),
         ("agent".into(), "agent-b".into()),
@@ -338,8 +277,11 @@ fn handle_path_claim_conflict_returns_409() {
 fn handle_path_claim_nonexistent_intent_returns_404() {
     let tmp = tempfile::TempDir::new().unwrap();
     let io = nex::FsIo::new(tmp.path()).unwrap();
-    let storage =
-        nex::FihStorage::with_clock(io, "test-claim-404", Box::new(nexus_model::SystemClock));
+    let storage = nex::FihStorage::with_clock(
+        io,
+        "test-claim-404",
+        Box::new(nexus_model::SystemClock),
+    );
 
     let rt = tokio::runtime::Runtime::new().unwrap();
 
@@ -357,18 +299,95 @@ fn semantic_search_no_stores_configured_proper_error() {
     let io = nex::FsIo::new(tmp.path()).unwrap();
     let storage =
         nex::FihStorage::with_clock(io, "test-no-store", Box::new(nexus_model::SystemClock));
-    // deliberately NOT registering any semantic store
 
-    let result = storage.semantic_search(
-        &TextQuery {
-            text: "test".into(),
-        },
-        5,
-    );
+    let result = storage.semantic_search(&TextQuery { text: "test".into() }, 5);
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
         err.contains("no semantic stores"),
         "error should mention no stores: {err}"
     );
+}
+
+#[test]
+fn ingest_all_from_mock_io_finds_dot_llms_dot_md() {
+    use std::collections::HashMap;
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::sync::{Arc, Mutex};
+
+    use nex::io::{AsyncFileIo, IoFuture, WriteOp};
+
+    struct MockDocIo {
+        data: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+    }
+    impl MockDocIo {
+        fn new() -> Self {
+            let mut m = HashMap::new();
+            m.insert(
+                "_llms/projects/nexus/index.llms.md".into(),
+                b"# Nexus\n\nNexus is a FIH blackboard system.".to_vec(),
+            );
+            m.insert(
+                "_llms/projects/ssccs/overview.llms.md".into(),
+                b"# SSCCS\n\nSemantic State Coordination System.".to_vec(),
+            );
+            m.insert(
+                "_llms/README.md".into(),
+                b"# README".to_vec(),
+            );
+            Self { data: Arc::new(Mutex::new(m)) }
+        }
+    }
+    impl AsyncFileIo for MockDocIo {
+        fn read<'a>(&'a self, path: &'a str) -> IoFuture<'a, Option<Vec<u8>>> {
+            let m = self.data.lock().unwrap();
+            Box::pin(std::future::ready(Ok(m.get(path).cloned())))
+        }
+        fn write<'a>(&'a self, _path: &'a str, _data: &'a [u8]) -> IoFuture<'a, ()> {
+            Box::pin(std::future::ready(Ok(())))
+        }
+        fn list<'a>(&'a self, prefix: &'a str) -> IoFuture<'a, Vec<String>> {
+            let m = self.data.lock().unwrap();
+            let keys: Vec<String> = m.keys().filter(|k| k.starts_with(prefix)).cloned().collect();
+            Box::pin(std::future::ready(Ok(keys)))
+        }
+        fn delete<'a>(&'a self, _path: &'a str) -> IoFuture<'a, ()> {
+            Box::pin(std::future::ready(Ok(())))
+        }
+        fn apply_batch<'a>(&'a self, _ops: &'a [WriteOp]) -> IoFuture<'a, ()> {
+            Box::pin(std::future::ready(Ok(())))
+        }
+    }
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let io = nex::FsIo::new(tmp.path()).unwrap();
+    let storage =
+        nex::FihStorage::with_clock(io, "test-ingest-all", Box::new(nexus_model::SystemClock));
+    storage.register_semantic_store(Box::new(InMemoryBm25::new()));
+
+    let doc_io = MockDocIo::new();
+    let (total, errors) = tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(nexus_gateway_nex_cf::ingest_all_from_io(
+            &storage, &doc_io, "_llms/",
+        ));
+
+    assert_eq!(total, 2, "should ingest 2 .llms.md files");
+    assert!(errors.is_empty(), "no errors: {:?}", errors);
+
+    let state = tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(storage.read_state());
+    assert_eq!(state.facts.len(), 4, "2 docs x 2 paragraphs each = 4 facts");
+
+    let r = storage
+        .semantic_search(&TextQuery { text: "Nexus blackboard".into() }, 5)
+        .expect("search");
+    assert!(!r.is_empty(), "nexus doc should be findable");
+
+    let r = storage
+        .semantic_search(&TextQuery { text: "SSCCS coordination".into() }, 5)
+        .expect("search");
+    assert!(!r.is_empty(), "ssccs doc should be findable");
 }

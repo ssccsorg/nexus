@@ -9,6 +9,7 @@ use worker::*;
 
 use crate::cf_io::CfFihIo;
 use nex::FihStorage;
+use nex::io::AsyncFileIo;
 use nexus_model::{AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead};
 use nexus_model::{Content, Fact, FihHash, Intent};
 use std::sync::OnceLock;
@@ -52,11 +53,7 @@ fn init_stores(prod_bucket: worker::Bucket, test_bucket: worker::Bucket) {
         s
     });
     TEST_STORE.0.get_or_init(|| {
-        let s = FihStorage::with_clock(
-            CfFihIo::new(test_bucket),
-            "cf-nexus-test",
-            Box::new(CfClock),
-        );
+        let s = FihStorage::with_clock(CfFihIo::new(test_bucket), "cf-nexus-test", Box::new(CfClock));
         s.register_semantic_store(Box::new(crate::stores::bm25::InMemoryBm25::new()));
         s
     });
@@ -64,19 +61,14 @@ fn init_stores(prod_bucket: worker::Bucket, test_bucket: worker::Bucket) {
 
 /// `/test/...` → true, 나머지 path 반환
 fn split_test_prefix(path: &str) -> (bool, &str) {
-    if path.len() >= 6
-        && path.as_bytes()[0] == b'/'
-        && path.as_bytes()[1] == b't'
-        && path.as_bytes()[2] == b'e'
-        && path.as_bytes()[3] == b's'
-        && path.as_bytes()[4] == b't'
+    if path.len() >= 6 && path.as_bytes()[0] == b'/' && path.as_bytes()[1] == b't'
+        && path.as_bytes()[2] == b'e' && path.as_bytes()[3] == b's' && path.as_bytes()[4] == b't'
     {
-        // `/test` 또는 `/test/...`
-        let rest = &path[5..]; // skip "/test"
+        let rest = &path[5..];
         if rest.is_empty() || rest == "/" {
             (true, "/")
         } else {
-            (true, rest) // "/fact", "/ingest?x=1", etc.
+            (true, rest)
         }
     } else {
         (false, path)
@@ -90,16 +82,12 @@ pub fn qv(q: &[(String, String)], k: &str) -> String {
         .unwrap_or_default()
 }
 
-/// 요청 경로와 쿼리 파라미터를 받아서 FihStorage 핸들러를 호출합니다.
-///
-/// worker-rs의 `Request`/`Response` 타입 대신 문자열 기반 인터페이스를 사용하므로
-/// CF Worker와 로컬 시뮬레이션 서버(mock/)에서 동일한 로직을 재사용할 수 있습니다.
-pub async fn handle_path<I: nex::io::AsyncFileIo>(
-    s: &nex::FihStorage<I>,
+/// Generic request router — shared between CF Worker and mock server.
+pub async fn handle_path<I: AsyncFileIo>(
+    s: &FihStorage<I>,
     path: &str,
     q: &[(String, String)],
 ) -> (u16, String, String) {
-    // Returns (status_code, content_type, body)
     match path {
         "/" => (200, "text/plain".into(), "nexus-cf".into()),
 
@@ -114,27 +102,15 @@ pub async fn handle_path<I: nex::io::AsyncFileIo>(
                 creator: qv(q, "creator"),
             };
             match s.submit_fact(&fact).await {
-                Ok(hash) => (
-                    200,
-                    "application/json".into(),
-                    serde_json::json!({"id": hash.to_string()}).to_string(),
-                ),
-                Err(e) => (
-                    500,
-                    "application/json".into(),
-                    serde_json::json!({"error": format!("submit_fact: {:?}", e)}).to_string(),
-                ),
+                Ok(hash) => (200, "application/json".into(), serde_json::json!({"id": hash.to_string()}).to_string()),
+                Err(e) => (500, "application/json".into(), serde_json::json!({"error": format!("submit_fact: {:?}", e)}).to_string()),
             }
         }
 
         "/intent" => {
             let intent = Intent {
                 id: FihHash::from_hex(&qv(q, "id")),
-                from_facts: qv(q, "from")
-                    .split(',')
-                    .filter(|s| !s.is_empty())
-                    .map(FihHash::from_hex)
-                    .collect(),
+                from_facts: qv(q, "from").split(',').filter(|s| !s.is_empty()).map(FihHash::from_hex).collect(),
                 description: qv(q, "desc"),
                 creator: qv(q, "creator"),
                 worker: None,
@@ -145,106 +121,51 @@ pub async fn handle_path<I: nex::io::AsyncFileIo>(
                 concluded_at: None,
             };
             match s.submit_intent(&intent).await {
-                Ok(hash) => (
-                    200,
-                    "application/json".into(),
-                    serde_json::json!({"id": hash.to_string()}).to_string(),
-                ),
-                Err(e) => (
-                    500,
-                    "application/json".into(),
-                    serde_json::json!({"error": format!("submit_intent: {:?}", e)}).to_string(),
-                ),
+                Ok(hash) => (200, "application/json".into(), serde_json::json!({"id": hash.to_string()}).to_string()),
+                Err(e) => (500, "application/json".into(), serde_json::json!({"error": format!("submit_intent: {:?}", e)}).to_string()),
             }
         }
 
         "/claim" => match s.claim_intent(&qv(q, "id"), &qv(q, "agent")).await {
-            Ok(()) => (
-                200,
-                "application/json".into(),
-                serde_json::json!({"status":"claimed"}).to_string(),
-            ),
+            Ok(()) => (200, "application/json".into(), serde_json::json!({"status":"claimed"}).to_string()),
             Err(e) => {
                 let msg = format!("{:?}", e);
-                let code = if msg.contains("Conflict") {
-                    409
-                } else if msg.contains("not found") {
-                    404
-                } else {
-                    500
-                };
-                (
-                    code,
-                    "application/json".into(),
-                    serde_json::json!({"error": msg}).to_string(),
-                )
+                let code = if msg.contains("Conflict") { 409 }
+                    else if msg.contains("not found") { 404 }
+                    else { 500 };
+                (code, "application/json".into(), serde_json::json!({"error": msg}).to_string())
             }
         },
 
         "/conclude" => match s.conclude_intent(&qv(q, "id"), &qv(q, "result")).await {
-            Ok(fact) => (
-                200,
-                "application/json".into(),
-                serde_json::json!({"status":"concluded","fact_id": fact.id.to_string()})
-                    .to_string(),
-            ),
-            Err(e) => (
-                500,
-                "application/json".into(),
-                serde_json::json!({"error": format!("{:?}", e)}).to_string(),
-            ),
+            Ok(fact) => (200, "application/json".into(), serde_json::json!({"status":"concluded","fact_id": fact.id.to_string()}).to_string()),
+            Err(e) => (500, "application/json".into(), serde_json::json!({"error": format!("{:?}", e)}).to_string()),
         },
 
         "/state" => {
             let state = s.read_state().await;
-            (
-                200,
-                "application/json".into(),
-                serde_json::to_string(&state).unwrap_or_else(|_| "{}".into()),
-            )
+            (200, "application/json".into(), serde_json::to_string(&state).unwrap_or_else(|_| "{}".into()))
         }
 
         "/flush" => match s.flush_pending().await {
-            Ok(()) => (
-                200,
-                "application/json".into(),
-                serde_json::json!({"status":"ok"}).to_string(),
-            ),
-            Err(e) => (
-                500,
-                "application/json".into(),
-                serde_json::json!({"error": format!("flush: {}", e)}).to_string(),
-            ),
+            Ok(()) => (200, "application/json".into(), serde_json::json!({"status":"ok"}).to_string()),
+            Err(e) => (500, "application/json".into(), serde_json::json!({"error": format!("flush: {}", e)}).to_string()),
         },
 
         "/rebuild" => match s.rebuild_cache().await {
-            Ok(()) => (
-                200,
-                "application/json".into(),
-                serde_json::json!({"status":"ok"}).to_string(),
-            ),
-            Err(e) => (
-                500,
-                "application/json".into(),
-                serde_json::json!({"error": format!("rebuild: {}", e)}).to_string(),
-            ),
+            Ok(()) => (200, "application/json".into(), serde_json::json!({"status":"ok"}).to_string()),
+            Err(e) => (500, "application/json".into(), serde_json::json!({"error": format!("rebuild: {}", e)}).to_string()),
         },
 
-        _ => (
-            404,
-            "application/json".into(),
-            serde_json::json!({"error": "not found"}).to_string(),
-        ),
+        _ => (404, "application/json".into(), serde_json::json!({"error": "not found"}).to_string()),
     }
 }
 
-// ── Entrypoint ───────────────────────────────────────────────────────
-// ── 문서 수집 헬퍼 ─────────────────────────────────
+// ── Document helpers ─────────────────────────────────────────────────
 
-/// 문서 텍스트를 청크로 나누어 FIH Facts로 제출합니다.
-/// 각 청크는 자동으로 등록된 SemanticStore에 인덱싱됩니다.
-pub async fn ingest_document<I: nex::io::AsyncFileIo>(
-    s: &nex::FihStorage<I>,
+/// Split document text into paragraphs and submit each as a Fact.
+pub async fn ingest_document<I: AsyncFileIo>(
+    s: &FihStorage<I>,
     text: &str,
     origin: &str,
 ) -> Result<String, String> {
@@ -275,20 +196,57 @@ pub async fn ingest_document<I: nex::io::AsyncFileIo>(
             .map_err(|e| format!("submit para {i}: {e:?}"))?;
         last_id = para_id;
     }
-
     Ok(last_id)
 }
 
 fn sanitize_id(s: &str) -> String {
     s.chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '_' || c == '-' {
-                c
-            } else {
-                '_'
-            }
-        })
+        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
         .collect()
+}
+
+/// Scan an `AsyncFileIo`-backed document store for `.llms.md` files
+/// and ingest each one as Facts into the given FihStorage.
+pub async fn ingest_all_from_io<I: AsyncFileIo, D: AsyncFileIo>(
+    s: &FihStorage<I>,
+    docs: &D,
+    prefix: &str,
+) -> (usize, Vec<String>) {
+    let mut total = 0usize;
+    let mut errors: Vec<String> = Vec::new();
+
+    let keys = match docs.list(prefix).await {
+        Ok(keys) => keys,
+        Err(e) => {
+            errors.push(format!("list '{prefix}': {e}"));
+            return (total, errors);
+        }
+    };
+
+    for key in &keys {
+        if !key.ends_with(".llms.md") {
+            continue;
+        }
+        let data = match docs.read(key).await {
+            Ok(Some(d)) => d,
+            Ok(None) => { errors.push(format!("{key}: empty")); continue; }
+            Err(e) => { errors.push(format!("{key}: {e}")); continue; }
+        };
+        let text = match String::from_utf8(data) {
+            Ok(t) => t,
+            Err(_) => { errors.push(format!("{key}: not UTF-8")); continue; }
+        };
+        let origin = key
+            .trim_end_matches(".llms.md")
+            .trim_start_matches("_llms/")
+            .to_string();
+        match ingest_document(s, &text, &origin).await {
+            Ok(_) => total += 1,
+            Err(e) => errors.push(format!("{key}: {e}")),
+        }
+    }
+
+    (total, errors)
 }
 
 // ── Entrypoint ───────────────────────────────────────────────────────
@@ -302,7 +260,6 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             .expect("FIH_R2_TEST bucket binding required"),
     );
 
-    // DOCS_R2 바인딩 (문서 아티팩트 버킷) — 선택 사항
     let docs_bucket = env.bucket("DOCS_R2").ok();
     let docs_bucket_test = env.bucket("DOCS_R2_TEST").ok();
 
@@ -313,38 +270,17 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .map(|(k, v)| (k.into_owned(), v.into_owned()))
         .collect();
 
-    // /test/ 프리픽스 → 테스트 스토어, 도큐먼트 버킷 사용
     let (is_test, path_stripped) = split_test_prefix(&path);
 
-    // 디버그: path 확인 (wrangler tail에서 볼 수 있음)
-    worker::console_log!(
-        "[nex-cf] path={}, is_test={}, stripped={}",
-        path,
-        is_test,
-        path_stripped
-    );
-    worker::console_log!("[nex-cf] path_bytes_len={}, first_5=", path.len());
-
     let s = store(is_test);
-    let _docs = if is_test {
-        docs_bucket_test.as_ref()
-    } else {
-        docs_bucket.as_ref()
-    };
 
     match path_stripped {
-        "/" => {
+        "/" | "/fact" | "/intent" | "/claim" | "/conclude" | "/state" | "/flush" | "/rebuild" => {
             let (code, _content_type, body) = handle_path(s, path_stripped, &q).await;
             Ok(Response::from_bytes(body.into_bytes())?.with_status(code))
         }
-        "/version" => {
-            Response::ok("2") // 배포 버전 확인용
-        }
-        // Standard FIH endpoints — delegated to generic handle_path
-        "/fact" | "/intent" | "/claim" | "/conclude" | "/state" | "/flush" | "/rebuild" => {
-            let (code, _content_type, body) = handle_path(s, path_stripped, &q).await;
-            Ok(Response::from_bytes(body.into_bytes())?.with_status(code))
-        }
+
+        "/version" => Response::ok("3"),
 
         "/ingest" => {
             let text = qv(&q, "text");
@@ -352,11 +288,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             if text.is_empty() {
                 return Response::error("missing 'text' parameter", 400);
             }
-            let origin = if origin.is_empty() {
-                "ingest".into()
-            } else {
-                origin
-            };
+            let origin = if origin.is_empty() { "ingest".into() } else { origin };
             match ingest_document(s, &text, &origin).await {
                 Ok(id) => Response::from_json(&serde_json::json!({"status":"ingested","id": id})),
                 Err(e) => Response::error(e, 500),
@@ -366,26 +298,93 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         "/search" => {
             let query_text = qv(&q, "q");
             if query_text.is_empty() {
-                return Response::error("missing 'q' (query text) parameter", 400);
+                return Response::error("missing 'q' parameter", 400);
             }
             let query = crate::cf_io::TextQuery { text: query_text };
             match s.semantic_search(&query, 10) {
                 Ok(results) => {
-                    let items: Vec<serde_json::Value> = results
-                        .iter()
-                        .map(|(idx, score)| {
-                            let hex = s.resolve_semantic_idx(*idx);
-                            serde_json::json!({
-                                "index": idx,
-                                "score": score,
-                                "id": hex,
-                            })
-                        })
-                        .collect();
+                    let items: Vec<serde_json::Value> = results.iter().map(|(idx, score)| {
+                        serde_json::json!({"index": idx, "score": score, "id": s.resolve_semantic_idx(*idx)})
+                    }).collect();
                     Response::from_json(&serde_json::json!({"results": items}))
                 }
                 Err(e) => Response::error(format!("search: {e}"), 500),
             }
+        }
+
+        "/debug/list-docs" => {
+            let bucket = if is_test { docs_bucket_test.as_ref() } else { docs_bucket.as_ref() };
+            match bucket {
+                Some(b) => {
+                    let objects = match b.list().execute().await {
+                        Ok(o) => o,
+                        Err(e) => return Response::error(format!("list error: {e}"), 500),
+                    };
+                    let keys: Vec<String> = objects.objects().iter().map(|o| o.key()).collect();
+                    Response::from_json(&serde_json::json!({
+                        "count": keys.len(),
+                        "keys": keys,
+                        "truncated": objects.truncated(),
+                    }))
+                }
+                None => Response::error("DOCS_R2 not bound", 500),
+            }
+        }
+        "/ingest-all" => {
+            let bucket = if is_test { docs_bucket_test.as_ref() } else { docs_bucket.as_ref() };
+            let bucket = match bucket {
+                Some(b) => b,
+                None => return Response::error("DOCS_R2 bucket not bound", 500),
+            };
+            let prefix = qv(&q, "prefix");
+            // 기본 프리픽스 없음 — 빈 문자열이면 전체 버킷 스캔
+
+            let filter_suffix = qv(&q, "suffix");
+            let filter_suffix = if filter_suffix.is_empty() { ".llms.md".into() } else { filter_suffix };
+
+            // Bucket의 list + get을 직접 사용 (Bucket은 Clone 불가)
+            let objects = match bucket.list().prefix(&prefix).execute().await {
+                Ok(o) => o,
+                Err(e) => return Response::error(format!("list docs: {e}"), 500),
+            };
+            let keys: Vec<String> = objects.objects().iter().map(|o| o.key()).collect();
+
+            let mut total = 0usize;
+            let mut errors: Vec<String> = Vec::new();
+
+            for key in &keys {
+                if !key.ends_with(&filter_suffix) {
+                    continue;
+                }
+                let obj = match bucket.get(key).execute().await {
+                    Ok(Some(o)) => o,
+                    Ok(None) => { errors.push(format!("{key}: empty")); continue; }
+                    Err(e) => { errors.push(format!("{key}: {e}")); continue; }
+                };
+                let data = match obj.body() {
+                    Some(b) => match b.bytes().await {
+                        Ok(bytes) => bytes.to_vec(),
+                        Err(e) => { errors.push(format!("{key}: {e}")); continue; }
+                    },
+                    None => { errors.push(format!("{key}: no body")); continue; }
+                };
+                let text = match String::from_utf8(data) {
+                    Ok(t) => t,
+                    Err(_) => { errors.push(format!("{key}: not UTF-8")); continue; }
+                };
+                let origin = key
+                    .trim_end_matches(".llms.md")
+                    .trim_start_matches("_llms/")
+                    .to_string();
+                match ingest_document(s, &text, &origin).await {
+                    Ok(_) => total += 1,
+                    Err(e) => errors.push(format!("{key}: {e}")),
+                }
+            }
+
+            Response::from_json(&serde_json::json!({
+                "status": "ok", "total": total, "errors": errors,
+            }))
         }
 
         _ => Response::error("not found", 404),
