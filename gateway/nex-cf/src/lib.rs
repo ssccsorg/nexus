@@ -45,11 +45,32 @@ fn store(is_test: bool) -> &'static FihStorage<CfFihIo> {
 
 fn init_stores(prod_bucket: worker::Bucket, test_bucket: worker::Bucket) {
     PROD_STORE.0.get_or_init(|| {
-        FihStorage::with_clock(CfFihIo::new(prod_bucket), "cf-nexus", Box::new(CfClock))
+        let s = FihStorage::with_clock(CfFihIo::new(prod_bucket), "cf-nexus", Box::new(CfClock));
+        s.register_semantic_store(Box::new(nex::InMemoryBm25::new()));
+        s
     });
     TEST_STORE.0.get_or_init(|| {
-        FihStorage::with_clock(CfFihIo::new(test_bucket), "cf-nexus-test", Box::new(CfClock))
+        let s = FihStorage::with_clock(CfFihIo::new(test_bucket), "cf-nexus-test", Box::new(CfClock));
+        s.register_semantic_store(Box::new(nex::InMemoryBm25::new()));
+        s
     });
+}
+
+/// `/test/...` → true, 나머지 path 반환
+fn split_test_prefix(path: &str) -> (bool, &str) {
+    if path.len() >= 6 && path.as_bytes()[0] == b'/' && path.as_bytes()[1] == b't'
+        && path.as_bytes()[2] == b'e' && path.as_bytes()[3] == b's' && path.as_bytes()[4] == b't'
+    {
+        // `/test` 또는 `/test/...`
+        let rest = &path[5..];  // skip "/test"
+        if rest.is_empty() || rest == "/" {
+            (true, "/")
+        } else {
+            (true, rest)  // "/fact", "/ingest?x=1", etc.
+        }
+    } else {
+        (false, path)
+    }
 }
 
 pub fn qv(q: &[(String, String)], k: &str) -> String {
@@ -283,19 +304,26 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .collect();
 
     // /test/ 프리픽스 → 테스트 스토어, 도큐먼트 버킷 사용
-    let (is_test, path_stripped) = if let Some(rest) = path.strip_prefix("/test") {
-        (true, if rest.is_empty() { "/".to_string() } else { rest.to_string() })
-    } else {
-        (false, path)
-    };
+    let (is_test, path_stripped) = split_test_prefix(&path);
+
+    // 디버그: path 확인 (wrangler tail에서 볼 수 있음)
+    worker::console_log!("[nex-cf] path={}, is_test={}, stripped={}", path, is_test, path_stripped);
+    worker::console_log!("[nex-cf] path_bytes_len={}, first_5=", path.len());
 
     let s = store(is_test);
     let _docs = if is_test { docs_bucket_test.as_ref() } else { docs_bucket.as_ref() };
 
-    match path_stripped.as_str() {
+    match path_stripped {
+        "/" => {
+            let (code, _content_type, body) = handle_path(s, path_stripped, &q).await;
+            Ok(Response::from_bytes(body.into_bytes())?.with_status(code))
+        }
+        "/version" => {
+            Response::ok("2")  // 배포 버전 확인용
+        }
         // Standard FIH endpoints — delegated to generic handle_path
-        "/" | "/fact" | "/intent" | "/claim" | "/conclude" | "/state" | "/flush" | "/rebuild" => {
-            let (code, _content_type, body) = handle_path(s, &path_stripped, &q).await;
+        "/fact" | "/intent" | "/claim" | "/conclude" | "/state" | "/flush" | "/rebuild" => {
+            let (code, _content_type, body) = handle_path(s, path_stripped, &q).await;
             Ok(Response::from_bytes(body.into_bytes())?.with_status(code))
         }
 
@@ -305,11 +333,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             if text.is_empty() {
                 return Response::error("missing 'text' parameter", 400);
             }
-            let origin = if origin.is_empty() {
-                "ingest".into()
-            } else {
-                origin
-            };
+            let origin = if origin.is_empty() { "ingest".into() } else { origin };
             match ingest_document(s, &text, &origin).await {
                 Ok(id) => Response::from_json(&serde_json::json!({"status":"ingested","id": id})),
                 Err(e) => Response::error(e, 500),
@@ -321,7 +345,6 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             if query_text.is_empty() {
                 return Response::error("missing 'q' (query text) parameter", 400);
             }
-            // Try to use semantic_search with text query
             let query = crate::cf_io::TextQuery { text: query_text };
             match s.semantic_search(&query, 10) {
                 Ok(results) => {

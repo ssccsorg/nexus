@@ -1,0 +1,51 @@
+name: Deploy nex-cf Worker
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "gateway/nex-cf/**"
+      - "nex/**"
+      - "model/**"
+      - ".github/workflows/deploy-nex-cf.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: wasm32-unknown-unknown
+
+      - name: WASM check
+        run: cargo check --target wasm32-unknown-unknown -p nexus-gateway-nex-cf
+
+      - name: Native test
+        run: cargo test -p nexus-gateway-nex-cf
+
+  deploy:
+    if: ${{ github.event_name == 'push' }}
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: wasm32-unknown-unknown
+
+      - name: Install worker-build
+        run: cargo install worker-build
+
+      - name: Deploy to Cloudflare Workers
+        run: ./gateway/nex-cf/deploy.sh
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CFWORKER_EDIT }}
