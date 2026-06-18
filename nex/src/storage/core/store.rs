@@ -224,11 +224,7 @@ impl<I: AsyncFileIo> FihStorage<I> {
     }
 
     /// Insert a record into semantic stores with the given load handle.
-    pub fn semantic_insert(
-        &self,
-        id: u32,
-        load: &dyn RecordLoad,
-    ) -> Result<(), String> {
+    pub fn semantic_insert(&self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
         self.coord.semantic_insert(id, load)
     }
 

@@ -34,7 +34,9 @@ impl Default for InMemoryBm25 {
 
 impl SemanticStore for InMemoryBm25 {
     fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
-        let text = load.text(id).ok_or_else(|| "no text available".to_string())?;
+        let text = load
+            .text(id)
+            .ok_or_else(|| "no text available".to_string())?;
         self.ids.push(id);
         self.texts.push(text);
         Ok(())
