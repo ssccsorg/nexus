@@ -245,6 +245,11 @@ impl<I: AsyncFileIo> FihStorage<I> {
             .collect()
     }
 
+    /// Resolve a semantic index back to its hex ID string.
+    pub fn resolve_semantic_idx(&self, idx: u32) -> String {
+        self.coord.resolve(idx)
+    }
+
     /// Enqueue content as a blob write. FIH is append-only: no dedup
     /// read needed because records are never overwritten. R2 is
     /// last-writer-wins, so duplicate blob_hash writes are harmless.
