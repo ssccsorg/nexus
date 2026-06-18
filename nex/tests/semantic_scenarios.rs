@@ -16,9 +16,7 @@
 //   9. Dimension mismatch error
 //  10. FihCoord integration: semantic_insert / semantic_search via store
 
-use nex::storage::semantic::{
-    FeatureLoad as ReexportedFeatureLoad, FihLoad, FihQuery, SemanticStore,
-};
+use nex::storage::semantic::{FihLoad, FihQuery, SemanticStore};
 
 mod common;
 use common::semantic::{MockBm25Store, MockSemanticStore};
@@ -27,22 +25,19 @@ use common::semantic::{MockBm25Store, MockSemanticStore};
 
 /// A FihLoad that returns feature vectors (simulating a vector store).
 ///
-/// Note: FeatureLoad is now defined and re-exported from
-/// `ReexportedFeatureLoad`. It carries both a feature
-/// vector and an optional text string. The local re-definition below
-/// is kept for backward compatibility with existing tests; new tests
-/// should use the re-exported `FeatureLoad`.
-struct FeatureLoad {
+/// A `FihLoad` that only carries a feature vector (no text).
+/// For features + text, use `common::semantic::FeatureLoad`.
+struct TestFeat {
     features: Vec<f32>,
 }
 
-impl FeatureLoad {
+impl TestFeat {
     fn new(features: Vec<f32>) -> Self {
         Self { features }
     }
 }
 
-impl FihLoad for FeatureLoad {
+impl FihLoad for TestFeat {
     fn content(&self, _id: u32) -> Option<Vec<u8>> {
         None
     }
@@ -57,7 +52,7 @@ impl FihLoad for FeatureLoad {
     }
 }
 
-impl FihQuery for FeatureLoad {
+impl FihQuery for TestFeat {
     fn features(&self) -> Option<Vec<f32>> {
         Some(self.features.clone())
     }
@@ -251,18 +246,18 @@ fn scenario_basic_insert_and_search() {
 
     // Insert three documents with known feature vectors
     store
-        .insert(1, &FeatureLoad::new(vec![1.0, 0.0, 0.0]))
+        .insert(1, &TestFeat::new(vec![1.0, 0.0, 0.0]))
         .unwrap();
     store
-        .insert(2, &FeatureLoad::new(vec![0.0, 1.0, 0.0]))
+        .insert(2, &TestFeat::new(vec![0.0, 1.0, 0.0]))
         .unwrap();
     store
-        .insert(3, &FeatureLoad::new(vec![0.9, 0.1, 0.0]))
+        .insert(3, &TestFeat::new(vec![0.9, 0.1, 0.0]))
         .unwrap();
 
     // Search for documents similar to [1.0, 0.0, 0.0]
     let results = store
-        .search(&FeatureLoad::new(vec![1.0, 0.0, 0.0]), 2)
+        .search(&TestFeat::new(vec![1.0, 0.0, 0.0]), 2)
         .unwrap();
     assert_eq!(results.len(), 2, "should return top 2 results");
     assert_eq!(results[0].0, 1, "most similar should be id=1 (cosine ~1.0)");
@@ -291,18 +286,18 @@ fn scenario_text_only_insert() {
 fn scenario_remove_and_reinsert() {
     let mut store = MockSemanticStore::new();
 
-    store.insert(10, &FeatureLoad::new(vec![1.0, 0.0])).unwrap();
+    store.insert(10, &TestFeat::new(vec![1.0, 0.0])).unwrap();
     assert_eq!(store.len(), 1);
 
     store.remove(10).unwrap();
     assert_eq!(store.len(), 0, "should be empty after remove");
 
     // Re-insert same id
-    store.insert(10, &FeatureLoad::new(vec![0.0, 1.0])).unwrap();
+    store.insert(10, &TestFeat::new(vec![0.0, 1.0])).unwrap();
     assert_eq!(store.len(), 1);
 
     // Verify new vector is searchable
-    let results = store.search(&FeatureLoad::new(vec![0.0, 1.0]), 1).unwrap();
+    let results = store.search(&TestFeat::new(vec![0.0, 1.0]), 1).unwrap();
     assert_eq!(results[0].0, 10, "re-inserted id should be found");
 }
 
@@ -311,8 +306,8 @@ fn scenario_remove_and_reinsert() {
 fn scenario_mixed_content() {
     let mut store = MockSemanticStore::new();
 
-    store.insert(1, &FeatureLoad::new(vec![1.0, 0.0])).unwrap();
-    store.insert(2, &FeatureLoad::new(vec![0.0, 1.0])).unwrap();
+    store.insert(1, &TestFeat::new(vec![1.0, 0.0])).unwrap();
+    store.insert(2, &TestFeat::new(vec![0.0, 1.0])).unwrap();
 
     // TextLoad will fail for MockSemanticStore (no features)
     assert!(
@@ -339,7 +334,7 @@ fn scenario_batch_insert_stress() {
     for i in 0..count {
         let v = i as f32 / count as f32;
         store
-            .insert(i as u32, &FeatureLoad::new(vec![v, 1.0 - v, 0.5]))
+            .insert(i as u32, &TestFeat::new(vec![v, 1.0 - v, 0.5]))
             .unwrap();
     }
 
@@ -347,7 +342,7 @@ fn scenario_batch_insert_stress() {
 
     // Search for a specific vector
     let results = store
-        .search(&FeatureLoad::new(vec![0.5, 0.5, 0.5]), 5)
+        .search(&TestFeat::new(vec![0.5, 0.5, 0.5]), 5)
         .unwrap();
     assert_eq!(results.len(), 5, "should return top 5");
     // All results should have valid scores
@@ -362,7 +357,7 @@ fn scenario_empty_store() {
     let store = MockSemanticStore::new();
     assert!(store.is_empty());
 
-    let results = store.search(&FeatureLoad::new(vec![1.0, 0.0]), 10).unwrap();
+    let results = store.search(&TestFeat::new(vec![1.0, 0.0]), 10).unwrap();
     assert!(
         results.is_empty(),
         "empty store should return empty results"
@@ -374,8 +369,8 @@ fn scenario_empty_store() {
 fn scenario_duplicate_insert() {
     let mut store = MockSemanticStore::new();
 
-    store.insert(1, &FeatureLoad::new(vec![1.0, 0.0])).unwrap();
-    store.insert(1, &FeatureLoad::new(vec![1.0, 0.0])).unwrap();
+    store.insert(1, &TestFeat::new(vec![1.0, 0.0])).unwrap();
+    store.insert(1, &TestFeat::new(vec![1.0, 0.0])).unwrap();
     // MockSemanticStore does not dedup by id, so len becomes 2
     // This is expected — the caller (FihCoord) should prevent duplicates
     assert_eq!(
@@ -391,11 +386,11 @@ fn scenario_dimension_mismatch() {
     let mut store = MockSemanticStore::new();
 
     store
-        .insert(1, &FeatureLoad::new(vec![1.0, 0.0, 0.0]))
+        .insert(1, &TestFeat::new(vec![1.0, 0.0, 0.0]))
         .unwrap(); // 3D
 
     // Query with 2D vector should fail
-    let result = store.search(&FeatureLoad::new(vec![1.0, 0.0]), 5);
+    let result = store.search(&TestFeat::new(vec![1.0, 0.0]), 5);
     assert!(result.is_err(), "dimension mismatch should error");
 }
 
@@ -405,20 +400,20 @@ fn scenario_full_document_lifecycle() {
     let mut store = MockSemanticStore::new();
 
     store
-        .insert(100, &FeatureLoad::new(vec![1.0, 0.0, 0.0, 0.0]))
+        .insert(100, &TestFeat::new(vec![1.0, 0.0, 0.0, 0.0]))
         .unwrap();
     store
-        .insert(200, &FeatureLoad::new(vec![0.0, 1.0, 0.0, 0.0]))
+        .insert(200, &TestFeat::new(vec![0.0, 1.0, 0.0, 0.0]))
         .unwrap();
     store
-        .insert(300, &FeatureLoad::new(vec![0.0, 0.0, 1.0, 0.0]))
+        .insert(300, &TestFeat::new(vec![0.0, 0.0, 1.0, 0.0]))
         .unwrap();
 
     assert_eq!(store.len(), 3);
 
     // Search before remove
     let r1 = store
-        .search(&FeatureLoad::new(vec![1.0, 0.0, 0.0, 0.0]), 3)
+        .search(&TestFeat::new(vec![1.0, 0.0, 0.0, 0.0]), 3)
         .unwrap();
     assert_eq!(r1.len(), 3);
     assert_eq!(r1[0].0, 100);
@@ -429,7 +424,7 @@ fn scenario_full_document_lifecycle() {
 
     // Search after remove
     let r2 = store
-        .search(&FeatureLoad::new(vec![1.0, 0.0, 0.0, 0.0]), 3)
+        .search(&TestFeat::new(vec![1.0, 0.0, 0.0, 0.0]), 3)
         .unwrap();
     assert_eq!(r2.len(), 2, "should only have 2 after remove");
     assert_eq!(r2[0].0, 100);
@@ -453,7 +448,7 @@ fn scenario_search_json_documents() {
     let start = std::time::Instant::now();
     for (i, (_title, text)) in items.iter().enumerate().take(500) {
         let features = text_to_features(text, VOCABULARY);
-        store.insert(i as u32, &FeatureLoad::new(features)).unwrap();
+        store.insert(i as u32, &TestFeat::new(features)).unwrap();
         if i > 0 && i % 100 == 0 {
             eprintln!("  indexed {} / 500 documents...", i);
         }
@@ -465,7 +460,7 @@ fn scenario_search_json_documents() {
     eprintln!("\n  --- Query 1: 'segment scheme field observation projection' ---");
     let query = "segment scheme field observation projection";
     let query_feats = text_to_features(query, VOCABULARY);
-    let results = store.search(&FeatureLoad::new(query_feats), 5).unwrap();
+    let results = store.search(&TestFeat::new(query_feats), 5).unwrap();
     eprintln!("  top 5 results:");
     for (id, score) in &results {
         let (title, text) = &items[*id as usize];
@@ -478,7 +473,7 @@ fn scenario_search_json_documents() {
     eprintln!("\n  --- Query 2: 'ssccs foundation open source github' ---");
     let query2 = "ssccs foundation open source github";
     let query_feats2 = text_to_features(query2, VOCABULARY);
-    let results2 = store.search(&FeatureLoad::new(query_feats2), 3).unwrap();
+    let results2 = store.search(&TestFeat::new(query_feats2), 3).unwrap();
     eprintln!("  top 3 results:");
     for (id, score) in &results2 {
         let (title, _text) = &items[*id as usize];
@@ -489,7 +484,7 @@ fn scenario_search_json_documents() {
     eprintln!("\n  --- Query 3: 'energy memory data movement computation' ---");
     let query3 = "energy memory data movement computation";
     let query_feats3 = text_to_features(query3, VOCABULARY);
-    let results3 = store.search(&FeatureLoad::new(query_feats3), 4).unwrap();
+    let results3 = store.search(&TestFeat::new(query_feats3), 4).unwrap();
     eprintln!("  top 4 results:");
     for (id, score) in &results3 {
         let (title, _text) = &items[*id as usize];
@@ -507,24 +502,24 @@ fn scenario_search_json_incremental_add() {
     // Index first 100 docs
     for (i, (_title, text)) in items.iter().enumerate().take(100) {
         let features = text_to_features(text, VOCABULARY);
-        store.insert(i as u32, &FeatureLoad::new(features)).unwrap();
+        store.insert(i as u32, &TestFeat::new(features)).unwrap();
     }
     assert_eq!(store.len(), 100);
 
     // Search without the new doc
     let q = "open source community";
     let qf = text_to_features(q, VOCABULARY);
-    let _before = store.search(&FeatureLoad::new(qf.clone()), 3).unwrap();
+    let _before = store.search(&TestFeat::new(qf.clone()), 3).unwrap();
 
     // Add a new "open source" oriented document
     let new_text =
         "open source community contributions github collaboration fork pull request license";
     let new_feats = text_to_features(new_text, VOCABULARY);
-    store.insert(999, &FeatureLoad::new(new_feats)).unwrap();
+    store.insert(999, &TestFeat::new(new_feats)).unwrap();
     assert_eq!(store.len(), 101);
 
     // Search again — new doc should appear in results
-    let after = store.search(&FeatureLoad::new(qf), 5).unwrap();
+    let after = store.search(&TestFeat::new(qf), 5).unwrap();
     let after_ids: Vec<u32> = after.iter().map(|(id, _)| *id).collect();
     assert!(
         after_ids.contains(&999),
@@ -540,13 +535,13 @@ fn scenario_search_json_topic_specific() {
 
     for (i, (_title, text)) in items.iter().enumerate().take(500) {
         let features = text_to_features(text, VOCABULARY);
-        store.insert(i as u32, &FeatureLoad::new(features)).unwrap();
+        store.insert(i as u32, &TestFeat::new(features)).unwrap();
     }
 
     // Topic: hardware / RISC-V
     let q1 = "risc hardware fpga verification processor";
     let r1 = store
-        .search(&FeatureLoad::new(text_to_features(q1, VOCABULARY)), 3)
+        .search(&TestFeat::new(text_to_features(q1, VOCABULARY)), 3)
         .unwrap();
     assert_eq!(r1.len(), 3);
     assert!(r1[0].1 > 0.0, "hardware topic should have positive scores");
@@ -554,7 +549,7 @@ fn scenario_search_json_topic_specific() {
     // Topic: C2PA / provenance
     let q2 = "c2pa provenance signature verification certificate";
     let r2 = store
-        .search(&FeatureLoad::new(text_to_features(q2, VOCABULARY)), 3)
+        .search(&TestFeat::new(text_to_features(q2, VOCABULARY)), 3)
         .unwrap();
     assert_eq!(r2.len(), 3);
 }
@@ -564,12 +559,12 @@ fn scenario_search_json_topic_specific() {
 fn scenario_query_consistency() {
     let mut store = MockSemanticStore::new();
 
-    store.insert(10, &FeatureLoad::new(vec![1.0, 0.0])).unwrap();
-    store.insert(20, &FeatureLoad::new(vec![0.0, 1.0])).unwrap();
+    store.insert(10, &TestFeat::new(vec![1.0, 0.0])).unwrap();
+    store.insert(20, &TestFeat::new(vec![0.0, 1.0])).unwrap();
 
     // Query same vector twice should produce same result
-    let r1 = store.search(&FeatureLoad::new(vec![1.0, 0.0]), 2).unwrap();
-    let r2 = store.search(&FeatureLoad::new(vec![1.0, 0.0]), 2).unwrap();
+    let r1 = store.search(&TestFeat::new(vec![1.0, 0.0]), 2).unwrap();
+    let r2 = store.search(&TestFeat::new(vec![1.0, 0.0]), 2).unwrap();
 
     assert_eq!(r1.len(), r2.len());
     for (a, b) in r1.iter().zip(r2.iter()) {
@@ -657,14 +652,14 @@ fn scenario_manual_score_verification() {
     // Verify against MockSemanticStore's internal calculation
     let mut store = MockSemanticStore::new();
     store
-        .insert(1, &FeatureLoad::new(vec![1.0, 0.0, 0.0]))
+        .insert(1, &TestFeat::new(vec![1.0, 0.0, 0.0]))
         .unwrap();
     store
-        .insert(2, &FeatureLoad::new(vec![0.5, 0.5, 0.0]))
+        .insert(2, &TestFeat::new(vec![0.5, 0.5, 0.0]))
         .unwrap();
 
     let results = store
-        .search(&FeatureLoad::new(vec![1.0, 0.0, 0.0]), 2)
+        .search(&TestFeat::new(vec![1.0, 0.0, 0.0]), 2)
         .unwrap();
     // Manually verify id=1 score
     let manual_score = score_semantic(&[1.0, 0.0, 0.0], &[1.0, 0.0, 0.0]);
@@ -698,7 +693,7 @@ fn scenario_fihcoord_integration() {
     coord
         .semantic_insert(
             idx1,
-            &ReexportedFeatureLoad::new(
+            &common::semantic::FeatureLoad::new(
                 vec![1.0, 0.0, 0.0],
                 Some("rust compiler verification".into()),
             ),
@@ -712,7 +707,7 @@ fn scenario_fihcoord_integration() {
     coord
         .semantic_insert(
             idx2,
-            &ReexportedFeatureLoad::new(
+            &common::semantic::FeatureLoad::new(
                 vec![0.0, 1.0, 0.0],
                 Some("energy memory constraint".into()),
             ),
@@ -726,13 +721,19 @@ fn scenario_fihcoord_integration() {
     coord
         .semantic_insert(
             idx3,
-            &ReexportedFeatureLoad::new(vec![0.9, 0.1, 0.0], Some("rust memory safety".into())),
+            &common::semantic::FeatureLoad::new(
+                vec![0.9, 0.1, 0.0],
+                Some("rust memory safety".into()),
+            ),
         )
         .unwrap();
 
     // Search by vector [1,0,0] — should find f_sem_001 first (cosine ~1.0), then f_sem_003 (~0.9)
     let results = coord
-        .semantic_search(&ReexportedFeatureLoad::new(vec![1.0, 0.0, 0.0], None), 3)
+        .semantic_search(
+            &common::semantic::FeatureLoad::new(vec![1.0, 0.0, 0.0], None),
+            3,
+        )
         .unwrap();
     assert_eq!(results.len(), 3, "should return results from both stores");
     // First result should be f_sem_001 (from MockSemanticStore, score ~1.0)
@@ -850,7 +851,7 @@ fn scenario_fihstorage_e2e_auto_index() {
     // Verify auto-index by searching via FihStorage
     let results = storage
         .semantic_search(
-            &ReexportedFeatureLoad::new(vec![], Some("rust compiler".into())),
+            &common::semantic::FeatureLoad::new(vec![], Some("rust compiler".into())),
             5,
         )
         .unwrap();
@@ -874,7 +875,7 @@ fn scenario_fihstorage_e2e_auto_index() {
     // Conclusion fact should not add noise to BM25 search for "rust"
     let results_after_conclusion = storage
         .semantic_search(
-            &ReexportedFeatureLoad::new(vec![], Some("rust compiler".into())),
+            &common::semantic::FeatureLoad::new(vec![], Some("rust compiler".into())),
             5,
         )
         .unwrap();
