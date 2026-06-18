@@ -1,6 +1,8 @@
 // gateway/nex-cf — Consumes FihStorage<CfFihIo> via async traits.
 // No block_on. No locks. Pure async over R2.
 
+pub mod stores;
+
 pub mod cf_io;
 
 use worker::*;
@@ -46,12 +48,12 @@ fn store(is_test: bool) -> &'static FihStorage<CfFihIo> {
 fn init_stores(prod_bucket: worker::Bucket, test_bucket: worker::Bucket) {
     PROD_STORE.0.get_or_init(|| {
         let s = FihStorage::with_clock(CfFihIo::new(prod_bucket), "cf-nexus", Box::new(CfClock));
-        s.register_semantic_store(Box::new(nex::InMemoryBm25::new()));
+        s.register_semantic_store(Box::new(crate::stores::bm25::InMemoryBm25::new()));
         s
     });
     TEST_STORE.0.get_or_init(|| {
         let s = FihStorage::with_clock(CfFihIo::new(test_bucket), "cf-nexus-test", Box::new(CfClock));
-        s.register_semantic_store(Box::new(nex::InMemoryBm25::new()));
+        s.register_semantic_store(Box::new(crate::stores::bm25::InMemoryBm25::new()));
         s
     });
 }

@@ -4,7 +4,7 @@
 // Intended for local development, testing, and CF Workers without Vectorize.
 // Replace with CfVectorizeStore for production-scale deployments.
 
-use crate::storage::semantic::{Query, RecordLoad, SemanticStore};
+use nex::storage::semantic::{Query, RecordLoad, SemanticStore};
 use std::collections::HashMap;
 
 /// In-memory BM25 semantic store.
