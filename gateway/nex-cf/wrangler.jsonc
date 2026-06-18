@@ -13,28 +13,20 @@
       "bucket_name": "nexus-fih-content"
     },
     {
+      "binding": "FIH_R2_TEST",
+      "bucket_name": "nexus-fih-content-test"
+    },
+    {
       "binding": "DOCS_R2",
       "bucket_name": "ssccs-nexus-af"
+    },
+    {
+      "binding": "DOCS_R2_TEST",
+      "bucket_name": "ssccs-nexus-af-test"
     }
   ],
 
   "observability": {
     "logs": { "enabled": true, "invocation_logs": true }
-  },
-
-  "env": {
-    "preview": {
-      "routes": ["preview.cf.nexgate.ssccs.org/*"],
-      "r2_buckets": [
-        {
-          "binding": "FIH_R2",
-          "bucket_name": "nexus-fih-content-test"
-        },
-        {
-          "binding": "DOCS_R2",
-          "bucket_name": "ssccs-nexus-af-test"
-        }
-      ]
-    }
   }
 }

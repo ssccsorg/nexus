@@ -9,6 +9,7 @@ use crate::cf_io::CfFihIo;
 use nex::FihStorage;
 use nexus_model::{AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead};
 use nexus_model::{Content, Fact, FihHash, Intent};
+use std::sync::OnceLock;
 
 // ── CF clock: real timestamps via worker::Date::now() ────────────────
 
@@ -22,26 +23,32 @@ impl nexus_model::Now for CfClock {
     }
 }
 
-// ── Static storage ───────────────────────────────────────────────────
+// ── Static storage (생산 + 테스트) ──────────────────────────────────
 
-/// SAFETY: Only used on the single-threaded Workers isolate.
-/// `FihStorage` contains `RefCell` (from `EntityStore` and `pending`)
-/// and `Box<dyn EntityStore>` trait objects that are `!Send + !Sync`,
-/// but in the WASM isolate there is no true parallelism — only async
-/// concurrency on one thread — so treating the inner type as `Sync`
-/// is sound. The `OnceLock` eliminates the previous data race on
-/// initialization from the old `UnsafeCell`-based approach.
-struct SyncStore(std::sync::OnceLock<FihStorage<CfFihIo>>);
+/// SAFETY: FihStorage contains RefCell (not Sync), but in the WASM
+/// isolate there is no true parallelism — only async concurrency on
+/// one thread. Wrapping OnceLock<FihStorage<CfFihIo>> in a newtype to
+/// safely implement Sync is sound on wasm32.
+struct SyncStore(OnceLock<FihStorage<CfFihIo>>);
 unsafe impl Sync for SyncStore {}
-static STORE: SyncStore = SyncStore(std::sync::OnceLock::new());
 
-fn store() -> &'static FihStorage<CfFihIo> {
-    STORE.0.get().expect("FihStorage not initialized")
+static PROD_STORE: SyncStore = SyncStore(OnceLock::new());
+static TEST_STORE: SyncStore = SyncStore(OnceLock::new());
+
+fn store(is_test: bool) -> &'static FihStorage<CfFihIo> {
+    if is_test {
+        TEST_STORE.0.get().expect("TEST FihStorage not initialized")
+    } else {
+        PROD_STORE.0.get().expect("PROD FihStorage not initialized")
+    }
 }
 
-fn init_store(bucket: worker::Bucket) {
-    STORE.0.get_or_init(|| {
-        FihStorage::with_clock(CfFihIo::new(bucket), "cf-nexus", Box::new(CfClock))
+fn init_stores(prod_bucket: worker::Bucket, test_bucket: worker::Bucket) {
+    PROD_STORE.0.get_or_init(|| {
+        FihStorage::with_clock(CfFihIo::new(prod_bucket), "cf-nexus", Box::new(CfClock))
+    });
+    TEST_STORE.0.get_or_init(|| {
+        FihStorage::with_clock(CfFihIo::new(test_bucket), "cf-nexus-test", Box::new(CfClock))
     });
 }
 
@@ -257,13 +264,16 @@ fn sanitize_id(s: &str) -> String {
 
 #[event(fetch)]
 pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
-    init_store(
+    init_stores(
         env.bucket("FIH_R2")
             .expect("FIH_R2 bucket binding required"),
+        env.bucket("FIH_R2_TEST")
+            .expect("FIH_R2_TEST bucket binding required"),
     );
 
     // DOCS_R2 바인딩 (문서 아티팩트 버킷) — 선택 사항
     let docs_bucket = env.bucket("DOCS_R2").ok();
+    let docs_bucket_test = env.bucket("DOCS_R2_TEST").ok();
 
     let url = req.url()?;
     let path = url.path().to_string();
@@ -271,12 +281,21 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .query_pairs()
         .map(|(k, v)| (k.into_owned(), v.into_owned()))
         .collect();
-    let s = store();
 
-    match path.as_str() {
+    // /test/ 프리픽스 → 테스트 스토어, 도큐먼트 버킷 사용
+    let (is_test, path_stripped) = if let Some(rest) = path.strip_prefix("/test") {
+        (true, if rest.is_empty() { "/".to_string() } else { rest.to_string() })
+    } else {
+        (false, path)
+    };
+
+    let s = store(is_test);
+    let _docs = if is_test { docs_bucket_test.as_ref() } else { docs_bucket.as_ref() };
+
+    match path_stripped.as_str() {
         // Standard FIH endpoints — delegated to generic handle_path
         "/" | "/fact" | "/intent" | "/claim" | "/conclude" | "/state" | "/flush" | "/rebuild" => {
-            let (code, _content_type, body) = handle_path(s, &path, &q).await;
+            let (code, _content_type, body) = handle_path(s, &path_stripped, &q).await;
             Ok(Response::from_bytes(body.into_bytes())?.with_status(code))
         }
 
