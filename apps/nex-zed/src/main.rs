@@ -70,10 +70,40 @@ struct Args {
     bench: bool,
 }
 
+// ── .env loader ────────────────────────────────────────────────────────
+
+/// Load `.env` file from the binary's parent directory into environment.
+/// Does not override existing vars. Silently ignores missing `.env`.
+fn load_dotenv() {
+    let env_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".env");
+    let content = match std::fs::read_to_string(&env_path) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') || !line.contains('=') {
+            continue;
+        }
+        // Split on first '='
+        if let Some(eq) = line.find('=') {
+            let key = line[..eq].trim();
+            let val = line[eq + 1..].trim().trim_matches('"');
+            // Only set if not already present (env vars take precedence)
+            if std::env::var(key).is_err() {
+                // SAFETY: called at the very top of main(), single-threaded
+                unsafe { std::env::set_var(key, val); }
+            }
+        }
+    }
+}
+
 // ── Main ──────────────────────────────────────────────────────────────
 
 #[tokio::main]
 async fn main() {
+    load_dotenv();
+
     let args = Args::parse();
 
     // Verbose flag sets RUST_LOG=debug if no explicit override
