@@ -1,5 +1,5 @@
-use std::cell::RefCell;
 use nex::io::{AsyncFileIo, IoFuture, WriteOp};
+use std::cell::RefCell;
 
 /// AsyncFileIo wrapper that batches writes and flushes them in one `apply_batch`.
 ///
@@ -13,7 +13,10 @@ pub struct BatchIo<I: AsyncFileIo> {
 
 impl<I: AsyncFileIo> BatchIo<I> {
     pub fn new(inner: I) -> Self {
-        Self { inner, pending: RefCell::new(Vec::new()) }
+        Self {
+            inner,
+            pending: RefCell::new(Vec::new()),
+        }
     }
 
     /// Flush pending writes to inner IO via apply_batch.
@@ -41,7 +44,9 @@ impl<I: AsyncFileIo> AsyncFileIo for BatchIo<I> {
     fn write<'a>(&'a self, path: &'a str, data: &'a [u8]) -> IoFuture<'a, ()> {
         let p = path.to_string();
         let d = data.to_vec();
-        self.pending.borrow_mut().push(WriteOp::Write { path: p, data: d });
+        self.pending
+            .borrow_mut()
+            .push(WriteOp::Write { path: p, data: d });
         Box::pin(std::future::ready(Ok(())))
     }
 
