@@ -1684,6 +1684,7 @@ dependencies = [
 name = "nex"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "cfg-if",
  "futures-executor",
  "log",
@@ -1734,6 +1735,8 @@ dependencies = [
 name = "nexus-gateway-nex-cf"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "futures-executor",
  "nex",
  "nexus-model",
  "serde",

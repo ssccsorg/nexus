@@ -33,22 +33,17 @@ use std::fmt::Debug;
 /// Multiple store implementations can coexist in the same binary,
 /// each using a different strategy (vector cosine, BM25 text, ngram,
 /// etc.) without the core knowing which one is in use.
+#[async_trait::async_trait(?Send)]
 pub trait SemanticStore: Debug {
-    /// Downcast to Any for accessing concrete implementation methods.
-    /// 
-    /// This method exists to allow async operations (like Vectorize sync)
-    /// on stores registered as `Box<dyn SemanticStore>`. It is not intended
-    /// for general use by consumers of the SemanticStore trait.
-    fn as_any(&self) -> &dyn std::any::Any;
     /// Insert a record into the store. The implementation calls
     /// `load` to retrieve only the data it needs.
-    fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String>;
+    async fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String>;
 
     /// Search for the top_k most similar records using the query handle.
-    fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String>;
+    async fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String>;
 
     /// Remove a record ID from the store.
-    fn remove(&mut self, id: u32) -> Result<(), String>;
+    async fn remove(&mut self, id: u32) -> Result<(), String>;
 
     /// Number of records stored.
     fn len(&self) -> usize;

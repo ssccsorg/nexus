@@ -32,12 +32,9 @@ impl Default for InMemoryBm25 {
     }
 }
 
+#[async_trait::async_trait(?Send)]
 impl SemanticStore for InMemoryBm25 {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
+    async fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
         let text = load
             .text(id)
             .ok_or_else(|| "no text available".to_string())?;
@@ -46,7 +43,7 @@ impl SemanticStore for InMemoryBm25 {
         Ok(())
     }
 
-    fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
+    async fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
         let qt = match query.text() {
             Some(t) if !t.trim().is_empty() => t,
             _ => return Ok(Vec::new()),
@@ -112,7 +109,7 @@ impl SemanticStore for InMemoryBm25 {
         Ok(scores)
     }
 
-    fn remove(&mut self, id: u32) -> Result<(), String> {
+    async fn remove(&mut self, id: u32) -> Result<(), String> {
         if let Some(pos) = self.ids.iter().position(|&i| i == id) {
             self.ids.remove(pos);
             self.texts.remove(pos);

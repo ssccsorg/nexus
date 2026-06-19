@@ -7,12 +7,12 @@ pub mod cf_io;
 
 use worker::*;
 
-use crate::batch_io::BatchIo;
 use crate::cf_io::CfFihIo;
+use crate::stores::vectorize::CfVectorizeStore;
 use nex::FihStorage;
 use nex::io::AsyncFileIo;
 use nexus_model::{
-    AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead, Content, Fact, FihHash, Intent,
+    AsyncIntentCapable, AsyncStorageRead, Content, Fact, FihHash, Intent,
 };
 use std::sync::OnceLock;
 
@@ -37,7 +37,7 @@ static TEST_STORE: SyncStore = SyncStore(OnceLock::new());
 static PROD_FIH_BUCKET: OnceLock<worker::Bucket> = OnceLock::new();
 static TEST_FIH_BUCKET: OnceLock<worker::Bucket> = OnceLock::new();
 
-struct SyncVectorizeStore(OnceLock<crate::stores::vectorize::CfVectorizeStore>);
+struct SyncVectorizeStore(OnceLock<CfVectorizeStore>);
 unsafe impl Sync for SyncVectorizeStore {}
 static PROD_VECTORIZE: SyncVectorizeStore = SyncVectorizeStore(OnceLock::new());
 static TEST_VECTORIZE: SyncVectorizeStore = SyncVectorizeStore(OnceLock::new());
@@ -47,7 +47,7 @@ fn store(is_test: bool) -> &'static FihStorage<CfFihIo> {
     else { PROD_STORE.0.get().expect("PROD FihStorage not initialized") }
 }
 
-fn vectorize_store(is_test: bool) -> Option<&'static crate::stores::vectorize::CfVectorizeStore> {
+fn vectorize_store(is_test: bool) -> Option<&'static CfVectorizeStore> {
     if is_test { TEST_VECTORIZE.0.get() }
     else { PROD_VECTORIZE.0.get() }
 }
@@ -65,8 +65,8 @@ fn init_stores(env: &worker::Env, prod_bucket: worker::Bucket, test_bucket: work
         s.register_semantic_store(Box::new(crate::stores::bm25::InMemoryBm25::new()));
         s
     });
-    let _ = PROD_VECTORIZE.0.set(crate::stores::vectorize::CfVectorizeStore::new(env.clone()));
-    let _ = TEST_VECTORIZE.0.set(crate::stores::vectorize::CfVectorizeStore::new(env.clone()));
+    let _ = PROD_VECTORIZE.0.set(CfVectorizeStore::new(env.clone()));
+    let _ = TEST_VECTORIZE.0.set(CfVectorizeStore::new(env.clone()));
 }
 
 fn split_test_prefix(path: &str) -> (bool, &str) {
@@ -93,10 +93,15 @@ pub async fn handle_path<I: AsyncFileIo>(s: &FihStorage<I>, path: &str, q: &[(St
                 content: Content { mime_type: "text/plain".into(), data: qv(q, "content").into_bytes() },
                 creator: qv(q, "creator"),
             };
-            match nexus_model::AsyncFactCapable::submit_fact(s, &fact).await {
-                Ok(hash) => (200, "application/json".into(), serde_json::json!({"id": hash.to_string()}).to_string()),
-                Err(e) => (500, "application/json".into(), serde_json::json!({"error": format!("submit_fact: {:?}", e)}).to_string()),
+            let hash = match nexus_model::AsyncFactCapable::submit_fact(s, &fact).await {
+                Ok(h) => h,
+                Err(e) => return (500, "application/json".into(), serde_json::json!({"error": format!("submit_fact: {:?}", e)}).to_string()),
+            };
+            // Flush immediately for single-fact endpoints (caller expects durability).
+            if let Err(e) = s.flush_pending().await {
+                return (500, "application/json".into(), serde_json::json!({"error": format!("flush: {}", e)}).to_string());
             }
+            (200, "application/json".into(), serde_json::json!({"id": hash.to_string()}).to_string())
         }
         "/intent" => {
             let intent = Intent {
@@ -106,10 +111,15 @@ pub async fn handle_path<I: AsyncFileIo>(s: &FihStorage<I>, path: &str, q: &[(St
                 worker: None, to_fact_id: None, last_heartbeat_at: None, created_at: None,
                 is_concluded: false, concluded_at: None,
             };
-            match s.submit_intent(&intent).await {
-                Ok(hash) => (200, "application/json".into(), serde_json::json!({"id": hash.to_string()}).to_string()),
-                Err(e) => (500, "application/json".into(), serde_json::json!({"error": format!("submit_intent: {:?}", e)}).to_string()),
+            let hash = match s.submit_intent(&intent).await {
+                Ok(h) => h,
+                Err(e) => return (500, "application/json".into(), serde_json::json!({"error": format!("submit_intent: {:?}", e)}).to_string()),
+            };
+            // Flush immediately for single-intent endpoints (caller expects durability).
+            if let Err(e) = s.flush_pending().await {
+                return (500, "application/json".into(), serde_json::json!({"error": format!("flush: {}", e)}).to_string());
             }
+            (200, "application/json".into(), serde_json::json!({"id": hash.to_string()}).to_string())
         }
         "/claim" => match s.claim_intent(&qv(q, "id"), &qv(q, "agent")).await {
             Ok(()) => (200, "application/json".into(), serde_json::json!({"status":"claimed"}).to_string()),
@@ -153,11 +163,15 @@ pub async fn ingest_document<I: AsyncFileIo>(s: &FihStorage<I>, text: &str, orig
             content: Content { mime_type: "text/plain".into(), data: para.as_bytes().to_vec() },
             creator: "ingestion-agent".into(),
         };
-        // Async FactCapable: R2에 직접 쓰고 BM25에도 즉시 반영
+        // Async FactCapable: enqueue in pending buffer only (no R2 PUT per paragraph).
+        // In-memory indices (BM25, FihCoord) are updated immediately for subsequent
+        // semantic_search calls within the same request.
         nexus_model::AsyncFactCapable::submit_fact(s, &fact).await
             .map_err(|e| format!("submit para {i}: {e:?}"))?;
         last_id = para_id;
     }
+    // Flush all pending writes to R2 in a single apply_batch call.
+    s.flush_pending().await.map_err(|e| format!("flush: {e}"))?;
     Ok(last_id)
 }
 
@@ -227,7 +241,15 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             if text.is_empty() { return Response::error("missing 'text' parameter", 400); }
             let origin = if origin.is_empty() { "ingest".into() } else { origin };
             match ingest_document(s, &text, &origin).await {
-                Ok(id) => Response::from_json(&serde_json::json!({"status":"ingested","id": id})),
+                Ok(id) => {
+                    // Sync semantic stores from memory to Vectorize index (async).
+                    if let Some(vs) = vectorize_store(is_test) {
+                        if let Err(e) = vs.sync_to_vectorize().await {
+                            worker::console_log!("vectorize sync error: {e}");
+                        }
+                    }
+                    Response::from_json(&serde_json::json!({"status":"ingested","id": id}))
+                }
                 Err(e) => Response::error(e, 500),
             }
         }
@@ -241,7 +263,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                     Ok(r) if !r.is_empty() => r,
                     _ => {
                         let query = crate::cf_io::TextQuery { text: query_text };
-                        match s.semantic_search(&query, 10) {
+                        match s.semantic_search(&query, 10).await {
                             Ok(r) => r,
                             Err(e) => return Response::error(format!("search: {e}"), 500),
                         }
@@ -249,7 +271,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                 },
                 None => {
                     let query = crate::cf_io::TextQuery { text: query_text };
-                    match s.semantic_search(&query, 10) {
+                    match s.semantic_search(&query, 10).await {
                         Ok(r) => r,
                         Err(e) => return Response::error(format!("search: {e}"), 500),
                     }
@@ -295,10 +317,17 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             let text = match String::from_utf8(data) { Ok(t) => t, Err(_) => return Response::error("not UTF-8", 500) };
             let origin = key.trim_end_matches(".llms.md").trim_start_matches("_llms/").to_string();
 
-            // Sync FactCapable으로 enqueue만 (R2 직접 쓰기 없음)
+            // ingest_document now enqueues writes across paragraphs and flushes
+            // all pending writes in a single apply_batch call (no individual R2 PUTs).
             match crate::ingest_document(s, &text, &origin).await {
                 Ok(id) => {
-                    Response::from_json(&serde_json::json!({"status":"enqueued","id": id}))
+                    // Sync semantic stores from memory to Vectorize index (async).
+                    if let Some(vs) = vectorize_store(is_test) {
+                        if let Err(e) = vs.sync_to_vectorize().await {
+                            worker::console_log!("vectorize sync error: {e}");
+                        }
+                    }
+                    Response::from_json(&serde_json::json!({"status":"ingested","id": id}))
                 }
                 Err(e) => Response::error(e, 500),
             }
