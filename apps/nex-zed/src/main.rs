@@ -1,153 +1,416 @@
-]8;;file:///Users/blackgene/Documents/ssccs-nexus/apps/nex-zed/src/main.rs]8;;
 // ── nex-zed: neXus instance with an ACP surface for the Zed editor ──────
 //
 // A standalone binary that embeds ACP (Agent Client Protocol) as one of its
 // communication surfaces. To the Zed editor, it appears as a custom agent
 // server spawned as a child process with piped stdin/stdout/stderr.
 //
+// This crate is a thin wrapper around `acp_bridge` (ext/acp-bridge), adding
+// neXus FIH blackboard integration on top of the base ACP agent functionality.
+//
 // Architecture:
 //   Zed Editor
 //     └── spawns child process (ACP stdio)
-//          └── nex-zed (agentic neXus instance)
-//               ├── ACP surface (inbound from Zed)
-//               ├── ACP surface (outbound to Zed)
-//               └── FIH surface (neXus blackboard)
-//
-// References:
-//   - https://docs.ssccs.org/projects/nexus/apps/zed.llms.md
-//   - https://github.com/ssccsorg/nexus/issues/72
+//          └── nex-zed (this binary)
+//               ├── acp_bridge crate (ACP engine, LLM, tools)
+//               └── neXus FIH integration (Phase 2+)
 
-use agent_client_protocol::schema as acp;
-use agent_client_protocol::{ConnectionTo, Lines as LinesTransport};
+use acp_bridge::acp;
+use acp_bridge::a2a;
+use acp_bridge::bench;
+use acp_bridge::client;
+use acp_bridge::config::{AgentConfig, ConfigFile};
+use acp_bridge::engine::{self, AppState, Notification};
+use acp_bridge::hardware;
+use acp_bridge::llm;
+use acp_bridge::protocol::{AcpError, JsonRpcRequest};
 use clap::Parser;
+use serde_json::{json, Value};
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::sync::mpsc;
+use tracing::{debug, error, info, warn};
 
-mod acp_handlers;
-mod config;
-pub mod session;
+// ── Run mode ──────────────────────────────────────────────────────────
 
-use acp_handlers::AppState;
+enum RunMode {
+    Acp,
+    A2a,
+    Client,
+    Bench,
+}
+
+// ── CLI args ──────────────────────────────────────────────────────────
+
+#[derive(Parser, Debug, Clone)]
+#[command(name = "nex-zed", version, about)]
+struct Args {
+    /// Path to neXus daemon Unix socket (unused until FIH phase).
+    #[arg(long, default_value = "/var/run/nexus.sock")]
+    nexus_socket: String,
+
+    /// Enable verbose logging (sets RUST_LOG=debug).
+    #[arg(long, short = 'v')]
+    verbose: bool,
+
+    /// Path to config.toml (optional; env vars used otherwise).
+    #[arg(long)]
+    config: Option<String>,
+
+    /// Run in A2A HTTP server mode.
+    #[arg(long)]
+    a2a: bool,
+
+    /// Run in client mode (spawn external ACP agent).
+    #[arg(long)]
+    client: bool,
+
+    /// Run benchmark.
+    #[arg(long)]
+    bench: bool,
+}
+
+// ── Main ──────────────────────────────────────────────────────────────
 
 #[tokio::main]
-async fn main() -> Result<(), anyhow::Error> {
-    let args = config::Args::parse();
+async fn main() {
+    let args = Args::parse();
 
-    // Initialize logging
-    if args.verbose {
-        std::env::set_var("RUST_LOG", "debug");
+    // Verbose flag sets RUST_LOG=debug if no explicit override
+    if args.verbose && std::env::var("RUST_LOG").is_err() {
+        // SAFETY: called before any threads are spawned and before tracing init;
+        // this is the single-threaded top of main() where set_var is sound.
+        unsafe { std::env::set_var("RUST_LOG", "nex_zed=debug,acp_bridge=debug"); }
     }
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or(&args.log_level),
-    )
-    .init();
 
-    log::info!("Starting nex-zed v{}", env!("CARGO_PKG_VERSION"));
-    log::info!("neXus socket: {}", args.nexus_socket);
+    // Initialize tracing
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "nex_zed=info".parse().unwrap()),
+        )
+        .with_target(true)
+        .with_writer(std::io::stderr)
+        .init();
 
-    // Shared application state (Phase 1: session manager only).
-    // Phase 2+: add NexusTransport, FihStorage, etc.
-    let state = std::sync::Arc::new(AppState::new());
+    // Determine run mode
+    let mode = if args.bench {
+        RunMode::Bench
+    } else if args.client {
+        RunMode::Client
+    } else if args.a2a {
+        RunMode::A2a
+    } else {
+        RunMode::Acp
+    };
 
-    // ACP transport over stdin/stdout (Content-Length-delimited JSON-RPC 2.0).
-    // Same framing as MCP: "Content-Length: N\r\n\r\n{...}".
-    // Zed captures and logs stderr but does not interpret it as protocol.
-    let transport = LinesTransport::stdio();
+    // Load config
+    let config_file = args
+        .config
+        .as_ref()
+        .map(|path| ConfigFile::load(std::path::Path::new(path)));
 
-    log::info!("ACP transport initialized, entering main loop");
+    // Client mode: spawn external ACP agent
+    if let RunMode::Client = mode {
+        let agent_config = config_file
+            .as_ref()
+            .and_then(|f| f.agent_config())
+            .or_else(AgentConfig::from_env);
 
-    // Ensure all critical ACP handlers are registered. Zed's
-    // connect_client_future() (crates/agent_servers/src/acp.rs:706)
-    // expects the full set.
-    let _connection = acp::Client::builder()
-        .name("nexus-zed")
-        // ── Requests (inbound from Zed) ────────────────────────────
-        .on_receive_request(
-            |req, responder, connection| {
-                let state = state.clone();
-                async move { acp_handlers::handle_initialize_request(req, responder, connection).await }
-            },
-            agent_client_protocol::on_receive_request!(),
-        )
-        .on_receive_request(
-            |req, responder, connection| {
-                let state = state.clone();
-                async move { acp_handlers::handle_new_session_request(req, responder, connection, &state).await }
-            },
-            agent_client_protocol::on_receive_request!(),
-        )
-        .on_receive_request(
-            |req, responder, connection| {
-                async move { acp_handlers::handle_load_session_request(req, responder, connection).await }
-            },
-            agent_client_protocol::on_receive_request!(),
-        )
-        .on_receive_request(
-            |req, responder, connection| {
-                async move { acp_handlers::handle_resume_session_request(req, responder, connection).await }
-            },
-            agent_client_protocol::on_receive_request!(),
-        )
-        .on_receive_request(
-            |req, responder, connection| {
-                let state = state.clone();
-                async move { acp_handlers::handle_set_session_mode_request(req, responder, connection, &state).await }
-            },
-            agent_client_protocol::on_receive_request!(),
-        )
-        .on_receive_request(
-            |req, responder, connection| {
-                let state = state.clone();
-                async move { acp_handlers::handle_set_session_model_request(req, responder, connection, &state).await }
-            },
-            agent_client_protocol::on_receive_request!(),
-        )
-        .on_receive_request(
-            |req, responder, connection| {
-                let state = state.clone();
-                async move { acp_handlers::handle_set_session_config_option(req, responder, connection, &state).await }
-            },
-            agent_client_protocol::on_receive_request!(),
-        )
-        .on_receive_request(
-            |req, responder, connection| {
-                async move { acp_handlers::handle_prompt_request(req, responder, connection).await }
-            },
-            agent_client_protocol::on_receive_request!(),
-        )
-        .on_receive_request(
-            |req, responder, connection| {
-                let state = state.clone();
-                async move { acp_handlers::handle_delete_session(req, responder, connection, &state).await }
-            },
-            agent_client_protocol::on_receive_request!(),
-        )
-        .on_receive_request(
-            |req, responder, connection| {
-                async move { acp_handlers::handle_logout_request(req, responder, connection).await }
-            },
-            agent_client_protocol::on_receive_request!(),
-        )
-        // ── Notifications (inbound from Zed) ───────────────────────
-        .on_receive_notification(
-            |notif, connection| {
-                let state = state.clone();
-                async move { acp_handlers::handle_cancel_notification(notif, connection, &state).await }
-            },
-            agent_client_protocol::on_receive_notification!(),
-        )
-        .on_receive_notification(
-            |notif, connection| {
-                let state = state.clone();
-                async move { acp_handlers::handle_delete_session_notification(notif, connection, &state).await }
-            },
-            agent_client_protocol::on_receive_notification!(),
-        )
-        // ── Connect ────────────────────────────────────────────────
-        .connect_with(transport, |_connection: ConnectionTo<acp::Agent>| async move {
-            // Connection established; keep alive until transport closes.
-            futures::future::pending::<Result<(), acp::Error>>().await
-        })
-        .await?;
+        match agent_config {
+            Some(ac) => {
+                for line in hardware::detect().report_lines() {
+                    info!("{line}");
+                }
+                client::run_client_mode(&ac).await;
+                return;
+            }
+            None => {
+                eprintln!("Error: --client mode requires agent config.");
+                eprintln!("Set AGENT_COMMAND env var or add [agent] section to config.toml");
+                return;
+            }
+        }
+    }
 
-    log::info!("nex-zed connection closed, exiting");
-    Ok(())
+    // LLM and A2A config
+    let (config, a2a_config) = match config_file {
+        Some(file) => {
+            let a2a_cfg = file.a2a_config();
+            (file.into_llm_config(), a2a_cfg)
+        }
+        None => (llm::LlmConfig::from_env(), a2a::A2aConfig::from_env()),
+    };
+
+    // Benchmark mode
+    if let RunMode::Bench = mode {
+        for line in hardware::detect().report_lines() {
+            info!("{line}");
+        }
+        info!(base_url = %config.base_url, model = %config.model, "Running benchmark");
+        let results = bench::run(&config, &bench::default_fixtures()).await;
+        bench::print_report(&config, &results);
+        return;
+    }
+
+    // Startup banner
+    let mode_str = match mode {
+        RunMode::Acp => "acp",
+        RunMode::A2a => "a2a",
+        _ => unreachable!(),
+    };
+    info!(
+        instance = "nex-zed",
+        version = env!("CARGO_PKG_VERSION"),
+        mode = mode_str,
+        model = %config.model,
+        base_url = %config.base_url,
+        max_history_turns = config.max_history_turns,
+        max_sessions = config.max_sessions,
+        session_idle_timeout_secs = config.session_idle_timeout_secs,
+        "Starting nex-zed"
+    );
+
+    for line in hardware::detect().report_lines() {
+        info!("{line}");
+    }
+
+    probe_backend(&config).await;
+
+    // Shared state
+    let state = AppState::new(config);
+
+    // Idle session eviction
+    let idle_timeout = state.config.session_idle_timeout_secs;
+    if idle_timeout > 0 {
+        let state_clone = Arc::clone(&state);
+        tokio::spawn(async move {
+            let interval = Duration::from_secs(idle_timeout.min(60));
+            loop {
+                tokio::time::sleep(interval).await;
+                state_clone.evict_idle_sessions(idle_timeout);
+            }
+        });
+    }
+
+    // Run in selected mode
+    match mode {
+        RunMode::Acp => run_acp_loop(state).await,
+        RunMode::A2a => {
+            if let Err(e) = a2a::serve(state, a2a_config).await {
+                error!(error = %e, "A2A server error");
+            }
+        }
+        RunMode::Client | RunMode::Bench => unreachable!(),
+    }
+}
+
+// ── Backend probing ───────────────────────────────────────────────────
+
+async fn probe_backend(config: &llm::LlmConfig) {
+    match llm::probe_backend(config).await {
+        Ok(models) if models.is_empty() => {
+            info!("Connected to backend (no models listed)");
+        }
+        Ok(models) => {
+            info!(count = models.len(), "Available models:");
+            for m in &models {
+                info!("  - {m}");
+            }
+            if !models.iter().any(|m| {
+                m.starts_with(&config.model)
+                    || config.model.starts_with(m.split(':').next().unwrap_or(""))
+            }) {
+                warn!(configured = %config.model, "Configured model not found in available models");
+            }
+        }
+        Err(reason) => {
+            warn!(
+                base_url = %config.base_url,
+                error = %reason,
+                "Cannot reach backend — will retry on first request"
+            );
+        }
+    }
+
+    // Ollama-specific info (no-op for OpenAI-compatible APIs)
+    if let Some(info) = llm::query_model_info(config).await {
+        info!(context_length = info.context_length, "Model info from /api/show");
+    }
+    if let Some(running) = llm::query_running_models(config).await {
+        if running.is_empty() {
+            warn!(
+                model = %config.model,
+                "No models loaded in VRAM — first request may be slow"
+            );
+        } else {
+            info!(count = running.len(), "Running models (loaded in VRAM):");
+            for m in &running {
+                info!("  - {m}");
+            }
+        }
+    }
+}
+
+// ── ACP mode ──────────────────────────────────────────────────────────
+
+async fn run_acp_loop(state: Arc<AppState>) {
+    let stdin = tokio::io::stdin();
+    let reader = BufReader::new(stdin);
+    let mut lines = reader.lines();
+
+    loop {
+        tokio::select! {
+            line_result = lines.next_line() => {
+                match line_result {
+                    Ok(Some(line)) => {
+                        let trimmed = line.trim().to_string();
+                        if trimmed.is_empty() { continue; }
+
+                        let msg: JsonRpcRequest = match serde_json::from_str(&trimmed) {
+                            Ok(m) => m,
+                            Err(e) => {
+                                debug!(error = %e, "Skipping invalid JSON-RPC line");
+                                continue;
+                            }
+                        };
+
+                        let id_opt = msg.id;
+                        let method = msg.method.as_str();
+                        let params = msg.params.clone().unwrap_or(json!({}));
+                        debug!(?id_opt, method, "Received message");
+
+                        // JSON-RPC 2.0 notification (no id)
+                        let id = match id_opt {
+                            Some(id) => id,
+                            None => {
+                                match method {
+                                    "session/cancel" => {
+                                        info!(
+                                            session_id = %params.get("sessionId").and_then(|v| v.as_str()).unwrap_or(""),
+                                            "Received session/cancel notification"
+                                        );
+                                    }
+                                    _ => debug!(method, "Ignoring unknown notification"),
+                                }
+                                continue;
+                            }
+                        };
+
+                        match method {
+                            "initialize" => {
+                                let result = engine::initialize(&state.config);
+                                acp::send_response(id, result);
+                            }
+                            "session/new" => {
+                                let raw_cwd = params.get("cwd").and_then(|v| v.as_str()).unwrap_or("/tmp");
+                                match engine::session_new(&state, raw_cwd) {
+                                    Ok(session_id) => acp::send_response(id, json!({"sessionId": session_id})),
+                                    Err(e) => acp::send_error(id, e.code(), &e.to_string()),
+                                }
+                            }
+                            "session/prompt" => handle_acp_prompt(id, &params, &state).await,
+                            "session/end" => {
+                                let session_id = params.get("sessionId").and_then(|v| v.as_str()).unwrap_or("");
+                                if session_id.is_empty() {
+                                    acp::send_error(id, AcpError::MissingParam { field: "sessionId".into() }.code(), "Missing sessionId");
+                                } else {
+                                    match engine::session_end(&state, session_id) {
+                                        Ok(()) => acp::send_response(id, json!({"status": "ended"})),
+                                        Err(e) => acp::send_error(id, e.code(), &e.to_string()),
+                                    }
+                                }
+                            }
+                            "session/load" | "session/resume" => {
+                                let err = AcpError::MethodNotFound { method: method.to_string() };
+                                acp::send_error(id, err.code(), &err.to_string());
+                            }
+                            "session/set_mode" => {
+                                let err = AcpError::MethodNotFound { method: method.to_string() };
+                                acp::send_error(id, err.code(), &err.to_string());
+                            }
+                            _ => {
+                                let err = AcpError::MethodNotFound { method: method.to_string() };
+                                acp::send_error(id, err.code(), &err.to_string());
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        info!("stdin closed, shutting down gracefully");
+                        break;
+                    }
+                    Err(e) => {
+                        error!(error = %e, "Error reading stdin");
+                        break;
+                    }
+                }
+            }
+            _ = tokio::signal::ctrl_c() => {
+                info!("Received shutdown signal, exiting");
+                break;
+            }
+        }
+    }
+
+    let n = state.cleanup();
+    if n > 0 {
+        info!(sessions = n, "Cleaned up sessions on exit");
+    }
+}
+
+/// Handle session/prompt — stream engine notifications to ACP stdout.
+async fn handle_acp_prompt(id: u64, params: &Value, state: &Arc<AppState>) {
+    let session_id = match params.get("sessionId").and_then(|v| v.as_str()) {
+        Some(s) => s.to_string(),
+        None => {
+            let err = AcpError::MissingParam { field: "sessionId".into() };
+            acp::send_error(id, err.code(), &err.to_string());
+            return;
+        }
+    };
+
+    let prompt_value = params.get("prompt").cloned().unwrap_or(Value::Null);
+    let raw_user_text = engine::extract_user_text_from_prompt(&prompt_value);
+    let (user_text, _sender_context) = engine::strip_sender_context(&raw_user_text);
+    let user_images = engine::extract_user_images_from_prompt(&prompt_value);
+
+    if user_text.trim().is_empty() && user_images.is_empty() {
+        let err = AcpError::MissingParam {
+            field: "prompt (expected non-empty text or image content)".into(),
+        };
+        acp::send_error(id, err.code(), &err.to_string());
+        return;
+    }
+
+    let (notify_tx, mut notify_rx) = mpsc::unbounded_channel::<Notification>();
+
+    let state_clone = Arc::clone(state);
+    let sid = session_id.clone();
+    let handle = tokio::spawn(async move {
+        engine::session_prompt(&state_clone, &sid, &user_text, &user_images, Some(notify_tx)).await
+    });
+
+    while let Some(notif) = notify_rx.recv().await {
+        match notif {
+            Notification::Thinking => acp::notify_thinking(),
+            Notification::ToolStart(name) => acp::notify_tool_start(&name),
+            Notification::ToolDone(name, status) => acp::notify_tool_done(&name, &status),
+            Notification::TextChunk(text) => acp::notify_text(&text),
+        }
+    }
+
+    let result = handle.await.unwrap_or_else(|_| engine::PromptResult {
+        status: "failed".into(),
+        text: "Internal error".into(),
+        error: None,
+    });
+
+    if let Some(err) = &result.error {
+        acp::send_error(id, err.code(), &err.to_string());
+    } else {
+        acp::send_response(
+            id,
+            json!({"status": result.status, "text": result.text}),
+        );
+    }
 }
