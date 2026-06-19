@@ -115,7 +115,7 @@ impl From<JsValueWrapper> for JsValue {
 }
 
 impl EnvBinding for JsValueWrapper {
-    const TYPE_NAME: &'static str = "Object";
+    const TYPE_NAME: &'static str = "VectorizeIndex";
 }
 
 impl JsCast for JsValueWrapper {
@@ -190,13 +190,14 @@ impl CfVectorizeStore {
     /// After successful flush, the buffer is NOT cleared (it serves as
     /// local fallback) but the synced flag is set to true.
     pub async fn sync_to_vectorize(&self) -> Result<()> {
-        let buffer = self.buffer.borrow();
-        if buffer.is_empty() {
+        if self.buffer.borrow().is_empty() {
             self.synced.replace(true);
             return Ok(());
         }
 
-        // Check if Env and Vectorize binding are available
+        let texts: Vec<String> = self.buffer.borrow().iter().map(|(_, t)| t.clone()).collect();
+        let ids: Vec<u32> = self.buffer.borrow().iter().map(|(id, _)| *id).collect();
+
         let env = match self.env.as_ref() {
             Some(e) => e,
             None => {
@@ -208,15 +209,12 @@ impl CfVectorizeStore {
             Ok(b) => b.0,
             Err(e) => {
                 console_log!("[CfVectorizeStore] SEMANTIC_INDEX binding unavailable: {e}");
-                // No Vectorize — just mark as synced and use local-only
                 self.synced.replace(true);
                 return Ok(());
             }
         };
 
-        // Extract texts for batch embedding
-        let texts: Vec<&str> = buffer.iter().map(|(_, t)| t.as_str()).collect();
-        let embeddings = match embed_texts(env, &texts).await {
+        let embeddings = match embed_texts(env, &texts.iter().map(|s| s.as_str()).collect::<Vec<&str>>()).await {
             Ok(v) => v,
             Err(e) => {
                 console_log!("[CfVectorizeStore] embed error: {e}");
@@ -226,7 +224,7 @@ impl CfVectorizeStore {
 
         // Build JS array of vector objects for Vectorize upsert
         let vectors = Array::new();
-        for ((id, _text), embedding) in buffer.iter().zip(embeddings.iter()) {
+        for (id, embedding) in ids.iter().zip(embeddings.iter()) {
             let vector_obj = Object::new();
 
             // id: string (must match Vectorize's id field)
@@ -275,22 +273,23 @@ impl CfVectorizeStore {
 
         let args = Array::new();
         args.push(&vectors);
-        match insert_fn_ref.apply(&binding, &args) {
-            Ok(_promise) => {
-                // Attempt to await the promise; in practice the runtime
-                // resolves it asynchronously.  The promise result is JsValue.
-                // We log success and mark as synced.
-                self.synced.replace(true);
-                console_log!(
-                    "[CfVectorizeStore] synced {} vectors",
-                    buffer.len()
-                );
-            }
-            Err(e) => {
-                console_log!("[CfVectorizeStore] insert call error: {:?}", e);
-                return Err(Error::JsError(format!("Vectorize insert error: {:?}", e)));
-            }
-        }
+        let promise: worker::js_sys::Promise = insert_fn_ref
+            .apply(&binding, &args)
+            .map_err(|e| {
+                Error::RustError(format!("Vectorize insert call failed: {:?}", e))
+            })?
+            .into();
+        worker::wasm_bindgen_futures::JsFuture::from(promise)
+            .await
+            .map_err(|e| {
+                Error::RustError(format!("Vectorize insert promise rejected: {:?}", e))
+            })?;
+
+        self.synced.replace(true);
+        console_log!(
+            "[CfVectorizeStore] synced {} vectors",
+            ids.len()
+        );
 
         Ok(())
     }
@@ -366,51 +365,52 @@ impl CfVectorizeStore {
         .unwrap_or_default();
         args.push(&options);
 
-        match query_fn_ref.apply(&binding, &args) {
-            Ok(result_val) => {
-                // result_val is a JsValue (Promise or result).
-                // In practice, Vectorize query returns a Promise.
-                // We attempt to convert it synchronously if resolved.
-                let result_str = js_sys::JSON::stringify(&result_val)
-                    .map(|s| s.as_string().unwrap_or_default())
-                    .unwrap_or_default();
+        let promise: worker::js_sys::Promise = query_fn_ref
+            .apply(&binding, &args)
+            .map_err(|e| {
+                Error::RustError(format!("Vectorize query call failed: {:?}", e))
+            })?
+            .into();
+        let result_val = worker::wasm_bindgen_futures::JsFuture::from(promise)
+            .await
+            .map_err(|e| {
+                Error::RustError(format!("Vectorize query promise rejected: {:?}", e))
+            })?;
 
-                // Parse the JSON result
-                if let Ok(parsed) = serde_json::from_str::<VectorizeQueryResult>(&result_str) {
-                    let results: Vec<(u32, f32)> = parsed
-                        .matches
-                        .into_iter()
-                        .filter_map(|m| {
-                            // Extract idx from metadata, or from the id string
-                            let idx = m
-                                .metadata
-                                .as_ref()
-                                .and_then(|meta| meta.get("idx").and_then(|v| v.as_u64()).map(|v| v as u32))
-                                .or_else(|| {
-                                    // Fallback: parse from id string "f_{idx}"
-                                    m.id.strip_prefix("f_")
-                                        .and_then(|s| s.parse::<u32>().ok())
-                                });
-                            idx.map(|id| (id, m.score))
-                        })
-                        .collect();
-                    return Ok(results);
-                }
+        // Parse the JSON result
+        let result_str = js_sys::JSON::stringify(&result_val)
+            .map(|s| s.as_string().unwrap_or_default())
+            .unwrap_or_default();
 
-                // Fallback to local search if JSON parse fails
-                console_log!("[CfVectorizeStore] query JSON parse failed, falling back to local");
-                Ok(self.local_search(query_text, top_k))
-            }
-            Err(e) => {
-                console_log!("[CfVectorizeStore] query call error: {e:?}, falling back to local");
-                Ok(self.local_search(query_text, top_k))
-            }
+        if let Ok(parsed) = serde_json::from_str::<VectorizeQueryResult>(&result_str) {
+            let results: Vec<(u32, f32)> = parsed
+                .matches
+                .into_iter()
+                .filter_map(|m| {
+                    // Extract idx from metadata, or from the id string
+                    let idx = m
+                        .metadata
+                        .as_ref()
+                        .and_then(|meta| meta.get("idx").and_then(|v| v.as_u64()).map(|v| v as u32))
+                        .or_else(|| {
+                            // Fallback: parse from id string "f_{idx}"
+                            m.id.strip_prefix("f_")
+                                .and_then(|s| s.parse::<u32>().ok())
+                        });
+                    idx.map(|id| (id, m.score))
+                })
+                .collect();
+            return Ok(results);
         }
+
+        // Fallback to local search if JSON parse fails
+        console_log!("[CfVectorizeStore] query JSON parse failed, falling back to local");
+        Ok(self.local_search(query_text, top_k))
     }
 
     /// Check whether a Vectorize binding is configured in the environment.
     pub fn vectorize_available(&self) -> bool {
-        self.env.as_ref().map_or(false, |env| has_vectorize_binding(env))
+        self.env.as_ref().is_some_and(has_vectorize_binding)
     }
 
     // ── Local fallback search ────────────────────────────────────────

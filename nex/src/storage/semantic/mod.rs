@@ -34,7 +34,11 @@ use std::fmt::Debug;
 /// each using a different strategy (vector cosine, BM25 text, ngram,
 /// etc.) without the core knowing which one is in use.
 pub trait SemanticStore: Debug {
-    /// Downcast to `Any` for accessing concrete implementation methods.
+    /// Downcast to Any for accessing concrete implementation methods.
+    /// 
+    /// This method exists to allow async operations (like Vectorize sync)
+    /// on stores registered as `Box<dyn SemanticStore>`. It is not intended
+    /// for general use by consumers of the SemanticStore trait.
     fn as_any(&self) -> &dyn std::any::Any;
     /// Insert a record into the store. The implementation calls
     /// `load` to retrieve only the data it needs.

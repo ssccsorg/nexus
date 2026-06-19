@@ -214,6 +214,13 @@ impl<I: AsyncFileIo> FihStorage<I> {
         self.coord.by_semantic.borrow_mut().push(store);
     }
 
+    /// Access the semantic stores list (for downcasting to concrete types).
+    pub fn semantic_stores(
+        &self,
+    ) -> impl std::ops::Deref<Target = Vec<Box<dyn crate::storage::semantic::SemanticStore>>> {
+        self.coord.by_semantic.borrow()
+    }
+
     /// Search semantic stores with the given query.
     pub fn semantic_search(
         &self,
@@ -226,13 +233,6 @@ impl<I: AsyncFileIo> FihStorage<I> {
     /// Insert a record into semantic stores with the given load handle.
     pub fn semantic_insert(&self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
         self.coord.semantic_insert(id, load)
-    }
-
-    /// Access the semantic store vector for downcasting and async operations.
-    pub fn semantic_stores(
-        &self,
-    ) -> std::cell::Ref<'_, Vec<Box<dyn crate::storage::semantic::SemanticStore>>> {
-        self.coord.by_semantic.borrow()
     }
 
     /// Query intents that reference a given fact.
