@@ -11,10 +11,10 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use nex::io::{AsyncFileIo, IoFuture, WriteOp};
 use nexus_gateway_nex_cf::cf_io::TextQuery;
 use nexus_gateway_nex_cf::stores::bm25::InMemoryBm25;
 use nexus_model::AsyncStorageRead;
-use nex::io::{AsyncFileIo, IoFuture, WriteOp};
 
 // ── Mock helpers ─────────────────────────────────────────────────────────
 
@@ -33,7 +33,8 @@ impl TestDocStore {
     }
 
     fn with(mut self, path: &str, content: &str) -> Self {
-        self.data.insert(path.to_string(), content.as_bytes().to_vec());
+        self.data
+            .insert(path.to_string(), content.as_bytes().to_vec());
         self
     }
 
@@ -135,8 +136,7 @@ impl AsyncFileIo for TrackingIo {
 
 fn make_storage(tmp: &tempfile::TempDir, label: &str) -> nex::FihStorage<nex::FsIo> {
     let io = nex::FsIo::new(tmp.path()).unwrap();
-    let storage =
-        nex::FihStorage::with_clock(io, label, Box::new(nexus_model::SystemClock));
+    let storage = nex::FihStorage::with_clock(io, label, Box::new(nexus_model::SystemClock));
     storage.register_semantic_store(Box::new(InMemoryBm25::new()));
     storage
 }
@@ -156,7 +156,9 @@ fn document_ingestion_pipeline_e2e() {
     let doc = "Graph Neural Networks process graph-structured data \
                through message-passing between nodes";
     let result = rt.block_on(nexus_gateway_nex_cf::ingest_document(
-        &storage, doc, "gnn-paper",
+        &storage,
+        doc,
+        "gnn-paper",
     ));
     assert!(result.is_ok());
 
@@ -165,13 +167,23 @@ fn document_ingestion_pipeline_e2e() {
     assert_eq!(state.facts[0].origin, "document:gnn-paper");
 
     let results = storage
-        .semantic_search(&TextQuery { text: "Graph Neural".into() }, 5)
+        .semantic_search(
+            &TextQuery {
+                text: "Graph Neural".into(),
+            },
+            5,
+        )
         .expect("search should succeed");
     assert!(!results.is_empty());
     assert!(results[0].1 > 0.5, "BM25 score: {}", results[0].1);
 
     let no_match = storage
-        .semantic_search(&TextQuery { text: "quantum physics".into() }, 5)
+        .semantic_search(
+            &TextQuery {
+                text: "quantum physics".into(),
+            },
+            5,
+        )
         .expect("search should succeed");
     assert!(
         no_match.is_empty() || no_match[0].1.abs() < f32::EPSILON,
@@ -181,14 +193,21 @@ fn document_ingestion_pipeline_e2e() {
     let doc2 = "Transformer architectures use self-attention mechanisms \
                 for sequence processing";
     rt.block_on(nexus_gateway_nex_cf::ingest_document(
-        &storage, doc2, "transformer-paper",
+        &storage,
+        doc2,
+        "transformer-paper",
     ))
     .expect("second ingest should succeed");
     let state2 = rt.block_on(storage.read_state());
     assert_eq!(state2.facts.len(), 2);
 
     let attn = storage
-        .semantic_search(&TextQuery { text: "self-attention".into() }, 5)
+        .semantic_search(
+            &TextQuery {
+                text: "self-attention".into(),
+            },
+            5,
+        )
         .expect("search should succeed");
     assert!(attn[0].1 > 0.5, "self-attention score: {}", attn[0].1);
 }
@@ -199,9 +218,14 @@ fn document_ingestion_empty_text_fails() {
     let io = nex::FsIo::new(tmp.path()).unwrap();
     let storage = nex::FihStorage::with_clock(io, "test-empty", Box::new(nexus_model::SystemClock));
 
-    let result = tokio::runtime::Runtime::new()
-        .unwrap()
-        .block_on(nexus_gateway_nex_cf::ingest_document(&storage, "", "empty-doc"));
+    let result =
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(nexus_gateway_nex_cf::ingest_document(
+                &storage,
+                "",
+                "empty-doc",
+            ));
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("empty"));
 }
@@ -220,7 +244,9 @@ fn document_ingestion_multiple_paragraphs() {
                 Second paragraph about gradient descent.\n\n\
                 Third paragraph about backpropagation.";
     rt.block_on(nexus_gateway_nex_cf::ingest_document(
-        &storage, text, "multi-para",
+        &storage,
+        text,
+        "multi-para",
     ))
     .expect("ingest should succeed");
 
@@ -243,15 +269,16 @@ fn document_ingestion_multiple_paragraphs() {
 fn ingest_document_large_paragraph_does_not_truncate() {
     let tmp = tempfile::TempDir::new().unwrap();
     let io = nex::FsIo::new(tmp.path()).unwrap();
-    let storage =
-        nex::FihStorage::with_clock(io, "test-large", Box::new(nexus_model::SystemClock));
+    let storage = nex::FihStorage::with_clock(io, "test-large", Box::new(nexus_model::SystemClock));
     storage.register_semantic_store(Box::new(InMemoryBm25::new()));
 
     let rt = tokio::runtime::Runtime::new().unwrap();
 
     let long_text = "Rust ".repeat(100);
     rt.block_on(nexus_gateway_nex_cf::ingest_document(
-        &storage, &long_text, "long-para",
+        &storage,
+        &long_text,
+        "long-para",
     ))
     .expect("long paragraph should succeed");
 
@@ -297,8 +324,11 @@ fn handle_path_round_trip() {
     assert_eq!(code, 200);
     assert_eq!(body, "nexus-cf");
 
-    let (code, _, _) =
-        rt.block_on(nexus_gateway_nex_cf::handle_path(&storage, "/nonexistent", &[]));
+    let (code, _, _) = rt.block_on(nexus_gateway_nex_cf::handle_path(
+        &storage,
+        "/nonexistent",
+        &[],
+    ));
     assert_eq!(code, 404);
 
     let q = vec![
@@ -346,7 +376,11 @@ fn handle_path_intent_lifecycle() {
         ("id".into(), "i_test_001".into()),
         ("result".into(), "done".into()),
     ];
-    let (code, _, _) = rt.block_on(nexus_gateway_nex_cf::handle_path(&storage, "/conclude", &qd));
+    let (code, _, _) = rt.block_on(nexus_gateway_nex_cf::handle_path(
+        &storage,
+        "/conclude",
+        &qd,
+    ));
     assert_eq!(code, 200);
 
     let (code, _, body) = rt.block_on(nexus_gateway_nex_cf::handle_path(&storage, "/state", &[]));
@@ -364,8 +398,7 @@ fn split_test_prefix_works() {
     let rt = tokio::runtime::Runtime::new().unwrap();
 
     for route in &["/", "/fact", "/state", "/flush", "/rebuild"] {
-        let (code, _, _) =
-            rt.block_on(nexus_gateway_nex_cf::handle_path(&storage, route, &[]));
+        let (code, _, _) = rt.block_on(nexus_gateway_nex_cf::handle_path(&storage, route, &[]));
         assert_eq!(code, 200, "route {route} should be handled");
     }
 }
@@ -410,11 +443,8 @@ fn handle_path_claim_conflict_returns_409() {
 fn handle_path_claim_nonexistent_intent_returns_404() {
     let tmp = tempfile::TempDir::new().unwrap();
     let io = nex::FsIo::new(tmp.path()).unwrap();
-    let storage = nex::FihStorage::with_clock(
-        io,
-        "test-claim-404",
-        Box::new(nexus_model::SystemClock),
-    );
+    let storage =
+        nex::FihStorage::with_clock(io, "test-claim-404", Box::new(nexus_model::SystemClock));
 
     let rt = tokio::runtime::Runtime::new().unwrap();
 
@@ -433,7 +463,12 @@ fn semantic_search_no_stores_configured_proper_error() {
     let storage =
         nex::FihStorage::with_clock(io, "test-no-store", Box::new(nexus_model::SystemClock));
 
-    let result = storage.semantic_search(&TextQuery { text: "test".into() }, 5);
+    let result = storage.semantic_search(
+        &TextQuery {
+            text: "test".into(),
+        },
+        5,
+    );
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
@@ -489,15 +524,16 @@ fn batch_io_flush_flushes_pending_writes_via_apply_batch() {
     rt.block_on(batch.flush()).unwrap();
 
     let counts = counts_arc.lock().unwrap();
-    assert_eq!(
-        counts.writes, 0,
-        "flush should not call write on inner"
-    );
+    assert_eq!(counts.writes, 0, "flush should not call write on inner");
     assert_eq!(
         counts.apply_batches, 1,
         "flush should call apply_batch once"
     );
-    assert_eq!(batch.pending_count(), 0, "pending should be empty after flush");
+    assert_eq!(
+        batch.pending_count(),
+        0,
+        "pending should be empty after flush"
+    );
 }
 
 #[test]
@@ -546,8 +582,10 @@ fn batch_io_data_survives_flush_to_disk() {
 
     let rt = tokio::runtime::Runtime::new().unwrap();
 
-    rt.block_on(batch.write("flush-test/hello.txt", b"hello world")).unwrap();
-    rt.block_on(batch.write("flush-test/nested/deep.txt", b"deep data")).unwrap();
+    rt.block_on(batch.write("flush-test/hello.txt", b"hello world"))
+        .unwrap();
+    rt.block_on(batch.write("flush-test/nested/deep.txt", b"deep data"))
+        .unwrap();
     rt.block_on(batch.flush()).unwrap();
 
     // Now re-open with a fresh FsIo and read back.
@@ -564,21 +602,25 @@ fn batch_io_data_survives_flush_to_disk() {
 #[test]
 fn ingest_all_from_mock_io_finds_dot_llms_dot_md() {
     let doc_io = TestDocStore::new()
-        .with("_llms/projects/nexus/index.llms.md",
-            "# Nexus\n\nNexus is a FIH blackboard system.")
-        .with("_llms/projects/ssccs/overview.llms.md",
-            "# SSCCS\n\nSemantic State Coordination System.")
-        .with("_llms/README.md",
-            "# README");
+        .with(
+            "_llms/projects/nexus/index.llms.md",
+            "# Nexus\n\nNexus is a FIH blackboard system.",
+        )
+        .with(
+            "_llms/projects/ssccs/overview.llms.md",
+            "# SSCCS\n\nSemantic State Coordination System.",
+        )
+        .with("_llms/README.md", "# README");
 
     let tmp = tempfile::TempDir::new().unwrap();
     let storage = make_storage(&tmp, "test-ingest-all");
 
-    let (total, errors) = tokio::runtime::Runtime::new()
-        .unwrap()
-        .block_on(nexus_gateway_nex_cf::ingest_all_from_io(
-            &storage, &doc_io, "_llms/",
-        ));
+    let (total, errors) =
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(nexus_gateway_nex_cf::ingest_all_from_io(
+                &storage, &doc_io, "_llms/",
+            ));
 
     assert_eq!(total, 2, "should ingest 2 .llms.md files");
     assert!(errors.is_empty(), "no errors: {:?}", errors);
@@ -589,12 +631,22 @@ fn ingest_all_from_mock_io_finds_dot_llms_dot_md() {
     assert_eq!(state.facts.len(), 4, "2 docs x 2 paragraphs each = 4 facts");
 
     let r = storage
-        .semantic_search(&TextQuery { text: "Nexus blackboard".into() }, 5)
+        .semantic_search(
+            &TextQuery {
+                text: "Nexus blackboard".into(),
+            },
+            5,
+        )
         .expect("search");
     assert!(!r.is_empty(), "nexus doc should be findable");
 
     let r = storage
-        .semantic_search(&TextQuery { text: "SSCCS coordination".into() }, 5)
+        .semantic_search(
+            &TextQuery {
+                text: "SSCCS coordination".into(),
+            },
+            5,
+        )
         .expect("search");
     assert!(!r.is_empty(), "ssccs doc should be findable");
 }
@@ -611,11 +663,12 @@ fn ingest_all_from_io_skips_non_llms_md_files() {
     let tmp = tempfile::TempDir::new().unwrap();
     let storage = make_storage(&tmp, "test-skip-non-llms");
 
-    let (total, errors) = tokio::runtime::Runtime::new()
-        .unwrap()
-        .block_on(nexus_gateway_nex_cf::ingest_all_from_io(
-            &storage, &doc_io, "_llms/",
-        ));
+    let (total, errors) =
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(nexus_gateway_nex_cf::ingest_all_from_io(
+                &storage, &doc_io, "_llms/",
+            ));
 
     assert_eq!(total, 2, "only .llms.md files should be ingested");
     assert!(errors.is_empty(), "no errors: {:?}", errors);
@@ -646,11 +699,12 @@ fn ingest_all_from_io_multiple_files_varied_content() {
     let tmp = tempfile::TempDir::new().unwrap();
     let storage = make_storage(&tmp, "test-varied-content");
 
-    let (total, errors) = tokio::runtime::Runtime::new()
-        .unwrap()
-        .block_on(nexus_gateway_nex_cf::ingest_all_from_io(
-            &storage, &doc_io, "_llms/",
-        ));
+    let (total, errors) =
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(nexus_gateway_nex_cf::ingest_all_from_io(
+                &storage, &doc_io, "_llms/",
+            ));
 
     assert_eq!(total, 5, "all 5 .llms.md files should be ingested");
     assert!(errors.is_empty(), "no errors: {:?}", errors);
@@ -666,7 +720,11 @@ fn ingest_all_from_io_multiple_files_varied_content() {
     //   "sql": "# SQL", "SQL is a declarative..." = 2
     //   "nosql": "# NoSQL", "NoSQL databases..." = 2
     // Total: 3+3+3+2+2 = 13 facts
-    assert_eq!(state.facts.len(), 13, "varied paragraph counts across 5 docs");
+    assert_eq!(
+        state.facts.len(),
+        13,
+        "varied paragraph counts across 5 docs"
+    );
 }
 
 #[test]
@@ -674,16 +732,20 @@ fn ingest_all_from_io_nested_mixed_depths() {
     let doc_io = TestDocStore::new()
         .with("_llms/a/b.llms.md", "# Deep\n\nNested at two levels.")
         .with("_llms/c.llms.md", "# Shallow\n\nSingle level.")
-        .with("_llms/x/y/z/d.llms.md", "# Very Deep\n\nNested at three levels.");
+        .with(
+            "_llms/x/y/z/d.llms.md",
+            "# Very Deep\n\nNested at three levels.",
+        );
 
     let tmp = tempfile::TempDir::new().unwrap();
     let storage = make_storage(&tmp, "test-nested-depths");
 
-    let (total, errors) = tokio::runtime::Runtime::new()
-        .unwrap()
-        .block_on(nexus_gateway_nex_cf::ingest_all_from_io(
-            &storage, &doc_io, "_llms/",
-        ));
+    let (total, errors) =
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(nexus_gateway_nex_cf::ingest_all_from_io(
+                &storage, &doc_io, "_llms/",
+            ));
 
     assert_eq!(total, 3, "all nested depths should be ingested");
     assert!(errors.is_empty(), "no errors: {:?}", errors);
@@ -726,15 +788,22 @@ fn ingest_all_from_io_error_missing_file() {
     let tmp = tempfile::TempDir::new().unwrap();
     let storage = make_storage(&tmp, "test-missing-file");
 
-    let (total, errors) = tokio::runtime::Runtime::new()
-        .unwrap()
-        .block_on(nexus_gateway_nex_cf::ingest_all_from_io(
-            &storage, &MissingFileIo, "_llms/",
-        ));
+    let (total, errors) =
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(nexus_gateway_nex_cf::ingest_all_from_io(
+                &storage,
+                &MissingFileIo,
+                "_llms/",
+            ));
 
     assert_eq!(total, 0);
     assert_eq!(errors.len(), 1);
-    assert!(errors[0].contains("empty"), "should report empty file: {}", errors[0]);
+    assert!(
+        errors[0].contains("empty"),
+        "should report empty file: {}",
+        errors[0]
+    );
 }
 
 #[test]
@@ -746,11 +815,12 @@ fn ingest_all_from_io_error_utf8_decode_failure() {
     let tmp = tempfile::TempDir::new().unwrap();
     let storage = make_storage(&tmp, "test-utf8-error");
 
-    let (total, errors) = tokio::runtime::Runtime::new()
-        .unwrap()
-        .block_on(nexus_gateway_nex_cf::ingest_all_from_io(
-            &storage, &doc_io, "_llms/",
-        ));
+    let (total, errors) =
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(nexus_gateway_nex_cf::ingest_all_from_io(
+                &storage, &doc_io, "_llms/",
+            ));
 
     assert_eq!(total, 1, "good file should be ingested");
     assert_eq!(errors.len(), 1, "bad file should produce error");
@@ -769,12 +839,18 @@ fn ingest_all_from_io_error_utf8_decode_failure() {
 #[test]
 fn ingest_all_from_io_cross_document_search() {
     let doc_io = TestDocStore::new()
-        .with("_llms/doc1.llms.md",
-            "The cat sat on the mat.\n\nCats are curious animals.")
-        .with("_llms/doc2.llms.md",
-            "Dogs are loyal companions.\n\nDogs enjoy long walks.")
-        .with("_llms/doc3.llms.md",
-            "Both cats and dogs are popular pets.\n\nPets bring joy to people.");
+        .with(
+            "_llms/doc1.llms.md",
+            "The cat sat on the mat.\n\nCats are curious animals.",
+        )
+        .with(
+            "_llms/doc2.llms.md",
+            "Dogs are loyal companions.\n\nDogs enjoy long walks.",
+        )
+        .with(
+            "_llms/doc3.llms.md",
+            "Both cats and dogs are popular pets.\n\nPets bring joy to people.",
+        );
 
     let tmp = tempfile::TempDir::new().unwrap();
     let storage = make_storage(&tmp, "test-cross-doc");
@@ -786,7 +862,12 @@ fn ingest_all_from_io_cross_document_search() {
 
     // Query matching content from multiple documents.
     let cat_results = storage
-        .semantic_search(&TextQuery { text: "cats".into() }, 10)
+        .semantic_search(
+            &TextQuery {
+                text: "cats".into(),
+            },
+            10,
+        )
         .expect("search cats");
     assert!(
         cat_results.len() >= 2,
@@ -795,7 +876,12 @@ fn ingest_all_from_io_cross_document_search() {
     );
 
     let dog_results = storage
-        .semantic_search(&TextQuery { text: "dogs".into() }, 10)
+        .semantic_search(
+            &TextQuery {
+                text: "dogs".into(),
+            },
+            10,
+        )
         .expect("search dogs");
     assert!(
         dog_results.len() >= 2,
@@ -804,7 +890,12 @@ fn ingest_all_from_io_cross_document_search() {
     );
 
     let pet_results = storage
-        .semantic_search(&TextQuery { text: "pets".into() }, 10)
+        .semantic_search(
+            &TextQuery {
+                text: "pets".into(),
+            },
+            10,
+        )
         .expect("search pets");
     assert!(
         pet_results.len() >= 2,
@@ -818,8 +909,14 @@ fn ingest_all_from_io_content_hash_idempotency() {
     // Re-ingesting the same documents should not increase fact count
     // because FihStorage uses content-hash-based dedup in enqueue_content.
     let doc_io = TestDocStore::new()
-        .with("_llms/doc1.llms.md", "# Stable\n\nThis content does not change.")
-        .with("_llms/doc2.llms.md", "# Stable Too\n\nThis also stays the same.");
+        .with(
+            "_llms/doc1.llms.md",
+            "# Stable\n\nThis content does not change.",
+        )
+        .with(
+            "_llms/doc2.llms.md",
+            "# Stable Too\n\nThis also stays the same.",
+        );
 
     let tmp = tempfile::TempDir::new().unwrap();
     let storage = make_storage(&tmp, "test-idempotency");
@@ -865,9 +962,14 @@ fn stress_ingest_twenty_small_documents() {
     let rt = tokio::runtime::Runtime::new().unwrap();
 
     for i in 0..20 {
-        let text = format!("Document {} with unique searchable content for BM25 indexing.", i);
+        let text = format!(
+            "Document {} with unique searchable content for BM25 indexing.",
+            i
+        );
         rt.block_on(nexus_gateway_nex_cf::ingest_document(
-            &storage, &text, &format!("stress-doc-{i}"),
+            &storage,
+            &text,
+            &format!("stress-doc-{i}"),
         ))
         .expect(&format!("ingest doc {i} should succeed"));
     }
@@ -902,7 +1004,9 @@ fn concurrent_semantic_search_stability() {
     ];
     for (i, text) in texts.iter().enumerate() {
         rt.block_on(nexus_gateway_nex_cf::ingest_document(
-            &storage, text, &format!("ml-doc-{i}"),
+            &storage,
+            text,
+            &format!("ml-doc-{i}"),
         ))
         .unwrap();
     }
@@ -916,7 +1020,12 @@ fn concurrent_semantic_search_stability() {
         "computer vision",
     ];
     for q in &queries {
-        let r = storage.semantic_search(&TextQuery { text: q.to_string() }, 5);
+        let r = storage.semantic_search(
+            &TextQuery {
+                text: q.to_string(),
+            },
+            5,
+        );
         assert!(r.is_ok(), "search for '{q}' should succeed");
         let results = r.unwrap();
         assert!(!results.is_empty(), "search for '{q}' should have results");
@@ -929,13 +1038,16 @@ fn concurrent_semantic_search_stability() {
 fn document_with_only_whitespace_fails() {
     let tmp = tempfile::TempDir::new().unwrap();
     let io = nex::FsIo::new(tmp.path()).unwrap();
-    let storage = nex::FihStorage::with_clock(io, "test-whitespace", Box::new(nexus_model::SystemClock));
+    let storage =
+        nex::FihStorage::with_clock(io, "test-whitespace", Box::new(nexus_model::SystemClock));
 
     let rt = tokio::runtime::Runtime::new().unwrap();
 
     let whitespace_only = "   \n   \n  \n   ";
     let result = rt.block_on(nexus_gateway_nex_cf::ingest_document(
-        &storage, whitespace_only, "whitespace-doc",
+        &storage,
+        whitespace_only,
+        "whitespace-doc",
     ));
     assert!(result.is_err());
     assert!(
@@ -953,7 +1065,9 @@ fn origin_with_special_characters_is_sanitized() {
 
     let origin = "my@special!origin#with$chars^and&stars*";
     rt.block_on(nexus_gateway_nex_cf::ingest_document(
-        &storage, "Test content with interesting origin.", origin,
+        &storage,
+        "Test content with interesting origin.",
+        origin,
     ))
     .expect("ingest should succeed");
 
@@ -973,7 +1087,8 @@ fn very_long_origin_string() {
 
     let long_origin = "a".repeat(500);
     rt.block_on(nexus_gateway_nex_cf::ingest_document(
-        &storage, "Content with a very long origin identifier for testing purposes.",
+        &storage,
+        "Content with a very long origin identifier for testing purposes.",
         &long_origin,
     ))
     .expect("ingest with long origin should succeed");
@@ -994,12 +1109,18 @@ fn paragraph_with_only_punctuation() {
     // and should be ingested as a fact (though it won't match many queries).
     let text = "!!!\n\n@@@\n\n###";
     rt.block_on(nexus_gateway_nex_cf::ingest_document(
-        &storage, text, "symbols-doc",
+        &storage,
+        text,
+        "symbols-doc",
     ))
     .expect("punctuation-only paragraphs should ingest");
 
     let state = rt.block_on(storage.read_state());
-    assert_eq!(state.facts.len(), 3, "three punctuation lines -> three facts");
+    assert_eq!(
+        state.facts.len(),
+        3,
+        "three punctuation lines -> three facts"
+    );
 }
 
 #[test]
@@ -1011,7 +1132,9 @@ fn origin_empty_string_sanitize() {
 
     // An empty origin string is allowed but produces facts with origin "document:".
     let result = rt.block_on(nexus_gateway_nex_cf::ingest_document(
-        &storage, "Content with empty origin.", "",
+        &storage,
+        "Content with empty origin.",
+        "",
     ));
     assert!(result.is_ok(), "empty origin should be accepted");
 
@@ -1031,28 +1154,27 @@ fn handle_path_flush_and_rebuild() {
 
     // Ingest a document
     rt.block_on(nexus_gateway_nex_cf::ingest_document(
-        &storage, "Some content to flush and rebuild.", "flush-test",
+        &storage,
+        "Some content to flush and rebuild.",
+        "flush-test",
     ))
     .expect("ingest should succeed");
 
     // Flush should succeed
-    let (code, _, body) = rt.block_on(
-        nexus_gateway_nex_cf::handle_path(&storage, "/flush", &[])
-    );
+    let (code, _, body) = rt.block_on(nexus_gateway_nex_cf::handle_path(&storage, "/flush", &[]));
     assert_eq!(code, 200, "flush should be OK: {body}");
 
     // Rebuild should succeed
-    let (code, _, body) = rt.block_on(
-        nexus_gateway_nex_cf::handle_path(&storage, "/rebuild", &[])
-    );
+    let (code, _, body) = rt.block_on(nexus_gateway_nex_cf::handle_path(&storage, "/rebuild", &[]));
     assert_eq!(code, 200, "rebuild should be OK: {body}");
 
     // State should still show the document after rebuild
-    let (code, _, body) = rt.block_on(
-        nexus_gateway_nex_cf::handle_path(&storage, "/state", &[])
-    );
+    let (code, _, body) = rt.block_on(nexus_gateway_nex_cf::handle_path(&storage, "/state", &[]));
     assert_eq!(code, 200);
-    assert!(body.contains("flush-test"), "document should survive rebuild: {body}");
+    assert!(
+        body.contains("flush-test"),
+        "document should survive rebuild: {body}"
+    );
 }
 
 #[test]
@@ -1079,11 +1201,12 @@ fn ingest_all_from_io_empty_prefix_returns_no_errors() {
     let tmp = tempfile::TempDir::new().unwrap();
     let storage = make_storage(&tmp, "test-empty-prefix");
 
-    let (total, errors) = tokio::runtime::Runtime::new()
-        .unwrap()
-        .block_on(nexus_gateway_nex_cf::ingest_all_from_io(
-            &storage, &EmptyIo, "_llms/",
-        ));
+    let (total, errors) =
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(nexus_gateway_nex_cf::ingest_all_from_io(
+                &storage, &EmptyIo, "_llms/",
+            ));
 
     assert_eq!(total, 0, "no files to ingest");
     assert!(errors.is_empty(), "no errors for empty prefix");
