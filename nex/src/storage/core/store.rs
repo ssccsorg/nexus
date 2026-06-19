@@ -228,6 +228,13 @@ impl<I: AsyncFileIo> FihStorage<I> {
         self.coord.semantic_insert(id, load)
     }
 
+    /// Access the semantic store vector for downcasting and async operations.
+    pub fn semantic_stores(
+        &self,
+    ) -> std::cell::Ref<'_, Vec<Box<dyn crate::storage::semantic::SemanticStore>>> {
+        self.coord.by_semantic.borrow()
+    }
+
     /// Query intents that reference a given fact.
     /// Returns Vec<String> (hex IDs). Each call allocates O(k) strings
     /// where k is the number of referencing intents — acceptable for

@@ -33,6 +33,10 @@ impl Default for InMemoryBm25 {
 }
 
 impl SemanticStore for InMemoryBm25 {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
         let text = load
             .text(id)

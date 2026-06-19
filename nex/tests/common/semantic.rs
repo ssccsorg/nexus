@@ -33,6 +33,10 @@ impl Default for MockSemanticStore {
 }
 
 impl SemanticStore for MockSemanticStore {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
         let features = load
             .features(id)
@@ -110,6 +114,10 @@ impl Default for MockBm25Store {
 }
 
 impl SemanticStore for MockBm25Store {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
         let text = load
             .text(id)
