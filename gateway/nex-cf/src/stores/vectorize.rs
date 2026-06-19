@@ -191,16 +191,19 @@ impl CfVectorizeStore {
     /// local fallback) but the synced flag is set to true.
     pub async fn sync_to_vectorize(&self) -> Result<()> {
         if self.buffer.borrow().is_empty() {
+            worker::console_log!("[CfVectorizeStore] sync: buffer empty, nothing to sync");
             self.synced.replace(true);
             return Ok(());
         }
 
         let texts: Vec<String> = self.buffer.borrow().iter().map(|(_, t)| t.clone()).collect();
         let ids: Vec<u32> = self.buffer.borrow().iter().map(|(id, _)| *id).collect();
+        worker::console_log!("[CfVectorizeStore] sync: {} texts to embed", ids.len());
 
         let env = match self.env.as_ref() {
             Some(e) => e,
             None => {
+                worker::console_log!("[CfVectorizeStore] sync: no env, skipping");
                 self.synced.replace(true);
                 return Ok(());
             }
@@ -208,16 +211,19 @@ impl CfVectorizeStore {
         let binding = match env.get_binding::<JsValueWrapper>("SEMANTIC_INDEX") {
             Ok(b) => b.0,
             Err(e) => {
-                console_log!("[CfVectorizeStore] SEMANTIC_INDEX binding unavailable: {e}");
+                worker::console_log!("[CfVectorizeStore] SEMANTIC_INDEX binding unavailable: {e}");
                 self.synced.replace(true);
                 return Ok(());
             }
         };
 
         let embeddings = match embed_texts(env, &texts.iter().map(|s| s.as_str()).collect::<Vec<&str>>()).await {
-            Ok(v) => v,
+            Ok(v) => {
+                worker::console_log!("[CfVectorizeStore] sync: embedded {} texts", texts.len());
+                v
+            }
             Err(e) => {
-                console_log!("[CfVectorizeStore] embed error: {e}");
+                worker::console_log!("[CfVectorizeStore] embed error: {e}");
                 return Err(e);
             }
         };
