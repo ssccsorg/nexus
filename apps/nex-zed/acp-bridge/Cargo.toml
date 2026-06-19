@@ -1,0 +1,45 @@
+[package]
+name = "acp-bridge"
+version = "0.7.7"
+edition = "2021"
+authors = ["Blake Labs"]
+description = "ACP/A2A adapter for self-hosted AI — bridges local LLM backends to Agent Client Protocol and Agent-to-Agent protocol"
+license = "MIT"
+repository = "https://github.com/BlakeHung/acp-bridge"
+keywords = ["acp", "a2a", "ollama", "local-ai", "agent-protocol"]
+categories = ["command-line-utilities"]
+
+[lib]
+name = "acp_bridge"
+path = "src/lib.rs"
+
+[[bin]]
+name = "acp-bridge"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["stream", "json", "rustls-tls"] }
+uuid = { version = "1", features = ["v4"] }
+bytes = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+thiserror = "2"
+toml = "0.8"
+axum = "0.8"
+libc = "0.2"
+
+[dev-dependencies]
+tokio-test = "0.4"
+hyper = "1"
+futures-lite = "2"
+
+# Release profile tuned for edge / air-gapped deployments — smaller binary,
+# at the cost of longer compile time. Keeps default unwinding so panics
+# don't orphan spawned child agents in --client mode.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
