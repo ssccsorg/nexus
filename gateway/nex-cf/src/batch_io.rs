@@ -58,15 +58,31 @@ impl<I: AsyncFileIo> AsyncFileIo for BatchIo<I> {
         self.inner.delete(path)
     }
 
-    /// Flush pending writes + forward to inner.
+    /// Flush pending writes + forward incoming batch to inner.
     fn apply_batch<'a>(&'a self, ops: &'a [WriteOp]) -> IoFuture<'a, ()> {
         let this: &BatchIo<I> = self;
         let ops_vec: Vec<WriteOp> = ops.to_vec();
         Box::pin(async move {
-            // First flush our own pending
-            this.flush().await?;
-            // Then forward the incoming batch
-            this.inner.apply_batch(&ops_vec).await
+            // BatchIo.pending에 중복되지 않은 incoming ops만 추가
+            // (write()에서 이미 BatchIo.pending에 enqueue된 것들이
+            // FihStorage.pending에도 있으므로 중복 방지를 위해 병합)
+            for op in &ops_vec {
+                match op {
+                    WriteOp::Write { path, data } => {
+                        this.pending.borrow_mut().push(WriteOp::Write {
+                            path: path.clone(),
+                            data: data.clone(),
+                        });
+                    }
+                    WriteOp::Delete { path } => {
+                        this.pending.borrow_mut().push(WriteOp::Delete {
+                            path: path.clone(),
+                        });
+                    }
+                }
+            }
+            // Flush all pending (both original and incoming) in one batch
+            this.flush().await
         })
     }
 }

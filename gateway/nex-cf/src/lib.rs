@@ -6,7 +6,6 @@ pub mod batch_io;
 pub mod cf_io;
 
 use worker::*;
-use worker::js_sys::Uint8Array;
 
 use crate::batch_io::BatchIo;
 use crate::cf_io::CfFihIo;
@@ -94,7 +93,7 @@ pub async fn handle_path<I: AsyncFileIo>(s: &FihStorage<I>, path: &str, q: &[(St
                 content: Content { mime_type: "text/plain".into(), data: qv(q, "content").into_bytes() },
                 creator: qv(q, "creator"),
             };
-            match s.submit_fact(&fact).await {
+            match nexus_model::AsyncFactCapable::submit_fact(s, &fact).await {
                 Ok(hash) => (200, "application/json".into(), serde_json::json!({"id": hash.to_string()}).to_string()),
                 Err(e) => (500, "application/json".into(), serde_json::json!({"error": format!("submit_fact: {:?}", e)}).to_string()),
             }
@@ -154,7 +153,9 @@ pub async fn ingest_document<I: AsyncFileIo>(s: &FihStorage<I>, text: &str, orig
             content: Content { mime_type: "text/plain".into(), data: para.as_bytes().to_vec() },
             creator: "ingestion-agent".into(),
         };
-        s.submit_fact(&fact).await.map_err(|e| format!("submit para {i}: {e:?}"))?;
+        // Async FactCapable: R2에 직접 쓰고 BM25에도 즉시 반영
+        nexus_model::AsyncFactCapable::submit_fact(s, &fact).await
+            .map_err(|e| format!("submit para {i}: {e:?}"))?;
         last_id = para_id;
     }
     Ok(last_id)
@@ -287,24 +288,20 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                 Ok(None) => return Response::error("not found", 404),
                 Err(e) => return Response::error(format!("R2 get: {e}"), 500),
             };
-
-            // Try array_buffer instead of bytes()
             let data = match obj.body() {
-                Some(body) => {
-                    let buf = body.array_buffer().await.map_err(|e| format!("read buffer: {e}"))?;
-                    let u8array = js_sys::Uint8Array::new(&buf);
-                    let mut vec = vec![0u8; u8array.length() as usize];
-                    u8array.copy_to(&mut vec);
-                    vec
-                },
+                Some(body) => body.bytes().await.map_err(|e| format!("read body: {e}"))?.to_vec(),
                 None => return Response::error("no body", 500),
             };
+            let text = match String::from_utf8(data) { Ok(t) => t, Err(_) => return Response::error("not UTF-8", 500) };
+            let origin = key.trim_end_matches(".llms.md").trim_start_matches("_llms/").to_string();
 
-            Response::from_json(&serde_json::json!({
-                "status": "read_ok",
-                "key": key,
-                "size": data.len(),
-            }))
+            // Sync FactCapable으로 enqueue만 (R2 직접 쓰기 없음)
+            match crate::ingest_document(s, &text, &origin).await {
+                Ok(id) => {
+                    Response::from_json(&serde_json::json!({"status":"enqueued","id": id}))
+                }
+                Err(e) => Response::error(e, 500),
+            }
         }
 
         _ => Response::error("not found", 404),
