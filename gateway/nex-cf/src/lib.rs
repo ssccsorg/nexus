@@ -421,11 +421,19 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             }
 
             // Try async Vectorize search first (semantic embedding).
-            // If Vectorize is unavailable, fall back to sync semantic_search.
+            // If Vectorize is unavailable or returns empty, fall back to sync semantic_search.
             let results = match vectorize_store(is_test) {
                 Some(vs) => {
                     match vs.search_vectorize_async(&query_text, 10).await {
-                        Ok(r) => r,
+                        Ok(r) if !r.is_empty() => r,
+                        Ok(_) => {
+                            // Vectorize returned empty — fall back to BM25
+                            let query = crate::cf_io::TextQuery { text: query_text };
+                            match s.semantic_search(&query, 10) {
+                                Ok(r) => r,
+                                Err(e2) => return Response::error(format!("search: {e2}"), 500),
+                            }
+                        }
                         Err(e) => {
                             worker::console_log!("[search] CfVectorizeStore async error: {e}, falling back");
                             let query = crate::cf_io::TextQuery { text: query_text };
@@ -492,8 +500,8 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             };
             let cursor = qv(&q, "cursor");
 
-            // R2 문서 목록 조회 (커서 지원: 25개씩)
-            let mut list_op = bucket.list().prefix(&prefix).limit(25);
+            // R2 문서 목록 조회 (작은 페이지: 5개씩)
+            let mut list_op = bucket.list().prefix(&prefix).limit(5);
             if !cursor.is_empty() {
                 list_op = list_op.cursor(&cursor);
             }
@@ -508,26 +516,64 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                 None
             };
 
-            // BatchIo로 감싼 ingest: 키 목록을 큐에 전송, consumer가 각각 처리
-            let queue = match &ingest_queue {
-                Some(q) => q,
-                None => return Response::error("INGEST_QUEUE not bound", 500),
-            };
+            // sequential R2 읽기 (futures::join_all은 WASM에서 불안정)
+            let batch_limit: usize = qv(&q, "limit").parse().unwrap_or(3);
+
+            // BatchIo로 ingest (R2 쓰기 배치)
+            let batch_io = BatchIo::new(CfFihIo::new(
+                if is_test {
+                    match env.bucket("FIH_R2_TEST") {
+                        Ok(b) => b,
+                        Err(e) => return Response::error(format!("FIH_R2_TEST: {e}"), 500),
+                    }
+                } else {
+                    match env.bucket("FIH_R2") {
+                        Ok(b) => b,
+                        Err(e) => return Response::error(format!("FIH_R2: {e}"), 500),
+                    }
+                },
+            ));
+            let batch_storage = nex::FihStorage::with_clock(batch_io, "cf-nexus", Box::new(CfClock));
+            batch_storage.register_semantic_store(Box::new(crate::stores::bm25::InMemoryBm25::new()));
 
             let mut total = 0usize;
             let mut errors: Vec<String> = Vec::new();
+            let mut processed = 0usize;
 
-            // 각 .llms.md 키를 Queue 메시지로 전송
             for key in &keys {
-                if !key.ends_with(&filter_suffix) {
+                if !key.ends_with(&filter_suffix) || processed >= batch_limit {
+                    if processed >= batch_limit { break; }
                     continue;
                 }
-                let msg = serde_json::json!({"key": key, "is_test": is_test});
-                if let Err(e) = queue.send(msg).await {
-                    errors.push(format!("{key}: queue send error: {e}"));
-                } else {
-                    total += 1;
+                let obj = match bucket.get(key).execute().await {
+                    Ok(Some(o)) => o,
+                    Ok(None) => { errors.push(format!("{key}: empty")); processed += 1; continue; }
+                    Err(e) => { errors.push(format!("{key}: {e}")); processed += 1; continue; }
+                };
+                let data = match obj.body() {
+                    Some(b) => match b.bytes().await {
+                        Ok(bytes) => bytes.to_vec(),
+                        Err(e) => { errors.push(format!("{key}: {e}")); processed += 1; continue; }
+                    },
+                    None => { errors.push(format!("{key}: no body")); processed += 1; continue; }
+                };
+                processed += 1;
+                let text = match String::from_utf8(data) {
+                    Ok(t) => t,
+                    Err(_) => { errors.push(format!("{key}: not UTF-8")); continue; }
+                };
+                let origin = key
+                    .trim_end_matches(&filter_suffix)
+                    .trim_start_matches("_llms/")
+                    .to_string();
+                match crate::ingest_document(&batch_storage, &text, &origin).await {
+                    Ok(_) => total += 1,
+                    Err(e) => errors.push(format!("{key}: {e}")),
                 }
+            }
+
+            if let Err(e) = batch_storage.flush_pending().await {
+                errors.push(format!("flush: {e}"));
             }
 
             Response::from_json(&serde_json::json!({
@@ -653,7 +699,7 @@ pub async fn queue_handler(
         for store in storage.semantic_stores().iter() {
             if let Some(vs) = (*store).as_any().downcast_ref::<crate::stores::vectorize::CfVectorizeStore>() {
                 if let Err(e) = vs.sync_to_vectorize().await {
-                    worker::console_log!("[ingest-queue] {key}: vectorize sync error {e}");
+                    worker::console_log!("[ingest-queue] {key}: vectorize sync error: {e}");
                 }
                 break;
             }
