@@ -40,11 +40,26 @@ unsafe impl Sync for SyncStore {}
 static PROD_STORE: SyncStore = SyncStore(OnceLock::new());
 static TEST_STORE: SyncStore = SyncStore(OnceLock::new());
 
+/// Thread-safe wrapper for CfVectorizeStore (sound on wasm32 single-thread).
+struct SyncVectorizeStore(OnceLock<crate::stores::vectorize::CfVectorizeStore>);
+unsafe impl Sync for SyncVectorizeStore {}
+
+static PROD_VECTORIZE: SyncVectorizeStore = SyncVectorizeStore(OnceLock::new());
+static TEST_VECTORIZE: SyncVectorizeStore = SyncVectorizeStore(OnceLock::new());
+
 fn store(is_test: bool) -> &'static FihStorage<CfFihIo> {
     if is_test {
         TEST_STORE.0.get().expect("TEST FihStorage not initialized")
     } else {
         PROD_STORE.0.get().expect("PROD FihStorage not initialized")
+    }
+}
+
+fn vectorize_store(is_test: bool) -> Option<&'static crate::stores::vectorize::CfVectorizeStore> {
+    if is_test {
+        TEST_VECTORIZE.0.get()
+    } else {
+        PROD_VECTORIZE.0.get()
     }
 }
 
@@ -65,6 +80,12 @@ fn init_stores(env: &worker::Env, prod_bucket: worker::Bucket, test_bucket: work
         s.register_semantic_store(Box::new(crate::stores::vectorize::CfVectorizeStore::new(env.clone())));
         s
     });
+    // Also initialize separate Vectorize store statics for async operations.
+    // These are independent instances that share the same Env bindings.
+    // Duplicating the store is acceptable: each holds its own buffer, but
+    // both reference the same Vectorize index via the Env bindings.
+    let _ = PROD_VECTORIZE.0.set(crate::stores::vectorize::CfVectorizeStore::new(env.clone()));
+    let _ = TEST_VECTORIZE.0.set(crate::stores::vectorize::CfVectorizeStore::new(env.clone()));
 }
 
 /// `/test/...` → true, 나머지 path 반환
@@ -401,23 +422,20 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
 
             // Try async Vectorize search first (semantic embedding).
             // If Vectorize is unavailable, fall back to sync semantic_search.
-            let mut vectorize_results: Option<Vec<(u32, f32)>> = None;
-            for store in s.semantic_stores().iter() {
-                if let Some(vs) = (*store).as_any().downcast_ref::<crate::stores::vectorize::CfVectorizeStore>() {
+            let results = match vectorize_store(is_test) {
+                Some(vs) => {
                     match vs.search_vectorize_async(&query_text, 10).await {
-                        Ok(r) => {
-                            vectorize_results = Some(r);
-                            break;
-                        }
+                        Ok(r) => r,
                         Err(e) => {
                             worker::console_log!("[search] CfVectorizeStore async error: {e}, falling back");
+                            let query = crate::cf_io::TextQuery { text: query_text };
+                            match s.semantic_search(&query, 10) {
+                                Ok(r) => r,
+                                Err(e2) => return Response::error(format!("search: {e2}"), 500),
+                            }
                         }
                     }
                 }
-            }
-
-            let results = match vectorize_results {
-                Some(r) => r,
                 None => {
                     let query = crate::cf_io::TextQuery { text: query_text };
                     match s.semantic_search(&query, 10) {
@@ -533,6 +551,15 @@ pub async fn queue_handler(
     env: Env,
     _ctx: Context,
 ) -> Result<()> {
+    // Ensure PROD_STORE/TEST_STORE and VECTORIZE stores are initialized
+    init_stores(
+        &env,
+        env.bucket("FIH_R2")
+            .expect("FIH_R2 bucket binding required"),
+        env.bucket("FIH_R2_TEST")
+            .expect("FIH_R2_TEST bucket binding required"),
+    );
+
     for msg_result in batch.iter() {
         let msg = match msg_result {
             Ok(m) => m,
@@ -620,6 +647,16 @@ pub async fn queue_handler(
         }
         if let Err(e) = storage.flush_pending().await {
             worker::console_log!("[ingest-queue] {key}: flush error {e}");
+        }
+
+        // Vectorize sync: storage에 등록된 CfVectorizeStore를 찾아서 sync
+        for store in storage.semantic_stores().iter() {
+            if let Some(vs) = (*store).as_any().downcast_ref::<crate::stores::vectorize::CfVectorizeStore>() {
+                if let Err(e) = vs.sync_to_vectorize().await {
+                    worker::console_log!("[ingest-queue] {key}: vectorize sync error {e}");
+                }
+                break;
+            }
         }
     }
 
