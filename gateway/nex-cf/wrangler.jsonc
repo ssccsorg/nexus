@@ -44,6 +44,17 @@
     ]
   },
 
+  "vectorize": [
+    {
+      "binding": "SEMANTIC_INDEX",
+      "index_name": "nex-cf-semantic"
+    }
+  ],
+
+  "ai": {
+    "binding": "AI"
+  },
+
   "observability": {
     "logs": { "enabled": true, "invocation_logs": true }
   }

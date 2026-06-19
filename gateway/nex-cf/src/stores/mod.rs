@@ -12,6 +12,7 @@
 // the hydrate/drain cycle through AsyncStoreSession (see nex/src/storage/composite/).
 
 pub mod bm25;
+pub mod vectorize;
 
 use nexus_model::{BlobStore, MetaStore, ObjectStore};
 use worker::*;

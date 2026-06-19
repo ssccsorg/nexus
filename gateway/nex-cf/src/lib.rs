@@ -48,10 +48,11 @@ fn store(is_test: bool) -> &'static FihStorage<CfFihIo> {
     }
 }
 
-fn init_stores(prod_bucket: worker::Bucket, test_bucket: worker::Bucket) {
+fn init_stores(env: &worker::Env, prod_bucket: worker::Bucket, test_bucket: worker::Bucket) {
     PROD_STORE.0.get_or_init(|| {
         let s = FihStorage::with_clock(CfFihIo::new(prod_bucket), "cf-nexus", Box::new(CfClock));
         s.register_semantic_store(Box::new(crate::stores::bm25::InMemoryBm25::new()));
+        s.register_semantic_store(Box::new(crate::stores::vectorize::CfVectorizeStore::new(env.clone())));
         s
     });
     TEST_STORE.0.get_or_init(|| {
@@ -61,6 +62,7 @@ fn init_stores(prod_bucket: worker::Bucket, test_bucket: worker::Bucket) {
             Box::new(CfClock),
         );
         s.register_semantic_store(Box::new(crate::stores::bm25::InMemoryBm25::new()));
+        s.register_semantic_store(Box::new(crate::stores::vectorize::CfVectorizeStore::new(env.clone())));
         s
     });
 }
@@ -344,6 +346,7 @@ pub async fn ingest_all_from_io<I: AsyncFileIo, D: AsyncFileIo>(
 #[event(fetch)]
 pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     init_stores(
+        &env,
         env.bucket("FIH_R2")
             .expect("FIH_R2 bucket binding required"),
         env.bucket("FIH_R2_TEST")
@@ -395,16 +398,39 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             if query_text.is_empty() {
                 return Response::error("missing 'q' parameter", 400);
             }
-            let query = crate::cf_io::TextQuery { text: query_text };
-            match s.semantic_search(&query, 10) {
-                Ok(results) => {
-                    let items: Vec<serde_json::Value> = results.iter().map(|(idx, score)| {
-                        serde_json::json!({"index": idx, "score": score, "id": s.resolve_semantic_idx(*idx)})
-                    }).collect();
-                    Response::from_json(&serde_json::json!({"results": items}))
+
+            // Try async Vectorize search first (semantic embedding).
+            // If Vectorize is unavailable, fall back to sync semantic_search.
+            let mut vectorize_results: Option<Vec<(u32, f32)>> = None;
+            for store in s.semantic_stores().iter() {
+                if let Some(vs) = (*store).as_any().downcast_ref::<crate::stores::vectorize::CfVectorizeStore>() {
+                    match vs.search_vectorize_async(&query_text, 10).await {
+                        Ok(r) => {
+                            vectorize_results = Some(r);
+                            break;
+                        }
+                        Err(e) => {
+                            worker::console_log!("[search] CfVectorizeStore async error: {e}, falling back");
+                        }
+                    }
                 }
-                Err(e) => Response::error(format!("search: {e}"), 500),
             }
+
+            let results = match vectorize_results {
+                Some(r) => r,
+                None => {
+                    let query = crate::cf_io::TextQuery { text: query_text };
+                    match s.semantic_search(&query, 10) {
+                        Ok(r) => r,
+                        Err(e) => return Response::error(format!("search: {e}"), 500),
+                    }
+                }
+            };
+
+            let items: Vec<serde_json::Value> = results.iter().map(|(idx, score)| {
+                serde_json::json!({"index": idx, "score": score, "id": s.resolve_semantic_idx(*idx)})
+            }).collect();
+            Response::from_json(&serde_json::json!({"results": items}))
         }
 
         "/debug/list-docs" => {
@@ -586,6 +612,7 @@ pub async fn queue_handler(
         let batch_io = BatchIo::new(CfFihIo::new(fih_bucket));
         let storage = FihStorage::with_clock(batch_io, "cf-nexus", Box::new(CfClock));
         storage.register_semantic_store(Box::new(crate::stores::bm25::InMemoryBm25::new()));
+        storage.register_semantic_store(Box::new(crate::stores::vectorize::CfVectorizeStore::new(env.clone())));
 
         if let Err(e) = ingest_document(&storage, &text, &origin).await {
             worker::console_log!("[ingest-queue] {key}: ingest error {e}");

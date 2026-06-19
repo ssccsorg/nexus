@@ -1736,6 +1736,7 @@ version = "0.1.0"
 dependencies = [
  "nex",
  "nexus-model",
+ "serde",
  "serde_json",
  "tempfile",
  "tokio",

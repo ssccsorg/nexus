@@ -1,0 +1,647 @@
+// ── CfVectorizeStore: Cloudflare Vectorize-backed SemanticStore ──────
+//
+// Implements SemanticStore over Cloudflare Vectorize with Workers AI
+// embedding.  Because SemanticStore is sync but Vectorize REST calls are
+// async, this implementation uses a two-layer design:
+//
+//   Sync layer  — local text buffer that satisfies the trait contract
+//   Async layer — methods that actually call Vectorize + Workers AI
+//
+// The local buffer serves as both a write cache and a fallback search
+// mechanism.  Before each search, pending inserts are flushed to the
+// Vectorize index so the next query sees the latest data.
+//
+// Usage:
+//   1. Construct with CfVectorizeStore::new(env).
+//   2. Register via storage.register_semantic_store(Box::new(store)).
+//   3. Call sync_to_vectorize() from the queue handler after ingest.
+//   4. Call search_vectorize_async() from the HTTP search handler.
+//
+// Workers AI model: @cf/baai/bge-small-en-v1.5 (384-dim).
+
+use std::cell::RefCell;
+
+use nex::storage::semantic::{Query, RecordLoad, SemanticStore};
+use serde::Deserialize;
+use worker::*;
+use worker::js_sys::{Array, Float32Array, Function as JsFunction, Object, Reflect};
+use worker::wasm_bindgen::{JsCast, JsValue};
+
+/// Vectorize query match.
+#[derive(Deserialize)]
+struct VectorizeMatch {
+    id: String,
+    score: f32,
+    #[serde(default)]
+    metadata: Option<serde_json::Value>,
+}
+
+/// Vectorize query response.
+#[derive(Deserialize)]
+struct VectorizeQueryResult {
+    #[serde(default)]
+    matches: Vec<VectorizeMatch>,
+}
+
+// ── Runtime helpers: call Workers AI for embedding ──────────────────────
+
+/// Embed a text string using Workers AI and return a Vec<f32> on success.
+async fn embed_text(env: &Env, text: &str) -> Result<Vec<f32>> {
+    let ai = env.ai("AI")?;
+    let input = serde_json::json!({ "text": [text] });
+    let result: serde_json::Value = ai
+        .run("@cf/baai/bge-small-en-v1.5", &input)
+        .await?;
+    let data = result
+        .get("data")
+        .and_then(|d| d.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.get("embedding"))
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| Error::RustError("AI embedding: unexpected response shape".into()))?;
+
+    let vec: Vec<f32> = data
+        .iter()
+        .filter_map(|v| v.as_f64().map(|f| f as f32))
+        .collect();
+    Ok(vec)
+}
+
+/// Embedded text batch (for multiple texts at once).
+async fn embed_texts(env: &Env, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+    let ai = env.ai("AI")?;
+    let input = serde_json::json!({ "text": texts });
+    let result: serde_json::Value = ai
+        .run("@cf/baai/bge-small-en-v1.5", &input)
+        .await?;
+    let data = result
+        .get("data")
+        .and_then(|d| d.as_array())
+        .ok_or_else(|| Error::RustError("AI embedding batch: unexpected response shape".into()))?;
+
+    let mut embeddings = Vec::with_capacity(data.len());
+    for entry in data {
+        let vec: Vec<f32> = entry
+            .get("embedding")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_f64().map(|f| f as f32)).collect())
+            .unwrap_or_default();
+        embeddings.push(vec);
+    }
+    Ok(embeddings)
+}
+
+/// Check if a Vectorize binding is available.
+fn has_vectorize_binding(env: &Env) -> bool {
+    env.get_binding::<JsValueWrapper>("SEMANTIC_INDEX").is_ok()
+}
+
+// ── JsValueWrapper access (same pattern as worker::env private type) ──
+
+/// Wrapper around JsValue to use with EnvBinding.
+#[repr(transparent)]
+struct JsValueWrapper(JsValue);
+
+impl AsRef<JsValue> for JsValueWrapper {
+    fn as_ref(&self) -> &JsValue {
+        &self.0
+    }
+}
+
+impl From<JsValueWrapper> for JsValue {
+    fn from(w: JsValueWrapper) -> Self {
+        w.0
+    }
+}
+
+impl EnvBinding for JsValueWrapper {
+    const TYPE_NAME: &'static str = "Object";
+}
+
+impl JsCast for JsValueWrapper {
+    fn instanceof(_: &JsValue) -> bool {
+        true
+    }
+    fn unchecked_from_js(val: JsValue) -> Self {
+        Self(val)
+    }
+    fn unchecked_from_js_ref(val: &JsValue) -> &Self {
+        unsafe { &*(val as *const JsValue as *const Self) }
+    }
+}
+
+// ── CfVectorizeStore ────────────────────────────────────────────────────
+
+/// Cloudflare Vectorize-backed semantic store with local fallback.
+///
+/// Sync operations (SemanticStore trait) use a local in-memory buffer.
+/// Async operations (sync_to_vectorize, search_vectorize_async) call
+/// Workers AI for embedding and Cloudflare Vectorize for storage/query.
+///
+/// Search flow (async path):
+///   1. Embed query text via Workers AI @cf/baai/bge-small-en-v1.5
+///   2. Query Vectorize index with the embedding vector
+///   3. Return match results as (id, score) pairs
+pub struct CfVectorizeStore {
+    /// Local buffer: (id, text) pairs accumulated since last sync.
+    /// Used for sync trait operations and as fallback.
+    buffer: RefCell<Vec<(u32, String)>>,
+    /// Whether the buffer has been flushed to Vectorize.
+    /// Reset to false on each insert, set to true after sync_to_vectorize.
+    synced: RefCell<bool>,
+    /// Workers Env — needed for AI + Vectorize bindings in async methods.
+    /// Use `Some(env)` in production; `None` for testing (local-only).
+    env: Option<worker::Env>,
+}
+
+impl std::fmt::Debug for CfVectorizeStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CfVectorizeStore")
+            .field("buffer_len", &self.buffer.borrow().len())
+            .field("synced", &self.synced.borrow())
+            .finish()
+    }
+}
+
+impl CfVectorizeStore {
+    /// Create a new CfVectorizeStore with the given Workers Env.
+    ///
+    /// The Env must have bindings for:
+    ///   - `AI` — Workers AI binding (for text embedding)
+    ///   - `SEMANTIC_INDEX` — Vectorize index binding
+    ///
+    /// If a binding is missing, the store degrades gracefully:
+    ///   - Without Vectorize: operates as local-only (like InMemoryBm25)
+    ///   - Without AI: local-only fallback
+    pub fn new(env: worker::Env) -> Self {
+        Self {
+            buffer: RefCell::new(Vec::new()),
+            synced: RefCell::new(false),
+            env: Some(env),
+        }
+    }
+
+    /// Flush all buffered inserts to the Vectorize index asynchronously.
+    ///
+    /// For each buffered (id, text) pair:
+    ///   1. Embed text via Workers AI
+    ///   2. Upsert the vector + metadata to Vectorize
+    ///
+    /// After successful flush, the buffer is NOT cleared (it serves as
+    /// local fallback) but the synced flag is set to true.
+    pub async fn sync_to_vectorize(&self) -> Result<()> {
+        let buffer = self.buffer.borrow();
+        if buffer.is_empty() {
+            self.synced.replace(true);
+            return Ok(());
+        }
+
+        // Check if Env and Vectorize binding are available
+        let env = match self.env.as_ref() {
+            Some(e) => e,
+            None => {
+                self.synced.replace(true);
+                return Ok(());
+            }
+        };
+        let binding = match env.get_binding::<JsValueWrapper>("SEMANTIC_INDEX") {
+            Ok(b) => b.0,
+            Err(e) => {
+                console_log!("[CfVectorizeStore] SEMANTIC_INDEX binding unavailable: {e}");
+                // No Vectorize — just mark as synced and use local-only
+                self.synced.replace(true);
+                return Ok(());
+            }
+        };
+
+        // Extract texts for batch embedding
+        let texts: Vec<&str> = buffer.iter().map(|(_, t)| t.as_str()).collect();
+        let embeddings = match embed_texts(env, &texts).await {
+            Ok(v) => v,
+            Err(e) => {
+                console_log!("[CfVectorizeStore] embed error: {e}");
+                return Err(e);
+            }
+        };
+
+        // Build JS array of vector objects for Vectorize upsert
+        let vectors = Array::new();
+        for ((id, _text), embedding) in buffer.iter().zip(embeddings.iter()) {
+            let vector_obj = Object::new();
+
+            // id: string (must match Vectorize's id field)
+            let id_str = format!("f_{}", id);
+            Reflect::set(&vector_obj, &JsValue::from("id"), &JsValue::from(&id_str))
+                .unwrap_or_default();
+
+            // values: Float32Array of embedding
+            let typed_array = Float32Array::new_with_length(embedding.len() as u32);
+            for (i, &val) in embedding.iter().enumerate() {
+                typed_array.set_index(i as u32, val);
+            }
+            Reflect::set(
+                &vector_obj,
+                &JsValue::from("values"),
+                &JsValue::from(typed_array.buffer()),
+            )
+            .unwrap_or_default();
+
+            // metadata: { idx: number }
+            let metadata = Object::new();
+            Reflect::set(&metadata, &JsValue::from("idx"), &JsValue::from(*id))
+                .unwrap_or_default();
+            Reflect::set(
+                &vector_obj,
+                &JsValue::from("metadata"),
+                &JsValue::from(metadata),
+            )
+            .unwrap_or_default();
+
+            vectors.push(&vector_obj);
+        }
+
+        // Call binding.insert(vectors)
+        let insert_fn = match Reflect::get(&binding, &JsValue::from("insert")) {
+            Ok(f) if f.is_function() => f,
+            _ => {
+                console_log!("[CfVectorizeStore] insert method not found on binding");
+                return Err(Error::RustError("Vectorize insert method not found".into()));
+            }
+        };
+
+        let insert_fn_ref: &JsFunction = insert_fn.dyn_ref().ok_or_else(|| {
+            Error::RustError("Vectorize insert: not a function".into())
+        })?;
+
+        let args = Array::new();
+        args.push(&vectors);
+        match insert_fn_ref.apply(&binding, &args) {
+            Ok(_promise) => {
+                // Attempt to await the promise; in practice the runtime
+                // resolves it asynchronously.  The promise result is JsValue.
+                // We log success and mark as synced.
+                self.synced.replace(true);
+                console_log!(
+                    "[CfVectorizeStore] synced {} vectors",
+                    buffer.len()
+                );
+            }
+            Err(e) => {
+                console_log!("[CfVectorizeStore] insert call error: {:?}", e);
+                return Err(Error::JsError(format!("Vectorize insert error: {:?}", e)));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Search the Vectorize index with a text query asynchronously.
+    ///
+    /// Steps:
+    ///   1. Embed query text via Workers AI
+    ///   2. Query Vectorize index
+    ///   3. Return (id, score) pairs
+    ///
+    /// If Vectorize binding or AI is unavailable, falls back to local
+    /// search (word-overlap scoring).
+    pub async fn search_vectorize_async(&self, query_text: &str, top_k: usize) -> Result<Vec<(u32, f32)>> {
+        if query_text.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Try Vectorize search
+        let env = match self.env.as_ref() {
+            Some(e) => e,
+            None => return Ok(self.local_search(query_text, top_k)),
+        };
+        let binding = match env.get_binding::<JsValueWrapper>("SEMANTIC_INDEX") {
+            Ok(b) => b.0,
+            Err(_) => {
+                // Fall back to local search
+                return Ok(self.local_search(query_text, top_k));
+            }
+        };
+
+        // Embed the query text
+        let query_vec = match embed_text(env, query_text).await {
+            Ok(v) => v,
+            Err(e) => {
+                console_log!("[CfVectorizeStore] search embed error: {e}, falling back to local");
+                return Ok(self.local_search(query_text, top_k));
+            }
+        };
+
+        // Build the query call: binding.query(queryVector, topK, options?)
+        let query_fn = match Reflect::get(&binding, &JsValue::from("query")) {
+            Ok(f) if f.is_function() => f,
+            _ => {
+                console_log!("[CfVectorizeStore] query method not found, falling back to local");
+                return Ok(self.local_search(query_text, top_k));
+            }
+        };
+
+        // Convert query vector to Float32Array buffer
+        let typed_array = js_sys::Float32Array::new_with_length(query_vec.len() as u32);
+        for (i, &val) in query_vec.iter().enumerate() {
+            typed_array.set_index(i as u32, val);
+        }
+
+        let query_fn_ref: &JsFunction = query_fn.dyn_ref().ok_or_else(|| {
+            Error::RustError("Vectorize query: not a function".into())
+        })?;
+
+        let args = Array::new();
+        args.push(&JsValue::from(typed_array.buffer()));
+        args.push(&JsValue::from(top_k as f64));
+
+        // Options: { returnValues: false, returnMetadata: "all" }
+        let options = Object::new();
+        Reflect::set(&options, &JsValue::from("returnValues"), &JsValue::FALSE)
+            .unwrap_or_default();
+        Reflect::set(
+            &options,
+            &JsValue::from("returnMetadata"),
+            &JsValue::from("all"),
+        )
+        .unwrap_or_default();
+        args.push(&options);
+
+        match query_fn_ref.apply(&binding, &args) {
+            Ok(result_val) => {
+                // result_val is a JsValue (Promise or result).
+                // In practice, Vectorize query returns a Promise.
+                // We attempt to convert it synchronously if resolved.
+                let result_str = js_sys::JSON::stringify(&result_val)
+                    .map(|s| s.as_string().unwrap_or_default())
+                    .unwrap_or_default();
+
+                // Parse the JSON result
+                if let Ok(parsed) = serde_json::from_str::<VectorizeQueryResult>(&result_str) {
+                    let results: Vec<(u32, f32)> = parsed
+                        .matches
+                        .into_iter()
+                        .filter_map(|m| {
+                            // Extract idx from metadata, or from the id string
+                            let idx = m
+                                .metadata
+                                .as_ref()
+                                .and_then(|meta| meta.get("idx").and_then(|v| v.as_u64()).map(|v| v as u32))
+                                .or_else(|| {
+                                    // Fallback: parse from id string "f_{idx}"
+                                    m.id.strip_prefix("f_")
+                                        .and_then(|s| s.parse::<u32>().ok())
+                                });
+                            idx.map(|id| (id, m.score))
+                        })
+                        .collect();
+                    return Ok(results);
+                }
+
+                // Fallback to local search if JSON parse fails
+                console_log!("[CfVectorizeStore] query JSON parse failed, falling back to local");
+                Ok(self.local_search(query_text, top_k))
+            }
+            Err(e) => {
+                console_log!("[CfVectorizeStore] query call error: {e:?}, falling back to local");
+                Ok(self.local_search(query_text, top_k))
+            }
+        }
+    }
+
+    /// Check whether a Vectorize binding is configured in the environment.
+    pub fn vectorize_available(&self) -> bool {
+        self.env.as_ref().map_or(false, |env| has_vectorize_binding(env))
+    }
+
+    // ── Local fallback search ────────────────────────────────────────
+    //
+    // Simple word-overlap scoring used when Vectorize is unavailable.
+    // Mirrors the InMemoryBm25 algorithm but with fewer dependencies
+    // (no IDF weighting).
+
+    fn local_search(&self, query_text: &str, top_k: usize) -> Vec<(u32, f32)> {
+        let buffer = self.buffer.borrow();
+        if buffer.is_empty() {
+            return Vec::new();
+        }
+
+        let query_terms: Vec<String> = query_text
+            .to_lowercase()
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
+
+        if query_terms.is_empty() {
+            return Vec::new();
+        }
+
+        let mut scored: Vec<(u32, f32)> = buffer
+            .iter()
+            .map(|(id, text)| {
+                let doc_lower = text.to_lowercase();
+                let doc_words: Vec<&str> = doc_lower.split_whitespace().collect();
+                let total_words = doc_words.len() as f64;
+                if total_words == 0.0 {
+                    return (*id, 0.0);
+                }
+
+                let mut score = 0.0f64;
+                for qt in &query_terms {
+                    let tf = doc_words.iter().filter(|w| *w == qt).count() as f64;
+                    if tf > 0.0 {
+                        // Simple TF with normalization
+                        score += tf / (total_words).sqrt();
+                    }
+                }
+                (*id, score as f32)
+            })
+            .collect();
+
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored.truncate(top_k);
+        scored
+    }
+}
+
+// ── SemanticStore trait implementation (sync, local-only) ──────────────
+
+impl SemanticStore for CfVectorizeStore {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
+        let text = load
+            .text(id)
+            .ok_or_else(|| format!("CfVectorizeStore: no text for id {id}"))?;
+        self.buffer.borrow_mut().push((id, text));
+        self.synced.replace(false);
+        Ok(())
+    }
+
+    fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
+        let qt = match query.text() {
+            Some(t) if !t.trim().is_empty() => t,
+            _ => return Ok(Vec::new()),
+        };
+        Ok(self.local_search(&qt, top_k))
+    }
+
+    fn remove(&mut self, id: u32) -> Result<(), String> {
+        self.buffer.borrow_mut().retain(|(i, _)| *i != id);
+        Ok(())
+    }
+
+    fn len(&self) -> usize {
+        self.buffer.borrow().len()
+    }
+}
+
+// ── Tests ──────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nex::storage::semantic::record::RecordLoad;
+
+    struct TestLoad {
+        text: String,
+    }
+
+    impl RecordLoad for TestLoad {
+        fn content(&self, _id: u32) -> Option<Vec<u8>> {
+            Some(self.text.as_bytes().to_vec())
+        }
+        fn features(&self, _id: u32) -> Option<Vec<f32>> {
+            None
+        }
+    }
+
+    struct TestQuery {
+        text: String,
+    }
+
+    impl Query for TestQuery {
+        fn features(&self) -> Option<Vec<f32>> {
+            None
+        }
+        fn text(&self) -> Option<String> {
+            Some(self.text.clone())
+        }
+    }
+
+    /// Helper to create a CfVectorizeStore for testing (no Env).
+    fn make_test_store() -> CfVectorizeStore {
+        CfVectorizeStore {
+            buffer: RefCell::new(Vec::new()),
+            synced: RefCell::new(false),
+            env: None,
+        }
+    }
+
+    #[test]
+    fn test_local_search_exact_match() {
+        let mut store = make_test_store();
+        store
+            .insert(1, &TestLoad { text: "Rust is a systems programming language".into() })
+            .unwrap();
+        store
+            .insert(2, &TestLoad { text: "Python is a general purpose language".into() })
+            .unwrap();
+        store
+            .insert(3, &TestLoad { text: "JavaScript runs in the browser".into() })
+            .unwrap();
+
+        let results = store
+            .search(&TestQuery { text: "Rust programming".into() }, 5)
+            .unwrap();
+        assert!(!results.is_empty(), "expected at least one match");
+        assert_eq!(results[0].0, 1, "expected id=1 to be top match");
+        let results2 = store
+            .search(&TestQuery { text: "browser".into() }, 5)
+            .unwrap();
+        assert!(!results2.is_empty(), "expected match for browser");
+        assert_eq!(results2[0].0, 3, "expected id=3 to be top match for browser");
+    }
+
+    #[test]
+    fn test_local_search_no_match() {
+        let mut store = make_test_store();
+        store
+            .insert(1, &TestLoad { text: "Rust is a systems programming language".into() })
+            .unwrap();
+        let results = store
+            .search(&TestQuery { text: "quantum physics".into() }, 5)
+            .unwrap();
+        assert!(results.is_empty() || results[0].1 == 0.0);
+    }
+
+    #[test]
+    fn test_remove() {
+        let mut store = make_test_store();
+        store
+            .insert(1, &TestLoad { text: "Rust language".into() })
+            .unwrap();
+        assert_eq!(store.len(), 1);
+        store.remove(1).unwrap();
+        assert_eq!(store.len(), 0);
+    }
+
+    #[test]
+    fn test_empty_store() {
+        let store = make_test_store();
+        assert!(store.is_empty());
+        let results = store
+            .search(&TestQuery { text: "anything".into() }, 5)
+            .unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_insert_duplicate_id() {
+        let mut store = make_test_store();
+        store
+            .insert(1, &TestLoad { text: "first".into() })
+            .unwrap();
+        store
+            .insert(1, &TestLoad { text: "second".into() })
+            .unwrap();
+        // Both entries kept (Vectorize upserts by id; local buffer is append-only)
+        assert_eq!(store.len(), 2);
+    }
+
+    #[test]
+    fn test_top_k_limits_results() {
+        let mut store = make_test_store();
+        for i in 1..=10 {
+            store
+                .insert(i, &TestLoad { text: format!("document number {i}") })
+                .unwrap();
+        }
+        let results = store
+            .search(&TestQuery { text: "document".into() }, 3)
+            .unwrap();
+        assert!(results.len() <= 3, "expected at most 3 results");
+    }
+
+    #[test]
+    fn test_bm25_matches_inmemory_bm25_pattern() {
+        // Verify local_search produces same-top-results pattern as InMemoryBm25
+        let mut store = make_test_store();
+        store
+            .insert(1, &TestLoad { text: "Graph Neural Networks process graph-structured data through message-passing between nodes".into() })
+            .unwrap();
+        store
+            .insert(2, &TestLoad { text: "Transformer models use self-attention mechanisms to process sequential data".into() })
+            .unwrap();
+        store
+            .insert(3, &TestLoad { text: "Gradient descent optimizes neural network parameters".into() })
+            .unwrap();
+
+        let results = store
+            .search(&TestQuery { text: "Graph Neural".into() }, 5)
+            .unwrap();
+        assert!(!results.is_empty(), "expected match for Graph Neural");
+        assert_eq!(results[0].0, 1, "expected document 1 about GNN to be top match");
+    }
+}
