@@ -1,67 +1,60 @@
 # nex-zed
 
-A neXus instance embedding ACP (Agent Client Protocol) as one of its
-communication surfaces for the [Zed editor](https://zed.dev).
+neXus instance embedding ACP (Agent Client Protocol) as one of its communication surfaces.
 
 ## Architecture
 
 ```
-Zed Editor
-  └── spawns child process (ACP stdio)
-       └── nex-zed (agentic neXus instance)
-            ├── ACP surface (inbound from Zed)
-            ├── ACP surface (outbound to Zed)
-            └── FIH surface (neXus blackboard)
+Zed (네이티브 GUI)
+  └── ACP (stdin/stdout) ──→ nex-zed (네이티브 또는 WASM)
+                                └── neXus FIH ──→ Blackboard ←→ nex-cf (KG)
+
+배포 모드:
+  - 네이티브: 로컬 개발/테스트용
+  - WASM: Cloudflare Workers 배포용 (nex-cf와 동일 인프라)
 ```
 
-This is a neXus instance — not a bridge, not an orchestrator. It is
-one of many peers on the blackboard whose ACP surface happens to face Zed.
-
-## Build
+## Quick Start
 
 ```bash
-cargo build -p nex-zed
+# Build native binary
+./scripts/deploy.sh --native
+
+# Register in Zed settings.json:
+# {
+#   "agent_servers": {
+#     "nex-zed": {
+#       "type": "custom",
+#       "command": "/path/to/target/release/nex-zed"
+#     }
+#   }
+# }
 ```
 
-## Usage
+## Scripts
 
-Register in Zed settings:
-
-```json
-{
-  "agent_servers": {
-    "nexus-zed-dev": {
-      "command": {
-        "command": "/path/to/nex-zed/target/debug/nex-zed"
-      }
-    }
-  }
-}
+```bash
+./scripts/deploy.sh              # WASM build (default)
+./scripts/deploy.sh --native     # Native binary build
+./scripts/deploy.sh --deploy     # WASM + Cloudflare deploy
+./scripts/deploy.sh --setup      # Initial setup
+./scripts/deploy.sh --status     # Status check
 ```
 
-In Zed, open command palette and select "agent: select" → "nexus-zed-dev".
-
-## CLI
+## Project Structure
 
 ```
-Usage: nex-zed [OPTIONS]
+apps/nex-zed/
+├── src/main.rs          # ACP 런처 (네이티브)
+├── acp-bridge/          # Subtree: 독립 ACP 에이전트 서버
+├── scripts/deploy.sh    # 배포/통합 스크립트
+└── Cargo.toml
 
-Options:
-      --nexus-socket <PATH>  Path to neXus daemon Unix socket [default: /var/run/nexus.sock]
-  -v, --verbose              Enable verbose logging
-      --log-level <LEVEL>    Log level filter [default: info]
-  -h, --help                 Print help
-  -V, --version              Print version
+gateway/nex-zed-cf/      # WASM 배포용 (Cloudflare Workers)
+└── build/nex-zed.wasm   # 빌드된 WASM 바이너리
 ```
-
-## Implementation Status
-
-- [x] Phase 1: ACP stdio server (echo mode)
-- [ ] Phase 2: FIH blackboard connection
-- [ ] Phase 3: Bidirectional tool forwarding
-- [ ] Phase 4: Deployment packaging
 
 ## References
 
-- Design document: https://docs.ssccs.org/projects/nexus/apps/zed.llms.md
-- GitHub issue: https://github.com/ssccsorg/nexus/issues/72
+- Design: https://docs.ssccs.org/projects/nexus/apps/zed.llms.md
+- Issue: https://github.com/ssccsorg/nexus/issues/72
