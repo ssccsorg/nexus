@@ -166,24 +166,24 @@ fn document_ingestion_pipeline_e2e() {
     assert_eq!(state.facts.len(), 1);
     assert_eq!(state.facts[0].origin, "document:gnn-paper");
 
-    let results = storage
-        .semantic_search(
+    let results = rt
+        .block_on(storage.semantic_search(
             &TextQuery {
                 text: "Graph Neural".into(),
             },
             5,
-        )
+        ))
         .expect("search should succeed");
     assert!(!results.is_empty());
     assert!(results[0].1 > 0.5, "BM25 score: {}", results[0].1);
 
-    let no_match = storage
-        .semantic_search(
+    let no_match = rt
+        .block_on(storage.semantic_search(
             &TextQuery {
                 text: "quantum physics".into(),
             },
             5,
-        )
+        ))
         .expect("search should succeed");
     assert!(
         no_match.is_empty() || no_match[0].1.abs() < f32::EPSILON,
@@ -201,13 +201,13 @@ fn document_ingestion_pipeline_e2e() {
     let state2 = rt.block_on(storage.read_state());
     assert_eq!(state2.facts.len(), 2);
 
-    let attn = storage
-        .semantic_search(
+    let attn = rt
+        .block_on(storage.semantic_search(
             &TextQuery {
                 text: "self-attention".into(),
             },
             5,
-        )
+        ))
         .expect("search should succeed");
     assert!(attn[0].1 > 0.5, "self-attention score: {}", attn[0].1);
 }
@@ -258,8 +258,8 @@ fn document_ingestion_multiple_paragraphs() {
         ("gradient descent", "para 2"),
         ("backpropagation", "para 3"),
     ] {
-        let r = storage
-            .semantic_search(&TextQuery { text: query.into() }, 5)
+        let r = rt
+            .block_on(storage.semantic_search(&TextQuery { text: query.into() }, 5))
             .expect("search should succeed");
         assert!(!r.is_empty(), "{label} should be searchable");
     }
@@ -357,8 +357,19 @@ fn handle_path_intent_lifecycle() {
 
     let rt = tokio::runtime::Runtime::new().unwrap();
 
+    // First create a fact for the intent to reference
+    let qf = vec![
+        ("id".into(), "f_intent_test_001".into()),
+        ("origin".into(), "intent-test".into()),
+        ("content".into(), "test content for intent".into()),
+        ("creator".into(), "tester".into()),
+    ];
+    let (code, _, _) = rt.block_on(nexus_gateway_nex_cf::handle_path(&storage, "/fact", &qf));
+    assert_eq!(code, 200, "fact creation should succeed");
+
     let qi = vec![
         ("id".into(), "i_test_001".into()),
+        ("from".into(), "f_intent_test_001".into()),
         ("desc".into(), "test intent".into()),
         ("creator".into(), "tester".into()),
     ];
@@ -417,8 +428,19 @@ fn handle_path_claim_conflict_returns_409() {
 
     let rt = tokio::runtime::Runtime::new().unwrap();
 
+    // First create a fact for the intent to reference
+    let qf = vec![
+        ("id".into(), "f_conflict_base".into()),
+        ("origin".into(), "conflict-test".into()),
+        ("content".into(), "base fact".into()),
+        ("creator".into(), "tester".into()),
+    ];
+    let (code, _, _) = rt.block_on(nexus_gateway_nex_cf::handle_path(&storage, "/fact", &qf));
+    assert_eq!(code, 200);
+
     let qi = vec![
         ("id".into(), "i_conflict_001".into()),
+        ("from".into(), "f_conflict_base".into()),
         ("desc".into(), "conflict test".into()),
         ("creator".into(), "tester".into()),
     ];
@@ -458,17 +480,18 @@ fn handle_path_claim_nonexistent_intent_returns_404() {
 
 #[test]
 fn semantic_search_no_stores_configured_proper_error() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
     let tmp = tempfile::TempDir::new().unwrap();
     let io = nex::FsIo::new(tmp.path()).unwrap();
     let storage =
         nex::FihStorage::with_clock(io, "test-no-store", Box::new(nexus_model::SystemClock));
 
-    let result = storage.semantic_search(
+    let result = rt.block_on(storage.semantic_search(
         &TextQuery {
             text: "test".into(),
         },
         5,
-    );
+    ));
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
@@ -630,23 +653,24 @@ fn ingest_all_from_mock_io_finds_dot_llms_dot_md() {
         .block_on(storage.read_state());
     assert_eq!(state.facts.len(), 4, "2 docs x 2 paragraphs each = 4 facts");
 
-    let r = storage
-        .semantic_search(
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let r = rt
+        .block_on(storage.semantic_search(
             &TextQuery {
                 text: "Nexus blackboard".into(),
             },
             5,
-        )
+        ))
         .expect("search");
     assert!(!r.is_empty(), "nexus doc should be findable");
 
-    let r = storage
-        .semantic_search(
+    let r = rt
+        .block_on(storage.semantic_search(
             &TextQuery {
                 text: "SSCCS coordination".into(),
             },
             5,
-        )
+        ))
         .expect("search");
     assert!(!r.is_empty(), "ssccs doc should be findable");
 }
@@ -861,13 +885,13 @@ fn ingest_all_from_io_cross_document_search() {
     ));
 
     // Query matching content from multiple documents.
-    let cat_results = storage
-        .semantic_search(
+    let cat_results = rt
+        .block_on(storage.semantic_search(
             &TextQuery {
                 text: "cats".into(),
             },
             10,
-        )
+        ))
         .expect("search cats");
     assert!(
         cat_results.len() >= 2,
@@ -875,13 +899,13 @@ fn ingest_all_from_io_cross_document_search() {
         cat_results.len()
     );
 
-    let dog_results = storage
-        .semantic_search(
+    let dog_results = rt
+        .block_on(storage.semantic_search(
             &TextQuery {
                 text: "dogs".into(),
             },
             10,
-        )
+        ))
         .expect("search dogs");
     assert!(
         dog_results.len() >= 2,
@@ -889,13 +913,13 @@ fn ingest_all_from_io_cross_document_search() {
         dog_results.len()
     );
 
-    let pet_results = storage
-        .semantic_search(
+    let pet_results = rt
+        .block_on(storage.semantic_search(
             &TextQuery {
                 text: "pets".into(),
             },
             10,
-        )
+        ))
         .expect("search pets");
     assert!(
         pet_results.len() >= 2,
@@ -980,8 +1004,8 @@ fn stress_ingest_twenty_small_documents() {
     // All documents should be individually searchable
     for i in 0..20 {
         let query = format!("Document {}", i);
-        let r = storage
-            .semantic_search(&TextQuery { text: query }, 5)
+        let r = rt
+            .block_on(storage.semantic_search(&TextQuery { text: query }, 5))
             .expect("search should succeed");
         assert!(!r.is_empty(), "doc {i} should be searchable");
     }
@@ -1020,12 +1044,12 @@ fn concurrent_semantic_search_stability() {
         "computer vision",
     ];
     for q in &queries {
-        let r = storage.semantic_search(
+        let r = rt.block_on(storage.semantic_search(
             &TextQuery {
                 text: q.to_string(),
             },
             5,
-        );
+        ));
         assert!(r.is_ok(), "search for '{q}' should succeed");
         let results = r.unwrap();
         assert!(!results.is_empty(), "search for '{q}' should have results");

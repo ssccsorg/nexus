@@ -469,14 +469,11 @@ impl CfVectorizeStore {
     }
 }
 
-// ── SemanticStore trait implementation (sync, local-only) ──────────────
+// ── SemanticStore trait implementation (async, local-only) ─────────────
 
+#[async_trait::async_trait(?Send)]
 impl SemanticStore for CfVectorizeStore {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
+    async fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
         let text = load
             .text(id)
             .ok_or_else(|| format!("CfVectorizeStore: no text for id {id}"))?;
@@ -485,7 +482,7 @@ impl SemanticStore for CfVectorizeStore {
         Ok(())
     }
 
-    fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
+    async fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
         let qt = match query.text() {
             Some(t) if !t.trim().is_empty() => t,
             _ => return Ok(Vec::new()),
@@ -493,7 +490,7 @@ impl SemanticStore for CfVectorizeStore {
         Ok(self.local_search(&qt, top_k))
     }
 
-    fn remove(&mut self, id: u32) -> Result<(), String> {
+    async fn remove(&mut self, id: u32) -> Result<(), String> {
         self.buffer.borrow_mut().retain(|(i, _)| *i != id);
         Ok(())
     }
@@ -547,107 +544,137 @@ mod tests {
 
     #[test]
     fn test_local_search_exact_match() {
-        let mut store = make_test_store();
-        store
-            .insert(1, &TestLoad { text: "Rust is a systems programming language".into() })
-            .unwrap();
-        store
-            .insert(2, &TestLoad { text: "Python is a general purpose language".into() })
-            .unwrap();
-        store
-            .insert(3, &TestLoad { text: "JavaScript runs in the browser".into() })
-            .unwrap();
+        futures_executor::block_on(async {
+            let mut store = make_test_store();
+            store
+                .insert(1, &TestLoad { text: "Rust is a systems programming language".into() })
+                .await
+                .unwrap();
+            store
+                .insert(2, &TestLoad { text: "Python is a general purpose language".into() })
+                .await
+                .unwrap();
+            store
+                .insert(3, &TestLoad { text: "JavaScript runs in the browser".into() })
+                .await
+                .unwrap();
 
-        let results = store
-            .search(&TestQuery { text: "Rust programming".into() }, 5)
-            .unwrap();
-        assert!(!results.is_empty(), "expected at least one match");
-        assert_eq!(results[0].0, 1, "expected id=1 to be top match");
-        let results2 = store
-            .search(&TestQuery { text: "browser".into() }, 5)
-            .unwrap();
-        assert!(!results2.is_empty(), "expected match for browser");
-        assert_eq!(results2[0].0, 3, "expected id=3 to be top match for browser");
+            let results = store
+                .search(&TestQuery { text: "Rust programming".into() }, 5)
+                .await
+                .unwrap();
+            assert!(!results.is_empty(), "expected at least one match");
+            assert_eq!(results[0].0, 1, "expected id=1 to be top match");
+            let results2 = store
+                .search(&TestQuery { text: "browser".into() }, 5)
+                .await
+                .unwrap();
+            assert!(!results2.is_empty(), "expected match for browser");
+            assert_eq!(results2[0].0, 3, "expected id=3 to be top match for browser");
+        });
     }
 
     #[test]
     fn test_local_search_no_match() {
-        let mut store = make_test_store();
-        store
-            .insert(1, &TestLoad { text: "Rust is a systems programming language".into() })
-            .unwrap();
-        let results = store
-            .search(&TestQuery { text: "quantum physics".into() }, 5)
-            .unwrap();
-        assert!(results.is_empty() || results[0].1 == 0.0);
+        futures_executor::block_on(async {
+            let mut store = make_test_store();
+            store
+                .insert(1, &TestLoad { text: "Rust is a systems programming language".into() })
+                .await
+                .unwrap();
+            let results = store
+                .search(&TestQuery { text: "quantum physics".into() }, 5)
+                .await
+                .unwrap();
+            assert!(results.is_empty() || results[0].1 == 0.0);
+        });
     }
 
     #[test]
     fn test_remove() {
-        let mut store = make_test_store();
-        store
-            .insert(1, &TestLoad { text: "Rust language".into() })
-            .unwrap();
-        assert_eq!(store.len(), 1);
-        store.remove(1).unwrap();
-        assert_eq!(store.len(), 0);
+        futures_executor::block_on(async {
+            let mut store = make_test_store();
+            store
+                .insert(1, &TestLoad { text: "Rust language".into() })
+                .await
+                .unwrap();
+            assert_eq!(store.len(), 1);
+            store.remove(1).await.unwrap();
+            assert_eq!(store.len(), 0);
+        });
     }
 
     #[test]
     fn test_empty_store() {
-        let store = make_test_store();
-        assert!(store.is_empty());
-        let results = store
-            .search(&TestQuery { text: "anything".into() }, 5)
-            .unwrap();
-        assert!(results.is_empty());
+        futures_executor::block_on(async {
+            let store = make_test_store();
+            assert!(store.is_empty());
+            let results = store
+                .search(&TestQuery { text: "anything".into() }, 5)
+                .await
+                .unwrap();
+            assert!(results.is_empty());
+        });
     }
 
     #[test]
     fn test_insert_duplicate_id() {
-        let mut store = make_test_store();
-        store
-            .insert(1, &TestLoad { text: "first".into() })
-            .unwrap();
-        store
-            .insert(1, &TestLoad { text: "second".into() })
-            .unwrap();
-        // Both entries kept (Vectorize upserts by id; local buffer is append-only)
-        assert_eq!(store.len(), 2);
+        futures_executor::block_on(async {
+            let mut store = make_test_store();
+            store
+                .insert(1, &TestLoad { text: "first".into() })
+                .await
+                .unwrap();
+            store
+                .insert(1, &TestLoad { text: "second".into() })
+                .await
+                .unwrap();
+            // Both entries kept (Vectorize upserts by id; local buffer is append-only)
+            assert_eq!(store.len(), 2);
+        });
     }
 
     #[test]
     fn test_top_k_limits_results() {
-        let mut store = make_test_store();
-        for i in 1..=10 {
-            store
-                .insert(i, &TestLoad { text: format!("document number {i}") })
+        futures_executor::block_on(async {
+            let mut store = make_test_store();
+            for i in 1..=10 {
+                store
+                    .insert(i, &TestLoad { text: format!("document number {i}") })
+                    .await
+                    .unwrap();
+            }
+            let results = store
+                .search(&TestQuery { text: "document".into() }, 3)
+                .await
                 .unwrap();
-        }
-        let results = store
-            .search(&TestQuery { text: "document".into() }, 3)
-            .unwrap();
-        assert!(results.len() <= 3, "expected at most 3 results");
+            assert!(results.len() <= 3, "expected at most 3 results");
+        });
     }
 
     #[test]
     fn test_bm25_matches_inmemory_bm25_pattern() {
-        // Verify local_search produces same-top-results pattern as InMemoryBm25
-        let mut store = make_test_store();
-        store
-            .insert(1, &TestLoad { text: "Graph Neural Networks process graph-structured data through message-passing between nodes".into() })
-            .unwrap();
-        store
-            .insert(2, &TestLoad { text: "Transformer models use self-attention mechanisms to process sequential data".into() })
-            .unwrap();
-        store
-            .insert(3, &TestLoad { text: "Gradient descent optimizes neural network parameters".into() })
-            .unwrap();
+        futures_executor::block_on(async {
+            let mut store = make_test_store();
+            store
+                .insert(1, &TestLoad { text: "Graph Neural Networks process graph-structured data through message-passing between nodes".into() })
+                .await
+                .unwrap();
+            store
+                .insert(2, &TestLoad { text: "Transformer models use self-attention mechanisms to process sequential data".into() })
+                .await
+                .unwrap();
+            store
+                .insert(3, &TestLoad { text: "Gradient descent optimizes neural network parameters".into() })
+                .await
+                .unwrap();
 
-        let results = store
-            .search(&TestQuery { text: "Graph Neural".into() }, 5)
-            .unwrap();
-        assert!(!results.is_empty(), "expected match for Graph Neural");
-        assert_eq!(results[0].0, 1, "expected document 1 about GNN to be top match");
+            let results = store
+                .search(&TestQuery { text: "Graph Neural".into() }, 5)
+                .await
+                .unwrap();
+            assert!(!results.is_empty(), "expected match for Graph Neural");
+            assert_eq!(results[0].0, 1, "expected document 1 about GNN to be top match");
+        });
     }
 }

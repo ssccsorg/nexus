@@ -296,7 +296,7 @@ impl FihCoord {
     // ── Semantic store interaction ────────────────────────────────
 
     /// Insert a record into the semantic store using the provided `RecordLoad`.
-    pub fn semantic_insert(&self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
+    pub async fn semantic_insert(&self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
         let mut stores = self.by_semantic.borrow_mut();
         if stores.is_empty() {
             return Err("no semantic stores configured".into());
@@ -305,13 +305,14 @@ impl FihCoord {
         for store in stores.iter_mut() {
             store
                 .insert(id, load)
+                .await
                 .map_err(|e| format!("semantic insert failed (store {num_stores}): {e}"))?;
         }
         Ok(())
     }
 
     /// Search the semantic store using the provided query handle.
-    pub fn semantic_search(
+    pub async fn semantic_search(
         &self,
         query: &dyn Query,
         top_k: usize,
@@ -322,7 +323,7 @@ impl FihCoord {
         }
         let mut all_results = Vec::new();
         for store in stores.iter() {
-            if let Ok(results) = store.search(query, top_k) {
+            if let Ok(results) = store.search(query, top_k).await {
                 all_results.extend(results);
             }
         }

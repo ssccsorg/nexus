@@ -32,12 +32,9 @@ impl Default for MockSemanticStore {
     }
 }
 
+#[async_trait::async_trait(?Send)]
 impl SemanticStore for MockSemanticStore {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
+    async fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
         let features = load
             .features(id)
             .ok_or_else(|| "no features available".to_string())?;
@@ -46,7 +43,7 @@ impl SemanticStore for MockSemanticStore {
         Ok(())
     }
 
-    fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
+    async fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
         let query_vec = query
             .features()
             .ok_or_else(|| "no query features".to_string())?;
@@ -76,7 +73,7 @@ impl SemanticStore for MockSemanticStore {
         Ok(scores)
     }
 
-    fn remove(&mut self, id: u32) -> Result<(), String> {
+    async fn remove(&mut self, id: u32) -> Result<(), String> {
         if let Some(pos) = self.ids.iter().position(|&i| i == id) {
             self.ids.remove(pos);
             self.vectors.remove(pos);
@@ -113,12 +110,9 @@ impl Default for MockBm25Store {
     }
 }
 
+#[async_trait::async_trait(?Send)]
 impl SemanticStore for MockBm25Store {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
+    async fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
         let text = load
             .text(id)
             .ok_or_else(|| "no text available".to_string())?;
@@ -127,7 +121,7 @@ impl SemanticStore for MockBm25Store {
         Ok(())
     }
 
-    fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
+    async fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
         let query_text = query.text().ok_or_else(|| "no query text".to_string())?;
 
         if self.ids.is_empty() {
@@ -195,7 +189,7 @@ impl SemanticStore for MockBm25Store {
         Ok(scores)
     }
 
-    fn remove(&mut self, id: u32) -> Result<(), String> {
+    async fn remove(&mut self, id: u32) -> Result<(), String> {
         if let Some(pos) = self.ids.iter().position(|&i| i == id) {
             self.ids.remove(pos);
             self.texts.remove(pos);
