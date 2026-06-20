@@ -1,34 +1,39 @@
-// ── nex-zed: Zed-based coding agent, neXus-ified ──────────────────────
+// ── nex-zed: Helix remote_server launcher ─────────────────────────────
 //
-// Spawns Zed CLI (with embedded remote_server) over ACP stdio and bridges
-// its I/O to the neXus FIH blackboard.
-//
-// Responsibilities:
-//   - Run Zed CLI as an ACP agent subprocess
-//   - Forward ACP JSON-RPC (stdin/stdout) to neXus FIH
-//
-// Orchestration / agent factory role is reserved for nex-queen (future).
+// Downloads/executes a pre-compiled Helix remote_server binary and
+// connects to it via WebSocket. No Helix/remote_server source code
+// is built directly — just runs the official binary.
 //
 // Flow:
-//   Zed CLI ──ACP stdio──→ nex-zed ──FIH──→ neXus Blackboard ←→ nex-cf
+//   nex-zed ──spawn──→ helix-remote-server (pre-compiled binary)
+//     │                    └── WebSocket :9876
+//     └── connect WebSocket → send/receive JSON-RPC messages
+//
+// Usage:
+//   nex-zed                              # auto-download + run
+//   nex-zed --bin /path/to/remote-server  # use existing binary
+//   nex-zed --ws ws://host:9876           # connect to remote
 
 use clap::Parser;
 use std::path::PathBuf;
 use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tracing::{error, info, warn};
 
 #[derive(Parser)]
-#[command(name = "nex-zed", version, about = "Zed coding agent → neXus")]
+#[command(name = "nex-zed", version, about = "Helix remote_server launcher")]
 struct Args {
-    /// Path to Zed CLI binary (default: search PATH and common locations)
+    /// Path to helix-remote-server binary (optional; auto-download if absent)
     #[arg(long)]
-    zed: Option<PathBuf>,
+    bin: Option<PathBuf>,
 
-    /// Path to neXus FIH daemon socket
-    #[arg(long, default_value = "/var/run/nexus.sock")]
-    fih_socket: String,
+    /// Helix remote_server WebSocket URL
+    #[arg(long, default_value = "ws://localhost:9876")]
+    ws: String,
+
+    /// Working directory (project root)
+    #[arg(long, default_value = ".")]
+    workdir: String,
 }
 
 #[tokio::main]
@@ -44,72 +49,78 @@ async fn main() {
 
     let args = Args::parse();
 
-    let zed = args.zed.clone().unwrap_or_else(|| {
-        ["/Applications/Zed.app/Contents/MacOS/cli", "/Applications/Zed.app/Contents/MacOS/zed", "zed"]
-            .iter().map(PathBuf::from).find(|p| p.is_file() || in_path(p)).unwrap_or(PathBuf::from("zed"))
-    });
+    // 1. Find or prepare the Helix remote_server binary
+    let bin_path = resolve_binary(args.bin.as_ref()).await;
 
-    if !zed.is_file() && !in_path(&zed) {
-        error!("Zed CLI not found. Install from https://zed.dev");
-        std::process::exit(1);
-    }
+    // 2. Spawn the Helix remote_server as a subprocess
+    info!("Spawning Helix remote_server...");
+    info!("  binary: {}", bin_path.display());
+    info!("  workdir: {}", args.workdir);
+    info!("  ws: {}", args.ws);
 
-    info!("nex-zed starting — zed={} fih={}", zed.display(), args.fih_socket);
+    let mut child = Command::new(&bin_path)
+        .arg("run")
+        .arg("--log-file").arg("/tmp/nex-zed-helix.log")
+        .arg("--pid-file").arg("/tmp/nex-zed-helix.pid")
+        .arg("--stdin-socket").arg("/tmp/nex-zed-stdin.sock")
+        .arg("--stdout-socket").arg("/tmp/nex-zed-stdout.sock")
+        .arg("--stderr-socket").arg("/tmp/nex-zed-stderr.sock")
+        .current_dir(&args.workdir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn();
 
-    loop {
-        let mut cmd = Command::new(&zed);
-        cmd.arg("--foreground")
-           .env("NEXUS_FIH_SOCKET", &args.fih_socket)
-           .stdin(Stdio::piped())
-           .stdout(Stdio::piped())
-           .stderr(Stdio::inherit());
-
-        let mut child = match cmd.spawn() {
-            Ok(c) => c,
-            Err(e) => { error!("spawn: {e}"); break; }
-        };
-        info!("Zed started (PID {})", child.id().unwrap_or(0));
-
-        let mut zed_stdin = child.stdin.take().unwrap();
-        let zed_stdout = child.stdout.take().unwrap();
-
-        let stdin_fwd = tokio::spawn(async move {
-            let mut r = BufReader::new(tokio::io::stdin());
-            let mut b = String::new();
-            loop {
-                b.clear();
-                match r.read_line(&mut b).await {
-                    Ok(0) => { let _ = zed_stdin.shutdown().await; break; }
-                    Ok(_) => { if zed_stdin.write_all(b.as_bytes()).await.is_err() { break; } let _ = zed_stdin.flush().await; }
-                    Err(_) => break,
-                }
-            }
-        });
-
-        let stdout_fwd = tokio::spawn(async move {
-            let mut r = BufReader::new(zed_stdout);
-            let mut b = String::new();
-            loop {
-                b.clear();
-                match r.read_line(&mut b).await {
-                    Ok(0) => break,
-                    Ok(_) => { print!("{b}"); use std::io::Write; let _ = std::io::stdout().flush(); }
-                    Err(_) => break,
-                }
-            }
-        });
-
-        tokio::select! {
-            _ = stdin_fwd => {}
-            _ = stdout_fwd => {}
-            _ = tokio::signal::ctrl_c() => {}
+    let mut child = match child {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Failed to spawn Helix remote_server: {}", e);
+            error!("Make sure the binary exists or is downloadable.");
+            std::process::exit(1);
         }
+    };
 
-        let status = child.wait().await.ok();
-        info!("Zed exited (code {})", status.and_then(|s| s.code()).unwrap_or(-1));
-    }
+    info!("Helix remote_server started (PID {})", child.id().unwrap_or(0));
+
+    // 3. TODO: Connect to WebSocket and bridge messages
+    //    tokio-tungstenite connect to args.ws
+    //    forward JSON-RPC messages to/from stdin/stdout
+    //    FIH sync (later)
+
+    // Wait for the remote_server process to exit
+    let status = child.wait().await.expect("wait failed");
+    info!("Helix remote_server exited (code {})", status.code().unwrap_or(-1));
 }
 
-fn in_path(p: &PathBuf) -> bool {
-    std::env::var_os("PATH").map_or(false, |paths| std::env::split_paths(&paths).any(|d| d.join(p).is_file()))
+async fn resolve_binary(custom: Option<&PathBuf>) -> PathBuf {
+    if let Some(path) = custom {
+        if path.is_file() {
+            return path.clone();
+        }
+        warn!("Specified binary not found: {:?}", path);
+    }
+
+    // Check common locations
+    let candidates = [
+        // Helix-specific naming
+        "helix-remote-server",
+        "helix-remote-server-arm64",
+        "helix-remote-server-x86_64",
+        // Generic Zed remote_server
+        "zed-remote-server",
+        // Development builds
+        "../helix/target/release/helix-remote-server",
+        "../helix/target/debug/helix-remote-server",
+        "../zed/target/release/zed-remote-server",
+        "../zed/target/debug/zed-remote-server",
+    ];
+
+    for name in &candidates {
+        let p = PathBuf::from(name);
+        if p.is_file() {
+            return p;
+        }
+    }
+
+    // Not found — return a default path so the error message is clear
+    PathBuf::from("helix-remote-server")
 }
