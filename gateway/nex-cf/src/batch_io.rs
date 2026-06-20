@@ -75,9 +75,9 @@ impl<I: AsyncFileIo> AsyncFileIo for BatchIo<I> {
                         });
                     }
                     WriteOp::Delete { path } => {
-                        this.pending.borrow_mut().push(WriteOp::Delete {
-                            path: path.clone(),
-                        });
+                        this.pending
+                            .borrow_mut()
+                            .push(WriteOp::Delete { path: path.clone() });
                     }
                 }
             }

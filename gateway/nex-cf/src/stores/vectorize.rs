@@ -15,7 +15,6 @@
 //   3. Async methods dispatch through the embedder trait
 
 use nex::storage::semantic::{Query, RecordLoad, SemanticStore};
-use serde::Deserialize;
 use worker::*;
 
 // ── Embedder trait ──────────────────────────────────────────────────────
@@ -63,7 +62,8 @@ impl Embedder for LocalTfidfEmbedder {
         let mut all_tokens: Vec<Vec<String>> = Vec::with_capacity(texts.len());
         let mut vocab: Vec<String> = Vec::new();
         for t in texts {
-            let tokens: Vec<String> = t.to_lowercase()
+            let tokens: Vec<String> = t
+                .to_lowercase()
                 .split_whitespace()
                 .map(|s| s.to_string())
                 .collect();
@@ -86,7 +86,9 @@ impl Embedder for LocalTfidfEmbedder {
             // Normalize
             let norm: f32 = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
             if norm > 0.0 {
-                for x in &mut vec { *x /= norm; }
+                for x in &mut vec {
+                    *x /= norm;
+                }
             }
             results.push(vec);
         }
@@ -94,10 +96,14 @@ impl Embedder for LocalTfidfEmbedder {
     }
 
     async fn embed_query(&self, text: &str) -> Result<Vec<f32>, String> {
-        self.embed(&[text.to_string()]).await.map(|v| v.into_iter().next().unwrap_or_default())
+        self.embed(&[text.to_string()])
+            .await
+            .map(|v| v.into_iter().next().unwrap_or_default())
     }
 
-    fn dims(&self) -> usize { 0 } // dynamic
+    fn dims(&self) -> usize {
+        0
+    } // dynamic
 }
 
 // ── CfVectorizeStore ────────────────────────────────────────────────────
@@ -144,7 +150,10 @@ impl CfVectorizeStore {
 
         let texts: Vec<String> = entries.iter().map(|(_, t)| t.clone()).collect();
         let ids: Vec<u32> = entries.iter().map(|(id, _)| *id).collect();
-        worker::console_log!("[CfVectorizeStore] sync: {} texts (local embedder)", ids.len());
+        worker::console_log!(
+            "[CfVectorizeStore] sync: {} texts (local embedder)",
+            ids.len()
+        );
 
         let embeddings = self.embedder.embed(&texts).await?;
 
@@ -152,14 +161,19 @@ impl CfVectorizeStore {
         // With a real Vectorize binding, we would upsert here.
         worker::console_log!(
             "[CfVectorizeStore] synced {} vectors (dim={})",
-            ids.len(), embeddings.first().map(|v| v.len()).unwrap_or(0)
+            ids.len(),
+            embeddings.first().map(|v| v.len()).unwrap_or(0)
         );
 
         Ok(())
     }
 
     /// Search using Vectorize index. Falls back to local search.
-    pub async fn search_vectorize_async(&self, query_text: &str, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
+    pub async fn search_vectorize_async(
+        &self,
+        query_text: &str,
+        top_k: usize,
+    ) -> Result<Vec<(u32, f32)>, String> {
         if query_text.trim().is_empty() {
             return Ok(Vec::new());
         }
@@ -180,11 +194,17 @@ impl CfVectorizeStore {
             return Ok(Vec::new());
         }
 
-        let mut scores: Vec<(u32, f32)> = buf_embs.iter().zip(buf_ids.iter())
+        let mut scores: Vec<(u32, f32)> = buf_embs
+            .iter()
+            .zip(buf_ids.iter())
             .map(|(emb, &id)| {
                 let dot: f32 = emb.iter().zip(query_vec.iter()).map(|(a, b)| a * b).sum();
                 let norm: f32 = emb.iter().map(|x| x * x).sum::<f32>().sqrt();
-                let score = if norm > 0.0 { dot / (norm * query_norm) } else { 0.0 };
+                let score = if norm > 0.0 {
+                    dot / (norm * query_norm)
+                } else {
+                    0.0
+                };
                 (id, score)
             })
             .collect();
@@ -203,7 +223,9 @@ impl SemanticStore for CfVectorizeStore {
         let text = load
             .text(id)
             .ok_or_else(|| format!("CfVectorizeStore: no text for id {id}"))?;
-        unsafe { (*buffer()).push((id, text)); }
+        unsafe {
+            (*buffer()).push((id, text));
+        }
         Ok(())
     }
 
@@ -216,7 +238,9 @@ impl SemanticStore for CfVectorizeStore {
     }
 
     async fn remove(&mut self, id: u32) -> Result<(), String> {
-        unsafe { (*buffer()).retain(|(i, _)| *i != id); }
+        unsafe {
+            (*buffer()).retain(|(i, _)| *i != id);
+        }
         Ok(())
     }
 
@@ -231,20 +255,34 @@ impl SemanticStore for CfVectorizeStore {
 mod tests {
     use super::*;
 
-    struct TestLoad { text: String }
+    struct TestLoad {
+        text: String,
+    }
     impl RecordLoad for TestLoad {
-        fn content(&self, _id: u32) -> Option<Vec<u8>> { Some(self.text.as_bytes().to_vec()) }
-        fn features(&self, _id: u32) -> Option<Vec<f32>> { None }
+        fn content(&self, _id: u32) -> Option<Vec<u8>> {
+            Some(self.text.as_bytes().to_vec())
+        }
+        fn features(&self, _id: u32) -> Option<Vec<f32>> {
+            None
+        }
     }
 
-    struct TestQuery { text: String }
+    struct TestQuery {
+        text: String,
+    }
     impl Query for TestQuery {
-        fn features(&self) -> Option<Vec<f32>> { None }
-        fn text(&self) -> Option<String> { Some(self.text.clone()) }
+        fn features(&self) -> Option<Vec<f32>> {
+            None
+        }
+        fn text(&self) -> Option<String> {
+            Some(self.text.clone())
+        }
     }
 
     fn make_store() -> CfVectorizeStore {
-        unsafe { (*buffer()).clear(); }
+        unsafe {
+            (*buffer()).clear();
+        }
         CfVectorizeStore::with_embedder(Box::new(LocalTfidfEmbedder))
     }
 
@@ -252,10 +290,42 @@ mod tests {
     fn test_local_search_exact_match() {
         futures_executor::block_on(async {
             let mut store = make_store();
-            store.insert(1, &TestLoad { text: "Rust is a systems programming language".into() }).await.unwrap();
-            store.insert(2, &TestLoad { text: "Python is a general purpose language".into() }).await.unwrap();
-            store.insert(3, &TestLoad { text: "JavaScript runs in the browser".into() }).await.unwrap();
-            let results = store.search(&TestQuery { text: "Rust programming".into() }, 5).await.unwrap();
+            store
+                .insert(
+                    1,
+                    &TestLoad {
+                        text: "Rust is a systems programming language".into(),
+                    },
+                )
+                .await
+                .unwrap();
+            store
+                .insert(
+                    2,
+                    &TestLoad {
+                        text: "Python is a general purpose language".into(),
+                    },
+                )
+                .await
+                .unwrap();
+            store
+                .insert(
+                    3,
+                    &TestLoad {
+                        text: "JavaScript runs in the browser".into(),
+                    },
+                )
+                .await
+                .unwrap();
+            let results = store
+                .search(
+                    &TestQuery {
+                        text: "Rust programming".into(),
+                    },
+                    5,
+                )
+                .await
+                .unwrap();
             assert!(!results.is_empty());
             assert_eq!(results[0].0, 1);
         });
@@ -266,9 +336,25 @@ mod tests {
         futures_executor::block_on(async {
             let mut store = make_store();
             for i in 0..10 {
-                store.insert(i, &TestLoad { text: format!("document number {i}") }).await.unwrap();
+                store
+                    .insert(
+                        i,
+                        &TestLoad {
+                            text: format!("document number {i}"),
+                        },
+                    )
+                    .await
+                    .unwrap();
             }
-            let results = store.search(&TestQuery { text: "document number".into() }, 3).await.unwrap();
+            let results = store
+                .search(
+                    &TestQuery {
+                        text: "document number".into(),
+                    },
+                    3,
+                )
+                .await
+                .unwrap();
             assert!(results.len() <= 3);
         });
     }
@@ -285,7 +371,10 @@ mod tests {
     fn test_embedder_local() {
         futures_executor::block_on(async {
             let e = LocalTfidfEmbedder;
-            let embs = e.embed(&["hello world".into(), "hello rust".into()]).await.unwrap();
+            let embs = e
+                .embed(&["hello world".into(), "hello rust".into()])
+                .await
+                .unwrap();
             assert_eq!(embs.len(), 2);
             assert!(embs[0].len() > 0);
             // Both should be normalized

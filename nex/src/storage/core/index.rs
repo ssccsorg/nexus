@@ -297,6 +297,7 @@ impl FihCoord {
 
     /// Insert a record into the semantic store using the provided `RecordLoad`.
     pub async fn semantic_insert(&self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
+        #[allow(clippy::await_holding_refcell_ref)]
         let mut stores = self.by_semantic.borrow_mut();
         if stores.is_empty() {
             return Err("no semantic stores configured".into());
@@ -320,6 +321,7 @@ impl FihCoord {
         query: &dyn Query,
         top_k: usize,
     ) -> Result<Vec<(u32, f32)>, String> {
+        #[allow(clippy::await_holding_refcell_ref)]
         let stores = self.by_semantic.borrow();
         if stores.is_empty() {
             return Err("no semantic stores configured".into());

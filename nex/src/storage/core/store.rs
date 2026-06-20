@@ -204,18 +204,28 @@ impl<I: AsyncFileIo> FihStorage<I> {
     /// Rebuild semantic stores (BM25, Vectorize buffer) from fact_store after rebuild_cache.
     /// Reads content blobs from IO and inserts text into all registered semantic stores.
     pub async fn rebuild_semantic(&self) -> Result<(), String> {
-        struct TextRecord { text: String }
+        struct TextRecord {
+            text: String,
+        }
         impl crate::storage::semantic::record::RecordLoad for TextRecord {
-            fn content(&self, _id: u32) -> Option<Vec<u8>> { Some(self.text.as_bytes().to_vec()) }
-            fn features(&self, _id: u32) -> Option<Vec<f32>> { None }
+            fn content(&self, _id: u32) -> Option<Vec<u8>> {
+                Some(self.text.as_bytes().to_vec())
+            }
+            fn features(&self, _id: u32) -> Option<Vec<f32>> {
+                None
+            }
         }
 
         let facts = self.fact_store.values();
         for r in facts {
             let content = load_blob(&self.io, &r.blob_hash).await;
-            if content.data.is_empty() { continue; }
+            if content.data.is_empty() {
+                continue;
+            }
             let text = String::from_utf8_lossy(&content.data).to_string();
-            if text.trim().is_empty() { continue; }
+            if text.trim().is_empty() {
+                continue;
+            }
             let id_bytes = nexus_model::FihHash::from_hex(&r.id);
             let idx = self.coord.intern(&id_bytes.0);
             let load = TextRecord { text };
@@ -224,7 +234,7 @@ impl<I: AsyncFileIo> FihStorage<I> {
         Ok(())
     }
 
-        pub async fn flush_pending(&self) -> Result<(), String> {
+    pub async fn flush_pending(&self) -> Result<(), String> {
         let ops = std::mem::take(&mut *self.pending.try_borrow_mut().map_err(|e| e.to_string())?);
         if !ops.is_empty() {
             self.io.apply_batch(&ops).await?;
