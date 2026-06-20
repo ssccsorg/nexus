@@ -1,29 +1,34 @@
-// ── nex-zed: Helix remote_server launcher ─────────────────────────────
+// ── nex-zed: Helix remote_server WebSocket client ────────────────────
 //
-// Downloads/executes a pre-compiled Helix remote_server binary and
-// connects to it via WebSocket. No Helix/remote_server source code
-// is built directly — just runs the official binary.
+// Connects to Helix remote_server's WebSocket and provides
+// an interactive chat interface for coding via ACP.
 //
 // Flow:
-//   nex-zed ──spawn──→ helix-remote-server (pre-compiled binary)
-//     │                    └── WebSocket :9876
-//     └── connect WebSocket → send/receive JSON-RPC messages
+//   Helix remote_server (headless Zed)
+//     └── WebSocket ws://localhost:9876 ──→ nex-zed (this binary)
+//           ├── chat_message: send prompts
+//           ├── message_added: receive streaming responses
+//           └── message_completed: receive final results
 //
 // Usage:
-//   nex-zed                              # auto-download + run
-//   nex-zed --bin /path/to/remote-server  # use existing binary
-//   nex-zed --ws ws://host:9876           # connect to remote
+//   nex-zed                              # connect to localhost:9876
+//   nex-zed --ws ws://server:9876         # connect to remote
+//   nex-zed --bin /path/to/remote-server  # spawn + connect
 
 use clap::Parser;
+use futures_util::{SinkExt, StreamExt};
 use std::path::PathBuf;
 use std::process::Stdio;
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
+use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::{error, info, warn};
+use uuid::Uuid;
 
 #[derive(Parser)]
-#[command(name = "nex-zed", version, about = "Helix remote_server launcher")]
+#[command(name = "nex-zed", version, about = "Helix headless Zed client")]
 struct Args {
-    /// Path to helix-remote-server binary (optional; auto-download if absent)
+    /// Path to helix-remote-server binary (optional, spawn if provided)
     #[arg(long)]
     bin: Option<PathBuf>,
 
@@ -34,6 +39,14 @@ struct Args {
     /// Working directory (project root)
     #[arg(long, default_value = ".")]
     workdir: String,
+
+    /// Auth token for WebSocket connection
+    #[arg(long, default_value = "nex-zed-token")]
+    auth_token: String,
+
+    /// Agent name to use (e.g., "zed-agent", "qwen")
+    #[arg(long, default_value = "zed-agent")]
+    agent: String,
 }
 
 #[tokio::main]
@@ -42,85 +55,135 @@ async fn main() {
         unsafe { std::env::set_var("RUST_LOG", "nex_zed=info"); }
     }
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "nex_zed=info".parse().unwrap()))
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "nex_zed=info".parse().unwrap()),
+        )
         .with_target(true)
         .with_writer(std::io::stderr)
         .init();
 
     let args = Args::parse();
 
-    // 1. Find or prepare the Helix remote_server binary
-    let bin_path = resolve_binary(args.bin.as_ref()).await;
+    // Spawn remote_server if --bin provided
+    if let Some(ref bin_path) = args.bin {
+        info!("Spawning Helix remote_server from {:?}", bin_path);
+        let mut child = Command::new(bin_path)
+            .arg("run")
+            .arg("--log-file")
+            .arg("/tmp/nex-zed-helix.log")
+            .arg("--pid-file")
+            .arg("/tmp/nex-zed-helix.pid")
+            .arg("--stdin-socket")
+            .arg("/tmp/nex-zed-stdin.sock")
+            .arg("--stdout-socket")
+            .arg("/tmp/nex-zed-stdout.sock")
+            .arg("--stderr-socket")
+            .arg("/tmp/nex-zed-stderr.sock")
+            .current_dir(&args.workdir)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn();
 
-    // 2. Spawn the Helix remote_server as a subprocess
-    info!("Spawning Helix remote_server...");
-    info!("  binary: {}", bin_path.display());
-    info!("  workdir: {}", args.workdir);
-    info!("  ws: {}", args.ws);
+        match child {
+            Ok(mut c) => {
+                info!("Helix remote_server started (PID {})", c.id().unwrap_or(0));
+                // Don't wait, let it run in background
+                tokio::spawn(async move {
+                    let status = c.wait().await;
+                    info!(
+                        "Helix remote_server exited ({:?})",
+                        status.map(|s| s.code().unwrap_or(-1))
+                    );
+                });
+            }
+            Err(e) => {
+                error!("Failed to spawn: {}", e);
+                std::process::exit(1);
+            }
+        }
 
-    let mut child = Command::new(&bin_path)
-        .arg("run")
-        .arg("--log-file").arg("/tmp/nex-zed-helix.log")
-        .arg("--pid-file").arg("/tmp/nex-zed-helix.pid")
-        .arg("--stdin-socket").arg("/tmp/nex-zed-stdin.sock")
-        .arg("--stdout-socket").arg("/tmp/nex-zed-stdout.sock")
-        .arg("--stderr-socket").arg("/tmp/nex-zed-stderr.sock")
-        .current_dir(&args.workdir)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn();
+        // Wait for server to be ready
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    }
 
-    let mut child = match child {
-        Ok(c) => c,
+    // Connect WebSocket
+    let ws_url = format!("{}/api/v1/external-agents/sync?session_id={}", args.ws, Uuid::new_v4());
+    info!("Connecting to WebSocket: {}", ws_url);
+
+    let (ws_stream, _) = match connect_async(&ws_url).await {
+        Ok(s) => s,
         Err(e) => {
-            error!("Failed to spawn Helix remote_server: {}", e);
-            error!("Make sure the binary exists or is downloadable.");
+            error!("WebSocket connection failed: {}", e);
+            error!("Make sure Helix remote_server is running");
             std::process::exit(1);
         }
     };
 
-    info!("Helix remote_server started (PID {})", child.id().unwrap_or(0));
+    info!("WebSocket connected");
 
-    // 3. TODO: Connect to WebSocket and bridge messages
-    //    tokio-tungstenite connect to args.ws
-    //    forward JSON-RPC messages to/from stdin/stdout
-    //    FIH sync (later)
+    let (mut write, mut read) = ws_stream.split();
 
-    // Wait for the remote_server process to exit
-    let status = child.wait().await.expect("wait failed");
-    info!("Helix remote_server exited (code {})", status.code().unwrap_or(-1));
-}
+    // Read user input from stdin and send as chat_message
+    let stdin = tokio::io::stdin();
+    let mut reader = BufReader::new(stdin);
+    let mut line = String::new();
 
-async fn resolve_binary(custom: Option<&PathBuf>) -> PathBuf {
-    if let Some(path) = custom {
-        if path.is_file() {
-            return path.clone();
+    // Spawn read task
+    let read_handle = tokio::spawn(async move {
+        while let Some(msg) = read.next().await {
+            match msg {
+                Ok(Message::Text(text)) => {
+                    // Print received messages
+                    println!("{}", text);
+                }
+                Ok(Message::Close(_)) => break,
+                Err(e) => {
+                    error!("WebSocket error: {}", e);
+                    break;
+                }
+                _ => {}
+            }
         }
-        warn!("Specified binary not found: {:?}", path);
+    });
+
+    // Main loop: read stdin, send WebSocket messages
+    loop {
+        line.clear();
+        match reader.read_line(&mut line).await {
+            Ok(0) => break, // EOF
+            Ok(_) => {
+                let input = line.trim().to_string();
+                if input.is_empty() {
+                    continue;
+                }
+                if input == "/exit" || input == "/quit" {
+                    break;
+                }
+
+                // Send chat_message command to Helix remote_server
+                let msg = serde_json::json!({
+                    "type": "chat_message",
+                    "data": {
+                        "message": input,
+                        "request_id": Uuid::new_v4().to_string(),
+                        "acp_thread_id": null,
+                        "agent_name": args.agent,
+                    }
+                });
+
+                if let Err(e) = write.send(Message::Text(msg.to_string().into())).await {
+                    error!("Send failed: {}", e);
+                    break;
+                }
+            }
+            Err(e) => {
+                error!("Stdin error: {}", e);
+                break;
+            }
+        }
     }
 
-    // Check common locations
-    let candidates = [
-        // Helix-specific naming
-        "helix-remote-server",
-        "helix-remote-server-arm64",
-        "helix-remote-server-x86_64",
-        // Generic Zed remote_server
-        "zed-remote-server",
-        // Development builds
-        "../helix/target/release/helix-remote-server",
-        "../helix/target/debug/helix-remote-server",
-        "../zed/target/release/zed-remote-server",
-        "../zed/target/debug/zed-remote-server",
-    ];
-
-    for name in &candidates {
-        let p = PathBuf::from(name);
-        if p.is_file() {
-            return p;
-        }
-    }
-
-    // Not found — return a default path so the error message is clear
-    PathBuf::from("helix-remote-server")
+    read_handle.abort();
+    info!("nex-zed shutting down");
 }
