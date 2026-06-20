@@ -133,6 +133,13 @@ impl DurableObject for NexusCfDO {
         } else {
             &stores.prod
         };
+
+        // Cold-start recovery: if fact_store is empty, rebuild from R2.
+        // This happens when the DO was just created or restarted.
+        if s.fact_store.len() == 0 && path_stripped != "/ingest-one" && path_stripped != "/ingest" {
+            s.rebuild_cache().await.ok();
+            s.rebuild_semantic().await.ok();
+        }
         let docs = if is_test {
             self.docs_bucket_test.as_ref()
         } else {
