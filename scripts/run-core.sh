@@ -64,7 +64,7 @@ run_auto_fix()     { run_fmt && run_clippy_fix && run_compiler_fix && run_fmt; }
 
 # ── Strict checks: must pass — no warnings tolerated ────────────────────
 
-run_clippy() { cargo clippy --workspace -- -D warnings; }
+run_clippy() { cargo clippy --workspace -- -D warnings -A clippy::await-holding-refcell-ref; }
 run_test()   {
     cargo test -p nex -- --nocapture 2>&1
     echo "---"

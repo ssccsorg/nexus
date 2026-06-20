@@ -4,9 +4,9 @@
 // The #[event(fetch)] handler is a thin proxy that forwards every
 // request to the DO stub.
 
-pub mod stores;
 pub mod batch_io;
 pub mod cf_io;
+pub mod stores;
 
 use std::cell::RefCell;
 
@@ -14,11 +14,9 @@ use worker::*;
 
 use crate::cf_io::CfFihIo;
 use crate::stores::vectorize::CfVectorizeStore;
-use nex::io::AsyncFileIo;
 use nex::FihStorage;
-use nexus_model::{
-    AsyncIntentCapable, AsyncStorageRead, Content, Fact, FihHash, Intent,
-};
+use nex::io::AsyncFileIo;
+use nexus_model::{AsyncIntentCapable, AsyncStorageRead, Content, Fact, FihHash, Intent};
 
 // ── CF clock ────────────────────────────────────────────────────────────
 
@@ -47,9 +45,12 @@ fn build_store(bucket: worker::Bucket, env: &worker::Env, project: &str) -> FihS
 }
 
 fn split_test_prefix(path: &str) -> (bool, &str) {
-    if path.len() >= 6 && path.as_bytes()[0] == b'/'
-        && path.as_bytes()[1] == b't' && path.as_bytes()[2] == b'e'
-        && path.as_bytes()[3] == b's' && path.as_bytes()[4] == b't'
+    if path.len() >= 6
+        && path.as_bytes()[0] == b'/'
+        && path.as_bytes()[1] == b't'
+        && path.as_bytes()[2] == b'e'
+        && path.as_bytes()[3] == b's'
+        && path.as_bytes()[4] == b't'
     {
         let rest = &path[5..];
         if rest.is_empty() || rest == "/" {
@@ -128,15 +129,11 @@ impl DurableObject for NexusCfDO {
         let stores = stores_opt
             .as_ref()
             .expect("NexusCfDO stores not initialized");
-        let s: &FihStorage<CfFihIo> = if is_test {
-            &stores.test
-        } else {
-            &stores.prod
-        };
+        let s: &FihStorage<CfFihIo> = if is_test { &stores.test } else { &stores.prod };
 
         // Cold-start recovery: if fact_store is empty, rebuild from R2.
         // This happens when the DO was just created or restarted.
-        if s.fact_store.len() == 0 && path_stripped != "/ingest-one" && path_stripped != "/ingest" {
+        if s.fact_store.is_empty() && path_stripped != "/ingest-one" && path_stripped != "/ingest" {
             s.rebuild_cache().await.ok();
             s.rebuild_semantic().await.ok();
         }
@@ -147,10 +144,9 @@ impl DurableObject for NexusCfDO {
         };
 
         match path_stripped {
-            "/" | "/fact" | "/intent" | "/claim" | "/conclude" | "/state"
-            | "/flush" | "/rebuild" => {
-                let (code, _content_type, body) =
-                    handle_path(s, path_stripped, &q).await;
+            "/" | "/fact" | "/intent" | "/claim" | "/conclude" | "/state" | "/flush"
+            | "/rebuild" => {
+                let (code, _content_type, body) = handle_path(s, path_stripped, &q).await;
                 Ok(Response::from_bytes(body.into_bytes())?.with_status(code))
             }
 
@@ -190,9 +186,7 @@ impl DurableObject for NexusCfDO {
                     s.rebuild_cache().await.ok();
                     s.rebuild_semantic().await.ok();
                 }
-                let query = crate::cf_io::TextQuery {
-                    text: query_text,
-                };
+                let query = crate::cf_io::TextQuery { text: query_text };
                 let results = match s.semantic_search(&query, 10).await {
                     Ok(r) => r,
                     Err(e) => return Response::error(format!("search: {e}"), 500),
@@ -261,8 +255,7 @@ impl DurableObject for NexusCfDO {
                         Ok(o) => o,
                         Err(e) => return Response::error(format!("list error: {e}"), 500),
                     };
-                    let keys: Vec<String> =
-                        objects.objects().iter().map(|o| o.key()).collect();
+                    let keys: Vec<String> = objects.objects().iter().map(|o| o.key()).collect();
                     Response::from_json(&serde_json::json!({
                         "count": keys.len(),
                         "keys": keys,
@@ -324,9 +317,9 @@ impl DurableObject for NexusCfDO {
                                 continue;
                             }
                         };
-                        let origin =
-                            key.trim_end_matches(".llms.md")
-                                .trim_start_matches("_llms/");
+                        let origin = key
+                            .trim_end_matches(".llms.md")
+                            .trim_start_matches("_llms/");
                         match crate::ingest_document(s, &text, origin).await {
                             Ok(_) => {
                                 total += 1;
@@ -347,13 +340,7 @@ impl DurableObject for NexusCfDO {
                         Some(c) => c,
                         None => break,
                     };
-                    objects = match bucket
-                        .list()
-                        .prefix(prefix)
-                        .cursor(cursor)
-                        .execute()
-                        .await
-                    {
+                    objects = match bucket.list().prefix(prefix).cursor(cursor).execute().await {
                         Ok(o) => o,
                         Err(e) => {
                             errors.push(format!("list next page: {e}"));
@@ -396,10 +383,10 @@ impl DurableObject for NexusCfDO {
                     Ok(t) => t,
                     Err(_) => return Response::error("not UTF-8", 500),
                 };
-                let origin =
-                    key.trim_end_matches(".llms.md")
-                        .trim_start_matches("_llms/")
-                        .to_string();
+                let origin = key
+                    .trim_end_matches(".llms.md")
+                    .trim_start_matches("_llms/")
+                    .to_string();
 
                 let do_flush = qv(&q, "flush") != "0";
                 if !do_flush {
@@ -488,8 +475,7 @@ pub async fn handle_path<I: AsyncFileIo>(
                     return (
                         500,
                         "application/json".into(),
-                        serde_json::json!({"error": format!("submit_fact: {:?}", e)})
-                            .to_string(),
+                        serde_json::json!({"error": format!("submit_fact: {:?}", e)}).to_string(),
                     );
                 }
             };
@@ -531,8 +517,7 @@ pub async fn handle_path<I: AsyncFileIo>(
                     return (
                         500,
                         "application/json".into(),
-                        serde_json::json!({"error": format!("submit_intent: {:?}", e)})
-                            .to_string(),
+                        serde_json::json!({"error": format!("submit_intent: {:?}", e)}).to_string(),
                     );
                 }
             };
@@ -671,10 +656,12 @@ pub async fn ingest_document<I: AsyncFileIo>(
 
 fn sanitize_id(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' {
-            c
-        } else {
-            '_'
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
         })
         .collect()
 }

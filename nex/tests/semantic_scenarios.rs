@@ -273,18 +273,27 @@ fn scenario_remove_and_reinsert() {
     futures_executor::block_on(async {
         let mut store = MockSemanticStore::new();
 
-        store.insert(10, &TestFeat::new(vec![1.0, 0.0])).await.unwrap();
+        store
+            .insert(10, &TestFeat::new(vec![1.0, 0.0]))
+            .await
+            .unwrap();
         assert_eq!(store.len(), 1);
 
         store.remove(10).await.unwrap();
         assert_eq!(store.len(), 0, "should be empty after remove");
 
         // Re-insert same id
-        store.insert(10, &TestFeat::new(vec![0.0, 1.0])).await.unwrap();
+        store
+            .insert(10, &TestFeat::new(vec![0.0, 1.0]))
+            .await
+            .unwrap();
         assert_eq!(store.len(), 1);
 
         // Verify new vector is searchable
-        let results = store.search(&TestFeat::new(vec![0.0, 1.0]), 1).await.unwrap();
+        let results = store
+            .search(&TestFeat::new(vec![0.0, 1.0]), 1)
+            .await
+            .unwrap();
         assert_eq!(results[0].0, 10, "re-inserted id should be found");
     });
 }
@@ -295,8 +304,14 @@ fn scenario_mixed_content() {
     futures_executor::block_on(async {
         let mut store = MockSemanticStore::new();
 
-        store.insert(1, &TestFeat::new(vec![1.0, 0.0])).await.unwrap();
-        store.insert(2, &TestFeat::new(vec![0.0, 1.0])).await.unwrap();
+        store
+            .insert(1, &TestFeat::new(vec![1.0, 0.0]))
+            .await
+            .unwrap();
+        store
+            .insert(2, &TestFeat::new(vec![0.0, 1.0]))
+            .await
+            .unwrap();
 
         // TextLoad will fail for MockSemanticStore (no features)
         assert!(
@@ -353,7 +368,10 @@ fn scenario_empty_store() {
         let store = MockSemanticStore::new();
         assert!(store.is_empty());
 
-        let results = store.search(&TestFeat::new(vec![1.0, 0.0]), 10).await.unwrap();
+        let results = store
+            .search(&TestFeat::new(vec![1.0, 0.0]), 10)
+            .await
+            .unwrap();
         assert!(
             results.is_empty(),
             "empty store should return empty results"
@@ -367,8 +385,14 @@ fn scenario_duplicate_insert() {
     futures_executor::block_on(async {
         let mut store = MockSemanticStore::new();
 
-        store.insert(1, &TestFeat::new(vec![1.0, 0.0])).await.unwrap();
-        store.insert(1, &TestFeat::new(vec![1.0, 0.0])).await.unwrap();
+        store
+            .insert(1, &TestFeat::new(vec![1.0, 0.0]))
+            .await
+            .unwrap();
+        store
+            .insert(1, &TestFeat::new(vec![1.0, 0.0]))
+            .await
+            .unwrap();
         // MockSemanticStore does not dedup by id, so len becomes 2
         // This is expected — the caller (FihCoord) should prevent duplicates
         assert_eq!(
@@ -458,7 +482,10 @@ fn scenario_search_json_documents() {
         let start = std::time::Instant::now();
         for (i, (_title, text)) in items.iter().enumerate().take(500) {
             let features = text_to_features(text, VOCABULARY);
-            store.insert(i as u32, &TestFeat::new(features)).await.unwrap();
+            store
+                .insert(i as u32, &TestFeat::new(features))
+                .await
+                .unwrap();
             if i > 0 && i % 100 == 0 {
                 eprintln!("  indexed {} / 500 documents...", i);
             }
@@ -514,7 +541,10 @@ fn scenario_search_json_incremental_add() {
         // Index first 100 docs
         for (i, (_title, text)) in items.iter().enumerate().take(100) {
             let features = text_to_features(text, VOCABULARY);
-            store.insert(i as u32, &TestFeat::new(features)).await.unwrap();
+            store
+                .insert(i as u32, &TestFeat::new(features))
+                .await
+                .unwrap();
         }
         assert_eq!(store.len(), 100);
 
@@ -549,7 +579,10 @@ fn scenario_search_json_topic_specific() {
 
         for (i, (_title, text)) in items.iter().enumerate().take(500) {
             let features = text_to_features(text, VOCABULARY);
-            store.insert(i as u32, &TestFeat::new(features)).await.unwrap();
+            store
+                .insert(i as u32, &TestFeat::new(features))
+                .await
+                .unwrap();
         }
 
         // Topic: hardware / RISC-V
@@ -577,12 +610,24 @@ fn scenario_query_consistency() {
     futures_executor::block_on(async {
         let mut store = MockSemanticStore::new();
 
-        store.insert(10, &TestFeat::new(vec![1.0, 0.0])).await.unwrap();
-        store.insert(20, &TestFeat::new(vec![0.0, 1.0])).await.unwrap();
+        store
+            .insert(10, &TestFeat::new(vec![1.0, 0.0]))
+            .await
+            .unwrap();
+        store
+            .insert(20, &TestFeat::new(vec![0.0, 1.0]))
+            .await
+            .unwrap();
 
         // Query same vector twice should produce same result
-        let r1 = store.search(&TestFeat::new(vec![1.0, 0.0]), 2).await.unwrap();
-        let r2 = store.search(&TestFeat::new(vec![1.0, 0.0]), 2).await.unwrap();
+        let r1 = store
+            .search(&TestFeat::new(vec![1.0, 0.0]), 2)
+            .await
+            .unwrap();
+        let r2 = store
+            .search(&TestFeat::new(vec![1.0, 0.0]), 2)
+            .await
+            .unwrap();
 
         assert_eq!(r1.len(), r2.len());
         for (a, b) in r1.iter().zip(r2.iter()) {
@@ -604,13 +649,14 @@ fn scenario_origin_based_search() {
 
         // OriginLoad has no features, so MockSemanticStore fails on insert.
         // This is correct: OriginLoad tests the RecordLoad trait boundary.
-        let result = store.insert(
-            1,
-            &OriginLoad {
-                origin: "whitepaper".into(),
-            },
-        )
-        .await;
+        let result = store
+            .insert(
+                1,
+                &OriginLoad {
+                    origin: "whitepaper".into(),
+                },
+            )
+            .await;
         assert!(result.is_err(), "OriginLoad lacks features, should fail");
 
         // But verify the constructors work: we can still create and pass it
@@ -631,15 +677,16 @@ fn scenario_full_doc_load() {
         let mut store = MockSemanticStore::new();
 
         // FullDocLoad has no features either — should fail for MockSemanticStore
-        let result = store.insert(
-            1,
-            &FullDocLoad {
-                text: "ssccs semantics".into(),
-                origin: "whitepaper".into(),
-                creator: "taeho".into(),
-            },
-        )
-        .await;
+        let result = store
+            .insert(
+                1,
+                &FullDocLoad {
+                    text: "ssccs semantics".into(),
+                    origin: "whitepaper".into(),
+                    creator: "taeho".into(),
+                },
+            )
+            .await;
         assert!(result.is_err(), "FullDocLoad lacks features, should fail");
 
         // Verify all accessors work (RecordLoad only has content/text/features)
@@ -856,7 +903,7 @@ fn scenario_fihstorage_e2e_auto_index() {
     futures_executor::block_on(async {
         use nex::FihStorage;
         use nex::io::FsIo;
-        use nexus_model::{Content, Fact, FihHash, AsyncFactCapable};
+        use nexus_model::{AsyncFactCapable, Content, Fact, FihHash};
 
         let tmp = tempfile::TempDir::new().unwrap();
         let io = FsIo::new(tmp.path()).unwrap();
@@ -878,7 +925,9 @@ fn scenario_fihstorage_e2e_auto_index() {
 
         // Use async FactCapable trait — this enqueues writes to pending buffer
         // and calls record_fact + semantic_insert via .await.
-        AsyncFactCapable::submit_fact(&storage, &fact).await.unwrap();
+        AsyncFactCapable::submit_fact(&storage, &fact)
+            .await
+            .unwrap();
 
         // Verify fact exists in state (sync StorageRead reads from in-memory stores)
         let state = nexus_model::StorageRead::read_state(&storage);
@@ -907,7 +956,9 @@ fn scenario_fihstorage_e2e_auto_index() {
             },
             creator: "worker-1".into(),
         };
-        AsyncFactCapable::submit_fact(&storage, &conclusion).await.unwrap();
+        AsyncFactCapable::submit_fact(&storage, &conclusion)
+            .await
+            .unwrap();
 
         // Conclusion fact should not add noise to BM25 search for "rust"
         let results_after_conclusion = storage
