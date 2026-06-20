@@ -243,7 +243,7 @@ async fn handle_client(mut stream: TcpStream, storage: &nex::FihStorage<MockIo>)
                 )
             } else {
                 let query = nexus_gateway_nex_cf::cf_io::TextQuery { text: q };
-                match storage.semantic_search(&query, 10) {
+                match storage.semantic_search(&query, 10).await {
                     Ok(results) => {
                         let items: Vec<serde_json::Value> = results
                             .iter()
