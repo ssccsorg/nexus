@@ -1,41 +1,58 @@
 // ── nex-zed: Helix remote_server HTTP API client ─────────────────────
 //
-// Connects to Helix remote_server's external_websocket_sync HTTP API
-// to send coding prompts and receive results.
+// Connects to Helix remote_server (via external_websocket_sync) HTTP API.
+// Sends prompts, receives responses — same as Zed agent panel chat.
 //
-// remote_server provides all Zed native tools via HTTP.
-// nex-zed translates stdin prompts to API calls.
+// API endpoints:
+//   POST /api/v1/contexts              — create conversation
+//   POST /api/v1/contexts/:id/messages  — send message
+//   GET  /api/v1/contexts/:id/messages  — get messages
 //
 // Usage:
-//   nex-zed --api http://localhost:3030         # connect to API
-//   nex-zed --bin .bin/helix-remote-server-arm64 # spawn + connect
-//
-// API endpoints (from external_websocket_sync):
-//   POST /api/v1/contexts              - create conversation
-//   POST /api/v1/contexts/:id/messages  - send message
-//   GET  /api/v1/contexts/:id/messages  - get messages
-//   GET  /api/v1/ws                     - WebSocket streaming
+//   nex-zed --api http://localhost:3030
+//   nex-zed --bin .bin/helix-remote-server-arm64  (spawn + connect)
 
 use clap::Parser;
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::process::Stdio;
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 #[derive(Parser)]
 #[command(name = "nex-zed", version, about = "Helix headless Zed client")]
 struct Args {
-    /// Spawn Helix remote_server binary
     #[arg(long)]
     bin: Option<PathBuf>,
-
-    /// external_websocket_sync HTTP API base URL
     #[arg(long, default_value = "http://localhost:3030")]
     api: String,
-
-    /// Working directory
     #[arg(long, default_value = ".")]
     workdir: String,
+}
+
+#[derive(Serialize)]
+struct CreateContextRequest {
+    title: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct CreateContextResponse {
+    context_id: String,
+}
+
+#[derive(Serialize)]
+struct SendMessageRequest {
+    content: String,
+    role: String,
+}
+
+#[derive(Deserialize)]
+struct MessageInfo {
+    id: u64,
+    content: String,
+    role: String,
 }
 
 #[tokio::main]
@@ -66,21 +83,87 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .stderr(Stdio::inherit())
             .spawn()?;
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-        info!("Remote server spawned");
     }
 
-    info!("API endpoint: {}/api/v1", args.api);
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?;
 
-    // TODO:
-    // 1. POST /api/v1/contexts to create a conversation
-    // 2. Loop: read stdin → POST /api/v1/contexts/:id/messages
-    // 3. Poll GET /api/v1/contexts/:id/messages for responses
-    // 4. WebSocket for streaming (/api/v1/ws)
+    let api = args.api.trim_end_matches('/').to_string();
 
-    info!("Waiting for commands. Type /exit to quit.");
-    info!("(API integration pending)");
+    // 1. Create a conversation context
+    info!("Creating conversation...");
+    let ctx: CreateContextResponse = client
+        .post(format!("{}/api/v1/contexts", api))
+        .json(&CreateContextRequest { title: Some("nex-zed chat".into()) })
+        .send()
+        .await?
+        .json()
+        .await?;
 
-    tokio::signal::ctrl_c().await?;
+    let ctx_id = ctx.context_id;
+    info!("Context created: {}", ctx_id);
+    info!("Type your prompt and press Enter. /exit to quit.");
+
+    // 2. Stdin loop
+    let stdin = tokio::io::stdin();
+    let mut reader = BufReader::new(stdin);
+    let mut line = String::new();
+
+    // Polling task for incoming messages
+    let poll_api = api.clone();
+    let poll_ctx = ctx_id.clone();
+    let poll_handle = tokio::spawn(async move {
+        let poll_client = Client::new();
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            match poll_client
+                .get(format!("{}/api/v1/contexts/{}/messages", poll_api, poll_ctx))
+                .send()
+                .await
+            {
+                Ok(resp) => {
+                    if let Ok(msgs) = resp.json::<Vec<MessageInfo>>().await {
+                        for msg in &msgs {
+                            if msg.role == "assistant" {
+                                println!("[{}]: {}", msg.role, msg.content);
+                            }
+                        }
+                    }
+                }
+                Err(e) => debug!("Poll error: {}", e),
+            }
+        }
+    });
+
+    loop {
+        line.clear();
+        match reader.read_line(&mut line).await {
+            Ok(0) => break,
+            Ok(_) => {
+                let input = line.trim().to_string();
+                if input.is_empty() { continue; }
+                if input == "/exit" || input == "/quit" { break; }
+
+                // Send message
+                match client
+                    .post(format!("{}/api/v1/contexts/{}/messages", api, ctx_id))
+                    .json(&SendMessageRequest { content: input, role: "user".into() })
+                    .send()
+                    .await
+                {
+                    Ok(_) => info!("Message sent"),
+                    Err(e) => error!("Send error: {}", e),
+                }
+            }
+            Err(e) => {
+                error!("Stdin error: {}", e);
+                break;
+            }
+        }
+    }
+
+    poll_handle.abort();
     info!("Shutting down");
     Ok(())
 }
