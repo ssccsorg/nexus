@@ -1318,6 +1318,9 @@ impl<I: AsyncFileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
     }
 
     async fn read_state(&self) -> BoardState {
+        // Flush any pending writes so IO reflects the latest state.
+        let _ = self.flush_pending().await;
+
         // Direct async IO: list + read from backing store, no block_on.
         let mut facts = Vec::new();
         if let Ok(keys) = self.io.list("facts/").await {
@@ -1514,6 +1517,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
     }
 
     async fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let _ = self.flush_pending().await;
         let normalized = FihHash::from_hex(intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
@@ -1548,6 +1552,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
     }
 
     async fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let _ = self.flush_pending().await;
         let normalized = FihHash::from_hex(intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
@@ -1580,6 +1585,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
     }
 
     async fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let _ = self.flush_pending().await;
         let normalized = FihHash::from_hex(intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
@@ -1623,6 +1629,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
         intent_id: &str,
         result: &str,
     ) -> Result<Fact, BlackboardError> {
+        let _ = self.flush_pending().await;
         let normalized = FihHash::from_hex(intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
