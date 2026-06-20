@@ -19,8 +19,6 @@
 //
 // Workers AI model: @cf/baai/bge-small-en-v1.5 (384-dim).
 
-use std::cell::RefCell;
-
 use nex::storage::semantic::{Query, RecordLoad, SemanticStore};
 use serde::Deserialize;
 use worker::*;
@@ -45,10 +43,14 @@ struct VectorizeQueryResult {
 
 // ── Runtime helpers: call Workers AI for embedding ──────────────────────
 
-/// Embed a text string using Workers AI and return a Vec<f32> on success.
+/// Embed a single text string using Workers AI and return its embedding vector.
+///
+/// `@cf/baai/bge-small-en-v1.5` accepts `{ "text": "..." }` (single string) or
+/// `{ "text": ["...", "..."] }` (array). Single mode returns `{ "data": [{ "embedding": [...] }] }`.
 async fn embed_text(env: &Env, text: &str) -> Result<Vec<f32>> {
     let ai = env.ai("AI")?;
-    let input = serde_json::json!({ "text": [text] });
+    // Single string (not array) for bge-small-en-v1.5
+    let input = serde_json::json!({ "text": text });
     let result: serde_json::Value = ai
         .run("@cf/baai/bge-small-en-v1.5", &input)
         .await?;
@@ -58,7 +60,12 @@ async fn embed_text(env: &Env, text: &str) -> Result<Vec<f32>> {
         .and_then(|arr| arr.first())
         .and_then(|v| v.get("embedding"))
         .and_then(|v| v.as_array())
-        .ok_or_else(|| Error::RustError("AI embedding: unexpected response shape".into()))?;
+        .ok_or_else(|| {
+            Error::RustError(format!(
+                "AI embedding: unexpected response shape: {}",
+                serde_json::to_string(&result).unwrap_or_default()
+            ))
+        })?;
 
     let vec: Vec<f32> = data
         .iter()
@@ -67,7 +74,8 @@ async fn embed_text(env: &Env, text: &str) -> Result<Vec<f32>> {
     Ok(vec)
 }
 
-/// Embedded text batch (for multiple texts at once).
+/// Embed multiple texts using Workers AI.
+/// `@cf/baai/bge-small-en-v1.5` batch mode accepts `{ "text": ["...", "..."] }`.
 async fn embed_texts(env: &Env, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
     let ai = env.ai("AI")?;
     let input = serde_json::json!({ "text": texts });
@@ -93,72 +101,47 @@ async fn embed_texts(env: &Env, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
 
 /// Check if a Vectorize binding is available.
 fn has_vectorize_binding(env: &Env) -> bool {
-    env.get_binding::<JsValueWrapper>("SEMANTIC_INDEX").is_ok()
+    js_sys::Reflect::get(env.as_ref(), &JsValue::from("SEMANTIC_INDEX"))
+        .map(|v| !v.is_undefined())
+        .unwrap_or(false)
 }
 
-// ── JsValueWrapper access (same pattern as worker::env private type) ──
+// ── Global static buffer (CF Workers single-threaded) ────────────────
+//
+// Shared by all CfVectorizeStore instances. FihStorage owns one Box<dyn SemanticStore>,
+// while the fetch handler keeps a &'static reference via PROD_VECTORIZE. Both read/write
+// the same buffer, so semantic_insert and sync_to_vectorize access the same data.
 
-/// Wrapper around JsValue to use with EnvBinding.
-#[repr(transparent)]
-struct JsValueWrapper(JsValue);
+static mut VECTORIZE_BUFFER: Vec<(u32, String)> = Vec::new();
 
-impl AsRef<JsValue> for JsValueWrapper {
-    fn as_ref(&self) -> &JsValue {
-        &self.0
-    }
+/// Returns a mutable raw pointer to the global buffer.
+///
+/// # Safety
+///
+/// CF Workers is single-threaded, so concurrent access is impossible.
+/// Callers must ensure no other `&mut` or `&` reference is live simultaneously.
+fn buffer() -> *mut Vec<(u32, String)> {
+    core::ptr::addr_of_mut!(VECTORIZE_BUFFER)
 }
 
-impl From<JsValueWrapper> for JsValue {
-    fn from(w: JsValueWrapper) -> Self {
-        w.0
-    }
-}
-
-impl EnvBinding for JsValueWrapper {
-    const TYPE_NAME: &'static str = "VectorizeIndex";
-}
-
-impl JsCast for JsValueWrapper {
-    fn instanceof(_: &JsValue) -> bool {
-        true
-    }
-    fn unchecked_from_js(val: JsValue) -> Self {
-        Self(val)
-    }
-    fn unchecked_from_js_ref(val: &JsValue) -> &Self {
-        unsafe { &*(val as *const JsValue as *const Self) }
-    }
+/// Clear the global buffer. Should only be used in tests or at initialization.
+fn clear_buffer() {
+    unsafe { (*buffer()).clear(); }
 }
 
 // ── CfVectorizeStore ────────────────────────────────────────────────────
 
-/// Cloudflare Vectorize-backed semantic store with local fallback.
-///
-/// Sync operations (SemanticStore trait) use a local in-memory buffer.
-/// Async operations (sync_to_vectorize, search_vectorize_async) call
-/// Workers AI for embedding and Cloudflare Vectorize for storage/query.
-///
-/// Search flow (async path):
-///   1. Embed query text via Workers AI @cf/baai/bge-small-en-v1.5
-///   2. Query Vectorize index with the embedding vector
-///   3. Return match results as (id, score) pairs
+/// Cloudflare Vectorize-backed semantic store with global static buffer.
 pub struct CfVectorizeStore {
-    /// Local buffer: (id, text) pairs accumulated since last sync.
-    /// Used for sync trait operations and as fallback.
-    buffer: RefCell<Vec<(u32, String)>>,
-    /// Whether the buffer has been flushed to Vectorize.
-    /// Reset to false on each insert, set to true after sync_to_vectorize.
-    synced: RefCell<bool>,
-    /// Workers Env — needed for AI + Vectorize bindings in async methods.
-    /// Use `Some(env)` in production; `None` for testing (local-only).
     env: Option<worker::Env>,
 }
 
 impl std::fmt::Debug for CfVectorizeStore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // SAFETY: CF Workers single-threaded.
+        let len = unsafe { (*buffer()).len() };
         f.debug_struct("CfVectorizeStore")
-            .field("buffer_len", &self.buffer.borrow().len())
-            .field("synced", &self.synced.borrow())
+            .field("buffer_len", &len)
             .finish()
     }
 }
@@ -175,8 +158,6 @@ impl CfVectorizeStore {
     ///   - Without AI: local-only fallback
     pub fn new(env: worker::Env) -> Self {
         Self {
-            buffer: RefCell::new(Vec::new()),
-            synced: RefCell::new(false),
             env: Some(env),
         }
     }
@@ -190,43 +171,43 @@ impl CfVectorizeStore {
     /// After successful flush, the buffer is NOT cleared (it serves as
     /// local fallback) but the synced flag is set to true.
     pub async fn sync_to_vectorize(&self) -> Result<()> {
-        if self.buffer.borrow().is_empty() {
+        if unsafe { (*buffer()).is_empty() } {
             worker::console_log!("[CfVectorizeStore] sync: buffer empty, nothing to sync");
-            self.synced.replace(true);
             return Ok(());
         }
 
-        let texts: Vec<String> = self.buffer.borrow().iter().map(|(_, t)| t.clone()).collect();
-        let ids: Vec<u32> = self.buffer.borrow().iter().map(|(id, _)| *id).collect();
+        let buf = unsafe { &*buffer() };
+        let texts: Vec<String> = buf.iter().map(|(_, t)| t.clone()).collect();
+        let ids: Vec<u32> = buf.iter().map(|(id, _)| *id).collect();
         worker::console_log!("[CfVectorizeStore] sync: {} texts to embed", ids.len());
 
         let env = match self.env.as_ref() {
             Some(e) => e,
             None => {
                 worker::console_log!("[CfVectorizeStore] sync: no env, skipping");
-                self.synced.replace(true);
                 return Ok(());
             }
         };
-        let binding = match env.get_binding::<JsValueWrapper>("SEMANTIC_INDEX") {
-            Ok(b) => b.0,
-            Err(e) => {
-                worker::console_log!("[CfVectorizeStore] SEMANTIC_INDEX binding unavailable: {e}");
-                self.synced.replace(true);
+        let binding = match js_sys::Reflect::get(env.as_ref(), &JsValue::from("SEMANTIC_INDEX")) {
+            Ok(v) if !v.is_undefined() => v,
+            _ => {
+                worker::console_log!("[CfVectorizeStore] SEMANTIC_INDEX binding not found or undefined");
                 return Ok(());
             }
         };
 
-        let embeddings = match embed_texts(env, &texts.iter().map(|s| s.as_str()).collect::<Vec<&str>>()).await {
-            Ok(v) => {
-                worker::console_log!("[CfVectorizeStore] sync: embedded {} texts", texts.len());
-                v
+        // Embed each text individually (avoid batch API format issues)
+        let mut embeddings: Vec<Vec<f32>> = Vec::with_capacity(texts.len());
+        for t in &texts {
+            match embed_text(env, t).await {
+                Ok(v) => embeddings.push(v),
+                Err(e) => {
+                    worker::console_log!("[CfVectorizeStore] embed error for '{}': {}", t, e);
+                    return Err(e);
+                }
             }
-            Err(e) => {
-                worker::console_log!("[CfVectorizeStore] embed error: {e}");
-                return Err(e);
-            }
-        };
+        }
+        worker::console_log!("[CfVectorizeStore] sync: embedded {} texts", texts.len());
 
         // Build JS array of vector objects for Vectorize upsert
         let vectors = Array::new();
@@ -291,7 +272,6 @@ impl CfVectorizeStore {
                 Error::RustError(format!("Vectorize insert promise rejected: {:?}", e))
             })?;
 
-        self.synced.replace(true);
         console_log!(
             "[CfVectorizeStore] synced {} vectors",
             ids.len()
@@ -319,9 +299,9 @@ impl CfVectorizeStore {
             Some(e) => e,
             None => return Ok(self.local_search(query_text, top_k)),
         };
-        let binding = match env.get_binding::<JsValueWrapper>("SEMANTIC_INDEX") {
-            Ok(b) => b.0,
-            Err(_) => {
+        let binding = match js_sys::Reflect::get(env.as_ref(), &JsValue::from("SEMANTIC_INDEX")) {
+            Ok(v) if !v.is_undefined() => v,
+            _ => {
                 // Fall back to local search
                 return Ok(self.local_search(query_text, top_k));
             }
@@ -426,7 +406,7 @@ impl CfVectorizeStore {
     // (no IDF weighting).
 
     fn local_search(&self, query_text: &str, top_k: usize) -> Vec<(u32, f32)> {
-        let buffer = self.buffer.borrow();
+        let buffer = unsafe { &*buffer() };
         if buffer.is_empty() {
             return Vec::new();
         }
@@ -477,8 +457,7 @@ impl SemanticStore for CfVectorizeStore {
         let text = load
             .text(id)
             .ok_or_else(|| format!("CfVectorizeStore: no text for id {id}"))?;
-        self.buffer.borrow_mut().push((id, text));
-        self.synced.replace(false);
+        unsafe { (*buffer()).push((id, text)); }
         Ok(())
     }
 
@@ -491,12 +470,12 @@ impl SemanticStore for CfVectorizeStore {
     }
 
     async fn remove(&mut self, id: u32) -> Result<(), String> {
-        self.buffer.borrow_mut().retain(|(i, _)| *i != id);
+        unsafe { (*buffer()).retain(|(i, _)| *i != id); }
         Ok(())
     }
 
     fn len(&self) -> usize {
-        self.buffer.borrow().len()
+        unsafe { (*buffer()).len() }
     }
 }
 
@@ -535,9 +514,9 @@ mod tests {
 
     /// Helper to create a CfVectorizeStore for testing (no Env).
     fn make_test_store() -> CfVectorizeStore {
+        // Clear the global static buffer so each test starts fresh.
+        clear_buffer();
         CfVectorizeStore {
-            buffer: RefCell::new(Vec::new()),
-            synced: RefCell::new(false),
             env: None,
         }
     }

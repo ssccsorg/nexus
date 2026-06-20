@@ -42,14 +42,14 @@ unsafe impl Sync for SyncVectorizeStore {}
 static PROD_VECTORIZE: SyncVectorizeStore = SyncVectorizeStore(OnceLock::new());
 static TEST_VECTORIZE: SyncVectorizeStore = SyncVectorizeStore(OnceLock::new());
 
-fn store(is_test: bool) -> &'static FihStorage<CfFihIo> {
-    if is_test { TEST_STORE.0.get().expect("TEST FihStorage not initialized") }
-    else { PROD_STORE.0.get().expect("PROD FihStorage not initialized") }
-}
-
 fn vectorize_store(is_test: bool) -> Option<&'static CfVectorizeStore> {
     if is_test { TEST_VECTORIZE.0.get() }
     else { PROD_VECTORIZE.0.get() }
+}
+
+fn store(is_test: bool) -> &'static FihStorage<CfFihIo> {
+    if is_test { TEST_STORE.0.get().expect("TEST FihStorage not initialized") }
+    else { PROD_STORE.0.get().expect("PROD FihStorage not initialized") }
 }
 
 fn init_stores(env: &worker::Env, prod_bucket: worker::Bucket, test_bucket: worker::Bucket) {
@@ -58,11 +58,13 @@ fn init_stores(env: &worker::Env, prod_bucket: worker::Bucket, test_bucket: work
     PROD_STORE.0.get_or_init(|| {
         let s = FihStorage::with_clock(CfFihIo::new(prod_bucket), "cf-nexus", Box::new(CfClock));
         s.register_semantic_store(Box::new(crate::stores::bm25::InMemoryBm25::new()));
+        s.register_semantic_store(Box::new(CfVectorizeStore::new(env.clone())));
         s
     });
     TEST_STORE.0.get_or_init(|| {
         let s = FihStorage::with_clock(CfFihIo::new(test_bucket), "cf-nexus-test", Box::new(CfClock));
         s.register_semantic_store(Box::new(crate::stores::bm25::InMemoryBm25::new()));
+        s.register_semantic_store(Box::new(CfVectorizeStore::new(env.clone())));
         s
     });
     let _ = PROD_VECTORIZE.0.set(CfVectorizeStore::new(env.clone()));
@@ -257,31 +259,51 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         "/search" => {
             let query_text = qv(&q, "q");
             if query_text.is_empty() { return Response::error("missing 'q' parameter", 400); }
-
-            let results = match vectorize_store(is_test) {
-                Some(vs) => match vs.search_vectorize_async(&query_text, 10).await {
-                    Ok(r) if !r.is_empty() => r,
-                    _ => {
-                        let query = crate::cf_io::TextQuery { text: query_text };
-                        match s.semantic_search(&query, 10).await {
-                            Ok(r) => r,
-                            Err(e) => return Response::error(format!("search: {e}"), 500),
-                        }
-                    }
-                },
-                None => {
-                    let query = crate::cf_io::TextQuery { text: query_text };
-                    match s.semantic_search(&query, 10).await {
-                        Ok(r) => r,
-                        Err(e) => return Response::error(format!("search: {e}"), 500),
-                    }
-                }
+            // Rebuild from R2 if this is a cold instance (multi-instance CF Workers).
+            if s.fact_store.len() == 0 {
+                s.rebuild_cache().await.ok();
+                s.rebuild_semantic().await.ok();
+            }
+            let query = crate::cf_io::TextQuery { text: query_text };
+            let results = match s.semantic_search(&query, 10).await {
+                Ok(r) => r,
+                Err(e) => return Response::error(format!("search: {e}"), 500),
             };
-
             let items: Vec<serde_json::Value> = results.iter().map(|(idx, score)| {
                 serde_json::json!({"index": idx, "score": score, "id": s.resolve_semantic_idx(*idx)})
             }).collect();
             Response::from_json(&serde_json::json!({"results": items}))
+        }
+
+        "/debug/stores" => {
+            let stores = s.semantic_stores();
+            let count = stores.len();
+            worker::console_log!("semantic_stores count: {}", count);
+            drop(stores);
+            Response::ok(format!("stores={} fact_store={}", count, s.fact_store.len()))
+        }
+
+        "/debug/ingest-search" => {
+            // Ingest + search in a single request (same Worker instance).
+            let text = qv(&q, "text");
+            let query = qv(&q, "q");
+            if text.is_empty() { return Response::error("missing text", 400); }
+            if query.is_empty() { return Response::error("missing q", 400); }
+            match crate::ingest_document(s, &text, "debug").await {
+                Ok(id) => {
+                    let search_query = crate::cf_io::TextQuery { text: query };
+                    match s.semantic_search(&search_query, 10).await {
+                        Ok(results) => {
+                            let items: Vec<serde_json::Value> = results.iter().map(|(idx, score)| {
+                                serde_json::json!({"index": idx, "score": score})
+                            }).collect();
+                            Response::from_json(&serde_json::json!({"ingested": id, "fact_store": s.fact_store.len(), "results": items}))
+                        }
+                        Err(e) => Response::error(format!("search error: {}", e), 500),
+                    }
+                }
+                Err(e) => Response::error(e, 500),
+            }
         }
 
         "/debug/list-docs" => {
@@ -296,6 +318,61 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                 }
                 None => Response::error("DOCS_R2 not bound", 500),
             }
+        }
+
+        "/ingest-all" => {
+            // Ingest all .llms.md files from DOCS_R2 _llms/ prefix.
+            let bucket = match docs { Some(b) => b, None => return Response::error("DOCS_R2 not bound", 500) };
+            let prefix = qv(&q, "prefix");
+            let prefix = if prefix.is_empty() { "_llms/" } else { &prefix };
+            let mut total: usize = 0;
+            let mut errors: Vec<String> = Vec::new();
+            let list_result = match bucket.list().prefix(prefix).execute().await {
+                Ok(o) => o,
+                Err(e) => return Response::error(format!("list error: {e}"), 500),
+            };
+            let mut objects = list_result;
+            loop {
+                for obj in objects.objects() {
+                    let key = obj.key();
+                    if !key.ends_with(".llms.md") { continue; }
+                    let obj_get = match bucket.get(&key).execute().await {
+                        Ok(Some(o)) => o,
+                        Ok(None) => { errors.push(format!("{key}: not found")); continue; }
+                        Err(e) => { errors.push(format!("{key}: get error: {e}")); continue; }
+                    };
+                    let data = match obj_get.body() {
+                        Some(body) => match body.bytes().await {
+                            Ok(b) => b.to_vec(),
+                            Err(e) => { errors.push(format!("{key}: read body: {e}")); continue; }
+                        },
+                        None => { errors.push(format!("{key}: no body")); continue; }
+                    };
+                    let text = match String::from_utf8(data) {
+                        Ok(t) => t,
+                        Err(_) => { errors.push(format!("{key}: not UTF-8")); continue; }
+                    };
+                    let origin = key.trim_end_matches(".llms.md").trim_start_matches("_llms/");
+                    match crate::ingest_document(s, &text, origin).await {
+                        Ok(_) => total += 1,
+                        Err(e) => errors.push(format!("{key}: {e}")),
+                    }
+                }
+                if !objects.truncated() { break; }
+                let cursor = match objects.cursor() {
+                    Some(c) => c,
+                    None => break,
+                };
+                objects = match bucket.list().prefix(prefix).cursor(cursor).execute().await {
+                    Ok(o) => o,
+                    Err(e) => { errors.push(format!("list next page: {e}")); break; }
+                };
+            }
+            // After all ingests, sync to Vectorize
+            if let Some(vs) = vectorize_store(is_test) {
+                vs.sync_to_vectorize().await.ok();
+            }
+            Response::from_json(&serde_json::json!({"ingested": total, "errors": errors}))
         }
 
         "/ingest-one" => {

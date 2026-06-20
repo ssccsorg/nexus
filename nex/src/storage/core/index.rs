@@ -301,14 +301,17 @@ impl FihCoord {
         if stores.is_empty() {
             return Err("no semantic stores configured".into());
         }
-        let num_stores = stores.len();
+        let mut last_err: Option<String> = None;
         for store in stores.iter_mut() {
-            store
-                .insert(id, load)
-                .await
-                .map_err(|e| format!("semantic insert failed (store {num_stores}): {e}"))?;
+            if let Err(e) = store.insert(id, load).await {
+                last_err = Some(e);
+            }
         }
-        Ok(())
+        if let Some(e) = last_err {
+            Err(e)
+        } else {
+            Ok(())
+        }
     }
 
     /// Search the semantic store using the provided query handle.
