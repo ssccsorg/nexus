@@ -54,3 +54,6 @@ core/target/
 result/
 
 logs
+
+# Pre-compiled binaries (Helix remote_server, etc.)
+.bin/
