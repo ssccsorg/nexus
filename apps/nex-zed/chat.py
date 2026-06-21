@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
 """
-nex-zed: Helix headless Zed 대화형 채팅
+nex-zed: Helix headless Zed interactive chat
 
-Zed를 --headless 모드로 실행하고,
-WebSocket으로 연결하여 AI 에이전트와 대화합니다.
+Runs Zed in --headless mode,
+connects via WebSocket to converse with an AI agent.
 
-사용법:
-  ./chat.py                                    # 기본 실행
-  ./chat.py --bin ../.bin/helix-zed-headless-arm64  # 바이너리 경로 지정
-  ./chat.py --workdir /path/to/project              # 작업 디렉토리 지정
+Usage:
+  ./chat.py                                    # default run
+  ./chat.py --bin ../.bin/helix-zed-headless-arm64  # specify binary path
+  ./chat.py --workdir /path/to/project              # specify working directory
 
-명령어:
-  메시지를 입력하면 Zed 에이전트로 전송됩니다.
-  /exit, /quit    - 종료
-  /new            - 새 스레드 시작
-  /thread         - 현재 스레드 ID 보기
-  /raw            - 원시 JSON 메시지 표시 토글
+Commands:
+  Enter a message and it will be sent to the Zed agent.
+  /exit, /quit    - exit
+  /new            - start a new thread
+  /thread         - show current thread ID
+  /raw            - toggle raw JSON message display
 
-예시:
-  > 이 디렉토리에 뭐가 있어?
-  > main.rs를 읽어줘
-  > 여기에 TODO 주석이 있나 찾아봐
+Examples:
+  > What's in this directory?
+  > Read main.rs
+  > Find TODO comments here
 """
 
 import asyncio
@@ -44,23 +44,23 @@ except ImportError:
     import websockets
 
 
-# ── 설정 ──────────────────────────────────────────────────────────────
+# ── Config ──────────────────────────────────────────────────────────────
 
 HOST = "127.0.0.1"
 WS_PORT = 8080
 ZED_LOG = "/tmp/nex-zed-headless.log"
 SESSION_ID = f"ses_nex-zed-{uuid.uuid4().hex[:8]}"
 
-# 현재 스레드 ID (chat_message를 보내면 Zed가 응답으로 알려줌)
+# Zed responds with thread_id when we send chat_message
 current_thread_id = None
 current_request_id = None
-# 원시 JSON 표시
+# Raw JSON display
 show_raw = False
-# 연결된 Zed 소켓
+# Connected Zed socket
 zed_ws = None
 
 
-# ── ANSI 색상 ─────────────────────────────────────────────────────────
+# ── ANSI colors ─────────────────────────────────────────────────────────
 
 class C:
     HEADER = '\033[95m'
@@ -74,25 +74,25 @@ class C:
     END = '\033[0m'
 
 
-# ── WebSocket 서버: Zed의 연결을 받음 ────────────────────────────────
+# ── WebSocket server: handles Zed connections ────────────────────────────────
 
 async def handle_zed(websocket):
-    """Zed가 WebSocket으로 연결했을 때 호출됨."""
+    """Called when Zed connects via WebSocket."""
     global zed_ws, current_thread_id
     zed_ws = websocket
     peer = websocket.remote_address
 
-    print(f"\n{C.GREEN}{C.BOLD}✓ Zed 연결됨 ({peer}){C.END}")
-    print(f"{C.DIM}에이전트 준비 중... (최대 10초){C.END}")
+    print(f"\n{C.GREEN}{C.BOLD}✓ Zed connected ({peer}){C.END}")
+    print(f"{C.DIM}Agent initializing... (up to 10s){C.END}")
 
-    # /tmp/hl-stdin.sock 등 이전 소켓 파일 정리
+    # Clean up old socket files like /tmp/hl-stdin.sock
     for sock in ["/tmp/hl-stdin.sock", "/tmp/hl-stdout.sock", "/tmp/hl-stderr.sock", "/tmp/hl.pid"]:
         try:
             os.remove(sock)
         except FileNotFoundError:
             pass
 
-    # 잠시 기다리면 Zed가 agent_ready를 보냄
+    # Wait briefly for Zed to send agent_ready
     try:
         async for raw in websocket:
             try:
@@ -101,13 +101,13 @@ async def handle_zed(websocket):
             except json.JSONDecodeError:
                 pass
     except websockets.exceptions.ConnectionClosed:
-        print(f"\n{C.RED}Zed 연결 종료됨{C.END}")
+        print(f"\n{C.RED}Zed connection closed{C.END}")
     finally:
         zed_ws = None
 
 
 async def handle_message(msg):
-    """Zed로부터 받은 WebSocket 메시지 처리."""
+    """Handle WebSocket messages received from Zed."""
     global current_thread_id, current_request_id
     event_type = msg.get("event_type", "unknown")
     data = msg.get("data", {})
@@ -120,23 +120,23 @@ async def handle_message(msg):
         await zed_ws.send(json.dumps({"type": "pong", "data": data}))
 
     elif event_type == "pong":
-        pass  # 무시
+        pass  # ignore
 
     elif event_type == "agent_ready":
         agent = data.get("agent_name", "?")
         tid = data.get("thread_id")
-        print(f"\n{C.GREEN}{C.BOLD}✓ 에이전트 준비 완료 ({agent}){C.END}")
+        print(f"\n{C.GREEN}{C.BOLD}✓ Agent ready ({agent}){C.END}")
         if tid:
             current_thread_id = tid
-            print(f"  스레드: {C.CYAN}{tid}{C.END}")
-        print(f"\n{C.BOLD}메시지를 입력하세요. /exit로 종료.{C.END}")
-        print(f"{C.DIM}예: \"이 디렉토리에 뭐가 있어?\"{C.END}")
+            print(f"  Thread: {C.CYAN}{tid}{C.END}")
+        print(f"\n{C.BOLD}Enter a message. /exit to quit.{C.END}")
+        print(f"{C.DIM}Example: \"What's in this directory?\"{C.END}")
 
     elif event_type == "thread_created":
         tid = data.get("acp_thread_id", "?")
         rid = data.get("request_id", "")
         current_thread_id = tid
-        print(f"\n{C.CYAN}📌 새 스레드 생성: {tid}{C.END}")
+        print(f"\n{C.CYAN}📌 New thread created: {tid}{C.END}")
         if show_raw:
             print(f"  request_id: {rid}")
 
@@ -155,37 +155,37 @@ async def handle_message(msg):
             elif tool_status == "error":
                 print(f" {C.RED}✗{C.END}", end="", flush=True)
         elif role == "assistant":
-            # 스트리밍 출력 (줄바꿈 없이)
+            # Streaming output (no newline)
             print(content, end="", flush=True)
 
     elif event_type == "message_completed":
         mid = data.get("message_id", "?")
-        print(f"\n{C.GREEN}✓ 완료 (message: {mid[:8]}){C.END}")
+        print(f"\n{C.GREEN}✓ Complete (message: {mid[:8]}){C.END}")
         print()
 
     elif event_type == "thread_load_error":
         error = data.get("error", "?")
-        print(f"\n{C.RED}⚠ 스레드 로드 실패: {error}{C.END}")
+        print(f"\n{C.RED}⚠ Thread load failed: {error}{C.END}")
 
     elif event_type == "turn_cancelled":
         status = data.get("status", "?")
-        print(f"\n{C.YELLOW}⚠ 취소됨 ({status}){C.END}")
+        print(f"\n{C.YELLOW}⚠ Cancelled ({status}){C.END}")
 
     elif event_type == "chat_response_error":
         error = data.get("error", "?")
-        print(f"\n{C.RED}⚠ 응답 오류: {error}{C.END}")
+        print(f"\n{C.RED}⚠ Response error: {error}{C.END}")
 
     elif event_type == "user_created_thread":
-        print(f"\n{C.CYAN}📌 사용자가 새 스레드 생성{C.END}")
+        print(f"\n{C.CYAN}📌 User created a new thread{C.END}")
 
 
-# ── Zed로 명령 전송 ─────────────────────────────────────────────────
+# ── Send commands to Zed ─────────────────────────────────────────────────
 
 async def send_chat(message):
-    """chat_message 명령을 Zed로 전송."""
+    """Send chat_message command to Zed."""
     global current_request_id
     if not zed_ws:
-        print(f"{C.RED}⚠ Zed가 아직 연결되지 않았습니다.{C.END}")
+        print(f"{C.RED}⚠ Zed is not yet connected.{C.END}")
         return
 
     rid = uuid.uuid4().hex[:12]
@@ -207,9 +207,9 @@ async def send_chat(message):
 
 
 async def send_cancel():
-    """진행 중인 요청 취소."""
+    """Cancel ongoing request."""
     if not zed_ws or not current_request_id:
-        print(f"{C.YELLOW}⚠ 취소할 요청이 없습니다.{C.END}")
+        print(f"{C.YELLOW}⚠ No request to cancel.{C.END}")
         return
 
     cmd = {
@@ -217,14 +217,14 @@ async def send_cancel():
         "data": {"request_id": current_request_id},
     }
     await zed_ws.send(json.dumps(cmd))
-    print(f"{C.YELLOW}⚠ 취소 요청 전송{C.END}")
+    print(f"{C.YELLOW}⚠ Cancel request sent.{C.END}")
 
 
-# ── stdin 입력 처리 ──────────────────────────────────────────────────
+# ── stdin input handling ──────────────────────────────────────────────────
 
 async def read_stdin():
-    """사용자 입력을 읽어서 처리."""
-    # stdin이 터미널이 아니면 조용히 리턴
+    """Read and process user input."""
+    # Silently return if stdin is not a terminal
     if not sys.stdin.isatty() or not sys.__stdin__ or not sys.__stdin__.isatty():
         return
 
@@ -235,7 +235,7 @@ async def read_stdin():
     try:
         await loop.connect_read_pipe(lambda: protocol, sys.stdin)
     except (OSError, AttributeError):
-        return  # 백그라운드 모드
+        return  # background mode
 
     while True:
         try:
@@ -251,49 +251,49 @@ async def read_stdin():
             continue
 
         if text in ("/exit", "/quit"):
-            print("종료합니다.")
+            print("Exiting.")
             os._exit(0)
 
         elif text == "/new":
             current_thread_id = None
-            print(f"{C.CYAN}📌 새 스레드 모드 (기존 스레드에 이어서 않음){C.END}")
+            print(f"{C.CYAN}📌 New thread mode (will not continue existing thread){C.END}")
 
         elif text == "/thread":
             if current_thread_id:
-                print(f"현재 스레드: {C.CYAN}{current_thread_id}{C.END}")
+                print(f"Current thread: {C.CYAN}{current_thread_id}{C.END}")
             else:
-                print(f"{C.YELLOW}현재 스레드 없음 (새로 생성됩니다){C.END}")
+                print(f"{C.YELLOW}No current thread (a new one will be created){C.END}")
 
         elif text == "/raw":
             show_raw = not show_raw
-            print(f"원시 JSON 표시: {'ON' if show_raw else 'OFF'}")
+            print(f"Raw JSON display: {'ON' if show_raw else 'OFF'}")
 
         elif text == "/cancel":
             await send_cancel()
 
         elif text == "/help":
-            print(f"{C.BOLD}명령어:{C.END}")
-            print("  /exit, /quit   - 종료")
-            print("  /new           - 새 스레드 시작")
-            print("  /thread        - 현재 스레드 ID 보기")
-            print("  /cancel        - 진행 중인 응답 취소")
-            print("  /raw           - 원시 JSON 표시 토글")
-            print("  /help          - 이 도움말")
+            print(f"{C.BOLD}Commands:{C.END}")
+            print("  /exit, /quit   - exit")
+            print("  /new           - start a new thread")
+            print("  /thread        - show current thread ID")
+            print("  /cancel        - cancel ongoing response")
+            print("  /raw           - toggle raw JSON display")
+            print("  /help          - show this help")
 
         elif text.startswith("/"):
-            print(f"{C.YELLOW}알 수 없는 명령어: {text}{C.END}")
+            print(f"{C.YELLOW}Unknown command: {text}{C.END}")
 
         else:
             await send_chat(text)
 
 
-# ── 메인 ──────────────────────────────────────────────────────────────
+# ── Main ──────────────────────────────────────────────────────────────
 
-# ── Zed 설정 파일 생성 ─────────────────────────────────────────────
+# ── Zed settings file generation ─────────────────────────────────────────────
 
 def ensure_settings(data_dir: str, api_key: str):
     """
-    Zed의 settings.json을 생성/확인하여 DeepSeek provider를 등록.
+    Create/verify Zed's settings.json to register the DeepSeek provider.
     """
     settings_dir = Path(data_dir) / "config"
     settings_dir.mkdir(parents=True, exist_ok=True)
@@ -306,7 +306,7 @@ def ensure_settings(data_dir: str, api_key: str):
         except (json.JSONDecodeError, OSError):
             pass
 
-    # DeepSeek를 openai_compatible provider로 등록
+    # Register DeepSeek as an openai_compatible provider
     language_models = settings.setdefault("language_models", {})
     openai_compatible = language_models.setdefault("openai_compatible", {})
 
@@ -324,8 +324,8 @@ def ensure_settings(data_dir: str, api_key: str):
             ],
         }
 
-    # API 키는 Zed의 키체인 저장소를 통해 설정
-    # --user-data-dir 아래의 credentials.json에 직접 기록
+    # API key is set via Zed's keychain storage
+    # Write directly to credentials.json under --user-data-dir
     creds_dir = Path(data_dir) / "credentials"
     creds_dir.mkdir(parents=True, exist_ok=True)
     creds_file = creds_dir / "credentials.json"
@@ -337,7 +337,7 @@ def ensure_settings(data_dir: str, api_key: str):
         except (json.JSONDecodeError, OSError):
             pass
 
-    # provider/deepseek 경로에 api_key 저장 (Zed의 키 형식)
+    # Save api_key at provider/deepseek path (Zed key format)
     creds["provider/deepseek"] = {
         "api_key": api_key
     }
@@ -345,26 +345,26 @@ def ensure_settings(data_dir: str, api_key: str):
     settings_file.write_text(json.dumps(settings, indent=2))
     creds_file.write_text(json.dumps(creds, indent=2))
 
-    print(f"  {C.DIM}설정:{C.END} {settings_file}")
-    print(f"  {C.DIM}자격증명:{C.END} {creds_file}")
-    return str(settings_dir.parent)  # data_dir 반환
+    print(f"  {C.DIM}Settings:{C.END} {settings_file}")
+    print(f"  {C.DIM}Credentials:{C.END} {creds_file}")
+    return str(settings_dir.parent)  # return data_dir
 
 
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description="nex-zed: Helix headless Zed 채팅")
+    parser = argparse.ArgumentParser(description="nex-zed: Helix headless Zed chat")
     parser.add_argument("--bin", default=None,
-                        help="helix-zed-headless 바이너리 경로")
+                        help="helix-zed-headless binary path")
     parser.add_argument("--workdir", default=os.getcwd(),
-                        help="작업 디렉토리 (기본: 현재 디렉토리)")
+                        help="Working directory (default: current directory)")
     parser.add_argument("--no-zed", action="store_true",
-                        help="Zed를 실행하지 않고 WebSocket 서버만 시작")
+                        help="Start WebSocket server only, without launching Zed")
     parser.add_argument("--api-key", default=None,
-                        help="DeepSeek API 키 (기본: DEEPSEEK_API_KEY 환경변수)")
+                        help="DeepSeek API key (default: DEEPSEEK_API_KEY env var)")
     args = parser.parse_args()
 
-    # .env 파일 로드 (있는 경우)
+    # Load .env file (if present)
     env_file = Path(__file__).parent / ".env"
     if env_file.exists():
         for line in env_file.read_text().splitlines():
@@ -373,17 +373,17 @@ def main():
                 key, _, val = line.partition("=")
                 os.environ.setdefault(key.strip(), val.strip())
 
-    # DeepSeek API 키 확인 (여러 이름으로 시도)
+    # Check for DeepSeek API key (try multiple names)
     api_key = (args.api_key
                or os.environ.get("DEEPSEEK_API_KEY")
                or os.environ.get("LLM_API_KEY"))
     if not api_key:
-        print(f"{C.RED}⚠ API 키가 필요합니다.{C.END}")
-        print(f"  --api-key 옵션, DEEPSEEK_API_KEY 또는 LLM_API_KEY 환경변수를 설정하세요.")
-        print(f"  apps/nex-zed/.env 파일에도 LLM_API_KEY를 지정할 수 있습니다.")
+        print(f"{C.RED}⚠ API key is required.{C.END}")
+        print(f"  Use --api-key, DEEPSEEK_API_KEY, or LLM_API_KEY environment variable.")
+        print(f"  You can also set LLM_API_KEY in apps/nex-zed/.env.")
         sys.exit(1)
 
-    # 바이너리 경로 자동 탐색
+    # Auto-detect binary path
     bin_path = args.bin
     if not bin_path and not args.no_zed:
         candidates = [
@@ -395,50 +395,50 @@ def main():
                 bin_path = os.path.abspath(p)
                 break
         if not bin_path:
-            print(f"{C.RED}helix-zed-headless 바이너리를 찾을 수 없습니다.{C.END}")
-            print(f"  --bin 옵션으로 경로를 지정하세요.")
+            print(f"{C.RED}Could not find helix-zed-headless binary.{C.END}")
+            print(f"  Use --bin to specify the path.")
             sys.exit(1)
 
     workdir = os.path.abspath(args.workdir)
 
-    # 임시 사용자 데이터 디렉토리 생성 + 설정 파일 기록
+    # Create temporary user data directory + write settings
     user_data_dir = tempfile.mkdtemp(prefix="nex-zed-")
     ensure_settings(user_data_dir, api_key)
 
     print(f"\n{C.BOLD}{C.HEADER}╔══════════════════════════════════════╗{C.END}")
-    print(f"{C.BOLD}{C.HEADER}║        nex-zed: Helix 채팅          ║{C.END}")
+    print(f"{C.BOLD}{C.HEADER}║        nex-zed: Helix Chat          ║{C.END}")
     print(f"{C.BOLD}{C.HEADER}╚══════════════════════════════════════╝{C.END}")
-    print(f"  {C.DIM}바이너리:{C.END} {bin_path or '(서버 전용)'}")
-    print(f"  {C.DIM}작업 디렉토리:{C.END} {workdir}")
-    print(f"  {C.DIM}세션 ID:{C.END} {SESSION_ID}")
-    print(f"  {C.DIM}사용자 데이터:{C.END} {user_data_dir}")
+    print(f"  {C.DIM}Binary:{C.END} {bin_path or '(server only)'}")
+    print(f"  {C.DIM}Workdir:{C.END} {workdir}")
+    print(f"  {C.DIM}Session ID:{C.END} {SESSION_ID}")
+    print(f"  {C.DIM}User data:{C.END} {user_data_dir}")
     print(f"  {C.DIM}WebSocket:{C.END} ws://{HOST}:{WS_PORT}/api/v1/external-agents/sync")
     print()
 
-    # 이전 프로세스 정리
+    # Clean up previous processes
     if not args.no_zed:
         subprocess.run(["pkill", "-f", "helix-zed-headless"], capture_output=True)
         time.sleep(1)
 
-    # 로그 파일 정리
+    # Clean up log file
     if os.path.exists(ZED_LOG):
         os.remove(ZED_LOG)
 
-    # ── async 메인 ──
+    # ── async main ──
     async def async_main():
         global zed_ws
 
-        # WebSocket 서버 시작
+        # Start WebSocket server
         server = await websockets.serve(
             handle_zed,
             HOST,
             WS_PORT,
             process_request=lambda path, headers: None,
         )
-        print(f"{C.GREEN}✓ WebSocket 서버 시작됨 (포트 {WS_PORT}){C.END}")
-        print(f"{C.DIM}  Zed가 연결되길 기다리는 중...{C.END}")
+        print(f"{C.GREEN}✓ WebSocket server started (port {WS_PORT}){C.END}")
+        print(f"{C.DIM}  Waiting for Zed to connect...{C.END}")
 
-        # Zed 프로세스 시작
+        # Start Zed process
         zed_proc = None
         if not args.no_zed:
             env = os.environ.copy()
@@ -459,41 +459,41 @@ def main():
                 stdout=subprocess.DEVNULL,
                 stderr=open(ZED_LOG, "w"),
             )
-            print(f"{C.GREEN}✓ Zed 시작됨 (PID: {zed_proc.pid}){C.END}")
-            print(f"  {C.DIM}로그: {ZED_LOG}{C.END}")
+            print(f"{C.GREEN}✓ Zed started (PID: {zed_proc.pid}){C.END}")
+            print(f"  {C.DIM}Log: {ZED_LOG}{C.END}")
             print()
 
-        # stdin 입력 태스크 시작 (터미널이 아닌 경우 아무것도 안 함)
+        # Start stdin input task (no-op if not a terminal)
         asyncio.create_task(read_stdin())
 
-        # Zed가 종료될 때까지 대기
+        # Wait for Zed to exit
         if zed_proc:
             loop = asyncio.get_event_loop()
             try:
                 await loop.run_in_executor(None, zed_proc.wait)
             except asyncio.CancelledError:
                 pass
-            print(f"\n{C.YELLOW}Zed 프로세스 종료됨{C.END}")
+            print(f"\n{C.YELLOW}Zed process exited{C.END}")
         else:
-            # 서버 전용 모드 or no-stdin: 계속 실행
+            # Server-only mode or no-stdin: keep running
             while True:
                 await asyncio.sleep(5)
-                # 주기적으로 상태 출력 (background mode)
+                # Periodically print status (background mode)
                 print(f".", end="", flush=True)
 
     try:
         asyncio.run(async_main())
     except KeyboardInterrupt:
-        print(f"\n{C.YELLOW}종료 중...{C.END}")
+        print(f"\n{C.YELLOW}Shutting down...{C.END}")
     finally:
-        # 정리
+        # Cleanup
         subprocess.run(["pkill", "-f", "helix-zed-headless"], capture_output=True)
-        # 임시 디렉토리 정리 (선택사항, 주석해제하면 활성화)
+        # Temporary directory cleanup (optional, uncomment to enable)
         # if 'user_data_dir' in dir():
         #     shutil.rmtree(user_data_dir, ignore_errors=True)
-        print(f"{C.GREEN}✓ 정리 완료{C.END}")
-        print(f"{C.DIM}  설정 파일: {user_data_dir}/config/settings.json{C.END}")
-        print(f"{C.DIM}  다음 실행 시 --user-data-dir {user_data_dir} 로 재사용 가능{C.END}")
+        print(f"{C.GREEN}✓ Cleanup complete{C.END}")
+        print(f"{C.DIM}  Settings file: {user_data_dir}/config/settings.json{C.END}")
+        print(f"{C.DIM}  Can reuse with --user-data-dir {user_data_dir} on next run{C.END}")
 
 
 if __name__ == "__main__":
