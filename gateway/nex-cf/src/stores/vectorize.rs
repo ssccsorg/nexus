@@ -38,14 +38,6 @@ pub trait Embedder: std::fmt::Debug {
     fn dims(&self) -> usize;
 }
 
-// ── Global static buffer (CF Workers single-threaded) ────────────────
-
-static mut VECTORIZE_BUFFER: Vec<(u32, String)> = Vec::new();
-
-fn buffer() -> *mut Vec<(u32, String)> {
-    core::ptr::addr_of_mut!(VECTORIZE_BUFFER)
-}
-
 // ── LocalTfidfEmbedder: simple string-overlap embedder ──────────────
 
 /// Local embedder using simple word overlap scores.
@@ -56,9 +48,6 @@ pub struct LocalTfidfEmbedder;
 #[async_trait::async_trait(?Send)]
 impl Embedder for LocalTfidfEmbedder {
     async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, String> {
-        // Return sparse bag-of-words as dense vectors: each dimension is
-        // a word's normalized TF-IDF weight. For simplicity, use identity
-        // per-word presence with dimension = max unique words.
         let mut all_tokens: Vec<Vec<String>> = Vec::with_capacity(texts.len());
         let mut vocab: Vec<String> = Vec::new();
         for t in texts {
@@ -83,7 +72,6 @@ impl Embedder for LocalTfidfEmbedder {
                     vec[pos] = 1.0;
                 }
             }
-            // Normalize
             let norm: f32 = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
             if norm > 0.0 {
                 for x in &mut vec {
@@ -103,7 +91,7 @@ impl Embedder for LocalTfidfEmbedder {
 
     fn dims(&self) -> usize {
         0
-    } // dynamic
+    }
 }
 
 // ── CfVectorizeStore ────────────────────────────────────────────────────
@@ -114,13 +102,15 @@ impl Embedder for LocalTfidfEmbedder {
 /// with a Workers AI embedder for production-grade semantic search.
 pub struct CfVectorizeStore {
     embedder: Box<dyn Embedder>,
+    /// In-memory buffer of (id, text) pairs, populated by `insert()`
+    /// and consumed by `sync_to_vectorize()`.
+    buffer: Vec<(u32, String)>,
 }
 
 impl std::fmt::Debug for CfVectorizeStore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let len = unsafe { (*buffer()).len() };
         f.debug_struct("CfVectorizeStore")
-            .field("buffer_len", &len)
+            .field("buffer_len", &self.buffer.len())
             .field("embedder", &self.embedder)
             .finish()
     }
@@ -130,26 +120,26 @@ impl CfVectorizeStore {
     /// Create a new CfVectorizeStore with the default local embedder.
     /// Requires a Workers Env for Vectorize binding access.
     pub fn new(_env: worker::Env) -> Self {
-        Self {
-            embedder: Box::new(LocalTfidfEmbedder),
-        }
+        Self::with_embedder(Box::new(LocalTfidfEmbedder))
     }
 
     /// Create with a custom embedder.
     pub fn with_embedder(embedder: Box<dyn Embedder>) -> Self {
-        Self { embedder }
+        Self {
+            embedder,
+            buffer: Vec::new(),
+        }
     }
 
     /// Flush buffered inserts to Vectorize index.
     pub async fn sync_to_vectorize(&self) -> Result<(), String> {
-        let entries = unsafe { (*buffer()).clone() };
-        if entries.is_empty() {
+        if self.buffer.is_empty() {
             worker::console_log!("[CfVectorizeStore] sync: buffer empty, nothing to sync");
             return Ok(());
         }
 
-        let texts: Vec<String> = entries.iter().map(|(_, t)| t.clone()).collect();
-        let ids: Vec<u32> = entries.iter().map(|(id, _)| *id).collect();
+        let texts: Vec<String> = self.buffer.iter().map(|(_, t)| t.clone()).collect();
+        let ids: Vec<u32> = self.buffer.iter().map(|(id, _)| *id).collect();
         worker::console_log!(
             "[CfVectorizeStore] sync: {} texts (local embedder)",
             ids.len()
@@ -157,8 +147,6 @@ impl CfVectorizeStore {
 
         let embeddings = self.embedder.embed(&texts).await?;
 
-        // In local mode, we just log the embedding dimensions.
-        // With a real Vectorize binding, we would upsert here.
         worker::console_log!(
             "[CfVectorizeStore] synced {} vectors (dim={})",
             ids.len(),
@@ -178,15 +166,13 @@ impl CfVectorizeStore {
             return Ok(Vec::new());
         }
 
-        // Local search: compare query embedding against buffered text embeddings.
         let query_vec = self.embedder.embed_query(query_text).await?;
-        let buffer = unsafe { (*buffer()).clone() };
-        if buffer.is_empty() {
+        if self.buffer.is_empty() {
             return Ok(Vec::new());
         }
 
-        let buf_texts: Vec<String> = buffer.iter().map(|(_, t)| t.clone()).collect();
-        let buf_ids: Vec<u32> = buffer.iter().map(|(id, _)| *id).collect();
+        let buf_texts: Vec<String> = self.buffer.iter().map(|(_, t)| t.clone()).collect();
+        let buf_ids: Vec<u32> = self.buffer.iter().map(|(id, _)| *id).collect();
         let buf_embs = self.embedder.embed(&buf_texts).await?;
 
         let query_norm: f32 = query_vec.iter().map(|x| x * x).sum::<f32>().sqrt();
@@ -223,9 +209,7 @@ impl SemanticStore for CfVectorizeStore {
         let text = load
             .text(id)
             .ok_or_else(|| format!("CfVectorizeStore: no text for id {id}"))?;
-        unsafe {
-            (*buffer()).push((id, text));
-        }
+        self.buffer.push((id, text));
         Ok(())
     }
 
@@ -238,14 +222,12 @@ impl SemanticStore for CfVectorizeStore {
     }
 
     async fn remove(&mut self, id: u32) -> Result<(), String> {
-        unsafe {
-            (*buffer()).retain(|(i, _)| *i != id);
-        }
+        self.buffer.retain(|(i, _)| *i != id);
         Ok(())
     }
 
     fn len(&self) -> usize {
-        unsafe { (*buffer()).len() }
+        self.buffer.len()
     }
 }
 
@@ -280,9 +262,6 @@ mod tests {
     }
 
     fn make_store() -> CfVectorizeStore {
-        unsafe {
-            (*buffer()).clear();
-        }
         CfVectorizeStore::with_embedder(Box::new(LocalTfidfEmbedder))
     }
 
@@ -377,7 +356,6 @@ mod tests {
                 .unwrap();
             assert_eq!(embs.len(), 2);
             assert!(embs[0].len() > 0);
-            // Both should be normalized
             let n1: f32 = embs[0].iter().map(|x| x * x).sum();
             assert!((n1 - 1.0).abs() < 0.01);
         });
