@@ -55,4 +55,16 @@
     "DEEPSEEK_API_KEY": "",
     "DEEPSEEK_BASE_URL": "https://api.deepseek.com",
   },
+
+  "env": {
+    "preview": {
+      "name": "nexus-af-sync-preview",
+      "r2_buckets": [
+        {
+          "binding": "ARTIFACT_BUCKET",
+          "bucket_name": "ssccs-nexus-af-test",
+        },
+      ]
+    }
+  }
 }

@@ -1,31 +1,59 @@
 #!/usr/bin/env bash
 set -euo pipefail
 #
-# gateway-api — Start the FIH Blackboard HTTP gateway server.
+# run-gateway.sh — Gateway layer checks
+#
+# Verifies all gateway components:
+#   gateway/api        — FIH Blackboard HTTP API (Rust)
+#   gateway/nex-cf     — Cloudflare Worker (Rust/WASM)
+#   gateway/serde-proxy — Serialization proxy (Rust)
 #
 # Usage:
-#   scripts/run-gateway.sh              # In-memory, port 3000
-#   scripts/run-gateway.sh --db data.db # SQLite persistence
-#   scripts/run-gateway.sh --port 8080  # Custom port
+#   scripts/run-gateway.sh              # All gateway checks
+#   scripts/run-gateway.sh --api        # Only gateway/api
+#   scripts/run-gateway.sh --nex-cf     # Only gateway/nex-cf
+#   scripts/run-gateway.sh --serde      # Only gateway/serde-proxy
 #
 
-cd "$(dirname "$0")/../gateway/api"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT"
 
-PORT="3000"
-DB=""
+MODE="${1:-all}"
 
-while [[ "$#" -gt 0 ]]; do
-    case $1 in
-        --db) DB="$2"; shift 2 ;;
-        --port) PORT="$2"; shift 2 ;;
-        *) echo "Unknown: $1"; exit 1 ;;
-    esac
-done
+run_api() {
+    echo "=== gateway/api (cargo test) ==="
+    (cd gateway/api && cargo test)
+}
 
-echo "gateway-api: starting on port $PORT"
+run_nex_cf() {
+    echo "=== gateway/nex-cf (cargo check + test) ==="
+    ./scripts/run-nex-cf.sh --check-and-test
+}
 
-if [ -n "$DB" ]; then
-    exec cargo run -- --db "$DB"
-else
-    exec cargo run
-fi
+run_serde() {
+    echo "=== gateway/serde-proxy (cargo test) ==="
+    (cd gateway/serde-proxy && cargo test)
+}
+
+case "$MODE" in
+    --api|api)
+        run_api
+        ;;
+    --nex-cf|nex-cf)
+        run_nex_cf
+        ;;
+    --serde|serde)
+        run_serde
+        ;;
+    *)
+        echo "Gateway layer checks"
+        echo ""
+        run_api
+        echo ""
+        run_nex_cf
+        echo ""
+        run_serde
+        echo ""
+        echo "All gateway checks passed."
+        ;;
+esac

@@ -1684,6 +1684,7 @@ dependencies = [
 name = "nex"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "cfg-if",
  "futures-executor",
  "log",
@@ -1700,6 +1701,17 @@ dependencies = [
  "ureq",
  "walkdir",
  "worker",
+]
+
+[[package]]
+name = "nex-cf-mock"
+version = "0.1.0"
+dependencies = [
+ "nex",
+ "nexus-gateway-nex-cf",
+ "nexus-model",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -1723,9 +1735,14 @@ dependencies = [
 name = "nexus-gateway-nex-cf"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "futures-executor",
  "nex",
  "nexus-model",
+ "serde",
  "serde_json",
+ "tempfile",
+ "tokio",
  "worker",
 ]
 

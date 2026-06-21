@@ -3,62 +3,71 @@ set -euo pipefail
 #
 # nexus — Unified CI runner
 #
-# By default runs everything (core checks + consumer playbooks).
+# By default runs everything (core checks + gateway + playbooks).
 # Sub-commands for focused tasks.
 #
 # Usage:
-#   ./run.sh              # Everything (default)
-#   ./run.sh --core       # Core checks only
-#   ./run.sh --playbooks  # Consumer playbooks only
-#   ./run.sh --gateway    # Start gateway server only
+#   ./run.sh               # Everything (default)
+#   ./run.sh --core        # Core checks only (nex, storage/*)
+#   ./run.sh --gateway     # Gateway layer checks (api, nex-cf, serde-proxy)
+#   ./run.sh --playbooks   # Consumer playbooks only
 #
 
 cd "$(dirname "$0")"
+
+# ── Port cleanup ──────────────────────────────────────────────────────────
+#
+# Kill any process holding a given port. Used before playbooks (which start
+# gateway-api) to avoid AddrInUse from a stale process.
+
+kill_port() {
+    local port="$1"
+    local pid
+    pid=$(lsof -ti "$port" 2>/dev/null || true)
+    if [ -n "$pid" ]; then
+        echo "kill_port $port: killing PID $pid"
+        kill -9 "$pid" 2>/dev/null || true
+        sleep 1
+    fi
+}
+
+# ── Command dispatch ──────────────────────────────────────────────────────
 
 case "${1:-}" in
     --core)
         shift
         exec ./scripts/run-core.sh "$@"
         ;;
-    --gateway-api)
-        cd gateway/api && cargo test
-        ;;
-    --nex-cf)
+    --gateway)
         shift
-        exec ./scripts/run-nex-cf.sh "$@"
+        exec ./scripts/run-gateway.sh "$@"
         ;;
     --playbooks)
+        kill_port 3000
         exec ./playbooks/run.sh
-        ;;
-    --gateway)
-        exec ./scripts/run-gateway.sh
         ;;
     --help|-h)
         echo "Usage: $0 [OPTION]"
-        echo "  (no arg)     Core checks + playbooks [default]"
-        echo "  --core        Core checks only"
-        echo "  --gateway-api Gateway API unit tests"
-        echo "  --nex-cf      Nexus CF Worker WASM check"
+        echo "  (no arg)      Core + gateway + playbooks [default]"
+        echo "  --core        Core checks only (nex, storage/*)"
+        echo "  --gateway     Gateway layer checks (api, nex-cf, serde-proxy)"
         echo "  --playbooks   Consumer playbooks only"
-        echo "  --gateway     Start gateway API server"
         ;;
     "")
         # Default: run everything
         echo "=== Core ==="
         ./scripts/run-core.sh
         echo ""
-        echo "=== Gateway API ==="
-        (cd gateway/api && cargo test)
+        echo "=== Gateway ==="
+        ./scripts/run-gateway.sh
         echo ""
-        echo "=== Nexus CF Worker ==="
-        ./scripts/run-nex-cf.sh
-        echo ""
+        kill_port 3000
         echo "=== Playbooks ==="
         ./playbooks/run.sh
         ;;
     *)
         echo "Unknown: $1"
-        echo "Usage: $0 [--core|--playbooks|--gateway]"
+        echo "Usage: $0 [--core|--gateway|--playbooks]"
         exit 1
         ;;
 esac
