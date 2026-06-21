@@ -27,7 +27,7 @@ run_api() {
 
 run_nex_cf() {
     echo "=== gateway/nex-cf (cargo check + test) ==="
-    ./scripts/run-nex-cf.sh
+    ./scripts/run-nex-cf.sh --check-and-test
 }
 
 run_serde() {

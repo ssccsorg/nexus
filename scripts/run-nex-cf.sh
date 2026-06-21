@@ -21,6 +21,13 @@ case "$MODE" in
         echo "cargo test (native)..."
         cargo test
         ;;
+    --check-and-test|check-and-test)
+        echo "cargo check (WASM target)..."
+        cargo check --target wasm32-unknown-unknown
+        echo ""
+        echo "cargo test (native)..."
+        cargo test
+        ;;
     --build|build)
         echo "worker-build..."
         worker-build --release
