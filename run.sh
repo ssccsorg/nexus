@@ -15,6 +15,24 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# ── Port cleanup ──────────────────────────────────────────────────────────
+#
+# Kill any process holding a given port. Used before playbooks (which start
+# gateway-api) to avoid AddrInUse from a stale process.
+
+kill_port() {
+    local port="$1"
+    local pid
+    pid=$(lsof -ti "$port" 2>/dev/null || true)
+    if [ -n "$pid" ]; then
+        echo "kill_port $port: killing PID $pid"
+        kill -9 "$pid" 2>/dev/null || true
+        sleep 1
+    fi
+}
+
+# ── Command dispatch ──────────────────────────────────────────────────────
+
 case "${1:-}" in
     --core)
         shift
@@ -25,6 +43,7 @@ case "${1:-}" in
         exec ./scripts/run-gateway.sh "$@"
         ;;
     --playbooks)
+        kill_port 3000
         exec ./playbooks/run.sh
         ;;
     --help|-h)
@@ -42,6 +61,7 @@ case "${1:-}" in
         echo "=== Gateway ==="
         ./scripts/run-gateway.sh
         echo ""
+        kill_port 3000
         echo "=== Playbooks ==="
         ./playbooks/run.sh
         ;;
