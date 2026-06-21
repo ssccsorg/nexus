@@ -1,8 +1,8 @@
 # nex — FIH Blackboard Storage Engine
 
-nex (노드 연결망, node expansion) implements the Fact-Inference-Hint (FIH)
-blackboard coordination protocol. It provides persistent, indexed storage for
-distributed agent workflows over an abstract flat key-space I/O layer.
+nex implements the Fact-Inference-Hint (FIH) blackboard coordination
+protocol. It provides persistent, indexed storage for distributed agent
+workflows over an abstract flat key-space I/O layer.
 
 ## Execution Model
 
@@ -29,44 +29,38 @@ in-memory state and I/O channel. There is no internal concurrency.
   exclusively through the FIH protocol (facts, intents, hints submitted via
   the external I/O layer).
 
+### Why blocking is always wrong
+
+A nex instance cannot tolerate any blocking operation, including
+`block_on`, `Mutex::lock`, or thread::park. Blocking the sole thread
+stalls every pending I/O operation and future being awaited. There is no
+thread pool to offload to. Whether the use case is a lightweight
+single-process setup, a WASM-based edge runtime, or a bare-metal
+embedded controller, the consequence is the same: deadlock.
+
+The only correct concurrency model for nex is cooperative multitasking
+via async/await. Every operation that may touch I/O, wait for a resource,
+or yield to another task must be `async fn`.
+
 ## Scaling Model: Physical Replication
 
 nex does not scale by adding threads or internal sharding. It scales by
 **physical instance replication**:
 
 ```
-CF Workers Durable Objects:
-  NexusCfDO (name="shard-a") ─── FihStorage ─── R2 bucket A
-  NexusCfDO (name="shard-b") ─── FihStorage ─── R2 bucket B
-  NexusCfDO (name="shard-c") ─── FihStorage ─── R2 bucket C
-
-  Cross-instance communication: only via FIH protocol over R2
-
-Native processes:
-  Process 1 (port 3000) ─── FihStorage ─── FsIo("./data/shard-a")
-  Process 2 (port 3001) ─── FihStorage ─── FsIo("./data/shard-b")
+Process A (port 3000) ─── FihStorage ─── FsIo("./data/shard-a")
+Process B (port 3001) ─── FihStorage ─── FsIo("./data/shard-b")
+Process C (port 3002) ─── FihStorage ─── FsIo("./data/shard-c")
 ```
 
 Each instance is an island with exclusive state. Instances communicate by
 reading and writing facts, intents, and hints through the shared I/O layer
-(R2 bucket, filesystem directory). No direct RPC, no shared memory, no
-distributed locks.
+(filesystem directory, object store bucket). No direct RPC, no shared
+memory, no distributed locks.
 
-## Why async-first design
-
-In the Cloudflare Workers runtime (and WASM environments generally), blocking
-primitives are unavailable:
-
-| Primitive | Behavior in CF Workers / WASM |
-|-----------|-------------------------------|
-| `std::thread::spawn` | Panics or no-op |
-| `std::sync::Mutex::lock` | Hangs (park/unpark not implemented) |
-| `futures_executor::block_on` | Hangs (blocks the only thread, starving all other futures) |
-| `async fn` + `.await` | Works correctly (cooperative multitasking) |
-
-Because CF Workers is the primary deployment target, **async is the design
-center**. The entire I/O stack, from `AsyncFileIo` to `SemanticStore` to
-`FihStorage`'s public API, is async-only.
+The same model applies to edge deployment: a Durable Object runtime, for
+example, provides the same single-thread-per-instance guarantee, and
+physical replication is achieved by creating additional named instances.
 
 ## Architecture overview
 
@@ -148,11 +142,11 @@ Key-space layout:
 All writes go through a pending buffer and are committed in a single
 `apply_batch` call:
 
-1. `submit_fact` enqueues blob write + fact record write in `self.pending`
-2. `submit_intent` enqueues intent record write in `self.pending`
-3. Caller calls `flush_pending()` which calls `apply_batch(&ops)`
+1. `submit_fact` enqueues blob write + fact record write in `self.pending`.
+2. `submit_intent` enqueues intent record write in `self.pending`.
+3. Caller calls `flush_pending()` which issues `apply_batch(&ops)`.
 
-This reduces N R2 PUT calls to 1 for bulk operations (e.g., document
+This reduces N backend PUT calls to 1 for bulk operations (e.g., document
 ingestion with 100 paragraphs). The trade-off: unflushed data is lost on
 crash. The caller controls durability by choosing when to flush.
 
@@ -164,9 +158,9 @@ from the I/O layer and populates `FihCoord` indices and entity stores. The
 `rebuild_semantic` method then re-populates all registered `SemanticStore`
 implementations from the cached fact content.
 
-In the CF Workers Durable Object deployment, cold start is detected by an
-empty `fact_store`. The DO's `fetch` handler calls `rebuild_cache` and
-`rebuild_semantic` on the first request that encounters an empty store.
+Example (single-threaded context, e.g. a Durable Object): cold start is
+detected by an empty `fact_store`, and the request handler calls
+`rebuild_cache` then `rebuild_semantic` on the first request.
 
 ## Local simulation
 
@@ -192,7 +186,7 @@ These rules hold across all nex code:
 4. `SemanticStore` implementations must not re-enter `FihCoord` during
    `insert()` / `search()` / `remove()`.
 5. `Arc` is used only for immutable configuration data shared across the
-   outer wrapper (e.g., `Env` in `NexusCfDO`), never for mutable state.
+   outer wrapper, never for mutable state.
 6. Two instances never share a `FihCoord` or `EntityStore`.
 
 ## Extending nex
@@ -202,14 +196,14 @@ These rules hold across all nex code:
 Implement `AsyncFileIo` for any flat key-space:
 
 ```rust
-struct MyIo { /* ... */ }
+struct MyIo;
 
 #[async_trait(?Send)]
 impl AsyncFileIo for MyIo {
-    async fn read(&self, path: &str) -> Result<Option<Vec<u8>>, String> { /* ... */ }
-    async fn write(&self, path: &str, data: &[u8]) -> Result<(), String> { /* ... */ }
-    async fn list(&self, prefix: &str) -> Result<Vec<String>, String> { /* ... */ }
-    async fn delete(&self, path: &str) -> Result<(), String> { /* ... */ }
+    async fn read(&self, path: &str) -> Result<Option<Vec<u8>>, String> { todo!() }
+    async fn write(&self, path: &str, data: &[u8]) -> Result<(), String> { todo!() }
+    async fn list(&self, prefix: &str) -> Result<Vec<String>, String> { todo!() }
+    async fn delete(&self, path: &str) -> Result<(), String> { todo!() }
     // apply_batch has a default impl: sequential write/delete
 }
 ```
@@ -219,7 +213,7 @@ impl AsyncFileIo for MyIo {
 Implement `SemanticStore`:
 
 ```rust
-struct MyStore { /* ... */ }
+struct MyStore;
 
 #[async_trait(?Send)]
 impl SemanticStore for MyStore {
@@ -231,8 +225,8 @@ impl SemanticStore for MyStore {
     async fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
         // search and return (id, score) pairs
     }
-    async fn remove(&mut self, id: u32) -> Result<(), String> { /* ... */ }
-    fn len(&self) -> usize { /* ... */ }
+    async fn remove(&mut self, id: u32) -> Result<(), String> { todo!() }
+    fn len(&self) -> usize { todo!() }
 }
 ```
 
@@ -242,14 +236,14 @@ Register it:
 storage.register_semantic_store(Box::new(MyStore::new()));
 ```
 
-### Wrapping for sync use (native only)
+### Wrapping for sync use (native platforms only)
 
-On native platforms where `block_on` is safe (dedicated thread, not WASM),
-use `FihBlackboard`:
+On platforms where `block_on` is safe (dedicated thread, not WASM), use
+`FihBlackboard`:
 
 ```rust
 let bb = FihBlackboard::new(fs_io, "my-project");
 FactCapable::submit_fact(&bb, &fact)?; // sync, uses block_on internally
 ```
 
-`FihBlackboard` is not available on `wasm32` targets.
+`FihBlackboard` is gated behind `#[cfg(not(target_arch = "wasm32"))]`.
