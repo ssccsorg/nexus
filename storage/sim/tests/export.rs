@@ -142,7 +142,7 @@ fn test_export_import_fs_to_sim() {
 
 #[test]
 fn test_export_full_fih_lifecycle() {
-    use nexus_model::StorageRead;
+    use nexus_model::AsyncStorageRead;
     use nexus_storage_sim::FihStorage;
 
     // Seed a SimIo directly with records (not through FihStorage).
@@ -223,7 +223,7 @@ fn test_export_full_fih_lifecycle() {
     let storage = FihStorage::new(fresh_io, "lifecycle");
     futures_executor::block_on(storage.rebuild_cache()).unwrap();
 
-    let state = storage.read_state();
+    let state = futures_executor::block_on(storage.read_state());
     assert_eq!(state.facts.len(), 3, "should have 3 facts");
     assert_eq!(state.intents.len(), 2, "should have 2 intents");
     assert_eq!(state.hints.len(), 1, "should have 1 hint");
