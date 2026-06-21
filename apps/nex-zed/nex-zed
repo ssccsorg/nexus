@@ -1,0 +1,207 @@
+#!/usr/bin/env bash
+# nex-zed: 올인원 진입점
+#
+# 1. helix-zed-headless-arm64 바이너리가 없으면 자동 빌드
+# 2. webSocket 테스트 서버 + Zed --headless 실행
+# 3. chat.py로 대화형 채팅 시작
+#
+# Usage:
+#   ./nex-zed                          # 기본 실행 (현재 디렉토리)
+#   ./nex-zed --workdir /path/to/proj  # 작업 디렉토리 지정
+#   ./nex-zed --build-only             # 바이너리만 빌드
+#   ./nex-zed --help                   # 전체 옵션
+#
+# Prerequisites:
+#   - helix repo가 ../helix 에 있거나 HELIX_DIR 환경변수로 지정
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+BIN_DIR="$PROJECT_DIR/.bin"
+BIN="$BIN_DIR/helix-zed-headless-arm64"
+
+# ── 설정 ──────────────────────────────────────────────────────────────
+
+# Helix 포크 경로 (자동 탐색)
+HELIX_DIR="${HELIX_DIR:-}"
+if [ -z "$HELIX_DIR" ]; then
+    for candidate in \
+        "$PROJECT_DIR/../helix" \
+        "$HOME/Documents/helix" \
+        "$HOME/src/helix" \
+        "/opt/helix"; do
+        if [ -f "$candidate/Cargo.toml" ] && grep -q 'name = "external_websocket_sync"' "$candidate/crates/external_websocket_sync/Cargo.toml" 2>/dev/null; then
+            HELIX_DIR="$candidate"
+            break
+        fi
+    done
+fi
+
+# ── 함수 ──────────────────────────────────────────────────────────────
+
+info()  { echo -e "\033[96m==>\033[0m $*"; }
+ok()    { echo -e "\033[92m✓\033[0m $*"; }
+warn()  { echo -e "\033[93m⚠\033[0m $*" >&2; }
+fail()  { echo -e "\033[91m✗\033[0m $*" >&2; exit 1; }
+
+show_help() {
+    cat <<EOF
+Usage: $0 [OPTIONS]
+
+nex-zed: Helix headless Zed 올인원 실행기
+
+Options:
+  --workdir DIR    작업 디렉토리 (기본: 현재 디렉토리)
+  --build-only     바이너리만 빌드하고 종료
+  --no-build       빌드하지 않고 기존 바이너리 사용
+  --no-chat        Zed까지만 실행하고 chat.py는 실행하지 않음
+  --bin PATH       바이너리 경로 직접 지정
+  --api-key KEY    DeepSeek API 키 (기본: .env or 환경변수)
+  --help           이 도움말
+
+Environment:
+  HELIX_DIR        Helix 포크 경로 (자동 탐색 실패시)
+  DEEPSEEK_API_KEY DeepSeek API 키
+  LLM_API_KEY      .env 대체 키 이름
+EOF
+    exit 0
+}
+
+# ── 인자 파싱 ─────────────────────────────────────────────────────────
+
+WORKDIR="$(pwd)"
+BUILD_ONLY=false
+NO_BUILD=false
+NO_CHAT=false
+CUSTOM_BIN=""
+API_KEY=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --workdir)      shift; WORKDIR="$1" ;;
+        --build-only)   BUILD_ONLY=true ;;
+        --no-build)     NO_BUILD=true ;;
+        --no-chat)      NO_CHAT=true ;;
+        --bin)          shift; CUSTOM_BIN="$1" ;;
+        --api-key)      shift; API_KEY="$1" ;;
+        --help|-h)      show_help ;;
+        *)              fail "알 수 없는 옵션: $1 (--help 참조)" ;;
+    esac
+    shift
+done
+
+WORKDIR="$(cd "$WORKDIR" && pwd)"
+
+# ── API 키 확인 ───────────────────────────────────────────────────────
+
+# .env 로드
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    set -a
+    source "$SCRIPT_DIR/.env"
+    set +a
+fi
+
+if [ -z "$API_KEY" ]; then
+    API_KEY="${DEEPSEEK_API_KEY:-${LLM_API_KEY:-}}"
+fi
+
+# ── Step 1: 바이너리 확인 및 빌드 ─────────────────────────────────────
+
+if [ -n "$CUSTOM_BIN" ]; then
+    BIN="$CUSTOM_BIN"
+    [ -f "$BIN" ] || fail "지정한 바이너리가 없습니다: $BIN"
+    info "사용자 지정 바이너리: $BIN"
+elif [ -f "$BIN" ] && [ "$NO_BUILD" = false ]; then
+    info "기존 바이너리 발견: $BIN ($(ls -lh "$BIN" | awk '{print $5}'))"
+    # 최근 빌드인지 확인 (7일 이상 지난 건 리빌드 권장)
+    BIN_AGE=$(($(date +%s) - $(stat -f %m "$BIN" 2>/dev/null || echo 0)))
+    if [ "$BIN_AGE" -gt $((7*86400)) ] 2>/dev/null; then
+        warn "바이너리가 7일 이상 지났습니다. --no-build 플래그로 건너뛰거나 재빌드합니다."
+    fi
+    info "기존 바이너리 사용 (재빌드하려면 삭제 후 실행: rm $BIN)"
+elif [ "$NO_BUILD" = true ]; then
+    fail "바이너리가 없는데 --no-build 옵션이 지정됨: $BIN"
+else
+    # 빌드 필요
+    if [ -z "$HELIX_DIR" ]; then
+        fail "Helix 포크를 찾을 수 없습니다.
+  HELIX_DIR 환경변수를 설정하거나 helix repo를 다음 위치 중 하나에 두세요:
+    $(realpath "$PROJECT_DIR/../helix" 2>/dev/null || echo "$PROJECT_DIR/../helix")
+    $HOME/Documents/helix"
+    fi
+
+    info "Helix 포크 발견: $HELIX_DIR"
+    info "헤드리스 Zed 바이너리 빌드 중... (첫 빌드는 10-15분 소요)"
+    echo ""
+
+    cd "$HELIX_DIR"
+
+    # 빌드에 필요한 시스템 도구 확인
+    for cmd in cargo rustc; do
+        command -v "$cmd" >/dev/null 2>&1 || fail "필요한 도구 없음: $cmd"
+    done
+
+    info "cargo build -p zed --features external_websocket_sync --release"
+    cargo build -p zed --features external_websocket_sync --release 2>&1 | \
+        while IFS= read -r line; do
+            # 진행상황 요약 (모든 줄은 아니고 주요 상태만)
+            case "$line" in
+                *"Compiling"*) echo "   ${line#*Compiling }" ;;
+                *"Finished"*)  ok "빌드 완료: ${line#*Finished }" ;;
+                *"error"*)     echo -e "\033[91m${line}\033[0m" ;;
+            esac
+        done
+
+    # 빌드 실패 확인
+    if [ ! -f "$HELIX_DIR/target/release/zed" ]; then
+        fail "빌드 실패: $HELIX_DIR/target/release/zed 가 생성되지 않음"
+    fi
+
+    # 바이너리 복사
+    mkdir -p "$BIN_DIR"
+    cp "$HELIX_DIR/target/release/zed" "$BIN"
+    ok "바이너리 빌드 및 복사 완료: $BIN ($(ls -lh "$BIN" | awk '{print $5}'))"
+    cd "$PROJECT_DIR"
+fi
+
+# --build-only 면 여기서 종료
+if [ "$BUILD_ONLY" = true ]; then
+    echo ""
+    ok "빌드 전용 모드 완료"
+    exit 0
+fi
+
+# ── API 키 최종 확인 ──────────────────────────────────────────────────
+
+if [ -z "$API_KEY" ]; then
+    fail "API 키가 필요합니다.
+  --api-key 옵션, DEEPSEEK_API_KEY 환경변수, 또는 .env 파일의 LLM_API_KEY를 설정하세요."
+fi
+
+# ── Step 2: chat.py 실행 ──────────────────────────────────────────────
+
+CHAT_PY="$SCRIPT_DIR/chat.py"
+if [ ! -f "$CHAT_PY" ]; then
+    fail "chat.py를 찾을 수 없습니다: $CHAT_PY"
+fi
+
+info "nex-zed 실행..."
+echo "  바이너리:  $BIN"
+echo "  작업 디렉토리: $WORKDIR"
+echo "  chat.py:  $CHAT_PY"
+echo ""
+
+CHAT_ARGS=(
+    --bin "$BIN"
+    --workdir "$WORKDIR"
+    --api-key "$API_KEY"
+)
+
+if [ "$NO_CHAT" = true ]; then
+    # Zed만 실행 (chat.py의 서버 모드)
+    CHAT_ARGS+=(--no-zed)
+    warn "--no-chat 모드: Zed만 실행합니다."
+fi
+
+exec python3 "$CHAT_PY" "${CHAT_ARGS[@]}"
