@@ -55,7 +55,7 @@ jobs:
           cache-targets: true
           cache-on-failure: true
       - name: Core checks
-        run: ./run.sh --core
+        run: bash ./run.sh --core
 
   gateway-api:
     runs-on: ubuntu-latest
@@ -67,7 +67,7 @@ jobs:
           workspaces: "gateway/api"
           cache-targets: true
       - name: Gateway API tests
-        run: ./run.sh --gateway
+        run: bash ./run.sh --gateway
 
   playbooks:
     runs-on: ubuntu-latest
@@ -91,4 +91,4 @@ jobs:
         with:
           python-version: "3.12"
       - name: Playbook verification
-        run: ./run.sh --playbooks
+        run: bash ./run.sh --playbooks
