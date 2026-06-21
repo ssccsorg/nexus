@@ -67,7 +67,7 @@ jobs:
           workspaces: "gateway/api"
           cache-targets: true
       - name: Gateway API tests
-        run: ./run.sh --gateway-api
+        run: ./run.sh --gateway
 
   playbooks:
     runs-on: ubuntu-latest
