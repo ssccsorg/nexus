@@ -157,30 +157,39 @@ impl CfVectorizeStore {
     }
 
     /// Search using Vectorize index. Falls back to local search.
+    ///
+    /// Embeds the query together with all buffered documents in a single
+    /// batch so that the local TF-IDF embedder produces consistent vocab
+    /// dimensions. With a production embedder (fixed-dim AI model), the
+    /// separate embed_query call would suffice.
     pub async fn search_vectorize_async(
         &self,
         query_text: &str,
         top_k: usize,
     ) -> Result<Vec<(u32, f32)>, String> {
-        if query_text.trim().is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let query_vec = self.embedder.embed_query(query_text).await?;
-        if self.buffer.is_empty() {
+        if query_text.trim().is_empty() || self.buffer.is_empty() {
             return Ok(Vec::new());
         }
 
         let buf_texts: Vec<String> = self.buffer.iter().map(|(_, t)| t.clone()).collect();
         let buf_ids: Vec<u32> = self.buffer.iter().map(|(id, _)| *id).collect();
-        let buf_embs = self.embedder.embed(&buf_texts).await?;
 
+        // Embed query and all documents together so that local embedder
+        // builds a single consistent vocab across all inputs.
+        let mut all_texts = vec![query_text.to_string()];
+        all_texts.extend(buf_texts);
+        let all_embs = self.embedder.embed(&all_texts).await?;
+        if all_embs.len() < 2 {
+            return Ok(Vec::new());
+        }
+
+        let query_vec = &all_embs[0];
         let query_norm: f32 = query_vec.iter().map(|x| x * x).sum::<f32>().sqrt();
         if query_norm == 0.0 {
             return Ok(Vec::new());
         }
 
-        let mut scores: Vec<(u32, f32)> = buf_embs
+        let mut scores: Vec<(u32, f32)> = all_embs[1..]
             .iter()
             .zip(buf_ids.iter())
             .map(|(emb, &id)| {
