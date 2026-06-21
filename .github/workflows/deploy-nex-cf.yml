@@ -43,7 +43,7 @@ jobs:
           target: wasm32-unknown-unknown
 
       - name: Install worker-build
-        run: cargo install worker-build
+        run: cargo install worker-build --version 0.8.4
 
       - name: Deploy to Cloudflare Workers
         run: ./gateway/nex-cf/deploy.sh

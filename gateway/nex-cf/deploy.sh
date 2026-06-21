@@ -23,6 +23,7 @@ case "$MODE" in
         ;;
     --preview|preview)
         echo "=== worker-build (release) ==="
+        cargo install -q worker-build --version 0.8.4
         worker-build --release
         echo ""
         echo "=== wrangler deploy (preview) ==="
@@ -32,6 +33,7 @@ case "$MODE" in
         ;;
     *)
         echo "=== worker-build (release) ==="
+        cargo install -q worker-build --version 0.8.4
         worker-build --release
         echo ""
         echo "=== wrangler deploy (production) ==="
