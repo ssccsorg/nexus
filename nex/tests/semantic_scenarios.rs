@@ -903,7 +903,7 @@ fn scenario_fihstorage_e2e_auto_index() {
     futures_executor::block_on(async {
         use nex::FihStorage;
         use nex::io::FsIo;
-        use nexus_model::{AsyncFactCapable, Content, Fact, FihHash};
+        use nexus_model::{AsyncFactCapable, AsyncStorageRead, Content, Fact, FihHash};
 
         let tmp = tempfile::TempDir::new().unwrap();
         let io = FsIo::new(tmp.path()).unwrap();
@@ -929,8 +929,8 @@ fn scenario_fihstorage_e2e_auto_index() {
             .await
             .unwrap();
 
-        // Verify fact exists in state (sync StorageRead reads from in-memory stores)
-        let state = nexus_model::StorageRead::read_state(&storage);
+        // Verify fact exists in state
+        let state = AsyncStorageRead::read_state(&storage).await;
         assert_eq!(state.facts.len(), 1, "should have 1 fact");
 
         // Verify auto-index by searching via FihStorage
@@ -976,7 +976,7 @@ fn scenario_fihstorage_e2e_auto_index() {
         );
 
         // Also verify total facts in state: 2 (original + conclusion)
-        let state2 = nexus_model::StorageRead::read_state(&storage);
+        let state2 = AsyncStorageRead::read_state(&storage).await;
         assert_eq!(state2.facts.len(), 2, "should have 2 facts total");
     });
 }

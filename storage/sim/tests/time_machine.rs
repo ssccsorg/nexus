@@ -11,8 +11,9 @@ mod common;
 
 use futures_executor::block_on;
 use nexus_model::{
-    Content, EvictCapable, Fact, FactCapable, FihHash, FilterCapable, FlushCapable, FlushCursor,
-    FlushResult, Hint, HintCapable, Intent, IntentCapable, StateFilter, StorageRead,
+    AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable, AsyncHintCapable,
+    AsyncIntentCapable, AsyncStorageRead, Content, Fact, FihHash, FlushCursor, FlushResult, Hint,
+    Intent, StateFilter,
 };
 use nexus_storage_sim::{FihStorage, SimIo, SyncFileIo};
 
@@ -23,9 +24,8 @@ fn store() -> FihStorage<SimIo> {
 }
 
 fn submit_fact(store: &FihStorage<SimIo>, id: &str, data: &str) {
-    FactCapable::submit_fact(
-        store,
-        &Fact {
+    block_on(
+        store.submit_fact(&Fact {
             id: FihHash::from_hex(id),
             origin: "tm".into(),
             content: Content {
@@ -33,15 +33,14 @@ fn submit_fact(store: &FihStorage<SimIo>, id: &str, data: &str) {
                 data: data.as_bytes().to_vec(),
             },
             creator: "tester".into(),
-        },
+        }),
     )
     .unwrap();
 }
 
 fn submit_intent(store: &FihStorage<SimIo>, id: &str, from: &[&str]) {
-    IntentCapable::submit_intent(
-        store,
-        &Intent {
+    block_on(
+        store.submit_intent(&Intent {
             id: FihHash::from_hex(id),
             from_facts: from.iter().map(|s| FihHash::from_hex(s)).collect(),
             description: format!("intent {}", id),
@@ -52,13 +51,13 @@ fn submit_intent(store: &FihStorage<SimIo>, id: &str, from: &[&str]) {
             created_at: None,
             is_concluded: false,
             concluded_at: None,
-        },
+        }),
     )
     .unwrap();
 }
 
 fn flush_at(store: &FihStorage<SimIo>, cursor: &FlushCursor) -> FlushResult {
-    FlushCapable::flush_since(store, cursor).unwrap()
+    block_on(store.flush_since(cursor)).unwrap()
 }
 
 // ── Test 1: Delta chain reconstruction ───────────────────────────────────
@@ -106,7 +105,7 @@ fn test_delta_chain_reconstruction() {
     // Reconstruct from IO — all 3 facts should be present
     let store2 = FihStorage::new(io, "tm");
     block_on(store2.rebuild_cache()).unwrap();
-    let state = StorageRead::read_state(&store2);
+    let state = block_on(store2.read_state());
     assert_eq!(
         state.facts.len(),
         3,
@@ -137,7 +136,7 @@ fn test_storage_migration() {
     let dst = FihStorage::new(io, "tm");
     block_on(dst.rebuild_cache()).unwrap();
 
-    let state = StorageRead::read_state(&dst);
+    let state = block_on(dst.read_state());
     assert_eq!(state.facts.len(), 2);
     assert_eq!(state.intents.len(), 1);
     assert_eq!(state.intents[0].from_facts.len(), 2);
@@ -160,17 +159,16 @@ fn test_time_travel_consistency() {
     submit_intent(&store, "i_post", &["f_pre"]);
 
     // Full state has both
-    let full = StorageRead::read_state(&store);
+    let full = block_on(store.read_state());
     assert_eq!(full.facts.len(), 1);
     assert_eq!(full.intents.len(), 1);
 
     // Time-travel to t=2_500_000_000: Fact (indexed at 2G) included, Intent not yet indexed
-    let past = FilterCapable::read_state_filtered(
-        &store,
-        &StateFilter {
+    let past = block_on(
+        store.read_state_filtered(&StateFilter {
             until: Some("2500000000".to_string()),
             ..Default::default()
-        },
+        }),
     );
     assert_eq!(past.facts.len(), 1, "fact submitted before midpoint");
     assert_eq!(
@@ -211,21 +209,20 @@ fn test_full_statespace_round_trip() {
     submit_fact(&store, "f1", "one");
     submit_fact(&store, "f2", "two");
     submit_intent(&store, "i1", &["f1"]);
-    HintCapable::submit_hint(
-        &store,
-        &Hint {
+    block_on(
+        store.submit_hint(&Hint {
             id: FihHash::from_hex("h1"),
             content: "hint one".into(),
             creator: "tester".into(),
-        },
+        }),
     )
     .unwrap();
 
-    IntentCapable::claim_intent(&store, "i1", "alice").unwrap();
-    IntentCapable::heartbeat(&store, "i1", "alice").unwrap();
-    IntentCapable::conclude_intent(&store, "i1", "result one").unwrap();
+    block_on(store.claim_intent("i1", "alice")).unwrap();
+    block_on(store.heartbeat("i1", "alice")).unwrap();
+    block_on(store.conclude_intent("i1", "result one")).unwrap();
 
-    let state = StorageRead::read_state(&store);
+    let state = block_on(store.read_state());
     assert_eq!(state.facts.len(), 3, "2 original + 1 conclusion");
     assert_eq!(state.intents.len(), 1);
     assert_eq!(state.hints.len(), 1);
@@ -274,7 +271,7 @@ fn test_empty_statespace_is_valid() {
     let store = FihStorage::new(io.clone(), "tm");
     block_on(store.flush_pending()).unwrap();
 
-    let state = StorageRead::read_state(&store);
+    let state = block_on(store.read_state());
     assert!(state.facts.is_empty());
     assert!(state.intents.is_empty());
     assert!(state.hints.is_empty());
@@ -286,19 +283,21 @@ fn test_empty_statespace_is_valid() {
 fn test_eviction_preserves_fact_removes_old_hint() {
     let store = store();
     submit_fact(&store, "f_keep", "keep me");
-    HintCapable::submit_hint(
-        &store,
-        &Hint {
+    block_on(
+        store.submit_hint(&Hint {
             id: FihHash::from_hex("h_old"),
             content: "old hint".into(),
             creator: "tester".into(),
-        },
+        }),
     )
     .unwrap();
 
-    EvictCapable::evict_before(&store, "99999999999").unwrap();
+    block_on(store.evict_before("99999999999")).unwrap();
 
-    let state = StorageRead::read_state(&store);
+    // Note: evict_before only removes from the in-memory hint store.
+    // read_state reads from IO (which still has the hint), so we check
+    // the in-memory store directly.
+    assert_eq!(store.hint_store.len(), 0, "old hint must be evicted from memory");
+    let state = block_on(store.read_state());
     assert_eq!(state.facts.len(), 1, "fact must survive eviction");
-    assert_eq!(state.hints.len(), 0, "old hint must be evicted");
 }

@@ -11,6 +11,7 @@ serde = { version = "1", features = ["derive"] }
 postcard = { version = "1", features = ["alloc"] }
 cfg-if = "1"
 futures-executor = "0.3"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }
 
 [dev-dependencies]
 tempfile = "3"
