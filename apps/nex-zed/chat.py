@@ -36,6 +36,9 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Global shutdown flag — when set, main loop exits cleanly.
+_shutdown = False
+
 try:
     import websockets
 except ImportError:
@@ -252,7 +255,14 @@ async def read_stdin():
 
         if text in ("/exit", "/quit"):
             print("Exiting.")
-            os._exit(0)
+            global _shutdown
+            _shutdown = True
+            # Cancel the main waiter future if it exists
+            for task in asyncio.all_tasks():
+                if task.get_name() == "main-waiter":
+                    task.cancel()
+                    break
+            return
 
         elif text == "/new":
             current_thread_id = None
@@ -428,69 +438,75 @@ def main():
     async def async_main():
         global zed_ws
 
-        # Start WebSocket server
-        server = await websockets.serve(
+        async with websockets.serve(
             handle_zed,
             HOST,
             WS_PORT,
             process_request=lambda path, headers: None,
-        )
-        print(f"{C.GREEN}✓ WebSocket server started (port {WS_PORT}){C.END}")
-        print(f"{C.DIM}  Waiting for Zed to connect...{C.END}")
+        ):
+            print(f"{C.GREEN}✓ WebSocket server started (port {WS_PORT}){C.END}")
+            print(f"{C.DIM}  Waiting for Zed to connect...{C.END}")
 
-        # Start Zed process
-        zed_proc = None
-        if not args.no_zed:
-            env = os.environ.copy()
-            env.update({
-                "ZED_EXTERNAL_SYNC_ENABLED": "true",
-                "ZED_WEBSOCKET_SYNC_ENABLED": "true",
-                "ZED_HELIX_URL": f"{HOST}:{WS_PORT}",
-                "ZED_HELIX_TOKEN": "test-token",
-                "HELIX_SESSION_ID": SESSION_ID,
-                "ZED_STATELESS": "1",
-                "RUST_LOG": "info",
-            })
+            zed_proc = None
+            if not args.no_zed:
+                env = os.environ.copy()
+                env.update({
+                    "ZED_EXTERNAL_SYNC_ENABLED": "true",
+                    "ZED_WEBSOCKET_SYNC_ENABLED": "true",
+                    "ZED_HELIX_URL": f"{HOST}:{WS_PORT}",
+                    "ZED_HELIX_TOKEN": "test-token",
+                    "HELIX_SESSION_ID": SESSION_ID,
+                    "ZED_STATELESS": "1",
+                    "RUST_LOG": "info",
+                })
 
-            zed_proc = subprocess.Popen(
-                [bin_path, "--headless", "--allow-multiple-instances",
-                 "--user-data-dir", user_data_dir, workdir],
-                env=env,
-                stdout=subprocess.DEVNULL,
-                stderr=open(ZED_LOG, "w"),
-            )
-            print(f"{C.GREEN}✓ Zed started (PID: {zed_proc.pid}){C.END}")
-            print(f"  {C.DIM}Log: {ZED_LOG}{C.END}")
-            print()
+                zed_proc = subprocess.Popen(
+                    [bin_path, "--headless", "--allow-multiple-instances",
+                     "--user-data-dir", user_data_dir, workdir],
+                    env=env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=open(ZED_LOG, "w"),
+                )
+                print(f"{C.GREEN}✓ Zed started (PID: {zed_proc.pid}){C.END}")
+                print(f"  {C.DIM}Log: {ZED_LOG}{C.END}")
+                print()
 
-        # Start stdin input task (no-op if not a terminal)
-        asyncio.create_task(read_stdin())
+            asyncio.create_task(read_stdin())
 
-        # Wait for Zed to exit
-        if zed_proc:
-            loop = asyncio.get_event_loop()
+            async def wait_for_exit():
+                nonlocal zed_proc
+                if zed_proc:
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(None, zed_proc.wait)
+                else:
+                    while not _shutdown:
+                        await asyncio.sleep(1)
+
+            waiter = asyncio.create_task(wait_for_exit(), name="main-waiter")
             try:
-                await loop.run_in_executor(None, zed_proc.wait)
+                await waiter
             except asyncio.CancelledError:
                 pass
-            print(f"\n{C.YELLOW}Zed process exited{C.END}")
-        else:
-            # Server-only mode or no-stdin: keep running
-            while True:
-                await asyncio.sleep(5)
-                # Periodically print status (background mode)
-                print(f".", end="", flush=True)
+
+            if zed_proc and zed_proc.poll() is None:
+                zed_proc.terminate()
+                try:
+                    await asyncio.wait_for(
+                        asyncio.get_event_loop().run_in_executor(None, zed_proc.wait),
+                        timeout=5.0
+                    )
+                except asyncio.TimeoutError:
+                    zed_proc.kill()
+                    await asyncio.get_event_loop().run_in_executor(None, zed_proc.wait)
+                print(f"\n{C.YELLOW}Zed process terminated{C.END}")
+
+        print(f"{C.GREEN}✓ Server shutdown complete{C.END}")
 
     try:
         asyncio.run(async_main())
     except KeyboardInterrupt:
         print(f"\n{C.YELLOW}Shutting down...{C.END}")
     finally:
-        # Cleanup
-        subprocess.run(["pkill", "-f", "helix-zed-headless"], capture_output=True)
-        # Temporary directory cleanup (optional, uncomment to enable)
-        # if 'user_data_dir' in dir():
-        #     shutil.rmtree(user_data_dir, ignore_errors=True)
         print(f"{C.GREEN}✓ Cleanup complete{C.END}")
         print(f"{C.DIM}  Settings file: {user_data_dir}/config/settings.json{C.END}")
         print(f"{C.DIM}  Can reuse with --user-data-dir {user_data_dir} on next run{C.END}")
