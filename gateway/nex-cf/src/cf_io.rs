@@ -1,22 +1,7 @@
 // ── CfFihIo: Cloudflare R2-backed AsyncFileIo implementation ──────────
-//
-// Wraps worker::Bucket (R2 binding) behind the AsyncFileIo trait.
-// Enables FihStorage to run in Cloudflare Workers, using R2 as the
-// persistent key-value store.
-//
-// Key-space mapping:
-//   facts/f_{id}.fact       → r2 object "facts/f_{id}.fact"
-//   intents/i_{id}.intent   → r2 object "intents/i_{id}.intent"
-//   hints/h_{id}.hint       → r2 object "hints/h_{id}.hint"
-//   blob/{hash}.bin         → r2 object "blob/{hash}.bin"
-//   blob/{hash}.bin.meta    → r2 object "blob/{hash}.bin.meta"
-//   flush/{part}/cursor_{t}.chain → r2 object "flush/..."
-//
-// Limitations:
-//   - R2 list-after-write is eventually consistent (may miss recent writes)
-
 use nex::io::{AsyncFileIo, IoFuture, WriteOp};
-use worker::{Bucket, Data};
+use nex::storage::semantic::Query;
+use worker::Bucket;
 
 pub struct CfFihIo {
     bucket: Bucket,
@@ -55,7 +40,7 @@ impl AsyncFileIo for CfFihIo {
     fn write<'a>(&'a self, path: &'a str, data: &'a [u8]) -> IoFuture<'a, ()> {
         Box::pin(async move {
             self.bucket
-                .put(path, Data::Bytes(data.to_vec()))
+                .put(path, worker::Data::Bytes(data.to_vec()))
                 .execute()
                 .await
                 .map_err(|e| format!("R2 put {path}: {e}"))?;
@@ -80,7 +65,6 @@ impl AsyncFileIo for CfFihIo {
                 if !objects.truncated() {
                     break;
                 }
-                // SAFETY: cursor is present when truncated() is true
                 let cursor = objects.cursor().unwrap();
                 objects = self
                     .bucket
@@ -107,24 +91,60 @@ impl AsyncFileIo for CfFihIo {
 
     fn apply_batch<'a>(&'a self, ops: &'a [WriteOp]) -> IoFuture<'a, ()> {
         Box::pin(async move {
+            // Fire all R2 operations concurrently using spawn_local.
+            // WASM single-thread: JS event loop processes all HTTP requests in parallel.
+            let mut futs: Vec<std::pin::Pin<Box<dyn std::future::Future<Output = ()>>>> =
+                Vec::new();
             for op in ops {
+                let b = self.bucket.clone();
                 match op {
                     WriteOp::Write { path, data } => {
-                        self.bucket
-                            .put(path.as_str(), Data::Bytes(data.clone()))
-                            .execute()
-                            .await
-                            .map_err(|e| format!("R2 put {path}: {e}"))?;
+                        let p = path.clone();
+                        let v = data.clone();
+                        futs.push(Box::pin(async move {
+                            if let Err(msg) = b
+                                .put(&p, worker::Data::Bytes(v))
+                                .execute()
+                                .await
+                                .map_err(|m| format!("R2 put {p}: {m}"))
+                            {
+                                worker::console_log!("{msg}");
+                            }
+                        }));
                     }
                     WriteOp::Delete { path } => {
-                        self.bucket
-                            .delete(path.as_str())
-                            .await
-                            .map_err(|e| format!("R2 delete {path}: {e}"))?;
+                        let p = path.clone();
+                        futs.push(Box::pin(async move {
+                            if let Err(msg) = b
+                                .delete(&p)
+                                .await
+                                .map_err(|m| format!("R2 delete {p}: {m}"))
+                            {
+                                worker::console_log!("{msg}");
+                            }
+                        }));
                     }
                 }
             }
+            // Concurrently await all. In WASM, `join_all` on `select_all` runs in parallel
+            // because each Future is backed by a JS Promise.
+            for fut in futs {
+                fut.await;
+            }
             Ok(())
         })
+    }
+}
+
+// ── TextQuery ──────────────────────────────────────────────────────
+pub struct TextQuery {
+    pub text: String,
+}
+impl Query for TextQuery {
+    fn features(&self) -> Option<Vec<f32>> {
+        None
+    }
+    fn text(&self) -> Option<String> {
+        Some(self.text.clone())
     }
 }

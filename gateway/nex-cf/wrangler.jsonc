@@ -7,12 +7,69 @@
   "routes": ["cf.nexgate.ssccs.org/*"],
   "workers_dev": true,
 
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "STORAGE_DO",
+        "class_name": "NexusCfDO"
+      }
+    ]
+  },
+
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["NexusCfDO"]
+    }
+  ],
+
   "r2_buckets": [
     {
       "binding": "FIH_R2",
       "bucket_name": "nexus-fih-content"
+    },
+    {
+      "binding": "FIH_R2_TEST",
+      "bucket_name": "nexus-fih-content-test"
+    },
+    {
+      "binding": "DOCS_R2",
+      "bucket_name": "ssccs-nexus-af"
+    },
+    {
+      "binding": "DOCS_R2_TEST",
+      "bucket_name": "ssccs-nexus-af-test"
     }
   ],
+
+  "queues": {
+    "producers": [
+      {
+        "binding": "INGEST_QUEUE",
+        "queue": "nex-cf-ingest-queue"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "nex-cf-ingest-queue",
+        "max_batch_size": 5,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "dead_letter_queue": "nex-cf-ingest-dlq"
+      }
+    ]
+  },
+
+  "vectorize": [
+    {
+      "binding": "SEMANTIC_INDEX",
+      "index_name": "nex-cf-semantic"
+    }
+  ],
+
+  "ai": {
+    "binding": "AI"
+  },
 
   "observability": {
     "logs": { "enabled": true, "invocation_logs": true }

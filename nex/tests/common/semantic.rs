@@ -4,7 +4,7 @@
 // The `dead_code` allow is intentional: this is a shared mock library.
 #![allow(dead_code)]
 
-use nex::storage::semantic::{FihLoad, FihQuery, SemanticStore};
+use nex::storage::semantic::{Query, RecordLoad, SemanticStore};
 use std::collections::HashMap;
 use std::fmt::Debug;
 
@@ -32,8 +32,9 @@ impl Default for MockSemanticStore {
     }
 }
 
+#[async_trait::async_trait(?Send)]
 impl SemanticStore for MockSemanticStore {
-    fn insert(&mut self, id: u32, load: &dyn FihLoad) -> Result<(), String> {
+    async fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
         let features = load
             .features(id)
             .ok_or_else(|| "no features available".to_string())?;
@@ -42,7 +43,7 @@ impl SemanticStore for MockSemanticStore {
         Ok(())
     }
 
-    fn search(&self, query: &dyn FihQuery, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
+    async fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
         let query_vec = query
             .features()
             .ok_or_else(|| "no query features".to_string())?;
@@ -72,7 +73,7 @@ impl SemanticStore for MockSemanticStore {
         Ok(scores)
     }
 
-    fn remove(&mut self, id: u32) -> Result<(), String> {
+    async fn remove(&mut self, id: u32) -> Result<(), String> {
         if let Some(pos) = self.ids.iter().position(|&i| i == id) {
             self.ids.remove(pos);
             self.vectors.remove(pos);
@@ -109,8 +110,9 @@ impl Default for MockBm25Store {
     }
 }
 
+#[async_trait::async_trait(?Send)]
 impl SemanticStore for MockBm25Store {
-    fn insert(&mut self, id: u32, load: &dyn FihLoad) -> Result<(), String> {
+    async fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
         let text = load
             .text(id)
             .ok_or_else(|| "no text available".to_string())?;
@@ -119,7 +121,7 @@ impl SemanticStore for MockBm25Store {
         Ok(())
     }
 
-    fn search(&self, query: &dyn FihQuery, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
+    async fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
         let query_text = query.text().ok_or_else(|| "no query text".to_string())?;
 
         if self.ids.is_empty() {
@@ -187,7 +189,7 @@ impl SemanticStore for MockBm25Store {
         Ok(scores)
     }
 
-    fn remove(&mut self, id: u32) -> Result<(), String> {
+    async fn remove(&mut self, id: u32) -> Result<(), String> {
         if let Some(pos) = self.ids.iter().position(|&i| i == id) {
             self.ids.remove(pos);
             self.texts.remove(pos);
@@ -200,9 +202,9 @@ impl SemanticStore for MockBm25Store {
     }
 }
 
-// ── FeatureLoad: test/utility FihLoad+FihQuery implementation ───────────
+// ── FeatureLoad: test/utility RecordLoad+Query implementation ───────────
 
-/// A `FihLoad` + `FihQuery` implementation that carries a feature vector
+/// A `RecordLoad` + `Query` implementation that carries a feature vector
 /// and an optional text string.
 #[derive(Debug, Clone)]
 pub struct FeatureLoad {
@@ -216,7 +218,7 @@ impl FeatureLoad {
     }
 }
 
-impl FihLoad for FeatureLoad {
+impl RecordLoad for FeatureLoad {
     fn content(&self, _id: u32) -> Option<Vec<u8>> {
         self.text.as_ref().map(|t| t.as_bytes().to_vec())
     }
@@ -226,15 +228,9 @@ impl FihLoad for FeatureLoad {
     fn features(&self, _id: u32) -> Option<Vec<f32>> {
         Some(self.features.clone())
     }
-    fn origin(&self, _id: u32) -> Option<String> {
-        None
-    }
-    fn creator(&self, _id: u32) -> Option<String> {
-        None
-    }
 }
 
-impl FihQuery for FeatureLoad {
+impl Query for FeatureLoad {
     fn features(&self) -> Option<Vec<f32>> {
         Some(self.features.clone())
     }

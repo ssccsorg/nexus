@@ -11,13 +11,17 @@
 // These implementations use best-effort patterns; full persistence requires
 // the hydrate/drain cycle through AsyncStoreSession (see nex/src/storage/composite/).
 
-use nex::storage::{BlobStore, MetaStore, ObjectStore};
+pub mod bm25;
+pub mod vectorize;
+
+use nexus_model::{BlobStore, MetaStore, ObjectStore};
 use worker::*;
 
 // ── CfMetaStore ──────────────────────────────────────────────────────────
 
 #[derive(Clone)]
 pub struct CfMetaStore {
+    #[allow(dead_code)]
     kv: KvStore,
 }
 
@@ -74,15 +78,17 @@ impl BlobStore for CfBlobStore {
 
 // ── CfObjectStore ────────────────────────────────────────────────────────
 
-#[derive(Clone)]
-pub struct CfObjectStore {
-    #[allow(dead_code)]
-    namespace: DurableObjectNamespace,
+pub struct CfObjectStore;
+
+impl Default for CfObjectStore {
+    fn default() -> Self {
+        Self
+    }
 }
 
 impl CfObjectStore {
-    pub fn new(namespace: DurableObjectNamespace) -> Self {
-        Self { namespace }
+    pub fn new() -> Self {
+        Self
     }
 }
 

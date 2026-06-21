@@ -1,7 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 
-use crate::storage::semantic::{FihLoad, FihQuery, SemanticStore};
+use crate::storage::semantic::{Query, RecordLoad, SemanticStore};
 use nexus_model::FihHash;
 
 /// Append-only ordered index. Stores compact u32 IDs (no String duplication).
@@ -295,34 +295,40 @@ impl FihCoord {
 
     // ── Semantic store interaction ────────────────────────────────
 
-    /// Insert a record into the semantic store using the provided `FihLoad`.
-    pub fn semantic_insert(&self, id: u32, load: &dyn FihLoad) -> Result<(), String> {
+    /// Insert a record into the semantic store using the provided `RecordLoad`.
+    pub async fn semantic_insert(&self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
+        #[allow(clippy::await_holding_refcell_ref)]
         let mut stores = self.by_semantic.borrow_mut();
         if stores.is_empty() {
             return Err("no semantic stores configured".into());
         }
-        let num_stores = stores.len();
+        let mut last_err: Option<String> = None;
         for store in stores.iter_mut() {
-            store
-                .insert(id, load)
-                .map_err(|e| format!("semantic insert failed (store {num_stores}): {e}"))?;
+            if let Err(e) = store.insert(id, load).await {
+                last_err = Some(e);
+            }
         }
-        Ok(())
+        if let Some(e) = last_err {
+            Err(e)
+        } else {
+            Ok(())
+        }
     }
 
     /// Search the semantic store using the provided query handle.
-    pub fn semantic_search(
+    pub async fn semantic_search(
         &self,
-        query: &dyn FihQuery,
+        query: &dyn Query,
         top_k: usize,
     ) -> Result<Vec<(u32, f32)>, String> {
+        #[allow(clippy::await_holding_refcell_ref)]
         let stores = self.by_semantic.borrow();
         if stores.is_empty() {
             return Err("no semantic stores configured".into());
         }
         let mut all_results = Vec::new();
         for store in stores.iter() {
-            if let Ok(results) = store.search(query, top_k) {
+            if let Ok(results) = store.search(query, top_k).await {
                 all_results.extend(results);
             }
         }

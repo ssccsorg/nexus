@@ -25,7 +25,8 @@ use super::entity_store::{EntityStore, MemoryEntityStore};
 use super::index::FihCoord;
 use super::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
 use crate::io::file_io::{AsyncFileIo, WriteOp};
-use crate::storage::semantic::FihLoad as SemanticFihLoad;
+use crate::storage::semantic::fih::FihRecordLoad;
+use crate::storage::semantic::record::{Query, RecordLoad};
 
 /// Chain entry format: serialized by flush_since for delta chain files.
 /// Named struct avoids postcard tuple field ordering ambiguity with empty vecs.
@@ -200,6 +201,39 @@ impl<I: AsyncFileIo> FihStorage<I> {
     }
 
     /// Flush pending writes to IO.
+    /// Rebuild semantic stores (BM25, Vectorize buffer) from fact_store after rebuild_cache.
+    /// Reads content blobs from IO and inserts text into all registered semantic stores.
+    pub async fn rebuild_semantic(&self) -> Result<(), String> {
+        struct TextRecord {
+            text: String,
+        }
+        impl crate::storage::semantic::record::RecordLoad for TextRecord {
+            fn content(&self, _id: u32) -> Option<Vec<u8>> {
+                Some(self.text.as_bytes().to_vec())
+            }
+            fn features(&self, _id: u32) -> Option<Vec<f32>> {
+                None
+            }
+        }
+
+        let facts = self.fact_store.values();
+        for r in facts {
+            let content = load_blob(&self.io, &r.blob_hash).await;
+            if content.data.is_empty() {
+                continue;
+            }
+            let text = String::from_utf8_lossy(&content.data).to_string();
+            if text.trim().is_empty() {
+                continue;
+            }
+            let id_bytes = nexus_model::FihHash::from_hex(&r.id);
+            let idx = self.coord.intern(&id_bytes.0);
+            let load = TextRecord { text };
+            self.semantic_insert(idx, &load).await.ok();
+        }
+        Ok(())
+    }
+
     pub async fn flush_pending(&self) -> Result<(), String> {
         let ops = std::mem::take(&mut *self.pending.try_borrow_mut().map_err(|e| e.to_string())?);
         if !ops.is_empty() {
@@ -213,22 +247,25 @@ impl<I: AsyncFileIo> FihStorage<I> {
         self.coord.by_semantic.borrow_mut().push(store);
     }
 
-    /// Search semantic stores with the given query.
-    pub fn semantic_search(
+    /// Access the semantic stores list (for downcasting to concrete types).
+    pub fn semantic_stores(
         &self,
-        query: &dyn crate::storage::semantic::FihQuery,
+    ) -> impl std::ops::Deref<Target = Vec<Box<dyn crate::storage::semantic::SemanticStore>>> {
+        self.coord.by_semantic.borrow()
+    }
+
+    /// Search semantic stores with the given query.
+    pub async fn semantic_search(
+        &self,
+        query: &dyn Query,
         top_k: usize,
     ) -> Result<Vec<(u32, f32)>, String> {
-        self.coord.semantic_search(query, top_k)
+        self.coord.semantic_search(query, top_k).await
     }
 
     /// Insert a record into semantic stores with the given load handle.
-    pub fn semantic_insert(
-        &self,
-        id: u32,
-        load: &dyn crate::storage::semantic::FihLoad,
-    ) -> Result<(), String> {
-        self.coord.semantic_insert(id, load)
+    pub async fn semantic_insert(&self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
+        self.coord.semantic_insert(id, load).await
     }
 
     /// Query intents that reference a given fact.
@@ -243,6 +280,11 @@ impl<I: AsyncFileIo> FihStorage<I> {
             .into_iter()
             .map(|idx| self.coord.resolve(idx))
             .collect()
+    }
+
+    /// Resolve a semantic index back to its hex ID string.
+    pub fn resolve_semantic_idx(&self, idx: u32) -> String {
+        self.coord.resolve(idx)
     }
 
     /// Enqueue content as a blob write. FIH is append-only: no dedup
@@ -456,12 +498,6 @@ impl<I: AsyncFileIo> FactCapable for FihStorage<I> {
         let ts = self.clock.now_nanos();
         self.coord
             .record_fact(&fact.id.0, &fact.origin, &fact.creator, ts);
-
-        // Auto-index into semantic stores (skip conclusion facts to reduce noise)
-        if !fact.origin.starts_with("conclusion:") {
-            let fact_idx = self.coord.intern(&fact.id.0);
-            let _ = self.coord.semantic_insert(fact_idx, self);
-        }
 
         Ok(fact.id)
     }
@@ -1221,14 +1257,14 @@ impl<I: AsyncFileIo> FlushCapable for FihStorage<I> {
     }
 }
 
-// ── FihStorage as FihLoad ──────────────────────────────────────────
+// ── FihStorage as RecordLoad ────────────────────────────────────────
 //
-// Implements the flashlight handle that SemanticStore implementations
-// use to load record data. FihStorage has access to both the in-memory
+// Implements the pure semantic RecordLoad trait for SemanticStore
+// implementations. FihStorage has access to both the in-memory
 // EntityStore (for fact/intent/hint records) and the coord index (for
-// ID resolution), making it the natural FihLoad provider.
+// ID resolution), making it the natural RecordLoad provider.
 
-impl<I: AsyncFileIo> SemanticFihLoad for FihStorage<I> {
+impl<I: AsyncFileIo> RecordLoad for FihStorage<I> {
     fn content(&self, id: u32) -> Option<Vec<u8>> {
         let id_str = self.coord.resolve(id);
         if id_str.is_empty() {
@@ -1245,10 +1281,16 @@ impl<I: AsyncFileIo> SemanticFihLoad for FihStorage<I> {
 
     fn features(&self, _id: u32) -> Option<Vec<f32>> {
         // Feature vectors are not stored in FihStorage directly.
-        // External embedding services should set up FihLoad wrappers.
+        // External embedding services should set up RecordLoad wrappers.
         None
     }
+}
 
+// ── FihStorage as FihRecordLoad ────────────────────────────────────
+//
+// Extends RecordLoad with FIH-specific accessors for origin and creator.
+
+impl<I: AsyncFileIo> FihRecordLoad for FihStorage<I> {
     fn origin(&self, id: u32) -> Option<String> {
         let id_str = self.coord.resolve(id);
         if id_str.is_empty() {
@@ -1276,6 +1318,9 @@ impl<I: AsyncFileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
     }
 
     async fn read_state(&self) -> BoardState {
+        // Flush any pending writes so IO reflects the latest state.
+        let _ = self.flush_pending().await;
+
         // Direct async IO: list + read from backing store, no block_on.
         let mut facts = Vec::new();
         if let Ok(keys) = self.io.list("facts/").await {
@@ -1367,40 +1412,25 @@ impl<I: AsyncFileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
 
 impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
     async fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
-        // Write content blob to R2
-        let blob_hash = content_hash(&fact.content.data);
-        self.io
-            .write(&format!("blob/{}.bin", blob_hash), &fact.content.data)
-            .await
+        // Enqueue blob content and fact record in pending buffer only.
+        // No direct io.write() — caller must call flush_pending() for durability.
+        // This enables batch writes (N paragraphs → 1 apply_batch instead of 2N R2 PUTs).
+        let blob_hash = self
+            .enqueue_content(&fact.content)
             .map_err(BlackboardError::Internal)?;
 
-        // Also enqueue in pending buffer so FihLoad::content() can find it.
-        // R2 is last-writer-wins, so the duplicate write on flush is harmless.
-        let blob_path = format!("blob/{}.bin", blob_hash);
-        let meta = ContentMeta {
-            mime_type: fact.content.mime_type.clone(),
-            size: fact.content.data.len() as u64,
-        };
-        let meta_bytes =
-            postcard::to_allocvec(&meta).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.pending.borrow_mut().push(WriteOp::Write {
-            path: blob_path,
-            data: fact.content.data.clone(),
-        });
-        self.pending.borrow_mut().push(WriteOp::Write {
-            path: format!("blob/{}.bin.meta", blob_hash),
-            data: meta_bytes,
-        });
-
-        // Write fact record with blob_hash reference
-        let record = FactRecord::from_model(fact, blob_hash, 0);
+        let record = FactRecord::from_model(fact, blob_hash, self.clock.now_nanos());
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.io
-            .write(&record.key(), &bytes)
-            .await
-            .map_err(BlackboardError::Internal)?;
+
+        let op = WriteOp::Write {
+            path: record.key(),
+            data: bytes,
+        };
+
+        // Update in-memory cache immediately for subsequent reads
         self.fact_store.insert(record.id.clone(), record);
+        self.pending.borrow_mut().push(op);
 
         // Update indices via FihCoord (record_fact records by_time internally)
         let ts = self.clock.now_nanos();
@@ -1410,7 +1440,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
         // Auto-index into semantic stores (skip conclusion facts to reduce noise)
         if !fact.origin.starts_with("conclusion:") {
             let fact_idx = self.coord.intern(&fact.id.0);
-            let _ = self.coord.semantic_insert(fact_idx, self);
+            self.coord.semantic_insert(fact_idx, self).await.ok();
         }
 
         Ok(fact.id)
@@ -1425,16 +1455,17 @@ impl<I: AsyncFileIo> nexus_model::AsyncHintCapable for FihStorage<I> {
             id: hint.id.to_string(),
             content: hint.content.clone(),
             creator: hint.creator.clone(),
-            submitted_at: 0,
+            submitted_at: self.clock.now_secs(),
             ttl_secs: None,
         };
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.io
-            .write(&record.key(), &bytes)
-            .await
-            .map_err(BlackboardError::Internal)?;
+        let op = WriteOp::Write {
+            path: record.key(),
+            data: bytes,
+        };
         self.hint_store.insert(record.id.clone(), record);
+        self.pending.borrow_mut().push(op);
         Ok(())
     }
 }
@@ -1443,25 +1474,50 @@ impl<I: AsyncFileIo> nexus_model::AsyncHintCapable for FihStorage<I> {
 
 impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
     async fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+        if intent.from_facts.is_empty() {
+            return Err(BlackboardError::Forbidden(
+                "intent must reference at least one fact".into(),
+            ));
+        }
+        for fid in &intent.from_facts {
+            let fid_str = fid.to_string();
+            if !self.fact_store.contains_key(&fid_str) {
+                return Err(BlackboardError::NotFound(format!(
+                    "Fact {fid_str} not found"
+                )));
+            }
+        }
+
         let record = super::record::IntentRecord {
             id: intent.id.to_string(),
             from_facts: intent.from_facts.iter().map(|f| f.to_string()).collect(),
             description_hash: String::new(),
             creator: intent.creator.clone(),
             status: super::record::IntentStatus::Submitted,
-            created_at: 0,
+            created_at: self.clock.now_secs(),
         };
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.io
-            .write(&record.key(), &bytes)
-            .await
-            .map_err(BlackboardError::Internal)?;
+        let op = WriteOp::Write {
+            path: record.key(),
+            data: bytes,
+        };
+
+        // Record intent in coordinator (handles by_fact, ref_counts, by_status, by_creator)
+        self.coord.record_intent(
+            &intent.id.0,
+            &intent.creator,
+            record.created_at,
+            &intent.from_facts.iter().map(|f| f.0).collect::<Vec<_>>(),
+        );
+
         self.intent_store.insert(record.id.clone(), record);
+        self.pending.borrow_mut().push(op);
         Ok(intent.id)
     }
 
     async fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let _ = self.flush_pending().await;
         let normalized = FihHash::from_hex(intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
@@ -1496,6 +1552,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
     }
 
     async fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let _ = self.flush_pending().await;
         let normalized = FihHash::from_hex(intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
@@ -1528,6 +1585,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
     }
 
     async fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        let _ = self.flush_pending().await;
         let normalized = FihHash::from_hex(intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
@@ -1571,6 +1629,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
         intent_id: &str,
         result: &str,
     ) -> Result<Fact, BlackboardError> {
+        let _ = self.flush_pending().await;
         let normalized = FihHash::from_hex(intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
