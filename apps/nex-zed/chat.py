@@ -26,12 +26,15 @@ WebSocket으로 연결하여 AI 에이전트와 대화합니다.
 import asyncio
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 try:
     import websockets
@@ -286,6 +289,67 @@ async def read_stdin():
 
 # ── 메인 ──────────────────────────────────────────────────────────────
 
+# ── Zed 설정 파일 생성 ─────────────────────────────────────────────
+
+def ensure_settings(data_dir: str, api_key: str):
+    """
+    Zed의 settings.json을 생성/확인하여 DeepSeek provider를 등록.
+    """
+    settings_dir = Path(data_dir) / "config"
+    settings_dir.mkdir(parents=True, exist_ok=True)
+    settings_file = settings_dir / "settings.json"
+
+    settings = {}
+    if settings_file.exists():
+        try:
+            settings = json.loads(settings_file.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # DeepSeek를 openai_compatible provider로 등록
+    language_models = settings.setdefault("language_models", {})
+    openai_compatible = language_models.setdefault("openai_compatible", {})
+
+    if "deepseek" not in openai_compatible:
+        openai_compatible["deepseek"] = {
+            "api_url": "https://api.deepseek.com/v1",
+            "available_models": [
+                {
+                    "name": "deepseek-chat",
+                    "display_name": "DeepSeek V3",
+                    "max_tokens": 65536,
+                    "max_output_tokens": 8192,
+                    "tool_use": True,
+                }
+            ],
+        }
+
+    # API 키는 Zed의 키체인 저장소를 통해 설정
+    # --user-data-dir 아래의 credentials.json에 직접 기록
+    creds_dir = Path(data_dir) / "credentials"
+    creds_dir.mkdir(parents=True, exist_ok=True)
+    creds_file = creds_dir / "credentials.json"
+
+    creds = {}
+    if creds_file.exists():
+        try:
+            creds = json.loads(creds_file.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # provider/deepseek 경로에 api_key 저장 (Zed의 키 형식)
+    creds["provider/deepseek"] = {
+        "api_key": api_key
+    }
+
+    settings_file.write_text(json.dumps(settings, indent=2))
+    creds_file.write_text(json.dumps(creds, indent=2))
+
+    print(f"  {C.DIM}설정:{C.END} {settings_file}")
+    print(f"  {C.DIM}자격증명:{C.END} {creds_file}")
+    return str(settings_dir.parent)  # data_dir 반환
+
+
 def main():
     import argparse
 
@@ -296,7 +360,28 @@ def main():
                         help="작업 디렉토리 (기본: 현재 디렉토리)")
     parser.add_argument("--no-zed", action="store_true",
                         help="Zed를 실행하지 않고 WebSocket 서버만 시작")
+    parser.add_argument("--api-key", default=None,
+                        help="DeepSeek API 키 (기본: DEEPSEEK_API_KEY 환경변수)")
     args = parser.parse_args()
+
+    # .env 파일 로드 (있는 경우)
+    env_file = Path(__file__).parent / ".env"
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, _, val = line.partition("=")
+                os.environ.setdefault(key.strip(), val.strip())
+
+    # DeepSeek API 키 확인 (여러 이름으로 시도)
+    api_key = (args.api_key
+               or os.environ.get("DEEPSEEK_API_KEY")
+               or os.environ.get("LLM_API_KEY"))
+    if not api_key:
+        print(f"{C.RED}⚠ API 키가 필요합니다.{C.END}")
+        print(f"  --api-key 옵션, DEEPSEEK_API_KEY 또는 LLM_API_KEY 환경변수를 설정하세요.")
+        print(f"  apps/nex-zed/.env 파일에도 LLM_API_KEY를 지정할 수 있습니다.")
+        sys.exit(1)
 
     # 바이너리 경로 자동 탐색
     bin_path = args.bin
@@ -316,12 +401,17 @@ def main():
 
     workdir = os.path.abspath(args.workdir)
 
+    # 임시 사용자 데이터 디렉토리 생성 + 설정 파일 기록
+    user_data_dir = tempfile.mkdtemp(prefix="nex-zed-")
+    ensure_settings(user_data_dir, api_key)
+
     print(f"\n{C.BOLD}{C.HEADER}╔══════════════════════════════════════╗{C.END}")
     print(f"{C.BOLD}{C.HEADER}║        nex-zed: Helix 채팅          ║{C.END}")
     print(f"{C.BOLD}{C.HEADER}╚══════════════════════════════════════╝{C.END}")
     print(f"  {C.DIM}바이너리:{C.END} {bin_path or '(서버 전용)'}")
     print(f"  {C.DIM}작업 디렉토리:{C.END} {workdir}")
     print(f"  {C.DIM}세션 ID:{C.END} {SESSION_ID}")
+    print(f"  {C.DIM}사용자 데이터:{C.END} {user_data_dir}")
     print(f"  {C.DIM}WebSocket:{C.END} ws://{HOST}:{WS_PORT}/api/v1/external-agents/sync")
     print()
 
@@ -363,7 +453,8 @@ def main():
             })
 
             zed_proc = subprocess.Popen(
-                [bin_path, "--headless", "--allow-multiple-instances", workdir],
+                [bin_path, "--headless", "--allow-multiple-instances",
+                 "--user-data-dir", user_data_dir, workdir],
                 env=env,
                 stdout=subprocess.DEVNULL,
                 stderr=open(ZED_LOG, "w"),
@@ -397,7 +488,12 @@ def main():
     finally:
         # 정리
         subprocess.run(["pkill", "-f", "helix-zed-headless"], capture_output=True)
+        # 임시 디렉토리 정리 (선택사항, 주석해제하면 활성화)
+        # if 'user_data_dir' in dir():
+        #     shutil.rmtree(user_data_dir, ignore_errors=True)
         print(f"{C.GREEN}✓ 정리 완료{C.END}")
+        print(f"{C.DIM}  설정 파일: {user_data_dir}/config/settings.json{C.END}")
+        print(f"{C.DIM}  다음 실행 시 --user-data-dir {user_data_dir} 로 재사용 가능{C.END}")
 
 
 if __name__ == "__main__":
