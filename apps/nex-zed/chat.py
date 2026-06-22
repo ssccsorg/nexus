@@ -130,30 +130,40 @@ async def send_chat(client: NexClient, message: str):
 
     thread_announced = False
 
-    async with client.client.stream("POST", "/v1/chat", json=body) as resp:
-        resp.raise_for_status()
+    url = f"{client.base_url}/v1/chat"
+    body_str = json.dumps(body)
+    proc = await asyncio.create_subprocess_exec(
+        "curl", "-s", "-N", "-X", "POST", url,
+        "-H", "Content-Type: application/json",
+        "-d", body_str,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
+    )
+    print(f"{C.DIM}[SSE] curl started PID {proc.pid}{C.END}", file=sys.stderr)
 
-        async for line in resp.aiter_lines():
-            if _shutdown:
-                break
+    event_type = ""
+    raw_data = ""
 
-            # SSE format: "event: <type>" / "data: <json>"
-            if not line:
-                continue
-            if line.startswith("event: "):
-                event_type = line[len("event: "):].strip()
-                continue
-            if line.startswith("data: "):
-                raw_data = line[len("data: "):]
-            else:
-                continue
+    while not _shutdown:
+        line_b = await proc.stdout.readline()
+        if not line_b:
+            break
+        line = line_b.decode().strip()
 
-            if not raw_data:
+        if line.startswith("event: "):
+            event_type = line[7:].strip()
+        elif line.startswith("data: "):
+            raw_data = line[6:]
+        elif not line:
+            if not event_type or not raw_data:
+                event_type = ""
+                raw_data = ""
                 continue
 
             try:
                 event_data = json.loads(raw_data)
             except json.JSONDecodeError:
+                event_type = ""
+                raw_data = ""
                 continue
 
             if show_raw:
@@ -173,10 +183,15 @@ async def send_chat(client: NexClient, message: str):
                     print(delta, end="", flush=True)
 
             elif event_type == "message_completed":
-                mid = event_data.get("message_id", "?")
-                print(f"\n{C.GREEN}✓ Complete (message: {mid[:8]}){C.END}")
+                print(f"\n{C.GREEN}✓ Complete{C.END}")
                 print()
+                proc.kill()
                 return
+
+            event_type = ""
+            raw_data = ""
+
+    await proc.wait()
 
     if not thread_announced and current_thread_id:
         print(f"\n{C.CYAN}Thread: {current_thread_id}{C.END}\n")
