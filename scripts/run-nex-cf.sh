@@ -8,7 +8,7 @@ set -euo pipefail
 #   scripts/run-nex-cf.sh --check        # cargo check only (fast)
 #   scripts/run-nex-cf.sh --build        # worker-build (WASM)
 
-cd "$(dirname "$0")/../gateway/nex-cf"
+cd "$(dirname "$0")/../apps/nex-cf"
 
 MODE="${1:-all}"
 

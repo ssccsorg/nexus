@@ -48,7 +48,7 @@ MODE="${1:-all}"
 
 if [ "$MODE" = "all" ] || [ "$MODE" = "--consumers" ]; then
     echo "=== Building gateway server ==="
-    cd "$SCRIPT_DIR/../gateway/api"
+    cd "$SCRIPT_DIR/../apps/nex-api"
     cargo build --quiet 2>&1
     echo "=== Starting gateway server ==="
     cargo run --quiet &
