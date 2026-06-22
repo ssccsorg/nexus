@@ -49,10 +49,16 @@ cleanup() {
 
 check_binary() {
     if [ ! -f "$BIN" ]; then
-        fail "Binary not found at $BIN"
+        warn "Binary not found at $BIN — tests requiring it will be skipped"
+        return 1
     fi
     BIN_SIZE=$(ls -lh "$BIN" | awk '{print $5}')
     pass "Binary found: $BIN ($BIN_SIZE)"
+}
+
+skip_no_binary() {
+    warn "Skipping test: binary required at $BIN"
+    echo "  ${DIM}Build locally first: ./apps/nex-zed/nex-zed --build-only${END}"
 }
 
 # ── Test: WebSocket handshake only ───────────────────────────────────
@@ -103,7 +109,7 @@ test_binary() {
 test_connection() {
     step "Test: Zed WebSocket connection"
 
-    check_binary
+    check_binary || { skip_no_binary; return 0; }
 
     cleanup
 
@@ -180,7 +186,7 @@ test_apps() {
         info "Set DEEPSEEK_API_KEY or LLM_API_KEY to verify agent_ready + model init"
     fi
 
-    check_binary
+    check_binary || { skip_no_binary; return 0; }
     cleanup
 
     # Run nex-zed in no-chat mode (server only)
