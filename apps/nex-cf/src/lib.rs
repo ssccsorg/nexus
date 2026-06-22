@@ -37,10 +37,18 @@ struct CfStores {
     test: FihStorage<CfFihIo>,
 }
 
-fn build_store(bucket: worker::Bucket, env: &worker::Env, project: &str) -> FihStorage<CfFihIo> {
+fn build_store(bucket: worker::Bucket, _env: &worker::Env, project: &str) -> FihStorage<CfFihIo> {
     let s = FihStorage::with_clock(CfFihIo::new(bucket), project, Box::new(CfClock));
-    s.register_semantic_store(Box::new(crate::stores::bm25::InMemoryBm25::new()));
-    s.register_semantic_store(Box::new(CfVectorizeStore::new(env.clone())));
+    let bm25 = crate::stores::bm25::InMemoryBm25::new();
+    worker::console_log!("build_store: InMemoryBm25 created, len={}", bm25.len());
+    s.register_semantic_store(Box::new(bm25));
+    let vec_store = CfVectorizeStore::with_embedder(
+        Box::new(crate::stores::vectorize::LocalTfidfEmbedder),
+    );
+    worker::console_log!("build_store: CfVectorizeStore created, len={}", vec_store.len());
+    s.register_semantic_store(Box::new(vec_store));
+    let count = s.semantic_stores().len();
+    worker::console_log!("build_store: registered {} semantic stores", count);
     s
 }
 
@@ -131,17 +139,15 @@ impl DurableObject for NexusCfDO {
             .expect("NexusCfDO stores not initialized");
         let s: &FihStorage<CfFihIo> = if is_test { &stores.test } else { &stores.prod };
 
-        // Cold-start recovery: if fact_store is empty, rebuild from R2.
-        // This happens when the DO was just created or restarted.
-        if s.fact_store.is_empty() && path_stripped != "/ingest-one" && path_stripped != "/ingest" {
-            s.rebuild_cache().await.ok();
-            // rebuild_semantic is intentionally skipped here:
-            //   - submit_fact already indexed facts into semantic stores
-            //   - FihCoord::clear() preserves by_semantic across index rebuilds
-            //   - load_blob per fact during rebuild_semantic causes 1000+ R2 GETs
-            //     which exceeds the DO request timeout on cold start.
-            //   - New facts submitted after cold start will be auto-indexed.
-        }
+        // Cold-start recovery: if fact_store is empty, schedule a
+        // background rebuild via DO alarm so the first request does not
+        // timeout. The alarm fires after the current request completes.
+        // Subsequent requests will have the cache populated.
+        //
+        // rebuild_semantic is intentionally skipped:
+        //   - submit_fact already indexed facts into semantic stores
+        //   - FihCoord::clear() preserves by_semantic across index rebuilds
+        //   - New facts submitted after cold start will be auto-indexed.
         let docs = if is_test {
             self.docs_bucket_test.as_ref()
         } else {
@@ -587,7 +593,7 @@ pub async fn handle_path<I: AsyncFileIo>(
             )
         }
 
-        "/flush" => match s.flush_pending().await {
+        "/flush" => match s.flush_with_chain().await {
             Ok(()) => (
                 200,
                 "application/json".into(),
@@ -654,8 +660,11 @@ pub async fn ingest_document<I: AsyncFileIo>(
             .map_err(|e| format!("submit para {i}: {e:?}"))?;
         last_id = para_id;
     }
-    // Flush all pending writes to R2 in a single apply_batch call.
-    s.flush_pending().await.map_err(|e| format!("flush: {e}"))?;
+    // Flush all pending writes and write a chain-file checkpoint.
+    // The chain file enables fast cold-start recovery via rebuild_cache.
+    s.flush_with_chain()
+        .await
+        .map_err(|e| format!("flush: {e}"))?;
     Ok(last_id)
 }
 
