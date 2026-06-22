@@ -12,7 +12,6 @@ use axum::response::sse::Event;
 use futures_util::stream::Stream;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use tokio_stream::wrappers::IntervalStream;
 use std::convert::Infallible;
 use std::time::Duration;
 
@@ -86,13 +85,6 @@ pub struct ThreadDetailResponse {
     pub messages: Vec<serde_json::Value>,
     pub created_at: String,
     pub completed: bool,
-}
-
-#[derive(Serialize)]
-struct SsePayload {
-    event: String,
-    thread_id: String,
-    content: Option<String>,
 }
 
 // ── Handlers ───────────────────────────────────────────────────────────
@@ -182,11 +174,11 @@ async fn chat_stream(
 
     let stream = async_stream::stream! {
         // Emit initial event
-        yield Ok(Event::default().data(serde_json::to_string(&SsePayload {
-            event: "thread_created".to_string(),
-            thread_id: tid.clone(),
-            content: None,
-        }).unwrap()));
+        yield Ok(Event::default()
+            .event("thread_created")
+            .data(serde_json::to_string(&serde_json::json!({
+                "thread_id": tid.clone(),
+            })).unwrap()));
 
         let mut last_content = String::new();
         let mut done = false;
@@ -212,20 +204,21 @@ async fn chat_stream(
                     let delta = &assistant_content[last_content.len()..];
                     last_content = assistant_content.to_string();
 
-                    yield Ok(Event::default().data(serde_json::to_string(&SsePayload {
-                        event: "message_added".to_string(),
-                        thread_id: tid.clone(),
-                        content: Some(delta.to_string()),
-                    }).unwrap()));
+                    yield Ok(Event::default()
+                        .event("message_added")
+                        .data(serde_json::to_string(&serde_json::json!({
+                            "thread_id": tid.clone(),
+                            "content": delta,
+                        })).unwrap()));
                 }
 
                 // Check completion
                 if thread.completed {
-                    yield Ok(Event::default().data(serde_json::to_string(&SsePayload {
-                        event: "message_completed".to_string(),
-                        thread_id: tid.clone(),
-                        content: None,
-                    }).unwrap()));
+                    yield Ok(Event::default()
+                        .event("message_completed")
+                        .data(serde_json::to_string(&serde_json::json!({
+                            "thread_id": tid.clone(),
+                        })).unwrap()));
                     done = true;
                 }
             }
