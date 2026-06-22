@@ -1,4 +1,4 @@
-// Document pipeline integration tests for gateway/nex-cf.
+// Document pipeline integration tests for apps/nex-cf.
 //
 // These tests run under `cargo test --workspace` and verify the full
 // document ingestion -> semantic search pipeline using FsIo (tempfile)

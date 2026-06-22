@@ -24,7 +24,6 @@ use nex::process::tasks::gap_detector::GapDetector;
 use nex::process::tasks::new_document_analyzer::NewDocumentAnalyzer;
 use nex::process::tasks::state_change_detector::StateChangeDetector;
 use nexus_model::DetectionCapable;
-use nexus_model::DetectionOutput;
 use nexus_model::{
     AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead, BoardState, Fact, FihHash, Intent,
 };

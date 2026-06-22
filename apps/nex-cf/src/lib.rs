@@ -1,4 +1,4 @@
-// gateway/nex-cf — Consumes FihStorage<CfFihIo> via async traits.
+// apps/nex-cf — Consumes FihStorage<CfFihIo> via async traits.
 // All state lives inside a single Durable Object (NexusCfDO) so that
 // in-memory indices (BM25, FihCoord) are consistent across requests.
 // The #[event(fetch)] handler is a thin proxy that forwards every

@@ -4,7 +4,7 @@ on:
   push:
     branches: ["main"]
     paths:
-      - "gateway/nex-cf/**"
+      - "apps/nex-cf/**"
       - "nex/**"
       - "model/**"
       - ".github/workflows/deploy-nex-cf.yml"
@@ -46,6 +46,6 @@ jobs:
         run: cargo install worker-build --version 0.8.4
 
       - name: Deploy to Cloudflare Workers
-        run: ./gateway/nex-cf/deploy.sh
+        run: ./apps/nex-cf/deploy.sh
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CFWORKER_EDIT }}

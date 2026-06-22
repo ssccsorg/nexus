@@ -70,6 +70,7 @@ impl RecordLoad for TextLoad {
 }
 
 /// A RecordLoad that returns origin strings (simulating an ngram origin store).
+#[allow(dead_code)]
 struct OriginLoad {
     origin: String,
 }
@@ -84,6 +85,7 @@ impl RecordLoad for OriginLoad {
 }
 
 /// A RecordLoad that returns everything (full document load).
+#[allow(dead_code)]
 struct FullDocLoad {
     text: String,
     origin: String,

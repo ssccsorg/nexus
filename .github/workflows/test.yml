@@ -11,6 +11,9 @@ on:
       - "interface/**"
       - "storage/**"
       - "gateway/**"
+      - "apps/nex-api/**"
+      - "apps/nex-cf/**"
+      - "apps/nex-serde-proxy/**"
       - "playbooks/**"
       - "scripts/**"
       - ".github/workflows/test.yml"
@@ -23,6 +26,9 @@ on:
       - "interface/**"
       - "storage/**"
       - "gateway/**"
+      - "apps/nex-api/**"
+      - "apps/nex-cf/**"
+      - "apps/nex-serde-proxy/**"
       - "playbooks/**"
       - "scripts/**"
       - ".github/workflows/test.yml"
@@ -67,9 +73,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
-            gateway/api
-            gateway/nex-cf
-            gateway/serde-proxy
+            apps/nex-api
+            apps/nex-cf
+            apps/nex-serde-proxy
           cache-targets: true
       - name: Gateway checks
         run: bash ./run.sh --gateway

@@ -39,7 +39,7 @@ run_check()  { cargo check -p nex && cargo check -p nexus-storage-duckdb; }
 run_wasm_check() {
     # Find all Cargo.toml under core directories, excluding non-WASM targets.
     # Exclusions: storage/duckdb (crossterm), storage/ve-composite (tokio),
-    # storage/sim (tokio), gateway/* (HTTP server), playbooks/* (scripts),
+    # storage/sim (tokio), apps/* (HTTP server), playbooks/* (scripts),
     # target/ (build artifacts).
     # apps/ is excluded: each app has its own build target (native, container, etc.)
     # and is not expected to compile for wasm32.
@@ -50,7 +50,7 @@ run_wasm_check() {
         -not -path './storage/duckdb/*' \
         -not -path './storage/ve-composite/*' \
         -not -path './storage/sim/*' \
-        -not -path './gateway/*' \
+        -not -path './apps/*' \
         -not -path './playbooks/*' \
         -not -path './Cargo.toml' \
         -exec sh -c '

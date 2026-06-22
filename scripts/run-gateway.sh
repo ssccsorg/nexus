@@ -4,16 +4,15 @@ set -euo pipefail
 # run-gateway.sh — Gateway layer checks
 #
 # Verifies all gateway components:
-#   gateway/api        — FIH Blackboard HTTP API (Rust)
-#   gateway/nex-cf     — Cloudflare Worker (Rust/WASM)
-#   gateway/serde-proxy — Serialization proxy (Rust)
+#   apps/nex-api         — FIH Blackboard HTTP API (Rust)
+#   apps/nex-cf          — Cloudflare Worker (Rust/WASM)
+#   libs/serde-proxy     — Serialization proxy (Rust)
 #
 # Usage:
-#   scripts/run-gateway.sh              # All gateway checks
-#   scripts/run-gateway.sh --api        # Only gateway/api
-#   scripts/run-gateway.sh --nex-cf     # Only gateway/nex-cf
-#   scripts/run-gateway.sh --serde      # Only gateway/serde-proxy
-#
+#   scripts/run-gateway.sh                # All gateway checks
+#   scripts/run-gateway.sh --api          # Only apps/nex-api
+#   scripts/run-gateway.sh --nex-cf       # Only apps/nex-cf
+#   scripts/run-gateway.sh --serde        # Only libs/serde-proxy
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
@@ -21,18 +20,18 @@ cd "$REPO_ROOT"
 MODE="${1:-all}"
 
 run_api() {
-    echo "=== gateway/api (cargo test) ==="
-    (cd gateway/api && cargo test)
+    echo "=== apps/nex-api (cargo test) ==="
+    (cd apps/nex-api && cargo test)
 }
 
 run_nex_cf() {
-    echo "=== gateway/nex-cf (cargo check + test) ==="
+    echo "=== apps/nex-cf (cargo check + test) ==="
     ./scripts/run-nex-cf.sh --check-and-test
 }
 
 run_serde() {
-    echo "=== gateway/serde-proxy (cargo test) ==="
-    (cd gateway/serde-proxy && cargo test)
+    echo "=== libs/serde-proxy (cargo test) ==="
+    (cd libs/serde-proxy && cargo test)
 }
 
 case "$MODE" in
