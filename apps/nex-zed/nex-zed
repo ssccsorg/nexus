@@ -1,0 +1,200 @@
+#!/usr/bin/env bash
+# nex-zed: all-in-one entry point
+#
+# 1. Auto-build if helix-zed-headless-arm64 binary is missing
+# 2. WebSocket test server + Zed --headless execution
+# 3. Start interactive chat with chat.py
+#
+# Usage:
+#   ./nex-zed                          # default run (current directory)
+#   ./nex-zed --workdir /path/to/proj  # specify working directory
+#   ./nex-zed --build-only             # build binary only
+#   ./nex-zed --help                   # full options
+#
+# Prerequisites:
+#   - helix repo at ../helix or specified via HELIX_DIR env var
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+BIN_DIR="$PROJECT_DIR/.bin"
+BIN="$BIN_DIR/helix-zed-headless-arm64"
+
+# ── Configuration ──────────────────────────────────────────────────────────────
+
+# Helix fork path (auto-discovery)
+HELIX_DIR="${HELIX_DIR:-}"
+if [ -z "$HELIX_DIR" ]; then
+    for candidate in \
+        "$PROJECT_DIR/../helix" \
+        "$HOME/Documents/helix" \
+        "$HOME/src/helix" \
+        "/opt/helix"; do
+        if [ -f "$candidate/Cargo.toml" ] && grep -q 'name = "external_websocket_sync"' "$candidate/crates/external_websocket_sync/Cargo.toml" 2>/dev/null; then
+            HELIX_DIR="$candidate"
+            break
+        fi
+    done
+fi
+
+# ── Functions ──────────────────────────────────────────────────────────────
+
+info()  { echo -e "\033[96m==>\033[0m $*"; }
+ok()    { echo -e "\033[92m✓\033[0m $*"; }
+warn()  { echo -e "\033[93m⚠\033[0m $*" >&2; }
+fail()  { echo -e "\033[91m✗\033[0m $*" >&2; exit 1; }
+
+show_help() {
+    cat <<EOF
+Usage: $0 [OPTIONS]
+
+nex-zed: Helix headless Zed all-in-one runner
+
+Options:
+  --workdir DIR    Working directory (default: current directory)
+  --build-only     Build binary only and exit
+  --no-build       Use existing binary without building
+  --no-chat        Run Zed only without chat.py
+  --bin PATH       Specify binary path directly
+  --api-key KEY    DeepSeek API key (default: .env or env var)
+  --help           Show this help
+
+Environment:
+  HELIX_DIR        Helix fork path (when auto-discovery fails)
+  DEEPSEEK_API_KEY DeepSeek API key
+  LLM_API_KEY      .env fallback key name
+EOF
+    exit 0
+}
+
+# ── Argument parsing ─────────────────────────────────────────────────────────
+
+WORKDIR="$(pwd)"
+BUILD_ONLY=false
+NO_BUILD=false
+NO_CHAT=false
+CUSTOM_BIN=""
+API_KEY=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --workdir)      shift; WORKDIR="$1" ;;
+        --build-only)   BUILD_ONLY=true ;;
+        --no-build)     NO_BUILD=true ;;
+        --no-chat)      NO_CHAT=true ;;
+        --bin)          shift; CUSTOM_BIN="$1" ;;
+        --api-key)      shift; API_KEY="$1" ;;
+        --help|-h)      show_help ;;
+        *)              fail "Unknown option: $1 (see --help)" ;;
+    esac
+    shift
+done
+
+WORKDIR="$(cd "$WORKDIR" && pwd)"
+
+# ── API key check ───────────────────────────────────────────────────────
+
+# Load .env
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    set -a
+    source "$SCRIPT_DIR/.env"
+    set +a
+fi
+
+if [ -z "$API_KEY" ]; then
+    API_KEY="${DEEPSEEK_API_KEY:-${LLM_API_KEY:-}}"
+fi
+
+# ── Step 1: Binary check and build ─────────────────────────────────────
+
+if [ -n "$CUSTOM_BIN" ]; then
+    BIN="$CUSTOM_BIN"
+    [ -f "$BIN" ] || fail "Specified binary not found: $BIN"
+    info "Custom binary: $BIN"
+elif [ -f "$BIN" ] && [ "$NO_BUILD" = false ]; then
+    info "Existing binary found: $BIN ($(ls -lh "$BIN" | awk '{print $5}'))"
+    # Check if recent build (rebuild recommended if older than 7 days)
+    BIN_AGE=$(($(date +%s) - $(stat -f %m "$BIN" 2>/dev/null || echo 0)))
+    if [ "$BIN_AGE" -gt $((7*86400)) ] 2>/dev/null; then
+        warn "Binary is older than 7 days. Skip with --no-build flag or rebuild."
+    fi
+    info "Using existing binary (delete and rerun to rebuild: rm $BIN)"
+elif [ "$NO_BUILD" = true ]; then
+    fail "Binary not found but --no-build flag is set: $BIN"
+else
+    # Build required
+    if [ -z "$HELIX_DIR" ]; then
+        fail "Helix fork not found.
+  Set HELIX_DIR env var or place helix repo in one of these locations:
+    $(realpath "$PROJECT_DIR/../helix" 2>/dev/null || echo "$PROJECT_DIR/../helix")
+    $HOME/Documents/helix"
+    fi
+
+    info "Helix fork found: $HELIX_DIR"
+    info "Building headless Zed binary... (first build takes 10-15 min)"
+    echo ""
+
+    cd "$HELIX_DIR"
+
+    # Check required system tools for build
+    for cmd in cargo rustc; do
+        command -v "$cmd" >/dev/null 2>&1 || fail "Required tool not found: $cmd"
+    done
+
+    info "cargo build -p zed --features external_websocket_sync --release"
+    echo ""
+    cargo build -p zed --features external_websocket_sync --release 2>&1
+
+    # Check build success
+    if [ ! -f "$HELIX_DIR/target/release/zed" ]; then
+        fail "Build failed: $HELIX_DIR/target/release/zed was not created"
+    fi
+
+    # Copy binary
+    mkdir -p "$BIN_DIR"
+    cp "$HELIX_DIR/target/release/zed" "$BIN"
+    ok "Binary built and copied: $BIN ($(ls -lh "$BIN" | awk '{print $5}'))"
+    cd "$PROJECT_DIR"
+fi
+
+# Exit here if --build-only
+if [ "$BUILD_ONLY" = true ]; then
+    echo ""
+    ok "Build-only mode complete"
+    exit 0
+fi
+
+# ── Final API key check ──────────────────────────────────────────────────
+
+if [ -z "$API_KEY" ]; then
+    fail "API key is required.
+  Use --api-key option, DEEPSEEK_API_KEY env var, or LLM_API_KEY in .env file."
+fi
+
+# ── Step 2: Run chat.py ──────────────────────────────────────────────
+
+CHAT_PY="$SCRIPT_DIR/chat.py"
+if [ ! -f "$CHAT_PY" ]; then
+    fail "chat.py not found: $CHAT_PY"
+fi
+
+info "Starting nex-zed..."
+echo "  Binary:   $BIN"
+echo "  Workdir:  $WORKDIR"
+echo "  chat.py:  $CHAT_PY"
+echo ""
+
+CHAT_ARGS=(
+    --bin "$BIN"
+    --workdir "$WORKDIR"
+    --api-key "$API_KEY"
+)
+
+if [ "$NO_CHAT" = true ]; then
+    # Run Zed only (server mode of chat.py)
+    CHAT_ARGS+=(--no-zed)
+    warn "--no-chat mode: Running Zed only."
+fi
+
+exec python3 "$CHAT_PY" "${CHAT_ARGS[@]}"
