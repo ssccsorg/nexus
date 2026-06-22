@@ -50,10 +50,7 @@ fn submit_facts(bb: &FihStorage<SimIo>, facts: &[Fact]) {
 }
 
 /// Run a single detection tick manually: read state, run detectors, submit results.
-fn detection_tick(
-    bb: &FihStorage<SimIo>,
-    detectors: &mut [Box<dyn DetectionCapable>],
-) {
+fn detection_tick(bb: &FihStorage<SimIo>, detectors: &mut [Box<dyn DetectionCapable>]) {
     let state = block_on(bb.read_state());
 
     let mut all_facts = Vec::new();
