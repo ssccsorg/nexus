@@ -41,9 +41,12 @@ run_wasm_check() {
     # Exclusions: storage/duckdb (crossterm), storage/ve-composite (tokio),
     # storage/sim (tokio), gateway/* (HTTP server), playbooks/* (scripts),
     # target/ (build artifacts).
+    # apps/ is excluded: each app has its own build target (native, container, etc.)
+    # and is not expected to compile for wasm32.
     find . -name Cargo.toml \
         -not -path './target/*' \
         -not -path './ext/*' \
+        -not -path './apps/*' \
         -not -path './storage/duckdb/*' \
         -not -path './storage/ve-composite/*' \
         -not -path './storage/sim/*' \
