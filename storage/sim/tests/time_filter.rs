@@ -5,7 +5,7 @@
 
 mod common;
 
-use nexus_model::{FactCapable, FihHash, FilterCapable, StateFilter, StorageRead};
+use nexus_model::{AsyncFactCapable, AsyncFilterCapable, AsyncStorageRead, FihHash, StateFilter};
 use nexus_storage_sim::{FihStorage, SimIo};
 
 fn make_clocked() -> FihStorage<SimIo> {
@@ -19,13 +19,13 @@ fn make_clocked() -> FihStorage<SimIo> {
 #[test]
 fn test_since_returns_newer_only() {
     let store = make_clocked();
-    FactCapable::submit_fact(&store, &common::fact("f_a")).unwrap();
-    FactCapable::submit_fact(&store, &common::fact("f_b")).unwrap();
+    futures_executor::block_on(store.submit_fact(&common::fact("f_a"))).unwrap();
+    futures_executor::block_on(store.submit_fact(&common::fact("f_b"))).unwrap();
 
-    let state = StorageRead::read_state(&store);
+    let state = futures_executor::block_on(store.read_state());
     assert_eq!(state.facts.len(), 2);
 
-    let filtered = store.read_state_filtered(&StateFilter {
+    let filtered = futures_executor::block_on(store.read_state_filtered(&StateFilter {
         fact_ids: None,
         intent_ids: None,
         hint_ids: None,
@@ -35,7 +35,7 @@ fn test_since_returns_newer_only() {
         offset: None,
         creator: None,
         status: None,
-    });
+    }));
     assert_eq!(filtered.facts.len(), 1);
     assert_eq!(filtered.facts[0].id, FihHash::from_hex("f_b"));
 }
@@ -43,11 +43,11 @@ fn test_since_returns_newer_only() {
 #[test]
 fn test_until_as_of_time_travel() {
     let store = make_clocked();
-    FactCapable::submit_fact(&store, &common::fact("f_a")).unwrap();
-    FactCapable::submit_fact(&store, &common::fact("f_b")).unwrap();
-    FactCapable::submit_fact(&store, &common::fact("f_c")).unwrap();
+    futures_executor::block_on(store.submit_fact(&common::fact("f_a"))).unwrap();
+    futures_executor::block_on(store.submit_fact(&common::fact("f_b"))).unwrap();
+    futures_executor::block_on(store.submit_fact(&common::fact("f_c"))).unwrap();
 
-    let filtered = store.read_state_filtered(&StateFilter {
+    let filtered = futures_executor::block_on(store.read_state_filtered(&StateFilter {
         fact_ids: None,
         intent_ids: None,
         hint_ids: None,
@@ -57,7 +57,7 @@ fn test_until_as_of_time_travel() {
         offset: None,
         creator: None,
         status: None,
-    });
+    }));
     assert_eq!(filtered.facts.len(), 1);
     assert_eq!(filtered.facts[0].id, FihHash::from_hex("f_a"));
 }
@@ -65,11 +65,11 @@ fn test_until_as_of_time_travel() {
 #[test]
 fn test_range_returns_mid_only() {
     let store = make_clocked();
-    FactCapable::submit_fact(&store, &common::fact("f_a")).unwrap();
-    FactCapable::submit_fact(&store, &common::fact("f_b")).unwrap();
-    FactCapable::submit_fact(&store, &common::fact("f_c")).unwrap();
+    futures_executor::block_on(store.submit_fact(&common::fact("f_a"))).unwrap();
+    futures_executor::block_on(store.submit_fact(&common::fact("f_b"))).unwrap();
+    futures_executor::block_on(store.submit_fact(&common::fact("f_c"))).unwrap();
 
-    let filtered = store.read_state_filtered(&StateFilter {
+    let filtered = futures_executor::block_on(store.read_state_filtered(&StateFilter {
         fact_ids: None,
         intent_ids: None,
         hint_ids: None,
@@ -79,7 +79,7 @@ fn test_range_returns_mid_only() {
         offset: None,
         creator: None,
         status: None,
-    });
+    }));
     assert_eq!(filtered.facts.len(), 1);
     assert_eq!(filtered.facts[0].id, FihHash::from_hex("f_b"));
 }
@@ -87,8 +87,8 @@ fn test_range_returns_mid_only() {
 #[test]
 fn test_since_after_all_returns_empty() {
     let store = make_clocked();
-    FactCapable::submit_fact(&store, &common::fact("f_a")).unwrap();
-    let filtered = store.read_state_filtered(&StateFilter {
+    futures_executor::block_on(store.submit_fact(&common::fact("f_a"))).unwrap();
+    let filtered = futures_executor::block_on(store.read_state_filtered(&StateFilter {
         fact_ids: None,
         intent_ids: None,
         hint_ids: None,
@@ -98,15 +98,15 @@ fn test_since_after_all_returns_empty() {
         offset: None,
         creator: None,
         status: None,
-    });
+    }));
     assert_eq!(filtered.facts.len(), 0);
 }
 
 #[test]
 fn test_until_before_all_returns_empty() {
     let store = make_clocked();
-    FactCapable::submit_fact(&store, &common::fact("f_a")).unwrap();
-    let filtered = store.read_state_filtered(&StateFilter {
+    futures_executor::block_on(store.submit_fact(&common::fact("f_a"))).unwrap();
+    let filtered = futures_executor::block_on(store.read_state_filtered(&StateFilter {
         fact_ids: None,
         intent_ids: None,
         hint_ids: None,
@@ -116,17 +116,17 @@ fn test_until_before_all_returns_empty() {
         offset: None,
         creator: None,
         status: None,
-    });
+    }));
     assert_eq!(filtered.facts.len(), 0);
 }
 
 #[test]
 fn test_fact_ids_filter_independent_of_time() {
     let store = make_clocked();
-    FactCapable::submit_fact(&store, &common::fact("f_a")).unwrap();
-    FactCapable::submit_fact(&store, &common::fact("f_b")).unwrap();
+    futures_executor::block_on(store.submit_fact(&common::fact("f_a"))).unwrap();
+    futures_executor::block_on(store.submit_fact(&common::fact("f_b"))).unwrap();
 
-    let filtered = store.read_state_filtered(&StateFilter {
+    let filtered = futures_executor::block_on(store.read_state_filtered(&StateFilter {
         fact_ids: Some(vec!["f_a".into()]),
         intent_ids: None,
         hint_ids: None,
@@ -136,7 +136,7 @@ fn test_fact_ids_filter_independent_of_time() {
         offset: None,
         creator: None,
         status: None,
-    });
+    }));
     assert_eq!(filtered.facts.len(), 1);
     assert_eq!(filtered.facts[0].id, FihHash::from_hex("f_a"));
 }
