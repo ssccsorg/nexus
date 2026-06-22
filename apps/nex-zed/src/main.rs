@@ -39,10 +39,15 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::var("RUST_LOG").is_err() {
-        unsafe { std::env::set_var("RUST_LOG", "nex_zed=info"); }
+        unsafe {
+            std::env::set_var("RUST_LOG", "nex_zed=info");
+        }
     }
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "nex_zed=info".parse().unwrap()))
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "nex_zed=info".parse().unwrap()),
+        )
         .with_target(true)
         .with_writer(std::io::stderr)
         .init();
@@ -53,11 +58,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("Spawning: {:?}", bin_path);
         Command::new(bin_path)
             .arg("run")
-            .arg("--log-file").arg("/tmp/hl.log")
-            .arg("--pid-file").arg("/tmp/hl.pid")
-            .arg("--stdin-socket").arg(&args.stdin_sock)
-            .arg("--stdout-socket").arg(&args.stdout_sock)
-            .arg("--stderr-socket").arg("/tmp/hl-stderr.sock")
+            .arg("--log-file")
+            .arg("/tmp/hl.log")
+            .arg("--pid-file")
+            .arg("/tmp/hl.pid")
+            .arg("--stdin-socket")
+            .arg(&args.stdin_sock)
+            .arg("--stdout-socket")
+            .arg(&args.stdout_sock)
+            .arg("--stderr-socket")
+            .arg("/tmp/hl-stderr.sock")
             .current_dir(&args.workdir)
             .stdout(Stdio::null())
             .stderr(Stdio::inherit())
@@ -69,7 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Connecting to stdout: {}", args.stdout_sock);
 
     let mut to_server = UnixStream::connect(&args.stdin_sock).await?;
-    let mut from_server = UnixStream::connect(&args.stdout_sock).await?;
+    let from_server = UnixStream::connect(&args.stdout_sock).await?;
 
     info!("Connected. Type and press Enter. /exit to quit.");
 
@@ -103,12 +113,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(0) => break,
             Ok(_) => {
                 let input = line.trim();
-                if input.is_empty() { continue; }
-                if input == "/exit" || input == "/quit" { break; }
+                if input.is_empty() {
+                    continue;
+                }
+                if input == "/exit" || input == "/quit" {
+                    break;
+                }
                 to_server.write_all(line.as_bytes()).await?;
                 to_server.flush().await?;
             }
-            Err(e) => { error!("stdin: {}", e); break; }
+            Err(e) => {
+                error!("stdin: {}", e);
+                break;
+            }
         }
     }
 
