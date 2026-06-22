@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
+
 use tokio::net::TcpListener;
 use tokio::process::Command;
 use tokio::sync::{RwLock, mpsc};
@@ -26,6 +26,8 @@ pub struct ZedManager {
     pub threads: HashMap<String, ThreadSession>,
     /// Mapping from request_id to acp_thread_id (for correlating responses)
     pub pending_requests: HashMap<String, String>,
+    /// Mapping from zed_thread_id to local_thread_id (for reverse lookup)
+    pub thread_id_map: HashMap<String, String>,
 }
 
 /// A single conversation thread.
@@ -34,6 +36,8 @@ pub struct ThreadSession {
     pub id: String,
     pub messages: Vec<ThreadMessage>,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    /// True when the last assistant response is complete (message_completed received)
+    pub completed: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -54,6 +58,7 @@ impl ZedManager {
             ws_tx: None,
             threads: HashMap::new(),
             pending_requests: HashMap::new(),
+            thread_id_map: HashMap::new(),
         }
     }
 
@@ -74,6 +79,7 @@ impl ZedManager {
                     id: id.clone(),
                     messages: vec![],
                     created_at: chrono::Utc::now(),
+                    completed: false,
                 },
             );
         }
@@ -202,6 +208,10 @@ async fn handle_zed_event(zed_manager: &Arc<RwLock<ZedManager>>, text: &str) {
             let rid = data.get("request_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let mut mgr = zed_manager.write().await;
             tracing::info!("Thread created: {}", acp_id);
+            // Look up the original local thread_id from pending_requests
+            if let Some(local_id) = mgr.pending_requests.get(&rid).cloned() {
+                mgr.thread_id_map.insert(acp_id.clone(), local_id);
+            }
             mgr.get_or_create_thread(Some(&acp_id));
             mgr.pending_requests.insert(rid, acp_id);
         }
@@ -211,10 +221,23 @@ async fn handle_zed_event(zed_manager: &Arc<RwLock<ZedManager>>, text: &str) {
             let role = data.get("role").and_then(|v| v.as_str()).unwrap_or("assistant").to_string();
             let msg_id = data.get("message_id").and_then(|v| v.as_str()).map(|s| s.to_string());
             let mut mgr = zed_manager.write().await;
-            mgr.add_message(&acp_id, &role, &content, msg_id);
+            mgr.add_message(&acp_id, &role, &content, msg_id.clone());
+            // Mirror to the original local thread
+            if let Some(local_id) = mgr.thread_id_map.get(&acp_id).cloned() {
+                mgr.add_message(&local_id, &role, &content, msg_id);
+            }
         }
         "message_completed" => {
             let acp_id = data.get("acp_thread_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let mut mgr = zed_manager.write().await;
+            if let Some(thread) = mgr.threads.get_mut(&acp_id) {
+                thread.completed = true;
+            }
+            if let Some(local_id) = mgr.thread_id_map.get(&acp_id).cloned() {
+                if let Some(thread) = mgr.threads.get_mut(&local_id) {
+                    thread.completed = true;
+                }
+            }
             tracing::info!("Message complete for thread {}", &acp_id[..acp_id.len().min(12)]);
         }
         "chat_response_error" => {
