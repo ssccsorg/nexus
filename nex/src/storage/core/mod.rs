@@ -20,4 +20,4 @@ pub use index::OrderedIndex;
 pub use intent_status::IntentStatus;
 pub use record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
 pub use session::FihSession;
-pub use store::FihStorage;
+pub use store::{ChainEntry, FihStorage};
