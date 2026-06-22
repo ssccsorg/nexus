@@ -1,1 +1,1 @@
-// nex-zed — Helix remote_server launcher
+// nex-zed — Headless Zed AI agent server
