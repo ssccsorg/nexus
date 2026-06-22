@@ -40,9 +40,9 @@ struct CfStores {
 fn build_store(bucket: worker::Bucket, _env: &worker::Env, project: &str) -> FihStorage<CfFihIo> {
     let s = FihStorage::with_clock(CfFihIo::new(bucket), project, Box::new(CfClock));
     s.register_semantic_store(Box::new(crate::stores::bm25::InMemoryBm25::new()));
-    s.register_semantic_store(Box::new(CfVectorizeStore::with_embedder(
-        Box::new(crate::stores::vectorize::LocalTfidfEmbedder),
-    )));
+    s.register_semantic_store(Box::new(CfVectorizeStore::with_embedder(Box::new(
+        crate::stores::vectorize::LocalTfidfEmbedder,
+    ))));
     s
 }
 
