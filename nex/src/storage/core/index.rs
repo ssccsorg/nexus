@@ -179,6 +179,12 @@ impl FihCoord {
             .unwrap_or_default()
     }
 
+    /// Clear all indices EXCEPT semantic stores.
+    ///
+    /// Semantic stores are registered once at construction via
+    /// `register_semantic_store()` and must survive index rebuilds.
+    /// They are cleared separately via `clear_semantic()` only when
+    /// the store configuration changes.
     pub fn clear(&self) {
         self.id_to_idx.borrow_mut().clear();
         self.idx_to_id.borrow_mut().clear();
@@ -191,6 +197,13 @@ impl FihCoord {
         self.by_status.borrow_mut().clear();
         self.by_created_at_day.borrow_mut().clear();
         self.ref_counts.borrow_mut().clear();
+        // by_semantic is NOT cleared here — semantic stores persist
+        // across index rebuilds.
+    }
+
+    /// Clear semantic stores. Used when reconfiguring store backends.
+    /// Prefer `clear()` for ordinary index rebuilds.
+    pub fn clear_semantic(&self) {
         self.by_semantic.borrow_mut().clear();
     }
 
@@ -296,8 +309,12 @@ impl FihCoord {
     // ── Semantic store interaction ────────────────────────────────
 
     /// Insert a record into the semantic store using the provided `RecordLoad`.
+    ///
+    /// SAFETY: RefCell borrow is held across `.await` because this runs in
+    /// a single-threaded execution unit (FihStorage). SemanticStore
+    /// implementations must not re-enter FihCoord during insert().
+    #[allow(clippy::await_holding_refcell_ref)]
     pub async fn semantic_insert(&self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
-        #[allow(clippy::await_holding_refcell_ref)]
         let mut stores = self.by_semantic.borrow_mut();
         if stores.is_empty() {
             return Err("no semantic stores configured".into());
@@ -316,12 +333,16 @@ impl FihCoord {
     }
 
     /// Search the semantic store using the provided query handle.
+    ///
+    /// SAFETY: RefCell borrow is held across `.await` because this runs in
+    /// a single-threaded execution unit (FihStorage). SemanticStore
+    /// implementations must not re-enter FihCoord during search().
+    #[allow(clippy::await_holding_refcell_ref)]
     pub async fn semantic_search(
         &self,
         query: &dyn Query,
         top_k: usize,
     ) -> Result<Vec<(u32, f32)>, String> {
-        #[allow(clippy::await_holding_refcell_ref)]
         let stores = self.by_semantic.borrow();
         if stores.is_empty() {
             return Err("no semantic stores configured".into());

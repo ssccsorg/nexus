@@ -135,7 +135,12 @@ impl DurableObject for NexusCfDO {
         // This happens when the DO was just created or restarted.
         if s.fact_store.is_empty() && path_stripped != "/ingest-one" && path_stripped != "/ingest" {
             s.rebuild_cache().await.ok();
-            s.rebuild_semantic().await.ok();
+            // rebuild_semantic is intentionally skipped here:
+            //   - submit_fact already indexed facts into semantic stores
+            //   - FihCoord::clear() preserves by_semantic across index rebuilds
+            //   - load_blob per fact during rebuild_semantic causes 1000+ R2 GETs
+            //     which exceeds the DO request timeout on cold start.
+            //   - New facts submitted after cold start will be auto-indexed.
         }
         let docs = if is_test {
             self.docs_bucket_test.as_ref()

@@ -3,7 +3,9 @@
 
 mod common;
 
-use nexus_model::{FactCapable, FihHash, Hint, HintCapable, IntentCapable, StorageRead};
+use nexus_model::{
+    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, FihHash, Hint,
+};
 use nexus_storage_sim::{FihStorage, SimIo};
 
 fn store() -> FihStorage<SimIo> {
@@ -13,7 +15,7 @@ fn store() -> FihStorage<SimIo> {
 #[test]
 fn test_empty_state() {
     let s = store();
-    let state = s.read_state();
+    let state = futures_executor::block_on(s.read_state());
     assert_eq!(state.facts.len(), 0);
     assert_eq!(state.intents.len(), 0);
     assert_eq!(state.hints.len(), 0);
@@ -23,35 +25,33 @@ fn test_empty_state() {
 fn test_duplicate_fact_same_id_replaces() {
     let s = store();
     let f1 = common::fact("f001");
-    s.submit_fact(&f1).unwrap();
+    futures_executor::block_on(s.submit_fact(&f1)).unwrap();
     // Submitting the same fact ID again replaces the old one (HashMap semantics)
     let f2 = common::fact("f001");
-    s.submit_fact(&f2).unwrap();
-    let state = s.read_state();
+    futures_executor::block_on(s.submit_fact(&f2)).unwrap();
+    let state = futures_executor::block_on(s.read_state());
     assert_eq!(state.facts.len(), 1, "same fact ID replaces previous entry");
 }
 
 #[test]
 fn test_multiple_intents_same_fact_refcount() {
     let s = store();
-    s.submit_fact(&common::fact("f_base")).unwrap();
-    s.submit_intent(&common::intent("i_a", vec!["f_base"]))
-        .unwrap();
-    s.submit_intent(&common::intent("i_b", vec!["f_base"]))
-        .unwrap();
+    futures_executor::block_on(s.submit_fact(&common::fact("f_base"))).unwrap();
+    futures_executor::block_on(s.submit_intent(&common::intent("i_a", vec!["f_base"]))).unwrap();
+    futures_executor::block_on(s.submit_intent(&common::intent("i_b", vec!["f_base"]))).unwrap();
 
     // Both intents exist
-    let state = s.read_state();
+    let state = futures_executor::block_on(s.read_state());
     assert_eq!(state.intents.len(), 2);
 
     // Conclude both — each creates a conclusion fact
-    s.claim_intent("i_a", "agent").unwrap();
-    s.conclude_intent("i_a", "done").unwrap();
-    s.claim_intent("i_b", "agent").unwrap();
-    s.conclude_intent("i_b", "done").unwrap();
+    futures_executor::block_on(s.claim_intent("i_a", "agent")).unwrap();
+    futures_executor::block_on(s.conclude_intent("i_a", "done")).unwrap();
+    futures_executor::block_on(s.claim_intent("i_b", "agent")).unwrap();
+    futures_executor::block_on(s.conclude_intent("i_b", "done")).unwrap();
 
     // The original fact plus two conclusion facts (one per intent)
-    let state = s.read_state();
+    let state = futures_executor::block_on(s.read_state());
     assert_eq!(
         state.facts.len(),
         3,
@@ -62,11 +62,11 @@ fn test_multiple_intents_same_fact_refcount() {
 #[test]
 fn test_intent_not_found_error() {
     let s = store();
-    let result = s.claim_intent("nonexistent", "agent");
+    let result = futures_executor::block_on(s.claim_intent("nonexistent", "agent"));
     assert!(result.is_err());
-    let result = s.heartbeat("nonexistent", "agent");
+    let result = futures_executor::block_on(s.heartbeat("nonexistent", "agent"));
     assert!(result.is_err());
-    let result = s.conclude_intent("nonexistent", "done");
+    let result = futures_executor::block_on(s.conclude_intent("nonexistent", "done"));
     assert!(result.is_err());
 }
 
@@ -74,9 +74,9 @@ fn test_intent_not_found_error() {
 fn test_bulk_fact_submission() {
     let s = store();
     for i in 0..1000 {
-        s.submit_fact(&common::fact(&format!("f{:04}", i))).unwrap();
+        futures_executor::block_on(s.submit_fact(&common::fact(&format!("f{:04}", i)))).unwrap();
     }
-    let state = s.read_state();
+    let state = futures_executor::block_on(s.read_state());
     assert_eq!(state.facts.len(), 1000);
 }
 
@@ -88,8 +88,8 @@ fn test_submit_hint_then_read() {
         content: "test hint".into(),
         creator: "tester".into(),
     };
-    s.submit_hint(&hint).unwrap();
-    let state = s.read_state();
+    futures_executor::block_on(s.submit_hint(&hint)).unwrap();
+    let state = futures_executor::block_on(s.read_state());
     assert_eq!(state.hints.len(), 1);
     assert_eq!(state.hints[0].content, "test hint");
 }
@@ -105,27 +105,25 @@ fn test_minimal_fih_lifecycle() {
 
     // Three facts
     for id in &["f_1", "f_2", "f_3"] {
-        s.submit_fact(&common::fact(id)).unwrap();
+        futures_executor::block_on(s.submit_fact(&common::fact(id))).unwrap();
     }
 
     // Three intents referencing facts in various combinations
-    s.submit_intent(&common::intent("i_a", vec!["f_1"]))
-        .unwrap();
-    s.submit_intent(&common::intent("i_b", vec!["f_2"]))
-        .unwrap();
-    s.submit_intent(&common::intent("i_c", vec!["f_1", "f_3"]))
+    futures_executor::block_on(s.submit_intent(&common::intent("i_a", vec!["f_1"]))).unwrap();
+    futures_executor::block_on(s.submit_intent(&common::intent("i_b", vec!["f_2"]))).unwrap();
+    futures_executor::block_on(s.submit_intent(&common::intent("i_c", vec!["f_1", "f_3"])))
         .unwrap();
 
     // A hint with arbitrary string content
-    s.submit_hint(&Hint {
+    futures_executor::block_on(s.submit_hint(&Hint {
         id: FihHash::from_hex("h_guide"),
         content: "random constraint string: xkcd-934".into(),
         creator: "tester".into(),
-    })
+    }))
     .unwrap();
 
     // Verify everything stored
-    let state = s.read_state();
+    let state = futures_executor::block_on(s.read_state());
     assert_eq!(state.facts.len(), 3, "facts 1,2,3");
     assert_eq!(state.intents.len(), 3, "intents a,b,c");
     assert_eq!(state.hints.len(), 1, "one hint");
@@ -146,16 +144,16 @@ fn test_minimal_fih_lifecycle() {
 fn test_minimal_claim_conclude() {
     let s = store();
 
-    s.submit_fact(&common::fact("f_target")).unwrap();
-    s.submit_intent(&common::intent("i_work", vec!["f_target"]))
+    futures_executor::block_on(s.submit_fact(&common::fact("f_target"))).unwrap();
+    futures_executor::block_on(s.submit_intent(&common::intent("i_work", vec!["f_target"])))
         .unwrap();
 
-    s.claim_intent("i_work", "agent").unwrap();
-    let state = s.read_state();
+    futures_executor::block_on(s.claim_intent("i_work", "agent")).unwrap();
+    let state = futures_executor::block_on(s.read_state());
     assert_eq!(state.intents[0].worker.as_deref(), Some("agent"));
 
-    s.conclude_intent("i_work", "result achieved").unwrap();
-    let state = s.read_state();
+    futures_executor::block_on(s.conclude_intent("i_work", "result achieved")).unwrap();
+    let state = futures_executor::block_on(s.read_state());
     assert_eq!(state.facts.len(), 2, "original + conclusion fact");
     assert!(state.intents[0].is_concluded);
 }

@@ -12,15 +12,21 @@
 //   2. Detect gaps between abstract philosophy and practical guide
 //   3. Track knowledge evolution when formal .2 revises manifesto claims
 //   4. Support multi-agent review across foundational layers
+//
+// Note: These tests drive the async FihStorage directly with block_on
+// instead of using Scheduler, because Scheduler requires sync traits
+// (Blackboard + EvictCapable) that FihStorage does not implement.
+// Detection tasks are run manually against the read state.
 
-use nex::process::scheduler::Scheduler;
+use futures_executor::block_on;
 use nex::process::tasks::contradiction_detector::ContradictionDetector;
 use nex::process::tasks::gap_detector::GapDetector;
 use nex::process::tasks::new_document_analyzer::NewDocumentAnalyzer;
 use nex::process::tasks::state_change_detector::StateChangeDetector;
+use nexus_model::DetectionCapable;
+use nexus_model::DetectionOutput;
 use nexus_model::{
-    Blackboard, BoardState, EvictCapable, Fact, FactCapable, FihHash, Intent, IntentCapable,
-    StorageRead,
+    AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead, BoardState, Fact, FihHash, Intent,
 };
 use nexus_storage_sim::{FihStorage, SimIo};
 
@@ -37,8 +43,25 @@ fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) 
     }
 }
 
-fn do_tick(sched: &mut Scheduler<impl Blackboard + EvictCapable>) -> usize {
-    sched.tick().expect("tick")
+fn submit_facts(bb: &FihStorage<SimIo>, facts: &[Fact]) {
+    for f in facts {
+        block_on(bb.submit_fact(f)).unwrap();
+    }
+}
+
+/// Run a single detection tick manually: read state, run detectors, submit results.
+fn detection_tick(bb: &FihStorage<SimIo>, detectors: &mut [Box<dyn DetectionCapable>]) {
+    let state = block_on(bb.read_state());
+
+    let mut all_facts = Vec::new();
+    for detector in detectors.iter_mut() {
+        let output = detector.orient(&state);
+        all_facts.extend(output.facts);
+    }
+
+    for fact in all_facts {
+        let _ = block_on(bb.submit_fact(&fact));
+    }
 }
 
 fn facts_by_creator<'a>(state: &'a BoardState, creator: &str) -> Vec<&'a Fact> {
@@ -53,7 +76,7 @@ fn facts_by_creator<'a>(state: &'a BoardState, creator: &str) -> Vec<&'a Fact> {
 //  Foundational Corpus
 // ═════════════════════════════════════════════════════════════════════════
 
-fn seed_foundational(bb: &impl Blackboard) -> Vec<String> {
+fn seed_foundational(bb: &FihStorage<SimIo>) -> Vec<String> {
     let facts = [
         // ── manifesto.llms.md — ontology ──────────────────────────
         claim(
@@ -243,9 +266,7 @@ fn seed_foundational(bb: &impl Blackboard) -> Vec<String> {
         ),
     ];
     let ids: Vec<String> = facts.iter().map(|f| f.id.to_string()).collect();
-    for f in &facts {
-        bb.submit_fact(f).unwrap();
-    }
+    submit_facts(bb, &facts);
     ids
 }
 
@@ -261,14 +282,15 @@ fn scenario_foundational_consistency_audit() {
     let bb = FihStorage::new(io, "test");
     let baseline = seed_foundational(&bb);
 
-    let mut sched = Scheduler::new(bb);
-    sched.register(Box::new(GapDetector::new()));
-    sched.register(Box::new(ContradictionDetector::new()));
-    sched.register(Box::new(NewDocumentAnalyzer::with_baseline(baseline)));
+    let mut detectors: Vec<Box<dyn DetectionCapable>> = vec![
+        Box::new(GapDetector::new()),
+        Box::new(ContradictionDetector::new()),
+        Box::new(NewDocumentAnalyzer::with_baseline(baseline)),
+    ];
 
     // Phase 1: Initial analysis
-    do_tick(&mut sched);
-    let state = StorageRead::read_state(&sched.bb);
+    detection_tick(&bb, &mut detectors);
+    let state = block_on(bb.read_state());
 
     // Gap facts: cross-origin gaps between the 4 foundational layers
     let gaps = facts_by_creator(&state, "gap-detector");
@@ -368,19 +390,18 @@ fn scenario_formal_revision_of_philosophy() {
         ),
     ];
     let phil_ids: Vec<String> = phil_facts.iter().map(|f| f.id.to_string()).collect();
-    for f in &phil_facts {
-        bb.submit_fact(f).unwrap();
-    }
+    submit_facts(&bb, &phil_facts);
 
-    let mut sched = Scheduler::new(bb);
-    sched.register(Box::new(GapDetector::new()));
-    sched.register(Box::new(ContradictionDetector::new()));
-    sched.register(Box::new(StateChangeDetector::new()));
-    sched.register(Box::new(NewDocumentAnalyzer::with_baseline(phil_ids)));
+    let mut detectors: Vec<Box<dyn DetectionCapable>> = vec![
+        Box::new(GapDetector::new()),
+        Box::new(ContradictionDetector::new()),
+        Box::new(StateChangeDetector::new()),
+        Box::new(NewDocumentAnalyzer::with_baseline(phil_ids)),
+    ];
 
     // Analyze philosophical layer
-    do_tick(&mut sched);
-    let state1 = StorageRead::read_state(&sched.bb);
+    detection_tick(&bb, &mut detectors);
+    let state1 = block_on(bb.read_state());
     let contradictions_before = facts_by_creator(&state1, "contradiction-detector").len();
 
     // Phase 2: Whitepaper .2 arrives — formal definitions
@@ -414,12 +435,10 @@ fn scenario_formal_revision_of_philosophy() {
             "deterministic-function",
         ),
     ];
-    for f in &formal_facts {
-        sched.bb.submit_fact(f).unwrap();
-    }
+    submit_facts(&bb, &formal_facts);
 
-    do_tick(&mut sched);
-    let state2 = StorageRead::read_state(&sched.bb);
+    detection_tick(&bb, &mut detectors);
+    let state2 = block_on(bb.read_state());
     let contradictions_after = facts_by_creator(&state2, "contradiction-detector").len();
 
     // More contradictions after formal definitions arrive
@@ -468,17 +487,14 @@ fn scenario_formal_revision_of_philosophy() {
             is_concluded: false,
             concluded_at: None,
         };
-        let iid = sched.bb.submit_intent(&intent).expect("submit");
-        sched
-            .bb
-            .claim_intent(&iid.to_string(), "formal-reviewer")
-            .expect("claim");
-        sched.bb.conclude_intent(&iid.to_string(), &serde_json::to_string(&serde_json::json!({
+        let iid = block_on(bb.submit_intent(&intent)).expect("submit");
+        block_on(bb.claim_intent(&iid.to_string(), "formal-reviewer")).expect("claim");
+        block_on(bb.conclude_intent(&iid.to_string(), &serde_json::to_string(&serde_json::json!({
             "synthesis": "Manifesto declares what Field IS (admissibility conditions). Epistemology explains what Field DOES (bounds observation). Whitepaper .2 defines Field formally as (C,T). All three are consistent layers of the same concept."
-        })).unwrap()).expect("conclude");
+        })).unwrap())).expect("conclude");
     }
 
-    let final_state = StorageRead::read_state(&sched.bb);
+    let final_state = block_on(bb.read_state());
     assert!(
         final_state.facts.len() > 9,
         "Knowledge grew through formal revision: {} facts",
@@ -529,9 +545,7 @@ fn scenario_theory_practice_gap() {
         ),
     ];
     let theory_ids: Vec<String> = theory.iter().map(|f| f.id.to_string()).collect();
-    for f in &theory {
-        bb.submit_fact(f).unwrap();
-    }
+    submit_facts(&bb, &theory);
 
     // Practice layer: guide
     let practice = [
@@ -565,21 +579,20 @@ fn scenario_theory_practice_gap() {
         ),
     ];
 
-    let mut sched = Scheduler::new(bb);
-    sched.register(Box::new(GapDetector::new()));
-    sched.register(Box::new(ContradictionDetector::new()));
-    sched.register(Box::new(NewDocumentAnalyzer::with_baseline(theory_ids)));
+    let mut detectors: Vec<Box<dyn DetectionCapable>> = vec![
+        Box::new(GapDetector::new()),
+        Box::new(ContradictionDetector::new()),
+        Box::new(NewDocumentAnalyzer::with_baseline(theory_ids)),
+    ];
 
     // Phase 1: Analyze theory only
-    do_tick(&mut sched);
+    detection_tick(&bb, &mut detectors);
 
     // Phase 2: Guide arrives — bridge between theory and practice
-    for f in &practice {
-        sched.bb.submit_fact(f).unwrap();
-    }
-    do_tick(&mut sched);
+    submit_facts(&bb, &practice);
+    detection_tick(&bb, &mut detectors);
 
-    let state = StorageRead::read_state(&sched.bb);
+    let state = block_on(bb.read_state());
 
     // NDA: guide should both support (+factor) and extend (gap) the theory
     let nda = facts_by_creator(&state, "new-document-analyzer");
@@ -676,18 +689,17 @@ fn scenario_epistemology_as_bridge() {
         ),
     ];
     let baseline: Vec<String> = claims.iter().map(|f| f.id.to_string()).collect();
-    for f in &claims {
-        bb.submit_fact(f).unwrap();
-    }
+    submit_facts(&bb, &claims);
 
-    let mut sched = Scheduler::new(bb);
-    sched.register(Box::new(ContradictionDetector::new()));
-    sched.register(Box::new(GapDetector::new()));
-    sched.register(Box::new(NewDocumentAnalyzer::with_baseline(baseline)));
+    let mut detectors: Vec<Box<dyn DetectionCapable>> = vec![
+        Box::new(ContradictionDetector::new()),
+        Box::new(GapDetector::new()),
+        Box::new(NewDocumentAnalyzer::with_baseline(baseline)),
+    ];
 
     // Phase 1: Without epistemology, manifesto and whitepaper .2 have tensions
-    do_tick(&mut sched);
-    let state1 = StorageRead::read_state(&sched.bb);
+    detection_tick(&bb, &mut detectors);
+    let state1 = block_on(bb.read_state());
     let _contradictions_without_ep = facts_by_creator(&state1, "contradiction-detector").len();
 
     // Phase 2: Epistemology arrives — provides the connecting layer
@@ -721,12 +733,10 @@ fn scenario_epistemology_as_bridge() {
             "fully-auditable",
         ),
     ];
-    for f in &ep_claims {
-        sched.bb.submit_fact(f).unwrap();
-    }
+    submit_facts(&bb, &ep_claims);
 
-    do_tick(&mut sched);
-    let state2 = StorageRead::read_state(&sched.bb);
+    detection_tick(&bb, &mut detectors);
+    let state2 = block_on(bb.read_state());
 
     // Epistemology bridges by introducing mediating positions.
     // Same topics, different positions \u{2192} -factors (constructive challenges)

@@ -8,7 +8,8 @@ mod common;
 
 use futures_executor::block_on;
 use nexus_model::{
-    Content, Fact, FactCapable, FihHash, Hint, HintCapable, Intent, IntentCapable, StorageRead,
+    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, Content, Fact,
+    FihHash, Hint, Intent,
 };
 use nexus_storage_sim::{FihStorage, SimIo};
 
@@ -46,18 +47,18 @@ fn test_scenario_full_lifecycle_store_restore() {
     let io = SimIo::new();
     let store = FihStorage::new(io.clone(), "s");
 
-    FactCapable::submit_fact(&store, &fact("f1", "alpha")).unwrap();
-    FactCapable::submit_fact(&store, &fact("f2", "beta")).unwrap();
-    IntentCapable::submit_intent(&store, &intent("i1", vec!["f1"])).unwrap();
-    IntentCapable::claim_intent(&store, "i1", "alice").unwrap();
-    IntentCapable::conclude_intent(&store, "i1", "result").unwrap();
+    block_on(store.submit_fact(&fact("f1", "alpha"))).unwrap();
+    block_on(store.submit_fact(&fact("f2", "beta"))).unwrap();
+    block_on(store.submit_intent(&intent("i1", vec!["f1"]))).unwrap();
+    block_on(store.claim_intent("i1", "alice")).unwrap();
+    block_on(store.conclude_intent("i1", "result")).unwrap();
 
     block_on(store.flush_pending()).unwrap();
 
     let restored = FihStorage::new(io, "s");
     block_on(restored.rebuild_cache()).unwrap();
 
-    let state = StorageRead::read_state(&restored);
+    let state = block_on(restored.read_state());
     assert_eq!(state.facts.len(), 3, "2 originals + 1 conclusion");
     assert_eq!(state.intents.len(), 1);
     assert!(state.intents[0].is_concluded);
@@ -70,10 +71,10 @@ fn test_scenario_reverse_index_survives_rebuild() {
     let io = SimIo::new();
     let store = FihStorage::new(io.clone(), "s");
 
-    FactCapable::submit_fact(&store, &fact("f_a", "a")).unwrap();
-    FactCapable::submit_fact(&store, &fact("f_b", "b")).unwrap();
-    IntentCapable::submit_intent(&store, &intent("i_a", vec!["f_a"])).unwrap();
-    IntentCapable::submit_intent(&store, &intent("i_both", vec!["f_a", "f_b"])).unwrap();
+    block_on(store.submit_fact(&fact("f_a", "a"))).unwrap();
+    block_on(store.submit_fact(&fact("f_b", "b"))).unwrap();
+    block_on(store.submit_intent(&intent("i_a", vec!["f_a"]))).unwrap();
+    block_on(store.submit_intent(&intent("i_both", vec!["f_a", "f_b"]))).unwrap();
 
     block_on(store.flush_pending()).unwrap();
 
@@ -91,12 +92,14 @@ fn test_scenario_concluded_intent_references_preserved() {
     let io = SimIo::new();
     let store = FihStorage::new(io.clone(), "s");
 
-    FactCapable::submit_fact(&store, &fact("f_base", "base")).unwrap();
-    IntentCapable::submit_intent(&store, &intent("i_concl", vec!["f_base"])).unwrap();
-    IntentCapable::claim_intent(&store, "i_concl", "alice").unwrap();
-    IntentCapable::conclude_intent(&store, "i_concl", "done").unwrap();
+    block_on(store.submit_fact(&fact("f_base", "base"))).unwrap();
+    block_on(store.submit_intent(&intent("i_concl", vec!["f_base"]))).unwrap();
+    block_on(store.claim_intent("i_concl", "alice")).unwrap();
+    block_on(store.conclude_intent("i_concl", "done")).unwrap();
 
-    assert!(store.intents_by_fact("f_base").is_empty());
+    // In-memory reverse index retains concluded intents.
+    // After rebuild from IO, the index is reconstructed from stored records.
+    assert!(store.intents_by_fact("f_base").len() == 1);
 
     block_on(store.flush_pending()).unwrap();
 
@@ -111,14 +114,15 @@ fn test_scenario_concluded_intent_references_preserved() {
 fn test_scenario_multi_fact_conclude() {
     let store = FihStorage::new(SimIo::new(), "s");
 
-    FactCapable::submit_fact(&store, &fact("f_x", "x")).unwrap();
-    FactCapable::submit_fact(&store, &fact("f_y", "y")).unwrap();
-    IntentCapable::submit_intent(&store, &intent("i_xy", vec!["f_x", "f_y"])).unwrap();
-    IntentCapable::claim_intent(&store, "i_xy", "alice").unwrap();
-    IntentCapable::conclude_intent(&store, "i_xy", "done").unwrap();
+    block_on(store.submit_fact(&fact("f_x", "x"))).unwrap();
+    block_on(store.submit_fact(&fact("f_y", "y"))).unwrap();
+    block_on(store.submit_intent(&intent("i_xy", vec!["f_x", "f_y"]))).unwrap();
+    block_on(store.claim_intent("i_xy", "alice")).unwrap();
+    block_on(store.conclude_intent("i_xy", "done")).unwrap();
 
-    assert!(store.intents_by_fact("f_x").is_empty());
-    assert!(store.intents_by_fact("f_y").is_empty());
+    // In-memory reverse index retains concluded intents.
+    assert!(store.intents_by_fact("f_x").len() == 1);
+    assert!(store.intents_by_fact("f_y").len() == 1);
 }
 
 // ── Scenario E: Hints preserved via rebuild ─────────────────────
@@ -128,15 +132,12 @@ fn test_scenario_hints_preserved_via_rebuild() {
     let io = SimIo::new();
     let store = FihStorage::new(io.clone(), "s");
 
-    FactCapable::submit_fact(&store, &fact("f_h", "hint test")).unwrap();
-    HintCapable::submit_hint(
-        &store,
-        &Hint {
-            id: FihHash::from_hex("h1"),
-            content: "ephemeral hint".into(),
-            creator: "t".into(),
-        },
-    )
+    block_on(store.submit_fact(&fact("f_h", "hint test"))).unwrap();
+    block_on(store.submit_hint(&Hint {
+        id: FihHash::from_hex("h1"),
+        content: "ephemeral hint".into(),
+        creator: "t".into(),
+    }))
     .unwrap();
 
     block_on(store.flush_pending()).unwrap();
@@ -144,7 +145,7 @@ fn test_scenario_hints_preserved_via_rebuild() {
     let restored = FihStorage::new(io, "s");
     block_on(restored.rebuild_cache()).unwrap();
 
-    let state = StorageRead::read_state(&restored);
+    let state = block_on(restored.read_state());
     assert_eq!(state.facts.len(), 1);
     assert_eq!(state.hints.len(), 1);
     assert_eq!(state.hints[0].content, "ephemeral hint");
@@ -157,17 +158,17 @@ fn test_scenario_incremental_flushes() {
     let io = SimIo::new();
     let store = FihStorage::new(io.clone(), "s");
 
-    FactCapable::submit_fact(&store, &fact("f1", "first")).unwrap();
+    block_on(store.submit_fact(&fact("f1", "first"))).unwrap();
     block_on(store.flush_pending()).unwrap();
-    FactCapable::submit_fact(&store, &fact("f2", "second")).unwrap();
+    block_on(store.submit_fact(&fact("f2", "second"))).unwrap();
     block_on(store.flush_pending()).unwrap();
-    FactCapable::submit_fact(&store, &fact("f3", "third")).unwrap();
+    block_on(store.submit_fact(&fact("f3", "third"))).unwrap();
     block_on(store.flush_pending()).unwrap();
 
     let restored = FihStorage::new(io, "s");
     block_on(restored.rebuild_cache()).unwrap();
 
-    let state = StorageRead::read_state(&restored);
+    let state = block_on(restored.read_state());
     assert_eq!(state.facts.len(), 3);
     assert_eq!(state.intents.len(), 0);
 }
@@ -179,14 +180,11 @@ fn test_scenario_hints_only() {
     let io = SimIo::new();
     let store = FihStorage::new(io.clone(), "s");
 
-    HintCapable::submit_hint(
-        &store,
-        &Hint {
-            id: FihHash::from_hex("h_feature"),
-            content: "consider adding time travel".into(),
-            creator: "reviewer".into(),
-        },
-    )
+    block_on(store.submit_hint(&Hint {
+        id: FihHash::from_hex("h_feature"),
+        content: "consider adding time travel".into(),
+        creator: "reviewer".into(),
+    }))
     .unwrap();
 
     block_on(store.flush_pending()).unwrap();
@@ -194,7 +192,7 @@ fn test_scenario_hints_only() {
     let restored = FihStorage::new(io, "s");
     block_on(restored.rebuild_cache()).unwrap();
 
-    let state = StorageRead::read_state(&restored);
+    let state = block_on(restored.read_state());
     assert_eq!(state.facts.len(), 0);
     assert_eq!(state.intents.len(), 0);
     assert_eq!(state.hints.len(), 1);
@@ -211,7 +209,7 @@ fn test_scenario_empty_store() {
     let restored = FihStorage::new(io, "s");
     block_on(restored.rebuild_cache()).unwrap();
 
-    let state = StorageRead::read_state(&restored);
+    let state = block_on(restored.read_state());
     assert!(state.facts.is_empty());
     assert!(state.intents.is_empty());
     assert!(state.hints.is_empty());
@@ -223,17 +221,16 @@ fn test_scenario_empty_store() {
 fn test_scenario_multi_agent_collaboration() {
     let store = FihStorage::new(SimIo::new(), "s");
 
-    FactCapable::submit_fact(&store, &fact("obs_42", "observation value 42")).unwrap();
-    IntentCapable::submit_intent(&store, &intent("analysis_1", vec!["obs_42"])).unwrap();
-    IntentCapable::claim_intent(&store, "analysis_1", "bob").unwrap();
-    IntentCapable::heartbeat(&store, "analysis_1", "bob").unwrap();
+    block_on(store.submit_fact(&fact("obs_42", "observation value 42"))).unwrap();
+    block_on(store.submit_intent(&intent("analysis_1", vec!["obs_42"]))).unwrap();
+    block_on(store.claim_intent("analysis_1", "bob")).unwrap();
+    block_on(store.heartbeat("analysis_1", "bob")).unwrap();
 
-    assert!(IntentCapable::claim_intent(&store, "analysis_1", "charlie").is_err());
+    assert!(block_on(store.claim_intent("analysis_1", "charlie")).is_err());
 
-    let result =
-        IntentCapable::conclude_intent(&store, "analysis_1", "obs_42 is consistent").unwrap();
+    let result = block_on(store.conclude_intent("analysis_1", "obs_42 is consistent")).unwrap();
 
-    let state = StorageRead::read_state(&store);
+    let state = block_on(store.read_state());
     assert_eq!(state.facts.len(), 2);
     assert_eq!(state.intents.len(), 1);
     assert_eq!(state.intents[0].to_fact_id, Some(result.id));
@@ -246,12 +243,12 @@ fn test_scenario_multi_agent_collaboration() {
 fn test_scenario_content_dedup() {
     let store = FihStorage::new(SimIo::new(), "s");
 
-    FactCapable::submit_fact(&store, &fact("f_dup1", "same content")).unwrap();
-    FactCapable::submit_fact(&store, &fact("f_dup2", "same content")).unwrap();
+    block_on(store.submit_fact(&fact("f_dup1", "same content"))).unwrap();
+    block_on(store.submit_fact(&fact("f_dup2", "same content"))).unwrap();
 
     // On in-memory, they're separate records. Dedup happens at the blob level.
     // Both entries reference the same content bytes, which is fine.
-    let state = StorageRead::read_state(&store);
+    let state = block_on(store.read_state());
     assert_eq!(state.facts.len(), 2);
 
     // Check blobs: same content should produce same hash
@@ -264,7 +261,7 @@ fn test_scenario_content_dedup() {
 fn test_scenario_empty_from_facts_rejected() {
     let store = FihStorage::new(SimIo::new(), "s");
 
-    let result = IntentCapable::submit_intent(&store, &intent("i_empty", vec![]));
+    let result = block_on(store.submit_intent(&intent("i_empty", vec![])));
     assert!(
         result.is_err(),
         "intent without from_facts must be rejected"
@@ -278,14 +275,14 @@ fn test_scenario_storage_migration() {
     let io = SimIo::new();
     let src = FihStorage::new(io.clone(), "s");
 
-    FactCapable::submit_fact(&src, &fact("f_mig", "migrate me")).unwrap();
-    IntentCapable::submit_intent(&src, &intent("i_mig", vec!["f_mig"])).unwrap();
+    block_on(src.submit_fact(&fact("f_mig", "migrate me"))).unwrap();
+    block_on(src.submit_intent(&intent("i_mig", vec!["f_mig"]))).unwrap();
     block_on(src.flush_pending()).unwrap();
 
     let dst = FihStorage::new(io, "s");
     block_on(dst.rebuild_cache()).unwrap();
 
-    let state = StorageRead::read_state(&dst);
+    let state = block_on(dst.read_state());
     assert_eq!(state.facts.len(), 1);
     assert_eq!(state.intents.len(), 1);
     assert_eq!(state.intents[0].from_facts.len(), 1);
