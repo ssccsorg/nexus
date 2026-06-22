@@ -11,9 +11,7 @@
 mod common;
 
 use futures_executor::block_on;
-use nexus_model::{
-    AsyncFactCapable, AsyncIntentCapable, Content, Fact, FihHash, Intent,
-};
+use nexus_model::{AsyncFactCapable, AsyncIntentCapable, Content, Fact, FihHash, Intent};
 use nexus_storage_sim::{FihStorage, SimIo};
 
 fn storage() -> FihStorage<SimIo> {

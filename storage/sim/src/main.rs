@@ -10,10 +10,9 @@ use nexus_model::{
     AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable, AsyncHintCapable,
     AsyncIntentCapable, AsyncStorageRead, Fact, FihHash, FlushCursor, Hint, Intent, StateFilter,
 };
-use nexus_storage_sim::{intent_status, FihStorage, SimIo, SyncFileIo};
+use nexus_storage_sim::{FihStorage, SimIo, SyncFileIo, intent_status};
 
-#[tokio::main]
-async fn main() {
+fn main() {
     eprintln!("+-----------------------------------------------------------+");
     eprintln!("| nexus-storage-sim verification runner                      |");
     eprintln!("| Phase 3: AsyncFileIo + FlushCapable + FsIo              |");

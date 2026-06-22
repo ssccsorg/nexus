@@ -5,6 +5,11 @@
 //
 // Unlike StoreSession, FihSession is generic over any FihIo implementation
 // and does not require separate MetaStore/BlobStore/ObjectStore instances.
+//
+// FihSession is used by storage/sim (native-only verification runner).
+// It uses block_on internally to wrap FihStorage's async methods into
+// a synchronous interface for convenience. This is acceptable because
+// storage/sim targets native platforms where block_on does not hang.
 
 use super::store::FihStorage;
 use crate::io::file_io::AsyncFileIo;

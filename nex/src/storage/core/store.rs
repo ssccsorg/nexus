@@ -39,8 +39,8 @@ use std::cell::{Cell, RefCell};
 use std::ops::Range;
 
 use nexus_model::{
-    BlackboardError, BoardState, Content, Fact, FihHash, FlushCursor, FlushResult,
-    Hint, Intent, Now, PartitionData, StateFilter,
+    BlackboardError, BoardState, Content, Fact, FihHash, FlushCursor, FlushResult, Hint, Intent,
+    Now, PartitionData, StateFilter,
 };
 
 use super::entity_store::{EntityStore, MemoryEntityStore};
@@ -135,15 +135,6 @@ impl<I: AsyncFileIo> FihStorage<I> {
             coord: FihCoord::new(),
             pending: RefCell::new(Vec::new()),
         }
-    }
-
-    /// Flush pending writes if auto_flush is enabled. No-op in the sync
-    /// path; auto-flush is only meaningful through the async trait impls
-    /// that call flush_pending directly.
-    fn maybe_flush(&self) -> Result<(), String> {
-        // Sync trait impls do not perform IO. Auto-flush is handled by
-        // the async trait impls which call flush_pending directly.
-        Ok(())
     }
 
     /// Rebuild in-memory cache from IO storage.

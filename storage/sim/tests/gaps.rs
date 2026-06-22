@@ -111,7 +111,8 @@ fn test_minimal_fih_lifecycle() {
     // Three intents referencing facts in various combinations
     futures_executor::block_on(s.submit_intent(&common::intent("i_a", vec!["f_1"]))).unwrap();
     futures_executor::block_on(s.submit_intent(&common::intent("i_b", vec!["f_2"]))).unwrap();
-    futures_executor::block_on(s.submit_intent(&common::intent("i_c", vec!["f_1", "f_3"]))).unwrap();
+    futures_executor::block_on(s.submit_intent(&common::intent("i_c", vec!["f_1", "f_3"])))
+        .unwrap();
 
     // A hint with arbitrary string content
     futures_executor::block_on(s.submit_hint(&Hint {
@@ -144,7 +145,8 @@ fn test_minimal_claim_conclude() {
     let s = store();
 
     futures_executor::block_on(s.submit_fact(&common::fact("f_target"))).unwrap();
-    futures_executor::block_on(s.submit_intent(&common::intent("i_work", vec!["f_target"]))).unwrap();
+    futures_executor::block_on(s.submit_intent(&common::intent("i_work", vec!["f_target"])))
+        .unwrap();
 
     futures_executor::block_on(s.claim_intent("i_work", "agent")).unwrap();
     let state = futures_executor::block_on(s.read_state());

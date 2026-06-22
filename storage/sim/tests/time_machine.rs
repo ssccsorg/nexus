@@ -24,35 +24,31 @@ fn store() -> FihStorage<SimIo> {
 }
 
 fn submit_fact(store: &FihStorage<SimIo>, id: &str, data: &str) {
-    block_on(
-        store.submit_fact(&Fact {
-            id: FihHash::from_hex(id),
-            origin: "tm".into(),
-            content: Content {
-                mime_type: "text/plain".into(),
-                data: data.as_bytes().to_vec(),
-            },
-            creator: "tester".into(),
-        }),
-    )
+    block_on(store.submit_fact(&Fact {
+        id: FihHash::from_hex(id),
+        origin: "tm".into(),
+        content: Content {
+            mime_type: "text/plain".into(),
+            data: data.as_bytes().to_vec(),
+        },
+        creator: "tester".into(),
+    }))
     .unwrap();
 }
 
 fn submit_intent(store: &FihStorage<SimIo>, id: &str, from: &[&str]) {
-    block_on(
-        store.submit_intent(&Intent {
-            id: FihHash::from_hex(id),
-            from_facts: from.iter().map(|s| FihHash::from_hex(s)).collect(),
-            description: format!("intent {}", id),
-            creator: "tester".into(),
-            worker: None,
-            to_fact_id: None,
-            last_heartbeat_at: None,
-            created_at: None,
-            is_concluded: false,
-            concluded_at: None,
-        }),
-    )
+    block_on(store.submit_intent(&Intent {
+        id: FihHash::from_hex(id),
+        from_facts: from.iter().map(|s| FihHash::from_hex(s)).collect(),
+        description: format!("intent {}", id),
+        creator: "tester".into(),
+        worker: None,
+        to_fact_id: None,
+        last_heartbeat_at: None,
+        created_at: None,
+        is_concluded: false,
+        concluded_at: None,
+    }))
     .unwrap();
 }
 
@@ -164,12 +160,10 @@ fn test_time_travel_consistency() {
     assert_eq!(full.intents.len(), 1);
 
     // Time-travel to t=2_500_000_000: Fact (indexed at 2G) included, Intent not yet indexed
-    let past = block_on(
-        store.read_state_filtered(&StateFilter {
-            until: Some("2500000000".to_string()),
-            ..Default::default()
-        }),
-    );
+    let past = block_on(store.read_state_filtered(&StateFilter {
+        until: Some("2500000000".to_string()),
+        ..Default::default()
+    }));
     assert_eq!(past.facts.len(), 1, "fact submitted before midpoint");
     assert_eq!(
         past.intents.len(),
@@ -209,13 +203,11 @@ fn test_full_statespace_round_trip() {
     submit_fact(&store, "f1", "one");
     submit_fact(&store, "f2", "two");
     submit_intent(&store, "i1", &["f1"]);
-    block_on(
-        store.submit_hint(&Hint {
-            id: FihHash::from_hex("h1"),
-            content: "hint one".into(),
-            creator: "tester".into(),
-        }),
-    )
+    block_on(store.submit_hint(&Hint {
+        id: FihHash::from_hex("h1"),
+        content: "hint one".into(),
+        creator: "tester".into(),
+    }))
     .unwrap();
 
     block_on(store.claim_intent("i1", "alice")).unwrap();
@@ -283,13 +275,11 @@ fn test_empty_statespace_is_valid() {
 fn test_eviction_preserves_fact_removes_old_hint() {
     let store = store();
     submit_fact(&store, "f_keep", "keep me");
-    block_on(
-        store.submit_hint(&Hint {
-            id: FihHash::from_hex("h_old"),
-            content: "old hint".into(),
-            creator: "tester".into(),
-        }),
-    )
+    block_on(store.submit_hint(&Hint {
+        id: FihHash::from_hex("h_old"),
+        content: "old hint".into(),
+        creator: "tester".into(),
+    }))
     .unwrap();
 
     block_on(store.evict_before("99999999999")).unwrap();
@@ -297,7 +287,11 @@ fn test_eviction_preserves_fact_removes_old_hint() {
     // Note: evict_before only removes from the in-memory hint store.
     // read_state reads from IO (which still has the hint), so we check
     // the in-memory store directly.
-    assert_eq!(store.hint_store.len(), 0, "old hint must be evicted from memory");
+    assert_eq!(
+        store.hint_store.len(),
+        0,
+        "old hint must be evicted from memory"
+    );
     let state = block_on(store.read_state());
     assert_eq!(state.facts.len(), 1, "fact must survive eviction");
 }
