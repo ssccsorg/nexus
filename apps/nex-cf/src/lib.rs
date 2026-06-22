@@ -39,16 +39,10 @@ struct CfStores {
 
 fn build_store(bucket: worker::Bucket, _env: &worker::Env, project: &str) -> FihStorage<CfFihIo> {
     let s = FihStorage::with_clock(CfFihIo::new(bucket), project, Box::new(CfClock));
-    let bm25 = crate::stores::bm25::InMemoryBm25::new();
-    worker::console_log!("build_store: InMemoryBm25 created, len={}", bm25.len());
-    s.register_semantic_store(Box::new(bm25));
-    let vec_store = CfVectorizeStore::with_embedder(
+    s.register_semantic_store(Box::new(crate::stores::bm25::InMemoryBm25::new()));
+    s.register_semantic_store(Box::new(CfVectorizeStore::with_embedder(
         Box::new(crate::stores::vectorize::LocalTfidfEmbedder),
-    );
-    worker::console_log!("build_store: CfVectorizeStore created, len={}", vec_store.len());
-    s.register_semantic_store(Box::new(vec_store));
-    let count = s.semantic_stores().len();
-    worker::console_log!("build_store: registered {} semantic stores", count);
+    )));
     s
 }
 
@@ -593,7 +587,7 @@ pub async fn handle_path<I: AsyncFileIo>(
             )
         }
 
-        "/flush" => match s.flush_with_chain().await {
+        "/flush" => match s.flush_pending().await {
             Ok(()) => (
                 200,
                 "application/json".into(),
@@ -660,11 +654,8 @@ pub async fn ingest_document<I: AsyncFileIo>(
             .map_err(|e| format!("submit para {i}: {e:?}"))?;
         last_id = para_id;
     }
-    // Flush all pending writes and write a chain-file checkpoint.
-    // The chain file enables fast cold-start recovery via rebuild_cache.
-    s.flush_with_chain()
-        .await
-        .map_err(|e| format!("flush: {e}"))?;
+    // Flush all pending writes to R2 in a single apply_batch call.
+    s.flush_pending().await.map_err(|e| format!("flush: {e}"))?;
     Ok(last_id)
 }
 
