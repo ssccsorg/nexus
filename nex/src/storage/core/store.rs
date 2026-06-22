@@ -138,7 +138,55 @@ impl<I: AsyncFileIo> FihStorage<I> {
     }
 
     /// Rebuild in-memory cache from IO storage.
+    ///
+    /// Tries chain-file replay first (single R2 list + sequential read of
+    /// chain files). Falls back to individual fact/intent/hint reads if no
+    /// chain files exist (legacy format).
     pub async fn rebuild_cache(&self) -> Result<(), String> {
+        // Try chain-file replay first (fast path: fewer reads).
+        let chain_keys = self.io.list("flush/").await?;
+        if !chain_keys.is_empty() {
+            let mut facts: Vec<(String, FactRecord)> = Vec::new();
+            let mut intents: Vec<(String, IntentRecord)> = Vec::new();
+
+            // Chain files are prefix-sorted by cursor timestamp.
+            // Read them in order and merge into the caches.
+            let mut sorted = chain_keys;
+            sorted.sort();
+            for key in &sorted {
+                if let Some(bytes) = self.io.read(key).await?
+                    && let Ok(entry) = postcard::from_bytes::<ChainEntry>(&bytes)
+                {
+                    for r in entry.facts {
+                        facts.push((r.id.clone(), r));
+                    }
+                    for r in entry.intents {
+                        intents.push((r.id.clone(), r));
+                    }
+                }
+            }
+
+            self.fact_store.replace_from(facts);
+            self.intent_store.replace_from(intents);
+
+            // Hints are not stored in chain files (ephemeral).
+            // Read them individually (typically few hints).
+            let hint_keys = self.io.list("hints/").await?;
+            let mut hints: Vec<(String, HintRecord)> = Vec::new();
+            for key in hint_keys {
+                if let Some(bytes) = self.io.read(&key).await?
+                    && let Ok(record) = postcard::from_bytes::<HintRecord>(&bytes)
+                {
+                    hints.push((record.id.clone(), record));
+                }
+            }
+            self.hint_store.replace_from(hints);
+
+            self.rebuild_coord();
+            return Ok(());
+        }
+
+        // Legacy path: read individual fact/intent/hint files.
         let fact_keys = self.io.list("facts/").await?;
         let mut facts: Vec<(String, FactRecord)> = Vec::new();
         for key in fact_keys {
@@ -252,6 +300,39 @@ impl<I: AsyncFileIo> FihStorage<I> {
         if !ops.is_empty() {
             self.io.apply_batch(&ops).await?;
         }
+        Ok(())
+    }
+
+    /// Flush pending writes and write a chain-file checkpoint.
+    ///
+    /// Unlike plain flush_pending(), this also writes a chain file
+    /// (flush/{partition}/cursor_{timestamp}.chain) containing all
+    /// fact and intent records. The chain file enables fast cold-start
+    /// recovery via rebuild_cache() — one R2 list + sequential reads
+    /// instead of N individual GET requests.
+    ///
+    /// Call this periodically (e.g., after bulk ingest) to keep
+    /// chain files current. Plain flush_pending() is sufficient for
+    /// most individual writes; call flush_with_chain() before
+    /// deployments or after batch operations.
+    pub async fn flush_with_chain(&self) -> Result<(), String> {
+        self.flush_pending().await?;
+        let now_ts = self.clock.now_nanos();
+        let facts = self.fact_store.values();
+        let intents = self.intent_store.values();
+        let entry = ChainEntry {
+            prev_cursor: 0,
+            records_flushed: facts.len() as u64,
+            facts,
+            intents,
+        };
+        let chain_bytes =
+            postcard::to_allocvec(&entry).map_err(|e| format!("serialize chain: {e}"))?;
+        let chain_path = format!("flush/default/cursor_{}.chain", now_ts);
+        self.io
+            .write(&chain_path, &chain_bytes)
+            .await
+            .map_err(|e| format!("write chain: {e}"))?;
         Ok(())
     }
 
