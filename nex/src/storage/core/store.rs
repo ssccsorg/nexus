@@ -35,7 +35,7 @@
 //   - no sync trait on FihStorage (async-only)
 //   - no static mutable state
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::ops::Range;
 
 use nexus_model::{
@@ -44,7 +44,7 @@ use nexus_model::{
 };
 
 use super::entity_store::{EntityStore, MemoryEntityStore};
-use super::index::FihCoord;
+use super::index::{Cell2, FihCoord};
 use super::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
 use crate::io::file_io::{AsyncFileIo, WriteOp};
 use crate::storage::semantic::fih::FihRecordLoad;
@@ -80,7 +80,7 @@ pub struct FihStorage<I: AsyncFileIo> {
     // Indices
     coord: FihCoord,
     // Pending writes (for FihSession coordination).
-    pub(crate) pending: RefCell<Vec<WriteOp>>,
+    pub(crate) pending: Cell2<Vec<WriteOp>>,
 }
 
 impl<I: AsyncFileIo> FihStorage<I> {
@@ -115,10 +115,11 @@ impl<I: AsyncFileIo> FihStorage<I> {
             intent_store: Box::new(MemoryEntityStore::<IntentRecord>::new()),
             hint_store: Box::new(MemoryEntityStore::<HintRecord>::new()),
             coord: FihCoord::new(),
-            pending: RefCell::new(Vec::new()),
+            pending: Cell2::new(Vec::new()),
         }
     }
 
+    /// Create storage with in-memory state only (no auto-flush).
     pub fn with_clock_and_memory(
         io: I,
         project_id: &str,
@@ -133,7 +134,7 @@ impl<I: AsyncFileIo> FihStorage<I> {
             intent_store: Box::new(MemoryEntityStore::<IntentRecord>::new()),
             hint_store: Box::new(MemoryEntityStore::<HintRecord>::new()),
             coord: FihCoord::new(),
-            pending: RefCell::new(Vec::new()),
+            pending: Cell2::new(Vec::new()),
         }
     }
 
@@ -196,7 +197,7 @@ impl<I: AsyncFileIo> FihStorage<I> {
         for r in &facts {
             let id_bytes = FihHash::from_hex(&r.id);
             let idx = self.coord.intern(&id_bytes.0);
-            self.coord.by_time.record(r.submitted_at, idx);
+            self.coord.by_time.borrow_mut().record(r.submitted_at, idx);
             self.coord
                 .record_fact(&id_bytes.0, &r.origin, &r.creator, r.submitted_at);
         }
@@ -248,22 +249,25 @@ impl<I: AsyncFileIo> FihStorage<I> {
     }
 
     pub async fn flush_pending(&self) -> Result<(), String> {
-        let ops = std::mem::take(&mut *self.pending.try_borrow_mut().map_err(|e| e.to_string())?);
-        if !ops.is_empty() {
-            self.io.apply_batch(&ops).await?;
-        }
-        Ok(())
+        let ops = {
+            let mut pending = self.pending.borrow_mut();
+            if pending.is_empty() {
+                return Ok(());
+            }
+            std::mem::take(&mut *pending)
+        };
+        self.io.apply_batch(&ops).await
     }
 
     /// Register a semantic store for auto-indexing on fact submission.
-    pub fn register_semantic_store(&self, store: Box<dyn crate::storage::semantic::SemanticStore>) {
+    pub fn register_semantic_store(&self, store: crate::storage::semantic::DynSemanticStore) {
         self.coord.by_semantic.borrow_mut().push(store);
     }
 
     /// Access the semantic stores list (for downcasting to concrete types).
     pub fn semantic_stores(
         &self,
-    ) -> impl std::ops::Deref<Target = Vec<Box<dyn crate::storage::semantic::SemanticStore>>> {
+    ) -> impl std::ops::Deref<Target = Vec<crate::storage::semantic::DynSemanticStore>> {
         self.coord.by_semantic.borrow()
     }
 
@@ -883,22 +887,19 @@ impl<I: AsyncFileIo> nexus_model::AsyncFilterCapable for FihStorage<I> {
                 let time_ids: HashSet<u32> = match (&filter.since, &filter.until) {
                     (Some(_), Some(_)) => self
                         .coord
-                        .by_time
-                        .range(&since_ns, &until_ns)
+                        .by_time.borrow().range(&since_ns, &until_ns)
                         .into_iter()
                         .map(|(_, idx)| idx)
                         .collect(),
                     (Some(_), None) => self
                         .coord
-                        .by_time
-                        .since(&since_ns)
+                        .by_time.borrow().since(&since_ns)
                         .into_iter()
                         .map(|(_, idx)| idx)
                         .collect(),
                     (None, Some(_)) => self
                         .coord
-                        .by_time
-                        .as_of(&until_ns)
+                        .by_time.borrow().as_of(&until_ns)
                         .into_iter()
                         .map(|(_, idx)| idx)
                         .collect(),
@@ -1284,8 +1285,8 @@ impl<I: AsyncFileIo> nexus_model::AsyncScanCapable for FihStorage<I> {
 
 impl<I: AsyncFileIo> nexus_model::AsyncTimeRangeCapable for FihStorage<I> {
     async fn time_range(&self) -> Option<Range<String>> {
-        let first = self.coord.by_time.first_key()?;
-        let last = self.coord.by_time.last_key()?;
+        let first = self.coord.by_time.borrow().first_key()?;
+        let last = self.coord.by_time.borrow().last_key()?;
         Some(first.to_string()..last.to_string())
     }
 }
@@ -1299,8 +1300,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncFlushCapable for FihStorage<I> {
 
         let delta_ids: Vec<(String, u64)> = self
             .coord
-            .by_time
-            .since(&since_ts)
+            .by_time.borrow().since(&since_ts)
             .into_iter()
             .map(|(_ts, idx)| (self.coord.resolve(idx), _ts))
             .collect();

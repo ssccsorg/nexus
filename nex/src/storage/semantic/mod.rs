@@ -23,32 +23,51 @@ pub use record::{Query, RecordLoad};
 
 use std::fmt::Debug;
 
+// ── Platform-adaptive async trait bounds ───────────────────────────
+//
+// On native/WASIX (where std is available): require Send + Sync so that
+//   FihStorage and FihCoord are themselves Send + Sync, enabling use as
+//   axum state without unsafe wrappers.
+// On wasm32-unknown-unknown:                       use ?Send (single-threaded).
+//
+// External implementations use the same trait regardless of platform.
+// The #[async_trait] macro adapts automatically.
+
+#[cfg(not(target_arch = "wasm32"))]
+mod async_trait_adapt {
+    pub use async_trait::async_trait;
+}
+
+#[cfg(target_arch = "wasm32")]
+mod async_trait_adapt {
+    pub use async_trait::async_trait;
+    pub use async_trait::async_trait as async_trait_send;
+}
+
 /// Semantic feature store for similarity search.
-///
-/// Maps semantic features to record IDs. Used by FihCoord as another
-/// index axis alongside by_origin, by_creator, by_status, etc.
-///
-/// Each implementation decides which data to extract via `RecordLoad`.
-///
-/// Multiple store implementations can coexist in the same binary,
-/// each using a different strategy (vector cosine, BM25 text, ngram,
-/// etc.) without the core knowing which one is in use.
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait::async_trait]
+pub trait SemanticStore: Debug + Send + Sync {
+    async fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String>;
+    async fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String>;
+    async fn remove(&mut self, id: u32) -> Result<(), String>;
+    fn len(&self) -> usize;
+    fn is_empty(&self) -> bool { self.len() == 0 }
+}
+
+#[cfg(target_arch = "wasm32")]
 #[async_trait::async_trait(?Send)]
 pub trait SemanticStore: Debug {
-    /// Insert a record into the store. The implementation calls
-    /// `load` to retrieve only the data it needs.
     async fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String>;
-
-    /// Search for the top_k most similar records using the query handle.
     async fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String>;
-
-    /// Remove a record ID from the store.
     async fn remove(&mut self, id: u32) -> Result<(), String>;
-
-    /// Number of records stored.
     fn len(&self) -> usize;
-
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
+    fn is_empty(&self) -> bool { self.len() == 0 }
 }
+
+/// Convenience type alias for storing SemanticStore in containers.
+#[cfg(not(target_arch = "wasm32"))]
+pub type DynSemanticStore = Box<dyn SemanticStore + Send>;
+
+#[cfg(target_arch = "wasm32")]
+pub type DynSemanticStore = Box<dyn SemanticStore>;
