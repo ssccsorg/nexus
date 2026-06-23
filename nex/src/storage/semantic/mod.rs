@@ -25,24 +25,9 @@ use std::fmt::Debug;
 
 // ── Platform-adaptive async trait bounds ───────────────────────────
 //
-// On native/WASIX (where std is available): require Send + Sync so that
-//   FihStorage and FihCoord are themselves Send + Sync, enabling use as
-//   axum state without unsafe wrappers.
-// On wasm32-unknown-unknown:                       use ?Send (single-threaded).
-//
+// On native/WASIX: require Send + Sync so FihStorage is Send + Sync.
+// On wasm32-unknown-unknown: use ?Send (single-threaded).
 // External implementations use the same trait regardless of platform.
-// The #[async_trait] macro adapts automatically.
-
-#[cfg(not(target_arch = "wasm32"))]
-mod async_trait_adapt {
-    pub use async_trait::async_trait;
-}
-
-#[cfg(target_arch = "wasm32")]
-mod async_trait_adapt {
-    pub use async_trait::async_trait;
-    pub use async_trait::async_trait as async_trait_send;
-}
 
 /// Semantic feature store for similarity search.
 #[cfg(not(target_arch = "wasm32"))]
@@ -52,7 +37,9 @@ pub trait SemanticStore: Debug + Send + Sync {
     async fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String>;
     async fn remove(&mut self, id: u32) -> Result<(), String>;
     fn len(&self) -> usize;
-    fn is_empty(&self) -> bool { self.len() == 0 }
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -62,7 +49,9 @@ pub trait SemanticStore: Debug {
     async fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String>;
     async fn remove(&mut self, id: u32) -> Result<(), String>;
     fn len(&self) -> usize;
-    fn is_empty(&self) -> bool { self.len() == 0 }
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 /// Convenience type alias for storing SemanticStore in containers.

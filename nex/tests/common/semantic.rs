@@ -65,7 +65,11 @@ impl SemanticStore for MockSemanticStore {
             .map(|(&id, vec)| {
                 let dot: f32 = vec.iter().zip(query_vec.iter()).map(|(a, b)| a * b).sum();
                 let norm: f32 = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
-                let score = if norm > 0.0 { dot / (norm * norm_q) } else { 0.0 };
+                let score = if norm > 0.0 {
+                    dot / (norm * norm_q)
+                } else {
+                    0.0
+                };
                 (id, score)
             })
             .collect();

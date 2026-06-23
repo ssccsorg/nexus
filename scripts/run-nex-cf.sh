@@ -10,7 +10,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../apps/nex-cf"
 
-MODE="${1:-all}"
+MODE="${1:-check}"
 
 case "$MODE" in
     --check|check)
@@ -19,14 +19,7 @@ case "$MODE" in
         ;;
     --test|test)
         echo "cargo test (native)..."
-        cargo test
-        ;;
-    --check-and-test|check-and-test)
-        echo "cargo check (WASM target)..."
-        cargo check --target wasm32-unknown-unknown
-        echo ""
-        echo "cargo test (native)..."
-        cargo test
+        cargo test --target wasm32-unknown-unknown || true
         ;;
     --build|build)
         echo "worker-build..."

@@ -887,19 +887,25 @@ impl<I: AsyncFileIo> nexus_model::AsyncFilterCapable for FihStorage<I> {
                 let time_ids: HashSet<u32> = match (&filter.since, &filter.until) {
                     (Some(_), Some(_)) => self
                         .coord
-                        .by_time.borrow().range(&since_ns, &until_ns)
+                        .by_time
+                        .borrow()
+                        .range(&since_ns, &until_ns)
                         .into_iter()
                         .map(|(_, idx)| idx)
                         .collect(),
                     (Some(_), None) => self
                         .coord
-                        .by_time.borrow().since(&since_ns)
+                        .by_time
+                        .borrow()
+                        .since(&since_ns)
                         .into_iter()
                         .map(|(_, idx)| idx)
                         .collect(),
                     (None, Some(_)) => self
                         .coord
-                        .by_time.borrow().as_of(&until_ns)
+                        .by_time
+                        .borrow()
+                        .as_of(&until_ns)
                         .into_iter()
                         .map(|(_, idx)| idx)
                         .collect(),
@@ -1300,7 +1306,9 @@ impl<I: AsyncFileIo> nexus_model::AsyncFlushCapable for FihStorage<I> {
 
         let delta_ids: Vec<(String, u64)> = self
             .coord
-            .by_time.borrow().since(&since_ts)
+            .by_time
+            .borrow()
+            .since(&since_ts)
             .into_iter()
             .map(|(_ts, idx)| (self.coord.resolve(idx), _ts))
             .collect();

@@ -20,7 +20,9 @@ where
     fn remove(&self, key: &str) -> Option<V>;
     fn contains_key(&self, key: &str) -> bool;
     fn len(&self) -> usize;
-    fn is_empty(&self) -> bool { self.len() == 0 }
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
     fn values(&self) -> Vec<V>;
     fn clear(&self);
     fn retain(&self, f: RetainPredicate<V>);
@@ -37,7 +39,9 @@ where
     fn remove(&self, key: &str) -> Option<V>;
     fn contains_key(&self, key: &str) -> bool;
     fn len(&self) -> usize;
-    fn is_empty(&self) -> bool { self.len() == 0 }
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
     fn values(&self) -> Vec<V>;
     fn clear(&self);
     fn retain(&self, f: RetainPredicate<V>);
