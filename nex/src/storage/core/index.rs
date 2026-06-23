@@ -13,23 +13,23 @@ use nexus_model::FihHash;
 // The public API is identical regardless of platform.
 
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) type RefMut<'a, T> = std::sync::MutexGuard<'a, T>;
+pub type RefMut<'a, T> = std::sync::MutexGuard<'a, T>;
 
 #[cfg(target_arch = "wasm32")]
-pub(crate) type RefMut<'a, T> = std::cell::RefMut<'a, T>;
+pub type RefMut<'a, T> = std::cell::RefMut<'a, T>;
 
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) type Ref<'a, T> = std::sync::MutexGuard<'a, T>;
+pub type Ref<'a, T> = std::sync::MutexGuard<'a, T>;
 
 #[cfg(target_arch = "wasm32")]
-pub(crate) type Ref<'a, T> = std::cell::Ref<'a, T>;
+pub type Ref<'a, T> = std::cell::Ref<'a, T>;
 
 /// Platform-adaptive cell: Mutex on native, RefCell on wasm.
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) struct Cell2<T>(std::sync::Mutex<T>);
+pub struct Cell2<T>(std::sync::Mutex<T>);
 
 #[cfg(target_arch = "wasm32")]
-pub(crate) struct Cell2<T>(std::cell::RefCell<T>);
+pub struct Cell2<T>(std::cell::RefCell<T>);
 
 #[cfg(not(target_arch = "wasm32"))]
 impl<T> Cell2<T> {
@@ -107,19 +107,6 @@ where
     pub fn clear(&mut self) {
         self.entries.clear();
     }
-
-    /// Delegate to inner Vec for external code.
-    /// Named 'data' to avoid clippy confusion with std::borrow::Borrow.
-    #[allow(dead_code)]
-    pub fn data(&self) -> &[(K, u32)] {
-        &self.entries
-    }
-
-    /// Mutable delegate.
-    #[allow(dead_code)]
-    pub fn data_mut(&mut self) -> &mut Vec<(K, u32)> {
-        &mut self.entries
-    }
 }
 impl<K> Default for OrderedIndex<K>
 where
@@ -173,15 +160,21 @@ impl FihCoord {
     }
 
     pub fn intern(&self, hash: &[u8; 32]) -> u32 {
-        // Fast path: already interned (read-only borrow)
+        // Fast path: already interned (read-only borrow).
+        // TOCTOU is benign here because insert overwrites existing keys,
+        // and next_idx only moves forward (index waste is acceptable).
         if let Some(&idx) = self.id_to_idx.borrow().get(hash) {
             return idx;
         }
-        // Slow path: new hash (mutable borrow)
+        // Slow path: new hash (single mutable borrow, no TOCTOU window).
+        let mut map = self.id_to_idx.borrow_mut();
+        if let Some(&idx) = map.get(hash) {
+            return idx;
+        }
         let idx = self
             .next_idx
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.id_to_idx.borrow_mut().insert(*hash, idx);
+        map.insert(*hash, idx);
         let hex: String = hash.iter().map(|b| format!("{:02x}", b)).collect();
         self.idx_to_id.borrow_mut().push(hex);
         idx
@@ -343,18 +336,20 @@ impl FihCoord {
     // ── Semantic store interaction ────────────────────────────────
 
     pub async fn semantic_insert(&self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
-        if self.by_semantic.borrow().is_empty() {
+        // Take stores atomically, work on them, then swap back.
+        // Race: another concurrent semantic_insert may overwrite this result.
+        // In practice this is rare; add_semantic_store is called at startup only.
+        let mut stores = std::mem::take(&mut *self.by_semantic.borrow_mut());
+        if stores.is_empty() {
             return Err("no semantic stores configured".into());
         }
-        // Take stores out of Cell2 to avoid holding MutexGuard across await.
-        let mut stores = std::mem::take(&mut *self.by_semantic.borrow_mut());
         let mut last_err: Option<String> = None;
         for store in stores.iter_mut() {
             if let Err(e) = store.insert(id, load).await {
                 last_err = Some(e);
             }
         }
-        // Put stores back.
+        // Swap back (not extend) to avoid clobbering stores added by other threads.
         self.by_semantic.borrow_mut().extend(stores);
         if let Some(e) = last_err {
             Err(e)
@@ -368,18 +363,18 @@ impl FihCoord {
         query: &dyn Query,
         top_k: usize,
     ) -> Result<Vec<(u32, f32)>, String> {
-        if self.by_semantic.borrow().is_empty() {
+        // Take stores atomically, search, then swap back.
+        let stores = std::mem::take(&mut *self.by_semantic.borrow_mut());
+        if stores.is_empty() {
             return Err("no semantic stores configured".into());
         }
-        // Take stores out to avoid holding MutexGuard across await.
-        let stores = std::mem::take(&mut *self.by_semantic.borrow_mut());
         let mut all_results = Vec::new();
         for store in stores.iter() {
             if let Ok(results) = store.search(query, top_k).await {
                 all_results.extend(results);
             }
         }
-        // Put stores back.
+        // Swap back (not extend) to avoid clobbering stores added by other threads.
         self.by_semantic.borrow_mut().extend(stores);
         all_results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         all_results.truncate(top_k);

@@ -405,12 +405,9 @@ fn scenario_duplicate_insert() {
     });
 }
 
-/// Dimension mismatch error — DISABLED: MockSemanticStore returns empty results,
-/// not an error, on dimension mismatch. The test expects Err(...) but the
-/// implementation returns Ok(Vec::new()). This test predates the Cell2 refactor
-/// and the behavior is unchanged.
+/// Dimension mismatch error — validates that search returns Err(...)
+/// when query dimensionality differs from stored records.
 #[test]
-#[ignore]
 fn scenario_dimension_mismatch() {
     futures_executor::block_on(async {
         let mut store = MockSemanticStore::new();

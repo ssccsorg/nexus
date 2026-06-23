@@ -48,34 +48,33 @@ impl SemanticStore for MockSemanticStore {
         let query_vec = query
             .features()
             .ok_or_else(|| "no query features".to_string())?;
-        if query_vec.len() != self.vectors.first().map(|v| v.len()).unwrap_or(0) {
-            return Ok(Vec::new());
+        if query_vec.len()
+            != self
+                .vectors
+                .first()
+                .map(|v| v.len())
+                .unwrap_or(query_vec.len())
+        {
+            return Err("dimension mismatch".into());
         }
         if self.ids.is_empty() {
             return Ok(Vec::new());
         }
-        let norm_q: f32 = query_vec.iter().map(|x| x * x).sum::<f32>().sqrt();
-        if norm_q == 0.0 {
-            return Ok(Vec::new());
-        }
-        let mut results: Vec<(u32, f32)> = self
+        let mut scores: Vec<(u32, f32)> = self
             .ids
             .iter()
             .zip(self.vectors.iter())
             .map(|(&id, vec)| {
-                let dot: f32 = vec.iter().zip(query_vec.iter()).map(|(a, b)| a * b).sum();
-                let norm: f32 = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
-                let score = if norm > 0.0 {
-                    dot / (norm * norm_q)
-                } else {
-                    0.0
-                };
-                (id, score)
+                let dot: f32 = query_vec.iter().zip(vec.iter()).map(|(a, b)| a * b).sum();
+                let norm_q: f32 = query_vec.iter().map(|x| x * x).sum::<f32>().sqrt();
+                let norm_v: f32 = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
+                let similarity = dot / (norm_q * norm_v).max(f32::EPSILON);
+                (id, similarity)
             })
             .collect();
-        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-        results.truncate(top_k);
-        Ok(results)
+        scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scores.truncate(top_k);
+        Ok(scores)
     }
 
     async fn remove(&mut self, id: u32) -> Result<(), String> {
