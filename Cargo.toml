@@ -15,6 +15,7 @@ members = [
     "storage/composite",
     "storage/petgraph",
     "apps/nex-zed",
+    "apps/nex-wasmer-ssccsdocs",
 ]
 
 [workspace.package]

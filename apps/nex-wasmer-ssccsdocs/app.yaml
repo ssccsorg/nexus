@@ -1,0 +1,20 @@
+kind: wasmer.io/App.v0
+name: nex-wasmer-ssccsdocs
+owner: blackgene
+package: .
+
+env:
+  DATA_DIR: /data/fih
+  DOCS_DIR: /data/docs
+  PROJECT: wasmer-ssccsdocs
+
+volumes:
+  - name: fih-data
+    mount: /data/fih
+  - name: docs-data
+    mount: /data/docs
+
+capabilities:
+  instaboot:
+    requests:
+      - path: /

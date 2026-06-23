@@ -1868,6 +1868,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexus-gateway-wasmer-ssccsdocs"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "futures-executor",
+ "nex",
+ "nexus-model",
+ "postcard",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "walkdir",
+]
+
+[[package]]
 name = "nexus-model"
 version = "0.1.0"
 dependencies = [
