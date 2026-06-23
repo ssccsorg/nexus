@@ -1885,7 +1885,6 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
- "futures-executor",
  "nex",
  "nexus-model",
  "postcard",

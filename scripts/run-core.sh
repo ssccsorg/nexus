@@ -32,7 +32,7 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
-run_check()  { cargo check -p nex && cargo check -p nexus-storage-duckdb; }
+run_check()  { cargo check -p nex && cargo check -p nexus-storage-duckdb && cargo check -p nexus-gateway-wasmer-ssccsdocs; }
 
 # ── WASM check: ensure storage-sim builds for wasm32 target ────────────
 

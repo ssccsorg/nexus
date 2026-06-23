@@ -2,7 +2,7 @@
 //
 // FIH Blackboard + document ingestion + semantic search, deployed on Wasmer Edge.
 // Uses `WasmerIo` (std::fs via WASIX) as the IO backend instead of Cloudflare R2.
-// All CF Workers-specific code (R2, DO, Queue, Vectorize) is removed.
+// No Workers-specific dependencies (R2, DO, Queue, Vectorize).
 //
 // Architecture:
 //   FihStorage<BatchIo<WasmerIo>>  ←  in-memory + filesystem persistence
@@ -26,6 +26,7 @@ mod wasmer_io;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use crate::batch_io::BatchIo;
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
@@ -43,7 +44,6 @@ use serde::Deserialize;
 use tower_http::cors::CorsLayer;
 use tracing_subscriber::EnvFilter;
 
-use crate::batch_io::BatchIo;
 use crate::bm25::InMemoryBm25;
 use crate::wasmer_io::WasmerIo;
 
