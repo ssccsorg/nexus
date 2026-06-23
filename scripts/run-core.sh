@@ -63,8 +63,8 @@ run_wasm_check() {
 # ── Pre-flight auto-fixes: catch trivial issues before strict checks ────
 
 run_fmt()          { cargo fmt --all; }
-run_clippy_fix()   { cargo clippy --fix --allow-dirty --workspace 2>&1 || true; }
-run_compiler_fix() { cargo fix --allow-dirty --workspace 2>&1 || true; }
+run_clippy_fix()   { cargo clippy --fix --allow-dirty -p nex 2>&1 || true; }
+run_compiler_fix() { cargo fix --allow-dirty -p nex 2>&1 || true; }
 run_auto_fix()     { run_fmt && run_clippy_fix && run_compiler_fix && run_fmt; }
 
 # ── Strict checks: must pass — no warnings tolerated ────────────────────
