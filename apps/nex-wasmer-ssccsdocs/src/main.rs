@@ -19,13 +19,13 @@
 //   cargo build --release --target wasm32-wasix
 //   wasmer deploy
 //
-// Design note: FihStorage uses RefCell internally, making it !Send and !Sync.
-// We use Arc<std::sync::Mutex<FihStorage>> as axum state. All async FihStorage
-// calls are wrapped via futures-executor::block_on inside the Mutex lock.
-// This is acceptable because the filesystem IO (WasmerIo) is sub-millisecond,
-// so blocking the tokio thread for each call has negligible impact.
-// The tokio runtime runs on a single thread (current_thread), so there is
-// no thread-pool starvation.
+// Thread safety: FihStorage uses RefCell internally (!Send, !Sync). On WASIX
+// (single-threaded per instance), we wrap it in SendSyncStorage with unsafe
+// Send+Sync impls and access through Arc<std::sync::Mutex>. All async
+// FihStorage calls are wrapped with futures_executor::block_on while holding
+// the Mutex lock. This is acceptable because WasmerIo (std::fs on WASIX) is
+// non-blocking OS IO at the wasm boundary — the block_on is effectively
+// polling a synchronous operation on a single-threaded runtime.
 
 mod batch_io;
 mod bm25;
@@ -73,37 +73,38 @@ impl SemanticQuery for TextQuery {
     }
 }
 
-// ── Storage wrapper (block_on inside Mutex) ─────────────────────────
+// ── Thread-safe storage wrapper ──────────────────────────────────
 
-/// Thread-safe storage wrapper. Calls async FihStorage methods via block_on
-/// inside a Mutex lock.
-///
-/// SAFETY: FihStorage uses RefCell internally, making it !Send. We wrap it
-/// in a Mutex and always access it through Arc<Mutex<Storage>>. The inner
-/// RefCell is never accessed concurrently because the Mutex provides exclusive
-/// access. The block_on calls are safe because filesystem IO is instant and
-/// the tokio runtime never parks while holding the Mutex lock.
-struct Storage {
-    inner: FihStorage<BatchIo<WasmerIo>>,
+// SAFETY: FihStorage uses RefCell internally (!Send, !Sync). WASIX runs
+// single-threaded per instance. All access is serialized through
+// Arc<std::sync::Mutex<SendSyncStorage>>. Async methods are called via
+// block_on while the Mutex is held. The RefCell is never concurrently
+// accessed, making this sound despite the unsafe impl.
+struct SendSyncStorage(FihStorage<BatchIo<WasmerIo>>);
+unsafe impl Send for SendSyncStorage {}
+unsafe impl Sync for SendSyncStorage {}
+
+impl std::ops::Deref for SendSyncStorage {
+    type Target = FihStorage<BatchIo<WasmerIo>>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
-unsafe impl Send for Storage {}
-unsafe impl Sync for Storage {}
-
-impl Storage {
-    fn new(inner: FihStorage<BatchIo<WasmerIo>>) -> Self {
-        Self { inner }
+impl std::ops::DerefMut for SendSyncStorage {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 
 // ── Build storage ────────────────────────────────────────────────────
 
-fn build_storage(data_dir: &str, project_id: &str) -> Storage {
+fn build_storage(data_dir: &str, project_id: &str) -> SendSyncStorage {
     let fs_io = WasmerIo::new(data_dir).expect("create WasmerIo");
     let io = BatchIo::new(fs_io);
     let s = FihStorage::new(io, project_id);
     s.register_semantic_store(Box::new(InMemoryBm25::new()));
-    Storage::new(s)
+    SendSyncStorage(s)
 }
 
 // ── Snapshot ─────────────────────────────────────────────────────────
@@ -120,11 +121,7 @@ fn write_snapshot(s: &FihStorage<BatchIo<WasmerIo>>) -> Result<(), String> {
         intents,
     };
     let bytes = postcard::to_allocvec(&entry).map_err(|e| format!("snapshot serialize: {e}"))?;
-    // Write through IO directly (bypasses BatchIo pending buffer).
-    // Use block_on for the inner WasmerIo write.
-    block_on(s.io.write("_snapshot/facts.bin", &bytes))?;
-    // Flush BatchIo eagerly so the snapshot is immediately durable.
-    block_on(s.io.flush())
+    block_on(s.io.write("_snapshot/facts.bin", &bytes))
 }
 
 fn restore_from_snapshot(s: &FihStorage<BatchIo<WasmerIo>>) -> Result<bool, String> {
@@ -171,10 +168,12 @@ fn ingest_document(s: &FihStorage<BatchIo<WasmerIo>>, text: &str, origin: &str) 
             .map_err(|e| format!("submit para {i}: {e:?}"))?;
         last_id = para_id;
     }
-    block_on(s.flush_pending()).map_err(|e| format!("flush: {e}"))?;
+    // Write snapshot while other pending writes are still buffered.
+    // A single flush_pending will write both facts and snapshot atomically.
     if let Err(e) = write_snapshot(s) {
         tracing::warn!("snapshot write failed: {e}");
     }
+    block_on(s.flush_pending()).map_err(|e| format!("flush: {e}"))?;
     Ok(last_id)
 }
 
@@ -309,9 +308,15 @@ fn uuid_v4() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
-// ── Route handlers ───────────────────────────────────────────────────
+// ── Shared state ─────────────────────────────────────────────────────
 
-type AppState = Arc<Mutex<Storage>>;
+type AppState = Arc<Mutex<SendSyncStorage>>;
+
+fn storage(state: &AppState) -> impl std::ops::Deref<Target = SendSyncStorage> + '_ {
+    state.lock().unwrap()
+}
+
+// ── Route handlers ───────────────────────────────────────────────────
 
 async fn handle_root() -> &'static str {
     "nexus-wasmer-ssccsdocs"
@@ -321,15 +326,11 @@ async fn handle_version() -> &'static str {
     "1"
 }
 
-fn storage_lock(state: &AppState) -> impl std::ops::Deref<Target = Storage> + '_ {
-    state.lock().unwrap()
-}
-
 async fn handle_debug_stores(State(state): State<AppState>) -> Json<serde_json::Value> {
-    let s = storage_lock(&state);
+    let s = storage(&state);
     Json(serde_json::json!({
-        "stores": s.inner.semantic_stores().len(),
-        "fact_store": s.inner.fact_store.len(),
+        "stores": s.semantic_stores().len(),
+        "fact_store": s.fact_store.len(),
         "service": "nexus-wasmer-ssccsdocs"
     }))
 }
@@ -338,12 +339,9 @@ async fn handle_ingest(
     State(state): State<AppState>,
     Json(params): Json<IngestParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
+    let s = storage(&state);
     let origin = params.origin.unwrap_or_else(|| "ingest".into());
-    let result = {
-        let s = storage_lock(&state);
-        ingest_document(&s.inner, &params.text, &origin)
-    };
-    match result {
+    match ingest_document(&s.0, &params.text, &origin) {
         Ok(id) => Ok(Json(serde_json::json!({"status": "ingested", "id": id}))),
         Err(e) => Err(err_response(StatusCode::INTERNAL_SERVER_ERROR, "ingest_error", e)),
     }
@@ -353,24 +351,23 @@ async fn handle_search(
     State(state): State<AppState>,
     Query(params): Query<SearchParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
-    let query = TextQuery { text: params.q.clone() };
-    let top_k = params.top_k.unwrap_or(10);
-    let results = {
-        let s = storage_lock(&state);
-        block_on(s.inner.semantic_search(&query, top_k))
+    let s = storage(&state);
+    let query = TextQuery {
+        text: params.q.clone(),
     };
-    match results {
+    let top_k = params.top_k.unwrap_or(10);
+    match block_on(s.0.semantic_search(&query, top_k)) {
         Ok(results) => {
-            let items: Vec<serde_json::Value> = {
-                let s = storage_lock(&state);
-                results.iter().map(|(idx, score)| {
+            let items: Vec<serde_json::Value> = results
+                .iter()
+                .map(|(idx, score)| {
                     serde_json::json!({
                         "index": idx,
                         "score": score,
-                        "id": s.inner.resolve_semantic_idx(*idx)
+                        "id": s.0.resolve_semantic_idx(*idx)
                     })
-                }).collect()
-            };
+                })
+                .collect();
             Ok(Json(serde_json::json!({"results": items})))
         }
         Err(e) => Err(err_response(StatusCode::INTERNAL_SERVER_ERROR, "search_error", e)),
@@ -393,25 +390,21 @@ async fn handle_ingest_all(
             }));
         }
     };
-    let (total, errors) = {
-        let s = storage_lock(&state);
-        ingest_all_from_io(&s.inner, &docs_io, &prefix, max)
-    };
+    let s = storage(&state);
+    let (total, errors) = ingest_all_from_io(&s.0, &docs_io, &prefix, max);
     Json(serde_json::json!({"ingested": total, "errors": errors}))
 }
 
 async fn handle_state(State(state): State<AppState>) -> Json<nexus_model::BoardState> {
-    let board_state = {
-        let s = storage_lock(&state);
-        block_on(s.inner.read_state())
-    };
-    Json(board_state)
+    let s = storage(&state);
+    Json(block_on(s.0.read_state()))
 }
 
 async fn handle_fact(
     State(state): State<AppState>,
     Json(params): Json<FactParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
+    let s = storage(&state);
     let id = params.id.unwrap_or_else(|| format!("fact_{}", uuid_v4()));
     let fact = Fact {
         id: FihHash::from_hex(&id),
@@ -422,14 +415,10 @@ async fn handle_fact(
         },
         creator: params.creator,
     };
-    let hash = {
-        let s = storage_lock(&state);
-        let h = block_on(s.inner.submit_fact(&fact))
-            .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "fact_error", format!("{e:?}")))?;
-        block_on(s.inner.flush_pending())
-            .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "flush_error", e))?;
-        h
-    };
+    let hash = block_on(s.0.submit_fact(&fact))
+        .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "fact_error", format!("{e:?}")))?;
+    block_on(s.0.flush_pending())
+        .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "flush_error", e))?;
     Ok(Json(serde_json::json!({"id": hash.to_string()})))
 }
 
@@ -437,27 +426,39 @@ async fn handle_intent(
     State(state): State<AppState>,
     Json(params): Json<IntentParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
+    let s = storage(&state);
     let id = params.id.unwrap_or_else(|| format!("intent_{}", uuid_v4()));
-    let from_facts: Vec<FihHash> = params.from.as_deref().unwrap_or("").split(',')
-        .filter(|s| !s.is_empty()).map(FihHash::from_hex).collect();
+    let from_facts: Vec<FihHash> = params
+        .from
+        .as_deref()
+        .unwrap_or("")
+        .split(',')
+        .filter(|s| !s.is_empty())
+        .map(FihHash::from_hex)
+        .collect();
     if from_facts.is_empty() {
-        return Err(err_response(StatusCode::BAD_REQUEST, "validation_error",
-            "intent must be grounded in at least one fact".into()));
+        return Err(err_response(
+            StatusCode::BAD_REQUEST,
+            "validation_error",
+            "intent must be grounded in at least one fact".into(),
+        ));
     }
     let intent = Intent {
-        id: FihHash::from_hex(&id), from_facts, description: params.desc,
-        creator: params.creator, worker: None, to_fact_id: None,
-        last_heartbeat_at: None, created_at: None,
-        is_concluded: false, concluded_at: None,
+        id: FihHash::from_hex(&id),
+        from_facts,
+        description: params.desc,
+        creator: params.creator,
+        worker: None,
+        to_fact_id: None,
+        last_heartbeat_at: None,
+        created_at: None,
+        is_concluded: false,
+        concluded_at: None,
     };
-    let hash = {
-        let s = storage_lock(&state);
-        let h = block_on(s.inner.submit_intent(&intent))
-            .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "intent_error", format!("{e:?}")))?;
-        block_on(s.inner.flush_pending())
-            .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "flush_error", e))?;
-        h
-    };
+    let hash = block_on(s.0.submit_intent(&intent))
+        .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "intent_error", format!("{e:?}")))?;
+    block_on(s.0.flush_pending())
+        .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "flush_error", e))?;
     Ok(Json(serde_json::json!({"id": hash.to_string()})))
 }
 
@@ -466,15 +467,16 @@ async fn handle_claim(
     Path(intent_id): Path<String>,
     Json(params): Json<ClaimParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
-    let result = {
-        let s = storage_lock(&state);
-        block_on(s.inner.claim_intent(&intent_id, &params.agent))
-    };
-    result.map_err(|e| {
+    let s = storage(&state);
+    block_on(s.0.claim_intent(&intent_id, &params.agent)).map_err(|e| {
         let msg = format!("{e:?}");
-        let code = if msg.contains("Conflict") { StatusCode::CONFLICT }
-            else if msg.contains("not found") { StatusCode::NOT_FOUND }
-            else { StatusCode::INTERNAL_SERVER_ERROR };
+        let code = if msg.contains("Conflict") {
+            StatusCode::CONFLICT
+        } else if msg.contains("not found") {
+            StatusCode::NOT_FOUND
+        } else {
+            StatusCode::INTERNAL_SERVER_ERROR
+        };
         err_response(code, "claim_error", msg)
     })?;
     Ok(Json(serde_json::json!({"status": "claimed"})))
@@ -485,11 +487,9 @@ async fn handle_heartbeat(
     Path(intent_id): Path<String>,
     Json(params): Json<ClaimParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
-    let result = {
-        let s = storage_lock(&state);
-        block_on(s.inner.heartbeat(&intent_id, &params.agent))
-    };
-    result.map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "heartbeat_error", format!("{e:?}")))?;
+    let s = storage(&state);
+    block_on(s.0.heartbeat(&intent_id, &params.agent))
+        .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "heartbeat_error", format!("{e:?}")))?;
     Ok(Json(serde_json::json!({"status": "ok"})))
 }
 
@@ -498,11 +498,9 @@ async fn handle_release(
     Path(intent_id): Path<String>,
     Json(params): Json<ClaimParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
-    let result = {
-        let s = storage_lock(&state);
-        block_on(s.inner.release_intent(&intent_id, &params.agent))
-    };
-    result.map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "release_error", format!("{e:?}")))?;
+    let s = storage(&state);
+    block_on(s.0.release_intent(&intent_id, &params.agent))
+        .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "release_error", format!("{e:?}")))?;
     Ok(Json(serde_json::json!({"status": "released"})))
 }
 
@@ -511,11 +509,9 @@ async fn handle_conclude(
     Path(intent_id): Path<String>,
     Json(params): Json<ConcludeParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
-    let fact = {
-        let s = storage_lock(&state);
-        block_on(s.inner.conclude_intent(&intent_id, &params.result))
-    };
-    let fact = fact.map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "conclude_error", format!("{e:?}")))?;
+    let s = storage(&state);
+    let fact = block_on(s.0.conclude_intent(&intent_id, &params.result))
+        .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "conclude_error", format!("{e:?}")))?;
     Ok(Json(serde_json::json!({"status": "concluded", "fact_id": fact.id.to_string()})))
 }
 
@@ -523,32 +519,35 @@ async fn handle_hint(
     State(state): State<AppState>,
     Json(params): Json<HintParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
+    let s = storage(&state);
     let id = params.id.unwrap_or_else(|| format!("hint_{}", uuid_v4()));
-    let hint = Hint { id: FihHash::from_hex(&id), content: params.content, creator: params.creator };
-    let result = {
-        let s = storage_lock(&state);
-        block_on(s.inner.submit_hint(&hint))
+    let hint = Hint {
+        id: FihHash::from_hex(&id),
+        content: params.content,
+        creator: params.creator,
     };
-    result.map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "hint_error", format!("{e:?}")))?;
+    block_on(s.0.submit_hint(&hint))
+        .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "hint_error", format!("{e:?}")))?;
     Ok(Json(serde_json::json!({"status": "ok"})))
 }
 
-async fn handle_flush(State(state): State<AppState>) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
-    let result = {
-        let s = storage_lock(&state);
-        block_on(s.inner.flush_pending())
-    };
-    result.map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "flush_error", e))?;
+async fn handle_flush(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
+    let s = storage(&state);
+    block_on(s.0.flush_pending())
+        .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "flush_error", e))?;
     Ok(Json(serde_json::json!({"status": "ok"})))
 }
 
-async fn handle_rebuild(State(state): State<AppState>) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
-    let result = {
-        let s = storage_lock(&state);
-        let r1 = block_on(s.inner.rebuild_cache());
-        r1.and_then(|_| block_on(s.inner.rebuild_semantic()))
-    };
-    result.map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "rebuild_error", e))?;
+async fn handle_rebuild(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
+    let s = storage(&state);
+    block_on(s.0.rebuild_cache())
+        .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "rebuild_error", e))?;
+    block_on(s.0.rebuild_semantic())
+        .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "rebuild_semantic_error", e))?;
     Ok(Json(serde_json::json!({"status": "ok"})))
 }
 
@@ -598,8 +597,8 @@ async fn main() {
 
     let storage = build_storage(&data_dir, &project);
 
-    match restore_from_snapshot(&storage.inner) {
-        Ok(true) => tracing::info!("restored from snapshot ({} facts)", storage.inner.fact_store.len()),
+    match restore_from_snapshot(&storage.0) {
+        Ok(true) => tracing::info!("restored from snapshot ({} facts)", storage.fact_store.len()),
         Ok(false) => tracing::info!("no snapshot found, starting fresh"),
         Err(e) => tracing::warn!("snapshot restore failed (proceeding empty): {e}"),
     }
