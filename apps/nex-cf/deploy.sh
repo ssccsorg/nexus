@@ -27,7 +27,7 @@ case "$MODE" in
         worker-build --release
         echo ""
         echo "=== wrangler deploy (preview) ==="
-        wrangler deploy --env preview
+        npx wrangler deploy --env preview
         echo ""
         echo "Deployed to preview.cf.nexgate.ssccs.org"
         ;;
@@ -37,7 +37,7 @@ case "$MODE" in
         worker-build --release
         echo ""
         echo "=== wrangler deploy (production) ==="
-        wrangler deploy
+        npx wrangler deploy
         echo ""
         echo "Deployed to cf.nexgate.ssccs.org"
         ;;
