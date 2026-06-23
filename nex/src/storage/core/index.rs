@@ -222,6 +222,11 @@ impl FihCoord {
         self.by_semantic.borrow_mut().clear();
     }
 
+    /// Add a semantic store. Used by tests and external setup.
+    pub fn add_semantic_store(&self, store: DynSemanticStore) {
+        self.by_semantic.borrow_mut().push(store);
+    }
+
     // ── Index update ──────────────────────────────────────────────
 
     pub fn record_fact(&self, id: &[u8; 32], origin: &str, creator: &str, created_at: u64) {
