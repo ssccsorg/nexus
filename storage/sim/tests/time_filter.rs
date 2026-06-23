@@ -146,7 +146,7 @@ fn test_fact_ids_filter_independent_of_time() {
 use nexus_storage_sim::OrderedIndex;
 
 fn idx() -> OrderedIndex<u64> {
-    let idx = OrderedIndex::new();
+    let mut idx = OrderedIndex::new();
     idx.record(100, 1);
     idx.record(200, 2);
     idx.record(300, 3);
@@ -179,7 +179,7 @@ fn test_since() {
 
 #[test]
 fn test_range() {
-    let idx = idx();
+    let mut idx = idx();
     idx.record(400, 4);
 
     let mid = idx.range(&150, &350);
@@ -198,7 +198,7 @@ fn test_empty() {
 
 #[test]
 fn test_monotonic_preserved() {
-    let idx = OrderedIndex::new();
+    let mut idx = OrderedIndex::new();
     for i in 0..1000 {
         idx.record((i * 10) as u64, i);
     }

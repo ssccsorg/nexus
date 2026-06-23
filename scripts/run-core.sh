@@ -70,10 +70,21 @@ run_auto_fix()     { run_fmt && run_clippy_fix && run_compiler_fix && run_fmt; }
 # ── Strict checks: must pass — no warnings tolerated ────────────────────
 
 run_clippy() {
-    cargo clippy -p nex -- -D warnings -A clippy::await-holding-refcell-ref 2>&1
-    cargo clippy -p nexus-storage-composite -- -D warnings -A clippy::await-holding-refcell-ref 2>&1
-    cargo clippy -p nexus-storage-petgraph -- -D warnings -A clippy::await-holding-refcell-ref 2>&1
-    cargo clippy -p nexus-gateway-wasmer-ssccsdocs -- -D warnings -A clippy::await-holding-refcell-ref 2>&1
+    # Core crates that must pass clippy on native.
+    # (!) nex-cf is wasm only — clippy on native is not applicable.
+    for pkg in \
+        nex \
+        nexus-storage-composite \
+        nexus-storage-petgraph \
+        nexus-gateway-wasmer-ssccsdocs \
+        nexus-gateway-api \
+        nexus-model \
+        interface-query \
+        interface-cypher \
+        nexus-gateway-serde-proxy
+    do
+        cargo clippy -p "$pkg" -- -D warnings -A clippy::await-holding-refcell-ref
+    done
 }
 run_test()   {
     cargo test -p nex -- --nocapture 2>&1

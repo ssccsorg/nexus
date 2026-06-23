@@ -107,6 +107,19 @@ where
     pub fn clear(&mut self) {
         self.entries.clear();
     }
+
+    /// Delegate to inner Vec for external code.
+    /// Named 'data' to avoid clippy confusion with std::borrow::Borrow.
+    #[allow(dead_code)]
+    pub fn data(&self) -> &[(K, u32)] {
+        &self.entries
+    }
+
+    /// Mutable delegate.
+    #[allow(dead_code)]
+    pub fn data_mut(&mut self) -> &mut Vec<(K, u32)> {
+        &mut self.entries
+    }
 }
 impl<K> Default for OrderedIndex<K>
 where
