@@ -36,8 +36,8 @@ use nex::io::AsyncFileIo;
 use nex::storage::core::FihStorage;
 use nex::storage::semantic::Query as SemanticQuery;
 use nexus_model::{
-    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, Content, Fact, FihHash,
-    Hint, Intent,
+    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, Content, Fact,
+    FihHash, Hint, Intent,
 };
 use serde::Deserialize;
 use tower_http::cors::CorsLayer;
@@ -77,8 +77,8 @@ fn build_storage(data_dir: &str, project_id: &str) -> FihStorage<BatchIo<WasmerI
 // ── Snapshot ─────────────────────────────────────────────────────────
 
 async fn write_snapshot<I: AsyncFileIo>(s: &FihStorage<I>) -> Result<(), String> {
-    use nex::storage::core::record::{FactRecord, IntentRecord};
     use nex::storage::core::ChainEntry;
+    use nex::storage::core::record::{FactRecord, IntentRecord};
     let facts: Vec<FactRecord> = s.fact_store.values();
     let intents: Vec<IntentRecord> = s.intent_store.values();
     let entry = ChainEntry {
@@ -102,8 +102,13 @@ async fn restore_from_snapshot<I: AsyncFileIo>(s: &FihStorage<I>) -> Result<bool
         postcard::from_bytes(&bytes).map_err(|e| format!("snapshot deserialize: {e}"))?;
     s.fact_store
         .replace_from(entry.facts.into_iter().map(|r| (r.id.clone(), r)).collect());
-    s.intent_store
-        .replace_from(entry.intents.into_iter().map(|r| (r.id.clone(), r)).collect());
+    s.intent_store.replace_from(
+        entry
+            .intents
+            .into_iter()
+            .map(|r| (r.id.clone(), r))
+            .collect(),
+    );
     s.rebuild_coord();
     Ok(true)
 }
@@ -271,7 +276,13 @@ struct ApiError {
 }
 
 fn err_response(code: StatusCode, error: &str, detail: String) -> (StatusCode, Json<ApiError>) {
-    (code, Json(ApiError { error: error.into(), detail }))
+    (
+        code,
+        Json(ApiError {
+            error: error.into(),
+            detail,
+        }),
+    )
 }
 
 fn uuid_v4() -> String {
@@ -305,7 +316,11 @@ async fn handle_ingest(
     let origin = params.origin.unwrap_or_else(|| "ingest".into());
     match ingest_document(&*state, &params.text, &origin).await {
         Ok(id) => Ok(Json(serde_json::json!({"status": "ingested", "id": id}))),
-        Err(e) => Err(err_response(StatusCode::INTERNAL_SERVER_ERROR, "ingest_error", e)),
+        Err(e) => Err(err_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "ingest_error",
+            e,
+        )),
     }
 }
 
@@ -331,7 +346,11 @@ async fn handle_search(
                 .collect();
             Ok(Json(serde_json::json!({"results": items})))
         }
-        Err(e) => Err(err_response(StatusCode::INTERNAL_SERVER_ERROR, "search_error", e)),
+        Err(e) => Err(err_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "search_error",
+            e,
+        )),
     }
 }
 
@@ -375,10 +394,13 @@ async fn handle_fact(
         },
         creator: params.creator,
     };
-    let hash = state
-        .submit_fact(&fact)
-        .await
-        .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "fact_error", format!("{e:?}")))?;
+    let hash = state.submit_fact(&fact).await.map_err(|e| {
+        err_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "fact_error",
+            format!("{e:?}"),
+        )
+    })?;
     state
         .flush_pending()
         .await
@@ -418,10 +440,13 @@ async fn handle_intent(
         is_concluded: false,
         concluded_at: None,
     };
-    let hash = state
-        .submit_intent(&intent)
-        .await
-        .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "intent_error", format!("{e:?}")))?;
+    let hash = state.submit_intent(&intent).await.map_err(|e| {
+        err_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "intent_error",
+            format!("{e:?}"),
+        )
+    })?;
     state
         .flush_pending()
         .await
@@ -434,17 +459,20 @@ async fn handle_claim(
     Path(intent_id): Path<String>,
     Json(params): Json<ClaimParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
-    state.claim_intent(&intent_id, &params.agent).await.map_err(|e| {
-        let msg = format!("{e:?}");
-        let code = if msg.contains("Conflict") {
-            StatusCode::CONFLICT
-        } else if msg.contains("not found") {
-            StatusCode::NOT_FOUND
-        } else {
-            StatusCode::INTERNAL_SERVER_ERROR
-        };
-        err_response(code, "claim_error", msg)
-    })?;
+    state
+        .claim_intent(&intent_id, &params.agent)
+        .await
+        .map_err(|e| {
+            let msg = format!("{e:?}");
+            let code = if msg.contains("Conflict") {
+                StatusCode::CONFLICT
+            } else if msg.contains("not found") {
+                StatusCode::NOT_FOUND
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            };
+            err_response(code, "claim_error", msg)
+        })?;
     Ok(Json(serde_json::json!({"status": "claimed"})))
 }
 
@@ -456,7 +484,13 @@ async fn handle_heartbeat(
     state
         .heartbeat(&intent_id, &params.agent)
         .await
-        .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "heartbeat_error", format!("{e:?}")))?;
+        .map_err(|e| {
+            err_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "heartbeat_error",
+                format!("{e:?}"),
+            )
+        })?;
     Ok(Json(serde_json::json!({"status": "ok"})))
 }
 
@@ -468,7 +502,13 @@ async fn handle_release(
     state
         .release_intent(&intent_id, &params.agent)
         .await
-        .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "release_error", format!("{e:?}")))?;
+        .map_err(|e| {
+            err_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "release_error",
+                format!("{e:?}"),
+            )
+        })?;
     Ok(Json(serde_json::json!({"status": "released"})))
 }
 
@@ -480,8 +520,16 @@ async fn handle_conclude(
     let fact = state
         .conclude_intent(&intent_id, &params.result)
         .await
-        .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "conclude_error", format!("{e:?}")))?;
-    Ok(Json(serde_json::json!({"status": "concluded", "fact_id": fact.id.to_string()})))
+        .map_err(|e| {
+            err_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "conclude_error",
+                format!("{e:?}"),
+            )
+        })?;
+    Ok(Json(
+        serde_json::json!({"status": "concluded", "fact_id": fact.id.to_string()}),
+    ))
 }
 
 async fn handle_hint(
@@ -494,10 +542,13 @@ async fn handle_hint(
         content: params.content,
         creator: params.creator,
     };
-    state
-        .submit_hint(&hint)
-        .await
-        .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "hint_error", format!("{e:?}")))?;
+    state.submit_hint(&hint).await.map_err(|e| {
+        err_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "hint_error",
+            format!("{e:?}"),
+        )
+    })?;
     Ok(Json(serde_json::json!({"status": "ok"})))
 }
 
@@ -519,10 +570,13 @@ async fn handle_rebuild(
         .rebuild_cache()
         .await
         .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "rebuild_error", e))?;
-    state
-        .rebuild_semantic()
-        .await
-        .map_err(|e| err_response(StatusCode::INTERNAL_SERVER_ERROR, "rebuild_semantic_error", e))?;
+    state.rebuild_semantic().await.map_err(|e| {
+        err_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "rebuild_semantic_error",
+            e,
+        )
+    })?;
     Ok(Json(serde_json::json!({"status": "ok"})))
 }
 
@@ -573,7 +627,10 @@ async fn main() {
     let storage = build_storage(&data_dir, &project);
 
     match restore_from_snapshot(&storage).await {
-        Ok(true) => tracing::info!("restored from snapshot ({} facts)", storage.fact_store.len()),
+        Ok(true) => tracing::info!(
+            "restored from snapshot ({} facts)",
+            storage.fact_store.len()
+        ),
         Ok(false) => tracing::info!("no snapshot found, starting fresh"),
         Err(e) => tracing::warn!("snapshot restore failed (proceeding empty): {e}"),
     }

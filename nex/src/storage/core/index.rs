@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::AtomicU32;
 
-use crate::storage::semantic::{DynSemanticStore, Query, RecordLoad, SemanticStore};
+use crate::storage::semantic::{DynSemanticStore, Query, RecordLoad};
 use nexus_model::FihHash;
 
 // ── Internal cell type ─────────────────────────────────────────────
@@ -165,7 +165,9 @@ impl FihCoord {
             return idx;
         }
         // Slow path: new hash (mutable borrow)
-        let idx = self.next_idx.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let idx = self
+            .next_idx
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.id_to_idx.borrow_mut().insert(*hash, idx);
         let hex: String = hash.iter().map(|b| format!("{:02x}", b)).collect();
         self.idx_to_id.borrow_mut().push(hex);
@@ -250,10 +252,7 @@ impl FihCoord {
             .entry(day)
             .or_default()
             .push(idx);
-        self.ref_counts
-            .borrow_mut()
-            .entry(idx)
-            .or_insert(0);
+        self.ref_counts.borrow_mut().entry(idx).or_insert(0);
     }
 
     pub fn record_intent(
@@ -343,7 +342,7 @@ impl FihCoord {
             }
         }
         // Put stores back.
-        self.by_semantic.borrow_mut().extend(stores.into_iter());
+        self.by_semantic.borrow_mut().extend(stores);
         if let Some(e) = last_err {
             Err(e)
         } else {
@@ -368,7 +367,7 @@ impl FihCoord {
             }
         }
         // Put stores back.
-        self.by_semantic.borrow_mut().extend(stores.into_iter());
+        self.by_semantic.borrow_mut().extend(stores);
         all_results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         all_results.truncate(top_k);
         Ok(all_results)

@@ -34,6 +34,8 @@ impl<I: AsyncFileIo> BatchIo<I> {
         self.inner.apply_batch(&batch).await
     }
 
+    /// Returns the number of pending writes (for diagnostics).
+    #[expect(dead_code)]
     pub fn pending_count(&self) -> usize {
         self.pending.lock().unwrap().len()
     }
@@ -48,7 +50,8 @@ impl<I: AsyncFileIo> AsyncFileIo for BatchIo<I> {
         let p = path.to_string();
         let d = data.to_vec();
         self.pending
-            .lock().unwrap()
+            .lock()
+            .unwrap()
             .push(WriteOp::Write { path: p, data: d });
         Box::pin(std::future::ready(Ok(())))
     }
@@ -76,7 +79,8 @@ impl<I: AsyncFileIo> AsyncFileIo for BatchIo<I> {
                     }
                     WriteOp::Delete { path } => {
                         this.pending
-                            .lock().unwrap()
+                            .lock()
+                            .unwrap()
                             .push(WriteOp::Delete { path: path.clone() });
                     }
                 }
