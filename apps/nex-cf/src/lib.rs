@@ -37,10 +37,12 @@ struct CfStores {
     test: FihStorage<CfFihIo>,
 }
 
-fn build_store(bucket: worker::Bucket, env: &worker::Env, project: &str) -> FihStorage<CfFihIo> {
+fn build_store(bucket: worker::Bucket, _env: &worker::Env, project: &str) -> FihStorage<CfFihIo> {
     let s = FihStorage::with_clock(CfFihIo::new(bucket), project, Box::new(CfClock));
     s.register_semantic_store(Box::new(crate::stores::bm25::InMemoryBm25::new()));
-    s.register_semantic_store(Box::new(CfVectorizeStore::new(env.clone())));
+    s.register_semantic_store(Box::new(CfVectorizeStore::with_embedder(Box::new(
+        crate::stores::vectorize::LocalTfidfEmbedder,
+    ))));
     s
 }
 
@@ -132,16 +134,31 @@ impl DurableObject for NexusCfDO {
         let s: &FihStorage<CfFihIo> = if is_test { &stores.test } else { &stores.prod };
 
         // Cold-start recovery: if fact_store is empty, rebuild from R2.
-        // This happens when the DO was just created or restarted.
-        if s.fact_store.is_empty() && path_stripped != "/ingest-one" && path_stripped != "/ingest" {
-            s.rebuild_cache().await.ok();
-            // rebuild_semantic is intentionally skipped here:
-            //   - submit_fact already indexed facts into semantic stores
-            //   - FihCoord::clear() preserves by_semantic across index rebuilds
-            //   - load_blob per fact during rebuild_semantic causes 1000+ R2 GETs
-            //     which exceeds the DO request timeout on cold start.
-            //   - New facts submitted after cold start will be auto-indexed.
+        // Reads a consolidated snapshot file (_snapshot/facts.bin) in a
+        // single R2 GET, avoiding the 30s DO timeout from N sequential
+        // gets. If no snapshot exists, this is a fresh store — proceed
+        // with empty caches; first ingest will create the snapshot.
+        if s.fact_store.is_empty()
+            && path_stripped != "/ingest-one"
+            && path_stripped != "/ingest"
+            && let Ok(Some(bytes)) = s.io.read("_snapshot/facts.bin").await
+            && let Ok(entry) = postcard::from_bytes::<nex::storage::core::ChainEntry>(&bytes)
+        {
+            let facts: Vec<(String, _)> =
+                entry.facts.into_iter().map(|r| (r.id.clone(), r)).collect();
+            let intents: Vec<(String, _)> = entry
+                .intents
+                .into_iter()
+                .map(|r| (r.id.clone(), r))
+                .collect();
+            s.fact_store.replace_from(facts);
+            s.intent_store.replace_from(intents);
+            s.rebuild_coord();
         }
+        // rebuild_semantic is intentionally skipped:
+        //   - submit_fact already indexed facts into semantic stores
+        //   - FihCoord::clear() preserves by_semantic across index rebuilds
+        //   - New facts submitted after cold start will be auto-indexed.
         let docs = if is_test {
             self.docs_bucket_test.as_ref()
         } else {
@@ -656,7 +673,27 @@ pub async fn ingest_document<I: AsyncFileIo>(
     }
     // Flush all pending writes to R2 in a single apply_batch call.
     s.flush_pending().await.map_err(|e| format!("flush: {e}"))?;
+    // Write consolidated snapshot for fast cold-start recovery.
+    if let Err(e) = write_snapshot(s).await {
+        worker::console_log!("snapshot write failed: {e}");
+    }
     Ok(last_id)
+}
+
+async fn write_snapshot<I: nex::io::AsyncFileIo>(s: &FihStorage<I>) -> Result<(), String> {
+    use nex::storage::core::ChainEntry;
+    use nex::storage::core::record::FactRecord;
+    use nex::storage::core::record::IntentRecord;
+    let facts: Vec<FactRecord> = s.fact_store.values();
+    let intents: Vec<IntentRecord> = s.intent_store.values();
+    let entry = ChainEntry {
+        prev_cursor: 0,
+        records_flushed: facts.len() as u64,
+        facts,
+        intents,
+    };
+    let bytes = postcard::to_allocvec(&entry).map_err(|e| format!("snapshot serialize: {e}"))?;
+    s.io.write("_snapshot/facts.bin", &bytes).await
 }
 
 fn sanitize_id(s: &str) -> String {
