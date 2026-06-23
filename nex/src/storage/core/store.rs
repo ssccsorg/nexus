@@ -53,11 +53,11 @@ use crate::storage::semantic::record::{Query, RecordLoad};
 /// Chain entry format: serialized by flush_since for delta chain files.
 /// Named struct avoids postcard tuple field ordering ambiguity with empty vecs.
 #[derive(serde::Serialize, serde::Deserialize)]
-struct ChainEntry {
-    prev_cursor: u64,
-    records_flushed: u64,
-    facts: Vec<FactRecord>,
-    intents: Vec<IntentRecord>,
+pub struct ChainEntry {
+    pub prev_cursor: u64,
+    pub records_flushed: u64,
+    pub facts: Vec<FactRecord>,
+    pub intents: Vec<IntentRecord>,
 }
 
 /// Unified FIH storage backended by an abstract IO layer.
@@ -184,7 +184,7 @@ impl<I: AsyncFileIo> FihStorage<I> {
     /// monotonic ordering in by_time (required by OrderedIndex's binary
     /// search). Other indices are order-independent and built during the
     /// same pass via FihCoord methods.
-    fn rebuild_coord(&self) {
+    pub fn rebuild_coord(&self) {
         self.coord.clear();
 
         let mut facts = self.fact_store.values();
