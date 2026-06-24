@@ -1,20 +1,20 @@
-kind: wasmer.io/App.v0
 name: nex-wasmer-ssccsdocs
-owner: blackgene
+app_id: da_KgYIZt9Uoa0G
+owner: metasmile
 package: .
-
 env:
   DATA_DIR: /data/fih
   DOCS_DIR: /data/docs
   PROJECT: wasmer-ssccsdocs
-
-volumes:
-  - name: fih-data
-    mount: /data/fih
-  - name: docs-data
-    mount: /data/docs
-
 capabilities:
   instaboot:
+    mode: null
     requests:
-      - path: /
+    - path: /
+volumes:
+- name: fih-data
+  mount: /data/fih
+- name: docs-data
+  mount: /data/docs
+debug: true
+kind: wasmer.io/App.v0
