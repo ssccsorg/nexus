@@ -29,7 +29,7 @@ case "$MODE" in
         echo "=== wrangler deploy (preview) ==="
         npx wrangler deploy --env preview
         echo ""
-        echo "Deployed to preview.cf.nexgate.ssccs.org"
+        echo "Deployed to preview.nex-cf-ssccsdocs.ssccs.or"
         ;;
     *)
         echo "=== worker-build (release) ==="
@@ -39,6 +39,6 @@ case "$MODE" in
         echo "=== wrangler deploy (production) ==="
         npx wrangler deploy
         echo ""
-        echo "Deployed to cf.nexgate.ssccs.org"
+        echo "Deployed to nex-cf-ssccsdocs.ssccs.or"
         ;;
 esac

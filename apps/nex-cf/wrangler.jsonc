@@ -4,7 +4,7 @@
   "compatibility_date": "2026-01-14",
   "compatibility_flags": ["nodejs_compat"],
 
-  "routes": ["cf.nexgate.ssccs.org/*"],
+  "routes": ["nex-cf-ssccsdocs.ssccs.or/*"],
   "workers_dev": true,
 
   "durable_objects": {
