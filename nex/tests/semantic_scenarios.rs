@@ -405,7 +405,8 @@ fn scenario_duplicate_insert() {
     });
 }
 
-/// Dimension mismatch error
+/// Dimension mismatch error — validates that search returns Err(...)
+/// when query dimensionality differs from stored records.
 #[test]
 fn scenario_dimension_mismatch() {
     futures_executor::block_on(async {
@@ -757,14 +758,8 @@ fn scenario_fihcoord_integration() {
         let coord = FihCoord::new();
 
         // Configure two semantic stores: vector (MockSemanticStore) + text (MockBm25Store)
-        coord
-            .by_semantic
-            .borrow_mut()
-            .push(Box::new(MockSemanticStore::new()));
-        coord
-            .by_semantic
-            .borrow_mut()
-            .push(Box::new(MockBm25Store::new()));
+        coord.add_semantic_store(Box::new(MockSemanticStore::new()));
+        coord.add_semantic_store(Box::new(MockBm25Store::new()));
 
         // Record facts with different content
         // Fact 1: vector [1,0,0] + text "rust compiler verification"
@@ -864,10 +859,7 @@ fn scenario_fihcoord_single_store() {
         }
 
         let coord = FihCoord::new();
-        coord
-            .by_semantic
-            .borrow_mut()
-            .push(Box::new(MockSemanticStore::new()));
+        coord.add_semantic_store(Box::new(MockSemanticStore::new()));
 
         let f_id = nexus_model::FihHash::from_hex("f_inline_001");
         coord.record_fact(&f_id.0, "test", "tester", 100);

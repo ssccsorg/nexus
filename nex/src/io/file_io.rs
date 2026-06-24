@@ -32,9 +32,10 @@ use std::future::Future;
 use std::pin::Pin;
 
 /// Type alias to suppress clippy::type_complexity on AsyncFileIo methods.
-/// GAT-based alternative (nightly): `type IoFuture<'a, T>: Future<Output = Result<T, String>> + 'a`
-/// That would eliminate per-call heap allocation but requires nightly Rust.
-/// Keeping Box for now is acceptable for this abstraction layer.
+#[cfg(not(target_arch = "wasm32"))]
+pub type IoFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, String>> + Send + 'a>>;
+
+#[cfg(target_arch = "wasm32")]
 pub type IoFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, String>> + 'a>>;
 
 /// A single IO operation that can be committed or rolled back.
@@ -48,23 +49,31 @@ pub enum WriteOp {
 }
 
 /// Async IO operations on a flat key-space.
-///
-/// The key-space is flat (e.g., `facts/f_{hash}.fact`, `blob/{hash}.bin`).
-/// Directory structure is an implementation detail of the IO layer.
-pub trait AsyncFileIo {
-    /// Read a single file. Returns None if not found.
+#[cfg(not(target_arch = "wasm32"))]
+pub trait AsyncFileIo: Send + Sync {
     fn read<'a>(&'a self, path: &'a str) -> IoFuture<'a, Option<Vec<u8>>>;
-
-    /// Write a single file. Creates parent directories if needed.
     fn write<'a>(&'a self, path: &'a str, data: &'a [u8]) -> IoFuture<'a, ()>;
-
-    /// List all paths with the given prefix.
     fn list<'a>(&'a self, prefix: &'a str) -> IoFuture<'a, Vec<String>>;
-
-    /// Delete a single file. Ok if not found.
     fn delete<'a>(&'a self, path: &'a str) -> IoFuture<'a, ()>;
+    fn apply_batch<'a>(&'a self, ops: &'a [WriteOp]) -> IoFuture<'a, ()> {
+        Box::pin(async move {
+            for op in ops {
+                match op {
+                    WriteOp::Write { path, data } => self.write(path, data).await?,
+                    WriteOp::Delete { path } => self.delete(path).await?,
+                }
+            }
+            Ok(())
+        })
+    }
+}
 
-    /// Apply a batch of WriteOps. Default impl calls write/delete sequentially.
+#[cfg(target_arch = "wasm32")]
+pub trait AsyncFileIo {
+    fn read<'a>(&'a self, path: &'a str) -> IoFuture<'a, Option<Vec<u8>>>;
+    fn write<'a>(&'a self, path: &'a str, data: &'a [u8]) -> IoFuture<'a, ()>;
+    fn list<'a>(&'a self, prefix: &'a str) -> IoFuture<'a, Vec<String>>;
+    fn delete<'a>(&'a self, path: &'a str) -> IoFuture<'a, ()>;
     fn apply_batch<'a>(&'a self, ops: &'a [WriteOp]) -> IoFuture<'a, ()> {
         Box::pin(async move {
             for op in ops {
