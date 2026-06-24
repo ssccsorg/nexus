@@ -26,11 +26,11 @@ impl<I: AsyncFileIo> BatchIo<I> {
     pub async fn flush(&self) -> Result<(), String> {
         let batch = {
             let mut ops = self.pending.lock().unwrap();
+            if ops.is_empty() {
+                return Ok(());
+            }
             std::mem::take(&mut *ops)
         };
-        if batch.is_empty() {
-            return Ok(());
-        }
         self.inner.apply_batch(&batch).await
     }
 

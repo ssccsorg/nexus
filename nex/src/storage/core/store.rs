@@ -704,7 +704,8 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
             path: key,
             data: bytes,
         });
-        self.flush_pending().await
+        self.flush_pending()
+            .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.intent_store.insert(normalized.clone(), record);
         self.coord
@@ -741,7 +742,8 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
             path: key,
             data: bytes,
         });
-        self.flush_pending().await
+        self.flush_pending()
+            .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.intent_store.insert(intent_id.to_string(), record);
         Ok(())
@@ -783,7 +785,8 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
             path: key,
             data: bytes,
         });
-        self.flush_pending().await
+        self.flush_pending()
+            .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.intent_store.insert(intent_id.to_string(), record);
         Ok(())
@@ -847,7 +850,8 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
             path: key,
             data: intent_bytes,
         });
-        self.flush_pending().await
+        self.flush_pending()
+            .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.intent_store.insert(intent_id.to_string(), record);
         self.coord
