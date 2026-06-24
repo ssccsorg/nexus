@@ -23,32 +23,40 @@ pub use record::{Query, RecordLoad};
 
 use std::fmt::Debug;
 
+// ── Platform-adaptive async trait bounds ───────────────────────────
+//
+// On native/WASIX: require Send + Sync so FihStorage is Send + Sync.
+// On wasm32-unknown-unknown: use ?Send (single-threaded).
+// External implementations use the same trait regardless of platform.
+
 /// Semantic feature store for similarity search.
-///
-/// Maps semantic features to record IDs. Used by FihCoord as another
-/// index axis alongside by_origin, by_creator, by_status, etc.
-///
-/// Each implementation decides which data to extract via `RecordLoad`.
-///
-/// Multiple store implementations can coexist in the same binary,
-/// each using a different strategy (vector cosine, BM25 text, ngram,
-/// etc.) without the core knowing which one is in use.
-#[async_trait::async_trait(?Send)]
-pub trait SemanticStore: Debug {
-    /// Insert a record into the store. The implementation calls
-    /// `load` to retrieve only the data it needs.
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait::async_trait]
+pub trait SemanticStore: Debug + Send + Sync {
     async fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String>;
-
-    /// Search for the top_k most similar records using the query handle.
     async fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String>;
-
-    /// Remove a record ID from the store.
     async fn remove(&mut self, id: u32) -> Result<(), String>;
-
-    /// Number of records stored.
     fn len(&self) -> usize;
-
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
 }
+
+#[cfg(target_arch = "wasm32")]
+#[async_trait::async_trait(?Send)]
+pub trait SemanticStore: Debug {
+    async fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String>;
+    async fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String>;
+    async fn remove(&mut self, id: u32) -> Result<(), String>;
+    fn len(&self) -> usize;
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+/// Convenience type alias for storing SemanticStore in containers.
+#[cfg(not(target_arch = "wasm32"))]
+pub type DynSemanticStore = Box<dyn SemanticStore + Send>;
+
+#[cfg(target_arch = "wasm32")]
+pub type DynSemanticStore = Box<dyn SemanticStore>;

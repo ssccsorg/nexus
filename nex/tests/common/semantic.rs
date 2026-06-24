@@ -32,6 +32,65 @@ impl Default for MockSemanticStore {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait::async_trait]
+impl SemanticStore for MockSemanticStore {
+    async fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
+        let features = load
+            .features(id)
+            .ok_or_else(|| "no features available".to_string())?;
+        self.ids.push(id);
+        self.vectors.push(features);
+        Ok(())
+    }
+
+    async fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
+        let query_vec = query
+            .features()
+            .ok_or_else(|| "no query features".to_string())?;
+        if query_vec.len()
+            != self
+                .vectors
+                .first()
+                .map(|v| v.len())
+                .unwrap_or(query_vec.len())
+        {
+            return Err("dimension mismatch".into());
+        }
+        if self.ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut scores: Vec<(u32, f32)> = self
+            .ids
+            .iter()
+            .zip(self.vectors.iter())
+            .map(|(&id, vec)| {
+                let dot: f32 = query_vec.iter().zip(vec.iter()).map(|(a, b)| a * b).sum();
+                let norm_q: f32 = query_vec.iter().map(|x| x * x).sum::<f32>().sqrt();
+                let norm_v: f32 = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
+                let similarity = dot / (norm_q * norm_v).max(f32::EPSILON);
+                (id, similarity)
+            })
+            .collect();
+        scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scores.truncate(top_k);
+        Ok(scores)
+    }
+
+    async fn remove(&mut self, id: u32) -> Result<(), String> {
+        if let Some(pos) = self.ids.iter().position(|&i| i == id) {
+            self.ids.remove(pos);
+            self.vectors.remove(pos);
+        }
+        Ok(())
+    }
+
+    fn len(&self) -> usize {
+        self.ids.len()
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
 #[async_trait::async_trait(?Send)]
 impl SemanticStore for MockSemanticStore {
     async fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
@@ -110,6 +169,67 @@ impl Default for MockBm25Store {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait::async_trait]
+impl SemanticStore for MockBm25Store {
+    async fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
+        let text = load
+            .text(id)
+            .ok_or_else(|| "no text available".to_string())?;
+        self.ids.push(id);
+        self.texts.push(text);
+        Ok(())
+    }
+
+    async fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
+        let qt = match query.text() {
+            Some(t) if !t.trim().is_empty() => t,
+            _ => return Ok(Vec::new()),
+        };
+        if self.ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let query_terms: Vec<String> = qt
+            .to_lowercase()
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
+        if query_terms.is_empty() {
+            return Ok(Vec::new());
+        }
+        let n = self.texts.len();
+        let mut results: Vec<(u32, f32)> = self
+            .ids
+            .iter()
+            .zip(self.texts.iter())
+            .map(|(&id, doc)| {
+                let doc_lower = doc.to_lowercase();
+                let matches: f32 = query_terms
+                    .iter()
+                    .filter(|t| doc_lower.contains(t.as_str()))
+                    .count() as f32;
+                (id, matches)
+            })
+            .collect();
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        results.truncate(top_k);
+        Ok(results)
+    }
+
+    async fn remove(&mut self, id: u32) -> Result<(), String> {
+        if let Some(pos) = self.ids.iter().position(|&i| i == id) {
+            self.ids.remove(pos);
+            self.texts.remove(pos);
+        }
+        Ok(())
+    }
+
+    fn len(&self) -> usize {
+        self.ids.len()
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
 #[async_trait::async_trait(?Send)]
 impl SemanticStore for MockBm25Store {
     async fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {

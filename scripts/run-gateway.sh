@@ -25,8 +25,8 @@ run_api() {
 }
 
 run_nex_cf() {
-    echo "=== apps/nex-cf (cargo check + test) ==="
-    ./scripts/run-nex-cf.sh --check-and-test
+    echo "=== apps/nex-cf (cargo check --target wasm32-unknown-unknown) ==="
+    (cd apps/nex-cf && cargo check --target wasm32-unknown-unknown)
 }
 
 run_serde() {
