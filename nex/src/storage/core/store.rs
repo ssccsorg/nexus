@@ -700,10 +700,12 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
 
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.io
-            .write(&key, &bytes)
-            .await
-            .map_err(BlackboardError::Internal)?;
+        self.pending.borrow_mut().push(WriteOp::Write {
+            path: key,
+            data: bytes,
+        });
+        self.flush_pending().await
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.intent_store.insert(normalized.clone(), record);
         self.coord
             .update_intent_status(&FihHash::from_hex(&normalized).0, "submitted", "claimed");
@@ -735,10 +737,12 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
 
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.io
-            .write(&key, &bytes)
-            .await
-            .map_err(BlackboardError::Internal)?;
+        self.pending.borrow_mut().push(WriteOp::Write {
+            path: key,
+            data: bytes,
+        });
+        self.flush_pending().await
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.intent_store.insert(intent_id.to_string(), record);
         Ok(())
     }
@@ -775,10 +779,12 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
 
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.io
-            .write(&key, &bytes)
-            .await
-            .map_err(BlackboardError::Internal)?;
+        self.pending.borrow_mut().push(WriteOp::Write {
+            path: key,
+            data: bytes,
+        });
+        self.flush_pending().await
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.intent_store.insert(intent_id.to_string(), record);
         Ok(())
     }
@@ -825,23 +831,24 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
             .try_conclude(&conclusion_id, now_ns)
             .map_err(BlackboardError::Internal)?;
 
-        // Write conclusion fact to R2
+        // Write conclusion fact and updated intent via pending buffer.
         let fact_rec = FactRecord::from_model(&new_fact, String::new(), 0);
         let fact_bytes = postcard::to_allocvec(&fact_rec)
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.io
-            .write(&fact_rec.key(), &fact_bytes)
-            .await
-            .map_err(BlackboardError::Internal)?;
+        self.pending.borrow_mut().push(WriteOp::Write {
+            path: fact_rec.key(),
+            data: fact_bytes,
+        });
         self.fact_store.insert(fact_rec.id.clone(), fact_rec);
 
-        // Write updated intent to R2
         let intent_bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.io
-            .write(&key, &intent_bytes)
-            .await
-            .map_err(BlackboardError::Internal)?;
+        self.pending.borrow_mut().push(WriteOp::Write {
+            path: key,
+            data: intent_bytes,
+        });
+        self.flush_pending().await
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.intent_store.insert(intent_id.to_string(), record);
         self.coord
             .update_intent_status(&FihHash::from_hex(intent_id).0, "claimed", "concluded");
