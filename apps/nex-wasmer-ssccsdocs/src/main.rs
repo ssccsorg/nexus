@@ -115,41 +115,35 @@ async fn restore_from_snapshot<I: AsyncFileIo>(s: &FihStorage<I>) -> Result<bool
 
 // ── Document ingestion ───────────────────────────────────────────────
 
+/// Wasmer contract: each `.llms.md` file is stored as a single Fact.
+/// (contract.nex not yet implemented — this is app-level hardcoded policy.)
 async fn ingest_document<I: AsyncFileIo>(
     s: &FihStorage<I>,
     text: &str,
     origin: &str,
 ) -> Result<String, String> {
-    let paragraphs: Vec<&str> = text
-        .split('\n')
-        .map(|p| p.trim())
-        .filter(|p| !p.is_empty())
-        .collect();
-    if paragraphs.is_empty() {
+    let text = text.trim();
+    if text.is_empty() {
         return Err("empty document".into());
     }
-    let mut last_id = String::new();
-    for (i, para) in paragraphs.iter().enumerate() {
-        let para_id = format!("f_{}_{}", sanitize_id(origin), i);
-        let fact = Fact {
-            id: FihHash::from_hex(&para_id),
-            origin: format!("document:{}", origin),
-            content: Content {
-                mime_type: "text/plain".into(),
-                data: para.as_bytes().to_vec(),
-            },
-            creator: "ingestion-agent".into(),
-        };
-        AsyncFactCapable::submit_fact(s, &fact)
-            .await
-            .map_err(|e| format!("submit para {i}: {e:?}"))?;
-        last_id = para_id;
-    }
+    let doc_id = format!("doc_{}", sanitize_id(origin));
+    let fact = Fact {
+        id: FihHash::from_hex(&doc_id),
+        origin: format!("document:{}", origin),
+        content: Content {
+            mime_type: "text/markdown".into(),
+            data: text.as_bytes().to_vec(),
+        },
+        creator: "ingestion-agent".into(),
+    };
+    AsyncFactCapable::submit_fact(s, &fact)
+        .await
+        .map_err(|e| format!("submit doc: {e:?}"))?;
     if let Err(e) = write_snapshot(s).await {
         tracing::warn!("snapshot write failed: {e}");
     }
     s.flush_pending().await.map_err(|e| format!("flush: {e}"))?;
-    Ok(last_id)
+    Ok(doc_id)
 }
 
 async fn ingest_all_from_io<I: AsyncFileIo, D: AsyncFileIo>(
@@ -673,7 +667,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(id.starts_with("f_test-doc_"));
+        assert!(id.starts_with("doc_test-doc"));
 
         let query = TextQuery {
             text: "programming language".into(),
