@@ -1,21 +1,21 @@
 // ── nex: FIH Blackboard Storage Engine ───────────────────────────────
 //
-// nex is an execution unit. Each FihStorage instance runs on a single
-// thread with exclusive ownership of its in-memory state and I/O
-// channel. There is no internal concurrency: no Mutex, no RwLock, no
-// thread pool. Scaling happens through physical instance replication,
-// not through internal sharding.
+// nex is the core storage engine for the nexus FIH system.
+// Each FihStorage instance owns its in-memory state and I/O channel.
 //
-// All public storage methods are async. FihStorage does NOT implement
-// sync storage traits (FactCapable, IntentCapable, etc.). Sync callers
-// use futures_executor::block_on externally (see FihBlackboard).
+// On native (macOS, Linux, WASIX): interior mutability uses Mutex.
+// FihStorage<AsyncFileIo> is Send + Sync — safe to share across threads
+// via Arc (e.g., axum server state).
 //
-// Interior mutability uses RefCell, not Mutex. This is the simplest
-// correct implementation for a single-owner model. Thread-safe access
-// is achieved by wrapping the instance externally.
+// On wasm32-unknown-unknown: interior mutability uses RefCell.
+// FihStorage is single-threaded — no concurrency primitives available.
 //
-// No static or static mut state exists except fixed constants. Every
-// resource is owned by the instance.
+// Platform adaptation is transparent via Cell2<T>:
+//   Mutex<T> on native, RefCell<T> on wasm.
+//   Same borrow()/borrow_mut() API regardless of platform.
+//
+// All public storage methods are async. Sync callers use
+// futures_executor::block_on externally (see FihBlackboard).
 
 pub mod helper;
 pub mod io;
