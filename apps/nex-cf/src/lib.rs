@@ -72,6 +72,12 @@ pub fn qv(q: &[(String, String)], k: &str) -> String {
         .unwrap_or_default()
 }
 
+fn headers_with_ct(ct: String) -> worker::Headers {
+    let h = worker::Headers::new();
+    h.set("Content-Type", &ct).ok();
+    h
+}
+
 // ── NexusCfDO — Durable Object ─────────────────────────────────────────
 
 /// Durable Object that holds the full in-memory FihStorage state.
@@ -168,8 +174,12 @@ impl DurableObject for NexusCfDO {
         match path_stripped {
             "/" | "/fact" | "/intent" | "/claim" | "/conclude" | "/state" | "/flush"
             | "/rebuild" => {
-                let (code, _content_type, body) = handle_path(s, path_stripped, &q).await;
-                Ok(Response::from_bytes(body.into_bytes())?.with_status(code))
+                let (code, content_type, body) = handle_path(s, path_stripped, &q).await;
+                let mut resp = Response::from_bytes(body.into_bytes())?.with_status(code);
+                if let Some(ct) = content_type {
+                    resp = resp.with_headers(headers_with_ct(ct));
+                }
+                Ok(resp)
             }
 
             "/version" => Response::ok("3"),
@@ -477,9 +487,9 @@ pub async fn handle_path<I: AsyncFileIo>(
     s: &FihStorage<I>,
     path: &str,
     q: &[(String, String)],
-) -> (u16, String, String) {
+) -> (u16, Option<String>, String) {
     match path {
-        "/" => (200, "text/plain".into(), "nexus-cf".into()),
+        "/" => (200, None, "nexus-cf".into()),
 
         "/fact" => {
             let fact = Fact {
@@ -496,7 +506,7 @@ pub async fn handle_path<I: AsyncFileIo>(
                 Err(e) => {
                     return (
                         500,
-                        "application/json".into(),
+                        Some("application/json".into()),
                         serde_json::json!({"error": format!("submit_fact: {:?}", e)}).to_string(),
                     );
                 }
@@ -505,13 +515,13 @@ pub async fn handle_path<I: AsyncFileIo>(
             if let Err(e) = s.flush_pending().await {
                 return (
                     500,
-                    "application/json".into(),
+                    Some("application/json".into()),
                     serde_json::json!({"error": format!("flush: {}", e)}).to_string(),
                 );
             }
             (
                 200,
-                "application/json".into(),
+                Some("application/json".into()),
                 serde_json::json!({"id": hash.to_string()}).to_string(),
             )
         }
@@ -538,7 +548,7 @@ pub async fn handle_path<I: AsyncFileIo>(
                 Err(e) => {
                     return (
                         500,
-                        "application/json".into(),
+                        Some("application/json".into()),
                         serde_json::json!({"error": format!("submit_intent: {:?}", e)}).to_string(),
                     );
                 }
@@ -547,13 +557,13 @@ pub async fn handle_path<I: AsyncFileIo>(
             if let Err(e) = s.flush_pending().await {
                 return (
                     500,
-                    "application/json".into(),
+                    Some("application/json".into()),
                     serde_json::json!({"error": format!("flush: {}", e)}).to_string(),
                 );
             }
             (
                 200,
-                "application/json".into(),
+                Some("application/json".into()),
                 serde_json::json!({"id": hash.to_string()}).to_string(),
             )
         }
@@ -561,7 +571,7 @@ pub async fn handle_path<I: AsyncFileIo>(
         "/claim" => match s.claim_intent(&qv(q, "id"), &qv(q, "agent")).await {
             Ok(()) => (
                 200,
-                "application/json".into(),
+                Some("application/json".into()),
                 serde_json::json!({"status": "claimed"}).to_string(),
             ),
             Err(e) => {
@@ -575,7 +585,7 @@ pub async fn handle_path<I: AsyncFileIo>(
                 };
                 (
                     code,
-                    "application/json".into(),
+                    Some("application/json".into()),
                     serde_json::json!({"error": msg}).to_string(),
                 )
             }
@@ -584,13 +594,13 @@ pub async fn handle_path<I: AsyncFileIo>(
         "/conclude" => match s.conclude_intent(&qv(q, "id"), &qv(q, "result")).await {
             Ok(fact) => (
                 200,
-                "application/json".into(),
+                Some("application/json".into()),
                 serde_json::json!({"status": "concluded", "fact_id": fact.id.to_string()})
                     .to_string(),
             ),
             Err(e) => (
                 500,
-                "application/json".into(),
+                Some("application/json".into()),
                 serde_json::json!({"error": format!("{:?}", e)}).to_string(),
             ),
         },
@@ -599,7 +609,7 @@ pub async fn handle_path<I: AsyncFileIo>(
             let state = s.read_state().await;
             (
                 200,
-                "application/json".into(),
+                Some("application/json".into()),
                 serde_json::to_string(&state).unwrap_or_else(|_| "{}".into()),
             )
         }
@@ -607,12 +617,12 @@ pub async fn handle_path<I: AsyncFileIo>(
         "/flush" => match s.flush_pending().await {
             Ok(()) => (
                 200,
-                "application/json".into(),
+                Some("application/json".into()),
                 serde_json::json!({"status": "ok"}).to_string(),
             ),
             Err(e) => (
                 500,
-                "application/json".into(),
+                Some("application/json".into()),
                 serde_json::json!({"error": format!("flush: {}", e)}).to_string(),
             ),
         },
@@ -620,19 +630,19 @@ pub async fn handle_path<I: AsyncFileIo>(
         "/rebuild" => match s.rebuild_cache().await {
             Ok(()) => (
                 200,
-                "application/json".into(),
+                Some("application/json".into()),
                 serde_json::json!({"status": "ok"}).to_string(),
             ),
             Err(e) => (
                 500,
-                "application/json".into(),
+                Some("application/json".into()),
                 serde_json::json!({"error": format!("rebuild: {}", e)}).to_string(),
             ),
         },
 
         _ => (
             404,
-            "application/json".into(),
+            Some("application/json".into()),
             serde_json::json!({"error": "not found"}).to_string(),
         ),
     }

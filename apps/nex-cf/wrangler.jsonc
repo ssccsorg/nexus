@@ -4,7 +4,7 @@
   "compatibility_date": "2026-01-14",
   "compatibility_flags": ["nodejs_compat"],
 
-  "routes": ["nex-cf-ssccsdocs.ssccs.or/*"],
+  "routes": ["nex-cf-ssccsdocs.ssccs.org/*"],
   "workers_dev": true,
 
   "durable_objects": {
@@ -42,23 +42,23 @@
     }
   ],
 
-  "queues": {
-    "producers": [
-      {
-        "binding": "INGEST_QUEUE",
-        "queue": "nex-cf-ingest-queue"
-      }
-    ],
-    "consumers": [
-      {
-        "queue": "nex-cf-ingest-queue",
-        "max_batch_size": 5,
-        "max_batch_timeout": 5,
-        "max_retries": 3,
-        "dead_letter_queue": "nex-cf-ingest-dlq"
-      }
-    ]
-  },
+  // "queues": {
+  //   "producers": [
+  //     {
+  //       "binding": "INGEST_QUEUE",
+  //       "queue": "nex-cf-ingest-queue"
+  //     }
+  //   ],
+  //   "consumers": [
+  //     {
+  //       "queue": "nex-cf-ingest-queue",
+  //       "max_batch_size": 5,
+  //       "max_batch_timeout": 5,
+  //       "max_retries": 3,
+  //       "dead_letter_queue": "nex-cf-ingest-dlq"
+  //     }
+  //   ]
+  // },
 
   "vectorize": [
     {
