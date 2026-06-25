@@ -190,14 +190,16 @@ async fn chat_stream(
             let thread = mgr.threads.get(&tid);
 
             if let Some(thread) = thread {
-                // Find last assistant message
-                let assistant_content = thread
+                // Find last assistant message (with tool metadata)
+                let last_msg = thread
                     .messages
                     .iter()
                     .rev()
-                    .find(|m| m.role == "assistant")
-                    .map(|m| m.content.as_str())
-                    .unwrap_or("");
+                    .find(|m| m.role == "assistant");
+                let assistant_content = last_msg.map(|m| m.content.as_str()).unwrap_or("");
+                let entry_type = last_msg.and_then(|m| m.entry_type.as_deref());
+                let tool_name = last_msg.and_then(|m| m.tool_name.as_deref());
+                let tool_status = last_msg.and_then(|m| m.tool_status.as_deref());
 
                 // Yield delta
                 if assistant_content.len() > last_content.len() {
@@ -209,6 +211,9 @@ async fn chat_stream(
                         .data(serde_json::to_string(&serde_json::json!({
                             "thread_id": tid.clone(),
                             "content": delta,
+                            "entry_type": entry_type,
+                            "tool_name": tool_name,
+                            "tool_status": tool_status,
                         })).unwrap()));
                 }
 
@@ -261,6 +266,9 @@ async fn get_thread(
                         "role": m.role,
                         "content": m.content,
                         "message_id": m.message_id,
+                        "entry_type": m.entry_type,
+                        "tool_name": m.tool_name,
+                        "tool_status": m.tool_status,
                         "timestamp": m.timestamp.to_rfc3339(),
                     })
                 })
