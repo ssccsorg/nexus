@@ -45,6 +45,9 @@ pub struct ThreadMessage {
     pub role: String,
     pub content: String,
     pub message_id: Option<String>,
+    pub entry_type: Option<String>,
+    pub tool_name: Option<String>,
+    pub tool_status: Option<String>,
     pub timestamp: chrono::DateTime<chrono::Utc>,
 }
 
@@ -87,6 +90,14 @@ impl ZedManager {
     }
 
     pub fn add_message(&mut self, thread_id: &str, role: &str, content: &str, message_id: Option<String>) {
+        self.add_message_full(thread_id, role, content, message_id, None, None, None)
+    }
+
+    pub fn add_message_full(
+        &mut self, thread_id: &str, role: &str, content: &str,
+        message_id: Option<String>, entry_type: Option<String>,
+        tool_name: Option<String>, tool_status: Option<String>,
+    ) {
         if let Some(thread) = self.threads.get_mut(thread_id) {
             if let Some(ref mid) = message_id {
                 if let Some(last) = thread.messages.last_mut() {
@@ -100,6 +111,9 @@ impl ZedManager {
                 role: role.to_string(),
                 content: content.to_string(),
                 message_id,
+                entry_type,
+                tool_name,
+                tool_status,
                 timestamp: chrono::Utc::now(),
             });
         }
@@ -220,11 +234,14 @@ async fn handle_zed_event(zed_manager: &Arc<RwLock<ZedManager>>, text: &str) {
             let content = data.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let role = data.get("role").and_then(|v| v.as_str()).unwrap_or("assistant").to_string();
             let msg_id = data.get("message_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let entry_type = data.get("entry_type").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let tool_name = data.get("tool_name").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let tool_status = data.get("tool_status").and_then(|v| v.as_str()).map(|s| s.to_string());
             let mut mgr = zed_manager.write().await;
-            mgr.add_message(&acp_id, &role, &content, msg_id.clone());
+            mgr.add_message_full(&acp_id, &role, &content, msg_id.clone(), entry_type.clone(), tool_name.clone(), tool_status.clone());
             // Mirror to the original local thread
             if let Some(local_id) = mgr.thread_id_map.get(&acp_id).cloned() {
-                mgr.add_message(&local_id, &role, &content, msg_id);
+                mgr.add_message_full(&local_id, &role, &content, msg_id, entry_type, tool_name, tool_status);
             }
         }
         "message_completed" => {
