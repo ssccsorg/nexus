@@ -1,7 +1,7 @@
 // ── nexus-storage-sim: FIH storage simulator ─────────────────────────
 //
 // Simulator (test double) layer. Provides in-memory IO backend (SimIo)
-// that implements the AsyncFileIo trait defined in nex::io.
+// that implements the FileIo trait defined in nex::io.
 //
 // All core storage types (FihStorage, EntityStore, etc.) are
 // re-exported from nex::storage::core. The filesystem IO backend (FsIo)

@@ -3,7 +3,7 @@
 // Built-in storage engine for the nexus runtime. Implements the full FIH
 // lifecycle (Fact, Intent, Hint) on top of the IO abstraction layer.
 //
-// Uses crate::io::AsyncFileIo for all IO operations.
+// Uses crate::io::FileIo for all IO operations.
 // Can be swapped out for external storage engines.
 
 pub mod entity_store;

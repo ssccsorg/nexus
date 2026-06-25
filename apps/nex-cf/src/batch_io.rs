@@ -1,17 +1,17 @@
-use nex::io::{AsyncFileIo, IoFuture, WriteOp};
+use nex::io::{BatchIo as BatchIoTrait, FileIo, IoFuture, WriteOp, default_apply_batch};
 use std::cell::RefCell;
 
-/// AsyncFileIo wrapper that batches writes and flushes them in one `apply_batch`.
+/// Write-batching adapter wrapping any FileIo.
 ///
 /// Reads, lists, and deletes pass through to the inner IO immediately.
 /// Writes are enqueued and only committed when `apply_batch` is called.
 /// This reduces R2 PUT requests from N to 1 for bulk operations.
-pub struct BatchIo<I: AsyncFileIo> {
+pub struct BatchIo<I: FileIo> {
     inner: I,
     pending: RefCell<Vec<WriteOp>>,
 }
 
-impl<I: AsyncFileIo> BatchIo<I> {
+impl<I: FileIo> BatchIo<I> {
     pub fn new(inner: I) -> Self {
         Self {
             inner,
@@ -28,7 +28,7 @@ impl<I: AsyncFileIo> BatchIo<I> {
             }
             std::mem::take(&mut *ops)
         };
-        self.inner.apply_batch(&batch).await
+        default_apply_batch(&self.inner, &batch).await
     }
 
     pub fn pending_count(&self) -> usize {
@@ -36,7 +36,7 @@ impl<I: AsyncFileIo> BatchIo<I> {
     }
 }
 
-impl<I: AsyncFileIo> AsyncFileIo for BatchIo<I> {
+impl<I: FileIo> FileIo for BatchIo<I> {
     fn read<'a>(&'a self, path: &'a str) -> IoFuture<'a, Option<Vec<u8>>> {
         self.inner.read(path)
     }
@@ -57,15 +57,14 @@ impl<I: AsyncFileIo> AsyncFileIo for BatchIo<I> {
     fn delete<'a>(&'a self, path: &'a str) -> IoFuture<'a, ()> {
         self.inner.delete(path)
     }
+}
 
+impl<I: FileIo + BatchIoTrait> BatchIoTrait for BatchIo<I> {
     /// Flush pending writes + forward incoming batch to inner.
     fn apply_batch<'a>(&'a self, ops: &'a [WriteOp]) -> IoFuture<'a, ()> {
         let this: &BatchIo<I> = self;
         let ops_vec: Vec<WriteOp> = ops.to_vec();
         Box::pin(async move {
-            // BatchIo.pending에 중복되지 않은 incoming ops만 추가
-            // (write()에서 이미 BatchIo.pending에 enqueue된 것들이
-            // FihStorage.pending에도 있으므로 중복 방지를 위해 병합)
             for op in &ops_vec {
                 match op {
                     WriteOp::Write { path, data } => {

@@ -16,7 +16,7 @@ use crate::cf_io::CfFihIo;
 use crate::stores::vectorize::CfVectorizeStore;
 use nex::EntityStore;
 use nex::FihStorage;
-use nex::io::AsyncFileIo;
+use nex::io::FileIo;
 use nexus_model::{AsyncIntentCapable, AsyncStorageRead, Content, Fact, FihHash, Intent};
 
 // ── CF clock ────────────────────────────────────────────────────────────
@@ -421,35 +421,6 @@ impl DurableObject for NexusCfDO {
                     .trim_start_matches("_llms/")
                     .to_string();
 
-                let do_flush = qv(&q, "flush") != "0";
-                if !do_flush {
-                    let paragraphs: Vec<&str> = text
-                        .split('\n')
-                        .map(|p| p.trim())
-                        .filter(|p| !p.is_empty())
-                        .collect();
-                    let mut last_id = String::new();
-                    for (i, para) in paragraphs.iter().enumerate() {
-                        let para_id = format!("f_{}_{}", sanitize_id(&origin), i);
-                        let fact = Fact {
-                            id: FihHash::from_hex(&para_id),
-                            origin: format!("document:{}", origin),
-                            content: Content {
-                                mime_type: "text/plain".into(),
-                                data: para.as_bytes().to_vec(),
-                            },
-                            creator: "ingestion-agent".into(),
-                        };
-                        nexus_model::AsyncFactCapable::submit_fact(s, &fact)
-                            .await
-                            .map_err(|e| format!("submit para {i}: {e:?}"))?;
-                        last_id = para_id;
-                    }
-                    return Response::from_json(&serde_json::json!({
-                        "status": "indexed",
-                        "id": last_id
-                    }));
-                }
                 match crate::ingest_document(s, &text, &origin).await {
                     Ok(id) => {
                         let vs = CfVectorizeStore::new(self.env.clone());
@@ -459,7 +430,10 @@ impl DurableObject for NexusCfDO {
                             "id": id
                         }))
                     }
-                    Err(e) => Response::error(e, 500),
+                    Err(e) => {
+                        let err_json = serde_json::json!({"error": format!("ingest: {e}")});
+                        Response::from_json(&err_json).map(|r| r.with_status(500))
+                    }
                 }
             }
 
@@ -484,7 +458,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
 
 // ── Path handlers (called from DO) ──────────────────────────────────────
 
-pub async fn handle_path<I: AsyncFileIo>(
+pub async fn handle_path<I: FileIo>(
     s: &FihStorage<I>,
     path: &str,
     q: &[(String, String)],
@@ -652,7 +626,7 @@ pub async fn handle_path<I: AsyncFileIo>(
 // ── Document helpers ─────────────────────────────────────────────────
 
 /// nex-cf contract: each `.llms.md` file is stored as a single Fact.
-pub async fn ingest_document<I: AsyncFileIo>(
+pub async fn ingest_document<I: FileIo>(
     s: &FihStorage<I>,
     text: &str,
     origin: &str,
@@ -683,7 +657,7 @@ pub async fn ingest_document<I: AsyncFileIo>(
     Ok(doc_id)
 }
 
-async fn write_snapshot<I: nex::io::AsyncFileIo>(s: &FihStorage<I>) -> Result<(), String> {
+async fn write_snapshot<I: nex::io::FileIo>(s: &FihStorage<I>) -> Result<(), String> {
     use nex::storage::core::ChainEntry;
     use nex::storage::core::record::FactRecord;
     use nex::storage::core::record::IntentRecord;
@@ -711,7 +685,7 @@ fn sanitize_id(s: &str) -> String {
         .collect()
 }
 
-pub async fn ingest_all_from_io<I: AsyncFileIo, D: AsyncFileIo>(
+pub async fn ingest_all_from_io<I: FileIo, D: FileIo>(
     s: &FihStorage<I>,
     docs: &D,
     prefix: &str,

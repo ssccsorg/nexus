@@ -34,7 +34,7 @@ use axum::{
     routing::{get, post},
 };
 use nex::EntityStore;
-use nex::io::AsyncFileIo;
+use nex::io::FileIo;
 use nex::storage::core::FihStorage;
 use nex::storage::semantic::Query as SemanticQuery;
 use nexus_model::{
@@ -77,7 +77,7 @@ fn build_storage(data_dir: &str, project_id: &str) -> FihStorage<BatchIo<WasmerI
 
 // ── Snapshot ─────────────────────────────────────────────────────────
 
-async fn write_snapshot<I: AsyncFileIo>(s: &FihStorage<I>) -> Result<(), String> {
+async fn write_snapshot<I: FileIo>(s: &FihStorage<I>) -> Result<(), String> {
     use nex::storage::core::ChainEntry;
     use nex::storage::core::record::{FactRecord, IntentRecord};
     let facts: Vec<FactRecord> = s.fact_store.values().await;
@@ -92,7 +92,7 @@ async fn write_snapshot<I: AsyncFileIo>(s: &FihStorage<I>) -> Result<(), String>
     s.io.write("_snapshot/facts.bin", &bytes).await
 }
 
-async fn restore_from_snapshot<I: AsyncFileIo>(s: &FihStorage<I>) -> Result<bool, String> {
+async fn restore_from_snapshot<I: FileIo>(s: &FihStorage<I>) -> Result<bool, String> {
     if !s.fact_store.is_empty().await {
         return Ok(false);
     }
@@ -121,7 +121,7 @@ async fn restore_from_snapshot<I: AsyncFileIo>(s: &FihStorage<I>) -> Result<bool
 
 /// Wasmer contract: each `.llms.md` file is stored as a single Fact.
 /// (contract.nex not yet implemented — this is app-level hardcoded policy.)
-async fn ingest_document<I: AsyncFileIo>(
+async fn ingest_document<I: FileIo>(
     s: &FihStorage<I>,
     text: &str,
     origin: &str,
@@ -150,7 +150,7 @@ async fn ingest_document<I: AsyncFileIo>(
     Ok(doc_id)
 }
 
-async fn ingest_all_from_io<I: AsyncFileIo, D: AsyncFileIo>(
+async fn ingest_all_from_io<I: FileIo, D: FileIo>(
     s: &FihStorage<I>,
     docs: &D,
     prefix: &str,

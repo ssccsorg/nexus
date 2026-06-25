@@ -1,4 +1,4 @@
-// ── FihStorage — unified FIH storage over AsyncFileIo ──────────────────
+// ── FihStorage — unified FIH storage over FileIo ───────────────────────
 //
 // FihStorage is an execution unit. Each instance runs on a single thread
 // with exclusive ownership of its in-memory state (FihCoord indices,
@@ -45,7 +45,7 @@ use nexus_model::{
 use super::entity_store::{EntityStore, MemoryEntityStore};
 use super::index::{Cell2, FihCoord};
 use super::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
-use crate::io::file_io::{AsyncFileIo, WriteOp};
+use crate::io::file_io::{FileIo, WriteOp, default_apply_batch};
 use crate::storage::semantic::record::{Query, RecordLoad};
 
 /// Chain entry format: serialized by flush_since for delta chain files.
@@ -63,7 +63,7 @@ pub struct ChainEntry {
 /// All FIH trait methods are sync. They enqueue WriteOps into a buffer
 /// for batch commit by the outer FihSession layer.
 /// IO-bound operations (flush_pending, rebuild_cache) are async.
-pub struct FihStorage<I: AsyncFileIo> {
+pub struct FihStorage<I: FileIo> {
     pub io: I,
     project_id: String,
     clock: Box<dyn Now + Send + Sync>,
@@ -83,7 +83,7 @@ pub struct FihStorage<I: AsyncFileIo> {
     pub(crate) pending: Cell2<Vec<WriteOp>>,
 }
 
-impl<I: AsyncFileIo> FihStorage<I> {
+impl<I: FileIo> FihStorage<I> {
     pub fn new(io: I, project_id: &str) -> Self {
         Self::with_clock(io, project_id, Box::new(nexus_model::SystemClock))
     }
@@ -256,7 +256,7 @@ impl<I: AsyncFileIo> FihStorage<I> {
             }
             std::mem::take(&mut *pending)
         };
-        self.io.apply_batch(&ops).await
+        default_apply_batch(&self.io, &ops).await
     }
 
     /// Register a semantic store for auto-indexing on fact submission.
@@ -396,7 +396,7 @@ fn content_hash(data: &[u8]) -> String {
 }
 
 /// Load a content blob from IO by hash. Returns empty Content if not found.
-async fn load_blob(io: &impl AsyncFileIo, blob_hash: &str) -> Content {
+async fn load_blob(io: &impl FileIo, blob_hash: &str) -> Content {
     if blob_hash.is_empty() {
         return Content {
             mime_type: "application/json".into(),
@@ -418,7 +418,7 @@ async fn load_blob(io: &impl AsyncFileIo, blob_hash: &str) -> Content {
 
 // ── AsyncStorageRead ───────────────────────────────────────────────────────
 
-impl<I: AsyncFileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
+impl<I: FileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
     fn project_id(&self) -> &str {
         &self.project_id
     }
@@ -516,7 +516,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
 
 // ── AsyncFactCapable ───────────────────────────────────────────────────────
 
-impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
+impl<I: FileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
     async fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
         // Enqueue blob content and fact record in pending buffer only.
         // No direct io.write() — caller must call flush_pending() for durability.
@@ -570,7 +570,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
 
 // ── AsyncHintCapable ───────────────────────────────────────────────────────
 
-impl<I: AsyncFileIo> nexus_model::AsyncHintCapable for FihStorage<I> {
+impl<I: FileIo> nexus_model::AsyncHintCapable for FihStorage<I> {
     async fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         let record = super::record::HintRecord {
             id: hint.id.to_string(),
@@ -593,7 +593,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncHintCapable for FihStorage<I> {
 
 // ── AsyncIntentCapable ─────────────────────────────────────────────────────
 
-impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
+impl<I: FileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
     async fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
         if intent.from_facts.is_empty() {
             return Err(BlackboardError::Forbidden(
@@ -831,7 +831,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
 
 // ── AsyncFilterCapable (in-memory filtering) ────────────────────────────
 
-impl<I: AsyncFileIo> nexus_model::AsyncFilterCapable for FihStorage<I> {
+impl<I: FileIo> nexus_model::AsyncFilterCapable for FihStorage<I> {
     async fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
         use std::collections::HashSet;
 
@@ -1143,7 +1143,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncFilterCapable for FihStorage<I> {
 
 // ── AsyncEvictCapable (in-memory eviction) ──────────────────────────────
 
-impl<I: AsyncFileIo> nexus_model::AsyncEvictCapable for FihStorage<I> {
+impl<I: FileIo> nexus_model::AsyncEvictCapable for FihStorage<I> {
     async fn approximate_size(&self) -> usize {
         let facts = self.fact_store.len().await;
         let intents = self.intent_store.len().await;
@@ -1184,7 +1184,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncEvictCapable for FihStorage<I> {
 
 // ── AsyncScanCapable (in-memory scan) ───────────────────────────────────
 
-impl<I: AsyncFileIo> nexus_model::AsyncScanCapable for FihStorage<I> {
+impl<I: FileIo> nexus_model::AsyncScanCapable for FihStorage<I> {
     async fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
         let facts = self.fact_store.values().await;
         let intents = self.intent_store.values().await;
@@ -1262,7 +1262,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncScanCapable for FihStorage<I> {
 
 // ── AsyncTimeRangeCapable (in-memory time range) ────────────────────────
 
-impl<I: AsyncFileIo> nexus_model::AsyncTimeRangeCapable for FihStorage<I> {
+impl<I: FileIo> nexus_model::AsyncTimeRangeCapable for FihStorage<I> {
     async fn time_range(&self) -> Option<Range<String>> {
         let first = self.coord.by_time.borrow().first_key()?;
         let last = self.coord.by_time.borrow().last_key()?;
@@ -1272,7 +1272,7 @@ impl<I: AsyncFileIo> nexus_model::AsyncTimeRangeCapable for FihStorage<I> {
 
 // ── AsyncFlushCapable (IO: flush_pending via await) ──────────────────────
 
-impl<I: AsyncFileIo> nexus_model::AsyncFlushCapable for FihStorage<I> {
+impl<I: FileIo> nexus_model::AsyncFlushCapable for FihStorage<I> {
     async fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
         let since_ts = cursor.last_flushed_at;
         let now_ts = self.clock.now_nanos();
