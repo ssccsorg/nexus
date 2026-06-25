@@ -35,6 +35,7 @@ use axum::{
 };
 use nex::io::AsyncFileIo;
 use nex::storage::core::FihStorage;
+use nex::EntityStore;
 use nex::storage::semantic::Query as SemanticQuery;
 use nexus_model::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, Content, Fact,
@@ -79,8 +80,8 @@ fn build_storage(data_dir: &str, project_id: &str) -> FihStorage<BatchIo<WasmerI
 async fn write_snapshot<I: AsyncFileIo>(s: &FihStorage<I>) -> Result<(), String> {
     use nex::storage::core::ChainEntry;
     use nex::storage::core::record::{FactRecord, IntentRecord};
-    let facts: Vec<FactRecord> = s.fact_store.values();
-    let intents: Vec<IntentRecord> = s.intent_store.values();
+    let facts: Vec<FactRecord> = s.fact_store.values().await;
+    let intents: Vec<IntentRecord> = s.intent_store.values().await;
     let entry = ChainEntry {
         prev_cursor: 0,
         records_flushed: facts.len() as u64,
@@ -92,7 +93,7 @@ async fn write_snapshot<I: AsyncFileIo>(s: &FihStorage<I>) -> Result<(), String>
 }
 
 async fn restore_from_snapshot<I: AsyncFileIo>(s: &FihStorage<I>) -> Result<bool, String> {
-    if !s.fact_store.is_empty() {
+    if !s.fact_store.is_empty().await {
         return Ok(false);
     }
     let Some(bytes) = s.io.read("_snapshot/facts.bin").await? else {
@@ -101,15 +102,15 @@ async fn restore_from_snapshot<I: AsyncFileIo>(s: &FihStorage<I>) -> Result<bool
     let entry: nex::storage::core::ChainEntry =
         postcard::from_bytes(&bytes).map_err(|e| format!("snapshot deserialize: {e}"))?;
     s.fact_store
-        .replace_from(entry.facts.into_iter().map(|r| (r.id.clone(), r)).collect());
+        .replace_from(entry.facts.into_iter().map(|r| (r.id.clone(), r)).collect()).await;
     s.intent_store.replace_from(
         entry
             .intents
             .into_iter()
             .map(|r| (r.id.clone(), r))
             .collect(),
-    );
-    s.rebuild_coord();
+    ).await;
+    s.rebuild_coord().await;
     Ok(true)
 }
 
@@ -298,7 +299,7 @@ async fn handle_version() -> &'static str {
 async fn handle_debug_stores(State(state): State<AppState>) -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "stores": state.semantic_stores().len(),
-        "fact_store": state.fact_store.len(),
+        "fact_store": state.fact_store.len().await,
         "service": "nexus-wasmer-ssccsdocs"
     }))
 }
@@ -623,7 +624,7 @@ async fn main() {
     match restore_from_snapshot(&storage).await {
         Ok(true) => tracing::info!(
             "restored from snapshot ({} facts)",
-            storage.fact_store.len()
+            storage.fact_store.len().await
         ),
         Ok(false) => tracing::info!("no snapshot found, starting fresh"),
         Err(e) => tracing::warn!("snapshot restore failed (proceeding empty): {e}"),
@@ -690,7 +691,7 @@ mod tests {
 
         let restored = restore_from_snapshot(&s2).await.unwrap();
         assert!(restored, "snapshot should be restored");
-        assert_eq!(s2.fact_store.len(), 1);
+        assert_eq!(s2.fact_store.len().await, 1);
     }
 
     #[tokio::test]

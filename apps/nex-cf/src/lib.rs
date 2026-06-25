@@ -16,6 +16,7 @@ use crate::cf_io::CfFihIo;
 use crate::stores::vectorize::CfVectorizeStore;
 use nex::FihStorage;
 use nex::io::AsyncFileIo;
+use nex::EntityStore;
 use nexus_model::{AsyncIntentCapable, AsyncStorageRead, Content, Fact, FihHash, Intent};
 
 // ── CF clock ────────────────────────────────────────────────────────────
@@ -144,7 +145,7 @@ impl DurableObject for NexusCfDO {
         // single R2 GET, avoiding the 30s DO timeout from N sequential
         // gets. If no snapshot exists, this is a fresh store — proceed
         // with empty caches; first ingest will create the snapshot.
-        if s.fact_store.is_empty()
+        if s.fact_store.is_empty().await
             && path_stripped != "/ingest-one"
             && path_stripped != "/ingest"
             && let Ok(Some(bytes)) = s.io.read("_snapshot/facts.bin").await
@@ -157,9 +158,9 @@ impl DurableObject for NexusCfDO {
                 .into_iter()
                 .map(|r| (r.id.clone(), r))
                 .collect();
-            s.fact_store.replace_from(facts);
-            s.intent_store.replace_from(intents);
-            s.rebuild_coord();
+            s.fact_store.replace_from(facts).await;
+            s.intent_store.replace_from(intents).await;
+            s.rebuild_coord().await;
         }
         // rebuild_semantic is intentionally skipped:
         //   - submit_fact already indexed facts into semantic stores
@@ -244,7 +245,7 @@ impl DurableObject for NexusCfDO {
                 Response::ok(format!(
                     "stores={} fact_store={}",
                     count,
-                    s.fact_store.len()
+                    s.fact_store.len().await
                 ))
             }
 
@@ -270,7 +271,7 @@ impl DurableObject for NexusCfDO {
                                     .collect();
                                 Response::from_json(&serde_json::json!({
                                     "ingested": id,
-                                    "fact_store": s.fact_store.len(),
+                                    "fact_store": s.fact_store.len().await,
                                     "results": items
                                 }))
                             }
@@ -686,8 +687,8 @@ async fn write_snapshot<I: nex::io::AsyncFileIo>(s: &FihStorage<I>) -> Result<()
     use nex::storage::core::ChainEntry;
     use nex::storage::core::record::FactRecord;
     use nex::storage::core::record::IntentRecord;
-    let facts: Vec<FactRecord> = s.fact_store.values();
-    let intents: Vec<IntentRecord> = s.intent_store.values();
+    let facts: Vec<FactRecord> = s.fact_store.values().await;
+    let intents: Vec<IntentRecord> = s.intent_store.values().await;
     let entry = ChainEntry {
         prev_cursor: 0,
         records_flushed: facts.len() as u64,
