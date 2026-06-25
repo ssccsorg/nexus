@@ -14,9 +14,9 @@ use worker::*;
 
 use crate::cf_io::CfFihIo;
 use crate::stores::vectorize::CfVectorizeStore;
+use nex::EntityStore;
 use nex::FihStorage;
 use nex::io::AsyncFileIo;
-use nex::EntityStore;
 use nexus_model::{AsyncIntentCapable, AsyncStorageRead, Content, Fact, FihHash, Intent};
 
 // ── CF clock ────────────────────────────────────────────────────────────

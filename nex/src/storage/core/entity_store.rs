@@ -63,39 +63,6 @@ where
             inner: Cell2::new(HashMap::new()),
         }
     }
-
-    /// Sync accessor for use in sync trait impls (RecordLoad, FihRecordLoad)
-    /// that cannot use async EntityStore methods.
-    pub fn get_sync(&self, key: &str) -> Option<V> {
-        self.inner.borrow().get(key).cloned()
-    }
-
-    /// Sync values accessor for use in sync trait impls.
-    pub fn values_sync(&self) -> Vec<V> {
-        self.inner.borrow().values().cloned().collect()
-    }
-
-    /// Sync len accessor for use in sync trait impls.
-    pub fn len_sync(&self) -> usize {
-        self.inner.borrow().len()
-    }
-
-    /// Sync is_empty accessor for use in sync trait impls.
-    pub fn is_empty_sync(&self) -> bool {
-        self.inner.borrow().is_empty()
-    }
-
-    /// Sync contains_key accessor for use in sync trait impls.
-    pub fn contains_key_sync(&self, key: &str) -> bool {
-        self.inner.borrow().contains_key(key)
-    }
-
-    /// Sync retain for use in contexts where async is not possible.
-    /// Since retain only does pure computation, it does not need to be async.
-    pub fn retain_sync(&self, mut f: Box<dyn FnMut(&str, &mut V) -> bool + Send>) {
-        let mut map = self.inner.borrow_mut();
-        map.retain(|k, v| f(k.as_str(), v));
-    }
 }
 
 impl<V> Default for MemoryEntityStore<V>
