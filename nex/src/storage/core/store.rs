@@ -72,8 +72,6 @@ pub struct FihStorage<I: FileIo> {
     #[expect(dead_code)]
     auto_flush: bool,
     // In-memory stores: rebuilt from IO on hydrate, kept in sync for reads.
-    // Concrete MemoryEntityStore used so sync trait impls (RecordLoad,
-    // FihRecordLoad) can access data without async dispatch.
     pub fact_store: MemoryEntityStore<FactRecord>,
     pub intent_store: MemoryEntityStore<IntentRecord>,
     pub hint_store: MemoryEntityStore<HintRecord>,
