@@ -29,7 +29,7 @@ where
 }
 
 #[cfg(target_arch = "wasm32")]
-#[async_trait]
+#[async_trait(?Send)]
 pub trait EntityStore<V>
 where
     V: Clone + 'static,
@@ -116,7 +116,7 @@ where
 }
 
 #[cfg(target_arch = "wasm32")]
-#[async_trait]
+#[async_trait(?Send)]
 impl<V> EntityStore<V> for MemoryEntityStore<V>
 where
     V: Clone + 'static,

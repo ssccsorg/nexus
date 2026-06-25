@@ -37,7 +37,6 @@
 
 use std::ops::Range;
 
-
 use nexus_model::{
     BlackboardError, BoardState, Content, Fact, FihHash, FlushCursor, FlushResult, Hint, Intent,
     Now, PartitionData, StateFilter,
@@ -417,8 +416,6 @@ async fn load_blob(io: &impl AsyncFileIo, blob_hash: &str) -> Content {
     }
 }
 
-
-
 // ── AsyncStorageRead ───────────────────────────────────────────────────────
 
 impl<I: AsyncFileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
@@ -550,14 +547,21 @@ impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
         if !fact.origin.starts_with("conclusion:") {
             let fact_idx = self.coord.intern(&fact.id.0);
             let text = String::from_utf8_lossy(&fact.content.data).to_string();
-            struct FactTextRecord { text: String }
+            struct FactTextRecord {
+                text: String,
+            }
             impl crate::storage::semantic::record::RecordLoad for FactTextRecord {
                 fn content(&self, _id: u32) -> Option<Vec<u8>> {
                     Some(self.text.as_bytes().to_vec())
                 }
-                fn features(&self, _id: u32) -> Option<Vec<f32>> { None }
+                fn features(&self, _id: u32) -> Option<Vec<f32>> {
+                    None
+                }
             }
-            self.coord.semantic_insert(fact_idx, &FactTextRecord { text }).await.ok();
+            self.coord
+                .semantic_insert(fact_idx, &FactTextRecord { text })
+                .await
+                .ok();
         }
 
         Ok(fact.id)
