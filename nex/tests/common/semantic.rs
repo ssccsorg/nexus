@@ -5,7 +5,6 @@
 #![allow(dead_code)]
 
 use nex::storage::semantic::{Query, RecordLoad, SemanticStore};
-use std::collections::HashMap;
 use std::fmt::Debug;
 
 // ── Mock SemanticStore (cosine vector) ───────────────────────────────────
@@ -197,7 +196,6 @@ impl SemanticStore for MockBm25Store {
         if query_terms.is_empty() {
             return Ok(Vec::new());
         }
-        let n = self.texts.len();
         let mut results: Vec<(u32, f32)> = self
             .ids
             .iter()
