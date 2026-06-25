@@ -6,10 +6,10 @@ Connects to the Rust HTTP server at localhost:9090 which already manages
 Zed headless.  No subprocess, no WebSocket, no API key needed here.
 
 Usage:
-  ./chat.py                              # default port 9090
-  ./chat.py --port 9091                  # custom port
-  ./chat.py --workdir /path/to/project   # no-zed fallback info
-  ./chat.py --no-zed                     # fallback mode
+  ./terminal.py                              # default port 9090
+  ./terminal.py --port 9091                  # custom port
+  ./terminal.py --workdir /path/to/project   # no-zed fallback info
+  ./terminal.py --no-zed                     # fallback mode
 
 Commands:
   /exit, /quit    - exit
