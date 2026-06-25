@@ -1,4 +1,4 @@
-// WasmerIo: filesystem-backed AsyncFileIo for WASIX targets.
+// WasmerIo: filesystem-backed FileIo for WASIX targets.
 //
 // WASIX (wasm32-wasix) provides full std::fs access.
 // This is equivalent to nex::io::FsIo but does not depend on
@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-use nex::io::{AsyncFileIo, IoFuture};
+use nex::io::{FileIo, IoFuture};
 
 /// Filesystem-backed IO for WASIX. Root directory is created on construction.
 pub struct WasmerIo {
@@ -33,7 +33,7 @@ impl WasmerIo {
     }
 }
 
-impl AsyncFileIo for WasmerIo {
+impl FileIo for WasmerIo {
     fn read<'a>(&'a self, path: &'a str) -> IoFuture<'a, Option<Vec<u8>>> {
         Box::pin(async move {
             let full = self.resolve(path)?;

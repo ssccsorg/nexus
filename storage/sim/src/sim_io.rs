@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use nex::io::file_io::{AsyncFileIo, IoFuture};
+use nex::io::file_io::{FileIo, IoFuture};
 
 /// Deterministic in-memory IO. No filesystem, no network, no async.
 /// On wasm32, uses Rc<RefCell<>> internally; on native, Arc<RwLock<>>.
@@ -68,7 +68,7 @@ impl Default for SimIo {
     }
 }
 
-impl AsyncFileIo for SimIo {
+impl FileIo for SimIo {
     fn read<'a>(&'a self, path: &'a str) -> IoFuture<'a, Option<Vec<u8>>> {
         Box::pin(async move {
             let map = self.data.read().map_err(|e| e.to_string())?;

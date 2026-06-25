@@ -15,19 +15,19 @@
 // Usage (native only):
 //   let bb = FihBlackboard::new(io, "project");
 
-use crate::io::AsyncFileIo;
+use crate::io::FileIo;
 use crate::storage::core::FihStorage;
 
 /// Blackboard implementation backed by FihStorage.
 ///
-/// Generic over any AsyncFileIo implementation. The IO backend is
+/// Generic over any FileIo implementation. The IO backend is
 /// injected at construction time (e.g., `CfFihIo` for R2, `FsIo` for
 /// filesystem, `SimIo` for in-memory).
-pub struct FihBlackboard<I: AsyncFileIo> {
+pub struct FihBlackboard<I: FileIo> {
     pub storage: FihStorage<I>,
 }
 
-impl<I: AsyncFileIo> FihBlackboard<I> {
+impl<I: FileIo> FihBlackboard<I> {
     /// Create a new FihBlackboard with the given IO backend.
     /// Use FihStorage::with_auto_flush for immediate durability.
     pub fn new(io: I, project_id: &str) -> Self {
@@ -37,7 +37,7 @@ impl<I: AsyncFileIo> FihBlackboard<I> {
     }
 }
 
-impl<I: AsyncFileIo> FihBlackboard<I> {
+impl<I: FileIo> FihBlackboard<I> {
     /// Rebuild in-memory cache from IO storage. Call on cold start.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn rebuild_cache(&self) -> Result<(), String> {

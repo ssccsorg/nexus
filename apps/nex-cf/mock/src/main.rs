@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 
-use nex::io::{AsyncFileIo, IoFuture, WriteOp};
+use nex::io::{BatchIo, FileIo, IoFuture, WriteOp};
 
 // ── MockBucket: in-memory HashMap mimicking R2 ──────────────────────────
 
@@ -64,7 +64,7 @@ impl Default for MockBucket {
     }
 }
 
-// ── MockIo: AsyncFileIo over MockBucket ─────────────────────────────────
+// ── MockIo: FileIo + BatchIo over MockBucket ────────────────────────────
 
 pub struct MockIo {
     bucket: MockBucket,
@@ -76,7 +76,7 @@ impl MockIo {
     }
 }
 
-impl AsyncFileIo for MockIo {
+impl FileIo for MockIo {
     fn read<'a>(&'a self, path: &'a str) -> IoFuture<'a, Option<Vec<u8>>> {
         let b = self.bucket.clone();
         let p = path.to_string();
@@ -107,7 +107,9 @@ impl AsyncFileIo for MockIo {
             Ok(())
         })
     }
+}
 
+impl BatchIo for MockIo {
     fn apply_batch<'a>(&'a self, ops: &'a [WriteOp]) -> IoFuture<'a, ()> {
         let b = self.bucket.clone();
         let items: Vec<(String, Vec<u8>, bool)> = ops

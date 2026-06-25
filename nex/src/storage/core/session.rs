@@ -12,17 +12,17 @@
 // storage/sim targets native platforms where block_on does not hang.
 
 use super::store::FihStorage;
-use crate::io::file_io::AsyncFileIo;
+use crate::io::file_io::FileIo;
 use futures_executor::block_on;
 
 /// Session wrapper around FihStorage that manages the
 /// hydrate → (read/write) → flush lifecycle.
-pub struct FihSession<I: AsyncFileIo> {
+pub struct FihSession<I: FileIo> {
     pub storage: FihStorage<I>,
     flushed: bool,
 }
 
-impl<I: AsyncFileIo> FihSession<I> {
+impl<I: FileIo> FihSession<I> {
     /// Create a new session. Storage is empty until hydrate() or
     /// operations are called.
     pub fn new(io: I, project_id: &str) -> Self {

@@ -2,7 +2,7 @@
 //
 // Export full FIH StateSpace (chain files + blob store) into a single
 // portable bundle file (.fihbundle), and import it back into any
-// AsyncFileIo-backed storage.
+// FileIo-backed storage.
 //
 // Bundle format: a single postcard-serialized Bundle struct:
 //   magic(8B) | postcard(Bundle { header, facts, intents, hints, blobs })
@@ -16,7 +16,7 @@
 //   - CfFihIo: (future) export/import over R2
 
 use super::record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
-use crate::io::file_io::{AsyncFileIo, SyncFileIo};
+use crate::io::file_io::{FileIo, SyncFileIo};
 
 /// Magic bytes for .fihbundle format identification.
 const BUNDLE_MAGIC: &[u8; 8] = b"FIHBUNDL";
@@ -61,7 +61,7 @@ pub trait FihImport {
 ///
 /// Scans the IO for fact, intent, hint records and blob entries,
 /// then serializes them into a single .fihbundle byte vector.
-pub fn export_from_io<A: AsyncFileIo>(io: &SyncFileIo<A>) -> Result<Vec<u8>, String> {
+pub fn export_from_io<A: FileIo>(io: &SyncFileIo<A>) -> Result<Vec<u8>, String> {
     let sync = io;
 
     // Collect all records
@@ -157,7 +157,7 @@ pub fn export_from_io<A: AsyncFileIo>(io: &SyncFileIo<A>) -> Result<Vec<u8>, Str
 ///
 /// Writes all records and blobs from the bundle into the IO,
 /// overwriting any existing data at the same paths.
-pub fn import_into_io<A: AsyncFileIo>(io: &SyncFileIo<A>, bundle: &[u8]) -> Result<(), String> {
+pub fn import_into_io<A: FileIo>(io: &SyncFileIo<A>, bundle: &[u8]) -> Result<(), String> {
     let sync = io;
 
     // Validate magic
