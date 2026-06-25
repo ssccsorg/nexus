@@ -31,6 +31,11 @@ impl<I: FileIo> BatchIo<I> {
         default_apply_batch(&self.inner, &batch).await
     }
 
+    /// Access inner IO for direct operations (bypassing batch buffer).
+    pub fn io(&self) -> &I {
+        &self.inner
+    }
+
     pub fn pending_count(&self) -> usize {
         self.pending.borrow().len()
     }
