@@ -301,7 +301,7 @@ pub async fn launch_zed(
 
 // ── Zed settings bootstrap ─────────────────────────────────────────────
 
-pub fn ensure_zed_settings(data_dir: &Path, api_key: &str) -> anyhow::Result<()> {
+pub fn ensure_zed_settings(data_dir: &Path, api_key: &str, model_name: &str, model_display: &str) -> anyhow::Result<()> {
     use std::fs;
     use std::io::Write;
 
@@ -324,8 +324,8 @@ pub fn ensure_zed_settings(data_dir: &Path, api_key: &str) -> anyhow::Result<()>
         settings["language_models"]["openai_compatible"]["deepseek"] = serde_json::json!({
             "api_url": "https://api.deepseek.com/v1",
             "available_models": [{
-                "name": "deepseek-chat",
-                "display_name": "DeepSeek V3",
+                "name": model_name,
+                "display_name": model_display,
                 "max_tokens": 65536,
                 "max_output_tokens": 8192,
                 "tool_use": true,
