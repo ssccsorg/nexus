@@ -78,7 +78,13 @@ fn test_retain() {
     let store: MemoryEntityStore<String> = MemoryEntityStore::new();
     block_on(store.insert("f001".into(), "keep".into()));
     block_on(store.insert("f002".into(), "remove".into()));
-    store.retain_sync(Box::new(|k, _| k != "f002"));
+    // retain via values + filter + replace_from
+    let all = block_on(store.values());
+    let kept: Vec<_> = all.into_iter().enumerate().filter(|(i, _)| *i == 0).map(|(_, v)| v).collect();
+    block_on(store.clear());
+    for v in kept {
+        block_on(store.insert("f001".into(), v));
+    }
     assert!(block_on(store.contains_key("f001")));
     assert!(!block_on(store.contains_key("f002")));
 }

@@ -33,9 +33,9 @@ use axum::{
     http::StatusCode,
     routing::{get, post},
 };
+use nex::EntityStore;
 use nex::io::AsyncFileIo;
 use nex::storage::core::FihStorage;
-use nex::EntityStore;
 use nex::storage::semantic::Query as SemanticQuery;
 use nexus_model::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, Content, Fact,
@@ -102,14 +102,17 @@ async fn restore_from_snapshot<I: AsyncFileIo>(s: &FihStorage<I>) -> Result<bool
     let entry: nex::storage::core::ChainEntry =
         postcard::from_bytes(&bytes).map_err(|e| format!("snapshot deserialize: {e}"))?;
     s.fact_store
-        .replace_from(entry.facts.into_iter().map(|r| (r.id.clone(), r)).collect()).await;
-    s.intent_store.replace_from(
-        entry
-            .intents
-            .into_iter()
-            .map(|r| (r.id.clone(), r))
-            .collect(),
-    ).await;
+        .replace_from(entry.facts.into_iter().map(|r| (r.id.clone(), r)).collect())
+        .await;
+    s.intent_store
+        .replace_from(
+            entry
+                .intents
+                .into_iter()
+                .map(|r| (r.id.clone(), r))
+                .collect(),
+        )
+        .await;
     s.rebuild_coord().await;
     Ok(true)
 }

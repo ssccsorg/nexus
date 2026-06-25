@@ -36,7 +36,7 @@
 //   - no static mutable state
 
 use std::ops::Range;
-use std::sync::atomic::{AtomicU64, Ordering};
+
 
 use nexus_model::{
     BlackboardError, BoardState, Content, Fact, FihHash, FlushCursor, FlushResult, Hint, Intent,
@@ -47,7 +47,6 @@ use super::entity_store::{EntityStore, MemoryEntityStore};
 use super::index::{Cell2, FihCoord};
 use super::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
 use crate::io::file_io::{AsyncFileIo, WriteOp};
-use crate::storage::semantic::fih::FihRecordLoad;
 use crate::storage::semantic::record::{Query, RecordLoad};
 
 /// Chain entry format: serialized by flush_since for delta chain files.
@@ -418,58 +417,7 @@ async fn load_blob(io: &impl AsyncFileIo, blob_hash: &str) -> Content {
     }
 }
 
-// ── FihStorage as RecordLoad ────────────────────────────────────────
-//
-// Implements the pure semantic RecordLoad trait for SemanticStore
-// implementations. FihStorage has access to both the in-memory
-// EntityStore (for fact/intent/hint records) and the coord index (for
-// ID resolution), making it the natural RecordLoad provider.
 
-impl<I: AsyncFileIo> RecordLoad for FihStorage<I> {
-    fn content(&self, id: u32) -> Option<Vec<u8>> {
-        let id_str = self.coord.resolve(id);
-        if id_str.is_empty() {
-            return None;
-        }
-        let record = self.fact_store.get_sync(&id_str)?;
-        let content = self.load_content(&record.blob_hash, "application/octet-stream");
-        if content.data.is_empty() {
-            None
-        } else {
-            Some(content.data)
-        }
-    }
-
-    fn features(&self, _id: u32) -> Option<Vec<f32>> {
-        // Feature vectors are not stored in FihStorage directly.
-        // External embedding services should set up RecordLoad wrappers.
-        None
-    }
-}
-
-// ── FihStorage as FihRecordLoad ────────────────────────────────────
-//
-// Extends RecordLoad with FIH-specific accessors for origin and creator.
-
-impl<I: AsyncFileIo> FihRecordLoad for FihStorage<I> {
-    fn origin(&self, id: u32) -> Option<String> {
-        let id_str = self.coord.resolve(id);
-        if id_str.is_empty() {
-            return None;
-        }
-        let record = self.fact_store.get_sync(&id_str)?;
-        Some(record.origin.clone())
-    }
-
-    fn creator(&self, id: u32) -> Option<String> {
-        let id_str = self.coord.resolve(id);
-        if id_str.is_empty() {
-            return None;
-        }
-        let record = self.fact_store.get_sync(&id_str)?;
-        Some(record.creator.clone())
-    }
-}
 
 // ── AsyncStorageRead ───────────────────────────────────────────────────────
 
@@ -601,7 +549,15 @@ impl<I: AsyncFileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
         // Auto-index into semantic stores (skip conclusion facts to reduce noise)
         if !fact.origin.starts_with("conclusion:") {
             let fact_idx = self.coord.intern(&fact.id.0);
-            self.coord.semantic_insert(fact_idx, self).await.ok();
+            let text = String::from_utf8_lossy(&fact.content.data).to_string();
+            struct FactTextRecord { text: String }
+            impl crate::storage::semantic::record::RecordLoad for FactTextRecord {
+                fn content(&self, _id: u32) -> Option<Vec<u8>> {
+                    Some(self.text.as_bytes().to_vec())
+                }
+                fn features(&self, _id: u32) -> Option<Vec<f32>> { None }
+            }
+            self.coord.semantic_insert(fact_idx, &FactTextRecord { text }).await.ok();
         }
 
         Ok(fact.id)
@@ -747,7 +703,9 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
         self.flush_pending()
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.intent_store.insert(intent_id.to_string(), record).await;
+        self.intent_store
+            .insert(intent_id.to_string(), record)
+            .await;
         Ok(())
     }
 
@@ -790,7 +748,9 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
         self.flush_pending()
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.intent_store.insert(intent_id.to_string(), record).await;
+        self.intent_store
+            .insert(intent_id.to_string(), record)
+            .await;
         Ok(())
     }
 
@@ -855,7 +815,9 @@ impl<I: AsyncFileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
         self.flush_pending()
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.intent_store.insert(intent_id.to_string(), record).await;
+        self.intent_store
+            .insert(intent_id.to_string(), record)
+            .await;
         self.coord
             .update_intent_status(&FihHash::from_hex(intent_id).0, "claimed", "concluded");
 
@@ -1187,38 +1149,32 @@ impl<I: AsyncFileIo> nexus_model::AsyncEvictCapable for FihStorage<I> {
 
     async fn evict_before(&self, before: &str) -> Result<u64, String> {
         let before_secs: u64 = before.parse().unwrap_or(0);
-        let removed = std::sync::Arc::new(AtomicU64::new(0));
-        let removed_clone = std::sync::Arc::clone(&removed);
-
-        self.hint_store.retain_sync(Box::new(move |_, r| {
-            if r.submitted_at < before_secs {
-                removed_clone.fetch_add(1, Ordering::Relaxed);
-                false
-            } else {
-                true
-            }
-        }));
-
-        Ok(removed.load(Ordering::Relaxed))
+        let all = self.hint_store.values().await;
+        let old_len = all.len();
+        let kept: Vec<(String, HintRecord)> = all
+            .into_iter()
+            .filter(|r| r.submitted_at >= before_secs)
+            .map(|r| (r.id.clone(), r))
+            .collect();
+        let kept_count = kept.len();
+        self.hint_store.replace_from(kept).await;
+        Ok((old_len - kept_count) as u64)
     }
 
     async fn evict_stale_intents(&self, older_than_secs: u64) -> Result<u64, String> {
         let now = self.clock.now_secs();
         let cutoff = now.saturating_sub(older_than_secs);
 
-        let removed = std::sync::Arc::new(AtomicU64::new(0));
-        let removed_clone = std::sync::Arc::clone(&removed);
-
-        self.intent_store.retain_sync(Box::new(move |_, r| {
-            if matches!(r.status, IntentStatus::Submitted) && r.created_at < cutoff {
-                removed_clone.fetch_add(1, Ordering::Relaxed);
-                false
-            } else {
-                true
-            }
-        }));
-
-        Ok(removed.load(Ordering::Relaxed))
+        let all = self.intent_store.values().await;
+        let old_len = all.len();
+        let kept: Vec<(String, IntentRecord)> = all
+            .into_iter()
+            .filter(|r| !(matches!(r.status, IntentStatus::Submitted) && r.created_at < cutoff))
+            .map(|r| (r.id.clone(), r))
+            .collect();
+        let kept_count = kept.len();
+        self.intent_store.replace_from(kept).await;
+        Ok((old_len - kept_count) as u64)
     }
 }
 
