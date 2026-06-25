@@ -10,7 +10,7 @@
 #
 # Prerequisites:
 #   .bin/helix-zed-headless-arm64 — pre-built binary
-#   apps/nex-zed/chat.py          — WebSocket server
+#   apps/nex-zed/terminal.py          — WebSocket server
 #
 # Environment:
 #   DEEPSEEK_API_KEY  — set for --apps test that verifies agent_ready + model init
@@ -20,7 +20,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BIN="$PROJECT_DIR/.bin/helix-zed-headless-arm64"
-CHAT_PY="$SCRIPT_DIR/chat.py"
+CHAT_PY="$SCRIPT_DIR/terminal.py"
 LOG="/tmp/nex-zed-headless.log"
 WS_LOG="/tmp/nex-zed-websocket.log"
 
@@ -43,7 +43,7 @@ step() { echo -e "\n${INFO} ${BOLD}$*${END}"; }
 
 cleanup() {
     pkill -f "helix-zed-headless" 2>/dev/null || true
-    pkill -f "chat.py" 2>/dev/null || true
+    pkill -f "terminal.py" 2>/dev/null || true
     sleep 1
 }
 
@@ -66,7 +66,7 @@ skip_no_binary() {
 test_ws_handshake() {
     step "Test: WebSocket handshake"
 
-    # Start chat.py as WebSocket server only
+    # Start terminal.py as WebSocket server only
     python3 "$CHAT_PY" --no-zed --api-key "test-dummy" > "$WS_LOG" 2>&1 &
     WS_PID=$!
     sleep 2
