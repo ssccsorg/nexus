@@ -72,6 +72,12 @@ pub fn qv(q: &[(String, String)], k: &str) -> String {
         .unwrap_or_default()
 }
 
+fn headers_with_ct(ct: String) -> worker::Headers {
+    let h = worker::Headers::new();
+    h.set("Content-Type", &ct).ok();
+    h
+}
+
 // ── NexusCfDO — Durable Object ─────────────────────────────────────────
 
 /// Durable Object that holds the full in-memory FihStorage state.
@@ -168,8 +174,12 @@ impl DurableObject for NexusCfDO {
         match path_stripped {
             "/" | "/fact" | "/intent" | "/claim" | "/conclude" | "/state" | "/flush"
             | "/rebuild" => {
-                let (code, _content_type, body) = handle_path(s, path_stripped, &q).await;
-                Ok(Response::from_bytes(body.into_bytes())?.with_status(code))
+                let (code, content_type, body) = handle_path(s, path_stripped, &q).await;
+                let mut resp = Response::from_bytes(body.into_bytes())?.with_status(code);
+                if let Some(ct) = content_type {
+                    resp = resp.with_headers(headers_with_ct(ct));
+                }
+                Ok(resp)
             }
 
             "/version" => Response::ok("3"),
@@ -477,9 +487,9 @@ pub async fn handle_path<I: AsyncFileIo>(
     s: &FihStorage<I>,
     path: &str,
     q: &[(String, String)],
-) -> (u16, String, String) {
+) -> (u16, Option<String>, String) {
     match path {
-        "/" => (200, "text/plain".into(), "nexus-cf".into()),
+        "/" => (200, None, "nexus-cf".into()),
 
         "/fact" => {
             let fact = Fact {
@@ -496,7 +506,7 @@ pub async fn handle_path<I: AsyncFileIo>(
                 Err(e) => {
                     return (
                         500,
-                        "application/json".into(),
+                        Some("application/json".into()),
                         serde_json::json!({"error": format!("submit_fact: {:?}", e)}).to_string(),
                     );
                 }
@@ -505,13 +515,13 @@ pub async fn handle_path<I: AsyncFileIo>(
             if let Err(e) = s.flush_pending().await {
                 return (
                     500,
-                    "application/json".into(),
+                    Some("application/json".into()),
                     serde_json::json!({"error": format!("flush: {}", e)}).to_string(),
                 );
             }
             (
                 200,
-                "application/json".into(),
+                Some("application/json".into()),
                 serde_json::json!({"id": hash.to_string()}).to_string(),
             )
         }
@@ -538,7 +548,7 @@ pub async fn handle_path<I: AsyncFileIo>(
                 Err(e) => {
                     return (
                         500,
-                        "application/json".into(),
+                        Some("application/json".into()),
                         serde_json::json!({"error": format!("submit_intent: {:?}", e)}).to_string(),
                     );
                 }
@@ -547,13 +557,13 @@ pub async fn handle_path<I: AsyncFileIo>(
             if let Err(e) = s.flush_pending().await {
                 return (
                     500,
-                    "application/json".into(),
+                    Some("application/json".into()),
                     serde_json::json!({"error": format!("flush: {}", e)}).to_string(),
                 );
             }
             (
                 200,
-                "application/json".into(),
+                Some("application/json".into()),
                 serde_json::json!({"id": hash.to_string()}).to_string(),
             )
         }
@@ -561,7 +571,7 @@ pub async fn handle_path<I: AsyncFileIo>(
         "/claim" => match s.claim_intent(&qv(q, "id"), &qv(q, "agent")).await {
             Ok(()) => (
                 200,
-                "application/json".into(),
+                Some("application/json".into()),
                 serde_json::json!({"status": "claimed"}).to_string(),
             ),
             Err(e) => {
@@ -575,7 +585,7 @@ pub async fn handle_path<I: AsyncFileIo>(
                 };
                 (
                     code,
-                    "application/json".into(),
+                    Some("application/json".into()),
                     serde_json::json!({"error": msg}).to_string(),
                 )
             }
@@ -584,13 +594,13 @@ pub async fn handle_path<I: AsyncFileIo>(
         "/conclude" => match s.conclude_intent(&qv(q, "id"), &qv(q, "result")).await {
             Ok(fact) => (
                 200,
-                "application/json".into(),
+                Some("application/json".into()),
                 serde_json::json!({"status": "concluded", "fact_id": fact.id.to_string()})
                     .to_string(),
             ),
             Err(e) => (
                 500,
-                "application/json".into(),
+                Some("application/json".into()),
                 serde_json::json!({"error": format!("{:?}", e)}).to_string(),
             ),
         },
@@ -599,7 +609,7 @@ pub async fn handle_path<I: AsyncFileIo>(
             let state = s.read_state().await;
             (
                 200,
-                "application/json".into(),
+                Some("application/json".into()),
                 serde_json::to_string(&state).unwrap_or_else(|_| "{}".into()),
             )
         }
@@ -607,12 +617,12 @@ pub async fn handle_path<I: AsyncFileIo>(
         "/flush" => match s.flush_pending().await {
             Ok(()) => (
                 200,
-                "application/json".into(),
+                Some("application/json".into()),
                 serde_json::json!({"status": "ok"}).to_string(),
             ),
             Err(e) => (
                 500,
-                "application/json".into(),
+                Some("application/json".into()),
                 serde_json::json!({"error": format!("flush: {}", e)}).to_string(),
             ),
         },
@@ -620,19 +630,19 @@ pub async fn handle_path<I: AsyncFileIo>(
         "/rebuild" => match s.rebuild_cache().await {
             Ok(()) => (
                 200,
-                "application/json".into(),
+                Some("application/json".into()),
                 serde_json::json!({"status": "ok"}).to_string(),
             ),
             Err(e) => (
                 500,
-                "application/json".into(),
+                Some("application/json".into()),
                 serde_json::json!({"error": format!("rebuild: {}", e)}).to_string(),
             ),
         },
 
         _ => (
             404,
-            "application/json".into(),
+            Some("application/json".into()),
             serde_json::json!({"error": "not found"}).to_string(),
         ),
     }
@@ -640,44 +650,36 @@ pub async fn handle_path<I: AsyncFileIo>(
 
 // ── Document helpers ─────────────────────────────────────────────────
 
+/// nex-cf contract: each `.llms.md` file is stored as a single Fact.
 pub async fn ingest_document<I: AsyncFileIo>(
     s: &FihStorage<I>,
     text: &str,
     origin: &str,
 ) -> Result<String, String> {
-    let paragraphs: Vec<&str> = text
-        .split('\n')
-        .map(|p| p.trim())
-        .filter(|p| !p.is_empty())
-        .collect();
-    if paragraphs.is_empty() {
+    let text = text.trim();
+    if text.is_empty() {
         return Err("empty document".into());
     }
-    let mut last_id = String::new();
-    for (i, para) in paragraphs.iter().enumerate() {
-        let para_id = format!("f_{}_{}", sanitize_id(origin), i);
-        let fact = Fact {
-            id: FihHash::from_hex(&para_id),
-            origin: format!("document:{}", origin),
-            content: Content {
-                mime_type: "text/plain".into(),
-                data: para.as_bytes().to_vec(),
-            },
-            creator: "ingestion-agent".into(),
-        };
-        // Async FactCapable: enqueue in pending buffer only (no R2 PUT per paragraph).
-        nexus_model::AsyncFactCapable::submit_fact(s, &fact)
-            .await
-            .map_err(|e| format!("submit para {i}: {e:?}"))?;
-        last_id = para_id;
-    }
+    let doc_id = format!("doc_{}", sanitize_id(origin));
+    let fact = Fact {
+        id: FihHash::from_hex(&doc_id),
+        origin: format!("document:{}", origin),
+        content: Content {
+            mime_type: "text/markdown".into(),
+            data: text.as_bytes().to_vec(),
+        },
+        creator: "ingestion-agent".into(),
+    };
+    nexus_model::AsyncFactCapable::submit_fact(s, &fact)
+        .await
+        .map_err(|e| format!("submit doc: {e:?}"))?;
     // Flush all pending writes to R2 in a single apply_batch call.
     s.flush_pending().await.map_err(|e| format!("flush: {e}"))?;
     // Write consolidated snapshot for fast cold-start recovery.
     if let Err(e) = write_snapshot(s).await {
         worker::console_log!("snapshot write failed: {e}");
     }
-    Ok(last_id)
+    Ok(doc_id)
 }
 
 async fn write_snapshot<I: nex::io::AsyncFileIo>(s: &FihStorage<I>) -> Result<(), String> {
