@@ -77,7 +77,7 @@ fn build_storage(data_dir: &str, project_id: &str) -> FihStorage<BatchIo<WasmerI
 
 // ── Snapshot ─────────────────────────────────────────────────────────
 
-async fn write_snapshot<I: FileIo>(s: &FihStorage<I>) -> Result<(), String> {
+async fn write_snapshot(s: &FihStorage<BatchIo<WasmerIo>>) -> Result<(), String> {
     use nex::storage::core::ChainEntry;
     use nex::storage::core::record::{FactRecord, IntentRecord};
     let facts: Vec<FactRecord> = s.fact_store.values().await;
@@ -89,10 +89,18 @@ async fn write_snapshot<I: FileIo>(s: &FihStorage<I>) -> Result<(), String> {
         intents,
     };
     let bytes = postcard::to_allocvec(&entry).map_err(|e| format!("snapshot serialize: {e}"))?;
-    s.io.write("_snapshot/facts.bin", &bytes).await
+    // Flush any pending BatchIo writes before writing snapshot directly.
+    // This ensures facts are persisted before the snapshot references them.
+    s.io.flush().await?;
+    // Write snapshot directly to inner IO (bypass BatchIo buffer).
+    s.io.io().write("_snapshot/facts.bin", &bytes).await?;
+    // Ensure snapshot is flushed to disk.
+    s.io.flush().await
 }
 
-async fn restore_from_snapshot<I: FileIo>(s: &FihStorage<I>) -> Result<bool, String> {
+async fn restore_from_snapshot(s: &FihStorage<BatchIo<WasmerIo>>) -> Result<bool, String> {
+    // Flush any pending writes first so read_state sees the latest state.
+    s.io.flush().await.ok();
     if !s.fact_store.is_empty().await {
         return Ok(false);
     }
@@ -121,8 +129,8 @@ async fn restore_from_snapshot<I: FileIo>(s: &FihStorage<I>) -> Result<bool, Str
 
 /// Wasmer contract: each `.llms.md` file is stored as a single Fact.
 /// (contract.nex not yet implemented — this is app-level hardcoded policy.)
-async fn ingest_document<I: FileIo>(
-    s: &FihStorage<I>,
+async fn ingest_document(
+    s: &FihStorage<BatchIo<WasmerIo>>,
     text: &str,
     origin: &str,
 ) -> Result<String, String> {
@@ -150,8 +158,8 @@ async fn ingest_document<I: FileIo>(
     Ok(doc_id)
 }
 
-async fn ingest_all_from_io<I: FileIo, D: FileIo>(
-    s: &FihStorage<I>,
+async fn ingest_all_from_io<D: FileIo>(
+    s: &FihStorage<BatchIo<WasmerIo>>,
     docs: &D,
     prefix: &str,
     max: usize,
@@ -312,7 +320,7 @@ async fn handle_ingest(
     Json(params): Json<IngestParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
     let origin = params.origin.unwrap_or_else(|| "ingest".into());
-    match ingest_document(&*state, &params.text, &origin).await {
+    match ingest_document(&state, &params.text, &origin).await {
         Ok(id) => Ok(Json(serde_json::json!({"status": "ingested", "id": id}))),
         Err(e) => Err(err_response(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -368,7 +376,7 @@ async fn handle_ingest_all(
             }));
         }
     };
-    let (total, errors) = ingest_all_from_io(&*state, &docs_io, &prefix, max).await;
+    let (total, errors) = ingest_all_from_io(&state, &docs_io, &prefix, max).await;
     Json(serde_json::json!({"ingested": total, "errors": errors}))
 }
 

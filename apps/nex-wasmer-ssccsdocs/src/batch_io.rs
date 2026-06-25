@@ -34,6 +34,11 @@ impl<I: FileIo> BatchIo<I> {
         default_apply_batch(&self.inner, &batch).await
     }
 
+    /// Access inner IO for direct operations (bypassing batch buffer).
+    pub fn io(&self) -> &I {
+        &self.inner
+    }
+
     /// Returns the number of pending writes (for diagnostics).
     #[expect(dead_code)]
     pub fn pending_count(&self) -> usize {
