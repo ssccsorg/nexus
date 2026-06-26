@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::io::{AsyncFileIo, IoFuture};
+use crate::io::{FileIo, IoFuture};
 
 /// Filesystem-backed FihIo. Root directory is created on construction.
 ///
@@ -53,7 +53,7 @@ impl FsIo {
     }
 }
 
-impl AsyncFileIo for FsIo {
+impl FileIo for FsIo {
     fn read<'a>(&'a self, path: &'a str) -> IoFuture<'a, Option<Vec<u8>>> {
         Box::pin(async move {
             let full = self.resolve(path)?;

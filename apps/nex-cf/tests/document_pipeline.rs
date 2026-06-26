@@ -11,14 +11,14 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use nex::io::{AsyncFileIo, IoFuture, WriteOp};
+use nex::io::{FileIo, IoFuture, WriteOp};
 use nexus_gateway_nex_cf::cf_io::TextQuery;
 use nexus_gateway_nex_cf::stores::bm25::InMemoryBm25;
 use nexus_model::AsyncStorageRead;
 
 // ── Mock helpers ─────────────────────────────────────────────────────────
 
-/// In-memory document store that implements AsyncFileIo.
+/// In-memory document store that implements FileIo.
 /// Used for `ingest_all_from_io` tests. Only `read` and `list` are
 /// meaningfully implemented; `write`/`delete`/`apply_batch` are no-ops.
 struct TestDocStore {
@@ -44,7 +44,7 @@ impl TestDocStore {
     }
 }
 
-impl AsyncFileIo for TestDocStore {
+impl FileIo for TestDocStore {
     fn read<'a>(&'a self, path: &'a str) -> IoFuture<'a, Option<Vec<u8>>> {
         let result = self.data.get(path).cloned();
         Box::pin(std::future::ready(Ok(result)))
@@ -65,10 +65,6 @@ impl AsyncFileIo for TestDocStore {
     }
 
     fn delete<'a>(&'a self, _path: &'a str) -> IoFuture<'a, ()> {
-        Box::pin(std::future::ready(Ok(())))
-    }
-
-    fn apply_batch<'a>(&'a self, _ops: &'a [WriteOp]) -> IoFuture<'a, ()> {
         Box::pin(std::future::ready(Ok(())))
     }
 }
@@ -99,7 +95,7 @@ impl TrackingIo {
     }
 }
 
-impl AsyncFileIo for TrackingIo {
+impl FileIo for TrackingIo {
     fn read<'a>(&'a self, path: &'a str) -> IoFuture<'a, Option<Vec<u8>>> {
         self.inner.read(path)
     }
@@ -121,7 +117,10 @@ impl AsyncFileIo for TrackingIo {
     fn delete<'a>(&'a self, path: &'a str) -> IoFuture<'a, ()> {
         self.inner.delete(path)
     }
+}
 
+use nex::io::BatchIo;
+impl BatchIo for TrackingIo {
     fn apply_batch<'a>(&'a self, ops: &'a [WriteOp]) -> IoFuture<'a, ()> {
         let counts = Arc::clone(&self.counts);
         let ops_vec: Vec<WriteOp> = ops.to_vec();
@@ -791,7 +790,7 @@ fn ingest_all_from_io_nested_mixed_depths() {
 fn ingest_all_from_io_error_missing_file() {
     // A store where list returns a path but read returns None (missing).
     struct MissingFileIo;
-    impl AsyncFileIo for MissingFileIo {
+    impl FileIo for MissingFileIo {
         fn read<'a>(&'a self, _path: &'a str) -> IoFuture<'a, Option<Vec<u8>>> {
             Box::pin(std::future::ready(Ok(None)))
         }
@@ -802,9 +801,6 @@ fn ingest_all_from_io_error_missing_file() {
             Box::pin(std::future::ready(Ok(vec!["_llms/missing.llms.md".into()])))
         }
         fn delete<'a>(&'a self, _path: &'a str) -> IoFuture<'a, ()> {
-            Box::pin(std::future::ready(Ok(())))
-        }
-        fn apply_batch<'a>(&'a self, _ops: &'a [WriteOp]) -> IoFuture<'a, ()> {
             Box::pin(std::future::ready(Ok(())))
         }
     }
@@ -1204,7 +1200,7 @@ fn handle_path_flush_and_rebuild() {
 #[test]
 fn ingest_all_from_io_empty_prefix_returns_no_errors() {
     struct EmptyIo;
-    impl AsyncFileIo for EmptyIo {
+    impl FileIo for EmptyIo {
         fn read<'a>(&'a self, _path: &'a str) -> IoFuture<'a, Option<Vec<u8>>> {
             Box::pin(std::future::ready(Ok(None)))
         }
@@ -1215,9 +1211,6 @@ fn ingest_all_from_io_empty_prefix_returns_no_errors() {
             Box::pin(std::future::ready(Ok(vec![])))
         }
         fn delete<'a>(&'a self, _path: &'a str) -> IoFuture<'a, ()> {
-            Box::pin(std::future::ready(Ok(())))
-        }
-        fn apply_batch<'a>(&'a self, _ops: &'a [WriteOp]) -> IoFuture<'a, ()> {
             Box::pin(std::future::ready(Ok(())))
         }
     }

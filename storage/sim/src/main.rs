@@ -15,7 +15,7 @@ use nexus_storage_sim::{FihStorage, SimIo, SyncFileIo, intent_status};
 fn main() {
     eprintln!("+-----------------------------------------------------------+");
     eprintln!("| nexus-storage-sim verification runner                      |");
-    eprintln!("| Phase 3: AsyncFileIo + FlushCapable + FsIo              |");
+    eprintln!("| Phase 3: FileIo + FlushCapable + FsIo                    |");
     eprintln!("+-----------------------------------------------------------+");
     eprintln!();
 
