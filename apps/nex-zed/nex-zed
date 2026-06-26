@@ -3,7 +3,7 @@
 #
 # 1. Auto-build if helix-zed-headless-arm64 binary is missing
 # 2. WebSocket test server + Zed --headless execution
-# 3. Start interactive chat with chat.py
+# 3. Start interactive chat with terminal.py
 #
 # Usage:
 #   ./nex-zed                          # default run (current directory)
@@ -55,7 +55,7 @@ Options:
   --workdir DIR    Working directory (default: current directory)
   --build-only     Build binary only and exit
   --no-build       Use existing binary without building
-  --no-chat        Run Zed only without chat.py
+  --no-chat        Run Zed only without terminal.py
   --bin PATH       Specify binary path directly
   --api-key KEY    DeepSeek API key (default: .env or env var)
   --help           Show this help
@@ -172,17 +172,17 @@ if [ -z "$API_KEY" ]; then
   Use --api-key option, DEEPSEEK_API_KEY env var, or LLM_API_KEY in .env file."
 fi
 
-# ── Step 2: Run chat.py ──────────────────────────────────────────────
+# ── Step 2: Run terminal.py ──────────────────────────────────────────────
 
-CHAT_PY="$SCRIPT_DIR/chat.py"
+CHAT_PY="$SCRIPT_DIR/terminal.py"
 if [ ! -f "$CHAT_PY" ]; then
-    fail "chat.py not found: $CHAT_PY"
+    fail "terminal.py not found: $CHAT_PY"
 fi
 
 info "Starting nex-zed..."
 echo "  Binary:   $BIN"
 echo "  Workdir:  $WORKDIR"
-echo "  chat.py:  $CHAT_PY"
+echo "  terminal.py:  $CHAT_PY"
 echo ""
 
 CHAT_ARGS=(
@@ -192,7 +192,7 @@ CHAT_ARGS=(
 )
 
 if [ "$NO_CHAT" = true ]; then
-    # Run Zed only (server mode of chat.py)
+    # Run Zed only (server mode of terminal.py)
     CHAT_ARGS+=(--no-zed)
     warn "--no-chat mode: Running Zed only."
 fi
