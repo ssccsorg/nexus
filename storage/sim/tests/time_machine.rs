@@ -15,7 +15,7 @@ use nexus_model::{
     AsyncIntentCapable, AsyncStorageRead, Content, Fact, FihHash, FlushCursor, FlushResult, Hint,
     Intent, StateFilter,
 };
-use nexus_storage_sim::{FihStorage, SimIo, SyncFileIo};
+use nexus_storage_sim::{EntityStore, FihStorage, SimIo, SyncFileIo};
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -288,7 +288,7 @@ fn test_eviction_preserves_fact_removes_old_hint() {
     // read_state reads from IO (which still has the hint), so we check
     // the in-memory store directly.
     assert_eq!(
-        store.hint_store.len(),
+        block_on(store.hint_store.len()),
         0,
         "old hint must be evicted from memory"
     );

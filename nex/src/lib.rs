@@ -4,7 +4,7 @@
 // Each FihStorage instance owns its in-memory state and I/O channel.
 //
 // On native (macOS, Linux, WASIX): interior mutability uses Mutex.
-// FihStorage<AsyncFileIo> is Send + Sync — safe to share across threads
+// FihStorage<FileIo> is Send + Sync — safe to share across threads
 // via Arc (e.g., axum server state).
 //
 // On wasm32-unknown-unknown: interior mutability uses RefCell.
@@ -24,7 +24,7 @@ pub mod storage;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use io::FsIo;
-pub use io::{AsyncFileIo, SyncFileIo, WriteOp};
+pub use io::{FileIo, SyncFileIo, WriteOp};
 pub use process::{error::ProcessError, scheduler::Scheduler};
 pub use storage::core::export::{FihExport, FihImport, export_from_io, import_into_io};
 pub use storage::core::{EntityStore, FihSession, FihStorage, IntentStatus, MemoryEntityStore};

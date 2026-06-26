@@ -33,7 +33,8 @@ use axum::{
     http::StatusCode,
     routing::{get, post},
 };
-use nex::io::AsyncFileIo;
+use nex::EntityStore;
+use nex::io::FileIo;
 use nex::storage::core::FihStorage;
 use nex::storage::semantic::Query as SemanticQuery;
 use nexus_model::{
@@ -76,11 +77,11 @@ fn build_storage(data_dir: &str, project_id: &str) -> FihStorage<BatchIo<WasmerI
 
 // ── Snapshot ─────────────────────────────────────────────────────────
 
-async fn write_snapshot<I: AsyncFileIo>(s: &FihStorage<I>) -> Result<(), String> {
+async fn write_snapshot(s: &FihStorage<BatchIo<WasmerIo>>) -> Result<(), String> {
     use nex::storage::core::ChainEntry;
     use nex::storage::core::record::{FactRecord, IntentRecord};
-    let facts: Vec<FactRecord> = s.fact_store.values();
-    let intents: Vec<IntentRecord> = s.intent_store.values();
+    let facts: Vec<FactRecord> = s.fact_store.values().await;
+    let intents: Vec<IntentRecord> = s.intent_store.values().await;
     let entry = ChainEntry {
         prev_cursor: 0,
         records_flushed: facts.len() as u64,
@@ -88,11 +89,19 @@ async fn write_snapshot<I: AsyncFileIo>(s: &FihStorage<I>) -> Result<(), String>
         intents,
     };
     let bytes = postcard::to_allocvec(&entry).map_err(|e| format!("snapshot serialize: {e}"))?;
-    s.io.write("_snapshot/facts.bin", &bytes).await
+    // Flush any pending BatchIo writes before writing snapshot directly.
+    // This ensures facts are persisted before the snapshot references them.
+    s.io.flush().await?;
+    // Write snapshot directly to inner IO (bypass BatchIo buffer).
+    s.io.io().write("_snapshot/facts.bin", &bytes).await?;
+    // Ensure snapshot is flushed to disk.
+    s.io.flush().await
 }
 
-async fn restore_from_snapshot<I: AsyncFileIo>(s: &FihStorage<I>) -> Result<bool, String> {
-    if !s.fact_store.is_empty() {
+async fn restore_from_snapshot(s: &FihStorage<BatchIo<WasmerIo>>) -> Result<bool, String> {
+    // Flush any pending writes first so read_state sees the latest state.
+    s.io.flush().await.ok();
+    if !s.fact_store.is_empty().await {
         return Ok(false);
     }
     let Some(bytes) = s.io.read("_snapshot/facts.bin").await? else {
@@ -101,15 +110,18 @@ async fn restore_from_snapshot<I: AsyncFileIo>(s: &FihStorage<I>) -> Result<bool
     let entry: nex::storage::core::ChainEntry =
         postcard::from_bytes(&bytes).map_err(|e| format!("snapshot deserialize: {e}"))?;
     s.fact_store
-        .replace_from(entry.facts.into_iter().map(|r| (r.id.clone(), r)).collect());
-    s.intent_store.replace_from(
-        entry
-            .intents
-            .into_iter()
-            .map(|r| (r.id.clone(), r))
-            .collect(),
-    );
-    s.rebuild_coord();
+        .replace_from(entry.facts.into_iter().map(|r| (r.id.clone(), r)).collect())
+        .await;
+    s.intent_store
+        .replace_from(
+            entry
+                .intents
+                .into_iter()
+                .map(|r| (r.id.clone(), r))
+                .collect(),
+        )
+        .await;
+    s.rebuild_coord().await;
     Ok(true)
 }
 
@@ -117,8 +129,8 @@ async fn restore_from_snapshot<I: AsyncFileIo>(s: &FihStorage<I>) -> Result<bool
 
 /// Wasmer contract: each `.llms.md` file is stored as a single Fact.
 /// (contract.nex not yet implemented — this is app-level hardcoded policy.)
-async fn ingest_document<I: AsyncFileIo>(
-    s: &FihStorage<I>,
+async fn ingest_document(
+    s: &FihStorage<BatchIo<WasmerIo>>,
     text: &str,
     origin: &str,
 ) -> Result<String, String> {
@@ -146,8 +158,8 @@ async fn ingest_document<I: AsyncFileIo>(
     Ok(doc_id)
 }
 
-async fn ingest_all_from_io<I: AsyncFileIo, D: AsyncFileIo>(
-    s: &FihStorage<I>,
+async fn ingest_all_from_io<D: FileIo>(
+    s: &FihStorage<BatchIo<WasmerIo>>,
     docs: &D,
     prefix: &str,
     max: usize,
@@ -298,7 +310,7 @@ async fn handle_version() -> &'static str {
 async fn handle_debug_stores(State(state): State<AppState>) -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "stores": state.semantic_stores().len(),
-        "fact_store": state.fact_store.len(),
+        "fact_store": state.fact_store.len().await,
         "service": "nexus-wasmer-ssccsdocs"
     }))
 }
@@ -308,7 +320,7 @@ async fn handle_ingest(
     Json(params): Json<IngestParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
     let origin = params.origin.unwrap_or_else(|| "ingest".into());
-    match ingest_document(&*state, &params.text, &origin).await {
+    match ingest_document(&state, &params.text, &origin).await {
         Ok(id) => Ok(Json(serde_json::json!({"status": "ingested", "id": id}))),
         Err(e) => Err(err_response(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -364,7 +376,7 @@ async fn handle_ingest_all(
             }));
         }
     };
-    let (total, errors) = ingest_all_from_io(&*state, &docs_io, &prefix, max).await;
+    let (total, errors) = ingest_all_from_io(&state, &docs_io, &prefix, max).await;
     Json(serde_json::json!({"ingested": total, "errors": errors}))
 }
 
@@ -623,7 +635,7 @@ async fn main() {
     match restore_from_snapshot(&storage).await {
         Ok(true) => tracing::info!(
             "restored from snapshot ({} facts)",
-            storage.fact_store.len()
+            storage.fact_store.len().await
         ),
         Ok(false) => tracing::info!("no snapshot found, starting fresh"),
         Err(e) => tracing::warn!("snapshot restore failed (proceeding empty): {e}"),
@@ -690,7 +702,7 @@ mod tests {
 
         let restored = restore_from_snapshot(&s2).await.unwrap();
         assert!(restored, "snapshot should be restored");
-        assert_eq!(s2.fact_store.len(), 1);
+        assert_eq!(s2.fact_store.len().await, 1);
     }
 
     #[tokio::test]

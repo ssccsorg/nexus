@@ -1,4 +1,4 @@
-// BatchIo: write-batching adapter for any AsyncFileIo backend.
+// BatchIo: write-batching adapter for any FileIo backend.
 //
 // Reads, lists, and deletes pass through to the inner IO immediately.
 // Writes are enqueued and only committed when `apply_batch` is called.
@@ -6,15 +6,15 @@
 
 use std::sync::Mutex;
 
-use nex::io::{AsyncFileIo, IoFuture, WriteOp};
+use nex::io::{BatchIo as BatchIoTrait, FileIo, IoFuture, WriteOp, default_apply_batch};
 
-/// AsyncFileIo wrapper that batches writes and flushes them in one `apply_batch`.
-pub struct BatchIo<I: AsyncFileIo> {
+/// Write-batching adapter wrapping any FileIo.
+pub struct BatchIo<I: FileIo> {
     inner: I,
     pending: Mutex<Vec<WriteOp>>,
 }
 
-impl<I: AsyncFileIo> BatchIo<I> {
+impl<I: FileIo> BatchIo<I> {
     pub fn new(inner: I) -> Self {
         Self {
             inner,
@@ -31,7 +31,12 @@ impl<I: AsyncFileIo> BatchIo<I> {
             }
             std::mem::take(&mut *ops)
         };
-        self.inner.apply_batch(&batch).await
+        default_apply_batch(&self.inner, &batch).await
+    }
+
+    /// Access inner IO for direct operations (bypassing batch buffer).
+    pub fn io(&self) -> &I {
+        &self.inner
     }
 
     /// Returns the number of pending writes (for diagnostics).
@@ -41,7 +46,7 @@ impl<I: AsyncFileIo> BatchIo<I> {
     }
 }
 
-impl<I: AsyncFileIo> AsyncFileIo for BatchIo<I> {
+impl<I: FileIo> FileIo for BatchIo<I> {
     fn read<'a>(&'a self, path: &'a str) -> IoFuture<'a, Option<Vec<u8>>> {
         self.inner.read(path)
     }
@@ -63,7 +68,9 @@ impl<I: AsyncFileIo> AsyncFileIo for BatchIo<I> {
     fn delete<'a>(&'a self, path: &'a str) -> IoFuture<'a, ()> {
         self.inner.delete(path)
     }
+}
 
+impl<I: FileIo + BatchIoTrait> BatchIoTrait for BatchIo<I> {
     /// Flush pending writes + forward incoming batch to inner.
     fn apply_batch<'a>(&'a self, ops: &'a [WriteOp]) -> IoFuture<'a, ()> {
         let this: &BatchIo<I> = self;

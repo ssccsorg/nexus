@@ -1,5 +1,5 @@
-// ── CfFihIo: Cloudflare R2-backed AsyncFileIo implementation ──────────
-use nex::io::{AsyncFileIo, IoFuture, WriteOp};
+// ── CfFihIo: Cloudflare R2-backed FileIo + BatchIo implementation ────
+use nex::io::{BatchIo, FileIo, IoFuture, WriteOp};
 use nex::storage::semantic::Query;
 use worker::Bucket;
 
@@ -13,7 +13,7 @@ impl CfFihIo {
     }
 }
 
-impl AsyncFileIo for CfFihIo {
+impl FileIo for CfFihIo {
     fn read<'a>(&'a self, path: &'a str) -> IoFuture<'a, Option<Vec<u8>>> {
         Box::pin(async move {
             let obj = self
@@ -88,7 +88,9 @@ impl AsyncFileIo for CfFihIo {
             Ok(())
         })
     }
+}
 
+impl BatchIo for CfFihIo {
     fn apply_batch<'a>(&'a self, ops: &'a [WriteOp]) -> IoFuture<'a, ()> {
         Box::pin(async move {
             // Fire all R2 operations concurrently using spawn_local.
