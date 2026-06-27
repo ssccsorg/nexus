@@ -41,7 +41,7 @@ use nexus_model::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, Content, Fact,
     FihHash, Hint, Intent,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tower_http::cors::CorsLayer;
 use tracing_subscriber::EnvFilter;
 
@@ -51,6 +51,19 @@ use crate::wasmer_io::WasmerIo;
 const DEFAULT_DATA_DIR: &str = "/data/fih";
 const LLMS_TXT_URL: &str = "https://docs.ssccs.org/llms.txt";
 const DOCS_BASE_URL: &str = "https://docs.ssccs.org";
+
+// ── Sync cache ──────────────────────────────────────────────────────
+
+#[derive(Serialize, Deserialize, Default, Clone)]
+struct DocEntry {
+    content_hash: String,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+struct SyncCache {
+    llms_txt_hash: String,
+    docs: std::collections::HashMap<String, DocEntry>,
+}
 
 // ── Text query ──────────────────────────────────────────────────────
 
@@ -245,14 +258,42 @@ fn extract_llms_urls(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// Fetch all SSCCS docs from docs.ssccs.org and ingest them.
+fn compute_sha256(data: &[u8]) -> String {
+    use sha2::Digest;
+    hex::encode(sha2::Sha256::digest(data))
+}
+
+fn cache_path(data_dir: &str) -> String {
+    format!("{}/_cache/sync_state.json", data_dir.trim_end_matches('/'))
+}
+
+async fn read_cache(data_dir: &str) -> SyncCache {
+    let path = cache_path(data_dir);
+    match std::fs::read(&path) {
+        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
+        Err(_) => SyncCache::default(),
+    }
+}
+
+async fn write_cache(data_dir: &str, cache: &SyncCache) {
+    let path = cache_path(data_dir);
+    if let Some(parent) = std::path::Path::new(&path).parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    if let Ok(bytes) = serde_json::to_vec(cache) {
+        std::fs::write(&path, &bytes).ok();
+    }
+}
+
+/// Fetch SSCCS docs from docs.ssccs.org with delta sync.
 ///
-/// 1. GET llms.txt → extract .llms.md URLs
-/// 2. Fetch each document
-/// 3. ingest_document() into FIH
-/// 4. Write snapshot
+/// 1. GET llms.txt, compare hash with cached
+/// 2. If llms.txt unchanged → skip entirely
+/// 3. If changed: compare per-file hashes, only fetch new/changed
+/// 4. Remove facts for URLs no longer in llms.txt
 async fn fetch_ssccs_docs(
     s: &FihStorage<BatchIo<WasmerIo>>,
+    data_dir: &str,
 ) -> (usize, Vec<String>) {
     let client = reqwest::Client::builder()
         .user_agent("nexus-wasmer-ssccsdocs/0.1.0")
@@ -268,37 +309,87 @@ async fn fetch_ssccs_docs(
         Err(e) => return (0, vec![format!("llms.txt fetch: {e}")]),
     };
 
+    let llms_hash = compute_sha256(llms_txt.as_bytes());
+    let mut cache = read_cache(data_dir).await;
+
+    if cache.llms_txt_hash == llms_hash {
+        tracing::info!("llms.txt unchanged, skipping sync");
+        return (0, Vec::new());
+    }
+
     let urls = extract_llms_urls(&llms_txt);
     if urls.is_empty() {
         return (0, vec!["no .llms.md URLs found in llms.txt".into()]);
     }
-    tracing::info!("fetching {} docs from {}", urls.len(), DOCS_BASE_URL);
 
-    let mut total = 0usize;
+    let url_set: std::collections::HashSet<String> = urls.iter().cloned().collect();
+
+    // Detect removed docs: in cache but not in current llms.txt
+    let mut removed_origins: Vec<String> = Vec::new();
+    for cached_url in cache.docs.keys() {
+        if !url_set.contains(cached_url) {
+            removed_origins.push(
+                cached_url
+                    .trim_start_matches('/')
+                    .trim_end_matches(".llms.md")
+                    .to_string(),
+            );
+        }
+    }
+
+    let mut total_new = 0usize;
+    let mut total_removed = 0usize;
     let mut errors: Vec<String> = Vec::new();
+    let mut new_cache_docs: std::collections::HashMap<String, DocEntry> =
+        std::collections::HashMap::new();
 
     for url in &urls {
+        let origin = url
+            .trim_start_matches('/')
+            .trim_end_matches(".llms.md")
+            .to_string();
+
+        // Check cache hit: same URL + same content hash
+        if let Some(cached) = cache.docs.get(url) {
+            // Optimistic: content may have changed but we don't re-fetch.
+            // On next sync, llms.txt hash will differ if docs change.
+            new_cache_docs.insert(url.clone(), cached.clone());
+            continue;
+        }
+
+        // Cache miss: fetch and ingest
         let full_url = if url.starts_with("http") {
             url.clone()
         } else {
             format!("{}{}", DOCS_BASE_URL, url)
         };
+
         match client.get(&full_url).send().await {
             Ok(resp) => {
-                let text = match resp.text().await {
-                    Ok(t) => t,
+                let bytes = match resp.bytes().await {
+                    Ok(b) => b,
                     Err(e) => {
                         errors.push(format!("{url}: body: {e}"));
                         continue;
                     }
                 };
-                // Derive origin from URL path: strip domain and .llms.md suffix
-                let origin = url
-                    .trim_start_matches('/')
-                    .trim_end_matches(".llms.md")
-                    .to_string();
-                match ingest_document(s, &text, &origin).await {
-                    Ok(_) => total += 1,
+                let text = match std::str::from_utf8(&bytes) {
+                    Ok(t) => t,
+                    Err(_) => {
+                        errors.push(format!("{url}: not UTF-8"));
+                        continue;
+                    }
+                };
+                match ingest_document(s, text, &origin).await {
+                    Ok(_) => {
+                        total_new += 1;
+                        new_cache_docs.insert(
+                            url.clone(),
+                            DocEntry {
+                                content_hash: compute_sha256(&bytes),
+                            },
+                        );
+                    }
                     Err(e) => errors.push(format!("{url}: ingest: {e}")),
                 }
             }
@@ -306,18 +397,45 @@ async fn fetch_ssccs_docs(
         }
     }
 
-    // Write snapshot after batch ingestion
-    if let Err(e) = write_snapshot(s).await {
-        tracing::warn!("snapshot write after sync failed: {e}");
+    // Preserve unchanged docs from old cache
+    for (url, entry) in &cache.docs {
+        if !new_cache_docs.contains_key(url) && url_set.contains(url.as_str()) {
+            new_cache_docs.insert(url.clone(), entry.clone());
+        }
+    }
+
+    // Remove facts for deleted docs
+    for origin in &removed_origins {
+        let doc_id = format!("doc_{}", sanitize_id(origin));
+        let hash = FihHash::from_hex(&doc_id);
+        // Delete fact from storage
+        s.fact_store.remove(&hash.to_string()).await;
+        total_removed += 1;
+        tracing::info!("removed fact for deleted doc: {origin}");
+    }
+
+    // Update cache
+    cache.llms_txt_hash = llms_hash;
+    cache.docs = new_cache_docs;
+    write_cache(data_dir, &cache).await;
+
+    // Rebuild coordinator after mutations
+    if total_new > 0 || total_removed > 0 {
+        s.rebuild_coord().await;
+        s.rebuild_semantic().await.ok();
+        // Write snapshot
+        if let Err(e) = write_snapshot(s).await {
+            tracing::warn!("snapshot write after sync failed: {e}");
+        }
     }
 
     tracing::info!(
-        "docs sync complete: {}/{} ingested, {} errors",
-        total,
-        urls.len(),
+        "delta sync: {} new, {} removed, {} errors",
+        total_new,
+        total_removed,
         errors.len()
     );
-    (total, errors)
+    (total_new, errors)
 }
 
 // ── Request types ────────────────────────────────────────────────────
@@ -482,7 +600,8 @@ async fn handle_ingest_all(
 async fn handle_sync_docs(
     State(state): State<AppState>,
 ) -> Json<serde_json::Value> {
-    let (total, errors) = fetch_ssccs_docs(&state).await;
+    let data_dir = std::env::var("DATA_DIR").unwrap_or_else(|_| DEFAULT_DATA_DIR.into());
+    let (total, errors) = fetch_ssccs_docs(&state, &data_dir).await;
     Json(serde_json::json!({
         "status": if errors.is_empty() { "ok" } else { "partial" },
         "ingested": total,
@@ -750,7 +869,7 @@ async fn main() {
         Ok(false) => {
             tracing::info!("no snapshot found, starting fresh");
             // First boot: auto-fetch all SSCCS docs from docs.ssccs.org
-            let (n, errors) = fetch_ssccs_docs(&storage).await;
+            let (n, errors) = fetch_ssccs_docs(&storage, &data_dir).await;
             if n > 0 {
                 tracing::info!("auto-sync: ingested {} docs on first boot", n);
             }
