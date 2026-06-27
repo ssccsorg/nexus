@@ -338,7 +338,6 @@ async fn fetch_ssccs_docs(
     }
 
     let mut total_new = 0usize;
-    let mut total_removed = 0usize;
     let mut errors: Vec<String> = Vec::new();
     let mut new_cache_docs: std::collections::HashMap<String, DocEntry> =
         std::collections::HashMap::new();
@@ -404,14 +403,11 @@ async fn fetch_ssccs_docs(
         }
     }
 
-    // Remove facts for deleted docs
+    // Facts are immutable: removed docs are NOT deleted from storage.
+    // They are simply excluded from future snapshots (which only contain
+    // current URLs). Orphaned facts persist per FIH immutability.
     for origin in &removed_origins {
-        let doc_id = format!("doc_{}", sanitize_id(origin));
-        let hash = FihHash::from_hex(&doc_id);
-        // Delete fact from storage
-        s.fact_store.remove(&hash.to_string()).await;
-        total_removed += 1;
-        tracing::info!("removed fact for deleted doc: {origin}");
+        tracing::info!("doc no longer in llms.txt (fact preserved): {origin}");
     }
 
     // Update cache
@@ -419,20 +415,18 @@ async fn fetch_ssccs_docs(
     cache.docs = new_cache_docs;
     write_cache(data_dir, &cache).await;
 
-    // Rebuild coordinator after mutations
-    if total_new > 0 || total_removed > 0 {
+    // Rebuild coordinator and snapshot after ingest mutations
+    if total_new > 0 {
         s.rebuild_coord().await;
         s.rebuild_semantic().await.ok();
-        // Write snapshot
         if let Err(e) = write_snapshot(s).await {
             tracing::warn!("snapshot write after sync failed: {e}");
         }
     }
 
     tracing::info!(
-        "delta sync: {} new, {} removed, {} errors",
+        "delta sync: {} new, {} errors (removed docs preserved per FIH immutability)",
         total_new,
-        total_removed,
         errors.len()
     );
     (total_new, errors)
