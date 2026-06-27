@@ -502,7 +502,12 @@ fn err_response(code: StatusCode, error: &str, detail: String) -> (StatusCode, J
 }
 
 fn uuid_v4() -> String {
-    uuid::Uuid::new_v4().to_string()
+    // Simple unique ID: timestamp + random hex. Avoids uuid/getrandom 0.4 dep.
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    format!("{ts:x}")
 }
 
 // ── Route handlers ───────────────────────────────────────────────────
