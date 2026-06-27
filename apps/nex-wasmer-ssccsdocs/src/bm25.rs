@@ -29,7 +29,7 @@ impl Default for InMemoryBm25 {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 #[async_trait::async_trait]
 impl SemanticStore for InMemoryBm25 {
     async fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
@@ -120,7 +120,7 @@ impl SemanticStore for InMemoryBm25 {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 #[async_trait::async_trait(?Send)]
 impl SemanticStore for InMemoryBm25 {
     async fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {

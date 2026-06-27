@@ -1,0 +1,34 @@
+[package]
+name = "nexus-gateway-wasmer-ssccsdocs"
+version = "0.5.1"
+edition = "2024"
+license = "Apache-2.0"
+
+[workspace]
+
+[dependencies]
+nex = { path = "../../nex" }
+nexus-model = { path = "../../model" }
+axum = { version = "=0.6.9", features = ["tokio", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "=1.24.2", default-features = false, features = ["full"] }
+tower-http = { version = "0.4", features = ["cors"] }
+tokio-util = "=0.7.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+async-trait = "0.1"
+postcard = { version = "1", features = ["alloc"] }
+walkdir = "2"
+reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"] }
+sha2 = "0.10"
+hex = "0.4"
+
+[patch.crates-io]
+tokio = { git = "https://github.com/wasix-org/tokio.git", branch = "epoll" }
+socket2 = { git = "https://github.com/wasix-org/socket2.git", branch = "v0.4.9" }
+libc = { git = "https://github.com/wasix-org/libc.git" }
+
+[dev-dependencies]
+tempfile = "3"
+reqwest = { version = "0.11", features = ["json"] }

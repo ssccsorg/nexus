@@ -1,0 +1,9 @@
+[package]
+name = "metasmile/nexus-gateway-wasmer-ssccsdocs"
+version = "0.3.0"
+description = "WASIX: FIH Blackboard + SSCCS docs + BM25 Search v2"
+
+[[module]]
+name = "nexus-gateway-wasmer-ssccsdocs"
+source = "app.wasm"
+abi = "wasi"
