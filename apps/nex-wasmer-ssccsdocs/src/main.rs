@@ -49,6 +49,7 @@ use crate::bm25::InMemoryBm25;
 use crate::wasmer_io::WasmerIo;
 
 const DEFAULT_DATA_DIR: &str = "/data/fih";
+
 const LLMS_TXT_URL: &str = "https://docs.ssccs.org/llms.txt";
 const DOCS_BASE_URL: &str = "https://docs.ssccs.org";
 
@@ -297,7 +298,6 @@ async fn fetch_ssccs_docs(
 ) -> (usize, Vec<String>) {
     let client = reqwest::Client::builder()
         .user_agent("nexus-wasmer-ssccsdocs/0.1.0")
-        .timeout(std::time::Duration::from_secs(30))
         .build()
         .expect("reqwest client");
 
@@ -515,7 +515,7 @@ fn uuid_v4() -> String {
 type AppState = Arc<FihStorage<BatchIo<WasmerIo>>>;
 
 async fn handle_root() -> &'static str {
-    "nexus-wasmer-ssccsdocs"
+    "nexus-wasmer-ssccsdocs v0.4.0"
 }
 
 async fn handle_version() -> &'static str {
@@ -595,7 +595,7 @@ async fn handle_ingest_all(
     Json(serde_json::json!({"ingested": total, "errors": errors}))
 }
 
-#[axum::debug_handler]
+#[cfg(not(target_arch = "wasm32"))]
 async fn handle_sync_docs(
     State(state): State<AppState>,
 ) -> Json<serde_json::Value> {
@@ -612,7 +612,6 @@ async fn handle_state(State(state): State<AppState>) -> Json<nexus_model::BoardS
     Json(state.read_state().await)
 }
 
-#[axum::debug_handler]
 async fn handle_fact(
     State(state): State<AppState>,
     Json(params): Json<FactParams>,
@@ -795,7 +794,6 @@ async fn handle_flush(
     Ok(Json(serde_json::json!({"status": "ok"})))
 }
 
-#[axum::debug_handler]
 async fn handle_rebuild(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ApiError>)> {
@@ -816,14 +814,13 @@ async fn handle_rebuild(
 // ── Router ───────────────────────────────────────────────────────────
 
 fn build_router(state: AppState) -> Router {
-    Router::new()
+    let mut router = Router::new()
         .route("/", get(handle_root))
         .route("/version", get(handle_version))
         .route("/debug/stores", get(handle_debug_stores))
         .route("/ingest", post(handle_ingest))
         .route("/search", get(handle_search))
         .route("/ingest-all", get(handle_ingest_all))
-        .route("/sync-docs", post(handle_sync_docs))
         .route("/state", get(handle_state))
         .route("/fact", post(handle_fact))
         .route("/intent", post(handle_intent))
@@ -833,8 +830,12 @@ fn build_router(state: AppState) -> Router {
         .route("/intent/{id}/conclude", post(handle_conclude))
         .route("/hint", post(handle_hint))
         .route("/flush", get(handle_flush))
-        .route("/rebuild", get(handle_rebuild))
-        .layer(CorsLayer::permissive())
+        .route("/rebuild", get(handle_rebuild));
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        router = router.route("/sync-docs", post(handle_sync_docs));
+    }
+    router.layer(CorsLayer::permissive())
         .with_state(state)
 }
 
@@ -867,13 +868,16 @@ async fn main() {
         ),
         Ok(false) => {
             tracing::info!("no snapshot found, starting fresh");
-            // First boot: auto-fetch all SSCCS docs from docs.ssccs.org
-            let (n, errors) = fetch_ssccs_docs(&storage, &data_dir).await;
-            if n > 0 {
-                tracing::info!("auto-sync: ingested {} docs on first boot", n);
-            }
-            for e in &errors {
-                tracing::warn!("auto-sync error: {e}");
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                // First boot: auto-fetch all SSCCS docs from docs.ssccs.org
+                let (n, errors) = fetch_ssccs_docs(&storage, &data_dir).await;
+                if n > 0 {
+                    tracing::info!("auto-sync: ingested {} docs on first boot", n);
+                }
+                for e in &errors {
+                    tracing::warn!("auto-sync error: {e}");
+                }
             }
         }
         Err(e) => tracing::warn!("snapshot restore failed (proceeding empty): {e}"),
@@ -885,10 +889,10 @@ async fn main() {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!("listening on {addr}");
 
-    let listener = tokio::net::TcpListener::bind(addr)
+    axum::Server::bind(&addr)
+        .serve(app.into_make_service())
         .await
-        .expect("failed to bind");
-    axum::serve(listener, app).await.expect("server error");
+        .expect("server error");
 }
 
 // ── Tests ────────────────────────────────────────────────────────────

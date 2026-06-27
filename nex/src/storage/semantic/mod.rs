@@ -30,7 +30,7 @@ use std::fmt::Debug;
 // External implementations use the same trait regardless of platform.
 
 /// Semantic feature store for similarity search.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 #[async_trait::async_trait]
 pub trait SemanticStore: Debug + Send + Sync {
     async fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String>;
@@ -42,7 +42,7 @@ pub trait SemanticStore: Debug + Send + Sync {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 #[async_trait::async_trait(?Send)]
 pub trait SemanticStore: Debug {
     async fn insert(&mut self, id: u32, load: &dyn RecordLoad) -> Result<(), String>;
@@ -55,8 +55,8 @@ pub trait SemanticStore: Debug {
 }
 
 /// Convenience type alias for storing SemanticStore in containers.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub type DynSemanticStore = Box<dyn SemanticStore + Send>;
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 pub type DynSemanticStore = Box<dyn SemanticStore>;

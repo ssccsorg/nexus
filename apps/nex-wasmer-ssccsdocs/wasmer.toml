@@ -1,4 +1,9 @@
 [package]
 name = "metasmile/nexus-gateway-wasmer-ssccsdocs"
-version = "0.1.2"
-description = "FIH Blackboard + SSCCS document ingestion service for Wasmer Edge"
+version = "0.5.1"
+description = "WASIX: FIH Blackboard + SSCCS docs + BM25 Search"
+
+[[module]]
+name = "main"
+source = "target/wasm32-wasmer-wasi/release/nexus-gateway-wasmer-ssccsdocs.wasm"
+abi = "wasi"
