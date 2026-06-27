@@ -49,6 +49,8 @@ use crate::bm25::InMemoryBm25;
 use crate::wasmer_io::WasmerIo;
 
 const DEFAULT_DATA_DIR: &str = "/data/fih";
+const LLMS_TXT_URL: &str = "https://docs.ssccs.org/llms.txt";
+const DOCS_BASE_URL: &str = "https://docs.ssccs.org";
 
 // ── Text query ──────────────────────────────────────────────────────
 
@@ -222,6 +224,102 @@ fn sanitize_id(s: &str) -> String {
         .collect()
 }
 
+// ── docs.ssccs.org sync ───────────────────────────────────────────────
+
+/// Parse .llms.md URLs from an llms.txt index file.
+fn extract_llms_urls(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if let Some(start) = line.find("](") {
+                let rest = &line[start + 2..];
+                if let Some(end) = rest.find(')') {
+                    let url = &rest[..end];
+                    if url.ends_with(".llms.md") {
+                        return Some(url.to_string());
+                    }
+                }
+            }
+            None
+        })
+        .collect()
+}
+
+/// Fetch all SSCCS docs from docs.ssccs.org and ingest them.
+///
+/// 1. GET llms.txt → extract .llms.md URLs
+/// 2. Fetch each document
+/// 3. ingest_document() into FIH
+/// 4. Write snapshot
+async fn fetch_ssccs_docs(
+    s: &FihStorage<BatchIo<WasmerIo>>,
+) -> (usize, Vec<String>) {
+    let client = reqwest::Client::builder()
+        .user_agent("nexus-wasmer-ssccsdocs/0.1.0")
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .expect("reqwest client");
+
+    let llms_txt = match client.get(LLMS_TXT_URL).send().await {
+        Ok(resp) => match resp.text().await {
+            Ok(t) => t,
+            Err(e) => return (0, vec![format!("llms.txt body: {e}")]),
+        },
+        Err(e) => return (0, vec![format!("llms.txt fetch: {e}")]),
+    };
+
+    let urls = extract_llms_urls(&llms_txt);
+    if urls.is_empty() {
+        return (0, vec!["no .llms.md URLs found in llms.txt".into()]);
+    }
+    tracing::info!("fetching {} docs from {}", urls.len(), DOCS_BASE_URL);
+
+    let mut total = 0usize;
+    let mut errors: Vec<String> = Vec::new();
+
+    for url in &urls {
+        let full_url = if url.starts_with("http") {
+            url.clone()
+        } else {
+            format!("{}{}", DOCS_BASE_URL, url)
+        };
+        match client.get(&full_url).send().await {
+            Ok(resp) => {
+                let text = match resp.text().await {
+                    Ok(t) => t,
+                    Err(e) => {
+                        errors.push(format!("{url}: body: {e}"));
+                        continue;
+                    }
+                };
+                // Derive origin from URL path: strip domain and .llms.md suffix
+                let origin = url
+                    .trim_start_matches('/')
+                    .trim_end_matches(".llms.md")
+                    .to_string();
+                match ingest_document(s, &text, &origin).await {
+                    Ok(_) => total += 1,
+                    Err(e) => errors.push(format!("{url}: ingest: {e}")),
+                }
+            }
+            Err(e) => errors.push(format!("{url}: {e}")),
+        }
+    }
+
+    // Write snapshot after batch ingestion
+    if let Err(e) = write_snapshot(s).await {
+        tracing::warn!("snapshot write after sync failed: {e}");
+    }
+
+    tracing::info!(
+        "docs sync complete: {}/{} ingested, {} errors",
+        total,
+        urls.len(),
+        errors.len()
+    );
+    (total, errors)
+}
+
 // ── Request types ────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -381,6 +479,17 @@ async fn handle_ingest_all(
 }
 
 #[axum::debug_handler]
+async fn handle_sync_docs(
+    State(state): State<AppState>,
+) -> Json<serde_json::Value> {
+    let (total, errors) = fetch_ssccs_docs(&state).await;
+    Json(serde_json::json!({
+        "status": if errors.is_empty() { "ok" } else { "partial" },
+        "ingested": total,
+        "errors": errors
+    }))
+}
+
 async fn handle_state(State(state): State<AppState>) -> Json<nexus_model::BoardState> {
     Json(state.read_state().await)
 }
@@ -596,6 +705,7 @@ fn build_router(state: AppState) -> Router {
         .route("/ingest", post(handle_ingest))
         .route("/search", get(handle_search))
         .route("/ingest-all", get(handle_ingest_all))
+        .route("/sync-docs", post(handle_sync_docs))
         .route("/state", get(handle_state))
         .route("/fact", post(handle_fact))
         .route("/intent", post(handle_intent))
@@ -637,7 +747,17 @@ async fn main() {
             "restored from snapshot ({} facts)",
             storage.fact_store.len().await
         ),
-        Ok(false) => tracing::info!("no snapshot found, starting fresh"),
+        Ok(false) => {
+            tracing::info!("no snapshot found, starting fresh");
+            // First boot: auto-fetch all SSCCS docs from docs.ssccs.org
+            let (n, errors) = fetch_ssccs_docs(&storage).await;
+            if n > 0 {
+                tracing::info!("auto-sync: ingested {} docs on first boot", n);
+            }
+            for e in &errors {
+                tracing::warn!("auto-sync error: {e}");
+            }
+        }
         Err(e) => tracing::warn!("snapshot restore failed (proceeding empty): {e}"),
     }
 

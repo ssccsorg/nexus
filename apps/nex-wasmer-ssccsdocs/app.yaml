@@ -18,3 +18,11 @@ volumes:
   mount: /data/docs
 debug: true
 kind: wasmer.io/App.v0
+annotations:
+  shipitcli.com/config:
+    commands: {}
+    convert_redirects: true
+    port: 8080
+    sws_version: 2.38.0
+  shipitcli.com/provider: staticfile
+  shipitcli.com/version: 0.21.4
