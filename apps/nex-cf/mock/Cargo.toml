@@ -1,8 +1,10 @@
 [package]
 name = "nex-cf-mock"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+[workspace]
 
 [dependencies]
 nex = { path = "../../../nex" }

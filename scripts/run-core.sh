@@ -32,7 +32,7 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
-run_check()  { cargo check -p nex && cargo check -p nexus-storage-duckdb && cargo check -p nexus-gateway-wasmer-ssccsdocs; }
+run_check()  { cargo check -p nex && cargo check -p nexus-storage-duckdb; }
 
 # ── WASM check: ensure storage-sim builds for wasm32 target ────────────
 
@@ -70,14 +70,11 @@ run_auto_fix()     { run_fmt && run_clippy_fix && run_compiler_fix && run_fmt; }
 # ── Strict checks: must pass — no warnings tolerated ────────────────────
 
 run_clippy() {
-    # Core crates that must pass clippy on native.
-    # (!) nex-cf is wasm only — clippy on native is not applicable.
+    # Core crates only. Apps (nex-cf, wasmer, api, zed) are separate projects.
     for pkg in \
         nex \
         nexus-storage-composite \
         nexus-storage-petgraph \
-        nexus-gateway-wasmer-ssccsdocs \
-        nexus-gateway-api \
         nexus-model \
         interface-query \
         interface-cypher \
@@ -88,8 +85,6 @@ run_clippy() {
 }
 run_test()   {
     cargo test -p nex -- --nocapture 2>&1
-    echo "---"
-    cargo test -p nexus-gateway-wasmer-ssccsdocs -- --nocapture 2>&1
 }
 run_all() {
     echo "=== fmt --all ===" && run_fmt
