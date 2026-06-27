@@ -4,9 +4,6 @@ members = [
     "model",
     "nex",
     "storage/duckdb",
-    "apps/nex-api",
-    "apps/nex-cf",
-    "apps/nex-cf/mock",
     "libs/serde-proxy",
     "playbooks/agents",
     "interface/query",
@@ -14,8 +11,6 @@ members = [
     "storage/sim",
     "storage/composite",
     "storage/petgraph",
-    "apps/nex-zed",
-    "apps/nex-wasmer-ssccsdocs",
 ]
 
 [workspace.package]
