@@ -1,9 +1,9 @@
 [package]
 name = "metasmile/nexus-gateway-wasmer-ssccsdocs"
-version = "0.5.1"
+version = "0.5.9"
 description = "WASIX: FIH Blackboard + SSCCS docs + BM25 Search"
 
 [[module]]
 name = "main"
-source = "target/wasm32-wasmer-wasi/release/nexus-gateway-wasmer-ssccsdocs.wasm"
-abi = "wasi"
+source = "target/wasm32-wasmer-wasi/release/nexus-gateway-wasmer-ssccsdocs.rustc.wasm"
+abi = "none"
