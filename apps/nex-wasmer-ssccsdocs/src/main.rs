@@ -595,7 +595,7 @@ async fn handle_ingest_all(
     Json(serde_json::json!({"ingested": total, "errors": errors}))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 async fn handle_sync_docs(
     State(state): State<AppState>,
 ) -> Json<serde_json::Value> {
@@ -824,14 +824,14 @@ fn build_router(state: AppState) -> Router {
         .route("/state", get(handle_state))
         .route("/fact", post(handle_fact))
         .route("/intent", post(handle_intent))
-        .route("/intent/{id}/claim", post(handle_claim))
-        .route("/intent/{id}/heartbeat", post(handle_heartbeat))
-        .route("/intent/{id}/release", post(handle_release))
-        .route("/intent/{id}/conclude", post(handle_conclude))
+        .route("/intent/:id/claim", post(handle_claim))
+        .route("/intent/:id/heartbeat", post(handle_heartbeat))
+        .route("/intent/:id/release", post(handle_release))
+        .route("/intent/:id/conclude", post(handle_conclude))
         .route("/hint", post(handle_hint))
         .route("/flush", get(handle_flush))
         .route("/rebuild", get(handle_rebuild));
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     {
         router = router.route("/sync-docs", post(handle_sync_docs));
     }
@@ -871,7 +871,7 @@ async fn main() {
         ),
         Ok(false) => {
             tracing::info!("no snapshot found, starting fresh");
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
             {
                 let (n, errors) = fetch_ssccs_docs(&storage, &data_dir).await;
                 if n > 0 {

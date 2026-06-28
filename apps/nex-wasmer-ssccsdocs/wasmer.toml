@@ -6,4 +6,4 @@ description = "WASIX: FIH Blackboard + SSCCS docs + BM25 Search"
 [[module]]
 name = "main"
 source = "target/wasm32-wasmer-wasi/release/nexus-gateway-wasmer-ssccsdocs.rustc.wasm"
-abi = "none"
+abi = "wasi"
