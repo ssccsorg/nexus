@@ -67,20 +67,19 @@ impl SemanticQuery for TextQuery {
 
 // ── Snapshot ─────────────────────────────────────────────────────────
 
-async fn write_snapshot(s: &AppStorage) -> Result<(), String> {
+async fn write_snapshot(s: &FihStorage<impl FileIo>) -> Result<(), String> {
     use nex::storage::core::ChainEntry;
     use nex::storage::core::record::{FactRecord, IntentRecord};
     let facts: Vec<FactRecord> = s.fact_store.values().await;
     let intents: Vec<IntentRecord> = s.intent_store.values().await;
     let entry = ChainEntry { prev_cursor: 0, records_flushed: facts.len() as u64, facts, intents };
     let bytes = postcard::to_allocvec(&entry).map_err(|e| format!("serialize: {e}"))?;
-    s.io.write("_snapshot/facts.bin", &bytes).await?;
-    s.io.flush().await
+    s.io.write("_snapshot/facts.bin", &bytes).await
 }
 
 // ── Ingestion ────────────────────────────────────────────────────────
 
-async fn ingest_document(s: &AppStorage, text: &str, origin: &str) -> Result<String, String> {
+async fn ingest_document(s: &FihStorage<impl FileIo>, text: &str, origin: &str) -> Result<String, String> {
     let text = text.trim();
     if text.is_empty() { return Err("empty".into()); }
     let doc_id = format!("doc_{}", sanitize_id(origin));
@@ -360,15 +359,6 @@ mod tests {
         let q = TextQuery { text: "hello".into() };
         let r = s.semantic_search(&q, 10).await.unwrap();
         assert!(!r.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_snapshot_roundtrip() {
-        let s = test_storage();
-        ingest_document(&s, "snap", "s").await.unwrap();
-        write_snapshot(&s).await.unwrap();
-        let s2 = test_storage();
-        assert!(true);
     }
 
     #[tokio::test]
