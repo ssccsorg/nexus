@@ -1,0 +1,14 @@
+
+::: {tbl-colwidths="[20, 80]"}
+
+| Updated | Document |
+|----------|---------|
+| 2026-06-28 | Report > Devlogs > [134-nex-spinwasi-ssccsdocs: From WASIX to Spin WASI](/report/devlogs/20260628.html) <sup style="background:#2c8;color:#fff;font-size:.65em;padding:0 .4em;border-radius:3px;">N</sup> |
+| 2026-06-26 | Report > Devlogs > [123-125: EntityStore async, AsyncFileIo rename, ingest-one cleanup](/report/devlogs/20260626.html) <sup style="background:#2c8;color:#fff;font-size:.65em;padding:0 .4em;border-radius:3px;">N</sup> |
+| 2026-05-30 | Report > Devlogs > [74: Core Serialization — Postcard Binary + Content Enum, Remove serde_json::Value](/report/devlogs/20260530.html) |
+| 2026-05-29 | Report > Devlogs > [20260526](/report/devlogs/20260526.html) |
+| 2026-05-29 | Report > Devlogs > [2026-05-28 — CompositeColdStorage: 3-tier orchestrated cold storage (Phase 1 final)](/report/devlogs/20260528.html) |
+| 2026-05-29 | Report > Devlogs > [66: IoBuffer Layer and StoreSession — Foundation-Preserving Async Bridge](/report/devlogs/20260529.html) |
+
+
+:::
