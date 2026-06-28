@@ -595,7 +595,7 @@ async fn handle_ingest_all(
     Json(serde_json::json!({"ingested": total, "errors": errors}))
 }
 
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+#[cfg(not(any(target_arch = "wasm32", target_os = "unknown")))]
 async fn handle_sync_docs(
     State(state): State<AppState>,
 ) -> Json<serde_json::Value> {
@@ -831,7 +831,7 @@ fn build_router(state: AppState) -> Router {
         .route("/hint", post(handle_hint))
         .route("/flush", get(handle_flush))
         .route("/rebuild", get(handle_rebuild));
-    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    #[cfg(not(any(target_arch = "wasm32", target_os = "unknown")))]
     {
         router = router.route("/sync-docs", post(handle_sync_docs));
     }
