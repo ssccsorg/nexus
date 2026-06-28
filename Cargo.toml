@@ -14,6 +14,7 @@ members = [
 ]
 exclude = [
     "apps/nex-wasmer-ssccsdocs",
+    "apps/nex-spinwasi-ssccsdocs",
 ]
 
 [workspace.package]
