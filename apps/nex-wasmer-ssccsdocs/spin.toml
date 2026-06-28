@@ -1,0 +1,25 @@
+#:schema https://schemas.spinframework.dev/spin/manifest-v2/latest.json
+
+spin_manifest_version = 2
+
+[application]
+name = "nex-ssccsdocs"
+version = "0.1.1"
+authors = ["metasmile <lee@ssccs.org>"]
+description = "FIH Blackboard + SSCCS docs + BM25 Search (Spin WASI)"
+
+[[trigger.http]]
+route = "/"
+component = "nex-ssccsdocs"
+
+[[trigger.http]]
+route = "/..."
+component = "nex-ssccsdocs"
+
+[component.nex-ssccsdocs]
+source = "target/wasm32-wasip2/release/nex_ssccsdocs.wasm"
+environment = { DATA_DIR = "./data/fih", PROJECT = "spin-ssccsdocs" }
+allowed_outbound_hosts = ["https://docs.ssccs.org:443"]
+[component.nex-ssccsdocs.build]
+command = "cargo build --target wasm32-wasip2 --release"
+watch = ["src/**/*.rs", "Cargo.toml"]
