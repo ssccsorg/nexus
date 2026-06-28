@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.31">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>quarto-input15a8003aef75af9f</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="20260530_files/libs/clipboard/clipboard.min.js"></script>
+<script src="20260530_files/libs/quarto-html/quarto.js" type="module"></script>
+<script src="20260530_files/libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="20260530_files/libs/quarto-html/popper.min.js"></script>
+<script src="20260530_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="20260530_files/libs/quarto-html/anchor.min.js"></script>
+<link href="20260530_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="20260530_files/libs/quarto-html/quarto-syntax-highlighting-7c69b197886ae2a34062761d21e44731.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="20260530_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="20260530_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="20260530_files/libs/bootstrap/bootstrap-138a6193a3bd40baf1e627da441a4734.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+
+
+</head>
+
+<body class="fullcontent quarto-light">
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+
+<main class="content" id="quarto-document-content">
+
+
+
+
+<section id="core-serialization-postcard-binary-content-enum-remove-serde_jsonvalue" class="level1">
+<h1>74: Core Serialization — Postcard Binary + Content Enum, Remove serde_json::Value</h1>
+<section id="problem" class="level2">
+<h2 class="anchored" data-anchor-id="problem">Problem</h2>
+<p><code>serde_json::Value</code> was used as <code>Fact.content</code> type and in petgraph <code>NodeWeight.properties</code>. This created several constraints:</p>
+<ul>
+<li><strong>Deserialize_any barrier</strong>: Binary serde formats (postcard, bincode) cannot serialize <code>serde_json::Value</code> because it requires <code>deserialize_any</code>, which binary formats do not support. Any attempt to switch from JSON to binary would require changing the core data type.</li>
+<li><strong>WASM incompatibility</strong>: <code>serde_json</code> is heavy for WASM. Worse, the previous SQLite backend (<code>rusqlite</code> with bundled C lib) made WASM compilation impossible. Even after SQLite removal, <code>serde_json</code> in core types prevented pure Rust + WASM targets.</li>
+<li><strong>Format lock-in</strong>: JSON in the core model meant all persistent data (snapshots, flush archives) had to be JSON. Switching to Parquet, Arrow, or any future format would require full data migration.</li>
+<li><strong>Performance</strong>: <code>serde_json::Value</code> is a heavy enum (String, Number, Array, Object, Bool, Null). Properties access required <code>v.as_str()</code>, <code>v.as_i64()</code>, <code>v.as_bool()</code> pattern matching. String comparisons on <code>Content::Text</code> are simpler and faster.</li>
+</ul>
+</section>
+<section id="solution" class="level2">
+<h2 class="anchored" data-anchor-id="solution">Solution</h2>
+<section id="content-enum" class="level3">
+<h3 class="anchored" data-anchor-id="content-enum">Content enum</h3>
+<p>Replace <code>serde_json::Value</code> with a minimal enum:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode rust code-with-copy"><code class="sourceCode rust"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">pub</span> <span class="kw">enum</span> Content <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    Text(<span class="dt">String</span>)<span class="op">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    Blob(<span class="dt">Vec</span><span class="op">&lt;</span><span class="dt">u8</span><span class="op">&gt;</span>)<span class="op">,</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>Text</code> holds plain strings or JSON strings as raw bytes. <code>Blob</code> holds binary data (images, serialized protobuf, etc.). The enum is trivially serializable by any serde-based format — postcard sees <code>Text</code> as <code>(tag=0, len, bytes)</code> and <code>Blob</code> as <code>(tag=1, len, bytes)</code>.</p>
+<p>Key design decisions:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 47%">
+<col style="width: 52%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Decision</th>
+<th>Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>No <code>JsonString</code> variant</td>
+<td>Text vs JsonString distinction at storage level is unnecessary. JSON parseability is a consumer concern.</td>
+</tr>
+<tr class="even">
+<td><code>From&lt;&amp;str&gt;</code> / <code>From&lt;String&gt;</code> → <code>Content::Text</code></td>
+<td>Ergonomics: <code>"text".into()</code> works for <code>Fact { content: ... }</code>.</td>
+</tr>
+<tr class="odd">
+<td><code>as_str() -&gt; Option&lt;&amp;str&gt;</code></td>
+<td>Direct string access without JSON parsing. Returns <code>None</code> for <code>Blob</code>.</td>
+</tr>
+<tr class="even">
+<td><code>PartialEq&lt;&amp;str&gt;</code></td>
+<td><code>fact.content == "synthesis complete"</code> works naturally.</td>
+</tr>
+<tr class="odd">
+<td><code>Display</code></td>
+<td><code>format!("{}", fact.content)</code> prints the text or <code>&lt;blob: N bytes&gt;</code>.</td>
+</tr>
+<tr class="even">
+<td>No <code>From&lt;serde_json::Value&gt;</code></td>
+<td>Prevents accidental JSON re-introduction in core. API boundary handles the conversion.</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="properties-hashmapstring-content" class="level3">
+<h3 class="anchored" data-anchor-id="properties-hashmapstring-content">Properties: HashMap&lt;String, Content&gt;</h3>
+<p><code>NodeWeight.properties</code> and <code>EdgeWeight.properties</code> changed from <code>HashMap&lt;String, serde_json::Value&gt;</code> to <code>HashMap&lt;String, Content&gt;</code>.</p>
+<p>Before:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode rust code-with-copy"><code class="sourceCode rust"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>m<span class="op">.</span>insert(<span class="st">"worker"</span><span class="op">.</span>into()<span class="op">,</span> agent<span class="op">.</span>to_string()<span class="op">.</span>into())<span class="op">;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="co">// postcard cannot serialize serde_json::Value</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>After:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode rust code-with-copy"><code class="sourceCode rust"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>m<span class="op">.</span>insert(<span class="st">"worker"</span><span class="op">.</span>into()<span class="op">,</span> <span class="pp">Content::</span>Text(agent<span class="op">.</span>to_string()))<span class="op">;</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="co">// postcard: (tag=0, len=7, "agent-x")</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>All property access patterns changed accordingly:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 53%">
+<col style="width: 46%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Before</th>
+<th>After</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>w.properties.get("key").and_then(v.as_str())</code></td>
+<td><code>w.properties.get("key").and_then(c.as_str())</code></td>
+</tr>
+<tr class="even">
+<td><code>w.properties.get("key").and_then(v.as_i64())</code></td>
+<td><code>w.properties.get("key").and_then(c.as_str()).and_then(s.parse().ok())</code></td>
+</tr>
+<tr class="odd">
+<td><code>w.properties.get("concluded").and_then(v.as_bool())</code></td>
+<td><code>w.properties.get("concluded").and_then(c.as_str()).is_some_and(v == "true")</code></td>
+</tr>
+</tbody>
+</table>
+<p>Numeric and boolean properties are stored as their string representations. Parsing is done at read time. This is acceptable because properties are small metadata values, not hot-path query columns.</p>
+</section>
+<section id="snapshot-serialization-postcard" class="level3">
+<h3 class="anchored" data-anchor-id="snapshot-serialization-postcard">Snapshot serialization: postcard</h3>
+<p><code>StorageSnapshot::to_bytes</code> / <code>from_bytes</code>:</p>
+<p>Before:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode rust code-with-copy"><code class="sourceCode rust"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="pp">serde_json::</span>to_vec(<span class="op">&amp;</span>snapshot)  <span class="co">// JSON, ~3x larger</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>After:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode rust code-with-copy"><code class="sourceCode rust"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="pp">postcard::</span>to_allocvec(<span class="op">&amp;</span><span class="kw">self</span>)   <span class="co">// postcard, compact binary</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<ul>
+<li>Version field added for forward migration.</li>
+<li>Custom serde module for properties (previous approach with <code>HashMap&lt;String, Value&gt;</code>) is no longer needed.</li>
+</ul>
+</section>
+<section id="flush-archive-postcard-binary" class="level3">
+<h3 class="anchored" data-anchor-id="flush-archive-postcard-binary">Flush archive: postcard binary</h3>
+<p><code>read_delta_since</code> returned <code>Vec&lt;String&gt;</code> (JSON lines). Changed to <code>Vec&lt;Vec&lt;u8&gt;&gt;</code> (postcard blobs).</p>
+<p>Before:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode rust code-with-copy"><code class="sourceCode rust"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="kw">let</span> line <span class="op">=</span> <span class="pp">serde_json::</span>to_string(<span class="op">&amp;</span>Fact<span class="op">{...}</span>)<span class="op">?;</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>cold<span class="op">.</span>write_blob(<span class="op">&amp;</span>key<span class="op">,</span> line<span class="op">.</span>as_bytes())<span class="op">?;</span>       <span class="co">// .jsonl file</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>After:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode rust code-with-copy"><code class="sourceCode rust"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="kw">let</span> bytes <span class="op">=</span> <span class="pp">postcard::</span>to_allocvec(<span class="op">&amp;</span>Fact<span class="op">{...}</span>)<span class="op">?;</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>cold<span class="op">.</span>write_blob(<span class="op">&amp;</span>key<span class="op">,</span> <span class="op">&amp;</span>bytes)<span class="op">?;</span>                 <span class="co">// .bin file</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<ul>
+<li><code>DeltaSet</code> type alias: <code>(Vec&lt;Vec&lt;u8&gt;&gt;, Vec&lt;Vec&lt;u8&gt;&gt;, Vec&lt;Vec&lt;u8&gt;&gt;)</code>.</li>
+<li><code>CompositeColdStorage::read_flushed_facts</code> uses <code>postcard::from_bytes::&lt;Fact&gt;(&amp;data)</code> instead of <code>serde_json::from_str::&lt;Fact&gt;(line)</code>.</li>
+<li>Eviction key matching: <code>.jsonl</code> → <code>.bin</code>.</li>
+<li>No JSON encoding/decoding in the storage layer at all.</li>
+</ul>
+</section>
+<section id="conclude_intent-str-instead-of-serde_jsonvalue" class="level3">
+<h3 class="anchored" data-anchor-id="conclude_intent-str-instead-of-serde_jsonvalue">conclude_intent: <code>&amp;str</code> instead of <code>&amp;serde_json::Value</code></h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode rust code-with-copy"><code class="sourceCode rust"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="kw">fn</span> conclude_intent(<span class="op">&amp;</span><span class="kw">self</span><span class="op">,</span> intent_id<span class="op">:</span> <span class="op">&amp;</span><span class="dt">str</span><span class="op">,</span> result<span class="op">:</span> <span class="op">&amp;</span><span class="dt">str</span>) <span class="op">-&gt;</span> <span class="dt">Result</span><span class="op">&lt;</span>Fact<span class="op">,</span> <span class="op">...&gt;;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The result string is stored as <code>Content::Text(result.to_string())</code>. If the caller wants to store JSON, they serialize it before calling:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode rust code-with-copy"><code class="sourceCode rust"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>bb<span class="op">.</span>conclude_intent(<span class="st">"i001"</span><span class="op">,</span> <span class="op">&amp;</span><span class="pp">serde_json::</span>to_string(<span class="op">&amp;</span><span class="pp">json!</span>(<span class="op">{...}</span>))<span class="op">.</span>unwrap())<span class="op">?;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="cyphercapable-moved-to-nexus-graph" class="level3">
+<h3 class="anchored" data-anchor-id="cyphercapable-moved-to-nexus-graph">CypherCapable: moved to nexus-graph</h3>
+<p><code>CypherCapable</code> trait was defined in <code>nexus-model/src/storage/cypher.rs</code> with <code>query_plan(&amp;Value) -&gt; Result&lt;Value, String&gt;</code>. Moved to <code>core/graph/src/query/cypher/capable.rs</code>.</p>
+<ul>
+<li><code>ColdStorage</code> and <code>HotStorage</code> no longer require <code>CypherCapable</code> — storage backends don’t need to implement query planning.</li>
+<li><code>CompositeColdStorage</code>’s <code>CypherCapable</code> impl is a no-op — queries go to petgraph hot storage.</li>
+<li><code>DefaultBlackboard</code> holds a separate <code>cold_cypher: Box&lt;dyn CypherCapable&gt;</code> field for DuckDB routing.</li>
+</ul>
+</section>
+<section id="cold_query-types-moved-to-nexus-graph" class="level3">
+<h3 class="anchored" data-anchor-id="cold_query-types-moved-to-nexus-graph">cold_query types: moved to nexus-graph</h3>
+<p><code>ColdQuery</code>, <code>ColdFilter</code>, etc. were in <code>nexus-model/src/cold_query.rs</code> (DuckDB-specific query types). Moved to <code>core/graph/src/query/cypher/cold_query.rs</code>.</p>
+<ul>
+<li><code>ext/storage-duckdb/</code> imports from <code>nexus_graph::cold_query</code>.</li>
+<li>Removed <code>pub mod cold_query;</code> from nexus-model.</li>
+</ul>
+</section>
+<section id="detectioncapable-content-instead-of-serde_jsonvalue" class="level3">
+<h3 class="anchored" data-anchor-id="detectioncapable-content-instead-of-serde_jsonvalue">DetectionCapable: Content instead of serde_json::Value</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode rust code-with-copy"><code class="sourceCode rust"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Before</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="kw">fn</span> snapshot_state(<span class="op">&amp;</span><span class="kw">self</span>) <span class="op">-&gt;</span> <span class="dt">Option</span><span class="op">&lt;</span><span class="pp">serde_json::</span>Value<span class="op">&gt;</span> <span class="op">{</span> <span class="cn">None</span> <span class="op">}</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="kw">fn</span> restore_state(<span class="op">&amp;</span><span class="kw">mut</span> <span class="kw">self</span><span class="op">,</span> _state<span class="op">:</span> <span class="pp">serde_json::</span>Value) <span class="op">{}</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a><span class="kw">pub</span> <span class="kw">type</span> TaskStates <span class="op">=</span> HashMap<span class="op">&lt;</span><span class="dt">String</span><span class="op">,</span> <span class="pp">serde_json::</span>Value<span class="op">&gt;;</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="co">// After</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a><span class="kw">fn</span> snapshot_state(<span class="op">&amp;</span><span class="kw">self</span>) <span class="op">-&gt;</span> <span class="dt">Option</span><span class="op">&lt;</span>Content<span class="op">&gt;</span> <span class="op">{</span> <span class="cn">None</span> <span class="op">}</span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a><span class="kw">fn</span> restore_state(<span class="op">&amp;</span><span class="kw">mut</span> <span class="kw">self</span><span class="op">,</span> _state<span class="op">:</span> Content) <span class="op">{}</span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a><span class="kw">pub</span> <span class="kw">type</span> TaskStates <span class="op">=</span> HashMap<span class="op">&lt;</span><span class="dt">String</span><span class="op">,</span> Content<span class="op">&gt;;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Detectors serialize their state as <code>Content::Text(json.to_string())</code>. StorageSnapshot serializes <code>TaskStates</code> via postcard.</p>
+</section>
+<section id="serde_json-dependency-removal" class="level3">
+<h3 class="anchored" data-anchor-id="serde_json-dependency-removal">serde_json dependency removal</h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 31%">
+<col style="width: 36%">
+<col style="width: 31%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Crate</th>
+<th>Before</th>
+<th>After</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>nexus-model</code></td>
+<td><code>serde_json.workspace = true</code></td>
+<td><strong>removed</strong></td>
+</tr>
+<tr class="even">
+<td><code>nexus-storage-petgraph</code></td>
+<td><code>serde_json.workspace = true</code></td>
+<td><strong>removed</strong></td>
+</tr>
+<tr class="odd">
+<td><code>nexus-storage-composite</code></td>
+<td><code>serde_json.workspace = true</code></td>
+<td><strong>removed</strong></td>
+</tr>
+<tr class="even">
+<td><code>nexus-graph</code></td>
+<td>kept</td>
+<td>Cypher query engine (<code>Record = HashMap&lt;String, Value&gt;</code>)</td>
+</tr>
+<tr class="odd">
+<td><code>nexus-process</code></td>
+<td>kept</td>
+<td>Detector consumer layer</td>
+</tr>
+<tr class="even">
+<td><code>nexus-storage-duckdb</code></td>
+<td>kept</td>
+<td>Parquet content parsing</td>
+</tr>
+<tr class="odd">
+<td><code>gateway-api</code></td>
+<td>kept</td>
+<td>HTTP JSON API boundary</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="cargo.lock-changes" class="level3">
+<h3 class="anchored" data-anchor-id="cargo.lock-changes">Cargo.lock changes</h3>
+<p>Added: <code>postcard</code>, <code>cobs</code>, <code>heapless</code>, <code>embedded-io</code> (x2), <code>byteorder</code>, <code>hash32</code>, <code>atomic-polyfill</code>, <code>critical-section</code>, <code>spin</code>, <code>stable_deref_trait</code>, <code>scopeguard</code>, <code>lock_api</code>, <code>rustc_version</code>.</p>
+<p>Removed: <code>rusqlite</code>, <code>libsqlite3-sys</code>, <code>cc</code>, <code>pkg-config</code>, <code>vcpkg</code>, <code>find-msvc-tools</code>, <code>shlex</code>, <code>ahash</code>, <code>zerocopy</code>, <code>zerocopy-derive</code>, <code>hashlink</code>, <code>fallible-iterator</code>, <code>fallible-streaming-iterator</code>, <code>smallvec</code>.</p>
+<p>Net: postcard adds ~15 lightweight no_std crates, removes ~15 C/C++ bindings. WASM-friendly.</p>
+</section>
+</section>
+<section id="key-architectural-insight" class="level2">
+<h2 class="anchored" data-anchor-id="key-architectural-insight">Key architectural insight</h2>
+<p>The original architecture stored graph data in KV (Workers KV) for “recent buffer, fast single-key write”. This meant <code>CompositeColdStorage</code> implemented <code>FactCapable</code>/<code>IntentCapable</code>/<code>HintCapable</code> — the full FIH persistence stack. The KV was the data plane.</p>
+<p>The new architecture:</p>
+<ul>
+<li><strong>Petgraph</strong> is the only graph data store (hot storage).</li>
+<li><strong>CompositeColdStorage</strong> manages only durable persistence (blobs, CAS coordination, cursor metadata).</li>
+<li><strong>DualStorage</strong> writes to hot only. Flush extracts deltas from hot and writes postcard blobs to cold.</li>
+<li>No graph data ever touches KV/MetaStore.</li>
+</ul>
+<p>This simplified the storage trait hierarchy considerably:</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Trait</th>
+<th>HotStorage</th>
+<th>ColdStorage</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>FactCapable</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr class="even">
+<td>IntentCapable</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr class="odd">
+<td>HintCapable</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr class="even">
+<td>FilterCapable</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr class="odd">
+<td>CypherCapable</td>
+<td>✅</td>
+<td>❌</td>
+</tr>
+<tr class="even">
+<td>EvictCapable</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr class="odd">
+<td>TimeRangeCapable</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr class="even">
+<td>ScanCapable</td>
+<td>❌</td>
+<td>✅</td>
+</tr>
+<tr class="odd">
+<td>FlushCapable</td>
+<td>❌</td>
+<td>✅</td>
+</tr>
+<tr class="even">
+<td>write_blob</td>
+<td>❌</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="verdict" class="level2">
+<h2 class="anchored" data-anchor-id="verdict">Verdict</h2>
+<p>The migration is clean. 82 files changed, ~3,800 lines net removed. All 150+ tests pass. The core crate (<code>nexus-model</code>) no longer depends on <code>serde_json</code> in any way — not in Cargo.toml, not in any source file. Storage crates (<code>nexus-storage-petgraph</code>, <code>nexus-storage-composite</code>) use only <code>postcard</code> for serialization.</p>
+<p>The remaining <code>serde_json</code> usage in <code>core/graph</code> (Cypher query engine) and <code>core/process</code> (detector consumer layer) is appropriate — those are higher-level layers that consume the core model, not part of the core model itself.</p>
+<p>Future work:</p>
+<ul>
+<li>Export utility crate: <code>nexus-export-jsonl</code> that reads postcard blobs and writes human-readable output.</li>
+<li>R2 lifecycle policies for blob eviction (Worker layer, not core).</li>
+<li>Potentially split <code>core/graph/src/query/cypher/</code> into its own crate to remove <code>serde_json</code> from <code>core/graph</code> as well.</li>
+</ul>
+</section>
+</section>
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

@@ -48,7 +48,7 @@ async fn ensure_initialized() {
     if INITIALIZED.load(Ordering::Acquire) { return; }
     let s = get_storage();
     tracing::info!("first request: syncing docs");
-    fetch_ssccs_docs(s, DEFAULT_DATA_DIR).await;
+    fetch_ssccs_docs(s).await;
     INITIALIZED.store(true, Ordering::Release);
 }
 
@@ -121,27 +121,37 @@ fn compute_sha256(data: &[u8]) -> String {
     hex::encode(sha2::Sha256::digest(data))
 }
 
-fn cache_path(data_dir: &str) -> String {
-    format!("{}/_cache/sync_state.json", data_dir.trim_end_matches('/'))
+fn cache_key() -> String {
+    "fih:_cache/sync_state.json".to_string()
 }
 
-async fn read_cache(data_dir: &str) -> SyncCache {
-    let path = cache_path(data_dir);
-    match std::fs::read(&path) { Ok(b) => serde_json::from_slice(&b).unwrap_or_default(), Err(_) => SyncCache::default() }
+async fn read_cache() -> SyncCache {
+    let store = match spin_sdk::key_value::Store::open_default() {
+        Ok(s) => s,
+        Err(_) => return SyncCache::default(),
+    };
+    match store.get(&cache_key()) {
+        Ok(Some(b)) => serde_json::from_slice(&b).unwrap_or_default(),
+        _ => SyncCache::default(),
+    }
 }
 
-async fn write_cache(data_dir: &str, cache: &SyncCache) {
-    let path = cache_path(data_dir);
-    if let Some(parent) = std::path::Path::new(&path).parent() { std::fs::create_dir_all(parent).ok(); }
-    if let Ok(b) = serde_json::to_vec(cache) { std::fs::write(&path, &b).ok(); }
+async fn write_cache(cache: &SyncCache) {
+    let store = match spin_sdk::key_value::Store::open_default() {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    if let Ok(b) = serde_json::to_vec(cache) {
+        store.set(&cache_key(), &b).ok();
+    }
 }
 
-async fn fetch_ssccs_docs(s: &AppStorage, data_dir: &str) -> (usize, Vec<String>) {
+async fn fetch_ssccs_docs(s: &AppStorage) -> (usize, Vec<String>) {
     let llms_txt = match fetch_url(LLMS_TXT_URL).await {
         Ok(t) => t, Err(e) => return (0, vec![format!("llms.txt: {e}")]),
     };
     let llms_hash = compute_sha256(llms_txt.as_bytes());
-    let mut cache = read_cache(data_dir).await;
+    let mut cache = read_cache().await;
     if cache.llms_txt_hash == llms_hash { tracing::info!("llms.txt unchanged"); return (0, vec![]); }
     let urls = extract_llms_urls(&llms_txt);
     if urls.is_empty() { return (0, vec!["no .llms.md URLs".into()]); }
@@ -160,7 +170,7 @@ async fn fetch_ssccs_docs(s: &AppStorage, data_dir: &str) -> (usize, Vec<String>
             Err(e) => errors.push(format!("{url}: {e}")),
         }
     }
-    cache.llms_txt_hash = llms_hash; cache.docs = new_cache; write_cache(data_dir, &cache).await;
+    cache.llms_txt_hash = llms_hash; cache.docs = new_cache; write_cache(&cache).await;
     if total > 0 {
         s.rebuild_coord().await; s.rebuild_semantic().await.ok();
         if let Err(e) = write_snapshot(s).await { tracing::warn!("snapshot: {e}"); }
@@ -253,7 +263,7 @@ async fn handler(req: Request<Vec<u8>>) -> anyhow::Result<impl IntoResponse> {
             }
         }
         (Method::GET | Method::POST, "/sync-docs") => {
-            let (total, errors) = fetch_ssccs_docs(get_storage(), DEFAULT_DATA_DIR).await;
+            let (total, errors) = fetch_ssccs_docs(get_storage()).await;
             ok_json(serde_json::json!({"status": if errors.is_empty() { "ok" } else { "partial" }, "ingested": total, "errors": errors}))
         }
         (Method::GET, "/state") => {

@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.31">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="dcterms.date" content="2026-05-15">
+
+<title>FIH Blackboard Core Restructuring</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="20260515_files/libs/clipboard/clipboard.min.js"></script>
+<script src="20260515_files/libs/quarto-html/quarto.js" type="module"></script>
+<script src="20260515_files/libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="20260515_files/libs/quarto-html/popper.min.js"></script>
+<script src="20260515_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="20260515_files/libs/quarto-html/anchor.min.js"></script>
+<link href="20260515_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="20260515_files/libs/quarto-html/quarto-syntax-highlighting-7c69b197886ae2a34062761d21e44731.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="20260515_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="20260515_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="20260515_files/libs/bootstrap/bootstrap-138a6193a3bd40baf1e627da441a4734.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+
+
+</head>
+
+<body class="fullcontent quarto-light">
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">FIH Blackboard Core Restructuring</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">May 15, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<section id="summary" class="level2">
+<h2 class="anchored" data-anchor-id="summary">Summary</h2>
+<p>Comprehensive restructuring of the FIH Blackboard implementation: extracted core interfaces, unified persistence behind a storage trait, and validated through multi-agent stress testing.</p>
+</section>
+<section id="structural-changes" class="level2">
+<h2 class="anchored" data-anchor-id="structural-changes">Structural Changes</h2>
+<section id="layout" class="level3">
+<h3 class="anchored" data-anchor-id="layout">Layout</h3>
+<pre class="text"><code>before:                          after:
+workers/                         gateway/         (agent entry point)
+engines/                         ext/             (external backends)
+core/graph (monolithic)          core/api/        (Blackboard trait + FIH)
+core/cypher (separate)           core/graph/      (GraphBlackboard + cypher)
+core/index (skeleton)            core/table/        (SqliteStorage)</code></pre>
+<ul>
+<li>workers/ -&gt; gateway/: agent entry and routing layer</li>
+<li>engines/ -&gt; ext/: external FIH backends, flattened with shared _runner/</li>
+<li>core/api/: pure Blackboard trait + Fact/Intent/Hint/FihHash, no storage deps</li>
+<li>core/graph/: GraphBlackboard (petgraph) + GraphAccess + Cypher executor (merged from core/cypher/)</li>
+<li>core/table/: SqliteStorage implementing Storage trait</li>
+<li>core/index/ removed: vector search is graph-level operation</li>
+</ul>
+</section>
+<section id="key-interfaces" class="level3">
+<h3 class="anchored" data-anchor-id="key-interfaces">Key Interfaces</h3>
+<ul>
+<li>Blackboard trait: 8 methods (submit_fact, submit_intent, claim_intent, heartbeat, release_intent, conclude_intent, read_state, submit_hint)</li>
+<li>Storage trait: 2 methods (log_fih, load_events), thread-safe (Send + Sync)</li>
+<li>GraphAccess trait: 10 methods, petgraph-specific, used by Cypher executor</li>
+<li>GraphBlackboard::with_storage(): inject any Storage impl at runtime</li>
+</ul>
+</section>
+</section>
+<section id="test-suite-37-tests-0-failures" class="level2">
+<h2 class="anchored" data-anchor-id="test-suite-37-tests-0-failures">Test Suite: 37 tests, 0 failures</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Category</th>
+<th>Count</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Unit (parser)</td>
+<td>21</td>
+<td>Cypher parsing, HIR lowering</td>
+</tr>
+<tr class="even">
+<td>Unit (graph)</td>
+<td>4</td>
+<td>FIH lifecycle</td>
+</tr>
+<tr class="odd">
+<td>Full flow</td>
+<td>1</td>
+<td>FIH + Cypher end-to-end</td>
+</tr>
+<tr class="even">
+<td>Sequential stress</td>
+<td>1</td>
+<td>30 ants x 200 ops</td>
+</tr>
+<tr class="odd">
+<td>Parallel stress</td>
+<td>1</td>
+<td>50 threads x 10,000 ops</td>
+</tr>
+<tr class="even">
+<td>Scenarios</td>
+<td>8</td>
+<td>Multi-agent collaborations</td>
+</tr>
+<tr class="odd">
+<td>Persistence</td>
+<td>1</td>
+<td>SQLite write/reload/verify</td>
+</tr>
+</tbody>
+</table>
+<section id="scenarios" class="level3">
+<h3 class="anchored" data-anchor-id="scenarios">Scenarios</h3>
+<ul>
+<li>Contradiction Detection: 3 agents resolve conflicting papers</li>
+<li>Peer Review: author + 2 reviewers + editor</li>
+<li>Knowledge Synthesis: 4 agents complete jigsaw from partial data</li>
+<li>Emergency Response: 7 agents, competitive claim</li>
+<li>Bug Fix Pipeline: reporter -&gt; triager -&gt; dev -&gt; reviewer</li>
+<li>CI Failure Investigation: 4 agents triangulate root cause</li>
+<li>Supply Chain Incident: security -&gt; SRE -&gt; comms -&gt; post-mortem</li>
+<li>SSCCS Primitive Discovery: 5 agents formalize Segment from 3 IR observations</li>
+</ul>
+</section>
+</section>
+<section id="key-discoveries" class="level2">
+<h2 class="anchored" data-anchor-id="key-discoveries">Key Discoveries</h2>
+<ol type="1">
+<li><p><strong>Append-only log = complete determinism</strong>: Any prior state exactly reconstructed by replay. No snapshots needed.</p></li>
+<li><p><strong>Storage trait as system boundary</strong>: Same FIH logic across SQLite, blockchain, or memory. Inside = deterministic; outside = implementation.</p></li>
+<li><p><strong>read_state() = observation</strong>: Field evolution is observation accumulation. No separate mechanism.</p></li>
+<li><p><strong>Parallelism is structural</strong>: 10,000 parallel events validated – 50 threads, zero conflicts.</p></li>
+<li><p><strong>Hints = Field constraints</strong>: Governance, focus, safety all carried by Hint primitive.</p></li>
+</ol>
+</section>
+<section id="stress-test-output" class="level2">
+<h2 class="anchored" data-anchor-id="stress-test-output">Stress Test Output</h2>
+<pre class="text"><code>  10000 EVENTS -- 50 threads x 200 ops
+  622 fact ops, 2470 intent ops
+  Final state: 1226 facts, 3069 intents
+  All FIH invariants hold under concurrent access</code></pre>
+<section id="example" class="level3">
+<h3 class="anchored" data-anchor-id="example">Example</h3>
+<pre class="text"><code>[ 2:120] ant-0002         submit Intent pi_ant-0002_120
+[ 2:140] ant-0002         read: 979F 2141I 0H
+[ 2:160] ant-0002         submit Intent pi_ant-0002_160
+[ 2:180] ant-0002         read: 981F 2150I 0H
+[ 2:199] ant-0002         submit Intent pi_ant-0002_199
+[43: 80] ant-0043         read: 982F 2158I 0H
+[43:100] ant-0043         read: 983F 2163I 0H
+[43:120] ant-0043         heartbeat intent_pi_ant-0003_12_next
+[43:140] ant-0043         read: 983F 2176I 0H
+[43:160] ant-0043         nothing to conclude
+[43:180] ant-0043         nothing to conclude
+[43:199] ant-0043         read: 989F 2194I 0H
+[20: 60] ant-0020         read: 993F 2200I 0H
+[37: 80] ant-0037         nothing to conclude
+[22: 20] ant-0022         submit Intent pi_ant-0022_20
+[22: 40] ant-0022         conclude intent_pi_ant-0031_112_next + 1 follow-ups
+[22: 60] ant-0022         read: 1010F 2215I 0H
+[22: 80] ant-0022         read: 1010F 2218I 0H
+[22:100] ant-0022         conclude pi_ant-0004_170 + 1 follow-ups
+[ 6:120] ant-0006         read: 1012F 2229I 0H
+[ 6:140] ant-0006         read: 1014F 2235I 0H
+[ 6:160] ant-0006         read: 1014F 2239I 0H
+[ 6:180] ant-0006         submit Intent pi_ant-0006_180
+[27: 80] ant-0027         read: 1016F 2257I 0H
+[27:100] ant-0027         heartbeat pi_ant-0045_38
+[27:120] ant-0027         nothing to beat
+[27:140] ant-0027         read: 1020F 2278I 0H
+[27:160] ant-0027         read: 1020F 2284I 0H
+[27:180] ant-0027         read: 1021F 2288I 0H
+[39: 40] ant-0039         read: 1026F 2297I 0H
+[48:199] ant-0048         read: 1028F 2304I 0H
+[37:100] ant-0037         read: 1028F 2307I 0H
+[37:120] ant-0037         read: 1029F 2312I 0H
+[37:140] ant-0037         submit Intent pi_ant-0037_140
+[37:160] ant-0037         already claimed
+[37:180] ant-0037         conclude pi_ant-0002_125 + 1 follow-ups
+[37:199] ant-0037         read: 1036F 2339I 0H
+[10:140] ant-0010         read: 1039F 2353I 0H
+[10:160] ant-0010         heartbeat pi_ant-0014_181
+[22:120] ant-0022         read: 1040F 2358I 0H
+[22:140] ant-0022         nothing to conclude
+[22:160] ant-0022         read: 1042F 2371I 0H
+[22:180] ant-0022         submit Intent pi_ant-0022_180
+[22:199] ant-0022         read: 1044F 2384I 0H
+[ 3:140] ant-0003         claim intent_intent_pi_ant-0034_12_next_next ✓
+[30:120] ant-0030         nothing to beat
+[30:140] ant-0030         heartbeat intent_pi_ant-0036_116_next
+[30:160] ant-0030         claim intent_intent_pi_ant-0042_24_next_next ✓
+[11: 40] ant-0011         conclude intent_pi_ant-0049_43_next + 1 follow-ups
+[10:180] ant-0010         already claimed
+[10:199] ant-0010         read: 1059F 2421I 0H
+[33:100] ant-0033         read: 1059F 2421I 0H
+[33:120] ant-0033         read: 1061F 2426I 0H
+[33:140] ant-0033         heartbeat intent_pi_ant-0017_37_next
+[33:160] ant-0033         nothing to beat
+[33:180] ant-0033         conclude pi_ant-0006_5 + 1 follow-ups
+[33:199] ant-0033         read: 1068F 2453I 0H
+[38:140] ant-0038         submit Intent pi_ant-0038_140
+[38:160] ant-0038         already claimed
+[27:199] ant-0027         read: 1070F 2468I 0H
+[19:160] ant-0019         submit Intent pi_ant-0019_160
+[19:180] ant-0019         submit Intent pi_ant-0019_180
+[41:140] ant-0041         nothing to conclude
+[41:160] ant-0041         submit Intent pi_ant-0041_160
+[41:180] ant-0041         read: 1075F 2502I 0H
+[41:199] ant-0041         heartbeat pi_ant-0029_136
+[13:160] ant-0013         read: 1075F 2509I 0H
+[13:180] ant-0013         read: 1076F 2515I 0H
+[13:199] ant-0013         read: 1077F 2519I 0H
+[24:  4] ant-0024         already claimed
+[35: 60] ant-0035         read: 1083F 2534I 0H
+[35: 80] ant-0035         read: 1083F 2536I 0H
+[35:100] ant-0035         read: 1084F 2542I 0H
+[35:120] ant-0035         heartbeat pi_ant-0005_20
+[35:140] ant-0035         submit Intent pi_ant-0035_140
+[35:160] ant-0035         nothing to conclude
+[35:180] ant-0035         already claimed
+[35:199] ant-0035         read: 1090F 2567I 0H
+[32: 20] ant-0032         read: 1091F 2568I 0H
+[32: 40] ant-0032         submit Intent pi_ant-0032_40
+[32: 60] ant-0032         read: 1100F 2578I 0H
+[32: 80] ant-0032         nothing to conclude
+[32:100] ant-0032         read: 1102F 2594I 0H
+[32:120] ant-0032         submit Intent pi_ant-0032_120
+[32:140] ant-0032         heartbeat pi_ant-0007_93
+[32:160] ant-0032         already claimed
+[32:180] ant-0032         read: 1104F 2614I 0H
+[ 5:180] ant-0005         conclude pi_ant-0030_24 + 1 follow-ups
+[38:180] ant-0038         read: 1106F 2623I 0H
+[38:199] ant-0038         nothing to beat
+[39: 60] ant-0039         submit Intent pi_ant-0039_60
+[39: 80] ant-0039         nothing to conclude
+[ 3:160] ant-0003         heartbeat pi_ant-0035_29
+[20: 80] ant-0020         read: 1114F 2650I 0H
+[11: 60] ant-0011         read: 1117F 2659I 0H
+[11: 80] ant-0011         submit Intent pi_ant-0011_80
+[11:100] ant-0011         submit Intent pi_ant-0011_100
+[11:120] ant-0011         read: 1122F 2679I 0H
+[11:140] ant-0011         read: 1122F 2683I 0H
+[11:160] ant-0011         read: 1123F 2689I 0H
+[11:180] ant-0011         claim pi_ant-0008_173 ✓
+[11:199] ant-0011         read: 1124F 2700I 0H
+[ 6:199] ant-0006         already claimed
+[34: 60] ant-0034         read: 1127F 2709I 0H
+[ 3:180] ant-0003         submit Intent pi_ant-0003_180
+[30:180] ant-0030         nothing to beat
+[30:199] ant-0030         read: 1131F 2728I 0H
+[20:100] ant-0020         read: 1131F 2728I 0H
+[20:120] ant-0020         submit Intent pi_ant-0020_120
+[20:140] ant-0020         conclude pi_ant-0008_117 + 1 follow-ups
+[ 5:199] ant-0005         read: 1135F 2745I 0H
+[34: 80] ant-0034         submit Intent pi_ant-0034_80
+[34:100] ant-0034         read: 1137F 2756I 0H
+[34:120] ant-0034         nothing to beat
+[34:140] ant-0034         nothing to conclude
+[34:160] ant-0034         read: 1141F 2772I 0H
+[34:180] ant-0034         submit Intent pi_ant-0034_180
+[34:199] ant-0034         read: 1144F 2783I 0H
+[20:160] ant-0020         read: 1144F 2783I 0H
+[20:180] ant-0020         read: 1145F 2789I 0H
+[20:199] ant-0020         read: 1145F 2793I 0H
+[24: 20] ant-0024         conclude pi_ant-0033_181 + 1 follow-ups
+[24: 40] ant-0024         submit Fact pf_ant-0024_40
+[ 3:199] ant-0003         submit Intent pi_ant-0003_199
+[47: 40] ant-0047         submit Fact pf_ant-0047_40
+[47: 60] ant-0047         claim pi_ant-0033_143 ✓
+[47: 80] ant-0047         submit Intent pi_ant-0047_80
+[39:100] ant-0039         heartbeat pi_ant-0003_195
+[19:199] ant-0019         read: 1169F 2833I 0H
+[21: 40] ant-0021         nothing to beat
+[21: 60] ant-0021         submit Intent pi_ant-0021_60
+[21: 80] ant-0021         submit Intent pi_ant-0021_80
+[21:100] ant-0021         conclude pi_ant-0009_140 + 1 follow-ups
+[15: 40] ant-0015         submit Intent pi_ant-0015_40
+[15: 60] ant-0015         read: 1186F 2868I 0H
+[15: 80] ant-0015         nothing to beat
+[15:100] ant-0015         read: 1189F 2882I 0H
+[15:120] ant-0015         read: 1190F 2885I 0H
+[15:140] ant-0015         already claimed
+[21:120] ant-0021         conclude pi_ant-0013_54 + 1 follow-ups
+[15:160] ant-0015         submit Intent pi_ant-0015_160
+[15:180] ant-0015         nothing to conclude
+[15:199] ant-0015         claim pi_ant-0038_114 ✓
+[47:100] ant-0047         submit Intent pi_ant-0047_100
+[47:120] ant-0047         read: 1200F 2935I 0H
+[39:120] ant-0039         read: 1202F 2938I 0H
+[39:140] ant-0039         submit Intent pi_ant-0039_140
+[47:140] ant-0047         submit Intent pi_ant-0047_140
+[47:160] ant-0047         read: 1205F 2958I 0H
+[47:180] ant-0047         claim pi_ant-0012_183 ✓
+[47:199] ant-0047         read: 1210F 2969I 0H
+[39:160] ant-0039         submit Intent pi_ant-0039_160
+[39:180] ant-0039         read: 1211F 2987I 0H
+[39:199] ant-0039         read: 1213F 2995I 0H
+[24: 60] ant-0024         submit Intent pi_ant-0024_60
+[32:199] ant-0032         read: 1213F 3003I 0H
+[21:140] ant-0021         read: 1214F 3008I 0H
+[21:160] ant-0021         read: 1215F 3013I 0H
+[21:180] ant-0021         heartbeat pi_ant-0003_159
+[24: 80] ant-0024         submit Intent pi_ant-0024_80
+[24:100] ant-0024         nothing to conclude
+[24:120] ant-0024         read: 1217F 3040I 0H
+[24:140] ant-0024         read: 1220F 3046I 0H
+[24:160] ant-0024         read: 1223F 3053I 0H
+[24:180] ant-0024         submit Intent pi_ant-0024_180
+[24:199] ant-0024         claim pi_ant-0029_157 ✓
+[21:199] ant-0021         claim intent_pi_ant-0008_138_next ✓
+
+────────────────────────────────────────
+10000 EVENTS — 50 threads × 200 ops
+────────────────────────────────────────
+Thread stats: 622 fact ops, 2470 intent ops
+Final state: 1226 facts, 3069 intents, 0 hints
+Lock contentions: Mutex handled all interleaving safely
+
+✓ Parallel stress test: 10000 events across 50 threads
+✓ All FIH invariants hold under concurrent access
+✓ Mutex guarantees safe shared state — no data races
+────────────────────────────────────────
+test test_parallel_many_ants ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.96s
+
+   Running tests/b_stress_sequential.rs (target/debug/deps/b_stress_sequential-4215ee1f1f2ce2c7)
+
+running 1 test
+Seeded 10 facts into empty graph
+[step   0] ant-0004     submit Fact f_ant-0004_0
+[step   1] ant-0028     read state: 11F 0I 0H
+[step   2] ant-0014     nothing to claim
+[step   3] ant-0029     read state: 11F 0I 0H
+[step   4] ant-0026     read state: 11F 0I 0H
+[step   5] ant-0004     read state: 11F 0I 0H
+[step   6] ant-0012     submit Fact f_ant-0012_6
+[step   7] ant-0028     read state: 12F 0I 0H
+[step   8] ant-0010     submit Intent i_ant-0010_8
+[step   9] ant-0008     read state: 12F 1I 0H
+[step  50] ant-0023     nothing to claim
+[step 100] ant-0026     read state: 55F 11I 0H
+[step 150] ant-0028     claim intent_i_ant-0007_71_next ✓
+[step 199] ant-0001     claim intent_i_ant-0025_73_next ✓</code></pre>
+</section>
+</section>
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

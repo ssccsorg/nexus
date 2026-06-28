@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.31">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>quarto-inputab2291aa31c117aa</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="20260628_files/libs/clipboard/clipboard.min.js"></script>
+<script src="20260628_files/libs/quarto-html/quarto.js" type="module"></script>
+<script src="20260628_files/libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="20260628_files/libs/quarto-html/popper.min.js"></script>
+<script src="20260628_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="20260628_files/libs/quarto-html/anchor.min.js"></script>
+<link href="20260628_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="20260628_files/libs/quarto-html/quarto-syntax-highlighting-7c69b197886ae2a34062761d21e44731.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="20260628_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="20260628_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="20260628_files/libs/bootstrap/bootstrap-138a6193a3bd40baf1e627da441a4734.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+
+
+</head>
+
+<body class="fullcontent quarto-light">
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+
+<main class="content" id="quarto-document-content">
+
+
+
+
+<section id="nex-spinwasi-ssccsdocs-from-wasix-to-spin-wasi" class="level1">
+<h1>134-nex-spinwasi-ssccsdocs: From WASIX to Spin WASI</h1>
+<section id="context" class="level2">
+<h2 class="anchored" data-anchor-id="context">Context</h2>
+<p>PR #134 aimed to separate all apps from the core workspace into independent Cargo projects. One of those apps was <code>nex-wasmer-ssccsdocs</code> — a document ingestion and BM25 semantic search service deployed on Wasmer Edge. The app uses FIH Blackboard as the storage substrate and syncs SSCCS documentation from <code>docs.ssccs.org</code> into Facts for semantic search.</p>
+</section>
+<section id="the-wasix-dead-end" class="level2">
+<h2 class="anchored" data-anchor-id="the-wasix-dead-end">The WASIX dead end</h2>
+<section id="attempt-wasmer-edge-wasix-proxy" class="level3">
+<h3 class="anchored" data-anchor-id="attempt-wasmer-edge-wasix-proxy">Attempt: Wasmer Edge WASIX Proxy</h3>
+<p>The original implementation used the WASIX toolchain (<code>rustc 1.90.0-dev</code>, the <code>wasix</code> Rustup toolchain) to compile for <code>wasm32-wasmer-wasi</code> target. Wasmer Edge’s Proxy mode works by having the WASM module start an internal HTTP server (axum + tokio) on a configurable port, which the Edge gateway then proxies external requests to.</p>
+<p><strong>Result</strong>: All 27 deployed versions (v1 through v27) returned <code>workload_failure</code> → HTTP 500.</p>
+</section>
+<section id="root-cause" class="level3">
+<h3 class="anchored" data-anchor-id="root-cause">Root cause</h3>
+<p>The <code>wasix</code> toolchain always produces WASM binaries with:</p>
+<ul>
+<li>90 <code>wasix_32v1</code> imports (thread spawn, futex, epoll, sock_accept_v2, etc.)</li>
+<li><code>env.memory</code> with <code>shared: true</code> (shared memory for threading)</li>
+<li><code>wasi.thread-spawn</code> import</li>
+</ul>
+<p>Neither the local Wasmer 7.1.0 CLI nor Wasmer Edge could run these binaries. Local validation failed with:</p>
+<pre class="text"><code>No backends support the required features for the Wasm module.</code></pre>
+<p>The official Wasmer Edge documentation confirms that TCP/UDP applications (which Proxy mode relies on via WASIX sockets) are still in alpha phase:</p>
+<blockquote class="blockquote">
+<p>“Although TCP and UDP applications are supported in Wasmer Edge, we haven’t yet exposed the API as it’s still in alpha phase.”</p>
+</blockquote>
+<p>For HTTP workloads, the documentation recommends WCGI mode (CGI over stdin/stdout) but that would require rewriting the HTTP handler layer.</p>
+</section>
+</section>
+<section id="the-spin-pivot" class="level2">
+<h2 class="anchored" data-anchor-id="the-spin-pivot">The Spin pivot</h2>
+<section id="decision-fermyon-spin-standard-wasi" class="level3">
+<h3 class="anchored" data-anchor-id="decision-fermyon-spin-standard-wasi">Decision: Fermyon Spin + standard WASI</h3>
+<p>Fermyon Spin provides a higher-level HTTP abstraction: instead of the WASM module managing its own TCP listener, Spin’s runtime handles HTTP and passes requests to the component via the WASI component model. This eliminates the need for WASIX entirely.</p>
+<p>Target: <code>wasm32-wasip2</code> (WASI preview 2 / Component Model) using the standard stable Rust toolchain — no forks, no patches.</p>
+</section>
+<section id="phase-1-spin-4-sdk-spin-sdk-6.0.0" class="level3">
+<h3 class="anchored" data-anchor-id="phase-1-spin-4-sdk-spin-sdk-6.0.0">Phase 1: Spin 4 SDK (<code>spin-sdk = "6.0.0"</code>)</h3>
+<p>Initial migration used Spin 4’s <code>#[http_service]</code> macro and <code>spin_sdk::http::Request</code>/<code>Response</code> types.</p>
+<p><strong>Result</strong>: Local <code>spin build --up</code> worked perfectly. All endpoints functional.</p>
+<p><strong>Hurdle</strong>: Fermyon Cloud returned 404 for all routes. Even a minimal “Hello!” app failed with <code>failed to prepare your Spin application</code>.</p>
+<p><strong>Root cause</strong>: Fermyon Cloud runs Spin 3.x which does not support the WASI preview 3 ABI produced by spin-sdk 6.x.</p>
+</section>
+<section id="phase-2-spin-3-sdk-spin-sdk-5.2.0" class="level3">
+<h3 class="anchored" data-anchor-id="phase-2-spin-3-sdk-spin-sdk-5.2.0">Phase 2: Spin 3 SDK (<code>spin-sdk = "5.2.0"</code>)</h3>
+<p>Downgraded to spin-sdk 5.2.0 which uses <code>#[http_component]</code> macro and standard <code>http::Request</code>/<code>http::Response</code> types (from the <code>http</code> crate).</p>
+<p>Key changes:</p>
+<ul>
+<li><code>#[http_service]</code> → <code>#[http_component]</code></li>
+<li><code>spin_sdk::http::Request</code> → <code>http::Request&lt;Vec&lt;u8&gt;&gt;</code></li>
+<li><code>Response::builder().body(text)?</code> with <code>?</code> operator</li>
+<li><code>spin_sdk::http::send(req)</code> for outbound HTTP (replacing <code>spin_sdk::http::get</code>)</li>
+<li>Removed <code>mem_io.rs</code>, <code>batch_io.rs</code>, <code>wasmer_io.rs</code> — replaced with in-memory <code>MemIo</code></li>
+</ul>
+<p><strong>Result</strong>: Deployed successfully on Fermyon Cloud. All endpoints return 200.</p>
+</section>
+</section>
+<section id="architecture" class="level2">
+<h2 class="anchored" data-anchor-id="architecture">Architecture</h2>
+<pre class="text"><code>┌────────────────────────────────────────────────────────────┐
+│  Fermyon Cloud                                             │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  Spin Runtime (v3.x)                                 │  │
+│  │  ┌────────────────────────────────────────────────┐  │  │
+│  │  │  nex-spinwasi-ssccsdocs (WASM component)       │  │  │
+│  │  │  ┌──────────────────────────────────────────┐   │  │  │
+│  │  │  │  #[http_component] handler                │   │  │  │
+│  │  │  │  ├─ routes: / /ingest /search /sync-docs  │   │  │  │
+│  │  │  │  └─ URL routing (manual match)            │   │  │  │
+│  │  │  ├──────────────────────────────────────────┤   │  │  │
+│  │  │  │  FihStorage&lt;MemIo&gt;                        │   │  │  │
+│  │  │  │  ├─ Fact Store (HashMap in-Mutex)          │   │  │  │
+│  │  │  │  ├─ Intent Store                          │   │  │  │
+│  │  │  │  └─ InMemoryBm25                          │   │  │  │
+│  │  │  ├──────────────────────────────────────────┤   │  │  │
+│  │  │  │  MemIo (in-memory HashMap)                │   │  │  │
+│  │  │  └──────────────────────────────────────────┘   │  │  │
+│  │  └────────────────────────────────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────────┘</code></pre>
+<section id="key-design-decisions" class="level3">
+<h3 class="anchored" data-anchor-id="key-design-decisions">Key design decisions</h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 47%">
+<col style="width: 52%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Decision</th>
+<th>Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>MemIo</code> over <code>FsIo</code></td>
+<td>WASI sandbox restricts filesystem writes. In-memory HashMap avoids permission issues entirely.</td>
+</tr>
+<tr class="even">
+<td><code>OnceLock</code> + <code>AtomicBool</code> lazy init</td>
+<td>Storage initializes on first request. Doc sync runs once per cold start (cheap via delta sync).</td>
+</tr>
+<tr class="odd">
+<td><code>#[http_component]</code> over <code>#[http_service]</code></td>
+<td>Spin 3.x compatibility for Fermyon Cloud.</td>
+</tr>
+<tr class="even">
+<td>Manual URL routing</td>
+<td>Avoids axum dependency. 15 routes matched by method + path pattern.</td>
+</tr>
+<tr class="odd">
+<td>standard <code>http</code> crate types</td>
+<td><code>spin_sdk::http::Request</code> differs between SDK versions. <code>http::Request&lt;Vec&lt;u8&gt;&gt;</code> is stable across versions.</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="file-structure" class="level3">
+<h3 class="anchored" data-anchor-id="file-structure">File structure</h3>
+<pre class="text"><code>apps/nex-spinwasi-ssccsdocs/
+├── Cargo.toml          # spin-sdk 5.2.0, no WASIX patches
+├── spin.toml           # Spin manifest (v2, wasm32-wasip2)
+├── src/
+│   ├── lib.rs          # Spin HTTP component (all routes)
+│   ├── mem_io.rs       # In-memory HashMap IO backend
+│   └── bm25.rs         # InMemoryBm25 (unchanged)</code></pre>
+</section>
+</section>
+<section id="lessons-learned" class="level2">
+<h2 class="anchored" data-anchor-id="lessons-learned">Lessons learned</h2>
+<ol type="1">
+<li><p><strong>WASIX is not production-ready on Wasmer Edge.</strong> The <code>wasix_32v1</code> ABI and shared memory threading model are incompatible with both local Wasmer 7.1.0 and the Edge platform. The docs explicitly state TCP/UDP apps are alpha.</p></li>
+<li><p><strong>Fermyon Cloud lags behind Spin CLI.</strong> Spin 4 (SDK 6.x, WASI preview 3) is not supported. Must use Spin 3 (SDK 5.x, <code>#[http_component]</code>, manifest v2 targeting wasm32-wasip2).</p></li>
+<li><p><strong>Platform abstraction pays off.</strong> The entire business logic (<code>FihStorage</code>, <code>InMemoryBm25</code>, <code>ingest_document</code>, BM25 search) moved from WASIX/axum to Spin with zero changes. Only the HTTP handler layer and IO backend needed migration.</p></li>
+<li><p><strong>In-memory storage is sufficient for stateless workloads.</strong> Data persists per WASM instance. Cross-instance persistence requires Spin’s key-value store (future work).</p></li>
+</ol>
+</section>
+</section>
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
