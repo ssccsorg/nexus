@@ -48,7 +48,7 @@ use tracing_subscriber::EnvFilter;
 use crate::bm25::InMemoryBm25;
 use crate::wasmer_io::WasmerIo;
 
-const DEFAULT_DATA_DIR: &str = "/data/fih";
+const DEFAULT_DATA_DIR: &str = "/tmp/fih";
 
 const LLMS_TXT_URL: &str = "https://docs.ssccs.org/llms.txt";
 const DOCS_BASE_URL: &str = "https://docs.ssccs.org";
@@ -515,7 +515,7 @@ fn uuid_v4() -> String {
 type AppState = Arc<FihStorage<BatchIo<WasmerIo>>>;
 
 async fn handle_root() -> &'static str {
-    "nexus-wasmer-ssccsdocs v0.4.0"
+    "ok"
 }
 
 async fn handle_version() -> &'static str {
@@ -850,12 +850,15 @@ async fn main() {
         )
         .init();
 
-    let data_dir = std::env::var("DATA_DIR").unwrap_or_else(|_| DEFAULT_DATA_DIR.into());
-    let project = std::env::var("PROJECT").unwrap_or_else(|_| "wasmer-ssccsdocs".into());
     let port: u16 = std::env::var("PORT")
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(3000);
+
+    tracing::info!("starting on port {port}");
+
+    let data_dir = std::env::var("DATA_DIR").unwrap_or_else(|_| DEFAULT_DATA_DIR.into());
+    let project = std::env::var("PROJECT").unwrap_or_else(|_| "wasmer-ssccsdocs".into());
 
     tracing::info!("initializing FIH storage at {data_dir}, project={project}");
 
@@ -870,7 +873,6 @@ async fn main() {
             tracing::info!("no snapshot found, starting fresh");
             #[cfg(not(target_arch = "wasm32"))]
             {
-                // First boot: auto-fetch all SSCCS docs from docs.ssccs.org
                 let (n, errors) = fetch_ssccs_docs(&storage, &data_dir).await;
                 if n > 0 {
                     tracing::info!("auto-sync: ingested {} docs on first boot", n);
