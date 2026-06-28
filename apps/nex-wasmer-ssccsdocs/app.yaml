@@ -6,10 +6,16 @@ env:
   DATA_DIR: /tmp/fih
   DOCS_DIR: /tmp/docs
   PROJECT: wasmer-ssccsdocs
+  PORT: '80'
 capabilities:
   instaboot:
     mode: null
     requests:
     - path: /
 debug: true
+volumes:
+- name: fih-data
+  mount: /tmp/fih
+- name: docs-data
+  mount: /tmp/docs
 kind: wasmer.io/App.v0

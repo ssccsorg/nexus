@@ -1,6 +1,6 @@
 [package]
 name = "metasmile/nexus-gateway-wasmer-ssccsdocs"
-version = "0.6.0"
+version = "0.6.2"
 description = "WASIX: FIH Blackboard + SSCCS docs + BM25 Search"
 wasmer-extra-flags = "--net --enable-threads --enable-bulk-memory"
 
