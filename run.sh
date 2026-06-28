@@ -3,22 +3,20 @@ set -euo pipefail
 #
 # nexus — Unified CI runner
 #
-# By default runs everything (core checks + gateway + playbooks).
+# By default runs everything (core checks + gateway + apps + playbooks).
 # Sub-commands for focused tasks.
 #
 # Usage:
 #   ./run.sh               # Everything (default)
 #   ./run.sh --core        # Core checks only (nex, storage/*)
 #   ./run.sh --gateway     # Gateway layer checks (api, nex-cf, serde-proxy)
+#   ./run.sh --apps        # All standalone app verification
 #   ./run.sh --playbooks   # Consumer playbooks only
 #
 
 cd "$(dirname "$0")"
 
 # ── Port cleanup ──────────────────────────────────────────────────────────
-#
-# Kill any process holding a given port. Used before playbooks (which start
-# gateway-api) to avoid AddrInUse from a stale process.
 
 kill_port() {
     local port="$1"
@@ -29,6 +27,62 @@ kill_port() {
         kill -9 "$pid" 2>/dev/null || true
         sleep 1
     fi
+}
+
+# ── App verifiers ─────────────────────────────────────────────────────────
+# Each verifier is a standalone function so it can be invoked independently
+# or composed under the --apps umbrella.
+
+verify_nex_spinwasi_ssccsdocs() {
+    echo "=== nex-spinwasi-ssccsdocs ==="
+    echo "Building..."
+    (cd apps/nex-spinwasi-ssccsdocs && spin build 2>&1)
+    echo ""
+    echo "Starting server..."
+    (cd apps/nex-spinwasi-ssccsdocs && spin up --build 2>&1) &
+    local SPIN_PID=$!
+    sleep 4
+
+    local failed=0
+    echo "Testing endpoints..."
+    for test in \
+        "GET /        : curl -s -o /dev/null -w %{http_code} http://127.0.0.1:3000/" \
+        "GET /version : curl -s -o /dev/null -w %{http_code} http://127.0.0.1:3000/version" \
+        "POST /ingest: curl -s -o /dev/null -w %{http_code} -X POST http://127.0.0.1:3000/ingest -H content-type:application/json -d '{\"text\":\"hello test\",\"origin\":\"test\"}'" \
+        "GET /search : curl -s -o /dev/null -w %{http_code} 'http://127.0.0.1:3000/search?q=hello'" \
+        "GET /state  : curl -s -o /dev/null -w %{http_code} http://127.0.0.1:3000/state"
+    do
+        local label="${test%%:*}"
+        local cmd="${test#*: }"
+        local code
+        code=$(eval "$cmd" 2>/dev/null)
+        if [ "$code" = "200" ]; then
+            echo "  $label $code"
+        else
+            echo "  $label $code (FAIL)"
+            failed=1
+        fi
+    done
+
+    echo ""
+    kill "$SPIN_PID" 2>/dev/null || true
+    if [ "$failed" -eq 0 ]; then
+        echo "nex-spinwasi-ssccsdocs: all 5/5 passed"
+    else
+        echo "nex-spinwasi-ssccsdocs: some tests FAILED"
+        return 1
+    fi
+}
+
+# ── App suite ─────────────────────────────────────────────────────────────
+
+run_apps() {
+    local any_failed=0
+    verify_nex_spinwasi_ssccsdocs || any_failed=1
+    # Future apps go here, e.g.:
+    # verify_nex_cf_mock || any_failed=1
+    # verify_nex_zed || any_failed=1
+    return "$any_failed"
 }
 
 # ── Command dispatch ──────────────────────────────────────────────────────
@@ -42,37 +96,9 @@ case "${1:-}" in
         shift
         exec ./scripts/run-gateway.sh "$@"
         ;;
-    --spinwasi)
+    --apps)
         shift
-        echo "=== nex-spinwasi-ssccsdocs ==="
-        echo "Building..."
-        (cd apps/nex-spinwasi-ssccsdocs && spin build 2>&1)
-        echo ""
-        echo "Starting server..."
-        (cd apps/nex-spinwasi-ssccsdocs && spin up --build 2>&1) &
-        SPIN_PID=$!
-        sleep 4
-        echo ""
-        echo "Testing endpoints..."
-        echo -n "GET /        : "
-        curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3000/ 2>&1
-        echo ""
-        echo -n "GET /version : "
-        curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3000/version 2>&1
-        echo ""
-        echo -n "POST /ingest: "
-        curl -s -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:3000/ingest -H "content-type: application/json" -d '{"text":"hello test","origin":"test"}' 2>&1
-        echo ""
-        echo -n "GET /search : "
-        curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:3000/search?q=hello" 2>&1
-        echo ""
-        echo -n "GET /state  : "
-        curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3000/state 2>&1
-        echo ""
-        echo ""
-        echo "Stopping server..."
-        kill "$SPIN_PID" 2>/dev/null || true
-        echo "Done."
+        run_apps
         ;;
     --playbooks)
         kill_port 3000
@@ -80,10 +106,10 @@ case "${1:-}" in
         ;;
     --help|-h)
         echo "Usage: $0 [OPTION]"
-        echo "  (no arg)      Core + gateway + playbooks [default]"
+        echo "  (no arg)      Core + gateway + apps + playbooks [default]"
         echo "  --core        Core checks only (nex, storage/*)"
         echo "  --gateway     Gateway layer checks (api, nex-cf, serde-proxy)"
-        echo "  --spinwasi    nex-spinwasi-ssccsdocs Spin build + test"
+        echo "  --apps        Standalone app verification (spinwasi, cf-mock, ...)"
         echo "  --playbooks   Consumer playbooks only"
         ;;
     "")
@@ -94,8 +120,8 @@ case "${1:-}" in
         echo "=== Gateway ==="
         ./scripts/run-gateway.sh
         echo ""
-        echo "=== Spin WASI ==="
-        $0 --spinwasi
+        echo "=== Apps ==="
+        run_apps
         echo ""
         kill_port 3000
         echo "=== Playbooks ==="
@@ -103,7 +129,7 @@ case "${1:-}" in
         ;;
     *)
         echo "Unknown: $1"
-        echo "Usage: $0 [--core|--gateway|--spinwasi|--playbooks]"
+        echo "Usage: $0 [--core|--gateway|--apps|--playbooks]"
         exit 1
         ;;
 esac
