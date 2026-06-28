@@ -4,8 +4,6 @@ version = "0.5.1"
 edition = "2024"
 license = "Apache-2.0"
 
-[workspace]
-
 [dependencies]
 nex = { path = "../../nex" }
 nexus-model = { path = "../../model" }

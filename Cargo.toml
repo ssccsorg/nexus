@@ -11,6 +11,8 @@ members = [
     "storage/sim",
     "storage/composite",
     "storage/petgraph",
+]
+exclude = [
     "apps/nex-wasmer-ssccsdocs",
 ]
 
