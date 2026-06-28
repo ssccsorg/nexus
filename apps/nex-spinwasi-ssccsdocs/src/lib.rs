@@ -5,11 +5,12 @@
 // Deployable to Fermyon Cloud.
 
 mod bm25;
-mod mem_io;
+mod kv_io;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
-use http::{Method, Request, Response, StatusCode};
+use http::{Method, Request, Response};
 use spin_sdk::http::IntoResponse;
 use spin_sdk::http_component;
 
@@ -24,31 +25,31 @@ use nexus_model::{
 use serde::{Deserialize, Serialize};
 
 use crate::bm25::InMemoryBm25;
-use crate::mem_io::MemIo;
+use crate::kv_io::KvIo;
 
 const DEFAULT_DATA_DIR: &str = "./data/fih";
 const LLMS_TXT_URL: &str = "https://docs.ssccs.org/llms.txt";
 const DOCS_BASE_URL: &str = "https://docs.ssccs.org";
 
-type AppStorage = FihStorage<MemIo>;
+type AppStorage = FihStorage<KvIo>;
 static STORAGE: OnceLock<AppStorage> = OnceLock::new();
-static INITIALIZED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 fn get_storage() -> &'static AppStorage {
     STORAGE.get_or_init(|| {
-        tracing::info!("init FIH (in-memory)");
-        let s = FihStorage::new(MemIo::new(), "spin-ssccsdocs");
+        tracing::info!("init FIH (KV store)");
+        let s = FihStorage::new(KvIo::new().expect("KvIo"), "spin-ssccsdocs");
         s.register_semantic_store(Box::new(InMemoryBm25::new()));
         s
     })
 }
 
 async fn ensure_initialized() {
-    if INITIALIZED.load(std::sync::atomic::Ordering::Acquire) { return; }
+    if INITIALIZED.load(Ordering::Acquire) { return; }
     let s = get_storage();
     tracing::info!("first request: syncing docs");
     fetch_ssccs_docs(s, DEFAULT_DATA_DIR).await;
-    INITIALIZED.store(true, std::sync::atomic::Ordering::Release);
+    INITIALIZED.store(true, Ordering::Release);
 }
 
 // ── Data types ───────────────────────────────────────────────────────

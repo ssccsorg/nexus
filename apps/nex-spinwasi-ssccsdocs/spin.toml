@@ -19,6 +19,7 @@ component = "nex-spinwasi-ssccsdocs"
 [component.nex-spinwasi-ssccsdocs]
 source = "target/wasm32-wasip2/release/nex_spinwasi_ssccsdocs.wasm"
 environment = { DATA_DIR = "./data/fih", PROJECT = "spin-ssccsdocs" }
+key_value_stores = ["default"]
 allowed_outbound_hosts = ["https://docs.ssccs.org:443"]
 [component.nex-spinwasi-ssccsdocs.build]
 command = "cargo build --target wasm32-wasip2 --release"
