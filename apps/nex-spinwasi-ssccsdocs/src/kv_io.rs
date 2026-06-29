@@ -64,6 +64,10 @@ impl FileIo for KvIo {
     }
 }
 
+// Spin KV does not expose multi-key transactions, so apply_batch is not atomic.
+// If a mid-batch operation fails, earlier writes are already committed and
+// later operations are skipped. Callers should design for this: prefer
+// idempotent writes and tolerate partial application.
 impl nex::io::BatchIo for KvIo {
     fn apply_batch<'a>(&'a self, ops: &'a [WriteOp]) -> IoFuture<'a, ()> {
         let ops_vec = ops.to_vec();

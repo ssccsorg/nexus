@@ -3,6 +3,9 @@
 // FIH Blackboard + document ingestion + semantic search.
 // Targets wasm32-wasip2 (WASI preview 2 / Component Model).
 // Deployable to Fermyon Cloud.
+//
+// tracing events are captured by the Spin runtime; no subscriber is
+// needed. For local debugging with `spin up`, use `RUST_LOG=info`.
 
 mod bm25;
 mod kv_io;
@@ -142,7 +145,7 @@ fn extract_llms_urls(text: &str) -> Vec<String> {
 
 fn compute_sha256(data: &[u8]) -> String {
     use sha2::Digest;
-    hex::encode(sha2::Sha256::digest(data))
+    format!("{:x}", sha2::Sha256::digest(data))
 }
 
 fn cache_key() -> String {
@@ -240,7 +243,7 @@ fn err_json(code: u16, error: &str, detail: String) -> Result<Response<Vec<u8>>,
         .body(body.into_bytes())?)
 }
 
-fn uuid_v4() -> String {
+fn timestamp_id() -> String {
     let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
     format!("{ts:x}")
 }
@@ -296,7 +299,7 @@ async fn handler(req: Request<Vec<u8>>) -> anyhow::Result<impl IntoResponse> {
         }
         (Method::POST, "/fact") => {
             let params: FactParams = match serde_json::from_slice(&body) { Ok(p) => p, Err(e) => return err_json(400, "invalid_json", format!("{e}")) };
-            let id = params.id.unwrap_or_else(|| format!("fact_{}", uuid_v4()));
+            let id = params.id.unwrap_or_else(|| format!("fact_{}", timestamp_id()));
             let fact = Fact { id: FihHash::from_hex(&id), origin: params.origin, content: Content { mime_type: "text/plain".into(), data: params.content.into_bytes() }, creator: params.creator };
             let hash = match get_storage().submit_fact(&fact).await { Ok(h) => h, Err(e) => return err_json(500, "fact_error", format!("{e:?}")) };
             if let Err(e) = get_storage().flush_pending().await { return err_json(500, "flush_error", e); }
@@ -304,7 +307,7 @@ async fn handler(req: Request<Vec<u8>>) -> anyhow::Result<impl IntoResponse> {
         }
         (Method::POST, "/intent") => {
             let params: IntentParams = match serde_json::from_slice(&body) { Ok(p) => p, Err(e) => return err_json(400, "invalid_json", format!("{e}")) };
-            let id = params.id.unwrap_or_else(|| format!("intent_{}", uuid_v4()));
+            let id = params.id.unwrap_or_else(|| format!("intent_{}", timestamp_id()));
             let from_facts: Vec<FihHash> = params.from.as_deref().unwrap_or("").split(',').filter(|s| !s.is_empty()).map(FihHash::from_hex).collect();
             if from_facts.is_empty() { return err_json(400, "validation_error", "intent needs at least one fact".into()); }
             let intent = Intent { id: FihHash::from_hex(&id), from_facts, description: params.desc, creator: params.creator, worker: None, to_fact_id: None, last_heartbeat_at: None, created_at: None, is_concluded: false, concluded_at: None };
@@ -330,7 +333,7 @@ async fn handler(req: Request<Vec<u8>>) -> anyhow::Result<impl IntoResponse> {
         }
         (Method::POST, "/hint") => {
             let params: HintParams = match serde_json::from_slice(&body) { Ok(p) => p, Err(e) => return err_json(400, "invalid_json", format!("{e}")) };
-            let id = params.id.unwrap_or_else(|| format!("hint_{}", uuid_v4()));
+            let id = params.id.unwrap_or_else(|| format!("hint_{}", timestamp_id()));
             let hint = Hint { id: FihHash::from_hex(&id), content: params.content, creator: params.creator };
             if let Err(e) = get_storage().submit_hint(&hint).await { return err_json(500, "hint_error", format!("{e:?}")); }
             ok_json(serde_json::json!({"status": "ok"}))
@@ -350,15 +353,24 @@ async fn handler(req: Request<Vec<u8>>) -> anyhow::Result<impl IntoResponse> {
 }
 
 fn urldecode(s: &str) -> String {
-    let mut r = String::new(); let mut c = s.chars();
-    while let Some(ch) = c.next() {
+    let mut bytes: Vec<u8> = Vec::new();
+    let mut chars = s.chars();
+    while let Some(ch) = chars.next() {
         match ch {
-            '+' => r.push(' '),
-            '%' => { let hi = c.next().and_then(|x| x.to_digit(16)).unwrap_or(0); let lo = c.next().and_then(|x| x.to_digit(16)).unwrap_or(0); r.push(char::from((hi * 16 + lo) as u8)); }
-            _ => r.push(ch),
+            '+' => bytes.push(b' '),
+            '%' => {
+                let hi = chars.next().and_then(|x| x.to_digit(16)).unwrap_or(0);
+                let lo = chars.next().and_then(|x| x.to_digit(16)).unwrap_or(0);
+                bytes.push((hi * 16 + lo) as u8);
+            }
+            c => {
+                let mut buf = [0u8; 4];
+                let encoded = c.encode_utf8(&mut buf);
+                bytes.extend_from_slice(encoded.as_bytes());
+            }
         }
     }
-    r
+    String::from_utf8_lossy(&bytes).into_owned()
 }
 
 // ── Tests ────────────────────────────────────────────────────────────

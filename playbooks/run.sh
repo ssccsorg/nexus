@@ -55,10 +55,11 @@ if [ "$MODE" = "all" ] || [ "$MODE" = "--consumers" ]; then
     SERVER_PID=$!
     cd "$SCRIPT_DIR"
 
+    export GATEWAY_PORT=30922
     # Poll for readiness (up to 30s)
     for i in $(seq 1 30); do
-        if curl -sf http://localhost:3000/api/v1/fih/state > /dev/null 2>&1; then
-            echo "  Server ready at http://localhost:3000 (after ${i}s)"
+        if curl -sf "http://localhost:30922/api/v1/fih/state" > /dev/null 2>&1; then
+            echo "  Server ready at http://localhost:30922 (after ${i}s)"
             break
         fi
         if [ "$i" -eq 30 ]; then
