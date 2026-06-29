@@ -1,2 +1,0 @@
-[target.wasm32-wasmer-wasi]
-rustflags = ["-C", "target-feature=-atomics,-simd128,-relaxed-simd,-extended-const"]

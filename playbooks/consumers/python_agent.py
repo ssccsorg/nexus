@@ -12,15 +12,15 @@ Usage:
     python gateway/api/examples/python_agent.py
 
 Requires:
-    - gateway server running on localhost:3000
-      (cd gateway/api && cargo run)
+    - gateway server running on localhost:30922
+      (cd apps/nex-api && GATEWAY_PORT=30922 cargo run)
 """
 
 import json
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
-API = "http://localhost:3000/api/v1/fih"
+API = "http://localhost:30922/api/v1/fih"
 
 
 def post(path, body):

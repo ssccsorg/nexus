@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use nex::io::{FileIo, IoFuture, WriteOp, default_apply_batch};
+use nex::io::{FileIo, IoFuture, WriteOp};
 
 /// In-memory IO backend. All reads/writes go to a HashMap.
 pub struct MemIo {

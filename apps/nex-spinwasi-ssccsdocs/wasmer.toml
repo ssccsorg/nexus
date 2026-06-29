@@ -1,9 +1,0 @@
-[package]
-name = "metasmile/nexus-gateway-wasmer-ssccsdocs"
-version = "0.6.4"
-description = "WASIX: FIH Blackboard + SSCCS docs + BM25 Search"
-wasmer-extra-flags = "--net --enable-threads --enable-bulk-memory"
-
-[[module]]
-name = "nexus-gateway-wasmer-ssccsdocs"
-source = "target/wasm32-wasmer-wasi/release/nexus-gateway-wasmer-ssccsdocs.wasm"

@@ -9,9 +9,10 @@
 
 pub mod file_io;
 /// Filesystem-backed IO. Not available on wasm32-unknown-unknown.
-#[cfg(not(target_arch = "wasm32"))]
+/// (Available on wasm32-wasip2 where std::fs is present.)
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub mod fs_io;
 
 pub use file_io::{BatchIo, FileIo, IoFuture, SyncFileIo, WriteOp, default_apply_batch};
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub use fs_io::FsIo;

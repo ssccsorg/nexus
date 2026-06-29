@@ -34,23 +34,25 @@ kill_port() {
 # or composed under the --apps umbrella.
 
 verify_nex_spinwasi_ssccsdocs() {
+    local PORT=30921
     echo "=== nex-spinwasi-ssccsdocs ==="
     echo "Building..."
     (cd apps/nex-spinwasi-ssccsdocs && spin build 2>&1)
     echo ""
-    echo "Starting server..."
-    (cd apps/nex-spinwasi-ssccsdocs && spin up --build 2>&1) &
+    echo "Starting server on port $PORT..."
+    kill_port "$PORT" 2>/dev/null || true
+    (cd apps/nex-spinwasi-ssccsdocs && spin up --build --listen "127.0.0.1:$PORT" 2>&1) &
     local SPIN_PID=$!
     sleep 4
 
     local failed=0
     echo "Testing endpoints..."
     for test in \
-        "GET /        : curl -s -o /dev/null -w %{http_code} http://127.0.0.1:3000/" \
-        "GET /version : curl -s -o /dev/null -w %{http_code} http://127.0.0.1:3000/version" \
-        "POST /ingest: curl -s -o /dev/null -w %{http_code} -X POST http://127.0.0.1:3000/ingest -H content-type:application/json -d '{\"text\":\"hello test\",\"origin\":\"test\"}'" \
-        "GET /search : curl -s -o /dev/null -w %{http_code} 'http://127.0.0.1:3000/search?q=hello'" \
-        "GET /state  : curl -s -o /dev/null -w %{http_code} http://127.0.0.1:3000/state"
+        "GET /        : curl -s -o /dev/null -w %{http_code} http://127.0.0.1:${PORT}/" \
+        "GET /version : curl -s -o /dev/null -w %{http_code} http://127.0.0.1:${PORT}/version" \
+        "POST /ingest: curl -s -o /dev/null -w %{http_code} -X POST http://127.0.0.1:${PORT}/ingest -H content-type:application/json -d '{\"text\":\"hello test\",\"origin\":\"test\"}'" \
+        "GET /search : curl -s -o /dev/null -w %{http_code} 'http://127.0.0.1:${PORT}/search?q=hello'" \
+        "GET /state  : curl -s -o /dev/null -w %{http_code} http://127.0.0.1:${PORT}/state"
     do
         local label="${test%%:*}"
         local cmd="${test#*: }"
@@ -101,7 +103,7 @@ case "${1:-}" in
         run_apps
         ;;
     --playbooks)
-        kill_port 3000
+        kill_port 30922
         exec ./playbooks/run.sh
         ;;
     --help|-h)
@@ -123,7 +125,7 @@ case "${1:-}" in
         echo "=== Apps ==="
         run_apps
         echo ""
-        kill_port 3000
+        kill_port 30922
         echo "=== Playbooks ==="
         ./playbooks/run.sh
         ;;
