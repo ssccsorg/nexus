@@ -1,0 +1,27 @@
+[package]
+name = "nex-spinwasi-ssccsdocs"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+nex = { path = "../../nex" }
+nexus-model = { path = "../../model" }
+spin-sdk = "5.2.0"
+http = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+async-trait = "0.1"
+postcard = { version = "1", features = ["alloc"] }
+sha2 = "0.10"
+anyhow = "1"
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["rt", "macros"] }

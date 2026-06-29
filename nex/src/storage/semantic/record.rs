@@ -6,7 +6,7 @@
 // system can implement them.
 
 /// Pure semantic record loader — no FIH concepts.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub trait RecordLoad: Send + Sync {
     fn content(&self, id: u32) -> Option<Vec<u8>>;
     fn text(&self, id: u32) -> Option<String> {
@@ -16,7 +16,7 @@ pub trait RecordLoad: Send + Sync {
     fn features(&self, id: u32) -> Option<Vec<f32>>;
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 pub trait RecordLoad {
     fn content(&self, id: u32) -> Option<Vec<u8>>;
     fn text(&self, id: u32) -> Option<String> {
@@ -27,13 +27,13 @@ pub trait RecordLoad {
 }
 
 /// Pure semantic query — no FIH concepts.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub trait Query: Send + Sync {
     fn features(&self) -> Option<Vec<f32>>;
     fn text(&self) -> Option<String>;
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 pub trait Query {
     fn features(&self) -> Option<Vec<f32>>;
     fn text(&self) -> Option<String>;

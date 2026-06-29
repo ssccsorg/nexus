@@ -23,7 +23,11 @@ async fn main() {
 
     let app = build_router(state);
 
-    let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 3000));
+    let port: u16 = std::env::var("GATEWAY_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(30922);
+    let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!("gateway-api listening on {addr}");
 
     let listener = tokio::net::TcpListener::bind(addr)

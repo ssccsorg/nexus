@@ -12,26 +12,26 @@ use nexus_model::FihHash;
 // FihStorage and FihCoord are Send+Sync on native, single-threaded on wasm.
 // The public API is identical regardless of platform.
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub type RefMut<'a, T> = std::sync::MutexGuard<'a, T>;
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 pub type RefMut<'a, T> = std::cell::RefMut<'a, T>;
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub type Ref<'a, T> = std::sync::MutexGuard<'a, T>;
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 pub type Ref<'a, T> = std::cell::Ref<'a, T>;
 
-/// Platform-adaptive cell: Mutex on native, RefCell on wasm.
-#[cfg(not(target_arch = "wasm32"))]
+/// Platform-adaptive cell: Mutex on native/WASIX, RefCell on wasm32-unknown-unknown.
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub struct Cell2<T>(std::sync::Mutex<T>);
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 pub struct Cell2<T>(std::cell::RefCell<T>);
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 impl<T> Cell2<T> {
     pub fn new(val: T) -> Self {
         Self(std::sync::Mutex::new(val))
@@ -44,7 +44,7 @@ impl<T> Cell2<T> {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 impl<T> Cell2<T> {
     pub fn new(val: T) -> Self {
         Self(std::cell::RefCell::new(val))

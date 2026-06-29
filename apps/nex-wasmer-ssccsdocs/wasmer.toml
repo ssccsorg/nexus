@@ -1,4 +1,0 @@
-[package]
-name = "metasmile/nexus-gateway-wasmer-ssccsdocs"
-version = "0.1.0"
-description = "FIH Blackboard + SSCCS document ingestion service for Wasmer Edge"
