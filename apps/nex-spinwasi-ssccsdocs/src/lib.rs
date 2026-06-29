@@ -17,7 +17,7 @@ use spin_sdk::http_component;
 use nex::io::FileIo;
 use nex::EntityStore;
 use nex::storage::core::FihStorage;
-use nex::storage::semantic::{Query as SemanticQuery, SemanticStore};
+use nex::storage::semantic::Query as SemanticQuery;
 use nexus_model::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, Content, Fact,
     FihHash, Hint, Intent,
@@ -27,7 +27,6 @@ use serde::{Deserialize, Serialize};
 use crate::bm25::InMemoryBm25;
 use crate::kv_io::KvIo;
 
-const DEFAULT_DATA_DIR: &str = "./data/fih";
 const LLMS_TXT_URL: &str = "https://docs.ssccs.org/llms.txt";
 const DOCS_BASE_URL: &str = "https://docs.ssccs.org";
 
@@ -180,7 +179,7 @@ async fn fetch_ssccs_docs(s: &AppStorage) -> (usize, Vec<String>) {
     if cache.llms_txt_hash == llms_hash { tracing::info!("llms.txt unchanged"); return (0, vec![]); }
     let urls = extract_llms_urls(&llms_txt);
     if urls.is_empty() { return (0, vec!["no .llms.md URLs".into()]); }
-    let url_set: std::collections::HashSet<String> = urls.iter().cloned().collect();
+    let _url_set: std::collections::HashSet<String> = urls.iter().cloned().collect();
 
     let mut total = 0usize; let mut errors = vec![]; let mut new_cache = std::collections::HashMap::new();
     for url in &urls {
