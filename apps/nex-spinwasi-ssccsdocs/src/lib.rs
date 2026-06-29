@@ -47,8 +47,14 @@ fn get_storage() -> &'static AppStorage {
 async fn ensure_initialized() {
     if INITIALIZED.load(Ordering::Acquire) { return; }
     let s = get_storage();
-    tracing::info!("first request: syncing docs");
-    fetch_ssccs_docs(s).await;
+    match restore_from_snapshot(s).await {
+        Ok(true) => tracing::info!("restored snapshot ({} facts)", s.fact_store.len().await),
+        Ok(false) => {
+            tracing::info!("no snapshot found, syncing docs");
+            fetch_ssccs_docs(s).await;
+        }
+        Err(e) => tracing::warn!("snapshot restore failed (proceeding empty): {e}"),
+    }
     INITIALIZED.store(true, Ordering::Release);
 }
 
@@ -75,6 +81,26 @@ async fn write_snapshot(s: &FihStorage<impl FileIo>) -> Result<(), String> {
     let entry = ChainEntry { prev_cursor: 0, records_flushed: facts.len() as u64, facts, intents };
     let bytes = postcard::to_allocvec(&entry).map_err(|e| format!("serialize: {e}"))?;
     s.io.write("_snapshot/facts.bin", &bytes).await
+}
+
+async fn restore_from_snapshot(s: &AppStorage) -> Result<bool, String> {
+    let Some(bytes) = s.io.read("_snapshot/facts.bin").await? else { return Ok(false); };
+    let entry: nex::storage::core::ChainEntry =
+        postcard::from_bytes(&bytes).map_err(|e| format!("deserialize: {e}"))?;
+    s.fact_store
+        .replace_from(entry.facts.into_iter().map(|r| (r.id.clone(), r)).collect())
+        .await;
+    s.intent_store
+        .replace_from(
+            entry
+                .intents
+                .into_iter()
+                .map(|r| (r.id.clone(), r))
+                .collect(),
+        )
+        .await;
+    s.rebuild_coord().await;
+    Ok(true)
 }
 
 // ── Ingestion ────────────────────────────────────────────────────────
