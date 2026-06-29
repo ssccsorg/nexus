@@ -11,11 +11,11 @@
  *
  * Requires:
  *   - Node.js 18+ (built-in fetch)
- *   - gateway server running on localhost:3000
- *     (cd gateway/api && cargo run)
+ *   - gateway server running on localhost:30922
+ *     (cd apps/nex-api && GATEWAY_PORT=30922 cargo run)
  */
 
-const API = "http://localhost:3000/api/v1/fih";
+const API = "http://localhost:30922/api/v1/fih";
 
 async function post(path, body) {
   const res = await fetch(`${API}${path}`, {

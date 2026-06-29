@@ -9,7 +9,7 @@ use crate::storage::core::index::Cell2;
 // ── EntityStore trait ────────────────────────────────────────────────────
 
 /// EntityStore: replaceable key-value store for FIH records.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 #[async_trait]
 pub trait EntityStore<V>: Send + Sync
 where
@@ -28,7 +28,7 @@ where
     async fn replace_from(&self, entries: Vec<(String, V)>);
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 #[async_trait(?Send)]
 pub trait EntityStore<V>
 where
@@ -74,7 +74,7 @@ where
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 #[async_trait]
 impl<V> EntityStore<V> for MemoryEntityStore<V>
 where
@@ -115,7 +115,7 @@ where
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 #[async_trait(?Send)]
 impl<V> EntityStore<V> for MemoryEntityStore<V>
 where

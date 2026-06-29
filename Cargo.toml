@@ -4,9 +4,6 @@ members = [
     "model",
     "nex",
     "storage/duckdb",
-    "apps/nex-api",
-    "apps/nex-cf",
-    "apps/nex-cf/mock",
     "libs/serde-proxy",
     "playbooks/agents",
     "interface/query",
@@ -14,7 +11,10 @@ members = [
     "storage/sim",
     "storage/composite",
     "storage/petgraph",
+]
+exclude = [
     "apps/nex-wasmer-ssccsdocs",
+    "apps/nex-spinwasi-ssccsdocs",
 ]
 
 [workspace.package]

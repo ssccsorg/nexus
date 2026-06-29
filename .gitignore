@@ -49,6 +49,9 @@ rag/inputs/
 .pytest_cache/
 .python-version
 
+# Spin runtime state
+.spin/
+
 # Rust build (workspace)
 core/target/
 result/
