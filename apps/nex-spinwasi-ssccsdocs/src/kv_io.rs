@@ -18,10 +18,6 @@ impl KvIo {
         Ok(Self { store })
     }
 
-    /// No-op flush (writes are immediate via KV store).
-    pub async fn flush(&self) -> Result<(), String> {
-        Ok(())
-    }
 }
 
 impl FileIo for KvIo {
