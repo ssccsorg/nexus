@@ -49,8 +49,7 @@ async fn main() -> anyhow::Result<()> {
     );
 
     // ── Shared blackboard ────────────────────────────────────────────
-    let blackboard: Arc<Mutex<HybridBlackboard>> =
-        Arc::new(Mutex::new(create_blackboard()));
+    let blackboard: Arc<Mutex<HybridBlackboard>> = Arc::new(Mutex::new(create_blackboard()));
 
     // ── Shared process manager ───────────────────────────────────────
     let process_manager = Arc::new(Mutex::new(manager::ProcessManager::new()));
@@ -58,7 +57,9 @@ async fn main() -> anyhow::Result<()> {
     // Spawn default agent if configured
     if let Some(ref cmd) = cfg.agent_command {
         let mut pm = process_manager.lock().unwrap();
-        let _ = pm.spawn(cmd, &cfg.agent_args);
+        if let Err(e) = pm.spawn(cmd, &cfg.agent_args) {
+            tracing::error!(command = %cmd, error = %e, "failed to spawn startup agent");
+        }
     }
 
     // ── Build subsystems and run ─────────────────────────────────────
@@ -118,9 +119,14 @@ async fn scheduler_task(
                     .unwrap_or_default()
                     .as_secs();
 
-                let bb = match blackboard.lock() {
+                // Use try_lock to avoid blocking IPC handlers during heavy load.
+                // If the lock is contended, skip this tick and retry on the next one.
+                let bb = match blackboard.try_lock() {
                     Ok(g) => g,
-                    Err(_) => {
+                    Err(std::sync::TryLockError::WouldBlock) => {
+                        continue;
+                    }
+                    Err(std::sync::TryLockError::Poisoned(_)) => {
                         tracing::error!("blackboard lock poisoned in scheduler");
                         break;
                     }

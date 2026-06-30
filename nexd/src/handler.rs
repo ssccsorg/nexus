@@ -7,12 +7,12 @@
 use std::sync::{Arc, Mutex};
 
 use nexus_model::{
-    BlackboardError, Content, Fact, FactCapable, FihHash, Hint,
-    HintCapable, Intent, IntentCapable, StorageRead,
+    BlackboardError, Content, Fact, FactCapable, FihHash, Hint, HintCapable, Intent, IntentCapable,
+    StorageRead,
 };
 use nexus_storage_composite::HybridBlackboard;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::manager::ProcessManager;
 
@@ -69,7 +69,7 @@ impl RpcResponse {
     }
 }
 
-pub async fn dispatch(
+pub fn dispatch(
     req: RpcRequest,
     blackboard: &Arc<Mutex<HybridBlackboard>>,
     process_manager: &Arc<Mutex<ProcessManager>>,
@@ -107,17 +107,15 @@ fn map_error(e: BlackboardError) -> (i64, String) {
 fn lock_bb<'a>(
     bb: &'a Arc<Mutex<HybridBlackboard>>,
 ) -> Result<std::sync::MutexGuard<'a, HybridBlackboard>, RpcResponse> {
-    bb.lock().map_err(|e| {
-        RpcResponse::error(Value::Null, -32000, format!("lock poisoned: {e}"))
-    })
+    bb.lock()
+        .map_err(|e| RpcResponse::error(Value::Null, -32000, format!("lock poisoned: {e}")))
 }
 
 fn lock_pm<'a>(
     pm: &'a Arc<Mutex<ProcessManager>>,
 ) -> Result<std::sync::MutexGuard<'a, ProcessManager>, RpcResponse> {
-    pm.lock().map_err(|e| {
-        RpcResponse::error(Value::Null, -32000, format!("lock poisoned: {e}"))
-    })
+    pm.lock()
+        .map_err(|e| RpcResponse::error(Value::Null, -32000, format!("lock poisoned: {e}")))
 }
 
 // ── Fact handlers ────────────────────────────────────────────────────────
@@ -148,7 +146,9 @@ fn handle_write_fact(
             },
             other => Content {
                 mime_type: "application/json".into(),
-                data: serde_json::to_string(other).unwrap_or_default().into_bytes(),
+                data: serde_json::to_string(other)
+                    .unwrap_or_default()
+                    .into_bytes(),
             },
         },
         creator: p.creator,
@@ -167,10 +167,7 @@ fn handle_write_fact(
     }
 }
 
-fn handle_read_state(
-    id: Value,
-    blackboard: &Arc<Mutex<HybridBlackboard>>,
-) -> RpcResponse {
+fn handle_read_state(id: Value, blackboard: &Arc<Mutex<HybridBlackboard>>) -> RpcResponse {
     let bb = match lock_bb(blackboard) {
         Ok(g) => g,
         Err(e) => return e,
@@ -327,10 +324,7 @@ fn handle_conclude_intent(
         Err(e) => return e,
     };
     match bb.conclude_intent(&p.id, &p.result) {
-        Ok(fact) => RpcResponse::success(
-            id,
-            serde_json::to_value(fact).unwrap_or_default(),
-        ),
+        Ok(fact) => RpcResponse::success(id, serde_json::to_value(fact).unwrap_or_default()),
         Err(e) => {
             let (code, msg) = map_error(e);
             RpcResponse::error(id, code, msg)
@@ -367,7 +361,10 @@ fn handle_write_hint(
     };
     match bb.submit_hint(&hint) {
         Ok(()) => RpcResponse::success(id, json!({})),
-        Err(e) => RpcResponse::error(id, -32000, e.to_string()),
+        Err(e) => {
+            let (code, msg) = map_error(e);
+            RpcResponse::error(id, code, msg)
+        }
     }
 }
 
@@ -399,10 +396,7 @@ fn handle_spawn_agent(
     }
 }
 
-fn handle_list_agents(
-    id: Value,
-    process_manager: &Arc<Mutex<ProcessManager>>,
-) -> RpcResponse {
+fn handle_list_agents(id: Value, process_manager: &Arc<Mutex<ProcessManager>>) -> RpcResponse {
     let pm = match lock_pm(process_manager) {
         Ok(g) => g,
         Err(e) => return e,
