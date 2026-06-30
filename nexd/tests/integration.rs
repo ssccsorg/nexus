@@ -38,6 +38,75 @@ fn test_basic_request_response_roundtrip() {
 }
 
 #[test]
+fn test_read_fact_by_id() {
+    let d = DaemonHandle::start();
+    let f = d.ok(
+        "write_fact",
+        json!({"origin":"get-test","content":"target fact","creator":"t"}),
+    );
+    let fid = f["id"].as_str().unwrap().to_string();
+
+    let resp = d.rpc("read_fact", json!({"id": fid}));
+    assert!(
+        resp["error"].is_null(),
+        "read_fact error: {:?}",
+        resp["error"]
+    );
+    assert_eq!(resp["result"]["origin"], "get-test");
+    assert_eq!(resp["result"]["content"]["mime_type"], "text/plain");
+}
+
+#[test]
+fn test_read_fact_not_found() {
+    let d = DaemonHandle::start();
+    let resp = d.rpc("read_fact", json!({"id": "nonexistent"}));
+    assert_eq!(resp["error"]["code"], -32001);
+}
+
+#[test]
+fn test_read_intent_by_id() {
+    let d = DaemonHandle::start();
+    let f = d.ok(
+        "write_fact",
+        json!({"origin":"i-test","content":"base","creator":"t"}),
+    );
+    let fid = f["id"].as_str().unwrap().to_string();
+    let i = d.ok(
+        "write_intent",
+        json!({"from_facts":[fid],"description":"find me","creator":"t"}),
+    );
+    let iid = i["id"].as_str().unwrap().to_string();
+
+    let resp = d.rpc("read_intent", json!({"id": iid}));
+    assert!(
+        resp["error"].is_null(),
+        "read_intent error: {:?}",
+        resp["error"]
+    );
+    assert_eq!(resp["result"]["description"], "find me");
+}
+
+#[test]
+fn test_read_hint_by_id() {
+    let d = DaemonHandle::start();
+    d.ok(
+        "write_hint",
+        json!({"content":"readable hint","creator":"t"}),
+    );
+
+    let state = d.ok("read_state", json!({}));
+    let hid = state["hints"][0]["id"].as_str().unwrap().to_string();
+
+    let resp = d.rpc("read_hint", json!({"id": hid}));
+    assert!(
+        resp["error"].is_null(),
+        "read_hint error: {:?}",
+        resp["error"]
+    );
+    assert_eq!(resp["result"]["content"], "readable hint");
+}
+
+#[test]
 fn test_concurrent_connections() {
     // nexd must handle 5 concurrent client connections.
     let d = DaemonHandle::start();
