@@ -80,6 +80,9 @@ pub fn dispatch(
     match req.method.as_str() {
         "write_fact" => handle_write_fact(id, params, blackboard),
         "read_state" => handle_read_state(id, blackboard),
+        "read_fact" => handle_read_fact(id, params, blackboard),
+        "read_intent" => handle_read_intent(id, params, blackboard),
+        "read_hint" => handle_read_hint(id, params, blackboard),
         "write_intent" => handle_write_intent(id, params, blackboard),
         "claim_intent" => handle_claim_intent(id, params, blackboard),
         "heartbeat_intent" => handle_heartbeat_intent(id, params, blackboard),
@@ -174,6 +177,92 @@ fn handle_read_state(id: Value, blackboard: &Arc<Mutex<HybridBlackboard>>) -> Rp
     };
     let state = bb.read_state();
     RpcResponse::success(id, serde_json::to_value(state).unwrap_or_default())
+}
+
+// ── Single read handlers ─────────────────────────────────────────────────
+
+fn handle_read_fact(
+    id: Value,
+    params: Value,
+    blackboard: &Arc<Mutex<HybridBlackboard>>,
+) -> RpcResponse {
+    #[derive(Deserialize)]
+    struct Params {
+        id: String,
+    }
+    let p: Params = match serde_json::from_value(params) {
+        Ok(v) => v,
+        Err(e) => return RpcResponse::error(id, -32602, e.to_string()),
+    };
+
+    let bb = match lock_bb(blackboard) {
+        Ok(g) => g,
+        Err(e) => return e,
+    };
+    let state = bb.read_state();
+    let target = FihHash::from_hex(&p.id).to_string();
+    for fact in &state.facts {
+        if fact.id.to_string() == target {
+            return RpcResponse::success(id, serde_json::to_value(fact).unwrap_or_default());
+        }
+    }
+    RpcResponse::error(id, -32001, format!("fact not found: {}", p.id))
+}
+
+fn handle_read_intent(
+    id: Value,
+    params: Value,
+    blackboard: &Arc<Mutex<HybridBlackboard>>,
+) -> RpcResponse {
+    #[derive(Deserialize)]
+    struct Params {
+        id: String,
+    }
+    let p: Params = match serde_json::from_value(params) {
+        Ok(v) => v,
+        Err(e) => return RpcResponse::error(id, -32602, e.to_string()),
+    };
+
+    let bb = match lock_bb(blackboard) {
+        Ok(g) => g,
+        Err(e) => return e,
+    };
+    let state = bb.read_state();
+    let target = FihHash::from_hex(&p.id).to_string();
+    for intent in &state.intents {
+        if intent.id.to_string() == target {
+            return RpcResponse::success(id, serde_json::to_value(intent).unwrap_or_default());
+        }
+    }
+    RpcResponse::error(id, -32001, format!("intent not found: {}", p.id))
+}
+
+fn handle_read_hint(
+    id: Value,
+    params: Value,
+    blackboard: &Arc<Mutex<HybridBlackboard>>,
+) -> RpcResponse {
+    #[derive(Deserialize)]
+    struct Params {
+        id: String,
+    }
+    let p: Params = match serde_json::from_value(params) {
+        Ok(v) => v,
+        Err(e) => return RpcResponse::error(id, -32602, e.to_string()),
+    };
+
+    let bb = match lock_bb(blackboard) {
+        Ok(g) => g,
+        Err(e) => return e,
+    };
+    let state = bb.read_state();
+    let target = FihHash::from_hex(&p.id).to_string();
+    for hint in &state.hints {
+        if hint.id.to_string() == target {
+            return RpcResponse::success(id, serde_json::to_value(hint).unwrap_or_default());
+        }
+    }
+    RpcResponse::error(id, -32001, format!("hint not found: {}", p.id))
 }
 
 // ── Intent handlers ──────────────────────────────────────────────────────

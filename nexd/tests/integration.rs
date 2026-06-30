@@ -57,8 +57,7 @@ fn test_concurrent_connections() {
             let mut reader = BufReader::new(&stream);
             let mut line = String::new();
             reader.read_line(&mut line).unwrap();
-            let val: serde_json::Value =
-                serde_json::from_str(line.trim()).unwrap();
+            let val: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
             assert_eq!(val["id"], i, "response id must match request id");
         }));
     }
@@ -89,8 +88,7 @@ fn test_request_pipelining() {
     for i in 0..3 {
         line.clear();
         reader.read_line(&mut line).unwrap();
-        let val: serde_json::Value =
-            serde_json::from_str(line.trim()).unwrap();
+        let val: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
         assert_eq!(val["id"], i, "pipelined responses must maintain order");
     }
 }
@@ -106,8 +104,7 @@ fn test_invalid_json_is_rejected() {
     let mut reader = BufReader::new(&stream);
     let mut line = String::new();
     reader.read_line(&mut line).unwrap();
-    let val: serde_json::Value =
-        serde_json::from_str(line.trim()).unwrap();
+    let val: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
     assert!(val["error"].is_object(), "invalid JSON should error");
 }
 
@@ -123,11 +120,14 @@ fn test_large_message_throughput() {
     let d = DaemonHandle::start();
     let large = "A".repeat(50_000);
 
-    let result = d.ok("write_fact", json!({
-        "origin": "large-payload",
-        "content": large,
-        "creator": "tester"
-    }));
+    let result = d.ok(
+        "write_fact",
+        json!({
+            "origin": "large-payload",
+            "content": large,
+            "creator": "tester"
+        }),
+    );
     assert!(result["id"].as_str().unwrap().len() > 0);
 
     let state = d.ok("read_state", json!({}));
@@ -170,8 +170,7 @@ fn test_missing_method_field() {
     let mut reader = BufReader::new(&stream);
     let mut line = String::new();
     reader.read_line(&mut line).unwrap();
-    let val: serde_json::Value =
-        serde_json::from_str(line.trim()).unwrap();
+    let val: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
     assert!(val["error"].is_object(), "missing method should error");
 }
 
@@ -185,34 +184,42 @@ fn test_two_agents_communicate_through_blackboard() {
     let d = DaemonHandle::start();
 
     // Agent A: publishes a request Fact
-    let f = d.ok("write_fact", json!({
-        "origin": "agent-a:request",
-        "content": "data needed",
-        "creator": "agent-a"
-    }));
+    let f = d.ok(
+        "write_fact",
+        json!({
+            "origin": "agent-a:request",
+            "content": "data needed",
+            "creator": "agent-a"
+        }),
+    );
     let request_fact_id = f["id"].as_str().unwrap().to_string();
 
     // Agent B: discovers A's Fact via shared blackboard
     let state = d.ok("read_state", json!({}));
     let agent_a_facts: Vec<&serde_json::Value> = state["facts"]
-        .as_array().unwrap()
+        .as_array()
+        .unwrap()
         .iter()
         .filter(|f| f["creator"] == "agent-a")
         .collect();
     assert_eq!(agent_a_facts.len(), 1, "B must see A's fact");
 
     // Agent B: creates an Intent to process
-    let i = d.ok("write_intent", json!({
-        "from_facts": [request_fact_id],
-        "description": "B processing request",
-        "creator": "agent-b"
-    }));
+    let i = d.ok(
+        "write_intent",
+        json!({
+            "from_facts": [request_fact_id],
+            "description": "B processing request",
+            "creator": "agent-b"
+        }),
+    );
     let intent_id = i["id"].as_str().unwrap().to_string();
 
     // Agent A: discovers B's Intent
     let state = d.ok("read_state", json!({}));
     let agent_b_intents: Vec<&serde_json::Value> = state["intents"]
-        .as_array().unwrap()
+        .as_array()
+        .unwrap()
         .iter()
         .filter(|i| i["creator"] == "agent-b")
         .collect();
@@ -220,11 +227,17 @@ fn test_two_agents_communicate_through_blackboard() {
 
     // B: claims, processes, concludes
     d.ok("claim_intent", json!({"id": intent_id, "agent": "agent-b"}));
-    d.ok("heartbeat_intent", json!({"id": intent_id, "agent": "agent-b"}));
+    d.ok(
+        "heartbeat_intent",
+        json!({"id": intent_id, "agent": "agent-b"}),
+    );
 
-    let c = d.ok("conclude_intent", json!({
-        "id": intent_id, "result": "result data"
-    }));
+    let c = d.ok(
+        "conclude_intent",
+        json!({
+            "id": intent_id, "result": "result data"
+        }),
+    );
     assert!(c["id"].as_str().is_some());
 
     // A: sees the communication completed
@@ -240,10 +253,16 @@ fn test_agent_delegation_pattern() {
     // Orchestrator delegates work: claim → release → reclaim
     let d = DaemonHandle::start();
 
-    let f = d.ok("write_fact", json!({"origin":"task","content":"work","creator":"orch"}));
-    let i = d.ok("write_intent", json!({
-        "from_facts":[f["id"]],"description":"do work","creator":"orch"
-    }));
+    let f = d.ok(
+        "write_fact",
+        json!({"origin":"task","content":"work","creator":"orch"}),
+    );
+    let i = d.ok(
+        "write_intent",
+        json!({
+            "from_facts":[f["id"]],"description":"do work","creator":"orch"
+        }),
+    );
     let iid = i["id"].as_str().unwrap();
 
     d.ok("claim_intent", json!({"id":iid,"agent":"worker-1"}));
@@ -259,15 +278,25 @@ fn test_agent_delegation_pattern() {
 fn test_multiple_agents_share_single_blackboard() {
     let d = DaemonHandle::start();
 
-    d.ok("write_fact", json!({"origin":"agent-a","content":"alpha","creator":"a"}));
-    d.ok("write_fact", json!({"origin":"agent-b","content":"beta","creator":"b"}));
-    d.ok("write_fact", json!({"origin":"agent-c","content":"gamma","creator":"c"}));
+    d.ok(
+        "write_fact",
+        json!({"origin":"agent-a","content":"alpha","creator":"a"}),
+    );
+    d.ok(
+        "write_fact",
+        json!({"origin":"agent-b","content":"beta","creator":"b"}),
+    );
+    d.ok(
+        "write_fact",
+        json!({"origin":"agent-c","content":"gamma","creator":"c"}),
+    );
 
     let state = d.ok("read_state", json!({}));
     assert_eq!(state["facts"].as_array().unwrap().len(), 3);
 
     let origins: Vec<&str> = state["facts"]
-        .as_array().unwrap()
+        .as_array()
+        .unwrap()
         .iter()
         .map(|f| f["origin"].as_str().unwrap())
         .collect();
@@ -303,14 +332,32 @@ fn test_multi_agent_management() {
     let b = d.ok("spawn_agent", json!({"command":"sleep","args":["20"]}));
     let c = d.ok("spawn_agent", json!({"command":"sleep","args":["30"]}));
 
-    assert_eq!(d.ok("list_agents", json!({}))["agents"].as_array().unwrap().len(), 3);
+    assert_eq!(
+        d.ok("list_agents", json!({}))["agents"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
 
     d.ok("kill_agent", json!({"pid": b["pid"]}));
-    assert_eq!(d.ok("list_agents", json!({}))["agents"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        d.ok("list_agents", json!({}))["agents"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
 
     d.ok("kill_agent", json!({"pid": a["pid"]}));
     d.ok("kill_agent", json!({"pid": c["pid"]}));
-    assert_eq!(d.ok("list_agents", json!({}))["agents"].as_array().unwrap().len(), 0);
+    assert_eq!(
+        d.ok("list_agents", json!({}))["agents"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
 }
 
 #[test]
@@ -355,7 +402,10 @@ fn test_sigterm_graceful_shutdown_cleans_socket() {
     assert!(status.success(), "graceful exit");
 
     // Socket must be cleaned up on graceful shutdown
-    assert!(!socket_path.exists(), "socket removed after graceful shutdown");
+    assert!(
+        !socket_path.exists(),
+        "socket removed after graceful shutdown"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -365,19 +415,28 @@ fn test_sigterm_graceful_shutdown_cleans_socket() {
 #[test]
 fn test_write_intent_without_facts_gives_clear_error() {
     let d = DaemonHandle::start();
-    let resp = d.rpc("write_intent", json!({
-        "from_facts": [], "description": "no facts", "creator": "t"
-    }));
+    let resp = d.rpc(
+        "write_intent",
+        json!({
+            "from_facts": [], "description": "no facts", "creator": "t"
+        }),
+    );
     assert_eq!(resp["error"]["code"], -32003, "no-base-fact must error");
 }
 
 #[test]
 fn test_double_claim_gives_conflict_error() {
     let d = DaemonHandle::start();
-    let f = d.ok("write_fact", json!({"origin":"x","content":"x","creator":"x"}));
-    let i = d.ok("write_intent", json!({
-        "from_facts":[f["id"]],"description":"x","creator":"x"
-    }));
+    let f = d.ok(
+        "write_fact",
+        json!({"origin":"x","content":"x","creator":"x"}),
+    );
+    let i = d.ok(
+        "write_intent",
+        json!({
+            "from_facts":[f["id"]],"description":"x","creator":"x"
+        }),
+    );
     let iid = i["id"].as_str().unwrap();
 
     d.ok("claim_intent", json!({"id":iid,"agent":"alice"}));
@@ -388,10 +447,16 @@ fn test_double_claim_gives_conflict_error() {
 #[test]
 fn test_release_by_wrong_agent_gives_error() {
     let d = DaemonHandle::start();
-    let f = d.ok("write_fact", json!({"origin":"x","content":"x","creator":"x"}));
-    let i = d.ok("write_intent", json!({
-        "from_facts":[f["id"]],"description":"x","creator":"x"
-    }));
+    let f = d.ok(
+        "write_fact",
+        json!({"origin":"x","content":"x","creator":"x"}),
+    );
+    let i = d.ok(
+        "write_intent",
+        json!({
+            "from_facts":[f["id"]],"description":"x","creator":"x"
+        }),
+    );
     let iid = i["id"].as_str().unwrap();
 
     d.ok("claim_intent", json!({"id":iid,"agent":"alice"}));
@@ -400,13 +465,18 @@ fn test_release_by_wrong_agent_gives_error() {
 }
 
 #[test]
-#[test]
 fn test_conclude_unclaimed_intent_behavior() {
     let d = DaemonHandle::start();
-    let f = d.ok("write_fact", json!({"origin":"x","content":"x","creator":"x"}));
-    let i = d.ok("write_intent", json!({
-        "from_facts":[f["id"]],"description":"x","creator":"x"
-    }));
+    let f = d.ok(
+        "write_fact",
+        json!({"origin":"x","content":"x","creator":"x"}),
+    );
+    let i = d.ok(
+        "write_intent",
+        json!({
+            "from_facts":[f["id"]],"description":"x","creator":"x"
+        }),
+    );
     let iid = i["id"].as_str().unwrap();
 
     // GAP: HybridBlackboard does not enforce claim-before-conclude.

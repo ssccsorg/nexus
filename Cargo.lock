@@ -1823,12 +1823,14 @@ name = "nexd"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "libc",
  "nex",
  "nexus-model",
  "nexus-storage-composite",
  "proc-daemon",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",

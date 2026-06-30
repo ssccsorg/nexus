@@ -60,8 +60,7 @@ impl DaemonHandle {
 
     /// Connect, send one request, read one line response.
     pub fn rpc(&self, method: &str, params: serde_json::Value) -> serde_json::Value {
-        let mut stream =
-            UnixStream::connect(&self.socket_path).expect("connect");
+        let mut stream = UnixStream::connect(&self.socket_path).expect("connect");
         let req = serde_json::json!({"id":1,"method":method,"params":params});
         let mut buf = serde_json::to_string(&req).unwrap();
         buf.push('\n');
