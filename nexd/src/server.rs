@@ -6,6 +6,9 @@
 
 use std::sync::{Arc, Mutex};
 
+/// Maximum concurrent client connections.
+const MAX_CONNECTIONS: usize = 128;
+
 use nexus_storage_composite::HybridBlackboard;
 use proc_daemon::ShutdownHandle;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -26,21 +29,25 @@ pub async fn run(
     blackboard: Arc<Mutex<HybridBlackboard>>,
     process_manager: Arc<Mutex<ProcessManager>>,
 ) -> proc_daemon::Result<()> {
+    // Limit concurrent connections to prevent resource exhaustion.
+    let connection_semaphore = Arc::new(tokio::sync::Semaphore::new(MAX_CONNECTIONS));
     let socket_path = config.socket_path.as_path();
 
     // Remove stale socket file before binding
     if socket_path.exists() {
-        tokio::fs::remove_file(socket_path).await.map_err(|e| {
-            warn!(path = %socket_path.display(), "could not remove stale socket: {e}");
-            e
-        }).ok();
+        tokio::fs::remove_file(socket_path)
+            .await
+            .map_err(|e| {
+                warn!(path = %socket_path.display(), "could not remove stale socket: {e}");
+                e
+            })
+            .ok();
     }
 
-    let listener = UnixListener::bind(socket_path)
-        .map_err(|e| {
-            error!(path = %socket_path.display(), "failed to bind socket: {e}");
-            e
-        })?;
+    let listener = UnixListener::bind(socket_path).map_err(|e| {
+        error!(path = %socket_path.display(), "failed to bind socket: {e}");
+        e
+    })?;
 
     info!(
         path = %socket_path.display(),
@@ -60,7 +67,10 @@ pub async fn run(
                     Ok((stream, _addr)) => {
                         let bb = blackboard.clone();
                         let pm = process_manager.clone();
+                        let sem = connection_semaphore.clone();
                         tokio::spawn(async move {
+                            // Acquire semaphore permit — dropped when task completes
+                            let _permit = sem.acquire().await;
                             if let Err(e) = handle_connection(stream, bb, pm).await {
                                 warn!("connection handler error: {e}");
                             }
@@ -115,7 +125,7 @@ async fn handle_connection(
         };
 
         // Dispatch and respond
-        let resp = dispatch(req, &blackboard, &process_manager).await;
+        let resp = dispatch(req, &blackboard, &process_manager);
         let json = serde_json::to_string(&resp)?;
 
         writer.write_all(json.as_bytes()).await?;
