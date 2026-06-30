@@ -50,7 +50,7 @@ rag/inputs/
 .python-version
 
 # Spin runtime state
-.spin/**/*.*
+.spin/
 
 # Rust build (workspace)
 core/target/
