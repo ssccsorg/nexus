@@ -130,7 +130,7 @@ verify_nexd() {
     local F1
     F1=$(rpc '{"id":1,"method":"write_fact","params":{"origin":"ci","content":"smoke test","creator":"runner"}}')
     local FACT_ID
-    FACT_ID=$(echo "$F1" | sed 's/.*"id":"\([^"]*\)".*//')
+    FACT_ID=$(echo "$F1" | sed 's/.*"id":"\([^"]*\)".*/\1/' )
     if [ -n "$FACT_ID" ]; then
         echo "    write_fact: ok (id=$FACT_ID)"
     else
