@@ -40,7 +40,14 @@ verify_nex_spinwasi_ssccsdocs() {
     (cd apps/nex-spinwasi-ssccsdocs && spin build 2>&1)
     echo ""
     echo "Starting server on port $PORT..."
+    # Aggressive port cleanup: kill multiple times with delay
     kill_port "$PORT" 2>/dev/null || true
+    sleep 1
+    kill_port "$PORT" 2>/dev/null || true
+    sleep 1
+    # Also kill any leftover spin processes
+    pkill -f "spin.*up" 2>/dev/null || true
+    sleep 1
     (cd apps/nex-spinwasi-ssccsdocs && spin up --build --listen "127.0.0.1:$PORT" 2>&1) &
     local SPIN_PID=$!
     sleep 4
@@ -68,6 +75,8 @@ verify_nex_spinwasi_ssccsdocs() {
 
     echo ""
     kill "$SPIN_PID" 2>/dev/null || true
+    sleep 1
+    kill_port "$PORT" 2>/dev/null || true
     if [ "$failed" -eq 0 ]; then
         echo "nex-spinwasi-ssccsdocs: all 5/5 passed"
     else
@@ -356,6 +365,10 @@ verify_nexd() {
 run_apps() {
     local any_failed=0
     verify_nexd || any_failed=1
+    # Reset ports between apps to avoid conflicts
+    kill_port 30921 2>/dev/null || true
+    kill_port 30922 2>/dev/null || true
+    sleep 1
     verify_nex_spinwasi_ssccsdocs || any_failed=1
     # Future apps go here, e.g.:
     # verify_nex_cf_mock || any_failed=1
