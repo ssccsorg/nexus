@@ -22,7 +22,6 @@ use nex::create_blackboard;
 use nexus_model::{EvictCapable, IntentCapable, StorageRead};
 use nexus_storage_composite::HybridBlackboard;
 use proc_daemon::{Config, Daemon, LogLevel, ShutdownHandle};
-use tracing_subscriber::EnvFilter;
 
 mod config;
 mod handler;
@@ -31,16 +30,18 @@ mod server;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // ── Initialize logging ───────────────────────────────────────────
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("nexd=info")),
-        )
-        .init();
-
-    // ── Parse config ─────────────────────────────────────────────────
+    // ── Parse config before logging (proc-daemon handles tracing) ────
     let cfg = config::NexdConfig::parse();
+
+    // ── proc-daemon config (initializes tracing internally) ──────────
+    let daemon_config = Config::builder()
+        .name("nexd")
+        .log_level(LogLevel::Info)
+        .shutdown_timeout(Duration::from_secs(10))?
+        .force_shutdown_timeout(Duration::from_secs(15))?
+        .kill_timeout(Duration::from_secs(20))?
+        .build()?;
+
     tracing::info!(
         socket_path = %cfg.socket_path.display(),
         agent = ?cfg.agent_command,
@@ -48,7 +49,6 @@ async fn main() -> anyhow::Result<()> {
     );
 
     // ── Shared blackboard ────────────────────────────────────────────
-    // HybridBlackboard implements both Blackboard and EvictCapable.
     let blackboard: Arc<Mutex<HybridBlackboard>> =
         Arc::new(Mutex::new(create_blackboard()));
 
@@ -60,15 +60,6 @@ async fn main() -> anyhow::Result<()> {
         let mut pm = process_manager.lock().unwrap();
         let _ = pm.spawn(cmd, &cfg.agent_args);
     }
-
-    // ── proc-daemon config ───────────────────────────────────────────
-    let daemon_config = Config::builder()
-        .name("nexd")
-        .log_level(LogLevel::Info)
-        .shutdown_timeout(Duration::from_secs(10))?
-        .force_shutdown_timeout(Duration::from_secs(15))?
-        .kill_timeout(Duration::from_secs(20))?
-        .build()?;
 
     // ── Build subsystems and run ─────────────────────────────────────
     Daemon::builder(daemon_config)
@@ -156,7 +147,6 @@ async fn scheduler_task(
                 }
 
                 // Evict stale unclaimed intents
-                // HybridBlackboard implements EvictCapable via DualStorage.
                 if config.unclaimed_intent_ttl_secs > 0 {
                     let _ = bb.evict_stale_intents(config.unclaimed_intent_ttl_secs);
                 }
@@ -178,13 +168,11 @@ async fn process_manager_task(
         tokio::select! {
             () = shutdown.cancelled() => {
                 tracing::info!("process manager shutting down");
-                // Initiate kill for all children without awaiting
                 {
                     let mut pm = process_manager.lock().unwrap();
                     pm.shutdown_sync();
                 }
-                // Give children a moment to exit, then reap
-                tokio::time::sleep(Duration::from_secs(3)).await;
+                tokio::time::sleep(Duration::from_millis(100)).await;
                 {
                     let mut pm = process_manager.lock().unwrap();
                     pm.try_reap();
