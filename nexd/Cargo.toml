@@ -8,7 +8,6 @@ license.workspace = true
 nex = { path = "../nex" }
 nexus-model = { path = "../model" }
 nexus-storage-composite = { path = "../storage/composite" }
-proc-daemon = "1.1.2"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

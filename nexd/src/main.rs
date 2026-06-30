@@ -21,27 +21,29 @@ use std::time::Duration;
 use nex::create_blackboard;
 use nexus_model::{EvictCapable, IntentCapable, StorageRead};
 use nexus_storage_composite::HybridBlackboard;
-use proc_daemon::{Config, Daemon, LogLevel, ShutdownHandle};
+use tracing_subscriber::EnvFilter;
+
+use crate::rt::{Daemon, DaemonConfig, ShutdownHandle};
 
 mod config;
 mod handler;
 mod manager;
 mod server;
 
+mod rt;
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // ── Parse config before logging (proc-daemon handles tracing) ────
+    // ── Initialize logging ───────────────────────────────────────────
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new("nexd=info")),
+        )
+        .init();
+
+    // ── Parse config ─────────────────────────────────────────────────
     let cfg = config::NexdConfig::parse();
-
-    // ── proc-daemon config (initializes tracing internally) ──────────
-    let daemon_config = Config::builder()
-        .name("nexd")
-        .log_level(LogLevel::Info)
-        .shutdown_timeout(Duration::from_secs(10))?
-        .force_shutdown_timeout(Duration::from_secs(15))?
-        .kill_timeout(Duration::from_secs(20))?
-        .build()?;
-
     tracing::info!(
         socket_path = %cfg.socket_path.display(),
         agent = ?cfg.agent_command,
@@ -49,7 +51,8 @@ async fn main() -> anyhow::Result<()> {
     );
 
     // ── Shared blackboard ────────────────────────────────────────────
-    let blackboard: Arc<Mutex<HybridBlackboard>> = Arc::new(Mutex::new(create_blackboard()));
+    let blackboard: Arc<Mutex<HybridBlackboard>> =
+        Arc::new(Mutex::new(create_blackboard()));
 
     // ── Shared process manager ───────────────────────────────────────
     let process_manager = Arc::new(Mutex::new(manager::ProcessManager::new()));
@@ -62,37 +65,37 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
+    // ── Daemon config ────────────────────────────────────────────────
+    let daemon_config = DaemonConfig {
+        name: "nexd".into(),
+        shutdown_timeout: Duration::from_secs(10),
+    };
+
     // ── Build subsystems and run ─────────────────────────────────────
-    Daemon::builder(daemon_config)
+    Daemon::new(daemon_config)
         .with_task("ipc", {
             let bb = blackboard.clone();
             let pm = process_manager.clone();
             let cfg = cfg.clone();
-            move |shutdown| {
-                let bb = bb.clone();
-                let pm = pm.clone();
-                let cfg = cfg.clone();
-                server::run(shutdown, cfg, bb, pm)
+            move |shutdown| async move {
+                server::run(shutdown, cfg, bb, pm).await;
             }
         })
         .with_task("scheduler", {
             let bb = blackboard.clone();
             let cfg = cfg.clone();
-            move |shutdown| {
-                let bb = bb.clone();
-                let cfg = cfg.clone();
-                scheduler_task(shutdown, bb, cfg)
+            move |shutdown| async move {
+                scheduler_task(shutdown, bb, cfg).await;
             }
         })
         .with_task("process-manager", {
             let pm = process_manager.clone();
-            move |shutdown| {
-                let pm = pm.clone();
-                process_manager_task(shutdown, pm)
+            move |shutdown| async move {
+                process_manager_task(shutdown, pm).await;
             }
         })
         .run()
-        .await?;
+        .await;
 
     tracing::info!("nexd stopped");
     Ok(())
@@ -103,7 +106,7 @@ async fn scheduler_task(
     mut shutdown: ShutdownHandle,
     blackboard: Arc<Mutex<HybridBlackboard>>,
     config: config::NexdConfig,
-) -> proc_daemon::Result<()> {
+) {
     let tick_interval = Duration::from_millis(config.tick_interval_ms);
     let heartbeat_ttl = Duration::from_secs(config.heartbeat_ttl_secs);
 
@@ -119,22 +122,17 @@ async fn scheduler_task(
                     .unwrap_or_default()
                     .as_secs();
 
-                // Use try_lock to avoid blocking IPC handlers during heavy load.
-                // If the lock is contended, skip this tick and retry on the next one.
                 let bb = match blackboard.try_lock() {
                     Ok(g) => g,
-                    Err(std::sync::TryLockError::WouldBlock) => {
-                        continue;
-                    }
+                    Err(std::sync::TryLockError::WouldBlock) => continue,
                     Err(std::sync::TryLockError::Poisoned(_)) => {
-                        tracing::error!("blackboard lock poisoned in scheduler");
+                        tracing::error!("blackboard lock poisoned");
                         break;
                     }
                 };
 
                 let state = bb.read_state();
 
-                // Check heartbeat TTL — release stale claims
                 for intent in &state.intents {
                     if let Some(ref worker) = intent.worker
                         && let Some(hb_secs) = intent.last_heartbeat_at
@@ -152,22 +150,19 @@ async fn scheduler_task(
                     }
                 }
 
-                // Evict stale unclaimed intents
                 if config.unclaimed_intent_ttl_secs > 0 {
                     let _ = bb.evict_stale_intents(config.unclaimed_intent_ttl_secs);
                 }
             }
         }
     }
-
-    Ok(())
 }
 
 /// Process manager task: reap exited children periodically.
 async fn process_manager_task(
     mut shutdown: ShutdownHandle,
     process_manager: Arc<Mutex<manager::ProcessManager>>,
-) -> proc_daemon::Result<()> {
+) {
     let reap_interval = Duration::from_secs(5);
 
     loop {
@@ -191,6 +186,4 @@ async fn process_manager_task(
             }
         }
     }
-
-    Ok(())
 }
