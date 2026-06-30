@@ -129,8 +129,10 @@ verify_nexd() {
 
     local F1
     F1=$(rpc '{"id":1,"method":"write_fact","params":{"origin":"ci","content":"smoke test","creator":"runner"}}')
-    if echo "$F1" | grep -q '"result"'; then
-        echo "    write_fact: ok"
+    local FACT_ID
+    FACT_ID=$(echo "$F1" | sed 's/.*"id":"\([^"]*\)".*//')
+    if [ -n "$FACT_ID" ]; then
+        echo "    write_fact: ok (id=$FACT_ID)"
     else
         echo "    write_fact: FAIL ($F1)"
         failed=1
@@ -145,10 +147,20 @@ verify_nexd() {
         failed=1
     fi
 
+    # Read single fact by ID
+    local RF
+    RF=$(rpc "{"id":3,"method":"read_fact","params":{"id":"$FACT_ID"}}")
+    if echo "$RF" | grep -q '"result"'; then
+        echo "    read_fact: ok"
+    else
+        echo "    read_fact: FAIL ($RF)"
+        failed=1
+    fi
+
     # ═══════════════════════════════════════════════════════════════════
     # Scenario 2: Intent lifecycle — submit → claim → heartbeat → conclude
     # ═══════════════════════════════════════════════════════════════════
-    echo "  [2/6] Intent lifecycle..."
+    echo "  [2/7] Intent lifecycle..."
 
     local FID
     FID=$(rpc '{"id":10,"method":"write_fact","params":{"origin":"lifecycle","content":"base fact","creator":"runner"}}')
@@ -205,7 +217,7 @@ verify_nexd() {
     # ═══════════════════════════════════════════════════════════════════
     # Scenario 3: Agent lifecycle — spawn, verify, kill
     # ═══════════════════════════════════════════════════════════════════
-    echo "  [3/6] Agent lifecycle..."
+    echo "  [3/7] Agent lifecycle..."
 
     local SP
     SP=$(rpc '{"id":20,"method":"spawn_agent","params":{"command":"sleep","args":["5"]}}')
@@ -250,7 +262,7 @@ verify_nexd() {
     # ═══════════════════════════════════════════════════════════════════
     # Scenario 4: Error handling — conflict, rejection
     # ═══════════════════════════════════════════════════════════════════
-    echo "  [4/6] Error handling..."
+    echo "  [4/7] Error handling..."
 
     # Unknown method
     local UNK
@@ -285,7 +297,7 @@ verify_nexd() {
     # ═══════════════════════════════════════════════════════════════════
     # Scenario 5: Graceful shutdown — SIGTERM cleans socket
     # ═══════════════════════════════════════════════════════════════════
-    echo "  [5/6] Graceful shutdown..."
+    echo "  [5/7] Graceful shutdown..."
 
     # Start a separate daemon for this test
     local SIG_SOCKET_DIR
@@ -323,7 +335,7 @@ verify_nexd() {
     # ═══════════════════════════════════════════════════════════════════
     # Scenario 6: Concurrent communication — multiple clients
     # ═══════════════════════════════════════════════════════════════════
-    echo "  [6/6] Concurrent operations..."
+    echo "  [6/7] Concurrent operations..."
 
     # Send two write_fact requests in parallel
     rpc '{"id":40,"method":"write_fact","params":{"origin":"concurrent-a","content":"alpha","creator":"a"}}' > /dev/null &
@@ -353,7 +365,7 @@ verify_nexd() {
 
     echo ""
     if [ "$failed" -eq 0 ]; then
-        echo "nexd: 6/6 scenarios passed"
+        echo "nexd: 7/7 scenarios passed"
     else
         echo "nexd: some scenarios FAILED"
         return 1
