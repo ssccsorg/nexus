@@ -5,13 +5,12 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
 
 use tracing::info;
 
 use crate::daemon::daemon_config::Config;
-use crate::daemon::error::{Error, Result};
-use crate::daemon::shutdown::{ShutdownCoordinator, ShutdownHandle, ShutdownReason};
+use crate::daemon::error::Result;
+use crate::daemon::shutdown::{ShutdownCoordinator, ShutdownHandle};
 use crate::daemon::signal::SignalHandler;
 
 type BoxFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
@@ -31,7 +30,10 @@ pub struct Daemon {
 impl Daemon {
     /// Create a new daemon with the given config.
     pub fn new(config: Config) -> Self {
-        Self { config, tasks: Vec::new() }
+        Self {
+            config,
+            tasks: Vec::new(),
+        }
     }
 
     /// Register a task to run concurrently during the daemon's lifetime.
@@ -73,10 +75,7 @@ impl Daemon {
             handles.push((task.name, handle));
         }
 
-        info!(
-            "Daemon started, {} task(s) running",
-            handles.len()
-        );
+        info!("Daemon started, {} task(s) running", handles.len());
 
         // ── Wait for shutdown ──────────────────────────────────────
         coordinator.wait_for_shutdown().await.ok();

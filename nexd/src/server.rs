@@ -9,8 +9,8 @@ use std::sync::{Arc, Mutex};
 /// Maximum concurrent client connections.
 const MAX_CONNECTIONS: usize = 128;
 
-use nexus_storage_composite::HybridBlackboard;
 use crate::daemon::ShutdownHandle;
+use nexus_storage_composite::HybridBlackboard;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
 use tracing::{error, info, warn};
