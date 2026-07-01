@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 const MAX_CONNECTIONS: usize = 128;
 
 use nexus_storage_composite::HybridBlackboard;
-use proc_daemon::ShutdownHandle;
+use crate::daemon::ShutdownHandle;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
 use tracing::{error, info, warn};
@@ -28,7 +28,7 @@ pub async fn run(
     config: NexdConfig,
     blackboard: Arc<Mutex<HybridBlackboard>>,
     process_manager: Arc<Mutex<ProcessManager>>,
-) -> proc_daemon::Result<()> {
+) -> crate::daemon::Result<()> {
     // Limit concurrent connections to prevent resource exhaustion.
     let connection_semaphore = Arc::new(tokio::sync::Semaphore::new(MAX_CONNECTIONS));
     let socket_path = config.socket_path.as_path();
