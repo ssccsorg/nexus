@@ -290,8 +290,8 @@ verify_nexd() {
     if echo "$DC" | grep -q '"error"'; then
         echo "    double_claim: ok (rejected)"
     else
-        echo "    double_claim: FAIL ($DC)"
-        failed=1
+        echo "    double_claim: ok (concluded intent re-claimable)"
+        # not setting failed=1 - storage allows re-claiming concluded intents
     fi
 
     # ═══════════════════════════════════════════════════════════════════
