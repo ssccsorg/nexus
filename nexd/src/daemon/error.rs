@@ -15,7 +15,10 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Io { message, source } => write!(f, "I/O error: {message}: {source}"),
-            Self::Timeout { operation, timeout_ms } => write!(f, "{operation} timed out after {timeout_ms}ms"),
+            Self::Timeout {
+                operation,
+                timeout_ms,
+            } => write!(f, "{operation} timed out after {timeout_ms}ms"),
             Self::InvalidConfig(msg) => write!(f, "Invalid configuration: {msg}"),
             Self::InvalidState(msg) => write!(f, "Invalid state: {msg}"),
             Self::Signal(msg) => write!(f, "Signal error: {msg}"),
@@ -50,10 +53,16 @@ impl Error {
         Self::Runtime(msg.into())
     }
     pub fn io(msg: impl Into<String>, source: io::Error) -> Self {
-        Self::Io { message: msg.into(), source }
+        Self::Io {
+            message: msg.into(),
+            source,
+        }
     }
     pub fn timeout(operation: impl Into<String>, timeout_ms: u64) -> Self {
-        Self::Timeout { operation: operation.into(), timeout_ms }
+        Self::Timeout {
+            operation: operation.into(),
+            timeout_ms,
+        }
     }
 }
 
@@ -61,6 +70,9 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 impl From<io::Error> for Error {
     fn from(e: io::Error) -> Self {
-        Self::Io { message: e.to_string(), source: e }
+        Self::Io {
+            message: e.to_string(),
+            source: e,
+        }
     }
 }

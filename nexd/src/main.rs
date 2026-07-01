@@ -5,7 +5,6 @@ use nex::create_blackboard;
 use nexus_model::{EvictCapable, IntentCapable, StorageRead};
 use nexus_storage_composite::HybridBlackboard;
 
-
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
@@ -85,10 +84,11 @@ async fn scheduler_task(
                 };
                 let state = bb.read_state();
                 for intent in &state.intents {
-                    if let Some(ref worker) = intent.worker && let Some(hb_secs) = intent.last_heartbeat_at {
-                        if now_secs.saturating_sub(hb_secs) > heartbeat_ttl.as_secs() {
-                            let _ = bb.release_intent(&intent.id.to_string(), worker);
-                        }
+                    if let Some(ref worker) = intent.worker
+                        && let Some(hb_secs) = intent.last_heartbeat_at
+                        && now_secs.saturating_sub(hb_secs) > heartbeat_ttl.as_secs()
+                    {
+                        let _ = bb.release_intent(&intent.id.to_string(), worker);
                     }
                 }
                 if config.unclaimed_intent_ttl_secs > 0 {

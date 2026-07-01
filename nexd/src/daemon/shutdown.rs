@@ -1,9 +1,9 @@
+use crate::daemon::error::{Error, Result};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::sync::broadcast;
-use tracing::{info, warn};
-use crate::daemon::error::{Error, Result};
+use tracing::info;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShutdownReason {
@@ -31,7 +31,9 @@ pub struct ShutdownHandle {
 
 impl ShutdownHandle {
     pub fn new(rx: broadcast::Receiver<ShutdownReason>) -> Self {
-        Self { rx: Arc::new(tokio::sync::Mutex::new(rx)) }
+        Self {
+            rx: Arc::new(tokio::sync::Mutex::new(rx)),
+        }
     }
 
     pub async fn cancelled(&mut self) {
@@ -41,7 +43,10 @@ impl ShutdownHandle {
 
     pub fn is_shutdown(&self) -> bool {
         if let Ok(mut rx) = self.rx.try_lock() {
-            matches!(rx.try_recv(), Ok(_) | Err(broadcast::error::TryRecvError::Closed))
+            matches!(
+                rx.try_recv(),
+                Ok(_) | Err(broadcast::error::TryRecvError::Closed)
+            )
         } else {
             false
         }
@@ -52,6 +57,7 @@ pub struct ShutdownCoordinator {
     inner: Arc<ShutdownInner>,
 }
 
+#[allow(dead_code)]
 struct ShutdownInner {
     initiated: AtomicBool,
     reason: std::sync::Mutex<Option<ShutdownReason>>,
@@ -85,7 +91,12 @@ impl ShutdownCoordinator {
     }
 
     pub fn initiate_shutdown(&self, reason: ShutdownReason) -> bool {
-        if self.inner.initiated.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_ok() {
+        if self
+            .inner
+            .initiated
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
             *self.inner.reason.lock().unwrap() = Some(reason);
             let _ = self.inner.tx.send(reason);
             info!("Shutdown initiated: {reason}");
