@@ -9,15 +9,6 @@ pub mod error;
 pub mod shutdown;
 pub mod signal;
 
-// Stubs for modules not used in nexd
-pub mod coord {}
-pub mod lock {}
-pub mod pool {}
-pub mod resources {}
-pub mod metrics {}
-pub mod profiling {}
-pub mod ipc {}
-pub mod scheduler {}
 
 pub use daemon_config::{Config, LogLevel};
 pub use daemon_core::Daemon;
