@@ -32,7 +32,7 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
-run_check()  { cargo check -p nex && cargo check -p nexus-storage-duckdb && (cd apps/nex-spinwasi-ssccsdocs && cargo check); }
+run_check()  { cargo check -p nex && cargo check -p nexd && cargo check -p nexus-storage-duckdb && (cd apps/nex-spinwasi-ssccsdocs && cargo check); }
 
 # ── WASM check: ensure storage-sim builds for wasm32 target ────────────
 
@@ -50,6 +50,7 @@ run_wasm_check() {
         -not -path './storage/duckdb/*' \
         -not -path './storage/ve-composite/*' \
         -not -path './storage/sim/*' \
+        -not -path './nexd/*' \
         -not -path './apps/*' \
         -not -path './playbooks/*' \
         -not -path './Cargo.toml' \
@@ -80,13 +81,16 @@ run_clippy() {
         nexus-model \
         interface-query \
         interface-cypher \
-        nexus-gateway-serde-proxy
+        nexus-gateway-serde-proxy \
+        nexd
     do
         cargo clippy -p "$pkg" -- -D warnings -A clippy::await-holding-refcell-ref
     done
 }
 run_test()   {
     cargo test -p nex -- --nocapture 2>&1
+    echo "---"
+    cargo test -p nexd --test integration -- --test-threads=1 --nocapture 2>&1
     echo "---"
     echo "=== apps/nex-spinwasi-ssccsdocs (cargo test) ==="
     (cd apps/nex-spinwasi-ssccsdocs && cargo test -- --nocapture 2>&1)
