@@ -8,7 +8,6 @@ license.workspace = true
 nex = { path = "../nex" }
 nexus-model = { path = "../model" }
 nexus-storage-composite = { path = "../storage/composite" }
-proc-daemon = "1.1.2"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -17,8 +16,25 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
 
-[dev-dependencies]
+# ── Built-in daemon runtime deps (from proc-daemon) ───────────────────
+thiserror = "1.0"
+arc-swap = "1.9"
+parking_lot = "0.12"
+crossbeam = "0.8"
+dashmap = "6.2"
+once_cell = "1.21"
+fastrand = "2.4"
+futures = "0.3"
+num_cpus = "1.16"
 libc = "0.2"
+signal-hook = "0.3"
+ctrlc = "3.4"
+nix = { version = "0.31", features = ["signal", "sched"] }
+fs2 = "0.4"
+figment = { version = "0.10", features = ["toml", "env", "json"] }
+toml = "0.8"
+
+[dev-dependencies]
 tempfile = "3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
