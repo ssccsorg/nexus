@@ -14,3 +14,13 @@ pub use daemon_config::{Config, LogLevel};
 pub use daemon_core::Daemon;
 pub use error::{Error, Result};
 pub use shutdown::{ShutdownHandle, ShutdownReason};
+// Stubs for modules not used in nexd (available from proc-daemon source)
+pub mod coord {}
+pub mod lock {}
+pub mod pool {}
+pub mod resources {}
+pub mod metrics {}
+pub mod profiling {}
+pub mod ipc {}
+pub mod scheduler {}
+
