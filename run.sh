@@ -36,21 +36,34 @@ kill_port() {
 verify_nex_spinwasi_ssccsdocs() {
     local PORT=30921
     echo "=== nex-spinwasi-ssccsdocs ==="
-    echo "Building..."
-    (cd apps/nex-spinwasi-ssccsdocs && spin build 2>&1)
-    echo ""
     echo "Starting server on port $PORT..."
-    # Aggressive port cleanup: kill multiple times with delay
+    # Aggressive port cleanup
     kill_port "$PORT" 2>/dev/null || true
     sleep 1
     kill_port "$PORT" 2>/dev/null || true
     sleep 1
-    # Also kill any leftover spin processes
     pkill -f "spin.*up" 2>/dev/null || true
     sleep 1
+    # spin up --build handles both building and serving
     (cd apps/nex-spinwasi-ssccsdocs && spin up --build --listen "127.0.0.1:$PORT" 2>&1) &
     local SPIN_PID=$!
-    sleep 4
+
+    # Wait for server to be ready (poll until HTTP 200)
+    local waited=0
+    while [ "$waited" -lt 30 ]; do
+        code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT}/" 2>/dev/null || echo "000")
+        if [ "$code" = "200" ]; then
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    if [ "$waited" -ge 30 ]; then
+        echo "  server not ready after 30s (FAIL)"
+        kill "$SPIN_PID" 2>/dev/null || true
+        return 1
+    fi
+    echo "  server ready after ${waited}s"
 
     local failed=0
     echo "Testing endpoints..."
