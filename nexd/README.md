@@ -1,152 +1,134 @@
-# nexd — Unified daemon for the nex ecosystem
+# nexd — Native daemon / OS layer for the nex ecosystem
 
-`nexd` is the persistent runtime that maintains the FIH blackboard (Fact/Intent/Hint) and orchestrates the execution of all `nex-*` applications. It provides shared memory, process management, and IPC for a swarm of autonomous agents.
+`nexd` is the **runtime environment** for `nex-*` applications. It provides process lifecycle management, IPC substrate, device orchestration, and the persistent FIH blackboard service. Where `nex` defines the blackboard logic and storage semantics, `nexd` provides the environment in which that logic executes.
 
-Conceptual reference: **nexd is to nex-* as iOS is to apps.**
+**Conceptual reference**: nexd is to nex-* as iOS is to apps.
 
-## Quickstart
+## Layer Identity
 
-Build and run `nexd`:
+| Aspect | nexd | nex |
+|--------|------|-----|
+| Role | **Daemon / OS** — persistent runtime environment | **Blackboard engine** — FIH logic + storage |
+| Knows | IPC protocol, process management, device control, OTA | FIH semantics, coordinate indexing, storage I/O |
+| Does not know | FIH internal structure, coordinate index layout, storage backend details | Runtime environment, process model, network topology |
+| Communication | Unix socket JSON-RPC (wire protocol only) | Internal API consumed by apps via the `nex` crate |
+| Deployment | Native daemon (macOS, Linux), embedded (Rem) | Library crate, standalone server binary (future) |
+
+## Current Status (Phase 1 MVP)
+
+> **Note**: Phase 1 embeds `nex` as a Rust crate at compile time (`nex::create_blackboard()`). This is a pragmatic shortcut. The target architecture separates `nex` as an independent process — see Roadmap.
+
+### What works
+
+- Unix domain socket IPC with JSON-RPC style protocol (11 methods)
+- FIH blackboard service via embedded `HybridBlackboard` (same as `apps/nex-api`)
+- Process Manager — spawn, monitor (`try_reap`), kill child `nex-*` agents
+- OODA scheduler — heartbeat TTL monitoring, stale intent eviction
+- Graceful shutdown — SIGTERM/SIGINT/SIGQUIT handling via `proc-daemon`
+- Connection limiting — max 128 concurrent clients via `tokio::sync::Semaphore`
+- Single-entity read methods — `read_fact`, `read_intent`, `read_hint`
+- 27 integration tests + 7 CI verification scenarios
+
+### IPC Protocol
+
+Line-delimited JSON-RPC over Unix domain socket (`/tmp/nexd.sock` by default).
+
+| Method | Description |
+|--------|-------------|
+| `write_fact` / `read_fact` | Submit / read Fact |
+| `read_state` | Full board dump |
+| `write_intent` / `claim_intent` / `heartbeat_intent` / `release_intent` / `conclude_intent` | Intent lifecycle |
+| `write_hint` | Submit Hint |
+| `spawn_agent` / `list_agents` / `kill_agent` | Process management |
+
+### Architecture
+
+```text
+                External Agents (nex-zed, actus, scripts)
+                    │  line-delimited JSON over Unix socket
+                    ▼
++----------------------------------------------------+
+|                  nexd (daemon)                      |
+|  +---------------+  +----------+  +--------------+  |
+|  | IPC Server     |  | Scheduler|  | Process     |  |
+|  | (JSON-RPC)     |  | (OODA)   |  | Manager     |  |
+|  +-------+-------+  +----+-----+  +------+-------+  |
+|          │               │               │          |
+|  +-------+---------------+-------------+ |          |
+|  |    HybridBlackboard (Phase 1: embedded) |        |
+|  |    nex::create_blackboard()           |          |
+|  +--------------------------------------+          |
+|  +--------------------------------------+          |
+|  |   proc-daemon framework              |          |
+|  | (signal, shutdown, subsystem mgmt)   |          |
+|  +--------------------------------------+          |
++----------------------------------------------------+
+```
+
+### Quickstart
 
 ```bash
 cargo build --release -p nexd
-./target/release/nexd
-```
-
-Connect and write a Fact using `socat`:
-
-```bash
-echo '{"id":1,"method":"write_fact","params":{"origin":"test","content":"Hello nexd","creator":"alice"}}' | \
+./target/release/nexd                               # run with default config
+./target/release/nexd actus                          # spawn actus at startup
+echo '{"id":1,"method":"write_fact","params":{"origin":"test","content":"hello","creator":"alice"}}' | \
   socat - UNIX-CONNECT:/tmp/nexd.sock
 ```
 
-Read the full board state:
+## Roadmap
 
-```bash
-echo '{"id":2,"method":"read_state","params":{}}' | \
-  socat - UNIX-CONNECT:/tmp/nexd.sock
+### Phase 2: nex as independent blackboard server (tracked in #138)
+
+Extract `nex` from embedded crate to standalone process:
+
+```
+nexd (daemon)                              nex (standalone server)
+  ├── process manager (spawn nex)               └── FIH blackboard
+  ├── IPC router (socket ─► nex)                └── storage layer
+  ├── no nex crate dependency                    └── Unix socket server
+  └── knows only wire protocol
 ```
 
-## Usage
+- `nexd` loses `nex` crate dependency. All FIH knowledge removed from nexd source.
+- `nex` becomes a standalone binary with its own Unix socket.
+- `nexd` spawns and manages the `nex` process.
+- Wire protocol becomes the **contract** between the two layers.
 
-```text
-nexd                          # run with default config
-nexd actus                    # spawn actus at startup
-nexd ./my-agent --flag value  # spawn custom agent
-```
+### Phase 3: proc-daemon → built-in daemon runtime (#138)
 
-### Environment variables
+- Copy proc-daemon core source into `nexd/src/daemon/`.
+- Strip unnecessary modules (memory pools, metrics, profiling, crossbeam, dashmap).
+- Remove ~70 transitive dependencies.
+- Iteratively refactor toward nexd-optimized minimal daemon runtime.
+- Target: sub-5MB static binary for embedded deployment.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `NEXD_SOCKET_PATH` | `/tmp/nexd.sock` | Unix domain socket path |
-| `NEXD_TICK_INTERVAL_MS` | `100` | Scheduler tick interval |
-| `NEXD_HEARTBEAT_TTL_SECS` | `60` | Heartbeat timeout for claimed intents |
-| `NEXD_UNCLAIMED_INTENT_TTL_SECS` | `3600` | Stale intent eviction timeout |
-| `RUST_LOG` | `nexd=info` | Log level filter |
+### Phase 4: Embedded / Rem support
 
-## IPC Protocol
+- USB Gadget Mode (Mass Storage + CDC ACM).
+- OTA update mechanism.
+- Power management (battery, USB suspend).
+- P2P network sync between Rem devices.
 
-Line-delimited JSON-RPC 2.0 over Unix domain socket.
+### Phase 5: nexd as orchestration hub
 
-### Methods
+- Manage multiple `nex` instances (sharding, replication).
+- Route IPC between remote daemons (multi-node FIH sync).
+- Health dashboard and metrics.
 
-| Method | Params | Description |
-|--------|--------|-------------|
-| `write_fact` | `{origin, content, creator}` | Submit a new Fact |
-| `read_state` | `{}` | Read full board state |
-| `write_intent` | `{from_facts, description, creator}` | Submit a new Intent |
-| `claim_intent` | `{id, agent}` | Claim an Intent for processing |
-| `heartbeat_intent` | `{id, agent}` | Heartbeat for a claimed Intent |
-| `release_intent` | `{id, agent}` | Release a claimed Intent |
-| `conclude_intent` | `{id, result}` | Conclude an Intent with a result |
-| `write_hint` | `{content, creator}` | Submit a new Hint |
-| `spawn_agent` | `{command, args}` | Spawn a child process |
-| `list_agents` | `{}` | List managed child processes |
-| `kill_agent` | `{pid}` | Kill a child process |
+## Issue Map
 
-### Request format
-
-```json
-{"id":1,"method":"write_fact","params":{"origin":"test","content":"hello","creator":"alice"}}
-```
-
-### Success response
-
-```json
-{"id":1,"result":{"id":"abc123..."}}
-```
-
-### Error response
-
-```json
-{"id":1,"error":{"code":-32000,"message":"not found"}}
-```
-
-## Python client example
-
-```python
-import socket, json
-
-sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-sock.connect("/tmp/nexd.sock")
-
-def rpc(method, params={}):
-    req = json.dumps({"id": 1, "method": method, "params": params})
-    sock.sendall((req + "\n").encode())
-    resp = sock.recv(4096).decode()
-    return json.loads(resp)
-
-# Write a fact
-result = rpc("write_fact", {"origin":"test","content":"Hello from Python","creator":"py"})
-print("Fact ID:", result["result"]["id"])
-
-# Read state
-state = rpc("read_state")
-print(f"Facts: {len(state['result']['facts'])}, Intents: {len(state['result']['intents'])}")
-
-sock.close()
-```
-
-## Architecture
-
-```text
-┌──────────────────────────────────────────────────┐
-│                    nexd                           │
-├──────────────────────────────────────────────────┤
-│  ┌──────────┐  ┌──────────┐  ┌────────────────┐  │
-│  │ Blackboard│  │  Process  │  │  IPC Server    │  │
-│  │ (nex::Hy- │  │  Manager  │  │ (Unix socket)  │  │
-│  │ bridBlack-│  │          │  │                │  │
-│  │ board)    │  │          │  │                │  │
-│  └──────────┘  └──────────┘  └────────────────┘  │
-│  ┌──────────────────────────────────────────────┐ │
-│  │       proc-daemon framework                  │ │
-│  │  (SubsystemManager, ShutdownHandle, Config)  │ │
-│  └──────────────────────────────────────────────┘ │
-└──────────────────────────────────────────────────┘
-```
-
-## Project structure
-
-```text
-nexd/
-├── Cargo.toml
-├── README.md
-└── src/
-    ├── main.rs      # Entry point — builds and runs the daemon
-    ├── lib.rs       # Library exports for testing
-    ├── config.rs    # Daemon configuration
-    ├── handler.rs   # JSON-RPC method dispatch
-    ├── manager.rs   # Child process lifecycle management
-    └── server.rs    # Unix socket listener
-```
+| Issue | Title | Status |
+|-------|-------|--------|
+| #135 | nexd Phase 1 MVP | ✅ Merged |
+| #138 | nex as isolated server, nexd as pure OS | 🔲 Epic (next) |
+| #137 | proc-daemon → built-in rt.rs | 🔲 Branch exists |
+| #139 | FIH coordinate system formalization | 🔲 Epic (nex side) |
 
 ## Dependencies
 
-- [proc-daemon](https://github.com/jamesgober/proc-daemon) — production daemon framework
-- [nex](https://crates.io/crates/nex) — FIH blackboard storage engine
-- [nexus-model](https://crates.io/crates/nexus-model) — FIH primitives (Fact, Intent, Hint)
+- [proc-daemon](https://github.com/jamesgober/proc-daemon) — daemon framework (to be replaced in Phase 3)
+- [nex](https://crates.io/crates/nex) — FIH blackboard engine (to be extracted in Phase 2)
+- [nexus-model](https://crates.io/crates/nexus-model) — FIH primitives
 - Tokio — async runtime
 
 ## License

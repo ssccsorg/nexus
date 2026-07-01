@@ -247,3 +247,57 @@ FactCapable::submit_fact(&bb, &fact)?; // sync, uses block_on internally
 ```
 
 `FihBlackboard` is gated behind `#[cfg(not(target_arch = "wasm32"))]`.
+
+## Status
+
+### Current (Phase 3 complete)
+
+- FIH lifecycle: submit, claim, heartbeat, release, conclude
+- Coordinate-based indexing with temporal ordering (`FihCoord`)
+- Async-only storage interface (`AsyncFileIo`, `AsyncFactCapable`, etc.)
+- SemanticStore flashlight pattern (BM25, Vectorize plug-in)
+- DuckDB cold storage (Parquet-backed analytical queries)
+- OODA Scheduler + detection tasks (gap, contradiction, state change)
+- WASM target support (wasm32-unknown-unknown, wasm32-wasip2)
+- In-memory simulation backend (`storage/sim`)
+- 100+ integration and scenario tests
+
+### Architecture issue: nex is not a standalone server
+
+Currently `nex` is only consumable as a Rust crate. Applications embed it directly:
+
+```rust
+// Current: every app embeds nex
+let bb = nex::create_blackboard();  // HybridBlackboard in-process
+```
+
+The correct architecture has `nex` as an **independent process** that speaks the FIH wire protocol:
+
+```text
+// Target: nex is a server
+nex-server (standalone binary)
+  └── Unix socket: /tmp/nex.sock
+  └── serves FIH blackboard
+  └── apps connect via nex crate (SDK mode)
+```
+
+This is tracked in issue #138.
+
+### Known gaps
+
+| Gap | Issue | Severity |
+|-----|-------|----------|
+| FIH coordinate system not formalized | #139 | High |
+| nex is library, not standalone server | #138 | High |
+| Claim-before-conclude not enforced | — | Medium |
+| Sync trait implementations remain on HybridBlackboard | — | Low |
+
+### Roadmap
+
+| Phase | What | When |
+|-------|------|------|
+| Formalize FIH coordinate system | Define baking, projection, n-dimensional state space semantics | #139 |
+| Extract nex-server | Standalone binary with Unix socket IPC | #138 Phase 2 |
+| Sync trait removal | Remove remaining sync trait impls from FihStorage | After #138 |
+| Distributed sync | Multi-instance FIH synchronization | Future |
+
