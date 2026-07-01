@@ -149,7 +149,7 @@ verify_nexd() {
 
     # Read single fact by ID
     local RF
-    RF=$(rpc "{"id":3,"method":"read_fact","params":{"id":"$FACT_ID"}}")
+    RF=$(rpc '{"id":3,"method":"read_fact","params":{"id":"'"$FACT_ID"'"}}')
     if echo "$RF" | grep -q '"result"'; then
         echo "    read_fact: ok"
     else
