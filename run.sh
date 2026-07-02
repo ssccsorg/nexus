@@ -49,8 +49,9 @@ verify_nex_spinwasi_ssccsdocs() {
     local SPIN_PID=$!
 
     # Wait for server to be ready (poll until HTTP 200)
+    local TIMEOUT=60
     local waited=0
-    while [ "$waited" -lt 75 ]; do
+    while [ "$waited" -lt "$TIMEOUT" ]; do
         code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT}/" 2>/dev/null || echo "000")
         if [ "$code" = "200" ]; then
             break
@@ -58,12 +59,12 @@ verify_nex_spinwasi_ssccsdocs() {
         sleep 1
         waited=$((waited + 1))
     done
-    if [ "$waited" -ge 75 ]; then
-        echo "  server not ready after 30s (FAIL)"
+    if [ "$waited" -ge "$TIMEOUT" ]; then
+        echo "  server not ready after ${TIMEOUT}s (FAIL)"
         kill "$SPIN_PID" 2>/dev/null || true
         return 1
     fi
-    echo "  server ready after $((waited / 5))s"
+    echo "  server ready after ${waited}s"
 
     local failed=0
     echo "Testing endpoints..."
