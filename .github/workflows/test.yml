@@ -80,7 +80,7 @@ jobs:
             apps/nex-spinwasi-ssccsdocs
           cache-targets: true
           cache-on-failure: true
-      - uses: fermyon/actions/spin@v2
+      - uses: fermyon/actions/spin@v1
       - name: App verification
         run: bash ./run.sh --apps
 
