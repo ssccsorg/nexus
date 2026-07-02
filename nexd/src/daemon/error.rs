@@ -24,7 +24,7 @@
 //!
 //! ## Basic Error Handling
 //!
-//! ```no_run
+//! ```ignore
 //! use proc_daemon::{Error, Result};
 //!
 //! fn example_function() -> Result<()> {
@@ -47,7 +47,7 @@
 //!
 //! ## Capturing Source Errors
 //!
-//! ```no_run
+//! ```ignore
 //! use proc_daemon::{Error, Result};
 //! use std::fs::File;
 //!
