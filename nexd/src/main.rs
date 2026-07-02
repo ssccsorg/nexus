@@ -2,19 +2,21 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use nex::create_blackboard;
+use nexd::daemon::{Config, Daemon, LogLevel, ShutdownHandle};
 use nexus_model::{EvictCapable, IntentCapable, StorageRead};
 use nexus_storage_composite::HybridBlackboard;
 
 #[tokio::main]
-async fn main() {
-    tracing_subscriber::fmt()
+async fn main() -> nexd::daemon::Result<()> {
+    let cfg = nexd::config::NexdConfig::parse();
+
+    let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("nexd=info")),
         )
-        .init();
+        .try_init();
 
-    let cfg = nexd::config::NexdConfig::parse();
     tracing::info!(socket_path = %cfg.socket_path.display(), agent = ?cfg.agent_command, "starting nexd");
 
     let blackboard: Arc<Mutex<HybridBlackboard>> = Arc::new(Mutex::new(create_blackboard()));
@@ -27,45 +29,67 @@ async fn main() {
         }
     }
 
-    let daemon_config = nexd::daemon::Config {
-        name: "nexd".into(),
-        log_level: nexd::daemon::LogLevel::Info,
-        shutdown_timeout: Duration::from_secs(10),
-        force_shutdown_timeout: Duration::from_secs(15),
-        kill_timeout: Duration::from_secs(20),
-    };
+    let daemon_config = Config::builder()
+        .name("nexd")
+        .log_level(LogLevel::Info)
+        .shutdown_timeout(Duration::from_secs(10))?
+        .force_shutdown_timeout(Duration::from_secs(15))?
+        .kill_timeout(Duration::from_secs(20))?
+        .build()?;
 
-    nexd::daemon::Daemon::new(daemon_config)
+    Daemon::builder(daemon_config)
         .with_task("ipc", {
             let bb = blackboard.clone();
             let pm = process_manager.clone();
             let cfg = cfg.clone();
-            move |shutdown| async move {
-                let _ = nexd::server::run(shutdown, cfg, bb, pm).await;
+            move |shutdown| {
+                let bb = bb.clone();
+                let pm = pm.clone();
+                let cfg = cfg.clone();
+                async move {
+                    let _ = nexd::server::run(shutdown, cfg, bb, pm).await;
+                    Ok(())
+                }
             }
         })
         .with_task("scheduler", {
             let bb = blackboard.clone();
             let cfg = cfg.clone();
-            move |shutdown| async move {
-                scheduler_task(shutdown, bb, cfg).await;
+            move |shutdown| {
+                let bb = bb.clone();
+                let cfg = cfg.clone();
+                async move {
+                    scheduler_task(shutdown, bb, cfg).await;
+                    Ok(())
+                }
             }
         })
         .with_task("process-manager", {
             let pm = process_manager.clone();
-            move |shutdown| async move {
-                process_manager_task(shutdown, pm).await;
+            move |shutdown| {
+                let pm = pm.clone();
+                async move {
+                    process_manager_task(shutdown, pm).await;
+                    Ok(())
+                }
             }
         })
         .run()
-        .await
-        .expect("daemon run failed");
+        .await?;
+
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("nexd=info")),
+        )
+        .try_init();
 
     tracing::info!("nexd stopped");
+    Ok(())
 }
 
 async fn scheduler_task(
-    mut shutdown: nexd::daemon::ShutdownHandle,
+    mut shutdown: ShutdownHandle,
     blackboard: Arc<Mutex<HybridBlackboard>>,
     config: nexd::config::NexdConfig,
 ) {
@@ -100,13 +124,20 @@ async fn scheduler_task(
 }
 
 async fn process_manager_task(
-    mut shutdown: nexd::daemon::ShutdownHandle,
+    mut shutdown: ShutdownHandle,
     process_manager: Arc<Mutex<nexd::manager::ProcessManager>>,
 ) {
     loop {
         tokio::select! {
             () = shutdown.cancelled() => {
-                tracing::info!("process manager stopping");
+                let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("nexd=info")),
+        )
+        .try_init();
+
+    tracing::info!("process manager stopping");
                 { let mut pm = process_manager.lock().unwrap(); pm.shutdown_sync(); }
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 { let mut pm = process_manager.lock().unwrap(); pm.try_reap(); }
