@@ -8,14 +8,17 @@ on:
       - "Cargo.lock"
       - "model/**"
       - "nex/**"
-      - "interface/**"
-      - "storage/**"
+      - "nexd/**"
       - "gateway/**"
       - "apps/nex-api/**"
       - "apps/nex-cf/**"
-      - "apps/nex-serde-proxy/**"
+      - "interface/**"
+      - "storage/**"
+      - "libs/**"
+      - "apps/nex-spinwasi-ssccsdocs/**"
       - "playbooks/**"
       - "scripts/**"
+      - "run.sh"
       - ".github/workflows/test.yml"
   pull_request:
     paths:
@@ -23,14 +26,17 @@ on:
       - "Cargo.lock"
       - "model/**"
       - "nex/**"
-      - "interface/**"
-      - "storage/**"
+      - "nexd/**"
       - "gateway/**"
       - "apps/nex-api/**"
       - "apps/nex-cf/**"
-      - "apps/nex-serde-proxy/**"
+      - "interface/**"
+      - "storage/**"
+      - "libs/**"
+      - "apps/nex-spinwasi-ssccsdocs/**"
       - "playbooks/**"
       - "scripts/**"
+      - "run.sh"
       - ".github/workflows/test.yml"
   workflow_dispatch:
 
@@ -54,10 +60,15 @@ jobs:
           workspaces: |
             model
             nex
+            nexd
             interface/query
             interface/cypher
             storage/duckdb
-            storage/ve-composite
+            storage/sim
+            storage/composite
+            storage/petgraph
+            libs/serde-proxy
+            playbooks/agents
           cache-targets: true
           cache-on-failure: true
       - name: Core checks
@@ -75,10 +86,31 @@ jobs:
           workspaces: |
             apps/nex-api
             apps/nex-cf
-            apps/nex-serde-proxy
           cache-targets: true
       - name: Gateway checks
-        run: bash ./run.sh --gateway
+        run: bash ./scripts/run-gateway.sh
+
+  apps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            nexd
+            apps/nex-spinwasi-ssccsdocs
+          cache-targets: true
+          cache-on-failure: true
+      - name: Install socat (required for Unix socket RPC)
+        run: sudo apt-get update && sudo apt-get install -y socat
+      - uses: fermyon/actions/spin/setup@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: App verification
+        run: bash ./run.sh --apps
 
   playbooks:
     runs-on: ubuntu-latest

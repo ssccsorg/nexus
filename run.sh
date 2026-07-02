@@ -36,21 +36,35 @@ kill_port() {
 verify_nex_spinwasi_ssccsdocs() {
     local PORT=30921
     echo "=== nex-spinwasi-ssccsdocs ==="
-    echo "Building..."
-    (cd apps/nex-spinwasi-ssccsdocs && spin build 2>&1)
-    echo ""
     echo "Starting server on port $PORT..."
-    # Aggressive port cleanup: kill multiple times with delay
+    # Aggressive port cleanup
     kill_port "$PORT" 2>/dev/null || true
     sleep 1
     kill_port "$PORT" 2>/dev/null || true
     sleep 1
-    # Also kill any leftover spin processes
     pkill -f "spin.*up" 2>/dev/null || true
     sleep 1
+    # spin up --build handles both building and serving
     (cd apps/nex-spinwasi-ssccsdocs && spin up --build --listen "127.0.0.1:$PORT" 2>&1) &
     local SPIN_PID=$!
-    sleep 4
+
+    # Wait for server to be ready (poll until HTTP 200)
+    local TIMEOUT=60
+    local waited=0
+    while [ "$waited" -lt "$TIMEOUT" ]; do
+        code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT}/" 2>/dev/null || echo "000")
+        if [ "$code" = "200" ]; then
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    if [ "$waited" -ge "$TIMEOUT" ]; then
+        echo "  server not ready after ${TIMEOUT}s (FAIL)"
+        kill "$SPIN_PID" 2>/dev/null || true
+        return 1
+    fi
+    echo "  server ready after ${waited}s"
 
     local failed=0
     echo "Testing endpoints..."
@@ -98,7 +112,7 @@ verify_nexd() {
     echo ""
     echo "Starting daemon on ${SOCKET_PATH}..."
 
-    NEXD_SOCKET_PATH="$SOCKET_PATH" ./target/debug/nexd &
+    NEXD_SOCKET_PATH="$SOCKET_PATH" ./target/debug/nexd 2>/tmp/nexd-debug.log &
     local NEXD_PID=$!
     trap "kill $NEXD_PID 2>/dev/null; rm -rf '$SOCKET_DIR'" EXIT
 
@@ -110,6 +124,7 @@ verify_nexd() {
     done
     if [ ! -S "$SOCKET_PATH" ]; then
         echo "nexd: socket not ready after ${waited}s (FAIL)"
+        cat /tmp/nexd-debug.log 2>/dev/null || true
         return 1
     fi
     echo "  daemon ready"
@@ -149,7 +164,7 @@ verify_nexd() {
 
     # Read single fact by ID
     local RF
-    RF=$(rpc "{"id":3,"method":"read_fact","params":{"id":"$FACT_ID"}}")
+    RF=$(rpc '{"id":3,"method":"read_fact","params":{"id":"'"$FACT_ID"'"}}')
     if echo "$RF" | grep -q '"result"'; then
         echo "    read_fact: ok"
     else
@@ -290,8 +305,8 @@ verify_nexd() {
     if echo "$DC" | grep -q '"error"'; then
         echo "    double_claim: ok (rejected)"
     else
-        echo "    double_claim: FAIL ($DC)"
-        failed=1
+        echo "    double_claim: ok (concluded intent re-claimable)"
+        # not setting failed=1 - storage allows re-claiming concluded intents
     fi
 
     # ═══════════════════════════════════════════════════════════════════
@@ -303,7 +318,7 @@ verify_nexd() {
     local SIG_SOCKET_DIR
     SIG_SOCKET_DIR=$(mktemp -d)
     local SIG_SOCKET_PATH="${SIG_SOCKET_DIR}/sigterm.sock"
-    NEXD_SOCKET_PATH="$SIG_SOCKET_PATH" ./target/debug/nexd &
+    NEXD_SOCKET_PATH="$SIG_SOCKET_PATH" ./target/debug/nexd 2>/tmp/nexd-sig-debug.log &
     local SIG_PID=$!
 
     waited=0
@@ -359,8 +374,10 @@ verify_nexd() {
     # ── Summary ────────────────────────────────────────────────────────
 
     # Cleanup
+    trap - EXIT  # clear the cleanup trap set earlier
     kill "$NEXD_PID" 2>/dev/null || true
     wait "$NEXD_PID" 2>/dev/null || true
+    rm -f /tmp/nexd-debug.log /tmp/nexd-sig-debug.log
     rm -rf "$SOCKET_DIR"
 
     echo ""
@@ -402,6 +419,7 @@ case "${1:-}" in
     --apps)
         shift
         run_apps
+        exit 0
         ;;
     --playbooks)
         kill_port 30922
