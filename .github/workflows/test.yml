@@ -9,9 +9,13 @@ on:
       - "model/**"
       - "nex/**"
       - "nexd/**"
+      - "gateway/**"
+      - "apps/nex-api/**"
+      - "apps/nex-cf/**"
       - "interface/**"
       - "storage/**"
       - "libs/**"
+      - "apps/nex-spinwasi-ssccsdocs/**"
       - "playbooks/**"
       - "scripts/**"
       - "run.sh"
@@ -23,9 +27,13 @@ on:
       - "model/**"
       - "nex/**"
       - "nexd/**"
+      - "gateway/**"
+      - "apps/nex-api/**"
+      - "apps/nex-cf/**"
       - "interface/**"
       - "storage/**"
       - "libs/**"
+      - "apps/nex-spinwasi-ssccsdocs/**"
       - "playbooks/**"
       - "scripts/**"
       - "run.sh"
@@ -65,6 +73,22 @@ jobs:
           cache-on-failure: true
       - name: Core checks
         run: bash ./run.sh --core
+
+  gateway:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            apps/nex-api
+            apps/nex-cf
+          cache-targets: true
+      - name: Gateway checks
+        run: bash ./scripts/run-gateway.sh
 
   apps:
     runs-on: ubuntu-latest

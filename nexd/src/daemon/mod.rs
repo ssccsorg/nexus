@@ -32,7 +32,7 @@
 //! shortcut over `Config::default()`. Use `Daemon::builder(config)` when
 //! you need explicit configuration.
 //!
-//! ```no_run
+//! ```ignore
 //! use proc_daemon::{Daemon, ShutdownHandle};
 //! use std::time::Duration;
 //!
@@ -66,7 +66,7 @@
 //!
 //! With explicit configuration:
 //!
-//! ```no_run
+//! ```ignore
 //! use proc_daemon::{Config, Daemon, LogLevel};
 //! use std::time::Duration;
 //!

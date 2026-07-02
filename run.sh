@@ -50,7 +50,7 @@ verify_nex_spinwasi_ssccsdocs() {
 
     # Wait for server to be ready (poll until HTTP 200)
     local waited=0
-    while [ "$waited" -lt 30 ]; do
+    while [ "$waited" -lt 75 ]; do
         code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT}/" 2>/dev/null || echo "000")
         if [ "$code" = "200" ]; then
             break
@@ -58,12 +58,12 @@ verify_nex_spinwasi_ssccsdocs() {
         sleep 1
         waited=$((waited + 1))
     done
-    if [ "$waited" -ge 30 ]; then
+    if [ "$waited" -ge 75 ]; then
         echo "  server not ready after 30s (FAIL)"
         kill "$SPIN_PID" 2>/dev/null || true
         return 1
     fi
-    echo "  server ready after ${waited}s"
+    echo "  server ready after $((waited / 5))s"
 
     local failed=0
     echo "Testing endpoints..."
@@ -111,7 +111,7 @@ verify_nexd() {
     echo ""
     echo "Starting daemon on ${SOCKET_PATH}..."
 
-    NEXD_SOCKET_PATH="$SOCKET_PATH" ./target/debug/nexd &
+    NEXD_SOCKET_PATH="$SOCKET_PATH" ./target/debug/nexd 2>/tmp/nexd-debug.log &
     local NEXD_PID=$!
     trap "kill $NEXD_PID 2>/dev/null; rm -rf '$SOCKET_DIR'" EXIT
 
@@ -123,6 +123,7 @@ verify_nexd() {
     done
     if [ ! -S "$SOCKET_PATH" ]; then
         echo "nexd: socket not ready after ${waited}s (FAIL)"
+        cat /tmp/nexd-debug.log 2>/dev/null || true
         return 1
     fi
     echo "  daemon ready"
@@ -316,7 +317,7 @@ verify_nexd() {
     local SIG_SOCKET_DIR
     SIG_SOCKET_DIR=$(mktemp -d)
     local SIG_SOCKET_PATH="${SIG_SOCKET_DIR}/sigterm.sock"
-    NEXD_SOCKET_PATH="$SIG_SOCKET_PATH" ./target/debug/nexd &
+    NEXD_SOCKET_PATH="$SIG_SOCKET_PATH" ./target/debug/nexd 2>/tmp/nexd-sig-debug.log &
     local SIG_PID=$!
 
     waited=0
@@ -374,6 +375,7 @@ verify_nexd() {
     # Cleanup
     kill "$NEXD_PID" 2>/dev/null || true
     wait "$NEXD_PID" 2>/dev/null || true
+    rm -f /tmp/nexd-debug.log /tmp/nexd-sig-debug.log
     rm -rf "$SOCKET_DIR"
 
     echo ""

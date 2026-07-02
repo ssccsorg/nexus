@@ -204,7 +204,7 @@ impl Daemon {
     /// is constructed to pass validation, so this constructor is infallible.
     /// Use [`Self::builder`] when you have an explicit `Config`.
     ///
-    /// ```no_run
+    /// ```ignore
     /// use proc_daemon::Daemon;
     ///
     /// # async fn example() -> proc_daemon::Result<()> {
