@@ -104,6 +104,8 @@ jobs:
             apps/nex-spinwasi-ssccsdocs
           cache-targets: true
           cache-on-failure: true
+      - name: Install socat (required for Unix socket RPC)
+        run: sudo apt-get update && sudo apt-get install -y socat
       - uses: fermyon/actions/spin/setup@v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
