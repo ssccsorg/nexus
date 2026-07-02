@@ -464,7 +464,7 @@ impl Daemon {
                     .with_current_span(false);
 
                 // Use try_init to avoid panic if dispatcher was set after our check
-        tracing::subscriber::set_global_default(json_subscriber.finish()).map_err(|e| {
+                tracing::subscriber::set_global_default(json_subscriber.finish()).map_err(|e| {
                     Error::config(format!("Failed to initialize JSON logging: {e}"))
                 })?;
 

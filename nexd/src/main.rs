@@ -129,23 +129,23 @@ async fn process_manager_task(
 ) {
     loop {
         tokio::select! {
-            () = shutdown.cancelled() => {
-                let _ = tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("nexd=info")),
-        )
-        .try_init();
+                () = shutdown.cancelled() => {
+                    let _ = tracing_subscriber::fmt()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("nexd=info")),
+            )
+            .try_init();
 
-    tracing::info!("process manager stopping");
-                { let mut pm = process_manager.lock().unwrap(); pm.shutdown_sync(); }
-                tokio::time::sleep(Duration::from_millis(100)).await;
-                { let mut pm = process_manager.lock().unwrap(); pm.try_reap(); }
-                break;
+        tracing::info!("process manager stopping");
+                    { let mut pm = process_manager.lock().unwrap(); pm.shutdown_sync(); }
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    { let mut pm = process_manager.lock().unwrap(); pm.try_reap(); }
+                    break;
+                }
+                () = tokio::time::sleep(Duration::from_secs(5)) => {
+                    let mut pm = process_manager.lock().unwrap(); pm.try_reap();
+                }
             }
-            () = tokio::time::sleep(Duration::from_secs(5)) => {
-                let mut pm = process_manager.lock().unwrap(); pm.try_reap();
-            }
-        }
     }
 }
