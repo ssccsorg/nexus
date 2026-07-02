@@ -4,6 +4,27 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [
+    'cfg(feature, values("tokio"))',
+    'cfg(feature, values("async-std"))',
+    'cfg(feature, values("toml"))',
+    'cfg(feature, values("serde_json"))',
+    'cfg(feature, values("serde"))',
+    'cfg(feature, values("config-watch"))',
+    'cfg(feature, values("metrics"))',
+    'cfg(feature, values("mimalloc"))',
+    'cfg(feature, values("high-res-timing"))',
+    'cfg(feature, values("scheduler-hints"))',
+    'cfg(feature, values("lockfree-coordination"))',
+    'cfg(feature, values("profiling"))',
+    'cfg(feature, values("heap-profiling"))',
+    'cfg(feature, values("backtrace"))',
+    'cfg(feature, values("ipc"))',
+    'cfg(feature, values("json-logs"))',
+    'cfg(feature, values("windows-monitoring"))',
+]}
 [dependencies]
 nex = { path = "../nex" }
 nexus-model = { path = "../model" }
@@ -16,23 +37,40 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
 
-# ── Built-in daemon runtime deps (from proc-daemon) ───────────────────
 thiserror = "1.0"
+
 arc-swap = "1.9"
+
 parking_lot = "0.12"
+
 crossbeam = "0.8"
+
 dashmap = "6.2"
+
 once_cell = "1.21"
+
 fastrand = "2.4"
+
 futures = "0.3"
+
 num_cpus = "1.16"
+
 libc = "0.2"
+
 signal-hook = "0.3"
+
 ctrlc = "3.4"
+
 nix = { version = "0.31", features = ["signal", "sched"] }
+
 fs2 = "0.4"
+
 figment = { version = "0.10", features = ["toml", "env", "json"] }
 toml = "0.8"
+
+[features]
+default = ["tokio"]
+tokio = []
 
 [dev-dependencies]
 tempfile = "3"
