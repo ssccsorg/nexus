@@ -1,4 +1,8 @@
-#![allow(clippy::collapsible_if, clippy::items_after_statements, clippy::module_inception)]
+#![allow(
+    clippy::collapsible_if,
+    clippy::items_after_statements,
+    clippy::module_inception
+)]
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 #![warn(clippy::all)]
@@ -197,7 +201,7 @@ pub mod scheduler {
     pub fn apply_runtime_hints() {
         #[cfg(all(feature = "scheduler-hints-unix", target_os = "linux"))]
         {
-            use nix::sched::{sched_setaffinity, CpuSet};
+            use nix::sched::{CpuSet, sched_setaffinity};
             use nix::unistd::Pid;
 
             // Best-effort: allow running on all available CPUs (explicitly set mask)
