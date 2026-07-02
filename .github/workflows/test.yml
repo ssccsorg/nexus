@@ -20,6 +20,8 @@ on:
       - "scripts/**"
       - "run.sh"
       - ".github/workflows/test.yml"
+      - "!**/*.md"
+      - "!**/*.qmd"
   pull_request:
     paths:
       - "Cargo.toml"
@@ -38,6 +40,8 @@ on:
       - "scripts/**"
       - "run.sh"
       - ".github/workflows/test.yml"
+      - "!**/*.md"
+      - "!**/*.qmd"
   workflow_dispatch:
 
 permissions:
