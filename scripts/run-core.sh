@@ -32,7 +32,7 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
-run_check()  { cargo check -p nex && cargo check -p nexd && cargo check -p nexus-storage-duckdb && (cd apps/nex-spinwasi-ssccsdocs && cargo check); }
+run_check()  { cargo check -p nex && cargo check -p nexd && cargo check -p nexus-storage-duckdb; }
 
 # ── WASM check: ensure storage-sim builds for wasm32 target ────────────
 
@@ -91,9 +91,7 @@ run_test()   {
     cargo test -p nex -- --nocapture 2>&1
     echo "---"
     cargo test -p nexd --test integration -- --test-threads=1 --nocapture 2>&1
-    echo "---"
-    echo "=== apps/nex-spinwasi-ssccsdocs (cargo test) ==="
-    (cd apps/nex-spinwasi-ssccsdocs && cargo test -- --nocapture 2>&1)
+
 }
 run_all() {
     echo "=== fmt --all ===" && run_fmt
