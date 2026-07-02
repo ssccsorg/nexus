@@ -1,3 +1,4 @@
+#![allow(clippy::collapsible_if, clippy::items_after_statements, clippy::module_inception)]
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 #![warn(clippy::all)]
@@ -96,7 +97,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 // Private modules
 mod config;
-mod daemon_core;
+mod daemon;
 mod error;
 mod pool;
 
@@ -110,7 +111,7 @@ pub mod subsystem;
 
 // Public exports
 pub use config::{Config, LogLevel};
-pub use crate::daemon::daemon_core::Daemon;
+pub use daemon::{Daemon, DaemonBuilder};
 pub use error::{Error, Result};
 pub use pool::*;
 pub use shutdown::{ShutdownHandle, ShutdownReason};
@@ -161,7 +162,7 @@ pub mod scheduler {
     ///
     /// Default: no-op. If `scheduler-hints-unix` is enabled on Unix, attempts a
     /// best-effort niceness reduction.
-    pub fn apply_process_hints(config: &crate::config::Config) {
+    pub fn apply_process_hints(config: &crate::daemon::config::Config) {
         let name = &config.name;
         #[cfg(all(feature = "scheduler-hints-unix", unix))]
         {
@@ -196,7 +197,7 @@ pub mod scheduler {
     pub fn apply_runtime_hints() {
         #[cfg(all(feature = "scheduler-hints-unix", target_os = "linux"))]
         {
-            use nix::sched::{CpuSet, sched_setaffinity};
+            use nix::sched::{sched_setaffinity, CpuSet};
             use nix::unistd::Pid;
 
             // Best-effort: allow running on all available CPUs (explicitly set mask)
@@ -229,4 +230,3 @@ pub const DEFAULT_SHUTDOWN_TIMEOUT_MS: u64 = 5000;
 
 /// Default configuration file name
 pub const DEFAULT_CONFIG_FILE: &str = "daemon.toml";
-
