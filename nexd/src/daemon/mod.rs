@@ -1,13 +1,13 @@
-#![allow(
-    clippy::collapsible_if,
-    clippy::items_after_statements,
-    clippy::module_inception
-)]
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 #![warn(clippy::all)]
 #![warn(clippy::pedantic)]
 #![warn(clippy::nursery)]
+#![allow(
+    clippy::collapsible_if,
+    clippy::items_after_statements,
+    clippy::module_inception
+)]
 //! # proc-daemon: High-Performance Daemon Framework
 //!
 //! A foundational framework for building high-performance, resilient daemon services in Rust.
