@@ -1713,6 +1713,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "nex-server"
+version = "0.1.0"
+dependencies = [
+ "nex",
+ "nexus-model",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "nexd"
 version = "0.1.0"
 dependencies = [
