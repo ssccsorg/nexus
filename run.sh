@@ -374,6 +374,7 @@ verify_nexd() {
     # ── Summary ────────────────────────────────────────────────────────
 
     # Cleanup
+    trap - EXIT  # clear the cleanup trap set earlier
     kill "$NEXD_PID" 2>/dev/null || true
     wait "$NEXD_PID" 2>/dev/null || true
     rm -f /tmp/nexd-debug.log /tmp/nexd-sig-debug.log
@@ -418,6 +419,7 @@ case "${1:-}" in
     --apps)
         shift
         run_apps
+        exit 0
         ;;
     --playbooks)
         kill_port 30922
