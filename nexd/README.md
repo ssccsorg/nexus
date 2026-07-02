@@ -24,10 +24,11 @@
 - FIH blackboard service via embedded `HybridBlackboard` (same as `apps/nex-api`)
 - Process Manager — spawn, monitor (`try_reap`), kill child `nex-*` agents
 - OODA scheduler — heartbeat TTL monitoring, stale intent eviction
-- Graceful shutdown — SIGTERM/SIGINT/SIGQUIT handling via `proc-daemon`
+- Graceful shutdown — SIGTERM/SIGINT/SIGQUIT handling via embedded daemon framework
 - Connection limiting — max 128 concurrent clients via `tokio::sync::Semaphore`
 - Single-entity read methods — `read_fact`, `read_intent`, `read_hint`
-- 27 integration tests + 7 CI verification scenarios
+- Daemon framework embedded as built-in module (`nexd::daemon`)
+- 32 integration tests (27 nexd + 5 daemon framework) + 7 CI verification scenarios
 
 ### IPC Protocol
 
@@ -58,10 +59,10 @@ Line-delimited JSON-RPC over Unix domain socket (`/tmp/nexd.sock` by default).
 |  |    HybridBlackboard (Phase 1: embedded) |        |
 |  |    nex::create_blackboard()           |          |
 |  +--------------------------------------+          |
-|  +--------------------------------------+          |
-|  |   proc-daemon framework              |          |
-|  | (signal, shutdown, subsystem mgmt)   |          |
-|  +--------------------------------------+          |
+|  +------------------------------------------------+ |
+|  |   Built-in daemon runtime (nexd::daemon)       | |
+|  | (signal, shutdown, subsystem mgmt, config)     | |
+|  +------------------------------------------------+ |
 +----------------------------------------------------+
 ```
 
@@ -94,11 +95,13 @@ nexd (daemon)                              nex (standalone server)
 - `nexd` spawns and manages the `nex` process.
 - Wire protocol becomes the **contract** between the two layers.
 
-### Phase 3: proc-daemon → built-in daemon runtime (#138)
+### Phase 3: proc-daemon → built-in daemon runtime ✅
 
-- Copy proc-daemon core source into `nexd/src/daemon/`.
-- Strip unnecessary modules (memory pools, metrics, profiling, crossbeam, dashmap).
-- Remove ~70 transitive dependencies.
+Full copy of proc-daemon (8,001 lines, 14 files, 5 upstream tests) embedded as `nexd::daemon`. External `proc-daemon` crate replaced with built-in module. Rendered branch obsolete (`137-proc-daemon-replace`).
+
+**Remaining (post-embedding):**
+- Strip unnecessary modules (memory pools, metrics, profiling).
+- Remove ~70 transitive dependencies inherited from original.
 - Iteratively refactor toward nexd-optimized minimal daemon runtime.
 - Target: sub-5MB static binary for embedded deployment.
 
@@ -121,15 +124,16 @@ nexd (daemon)                              nex (standalone server)
 |-------|-------|--------|
 | #135 | nexd Phase 1 MVP | ✅ Merged |
 | #138 | nex as isolated server, nexd as pure OS | 🔲 Epic (next) |
-| #137 | proc-daemon → built-in rt.rs | 🔲 Branch exists |
+| #137 | proc-daemon → built-in rt.rs | 🔲 Superseded by #140 |
+| #140 | proc-daemon full embedding | ✅ Merged |
 | #139 | FIH coordinate system formalization | 🔲 Epic (nex side) |
 
 ## Dependencies
 
-- [proc-daemon](https://github.com/jamesgober/proc-daemon) — daemon framework (to be replaced in Phase 3)
 - [nex](https://crates.io/crates/nex) — FIH blackboard engine (to be extracted in Phase 2)
 - [nexus-model](https://crates.io/crates/nexus-model) — FIH primitives
 - Tokio — async runtime
+- Daemon framework is built-in (`nexd::daemon`, derived from [proc-daemon](https://github.com/jamesgober/proc-daemon))
 
 ## License
 
