@@ -114,7 +114,7 @@ verify_nexd() {
 
     NEXD_SOCKET_PATH="$SOCKET_PATH" ./target/debug/nexd 2>/tmp/nexd-debug.log &
     local NEXD_PID=$!
-    trap "kill $NEXD_PID 2>/dev/null; rm -rf '$SOCKET_DIR'" EXIT
+    trap 'kill $NEXD_PID 2>/dev/null; rm -rf "$SOCKET_DIR"' EXIT
 
     # Wait for socket
     local waited=0
@@ -389,6 +389,15 @@ verify_nexd() {
     fi
 }
 
+# ── nex-calc (CLI) ─────────────────────────────────────────────────────────
+
+verify_nex_calc() {
+    echo "=== nex-calc ==="
+    cargo build -p nex-calc 2>&1 || { echo "nex-calc: build FAILED"; return 1; }
+    cargo test -p nex-calc 2>&1 || { echo "nex-calc: tests FAILED"; return 1; }
+    echo "nex-calc: passed"
+}
+
 # ── App suite ─────────────────────────────────────────────────────────────
 
 run_apps() {
@@ -399,6 +408,7 @@ run_apps() {
     kill_port 30922 2>/dev/null || true
     sleep 1
     verify_nex_spinwasi_ssccsdocs || any_failed=1
+    verify_nex_calc || any_failed=1
     # Future apps go here, e.g.:
     # verify_nex_cf_mock || any_failed=1
     # verify_nex_zed || any_failed=1
