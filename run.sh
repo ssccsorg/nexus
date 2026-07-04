@@ -386,19 +386,19 @@ verify_nexd() {
     else
         echo "nexd: some scenarios FAILED"
         return 1
-        fi
-    }
+    fi
+}
 
-    # ── nex-calc (CLI) ─────────────────────────────────────────────────────────
+# ── nex-calc (CLI) ─────────────────────────────────────────────────────────
 
-    verify_nex_calc() {
-        echo "=== nex-calc ==="
-        cargo build -p nex-calc 2>&1 || { echo "nex-calc: build FAILED"; return 1; }
-        cargo test -p nex-calc 2>&1 || { echo "nex-calc: tests FAILED"; return 1; }
-        echo "nex-calc: passed"
-    }
+verify_nex_calc() {
+    echo "=== nex-calc ==="
+    cargo build -p nex-calc 2>&1 || { echo "nex-calc: build FAILED"; return 1; }
+    cargo test -p nex-calc 2>&1 || { echo "nex-calc: tests FAILED"; return 1; }
+    echo "nex-calc: passed"
+}
 
-    # ── App suite ─────────────────────────────────────────────────────────────
+# ── App suite ─────────────────────────────────────────────────────────────
 
 run_apps() {
     local any_failed=0

@@ -57,7 +57,6 @@ Hint ab12..cd34 (double operands)
 > resolve ...
 (3*2) + (5*2) = 16  → Fact ...
 > stats
-steps:     7
 facts:     4
 pending:   0
 hints:     1
