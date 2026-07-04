@@ -67,13 +67,25 @@ impl Constraint {
     /// Parse from Display-formatted string.
     pub fn parse_str(s: &str) -> Option<Self> {
         if s.starts_with("result > ") {
-            s.trim_start_matches("result > ").parse().ok().map(Constraint::GreaterThan)
+            s.trim_start_matches("result > ")
+                .parse()
+                .ok()
+                .map(Constraint::GreaterThan)
         } else if s.starts_with("result < ") {
-            s.trim_start_matches("result < ").parse().ok().map(Constraint::LessThan)
+            s.trim_start_matches("result < ")
+                .parse()
+                .ok()
+                .map(Constraint::LessThan)
         } else if s.starts_with("result = ") {
-            s.trim_start_matches("result = ").parse().ok().map(Constraint::Equals)
+            s.trim_start_matches("result = ")
+                .parse()
+                .ok()
+                .map(Constraint::Equals)
         } else if s.starts_with("result != ") {
-            s.trim_start_matches("result != ").parse().ok().map(Constraint::NotEquals)
+            s.trim_start_matches("result != ")
+                .parse()
+                .ok()
+                .map(Constraint::NotEquals)
         } else if s == "result is even" {
             Some(Constraint::IsEven)
         } else if s == "result > 0" {
@@ -88,7 +100,9 @@ impl Constraint {
     /// Parse from command arguments.
     pub fn parse(kind: &str, arg: Option<&str>) -> Option<Self> {
         match kind {
-            "gt" => arg.and_then(|a| a.parse().ok()).map(Constraint::GreaterThan),
+            "gt" => arg
+                .and_then(|a| a.parse().ok())
+                .map(Constraint::GreaterThan),
             "lt" => arg.and_then(|a| a.parse().ok()).map(Constraint::LessThan),
             "eq" => arg.and_then(|a| a.parse().ok()).map(Constraint::Equals),
             "ne" => arg.and_then(|a| a.parse().ok()).map(Constraint::NotEquals),

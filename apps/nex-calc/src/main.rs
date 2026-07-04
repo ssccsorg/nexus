@@ -25,11 +25,16 @@ async fn main() {
         match stdin.lock().read_line(&mut line) {
             Ok(0) => break,
             Ok(_) => {}
-            Err(e) => { eprintln!("read error: {e}"); break; }
+            Err(e) => {
+                eprintln!("read error: {e}");
+                break;
+            }
         }
 
         let line = line.trim();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
 
         let parts: Vec<&str> = line.split_whitespace().collect();
         let cmd = parts[0].to_lowercase();
@@ -46,14 +51,20 @@ async fn main() {
             "list" | "ls" => cmd_list(&engine).await,
             "stats" => cmd_stats(&engine).await,
             "help" | "h" | "?" => cmd_help(),
-            "quit" | "q" | "exit" => { println!("bye."); break; }
+            "quit" | "q" | "exit" => {
+                println!("bye.");
+                break;
+            }
             _ => println!("unknown command: {cmd}. type 'help' for commands."),
         }
     }
 }
 
 async fn cmd_put(engine: &CalcEngine, parts: &[&str]) {
-    if parts.len() < 2 { println!("usage: put <number>"); return; }
+    if parts.len() < 2 {
+        println!("usage: put <number>");
+        return;
+    }
     match parts[1].parse::<i64>() {
         Ok(n) => println!("Fact {} = {n}", short(&engine.put(n).await)),
         Err(_) => println!("invalid number: {}", parts[1]),
@@ -61,57 +72,100 @@ async fn cmd_put(engine: &CalcEngine, parts: &[&str]) {
 }
 
 async fn cmd_get(engine: &CalcEngine, parts: &[&str]) {
-    if parts.len() < 2 { println!("usage: get <hash-prefix>"); return; }
+    if parts.len() < 2 {
+        println!("usage: get <hash-prefix>");
+        return;
+    }
     match engine.find_fact(parts[1]).await {
         Some(id) => match engine.get(&id).await {
             Some(n) => println!("Fact {} = {n}", short(&id)),
             None => println!("not a number fact: {}", short(&id)),
-        }
+        },
         None => println!("no fact matching: {}", parts[1]),
     }
 }
 
 async fn cmd_op(engine: &CalcEngine, op: OpType, parts: &[&str]) {
-    if parts.len() < 3 { println!("usage: {} <fact-a> <fact-b>", op); return; }
+    if parts.len() < 3 {
+        println!("usage: {} <fact-a> <fact-b>", op);
+        return;
+    }
     let a = engine.find_fact(parts[1]).await;
     let b = engine.find_fact(parts[2]).await;
     match (a, b) {
         (Some(a), Some(b)) => match engine.op(op, &a, &b).await {
-            Ok(id) => println!("Intent {} ({} {} {})", short(&id), op.symbol(), short(&a), short(&b)),
+            Ok(id) => println!(
+                "Intent {} ({} {} {})",
+                short(&id),
+                op.symbol(),
+                short(&a),
+                short(&b)
+            ),
             Err(e) => println!("error: {e}"),
-        }
+        },
         (None, _) => println!("no fact matching: {}", parts[1]),
         (_, None) => println!("no fact matching: {}", parts[2]),
     }
 }
 
 async fn cmd_resolve(engine: &CalcEngine, parts: &[&str]) {
-    if parts.len() < 2 { println!("usage: resolve <intent-hash-prefix>"); return; }
+    if parts.len() < 2 {
+        println!("usage: resolve <intent-hash-prefix>");
+        return;
+    }
     let intents = engine.list_intents().await;
     let prefix = parts[1].to_lowercase();
-    let matches: Vec<_> = intents.iter().filter(|(id, _)| id.to_string().starts_with(&prefix)).collect();
-    if matches.is_empty() { println!("no intent matching: {}", parts[1]); return; }
+    let matches: Vec<_> = intents
+        .iter()
+        .filter(|(id, _)| id.to_string().starts_with(&prefix))
+        .collect();
+    if matches.is_empty() {
+        println!("no intent matching: {}", parts[1]);
+        return;
+    }
     if matches.len() > 1 {
         println!("ambiguous prefix, {} intents:", matches.len());
-        for (id, _) in &matches { println!("  {}", short(id)); }
+        for (id, _) in &matches {
+            println!("  {}", short(id));
+        }
         return;
     }
     match engine.resolve(&matches[0].0).await {
-        Ok(r) => println!("{} {} {} = {}  → Fact {} = {}", r.lhs, r.op.symbol(), r.rhs, r.result_value, short(&r.result_id), r.result_value),
+        Ok(r) => println!(
+            "{} {} {} = {}  → Fact {} = {}",
+            r.lhs,
+            r.op.symbol(),
+            r.rhs,
+            r.result_value,
+            short(&r.result_id),
+            r.result_value
+        ),
         Err(e) => println!("error: {e}"),
     }
 }
 
 async fn cmd_constrain(engine: &CalcEngine, parts: &[&str]) {
     if parts.len() < 2 {
-        println!("usage: constrain <type> [arg]\ntypes: gt <n>, lt <n>, eq <n>, ne <n>, even, pos, double\n       constrain clear");
+        println!(
+            "usage: constrain <type> [arg]\ntypes: gt <n>, lt <n>, eq <n>, ne <n>, even, pos, double\n       constrain clear"
+        );
         return;
     }
-    if parts[1] == "clear" { engine.clear_hints().await; println!("all constraints cleared."); return; }
+    if parts[1] == "clear" {
+        engine.clear_hints().await;
+        println!("all constraints cleared.");
+        return;
+    }
     let arg = parts.get(2).copied();
     match Constraint::parse(parts[1], arg) {
-        Some(c) => { let id = engine.constrain(c.clone()).await; println!("Hint {} ({})", short(&id), c.description()); }
-        None => println!("unknown constraint: {}. use: gt, lt, eq, ne, even, pos, double", parts[1]),
+        Some(c) => {
+            let id = engine.constrain(c.clone()).await;
+            println!("Hint {} ({})", short(&id), c.description());
+        }
+        None => println!(
+            "unknown constraint: {}. use: gt, lt, eq, ne, even, pos, double",
+            parts[1]
+        ),
     }
 }
 
@@ -121,12 +175,15 @@ async fn cmd_list(engine: &CalcEngine) {
     let hints = engine.list_hints().await;
 
     if facts.is_empty() && intents.is_empty() && hints.is_empty() {
-        println!("empty. use 'put' to store a number."); return;
+        println!("empty. use 'put' to store a number.");
+        return;
     }
 
     if !facts.is_empty() {
         println!("Facts ({}):", facts.len());
-        for (id, v) in &facts { println!("  {} = {v}", short(id)); }
+        for (id, v) in &facts {
+            println!("  {} = {v}", short(id));
+        }
     }
     if !intents.is_empty() {
         println!("Intents ({}):", intents.len());
@@ -136,7 +193,9 @@ async fn cmd_list(engine: &CalcEngine) {
     }
     if !hints.is_empty() {
         println!("Hints ({}):", hints.len());
-        for (id, c) in &hints { println!("  {} {c}", short(id)); }
+        for (id, c) in &hints {
+            println!("  {} {c}", short(id));
+        }
     }
 }
 
@@ -169,5 +228,5 @@ fn cmd_help() {
 
 fn short(hash: &nexus_model::FihHash) -> String {
     let full = hash.to_string();
-    format!("{}..{}", &full[..4], &full[full.len()-4..])
+    format!("{}..{}", &full[..4], &full[full.len() - 4..])
 }
