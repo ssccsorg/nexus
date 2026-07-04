@@ -42,7 +42,6 @@ pub enum CalcError {
         result: i64,
     },
     AlreadyResolved(String),
-    InvalidNumberEncoding(String),
 }
 
 impl fmt::Display for CalcError {
@@ -62,9 +61,6 @@ impl fmt::Display for CalcError {
                 )
             }
             CalcError::AlreadyResolved(id) => write!(f, "intent already resolved: {id}"),
-            CalcError::InvalidNumberEncoding(id) => {
-                write!(f, "invalid number encoding in fact: {id}")
-            }
         }
     }
 }
