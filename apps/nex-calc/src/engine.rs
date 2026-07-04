@@ -19,12 +19,12 @@ use std::fmt;
 
 use sha2::{Digest, Sha256};
 
+use nex::storage::core::intent_status::IntentStatus;
+use nex::storage::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
+use nex::storage::core::store::FihStorage;
 use nex::{EntityStore, FileIo};
 use nexus_model::{Content, FihHash};
 use nexus_storage_sim::SimIo;
-use nex::storage::core::store::FihStorage;
-use nex::storage::core::record::{FactRecord, IntentRecord, HintRecord, ContentMeta};
-use nex::storage::core::intent_status::IntentStatus;
 
 use crate::hint::Constraint;
 use crate::ops::OpType;
@@ -36,7 +36,11 @@ pub enum CalcError {
     FactNotFound(String),
     IntentNotFound(String),
     OpError(String),
-    ConstraintViolated { hint_id: String, constraint: String, result: i64 },
+    ConstraintViolated {
+        hint_id: String,
+        constraint: String,
+        result: i64,
+    },
     AlreadyResolved(String),
     InvalidNumberEncoding(String),
 }
@@ -47,11 +51,20 @@ impl fmt::Display for CalcError {
             CalcError::FactNotFound(id) => write!(f, "fact not found: {id}"),
             CalcError::IntentNotFound(id) => write!(f, "intent not found: {id}"),
             CalcError::OpError(msg) => write!(f, "operator error: {msg}"),
-            CalcError::ConstraintViolated { hint_id, constraint, result } => {
-                write!(f, "constraint violated [{hint_id}]: {constraint} (got {result})")
+            CalcError::ConstraintViolated {
+                hint_id,
+                constraint,
+                result,
+            } => {
+                write!(
+                    f,
+                    "constraint violated [{hint_id}]: {constraint} (got {result})"
+                )
             }
             CalcError::AlreadyResolved(id) => write!(f, "intent already resolved: {id}"),
-            CalcError::InvalidNumberEncoding(id) => write!(f, "invalid number encoding in fact: {id}"),
+            CalcError::InvalidNumberEncoding(id) => {
+                write!(f, "invalid number encoding in fact: {id}")
+            }
         }
     }
 }
@@ -77,7 +90,9 @@ pub struct CalcEngine {
 
 impl CalcEngine {
     pub fn new() -> Self {
-        Self { storage: FihStorage::new(SimIo::new(), "nex-calc") }
+        Self {
+            storage: FihStorage::new(SimIo::new(), "nex-calc"),
+        }
     }
 
     // ── Fact operations ───────────────────────────────────────────
@@ -99,8 +114,14 @@ impl CalcEngine {
         write_blob_meta(&self.storage.io, &blob_hash, NUMBER_MIME, data.len()).await;
 
         let record = FactRecord::from_model(
-            &nexus_model::Fact { id, origin: "nex-calc".into(), content: Content::from(""), creator: "user".into() },
-            blob_hash, 0,
+            &nexus_model::Fact {
+                id,
+                origin: "nex-calc".into(),
+                content: Content::from(""),
+                creator: "user".into(),
+            },
+            blob_hash,
+            0,
         );
         self.storage.fact_store.insert(id_str, record).await;
         id
@@ -126,11 +147,26 @@ impl CalcEngine {
     // ── Intent operations ─────────────────────────────────────────
 
     /// Create an operator Intent. Returns its content-addressed FihHash.
-    pub async fn op(&self, op: OpType, lhs_id: &FihHash, rhs_id: &FihHash) -> Result<FihHash, CalcError> {
-        if !self.storage.fact_store.contains_key(&lhs_id.to_string()).await {
+    pub async fn op(
+        &self,
+        op: OpType,
+        lhs_id: &FihHash,
+        rhs_id: &FihHash,
+    ) -> Result<FihHash, CalcError> {
+        if !self
+            .storage
+            .fact_store
+            .contains_key(&lhs_id.to_string())
+            .await
+        {
             return Err(CalcError::FactNotFound(lhs_id.to_string()));
         }
-        if !self.storage.fact_store.contains_key(&rhs_id.to_string()).await {
+        if !self
+            .storage
+            .fact_store
+            .contains_key(&rhs_id.to_string())
+            .await
+        {
             return Err(CalcError::FactNotFound(rhs_id.to_string()));
         }
 
@@ -146,7 +182,7 @@ impl CalcEngine {
         let record = IntentRecord {
             id: id_str.clone(),
             from_facts: vec![lhs_id.to_string(), rhs_id.to_string()],
-            description_hash: desc,  // store operator name directly
+            description_hash: desc, // store operator name directly
             creator: "user".into(),
             status: IntentStatus::Submitted,
             created_at: now,
@@ -163,53 +199,103 @@ impl CalcEngine {
     ///                   Hint gates
     pub async fn resolve(&self, intent_id: &FihHash) -> Result<ResolvedIntent, CalcError> {
         let id_str = intent_id.to_string();
-        let record = self.storage.intent_store.get(&id_str).await
+        let record = self
+            .storage
+            .intent_store
+            .get(&id_str)
+            .await
             .ok_or_else(|| CalcError::IntentNotFound(id_str.clone()))?;
 
         if matches!(record.status, IntentStatus::Concluded { .. }) {
             return Err(CalcError::AlreadyResolved(id_str));
         }
 
-        let op = OpType::parse(&record.description_hash)
-            .ok_or_else(|| CalcError::OpError(format!(
-                "unknown operator '{}' in intent {}", record.description_hash, id_str
-            )))?;
+        let op = OpType::parse(&record.description_hash).ok_or_else(|| {
+            CalcError::OpError(format!(
+                "unknown operator '{}' in intent {}",
+                record.description_hash, id_str
+            ))
+        })?;
 
-        let lhs_fid = record.from_facts.first().ok_or_else(|| CalcError::IntentNotFound("missing lhs".into()))?;
-        let rhs_fid = record.from_facts.get(1).ok_or_else(|| CalcError::IntentNotFound("missing rhs".into()))?;
+        let lhs_fid = record
+            .from_facts
+            .first()
+            .ok_or_else(|| CalcError::IntentNotFound("missing lhs".into()))?;
+        let rhs_fid = record
+            .from_facts
+            .get(1)
+            .ok_or_else(|| CalcError::IntentNotFound("missing rhs".into()))?;
 
-        let lhs = self.get(&FihHash::from_hex(lhs_fid)).await
+        let lhs = self
+            .get(&FihHash::from_hex(lhs_fid))
+            .await
             .ok_or_else(|| CalcError::FactNotFound(lhs_fid.clone()))?;
-        let rhs = self.get(&FihHash::from_hex(rhs_fid)).await
+        let rhs = self
+            .get(&FihHash::from_hex(rhs_fid))
+            .await
             .ok_or_else(|| CalcError::FactNotFound(rhs_fid.clone()))?;
 
         // Apply operand transforms, then operator.
         let (lhs, rhs) = self.apply_operand_transforms(lhs, rhs).await;
-        let raw_result = op.apply(lhs, rhs).map_err(|e| CalcError::OpError(e.to_string()))?;
+        let raw_result = op
+            .apply(lhs, rhs)
+            .map_err(|e| CalcError::OpError(e.to_string()))?;
 
         // Check result constraints.
         self.check_constraints(raw_result).await?;
 
         // Create the result Fact (content-addressed, so deduplicated).
         let result_id = make_number_fact_id(raw_result);
-        if !self.storage.fact_store.contains_key(&result_id.to_string()).await {
+        if !self
+            .storage
+            .fact_store
+            .contains_key(&result_id.to_string())
+            .await
+        {
             let data = raw_result.to_le_bytes().to_vec();
             let bh = content_hash(&data);
-            let _ = self.storage.io.write(&format!("blob/{}.bin", bh), &data).await;
+            let _ = self
+                .storage
+                .io
+                .write(&format!("blob/{}.bin", bh), &data)
+                .await;
             write_blob_meta(&self.storage.io, &bh, NUMBER_MIME, data.len()).await;
             let rec = FactRecord::from_model(
-                &nexus_model::Fact { id: result_id, origin: format!("nex-calc:resolve:{}", intent_id), content: Content::from(""), creator: "nex-calc".into() },
-                bh, 0,
+                &nexus_model::Fact {
+                    id: result_id,
+                    origin: format!("nex-calc:resolve:{}", intent_id),
+                    content: Content::from(""),
+                    creator: "nex-calc".into(),
+                },
+                bh,
+                0,
             );
-            self.storage.fact_store.insert(result_id.to_string(), rec).await;
+            self.storage
+                .fact_store
+                .insert(result_id.to_string(), rec)
+                .await;
         }
 
         // Mark intent concluded.
         let now = nanos();
-        let updated = IntentRecord { status: IntentStatus::Concluded { to_fact: result_id.to_string(), concluded_at: now, worker: "nex-calc".into() }, ..record };
+        let updated = IntentRecord {
+            status: IntentStatus::Concluded {
+                to_fact: result_id.to_string(),
+                concluded_at: now,
+                worker: "nex-calc".into(),
+            },
+            ..record
+        };
         self.storage.intent_store.insert(id_str, updated).await;
 
-        Ok(ResolvedIntent { intent_id: *intent_id, op, lhs, rhs, result_id, result_value: raw_result })
+        Ok(ResolvedIntent {
+            intent_id: *intent_id,
+            op,
+            lhs,
+            rhs,
+            result_id,
+            result_value: raw_result,
+        })
     }
 
     // ── Hint operations ───────────────────────────────────────────
@@ -224,7 +310,9 @@ impl CalcEngine {
                 content: constraint.to_string(),
                 creator: "user".into(),
                 submitted_at: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
                 ttl_secs: None,
             };
             self.storage.hint_store.insert(id_str, record).await;
@@ -249,60 +337,104 @@ impl CalcEngine {
     }
 
     pub async fn list_intents(&self) -> Vec<(FihHash, bool)> {
-        self.storage.intent_store.values().await.iter()
-            .map(|r| (FihHash::from_hex(&r.id), matches!(r.status, IntentStatus::Concluded { .. })))
+        self.storage
+            .intent_store
+            .values()
+            .await
+            .iter()
+            .map(|r| {
+                (
+                    FihHash::from_hex(&r.id),
+                    matches!(r.status, IntentStatus::Concluded { .. }),
+                )
+            })
             .collect()
     }
 
     pub async fn list_hints(&self) -> Vec<(FihHash, String)> {
-        self.storage.hint_store.values().await.iter()
+        self.storage
+            .hint_store
+            .values()
+            .await
+            .iter()
             .map(|r| (FihHash::from_hex(&r.id), r.content.clone()))
             .collect()
     }
 
-    pub async fn fact_count(&self) -> usize { self.storage.fact_store.len().await }
+    pub async fn fact_count(&self) -> usize {
+        self.storage.fact_store.len().await
+    }
     pub async fn pending_count(&self) -> usize {
-        self.storage.intent_store.values().await.iter()
-            .filter(|r| !matches!(r.status, IntentStatus::Concluded { .. })).count()
+        self.storage
+            .intent_store
+            .values()
+            .await
+            .iter()
+            .filter(|r| !matches!(r.status, IntentStatus::Concluded { .. }))
+            .count()
     }
 
     // ── Internal ──────────────────────────────────────────────────
 
     async fn apply_operand_transforms(&self, mut lhs: i64, mut rhs: i64) -> (i64, i64) {
         for r in self.storage.hint_store.values().await.iter() {
-            let c = match Constraint::parse_str(&r.content) { Some(c) => c, None => continue };
+            let c = match Constraint::parse_str(&r.content) {
+                Some(c) => c,
+                None => continue,
+            };
             let (l, r2) = c.transform_operands(lhs, rhs);
-            lhs = l; rhs = r2;
+            lhs = l;
+            rhs = r2;
         }
         (lhs, rhs)
     }
 
     async fn check_constraints(&self, result: i64) -> Result<(), CalcError> {
         for r in self.storage.hint_store.values().await.iter() {
-            let c = match Constraint::parse_str(&r.content) { Some(c) => c, None => continue };
+            let c = match Constraint::parse_str(&r.content) {
+                Some(c) => c,
+                None => continue,
+            };
             if !c.check(result) {
-                return Err(CalcError::ConstraintViolated { hint_id: r.id.clone(), constraint: c.to_string(), result });
+                return Err(CalcError::ConstraintViolated {
+                    hint_id: r.id.clone(),
+                    constraint: c.to_string(),
+                    result,
+                });
             }
         }
         Ok(())
     }
 }
 
-impl Default for CalcEngine { fn default() -> Self { Self::new() } }
+impl Default for CalcEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 // ── Blob IO ───────────────────────────────────────────────────────
 
 async fn write_blob_meta(io: &SimIo, blob_hash: &str, mime: &str, size: usize) {
-    let meta = ContentMeta { mime_type: mime.into(), size: size as u64 };
+    let meta = ContentMeta {
+        mime_type: mime.into(),
+        size: size as u64,
+    };
     let meta_bytes = postcard::to_allocvec(&meta).unwrap_or_default();
-    let _ = io.write(&format!("blob/{}.bin.meta", blob_hash), &meta_bytes).await;
+    let _ = io
+        .write(&format!("blob/{}.bin.meta", blob_hash), &meta_bytes)
+        .await;
 }
 
 async fn decode_blob(io: &SimIo, blob_hash: &str) -> Option<i64> {
-    if blob_hash.is_empty() { return None; }
+    if blob_hash.is_empty() {
+        return None;
+    }
     let key = format!("blob/{}.bin", blob_hash);
     let bytes = io.read(&key).await.ok()??;
-    if bytes.len() != 8 { return None; }
+    if bytes.len() != 8 {
+        return None;
+    }
     let mut arr = [0u8; 8];
     arr.copy_from_slice(&bytes);
     Some(i64::from_le_bytes(arr))
@@ -316,7 +448,9 @@ fn content_hash(data: &[u8]) -> String {
 
 fn nanos() -> u64 {
     std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos() as u64
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64
 }
 
 fn make_number_fact_id(value: i64) -> FihHash {
@@ -324,7 +458,10 @@ fn make_number_fact_id(value: i64) -> FihHash {
 }
 
 fn make_intent_id(op: OpType, lhs_id: &FihHash, rhs_id: &FihHash) -> FihHash {
-    FihHash::new(&[&lhs_id.to_string(), &rhs_id.to_string(), op.symbol()], "nex-calc-intent")
+    FihHash::new(
+        &[&lhs_id.to_string(), &rhs_id.to_string(), op.symbol()],
+        "nex-calc-intent",
+    )
 }
 
 fn make_hint_id(constraint: &Constraint) -> FihHash {
