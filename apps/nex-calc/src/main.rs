@@ -39,23 +39,28 @@ async fn main() {
         let parts: Vec<&str> = line.split_whitespace().collect();
         let cmd = parts[0].to_lowercase();
 
+        // Dispatch by operator type. Unary ops get one operand, binary get two.
+        // For ergonomics, command aliases (`+`, `-`, `*`, `/`) map to their ops.
         match cmd.as_str() {
             "put" | "p" => cmd_put(&engine, &parts).await,
             "get" | "g" => cmd_get(&engine, &parts).await,
-            "add" | "+" => cmd_op(&engine, OpType::Add, &parts).await,
-            "sub" | "-" => cmd_op(&engine, OpType::Sub, &parts).await,
-            "mul" | "*" => cmd_op(&engine, OpType::Mul, &parts).await,
-            "div" | "/" => cmd_op(&engine, OpType::Div, &parts).await,
             "resolve" | "r" => cmd_resolve(&engine, &parts).await,
             "constrain" | "c" => cmd_constrain(&engine, &parts).await,
             "list" | "ls" => cmd_list(&engine).await,
             "stats" => cmd_stats(&engine).await,
             "help" | "h" | "?" => cmd_help(),
-            "quit" | "q" | "exit" => {
-                println!("bye.");
-                break;
+            "quit" | "q" | "exit" => { println!("bye."); break; }
+            _ => {
+                if let Some(op) = OpType::parse(cmd.as_str()) {
+                    if op.arity() == 1 {
+                        cmd_op_unary(&engine, op, &parts).await;
+                    } else {
+                        cmd_op(&engine, op, &parts).await;
+                    }
+                } else {
+                    println!("unknown command: {cmd}. type 'help' for commands.");
+                }
             }
-            _ => println!("unknown command: {cmd}. type 'help' for commands."),
         }
     }
 }
@@ -105,6 +110,27 @@ async fn cmd_op(engine: &CalcEngine, op: OpType, parts: &[&str]) {
         },
         (None, _) => println!("no fact matching: {}", parts[1]),
         (_, None) => println!("no fact matching: {}", parts[2]),
+    }
+}
+
+/// Unary operator: `neg <fact>`, `abs <fact>`, `sqrt <fact>`, etc.
+/// Only one operand Fact; rhs gets a dummy fact (value 0) for the Intent.
+async fn cmd_op_unary(engine: &CalcEngine, op: OpType, parts: &[&str]) {
+    if parts.len() < 2 {
+        println!("usage: {} <fact>", op.symbol());
+        return;
+    }
+    let a = engine.find_fact(parts[1]).await;
+    match a {
+        Some(a) => {
+            // For unary ops, create a zero fact as dummy rhs.
+            let zero = engine.put(0).await;
+            match engine.op(op, &a, &zero).await {
+                Ok(id) => println!("Intent {} ({} {})", short(&id), op.symbol(), short(&a)),
+                Err(e) => println!("error: {e}"),
+            }
+        }
+        None => println!("no fact matching: {}", parts[1]),
     }
 }
 
@@ -209,7 +235,16 @@ fn cmd_help() {
     println!("Commands:");
     println!("  put <n>                   Store a number as a Fact");
     println!("  get <hash-prefix>         Read a number from a Fact");
-    println!("  add|sub|mul|div <a> <b>   Create an operator Intent");
+    println!("  add|sub|mul|div <a> <b>   Arithmetic (+, -, *, /)");
+    println!("  rem <a> <b>               Remainder (%)");
+    println!("  pow <a> <b>               Power (^)");
+    println!("  min|max <a> <b>           Minimum / maximum");
+    println!("  neg|abs|sqrt <a>          Unary: negation, abs, sqrt");
+    println!("  fac <a>                   Factorial");
+    println!("  and|or|xor <a> <b>        Bitwise AND, OR, XOR");
+    println!("  shl|shr <a> <b>           Shift left / right");
+    println!("  bnot <a>                  Bitwise NOT");
+    println!("  matmul|fft|conv <a> <b>   Vector ops (stage only)");
     println!("  resolve <hash-prefix>     Resolve an Intent (computation)");
     println!("  constrain <type> [arg]    Add a constraint Hint");
     println!("  constrain clear           Remove all constraints");
