@@ -386,10 +386,19 @@ verify_nexd() {
     else
         echo "nexd: some scenarios FAILED"
         return 1
-    fi
-}
+        fi
+    }
 
-# ── App suite ─────────────────────────────────────────────────────────────
+    # ── nex-calc (CLI) ─────────────────────────────────────────────────────────
+
+    verify_nex_calc() {
+        echo "=== nex-calc ==="
+        cargo build -p nex-calc 2>&1 || { echo "nex-calc: build FAILED"; return 1; }
+        cargo test -p nex-calc 2>&1 || { echo "nex-calc: tests FAILED"; return 1; }
+        echo "nex-calc: passed"
+    }
+
+    # ── App suite ─────────────────────────────────────────────────────────────
 
 run_apps() {
     local any_failed=0
@@ -399,6 +408,7 @@ run_apps() {
     kill_port 30922 2>/dev/null || true
     sleep 1
     verify_nex_spinwasi_ssccsdocs || any_failed=1
+    verify_nex_calc || any_failed=1
     # Future apps go here, e.g.:
     # verify_nex_cf_mock || any_failed=1
     # verify_nex_zed || any_failed=1
