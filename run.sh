@@ -114,7 +114,7 @@ verify_nexd() {
 
     NEXD_SOCKET_PATH="$SOCKET_PATH" ./target/debug/nexd 2>/tmp/nexd-debug.log &
     local NEXD_PID=$!
-    trap "kill $NEXD_PID 2>/dev/null; rm -rf '$SOCKET_DIR'" EXIT
+    trap 'kill $NEXD_PID 2>/dev/null; rm -rf "$SOCKET_DIR"' EXIT
 
     # Wait for socket
     local waited=0
