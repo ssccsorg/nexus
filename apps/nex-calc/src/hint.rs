@@ -64,6 +64,27 @@ impl Constraint {
         }
     }
 
+    /// Parse from Display-formatted string.
+    pub fn parse_str(s: &str) -> Option<Self> {
+        if s.starts_with("result > ") {
+            s.trim_start_matches("result > ").parse().ok().map(Constraint::GreaterThan)
+        } else if s.starts_with("result < ") {
+            s.trim_start_matches("result < ").parse().ok().map(Constraint::LessThan)
+        } else if s.starts_with("result = ") {
+            s.trim_start_matches("result = ").parse().ok().map(Constraint::Equals)
+        } else if s.starts_with("result != ") {
+            s.trim_start_matches("result != ").parse().ok().map(Constraint::NotEquals)
+        } else if s == "result is even" {
+            Some(Constraint::IsEven)
+        } else if s == "result > 0" {
+            Some(Constraint::IsPositive)
+        } else if s == "double operands" {
+            Some(Constraint::MapDouble)
+        } else {
+            None
+        }
+    }
+
     /// Parse from command arguments.
     pub fn parse(kind: &str, arg: Option<&str>) -> Option<Self> {
         match kind {

@@ -7,3 +7,8 @@ description = "FIH-based calculator — computation as state space traversal"
 
 [dependencies]
 nexus-model = { path = "../../model" }
+nex = { path = "../../nex" }
+nexus-storage-sim = { path = "../../storage/sim" }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "io-util"] }
+sha2 = "0.10"
+postcard = { version = "1", features = ["alloc"] }

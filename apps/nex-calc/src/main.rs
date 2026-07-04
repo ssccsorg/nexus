@@ -1,33 +1,20 @@
 // nex-calc CLI — interactive FIH-based calculator.
 //
-// Usage:
-//   nex-calc                  Interactive mode
-//
-// Commands:
-//   put <n>                   Store a number as a Fact
-//   get <hash-prefix>         Read a number from a Fact
-//   add|sub|mul|div <a> <b>   Create an operator Intent
-//   resolve <hash-prefix>     Resolve an Intent (this IS the computation)
-//   constrain <type> [arg]    Add a constraint Hint
-//   hints clear               Remove all constraints
-//   list                      List all Facts, Intents, and Hints
-//   stats                     Show engine statistics
-//   help                      Show this help
-//   quit                      Exit
-//
-// Every computation is a traversal of the FIH state space.
-// The result Fact persists at its new coordinate forever.
+// Computation as state space traversal. All methods are async
+// through the FihStorage<SimIo> backend. The tokio runtime handles
+// IO — all of which is in-memory via SimIo.
 
 use std::io::{self, BufRead, Write};
 
 use nex_calc::{CalcEngine, Constraint, OpType};
 
-fn main() {
-    let mut engine = CalcEngine::new();
+#[tokio::main]
+async fn main() {
+    let engine = CalcEngine::new();
     let stdin = io::stdin();
     let mut stdout = io::stdout();
 
-    println!("nex-calc — FIH-based calculator");
+    println!("nex-calc — FIH-based calculator (async, FihStorage<SimIo>)");
     println!("Type 'help' for commands, 'quit' to exit.\n");
 
     loop {
@@ -36,253 +23,151 @@ fn main() {
 
         let mut line = String::new();
         match stdin.lock().read_line(&mut line) {
-            Ok(0) => break, // EOF
+            Ok(0) => break,
             Ok(_) => {}
-            Err(e) => {
-                eprintln!("read error: {e}");
-                break;
-            }
+            Err(e) => { eprintln!("read error: {e}"); break; }
         }
 
         let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
+        if line.is_empty() { continue; }
 
         let parts: Vec<&str> = line.split_whitespace().collect();
         let cmd = parts[0].to_lowercase();
 
         match cmd.as_str() {
-            "put" | "p" => cmd_put(&mut engine, &parts),
-            "get" | "g" => cmd_get(&engine, &parts),
-            "add" | "+" => cmd_op(&mut engine, OpType::Add, &parts),
-            "sub" | "-" => cmd_op(&mut engine, OpType::Sub, &parts),
-            "mul" | "*" => cmd_op(&mut engine, OpType::Mul, &parts),
-            "div" | "/" => cmd_op(&mut engine, OpType::Div, &parts),
-            "resolve" | "r" => cmd_resolve(&mut engine, &parts),
-            "constrain" | "c" => cmd_constrain(&mut engine, &parts),
-            "list" | "ls" => cmd_list(&engine),
-            "stats" => cmd_stats(&engine),
+            "put" | "p" => cmd_put(&engine, &parts).await,
+            "get" | "g" => cmd_get(&engine, &parts).await,
+            "add" | "+" => cmd_op(&engine, OpType::Add, &parts).await,
+            "sub" | "-" => cmd_op(&engine, OpType::Sub, &parts).await,
+            "mul" | "*" => cmd_op(&engine, OpType::Mul, &parts).await,
+            "div" | "/" => cmd_op(&engine, OpType::Div, &parts).await,
+            "resolve" | "r" => cmd_resolve(&engine, &parts).await,
+            "constrain" | "c" => cmd_constrain(&engine, &parts).await,
+            "list" | "ls" => cmd_list(&engine).await,
+            "stats" => cmd_stats(&engine).await,
             "help" | "h" | "?" => cmd_help(),
-            "quit" | "q" | "exit" => {
-                println!("bye.");
-                break;
-            }
-            _ => {
-                println!("unknown command: {cmd}. type 'help' for commands.");
-            }
+            "quit" | "q" | "exit" => { println!("bye."); break; }
+            _ => println!("unknown command: {cmd}. type 'help' for commands."),
         }
     }
 }
 
-fn cmd_put(engine: &mut CalcEngine, parts: &[&str]) {
-    if parts.len() < 2 {
-        println!("usage: put <number>");
-        return;
-    }
+async fn cmd_put(engine: &CalcEngine, parts: &[&str]) {
+    if parts.len() < 2 { println!("usage: put <number>"); return; }
     match parts[1].parse::<i64>() {
-        Ok(n) => {
-            let id = engine.put(n);
-            println!("Fact {} = {n}", short_id(&id));
-        }
+        Ok(n) => println!("Fact {} = {n}", short(&engine.put(n).await)),
         Err(_) => println!("invalid number: {}", parts[1]),
     }
 }
 
-fn cmd_get(engine: &CalcEngine, parts: &[&str]) {
-    if parts.len() < 2 {
-        println!("usage: get <hash-prefix>");
-        return;
-    }
-    match engine.find_fact(parts[1]) {
-        Some(fact) => match engine.get(&fact.id) {
-            Some(n) => println!("Fact {} = {n}", short_id(&fact.id)),
-            None => println!("not a number fact: {}", short_id(&fact.id)),
-        },
+async fn cmd_get(engine: &CalcEngine, parts: &[&str]) {
+    if parts.len() < 2 { println!("usage: get <hash-prefix>"); return; }
+    match engine.find_fact(parts[1]).await {
+        Some(id) => match engine.get(&id).await {
+            Some(n) => println!("Fact {} = {n}", short(&id)),
+            None => println!("not a number fact: {}", short(&id)),
+        }
         None => println!("no fact matching: {}", parts[1]),
     }
 }
 
-fn cmd_op(engine: &mut CalcEngine, op: OpType, parts: &[&str]) {
-    if parts.len() < 3 {
-        println!("usage: {} <fact-a> <fact-b>", op);
+async fn cmd_op(engine: &CalcEngine, op: OpType, parts: &[&str]) {
+    if parts.len() < 3 { println!("usage: {} <fact-a> <fact-b>", op); return; }
+    let a = engine.find_fact(parts[1]).await;
+    let b = engine.find_fact(parts[2]).await;
+    match (a, b) {
+        (Some(a), Some(b)) => match engine.op(op, &a, &b).await {
+            Ok(id) => println!("Intent {} ({} {} {})", short(&id), op.symbol(), short(&a), short(&b)),
+            Err(e) => println!("error: {e}"),
+        }
+        (None, _) => println!("no fact matching: {}", parts[1]),
+        (_, None) => println!("no fact matching: {}", parts[2]),
+    }
+}
+
+async fn cmd_resolve(engine: &CalcEngine, parts: &[&str]) {
+    if parts.len() < 2 { println!("usage: resolve <intent-hash-prefix>"); return; }
+    let intents = engine.list_intents().await;
+    let prefix = parts[1].to_lowercase();
+    let matches: Vec<_> = intents.iter().filter(|(id, _)| id.to_string().starts_with(&prefix)).collect();
+    if matches.is_empty() { println!("no intent matching: {}", parts[1]); return; }
+    if matches.len() > 1 {
+        println!("ambiguous prefix, {} intents:", matches.len());
+        for (id, _) in &matches { println!("  {}", short(id)); }
         return;
     }
-    let a = match engine.find_fact(parts[1]) {
-        Some(f) => f.id,
-        None => {
-            println!("no fact matching: {}", parts[1]);
-            return;
-        }
-    };
-    let b = match engine.find_fact(parts[2]) {
-        Some(f) => f.id,
-        None => {
-            println!("no fact matching: {}", parts[2]);
-            return;
-        }
-    };
-    match engine.op(op, &a, &b) {
-        Ok(id) => println!("Intent {} ({} {} {})", short_id(&id), op.symbol(), short_id(&a), short_id(&b)),
+    match engine.resolve(&matches[0].0).await {
+        Ok(r) => println!("{} {} {} = {}  → Fact {} = {}", r.lhs, r.op.symbol(), r.rhs, r.result_value, short(&r.result_id), r.result_value),
         Err(e) => println!("error: {e}"),
     }
 }
 
-fn cmd_resolve(engine: &mut CalcEngine, parts: &[&str]) {
+async fn cmd_constrain(engine: &CalcEngine, parts: &[&str]) {
     if parts.len() < 2 {
-        println!("usage: resolve <intent-hash-prefix>");
+        println!("usage: constrain <type> [arg]\ntypes: gt <n>, lt <n>, eq <n>, ne <n>, even, pos, double\n       constrain clear");
         return;
     }
-    // Find the intent by prefix.
-    let intent_ids: Vec<_> = engine
-        .list_intents()
-        .iter()
-        .filter(|i| {
-            i.id.to_string()
-                .to_lowercase()
-                .starts_with(&parts[1].to_lowercase())
-        })
-        .map(|i| i.id)
-        .collect();
-
-    if intent_ids.is_empty() {
-        println!("no intent matching: {}", parts[1]);
-        return;
-    }
-    if intent_ids.len() > 1 {
-        println!("ambiguous prefix, {} intents match:", intent_ids.len());
-        for id in &intent_ids {
-            println!("  {}", short_id(id));
-        }
-        return;
-    }
-
-    match engine.resolve(&intent_ids[0]) {
-        Ok(resolved) => {
-            println!(
-                "{} {} {} = {}  → Fact {} = {}",
-                resolved.lhs,
-                resolved.op.symbol(),
-                resolved.rhs,
-                resolved.result_value,
-                short_id(&resolved.result_id),
-                resolved.result_value,
-            );
-        }
-        Err(e) => println!("error: {e}"),
-    }
-}
-
-fn cmd_constrain(engine: &mut CalcEngine, parts: &[&str]) {
-    if parts.len() < 2 {
-        println!("usage: constrain <type> [arg]");
-        println!("types: gt <n>, lt <n>, eq <n>, ne <n>, even, pos, double");
-        println!("       constrain clear  (remove all constraints)");
-        return;
-    }
-
-    if parts[1] == "clear" {
-        engine.clear_hints();
-        println!("all constraints cleared.");
-        return;
-    }
-
+    if parts[1] == "clear" { engine.clear_hints().await; println!("all constraints cleared."); return; }
     let arg = parts.get(2).copied();
     match Constraint::parse(parts[1], arg) {
-        Some(c) => {
-            let id = engine.constrain(c.clone());
-            println!("Hint {} ({})", short_id(&id), c.description());
-        }
-        None => println!("unknown constraint type: {}. use: gt, lt, eq, ne, even, pos, double", parts[1]),
+        Some(c) => { let id = engine.constrain(c.clone()).await; println!("Hint {} ({})", short(&id), c.description()); }
+        None => println!("unknown constraint: {}. use: gt, lt, eq, ne, even, pos, double", parts[1]),
     }
 }
 
-fn cmd_list(engine: &CalcEngine) {
-    let facts = engine.list_facts();
-    let intents = engine.list_intents();
-    let hints = engine.list_hints();
+async fn cmd_list(engine: &CalcEngine) {
+    let facts = engine.list_facts().await;
+    let intents = engine.list_intents().await;
+    let hints = engine.list_hints().await;
 
     if facts.is_empty() && intents.is_empty() && hints.is_empty() {
-        println!("empty. use 'put' to store a number.");
-        return;
+        println!("empty. use 'put' to store a number."); return;
     }
 
     if !facts.is_empty() {
         println!("Facts ({}):", facts.len());
-        for f in &facts {
-            if let Some(n) = engine.get(&f.id) {
-                println!("  {} = {n}", short_id(&f.id));
-            } else {
-                println!("  {} [non-number]", short_id(&f.id));
-            }
-        }
+        for (id, v) in &facts { println!("  {} = {v}", short(id)); }
     }
-
     if !intents.is_empty() {
         println!("Intents ({}):", intents.len());
-        for i in &intents {
-            let status = if i.is_concluded { "✓" } else { "…" };
-            print!("  {} {status}", short_id(&i.id));
-            if !i.from_facts.is_empty() {
-                print!(" from=[");
-                for (idx, fh) in i.from_facts.iter().enumerate() {
-                    if idx > 0 {
-                        print!(", ");
-                    }
-                    print!("{}", short_id(fh));
-                }
-                print!("]");
-            }
-            println!(" op={}", i.description);
+        for (id, concluded) in &intents {
+            println!("  {} {}", short(id), if *concluded { "✓" } else { "…" });
         }
     }
-
     if !hints.is_empty() {
         println!("Hints ({}):", hints.len());
-        for (id, c) in &hints {
-            println!("  {} {}", short_id(id), c.description());
-        }
+        for (id, c) in &hints { println!("  {} {c}", short(id)); }
     }
 }
 
-fn cmd_stats(engine: &CalcEngine) {
-    println!("steps:     {}", engine.step_count());
-    println!("facts:     {}", engine.fact_count());
-    println!("pending:   {}", engine.pending_count());
-    let hints = engine.list_hints();
-    println!("hints:     {}", hints.len());
+async fn cmd_stats(engine: &CalcEngine) {
+    println!("facts:   {}", engine.fact_count().await);
+    println!("pending: {}", engine.pending_count().await);
+    println!("hints:   {}", engine.list_hints().await.len());
 }
 
 fn cmd_help() {
-    println!("nex-calc commands:");
+    println!("Commands:");
     println!("  put <n>                   Store a number as a Fact");
     println!("  get <hash-prefix>         Read a number from a Fact");
     println!("  add|sub|mul|div <a> <b>   Create an operator Intent");
     println!("  resolve <hash-prefix>     Resolve an Intent (computation)");
     println!("  constrain <type> [arg]    Add a constraint Hint");
     println!("  constrain clear           Remove all constraints");
-    println!("  list                      List all Facts, Intents, Hints");
+    println!("  list                      List Facts, Intents, Hints");
     println!("  stats                     Engine statistics");
-    println!("  help                      Show this help");
+    println!("  help                      Help");
     println!("  quit                      Exit");
     println!();
-    println!("Constraint types:");
-    println!("  gt <n>    result > n");
-    println!("  lt <n>    result < n");
-    println!("  eq <n>    result = n");
-    println!("  ne <n>    result != n");
-    println!("  even      result is even");
-    println!("  pos       result > 0");
-    println!("  double    double operands before compute");
+    println!("Constraints: gt <n>, lt <n>, eq <n>, ne <n>, even, pos, double");
     println!();
-    println!("Concept:");
-    println!("  Every 'put' creates an immutable Fact in the FIH space.");
-    println!("  Every operator creates an Intent pointing from operand Facts");
-    println!("  toward a new coordinate. Resolution traverses that path.");
-    println!("  The traversal IS the computation.");
+    println!("Concept: computation is FIH state space traversal.");
+    println!("  Fact = number at a coordinate (immutable)");
+    println!("  Intent = operator with direction (traversal vector)");
+    println!("  Hint = constraint or transform (dynamic boundary)");
 }
 
-fn short_id(hash: &nexus_model::FihHash) -> String {
+fn short(hash: &nexus_model::FihHash) -> String {
     let full = hash.to_string();
-    format!("{}..{}", &full[..4], &full[full.len() - 4..])
+    format!("{}..{}", &full[..4], &full[full.len()-4..])
 }

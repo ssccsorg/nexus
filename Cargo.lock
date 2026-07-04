@@ -1713,6 +1713,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "nex-calc"
+version = "0.1.0"
+dependencies = [
+ "nex",
+ "nexus-model",
+ "nexus-storage-sim",
+ "postcard",
+ "sha2",
+ "tokio",
+]
+
+[[package]]
 name = "nexd"
 version = "0.1.0"
 dependencies = [
