@@ -22,8 +22,8 @@ use nex::EntityStore;
 use nex::storage::core::FihStorage;
 use nex::storage::semantic::Query as SemanticQuery;
 use nexus_model::{
-    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, Content, Fact,
-    FihHash, GovernanceCapable, Hint, Intent,
+    AsyncFactCapable, AsyncFlushCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead,
+    Content, Fact, FihHash, FlushCursor, FlushResult, GovernanceCapable, Hint, Intent,
 };
 use serde::{Deserialize, Serialize};
 
@@ -78,18 +78,55 @@ impl SemanticQuery for TextQuery {
 
 // ── Snapshot ─────────────────────────────────────────────────────────
 
-async fn write_snapshot(s: &FihStorage<impl FileIo>) -> Result<(), String> {
-    use nex::storage::core::ChainEntry;
-    use nex::storage::core::record::{FactRecord, IntentRecord};
+use nex::storage::core::ChainEntry;
+use nex::storage::core::record::{FactRecord, IntentRecord};
+
+/// Cursor key: persisted after each flush_since call.
+const CURSOR_KEY: &str = "_snapshot/cursor";
+const SNAPSHOT_KEY: &str = "_snapshot/facts.bin";
+/// Load the persisted flush cursor, or create a fresh one at epoch.
+async fn load_or_create_cursor(s: &FihStorage<impl FileIo>) -> FlushCursor {
+    match s.io.read(CURSOR_KEY).await {
+        Ok(Some(bytes)) => {
+            let s = String::from_utf8_lossy(&bytes);
+            let ts: u64 = s.trim().parse().unwrap_or(0);
+            FlushCursor { last_flushed_at: ts, partition: "ssccsdocs".into() }
+        }
+        _ => FlushCursor { last_flushed_at: 0, partition: "ssccsdocs".into() },
+    }
+}
+
+/// Persist a flush cursor so delta chains are discoverable after restart.
+async fn persist_cursor(s: &FihStorage<impl FileIo>, cursor: &FlushCursor) -> Result<(), String> {
+    s.io.write(CURSOR_KEY, cursor.last_flushed_at.to_string().as_bytes()).await
+}
+
+/// Write a full checkpoint snapshot. Call periodically (not on every ingest).
+async fn write_checkpoint(s: &FihStorage<impl FileIo>) -> Result<(), String> {
     let facts: Vec<FactRecord> = s.fact_store.values().await;
     let intents: Vec<IntentRecord> = s.intent_store.values().await;
     let entry = ChainEntry { prev_cursor: 0, records_flushed: facts.len() as u64, facts, intents };
     let bytes = postcard::to_allocvec(&entry).map_err(|e| format!("serialize: {e}"))?;
-    s.io.write("_snapshot/facts.bin", &bytes).await
+    s.io.write(SNAPSHOT_KEY, &bytes).await
 }
 
+/// Write a delta chain since the last cursor. O(delta) instead of O(n).
+async fn write_delta(s: &FihStorage<impl FileIo>) -> Result<(), String> {
+    let cursor = load_or_create_cursor(s).await;
+    let result = s.flush_since(&cursor).await?;
+    // Persist the new cursor so next delta starts from here
+    let new_cursor = FlushCursor {
+        last_flushed_at: result.new_cursor.last_flushed_at,
+        partition: "ssccsdocs".into(),
+    };
+    persist_cursor(s, &new_cursor).await
+    // Delta chains are already written to IO by flush_since:
+    //   flush/ssccsdocs/cursor_{ts}.chain
+}
+
+/// Load state from full checkpoint + replay delta chains written after it.
 async fn restore_from_snapshot(s: &AppStorage) -> Result<bool, String> {
-    let Some(bytes) = s.io.read("_snapshot/facts.bin").await? else { return Ok(false); };
+    let Some(bytes) = s.io.read(SNAPSHOT_KEY).await? else { return Ok(false); };
     let entry: nex::storage::core::ChainEntry =
         postcard::from_bytes(&bytes).map_err(|e| format!("deserialize: {e}"))?;
     s.fact_store
@@ -104,6 +141,15 @@ async fn restore_from_snapshot(s: &AppStorage) -> Result<bool, String> {
                 .collect(),
         )
         .await;
+    let cursor = load_or_create_cursor(s).await;
+    // Replay any delta chains between cursor and now
+    if cursor.last_flushed_at > 0 {
+        let result = s.flush_since(&cursor).await?;
+        tracing::info!(
+            "replayed {} records from delta chains",
+            result.records_flushed
+        );
+    }
     s.rebuild_coord().await;
     Ok(true)
 }
@@ -121,7 +167,8 @@ async fn ingest_document(s: &FihStorage<impl FileIo>, text: &str, origin: &str) 
         creator: "ingestion-agent".into(),
     };
     AsyncFactCapable::submit_fact(s, &fact).await.map_err(|e| format!("submit: {e:?}"))?;
-    if let Err(e) = write_snapshot(s).await { tracing::warn!("snapshot: {e}"); }
+    // Write delta chain (O(delta)) and persist cursor
+    if let Err(e) = write_delta(s).await { tracing::warn!("delta: {e}"); }
     s.flush_pending().await.map_err(|e| format!("flush: {e}"))?;
     Ok(doc_id)
 }
@@ -203,7 +250,7 @@ async fn fetch_ssccs_docs(s: &AppStorage) -> (usize, Vec<String>) {
     cache.llms_txt_hash = llms_hash; cache.docs = new_cache; write_cache(&cache).await;
     if total > 0 {
         s.rebuild_coord().await; s.rebuild_semantic().await.ok();
-        if let Err(e) = write_snapshot(s).await { tracing::warn!("snapshot: {e}"); }
+        if let Err(e) = write_checkpoint(s).await { tracing::warn!("checkpoint: {e}"); }
     }
     (total, errors)
 }
@@ -349,6 +396,38 @@ async fn handler(req: Request<Vec<u8>>) -> anyhow::Result<impl IntoResponse> {
             if let Err(e) = get_storage().rebuild_cache().await { return err_json(500, "rebuild_error", e); }
             if let Err(e) = get_storage().rebuild_semantic().await { return err_json(500, "rebuild_semantic_error", e); }
             ok_json(serde_json::json!({"status": "ok"}))
+        }
+        // ── Delta sync (cursor-based, Copia/DeltaMCP pattern) ──────
+        (Method::GET, "/delta") => {
+            let cursor_str = query_str.split('&').find_map(|p| p.strip_prefix("cursor=")).map(urldecode).unwrap_or_default();
+            let has_more;
+            let result = if cursor_str.is_empty() {
+                // No cursor: return checkpoint cursor + full state marker
+                let cursor = load_or_create_cursor(get_storage()).await;
+                has_more = true;
+                FlushResult { records_flushed: 0, new_cursor: cursor }
+            } else {
+                let ts: u64 = cursor_str.parse().unwrap_or(0);
+                let cursor = FlushCursor { last_flushed_at: ts, partition: "ssccsdocs".into() };
+                match get_storage().flush_since(&cursor).await {
+                    Ok(r) => {
+                        has_more = r.records_flushed > 0;
+                        r
+                    }
+                    Err(e) => return err_json(500, "delta_error", e),
+                }
+            };
+            ok_json(serde_json::json!({
+                "cursor": result.new_cursor.last_flushed_at.to_string(),
+                "hasMore": has_more,
+            }))
+        }
+        // ── Full checkpoint (SurrealKV snapshot pattern) ────────────
+        (Method::POST, "/checkpoint") => {
+            match write_checkpoint(get_storage()).await {
+                Ok(()) => ok_json(serde_json::json!({"status": "checkpointed"})),
+                Err(e) => err_json(500, "checkpoint_error", e),
+            }
         }
         _ => err_json(404, "not_found", format!("no route for {method_str} {path}")),
     };
