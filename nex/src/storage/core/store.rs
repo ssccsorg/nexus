@@ -45,6 +45,7 @@ use nexus_model::{
 use super::entity_store::{EntityStore, MemoryEntityStore};
 use super::index::{Cell2, FihCoord};
 use super::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
+use crate::contract::{EvidenceChain, GovernanceGate, HintEngine};
 use crate::io::file_io::{FileIo, WriteOp, default_apply_batch};
 use crate::storage::semantic::record::{Query, RecordLoad};
 
@@ -63,6 +64,31 @@ pub struct ChainEntry {
 /// All FIH trait methods are sync. They enqueue WriteOps into a buffer
 /// for batch commit by the outer FihSession layer.
 /// IO-bound operations (flush_pending, rebuild_cache) are async.
+/// Optional governance state assembled onto an FihStorage instance.
+/// Follows the same composition pattern as the core capability traits:
+/// the storage implementation carries its own governance primitives.
+pub struct GovernanceState {
+    /// Schema-based write admission gate.
+    pub gate: GovernanceGate,
+    /// Constraint evaluation engine.
+    pub hints: HintEngine,
+    /// Append-only SHA-256 audit chain.
+    pub evidence: EvidenceChain,
+    /// Whether governance checks are active.
+    pub enabled: bool,
+}
+
+impl GovernanceState {
+    pub fn new(enabled: bool) -> Self {
+        Self {
+            gate: GovernanceGate::new(),
+            hints: HintEngine::new(),
+            evidence: EvidenceChain::new(),
+            enabled,
+        }
+    }
+}
+
 pub struct FihStorage<I: FileIo> {
     pub io: I,
     project_id: String,
@@ -79,6 +105,9 @@ pub struct FihStorage<I: FileIo> {
     coord: FihCoord,
     // Pending writes (for FihSession coordination).
     pub(crate) pending: Cell2<Vec<WriteOp>>,
+    /// Optional governance layer: Gate, HintEngine, EvidenceChain.
+    /// None = no governance overhead. Some = governance active.
+    pub(crate) governance: Cell2<Option<GovernanceState>>,
 }
 
 impl<I: FileIo> FihStorage<I> {
@@ -114,6 +143,7 @@ impl<I: FileIo> FihStorage<I> {
             hint_store: MemoryEntityStore::<HintRecord>::new(),
             coord: FihCoord::new(),
             pending: Cell2::new(Vec::new()),
+            governance: Cell2::new(None),
         }
     }
 
@@ -133,7 +163,109 @@ impl<I: FileIo> FihStorage<I> {
             hint_store: MemoryEntityStore::<HintRecord>::new(),
             coord: FihCoord::new(),
             pending: Cell2::new(Vec::new()),
+            governance: Cell2::new(None),
         }
+    }
+
+    /// Create storage with governance layer enabled.
+    pub fn with_governance(io: I, project_id: &str) -> Self {
+        let mut s = Self::new(io, project_id);
+        s.governance = Cell2::new(Some(GovernanceState::new(true)));
+        s
+    }
+
+    /// Create storage with governance but initially disabled.
+    pub fn with_governance_disabled(io: I, project_id: &str) -> Self {
+        let mut s = Self::new(io, project_id);
+        s.governance = Cell2::new(Some(GovernanceState::new(false)));
+        s
+    }
+
+    /// Returns true if governance is configured and active.
+    pub fn governance_enabled(&self) -> bool {
+        self.governance
+            .borrow()
+            .as_ref()
+            .map(|g| g.enabled)
+            .unwrap_or(false)
+    }
+
+    /// Enable or disable governance at runtime (no-op if not configured).
+    pub fn set_governance(&self, enabled: bool) {
+        if let Some(ref mut g) = *self.governance.borrow_mut() {
+            g.enabled = enabled;
+        }
+    }
+
+    /// Register a schema via the governance gate.
+    pub fn register_schema(&self, schema_id: &str, schema: &[u8]) -> Option<String> {
+        self.governance
+            .borrow()
+            .as_ref()
+            .map(|g| g.gate.register_schema(schema_id, schema))
+    }
+
+    /// Check numeric constraints against all active hints.
+    pub fn check_hints(&self, value: i64) -> Result<(), String> {
+        match *self.governance.borrow() {
+            Some(ref g) => g.hints.check_numeric(value),
+            None => Ok(()),
+        }
+    }
+
+    /// Return the evidence chain tip hash, if governance is active.
+    pub fn evidence_tip(&self) -> Option<String> {
+        self.governance
+            .borrow()
+            .as_ref()
+            .and_then(|g| g.evidence.tip())
+    }
+
+    /// Record an action in the evidence chain.
+    pub fn record_evidence(&self, action_hash: &str, action_type: &str) {
+        if let Some(ref g) = *self.governance.borrow_mut() {
+            use std::time::SystemTime;
+            let ts = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos() as u64;
+            g.evidence.append(action_hash, action_type, ts);
+        }
+    }
+
+    /// Verify evidence chain integrity from a given sequence number.
+    pub fn verify_evidence(&self, from_seq: u64) -> bool {
+        match *self.governance.borrow() {
+            Some(ref g) => g.evidence.verify(from_seq),
+            None => true,
+        }
+    }
+
+    /// Access the governance gate (for schema registration etc.).
+    pub fn with_gate<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&GovernanceGate) -> R,
+    {
+        self.governance
+            .borrow()
+            .as_ref()
+            .map(|g| f(&g.gate))
+    }
+
+    /// Access the hint engine.
+    pub fn with_hints<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&HintEngine) -> R,
+    {
+        self.governance.borrow().as_ref().map(|g| f(&g.hints))
+    }
+
+    /// Access the evidence chain.
+    pub fn with_evidence<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&EvidenceChain) -> R,
+    {
+        self.governance.borrow().as_ref().map(|g| f(&g.evidence))
     }
 
     /// Rebuild in-memory cache from IO storage.
@@ -516,6 +648,15 @@ impl<I: FileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
 
 impl<I: FileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
     async fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
+        // Governance gate: admit check before any IO
+        if let Some(ref g) = *self.governance.borrow() {
+            if g.enabled {
+                g.gate
+                    .admit(&fact.origin, &fact.content.data)
+                    .map_err(|e| BlackboardError::Forbidden(e.to_string()))?;
+            }
+        }
+
         // Enqueue blob content and fact record in pending buffer only.
         // No direct io.write() — caller must call flush_pending() for durability.
         // This enables batch writes (N paragraphs → 1 apply_batch instead of 2N R2 PUTs).
@@ -560,6 +701,18 @@ impl<I: FileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
                 .semantic_insert(fact_idx, &FactTextRecord { text })
                 .await
                 .ok();
+        }
+
+        // Governance evidence: record the submission
+        if let Some(ref g) = *self.governance.borrow() {
+            if g.enabled {
+                use std::time::SystemTime;
+                let ts_e = SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos() as u64;
+                g.evidence.append(&fact.id.to_string(), "fact:submit", ts_e);
+            }
         }
 
         Ok(fact.id)
@@ -761,6 +914,17 @@ impl<I: FileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
         intent_id: &str,
         result: &str,
     ) -> Result<Fact, BlackboardError> {
+        // Governance gate: evaluate hints before conclusion
+        if let Some(ref g) = *self.governance.borrow() {
+            if g.enabled {
+                if let Ok(numeric) = result.trim().parse::<i64>() {
+                    g.hints
+                        .check_numeric(numeric)
+                        .map_err(|e| BlackboardError::Forbidden(e))?;
+                }
+            }
+        }
+
         let _ = self.flush_pending().await;
         let normalized = FihHash::from_hex(intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
@@ -822,6 +986,18 @@ impl<I: FileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
             .await;
         self.coord
             .update_intent_status(&FihHash::from_hex(intent_id).0, "claimed", "concluded");
+
+        // Governance evidence: record the conclusion
+        if let Some(ref g) = *self.governance.borrow() {
+            if g.enabled {
+                use std::time::SystemTime;
+                let ts = SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos() as u64;
+                g.evidence.append(intent_id, "intent:conclude", ts);
+            }
+        }
 
         Ok(new_fact)
     }
