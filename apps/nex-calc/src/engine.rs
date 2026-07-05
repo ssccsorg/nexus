@@ -87,7 +87,7 @@ pub struct CalcEngine {
 impl CalcEngine {
     pub fn new() -> Self {
         let storage = FihStorage::with_governance(SimIo::new(), "nex-calc");
-        storage.register_schema("number", NUMBER_MIME.as_bytes());
+        storage.register_schema(NUMBER_MIME, NUMBER_MIME.as_bytes());
         Self { storage }
     }
 
@@ -106,7 +106,7 @@ impl CalcEngine {
         let blob_path = format!("blob/{}.bin", blob_hash);
 
         // Governance gate: admit before write (non-fatal in nex-calc)
-        if let Err(e) = self.storage.admit_fact("number", &data) {
+        if let Err(e) = self.storage.admit_fact(NUMBER_MIME, &data) {
             let _ = e; // non-fatal: ungoverned mode is valid
         }
 
