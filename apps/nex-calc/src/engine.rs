@@ -22,8 +22,10 @@ use sha2::{Digest, Sha256};
 use nex::storage::core::intent_status::IntentStatus;
 use nex::storage::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
 use nex::storage::core::store::FihStorage;
-use nex::{EntityStore, FileIo};
-use nexus_model::{Content, FihHash, GovernanceCapable};
+use nex::contract::core::{GovernanceGate, HintEngine};
+use nex::storage::core::EntityStore;
+use nex::io::FileIo;
+use nexus_model::{Content, FihHash};
 use nexus_storage_sim::SimIo;
 
 use crate::hint::Constraint;
@@ -82,13 +84,19 @@ pub struct ResolvedIntent {
 /// no filesystem. Calculator logic only sees the FihStorage API.
 pub struct CalcEngine {
     storage: FihStorage<SimIo>,
+    gate: GovernanceGate,
+    hints: HintEngine,
 }
 
 impl CalcEngine {
     pub fn new() -> Self {
-        let storage = FihStorage::with_governance(SimIo::new(), "nex-calc");
-        storage.register_schema(NUMBER_MIME, NUMBER_MIME.as_bytes());
-        Self { storage }
+        let gate = GovernanceGate::new();
+        gate.register_schema(NUMBER_MIME, NUMBER_MIME.as_bytes());
+        Self {
+            storage: FihStorage::new(SimIo::new(), "nex-calc"),
+            gate,
+            hints: HintEngine::new(),
+        }
     }
 
     // ── Fact operations ───────────────────────────────────────────
@@ -106,7 +114,7 @@ impl CalcEngine {
         let blob_path = format!("blob/{}.bin", blob_hash);
 
         // Governance gate: admit before write (non-fatal in nex-calc)
-        if let Err(e) = self.storage.admit_fact(NUMBER_MIME, &data) {
+        if let Err(e) = self.gate.admit(NUMBER_MIME, &data) {
             let _ = e; // non-fatal: ungoverned mode is valid
         }
 
@@ -244,10 +252,10 @@ impl CalcEngine {
 
         // Check result constraints (engine-native + governance).
         self.check_constraints(raw_result).await?;
-        if let Err(nexus_model::BlackboardError::Forbidden(msg)) = self.storage.check_hints(raw_result) {
+        if let Err(e) = self.hints.check_numeric(raw_result) {
             return Err(CalcError::ConstraintViolated {
                 hint_id: "governance".into(),
-                constraint: msg,
+                constraint: e,
                 result: raw_result,
             });
         }

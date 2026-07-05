@@ -23,7 +23,7 @@ use nex::storage::core::FihStorage;
 use nex::storage::semantic::Query as SemanticQuery;
 use nexus_model::{
     AsyncFactCapable, AsyncFlushCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead,
-    Content, Fact, FihHash, FlushCursor, FlushResult, GovernanceCapable, Hint, Intent,
+    Content, Fact, FihHash, FlushCursor, FlushResult, Hint, Intent,
 };
 use serde::{Deserialize, Serialize};
 
@@ -39,11 +39,8 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 fn get_storage() -> &'static AppStorage {
     STORAGE.get_or_init(|| {
-        tracing::info!("init FIH (KV store) with governance");
-        let s = FihStorage::with_governance(KvIo::new().expect("KvIo"), "spin-ssccsdocs");
-        s.register_schema("text/markdown", b"markdown");
-        s.register_schema("text/plain", b"text");
-        tracing::info!("registered schemas: text/markdown, text/plain");
+        tracing::info!("init FIH (KV store)");
+        let s = FihStorage::new(KvIo::new().expect("KvIo"), "spin-ssccsdocs");
         s.register_semantic_store(Box::new(InMemoryBm25::new()));
         s
     })

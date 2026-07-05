@@ -7,15 +7,17 @@ fn test_register_default_fih_schemas() {
     let gate = GovernanceGate::new();
     fih::register_default_fih_schemas(&gate);
 
-    assert_eq!(gate.schema_count(), 3);
-    assert!(gate.has_schema("number"));
-    assert!(gate.has_schema("text"));
-    assert!(gate.has_schema("blob"));
+    assert_eq!(gate.schema_count(), 4);
+    assert!(gate.has_schema("text/plain"));
+    assert!(gate.has_schema("text/markdown"));
+    assert!(gate.has_schema("application/x-nex-calc-number"));
+    assert!(gate.has_schema("application/octet-stream"));
 
     // Verify schemas are admitted correctly
-    assert!(gate.admit("number", b"42").is_ok());
-    assert!(gate.admit("text", b"hello").is_ok());
-    assert!(gate.admit("blob", b"\x00\x01\x02").is_ok());
+    assert!(gate.admit("text/plain", b"hello").is_ok());
+    assert!(gate.admit("text/markdown", b"# Hello").is_ok());
+    assert!(gate.admit("application/x-nex-calc-number", b"42").is_ok());
+    assert!(gate.admit("application/octet-stream", b"\x00\x01\x02").is_ok());
 }
 
 #[test]
