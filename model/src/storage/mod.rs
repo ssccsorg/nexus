@@ -6,6 +6,7 @@ pub mod evict;
 pub mod fact;
 pub mod filter;
 pub mod flush;
+pub mod governance;
 pub mod graph;
 pub mod hint;
 pub mod intent;
@@ -20,8 +21,9 @@ pub mod time_range;
 
 pub use aggregate::{ColdStorage, DeltaSet, FihPersistence, HotStorage, StorageSend};
 pub use async_impl::{
-    AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable, AsyncHintCapable,
-    AsyncIntentCapable, AsyncScanCapable, AsyncStorageRead, AsyncTimeRangeCapable,
+    AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable,
+    AsyncGovernanceCapable, AsyncHintCapable, AsyncIntentCapable, AsyncScanCapable,
+    AsyncStorageRead, AsyncTimeRangeCapable,
 };
 pub use blob_store::BlobStore;
 pub use dual::DualStorage;
@@ -29,6 +31,7 @@ pub use evict::EvictCapable;
 pub use fact::FactCapable;
 pub use filter::{FilterCapable, StateFilter};
 pub use flush::{FlushCapable, FlushCursor, FlushResult};
+pub use governance::GovernanceCapable;
 pub use graph::{EdgeWeight, GraphRead, GraphWrite, NodeWeight};
 pub use hint::HintCapable;
 pub use intent::IntentCapable;
