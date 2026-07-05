@@ -1,23 +1,14 @@
-// ── Contract Layer: Governance primitives ──────────────────────────────
+// ── Contract module ────────────────────────────────────────────────────
 //
-// Pure governance primitives for the FIH state space. These are
-// implementation-level building blocks. The governance wrapper that
-// assembles them onto FihStorage lives in storage/contract.rs, following
-// the same pattern as storage/fih.rs (FihBlackboard).
+// Contract layer: governance primitives and paradigm-specific compositions.
 //
-// Primitives:
-//   GovernanceGate  — schema-based write admission (raw data → schemed-segment)
-//   HintEngine      — constraint evaluation during Intent resolution
-//   EvidenceChain   — append-only SHA-256 chain for tamper evidence
+//   core/     ← primitives: GovernanceGate, HintEngine, EvidenceChain
+//   fih.rs    ← FIH-specific defaults (schemas, constraint factories)
 //
-// wasm32-unknown-unknown: All types compile under wasm (std + sha2).
+// nex-apps import core primitives directly for custom contracts,
+// or use fih.rs for ready-made FIH governance.
 
-pub mod evidence;
-pub mod gate;
-pub mod hint;
-pub mod lifecycle;
+pub mod core;
+pub mod fih;
 
-pub use evidence::{EvidenceChain, EvidenceEntry};
-pub use gate::{GovernanceBypassError, GovernanceGate};
-pub use hint::{HintEngine, HintRule};
-pub use lifecycle::{HealthStatus, NexConfig, NexInstanceInfo, NexLifecycle};
+pub use core::*;
