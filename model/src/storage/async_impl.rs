@@ -74,4 +74,5 @@ pub trait AsyncGovernanceCapable: AsyncStorageRead {
     async fn check_hints(&self, value: i64) -> Result<(), BlackboardError>;
     async fn evidence_tip(&self) -> Option<String>;
     async fn governance_enabled(&self) -> bool;
+    async fn set_governance(&self, enabled: bool);
 }

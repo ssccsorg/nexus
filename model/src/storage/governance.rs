@@ -5,11 +5,10 @@ use crate::error::BlackboardError;
 ///
 /// A storage that implements this trait can gate writes with schema checks
 /// and hint constraints, and maintain an append-only audit chain.
-/// Together with `FihPersistence`, a governed blackboard is formed:
 ///
-/// ```ignore
-/// pub trait GovernedBlackboard: FihPersistence + GovernanceCapable {}
-/// ```
+/// In v1 this is a single aggregate trait. Future iter will decompose into
+/// individual contract traits (GateContract, HintContract, EvidenceContract)
+/// for N-way composability — each contract in a middleware chain.
 pub trait GovernanceCapable {
     /// Register a schema for admission. Returns the SHA-256 hex hash.
     fn register_schema(&self, schema_id: &str, schema: &[u8]) -> String;
@@ -25,6 +24,9 @@ pub trait GovernanceCapable {
 
     /// Returns true if governance checks are active.
     fn governance_enabled(&self) -> bool;
+
+    /// Enable or disable governance checks at runtime.
+    fn set_governance(&self, enabled: bool);
 }
 
 impl<T: GovernanceCapable> GovernanceCapable for &T {
@@ -43,6 +45,9 @@ impl<T: GovernanceCapable> GovernanceCapable for &T {
     fn governance_enabled(&self) -> bool {
         (**self).governance_enabled()
     }
+    fn set_governance(&self, enabled: bool) {
+        (**self).set_governance(enabled)
+    }
 }
 
 impl<T: GovernanceCapable> GovernanceCapable for &mut T {
@@ -60,5 +65,8 @@ impl<T: GovernanceCapable> GovernanceCapable for &mut T {
     }
     fn governance_enabled(&self) -> bool {
         (**self).governance_enabled()
+    }
+    fn set_governance(&self, enabled: bool) {
+        (**self).set_governance(enabled)
     }
 }

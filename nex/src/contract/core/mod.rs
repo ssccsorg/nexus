@@ -9,6 +9,7 @@ pub mod evidence;
 pub mod gate;
 pub mod hint;
 pub mod lifecycle;
+pub(crate) mod util;
 
 pub use evidence::{EvidenceChain, EvidenceEntry};
 pub use gate::{GovernanceBypassError, GovernanceGate};
