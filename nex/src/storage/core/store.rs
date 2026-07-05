@@ -45,7 +45,7 @@ use nexus_model::{
 use super::entity_store::{EntityStore, MemoryEntityStore};
 use super::index::{Cell2, FihCoord};
 use super::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
-use crate::contract::{EvidenceChain, GovernanceGate, HintEngine};
+use crate::contract::core::{EvidenceChain, GovernanceGate, HintEngine};
 use crate::io::file_io::{FileIo, WriteOp, default_apply_batch};
 use crate::storage::semantic::record::{Query, RecordLoad};
 
@@ -195,77 +195,6 @@ impl<I: FileIo> FihStorage<I> {
         if let Some(ref mut g) = *self.governance.borrow_mut() {
             g.enabled = enabled;
         }
-    }
-
-    /// Register a schema via the governance gate.
-    pub fn register_schema(&self, schema_id: &str, schema: &[u8]) -> Option<String> {
-        self.governance
-            .borrow()
-            .as_ref()
-            .map(|g| g.gate.register_schema(schema_id, schema))
-    }
-
-    /// Check numeric constraints against all active hints.
-    pub fn check_hints(&self, value: i64) -> Result<(), String> {
-        match *self.governance.borrow() {
-            Some(ref g) => g.hints.check_numeric(value),
-            None => Ok(()),
-        }
-    }
-
-    /// Return the evidence chain tip hash, if governance is active.
-    pub fn evidence_tip(&self) -> Option<String> {
-        self.governance
-            .borrow()
-            .as_ref()
-            .and_then(|g| g.evidence.tip())
-    }
-
-    /// Record an action in the evidence chain.
-    pub fn record_evidence(&self, action_hash: &str, action_type: &str) {
-        if let Some(ref g) = *self.governance.borrow_mut() {
-            use std::time::SystemTime;
-            let ts = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos() as u64;
-            g.evidence.append(action_hash, action_type, ts);
-        }
-    }
-
-    /// Verify evidence chain integrity from a given sequence number.
-    pub fn verify_evidence(&self, from_seq: u64) -> bool {
-        match *self.governance.borrow() {
-            Some(ref g) => g.evidence.verify(from_seq),
-            None => true,
-        }
-    }
-
-    /// Access the governance gate (for schema registration etc.).
-    pub fn with_gate<F, R>(&self, f: F) -> Option<R>
-    where
-        F: FnOnce(&GovernanceGate) -> R,
-    {
-        self.governance
-            .borrow()
-            .as_ref()
-            .map(|g| f(&g.gate))
-    }
-
-    /// Access the hint engine.
-    pub fn with_hints<F, R>(&self, f: F) -> Option<R>
-    where
-        F: FnOnce(&HintEngine) -> R,
-    {
-        self.governance.borrow().as_ref().map(|g| f(&g.hints))
-    }
-
-    /// Access the evidence chain.
-    pub fn with_evidence<F, R>(&self, f: F) -> Option<R>
-    where
-        F: FnOnce(&EvidenceChain) -> R,
-    {
-        self.governance.borrow().as_ref().map(|g| f(&g.evidence))
     }
 
     /// Rebuild in-memory cache from IO storage.
@@ -716,6 +645,51 @@ impl<I: FileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
         }
 
         Ok(fact.id)
+    }
+}
+
+// ── GovernanceCapable ─────────────────────────────────────────────────────
+
+impl<I: FileIo> nexus_model::GovernanceCapable for FihStorage<I> {
+    fn register_schema(&self, schema_id: &str, schema: &[u8]) -> String {
+        match *self.governance.borrow() {
+            Some(ref g) => g.gate.register_schema(schema_id, schema),
+            None => String::new(),
+        }
+    }
+
+    fn admit_fact(&self, schema_id: &str, data: &[u8]) -> Result<(), nexus_model::BlackboardError> {
+        match *self.governance.borrow() {
+            Some(ref g) if g.enabled => g
+                .gate
+                .admit(schema_id, data)
+                .map_err(|e| nexus_model::BlackboardError::Forbidden(e.to_string())),
+            _ => Ok(()),
+        }
+    }
+
+    fn check_hints(&self, value: i64) -> Result<(), nexus_model::BlackboardError> {
+        match *self.governance.borrow() {
+            Some(ref g) => g
+                .hints
+                .check_numeric(value)
+                .map_err(|e| nexus_model::BlackboardError::Forbidden(e)),
+            None => Ok(()),
+        }
+    }
+
+    fn evidence_tip(&self) -> Option<String> {
+        self.governance.borrow().as_ref().and_then(|g| g.evidence.tip())
+    }
+
+    fn governance_enabled(&self) -> bool {
+        self.governance.borrow().as_ref().map(|g| g.enabled).unwrap_or(false)
+    }
+
+    fn set_governance(&self, enabled: bool) {
+        if let Some(ref mut g) = *self.governance.borrow_mut() {
+            g.enabled = enabled;
+        }
     }
 }
 

@@ -2,6 +2,7 @@ use super::evict::EvictCapable;
 use super::fact::FactCapable;
 use super::filter::FilterCapable;
 use super::flush::FlushCapable;
+use super::governance::GovernanceCapable;
 use super::hint::HintCapable;
 use super::intent::IntentCapable;
 use super::scan::ScanCapable;
@@ -27,6 +28,10 @@ pub use send_marker::StorageSend;
 /// Full FIH persistence: what a Blackboard backend must provide.
 pub trait FihPersistence: FactCapable + IntentCapable + HintCapable {}
 impl<T: FactCapable + IntentCapable + HintCapable> FihPersistence for T {}
+
+/// Full FIH persistence with governance: what a governed Blackboard backend must provide.
+pub trait GovernedPersistence: FihPersistence + GovernanceCapable {}
+impl<T: FihPersistence + GovernanceCapable> GovernedPersistence for T {}
 
 /// Delta set of postcard-serialized entity blobs: (facts, intents, hints).
 pub type DeltaSet = (Vec<Vec<u8>>, Vec<Vec<u8>>, Vec<Vec<u8>>);
