@@ -577,15 +577,6 @@ impl<I: FileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
 
 impl<I: FileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
     async fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
-        // Governance gate: admit check before any IO
-        if let Some(ref g) = *self.governance.borrow() {
-            if g.enabled {
-                g.gate
-                    .admit(&fact.origin, &fact.content.data)
-                    .map_err(|e| BlackboardError::Forbidden(e.to_string()))?;
-            }
-        }
-
         // Enqueue blob content and fact record in pending buffer only.
         // No direct io.write() — caller must call flush_pending() for durability.
         // This enables batch writes (N paragraphs → 1 apply_batch instead of 2N R2 PUTs).
@@ -630,18 +621,6 @@ impl<I: FileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
                 .semantic_insert(fact_idx, &FactTextRecord { text })
                 .await
                 .ok();
-        }
-
-        // Governance evidence: record the submission
-        if let Some(ref g) = *self.governance.borrow() {
-            if g.enabled {
-                use std::time::SystemTime;
-                let ts_e = SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos() as u64;
-                g.evidence.append(&fact.id.to_string(), "fact:submit", ts_e);
-            }
         }
 
         Ok(fact.id)
@@ -888,17 +867,6 @@ impl<I: FileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
         intent_id: &str,
         result: &str,
     ) -> Result<Fact, BlackboardError> {
-        // Governance gate: evaluate hints before conclusion
-        if let Some(ref g) = *self.governance.borrow() {
-            if g.enabled {
-                if let Ok(numeric) = result.trim().parse::<i64>() {
-                    g.hints
-                        .check_numeric(numeric)
-                        .map_err(|e| BlackboardError::Forbidden(e))?;
-                }
-            }
-        }
-
         let _ = self.flush_pending().await;
         let normalized = FihHash::from_hex(intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
@@ -960,18 +928,6 @@ impl<I: FileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
             .await;
         self.coord
             .update_intent_status(&FihHash::from_hex(intent_id).0, "claimed", "concluded");
-
-        // Governance evidence: record the conclusion
-        if let Some(ref g) = *self.governance.borrow() {
-            if g.enabled {
-                use std::time::SystemTime;
-                let ts = SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos() as u64;
-                g.evidence.append(intent_id, "intent:conclude", ts);
-            }
-        }
 
         Ok(new_fact)
     }
