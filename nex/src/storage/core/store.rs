@@ -45,7 +45,6 @@ use nexus_model::{
 use super::entity_store::{EntityStore, MemoryEntityStore};
 use super::index::{Cell2, FihCoord};
 use super::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
-use crate::contract::core::{EvidenceChain, GovernanceGate, HintEngine};
 use crate::io::file_io::{FileIo, WriteOp, default_apply_batch};
 use crate::storage::semantic::record::{Query, RecordLoad};
 
@@ -64,31 +63,6 @@ pub struct ChainEntry {
 /// All FIH trait methods are sync. They enqueue WriteOps into a buffer
 /// for batch commit by the outer FihSession layer.
 /// IO-bound operations (flush_pending, rebuild_cache) are async.
-/// Optional governance state assembled onto an FihStorage instance.
-/// Follows the same composition pattern as the core capability traits:
-/// the storage implementation carries its own governance primitives.
-pub struct GovernanceState {
-    /// Schema-based write admission gate.
-    pub gate: GovernanceGate,
-    /// Constraint evaluation engine.
-    pub hints: HintEngine,
-    /// Append-only SHA-256 audit chain.
-    pub evidence: EvidenceChain,
-    /// Whether governance checks are active.
-    pub enabled: bool,
-}
-
-impl GovernanceState {
-    pub fn new(enabled: bool) -> Self {
-        Self {
-            gate: GovernanceGate::new(),
-            hints: HintEngine::new(),
-            evidence: EvidenceChain::new(),
-            enabled,
-        }
-    }
-}
-
 pub struct FihStorage<I: FileIo> {
     pub io: I,
     project_id: String,
@@ -105,9 +79,6 @@ pub struct FihStorage<I: FileIo> {
     coord: FihCoord,
     // Pending writes (for FihSession coordination).
     pub(crate) pending: Cell2<Vec<WriteOp>>,
-    /// Optional governance layer: Gate, HintEngine, EvidenceChain.
-    /// None = no governance overhead. Some = governance active.
-    pub(crate) governance: Cell2<Option<GovernanceState>>,
 }
 
 impl<I: FileIo> FihStorage<I> {
@@ -143,7 +114,6 @@ impl<I: FileIo> FihStorage<I> {
             hint_store: MemoryEntityStore::<HintRecord>::new(),
             coord: FihCoord::new(),
             pending: Cell2::new(Vec::new()),
-            governance: Cell2::new(None),
         }
     }
 
@@ -163,37 +133,6 @@ impl<I: FileIo> FihStorage<I> {
             hint_store: MemoryEntityStore::<HintRecord>::new(),
             coord: FihCoord::new(),
             pending: Cell2::new(Vec::new()),
-            governance: Cell2::new(None),
-        }
-    }
-
-    /// Create storage with governance layer enabled.
-    pub fn with_governance(io: I, project_id: &str) -> Self {
-        let mut s = Self::new(io, project_id);
-        s.governance = Cell2::new(Some(GovernanceState::new(true)));
-        s
-    }
-
-    /// Create storage with governance but initially disabled.
-    pub fn with_governance_disabled(io: I, project_id: &str) -> Self {
-        let mut s = Self::new(io, project_id);
-        s.governance = Cell2::new(Some(GovernanceState::new(false)));
-        s
-    }
-
-    /// Returns true if governance is configured and active.
-    pub fn governance_enabled(&self) -> bool {
-        self.governance
-            .borrow()
-            .as_ref()
-            .map(|g| g.enabled)
-            .unwrap_or(false)
-    }
-
-    /// Enable or disable governance at runtime (no-op if not configured).
-    pub fn set_governance(&self, enabled: bool) {
-        if let Some(ref mut g) = *self.governance.borrow_mut() {
-            g.enabled = enabled;
         }
     }
 
@@ -624,51 +563,6 @@ impl<I: FileIo> nexus_model::AsyncFactCapable for FihStorage<I> {
         }
 
         Ok(fact.id)
-    }
-}
-
-// ── GovernanceCapable ─────────────────────────────────────────────────────
-
-impl<I: FileIo> nexus_model::GovernanceCapable for FihStorage<I> {
-    fn register_schema(&self, schema_id: &str, schema: &[u8]) -> String {
-        match *self.governance.borrow() {
-            Some(ref g) => g.gate.register_schema(schema_id, schema),
-            None => String::new(),
-        }
-    }
-
-    fn admit_fact(&self, schema_id: &str, data: &[u8]) -> Result<(), nexus_model::BlackboardError> {
-        match *self.governance.borrow() {
-            Some(ref g) if g.enabled => g
-                .gate
-                .admit(schema_id, data)
-                .map_err(|e| nexus_model::BlackboardError::Forbidden(e.to_string())),
-            _ => Ok(()),
-        }
-    }
-
-    fn check_hints(&self, value: i64) -> Result<(), nexus_model::BlackboardError> {
-        match *self.governance.borrow() {
-            Some(ref g) => g
-                .hints
-                .check_numeric(value)
-                .map_err(|e| nexus_model::BlackboardError::Forbidden(e)),
-            None => Ok(()),
-        }
-    }
-
-    fn evidence_tip(&self) -> Option<String> {
-        self.governance.borrow().as_ref().and_then(|g| g.evidence.tip())
-    }
-
-    fn governance_enabled(&self) -> bool {
-        self.governance.borrow().as_ref().map(|g| g.enabled).unwrap_or(false)
-    }
-
-    fn set_governance(&self, enabled: bool) {
-        if let Some(ref mut g) = *self.governance.borrow_mut() {
-            g.enabled = enabled;
-        }
     }
 }
 
