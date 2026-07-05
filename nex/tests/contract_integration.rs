@@ -8,7 +8,7 @@
 
 use std::sync::Arc;
 
-use nex::contract::ContractBlackboard;
+use nex::ContractBlackboard;
 use nex::io::{FileIo, IoFuture};
 use nex::storage::core::FihStorage;
 use nexus_model::fih::{Content, Fact, FihHash};
