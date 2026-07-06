@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 const NEXD_BIN: &str = env!("CARGO_BIN_EXE_nexd");
 
 /// Path to nex-server binary, derived from nexd binary path.
-fn nex_server_bin() -> std::path::PathBuf {
+pub fn nex_server_bin() -> std::path::PathBuf {
     let nexd_path = std::path::Path::new(NEXD_BIN);
     // nexd and nex-server are in the same target/{profile}/ directory
     if let Some(parent) = nexd_path.parent() {
