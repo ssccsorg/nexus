@@ -447,6 +447,7 @@ verify_nex_server() {
     echo "=== nex-server ==="
     echo "Building..."
     cargo build -p nex-server 2>&1 || { echo "nex-server: build FAILED"; return 1; }
+    cargo check -p nex-client 2>&1 || { echo "nex-client: check FAILED"; return 1; }
     echo ""
     echo "Starting nex-server on ${SOCKET_PATH}..."
 
