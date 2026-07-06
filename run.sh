@@ -292,14 +292,14 @@ verify_nexd() {
         failed=1
     fi
 
-    # Verify agent removed
+    # Verify agent removed (sleep process should be gone, nex-server remains)
     sleep 0.3
     local LS2
     LS2=$(rpc '{"id":23,"method":"list_agents","params":{}}')
-    if echo "$LS2" | grep -q '"agents":\[\]'; then
-        echo "    agent cleanup: ok"
+    if echo "$LS2" | grep -qv "\"pid\":$AGENT_PID"; then
+        echo "    agent cleanup: ok (agent $AGENT_PID removed)"
     else
-        echo "    agent cleanup: FAIL (agent not removed: $LS2)"
+        echo "    agent cleanup: FAIL (agent $AGENT_PID still present: $LS2)"
         failed=1
     fi
 
