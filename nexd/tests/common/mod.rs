@@ -54,10 +54,13 @@ impl DaemonHandle {
         let socket_path = temp_dir.path().join("nexd.sock");
         let nex_server_socket = temp_dir.path().join("nex-server.sock");
 
-        // Start nex-server first
+        // Start nex-server first with unique data dir
+        let nex_data_dir = temp_dir.path().join("fih-data");
+        std::fs::create_dir_all(&nex_data_dir).expect("create nex-data dir");
         let nex_bin = nex_server_bin();
         let nex_child = Command::new(&nex_bin)
             .env("NEX_SOCKET_PATH", nex_server_socket.to_str().unwrap())
+            .env("NEX_DATA_DIR", nex_data_dir.to_str().unwrap())
             .env("RUST_LOG", "nex-server=error")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
