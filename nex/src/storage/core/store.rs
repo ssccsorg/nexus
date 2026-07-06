@@ -615,10 +615,32 @@ impl<I: FileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
             }
         }
 
+        // Store description as a blob if non-empty
+        let description_hash = if !intent.description.is_empty() {
+            let desc_bytes = intent.description.as_bytes();
+            let hash = content_hash(desc_bytes);
+            let meta = super::record::ContentMeta {
+                mime_type: "text/plain".into(),
+                size: desc_bytes.len() as u64,
+            };
+            let meta_bytes = postcard::to_allocvec(&meta).unwrap_or_default();
+            self.pending.borrow_mut().push(WriteOp::Write {
+                path: format!("blob/{hash}.bin"),
+                data: desc_bytes.to_vec(),
+            });
+            self.pending.borrow_mut().push(WriteOp::Write {
+                path: format!("blob/{hash}.bin.meta"),
+                data: meta_bytes,
+            });
+            hash
+        } else {
+            String::new()
+        };
+
         let record = super::record::IntentRecord {
             id: intent.id.to_string(),
             from_facts: intent.from_facts.iter().map(|f| f.to_string()).collect(),
-            description_hash: String::new(),
+            description_hash,
             creator: intent.creator.clone(),
             status: super::record::IntentStatus::Submitted,
             created_at: self.clock.now_secs(),

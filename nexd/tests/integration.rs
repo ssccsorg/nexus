@@ -401,12 +401,13 @@ fn test_multi_agent_management() {
     let b = d.ok("spawn_agent", json!({"command":"sleep","args":["20"]}));
     let c = d.ok("spawn_agent", json!({"command":"sleep","args":["30"]}));
 
+    // 3 spawned agents + nex-server = 4 total
     assert_eq!(
         d.ok("list_agents", json!({}))["agents"]
             .as_array()
             .unwrap()
             .len(),
-        3
+        4
     );
 
     d.ok("kill_agent", json!({"pid": b["pid"]}));
@@ -454,6 +455,9 @@ fn test_sigterm_graceful_shutdown_cleans_socket() {
 
     let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_nexd"))
         .env("NEXD_SOCKET_PATH", socket_path.to_str().unwrap())
+        .env("NEXD_NEX_SERVER_PATH", crate::common::nex_server_bin())
+        .env("NEX_SOCKET_PATH", temp_dir.path().join("nx.sock").to_str().unwrap())
+        .env("NEX_DATA_DIR", temp_dir.path().join("data").to_str().unwrap())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
@@ -566,15 +570,25 @@ fn test_short_lived_agent_eventually_reaped() {
     let d = DaemonHandle::start();
     d.ok("spawn_agent", json!({"command":"echo","args":["quick"]}));
 
-    // Process manager reaps every 5s. Wait up to 6s for it.
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(7);
+    // Get initial agent count (includes nex-server)
+    let initial = d.ok("list_agents", json!({}))["agents"]
+        .as_array()
+        .unwrap()
+        .len();
+    assert!(initial >= 1, "should have at least nex-server");
+
+    // Process manager reaps every 5s. Wait for agent count to drop back to initial.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(12);
     loop {
         let list = d.ok("list_agents", json!({}));
-        if list["agents"].as_array().unwrap().is_empty() {
-            break; // reaped
+        let count = list["agents"].as_array().unwrap().len();
+        if count == initial {
+            break; // spawned agent was reaped
         }
         if std::time::Instant::now() > deadline {
-            panic!("agent was not reaped within 7s (try_reap interval is 5s)");
+            panic!(
+                "agent not reaped within 12s (initial={initial}, current={count})"
+            );
         }
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
