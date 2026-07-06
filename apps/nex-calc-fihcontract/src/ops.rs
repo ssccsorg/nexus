@@ -50,7 +50,8 @@ impl OpType {
     /// How many operand Facts this operator reads from the FIH space.
     pub fn arity(&self) -> usize {
         match self {
-            OpType::Neg | OpType::Abs | OpType::Sqrt | OpType::Fac | OpType::BitNot => 1,
+            OpType::Neg | OpType::Abs | OpType::Sqrt | OpType::Fac
+            | OpType::BitNot => 1,
             _ => 2,
         }
     }
@@ -130,15 +131,9 @@ impl OpType {
             OpType::BitNot => Ok(!lhs),
 
             // Vector/transform placeholders
-            OpType::MatMul => Err(CalcOpError::VectorRequired(
-                "MatMul requires vector/matrix operands".into(),
-            )),
-            OpType::FFT => Err(CalcOpError::VectorRequired(
-                "FFT requires a vector operand".into(),
-            )),
-            OpType::Conv => Err(CalcOpError::VectorRequired(
-                "Conv requires vector operands".into(),
-            )),
+            OpType::MatMul => Err(CalcOpError::VectorRequired("MatMul requires vector/matrix operands".into())),
+            OpType::FFT => Err(CalcOpError::VectorRequired("FFT requires a vector operand".into())),
+            OpType::Conv => Err(CalcOpError::VectorRequired("Conv requires vector operands".into())),
         }
     }
 
@@ -229,99 +224,55 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_add() {
-        assert_eq!(OpType::Add.apply(3, 5), Ok(8));
-    }
+    fn test_add() { assert_eq!(OpType::Add.apply(3, 5), Ok(8)); }
     #[test]
-    fn test_sub() {
-        assert_eq!(OpType::Sub.apply(10, 3), Ok(7));
-    }
+    fn test_sub() { assert_eq!(OpType::Sub.apply(10, 3), Ok(7)); }
     #[test]
-    fn test_mul() {
-        assert_eq!(OpType::Mul.apply(6, 7), Ok(42));
-    }
+    fn test_mul() { assert_eq!(OpType::Mul.apply(6, 7), Ok(42)); }
     #[test]
-    fn test_div() {
-        assert_eq!(OpType::Div.apply(42, 6), Ok(7));
-    }
+    fn test_div() { assert_eq!(OpType::Div.apply(42, 6), Ok(7)); }
     #[test]
-    fn test_div_zero() {
-        assert_eq!(OpType::Div.apply(1, 0), Err(CalcOpError::DivisionByZero));
-    }
+    fn test_div_zero() { assert_eq!(OpType::Div.apply(1, 0), Err(CalcOpError::DivisionByZero)); }
     #[test]
-    fn test_rem() {
-        assert_eq!(OpType::Rem.apply(10, 3), Ok(1));
-    }
+    fn test_rem() { assert_eq!(OpType::Rem.apply(10, 3), Ok(1)); }
     #[test]
-    fn test_pow() {
-        assert_eq!(OpType::Pow.apply(2, 10), Ok(1024));
-    }
+    fn test_pow() { assert_eq!(OpType::Pow.apply(2, 10), Ok(1024)); }
     #[test]
-    fn test_min() {
-        assert_eq!(OpType::Min.apply(3, 7), Ok(3));
-    }
+    fn test_min() { assert_eq!(OpType::Min.apply(3, 7), Ok(3)); }
     #[test]
-    fn test_max() {
-        assert_eq!(OpType::Max.apply(3, 7), Ok(7));
-    }
+    fn test_max() { assert_eq!(OpType::Max.apply(3, 7), Ok(7)); }
     #[test]
-    fn test_neg() {
-        assert_eq!(OpType::Neg.apply(42, 0), Ok(-42));
-    }
+    fn test_neg() { assert_eq!(OpType::Neg.apply(42, 0), Ok(-42)); }
     #[test]
-    fn test_abs() {
-        assert_eq!(OpType::Abs.apply(-5, 0), Ok(5));
-    }
+    fn test_abs() { assert_eq!(OpType::Abs.apply(-5, 0), Ok(5)); }
     #[test]
-    fn test_sqrt() {
-        assert_eq!(OpType::Sqrt.apply(16, 0), Ok(4));
-    }
+    fn test_sqrt() { assert_eq!(OpType::Sqrt.apply(16, 0), Ok(4)); }
     #[test]
-    fn test_sqrt_neg() {
-        assert!(OpType::Sqrt.apply(-1, 0).is_err());
-    }
+    fn test_sqrt_neg() { assert!(OpType::Sqrt.apply(-1, 0).is_err()); }
     #[test]
-    fn test_fac() {
-        assert_eq!(OpType::Fac.apply(5, 0), Ok(120));
-    }
+    fn test_fac() { assert_eq!(OpType::Fac.apply(5, 0), Ok(120)); }
     #[test]
-    fn test_fac_neg() {
-        assert!(OpType::Fac.apply(-1, 0).is_err());
-    }
+    fn test_fac_neg() { assert!(OpType::Fac.apply(-1, 0).is_err()); }
     #[test]
-    fn test_bitand() {
-        assert_eq!(OpType::BitAnd.apply(6, 3), Ok(2));
-    }
+    fn test_bitand() { assert_eq!(OpType::BitAnd.apply(6, 3), Ok(2)); }
     #[test]
-    fn test_bitor() {
-        assert_eq!(OpType::BitOr.apply(6, 3), Ok(7));
-    }
+    fn test_bitor() { assert_eq!(OpType::BitOr.apply(6, 3), Ok(7)); }
     #[test]
-    fn test_bitxor() {
-        assert_eq!(OpType::BitXor.apply(6, 3), Ok(5));
-    }
+    fn test_bitxor() { assert_eq!(OpType::BitXor.apply(6, 3), Ok(5)); }
     #[test]
-    fn test_shl() {
-        assert_eq!(OpType::Shl.apply(3, 2), Ok(12));
-    }
+    fn test_shl() { assert_eq!(OpType::Shl.apply(3, 2), Ok(12)); }
     #[test]
-    fn test_shr() {
-        assert_eq!(OpType::Shr.apply(12, 2), Ok(3));
-    }
+    fn test_shr() { assert_eq!(OpType::Shr.apply(12, 2), Ok(3)); }
     #[test]
-    fn test_bitnot() {
-        assert_eq!(OpType::BitNot.apply(0i64, 0), Ok(!0i64));
-    }
+    fn test_bitnot() { assert_eq!(OpType::BitNot.apply(0i64, 0), Ok(!0i64)); }
     #[test]
-    fn test_overflow_returns_error() {
-        assert_eq!(OpType::Mul.apply(i64::MAX, 2), Err(CalcOpError::Overflow));
-    }
+    fn test_overflow_returns_error() { assert_eq!(OpType::Mul.apply(i64::MAX, 2), Err(CalcOpError::Overflow)); }
     #[test]
     fn test_parse_all() {
-        for s in [
-            "add", "sub", "mul", "div", "rem", "pow", "min", "max", "neg", "abs", "sqrt", "fac",
-            "and", "or", "xor", "shl", "shr", "bnot", "matmul", "fft", "conv",
-        ] {
+        for s in ["add", "sub", "mul", "div", "rem", "pow", "min", "max",
+                   "neg", "abs", "sqrt", "fac",
+                   "and", "or", "xor", "shl", "shr", "bnot",
+                   "matmul", "fft", "conv"] {
             assert!(OpType::parse(s).is_some(), "failed to parse {s}");
         }
     }

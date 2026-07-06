@@ -6,7 +6,7 @@
 
 use std::io::{self, BufRead, Write};
 
-use nex_calc::{CalcEngine, Constraint, OpType};
+use nex_calc_fihcontract::{CalcEngine, Constraint, OpType};
 
 #[tokio::main]
 async fn main() {
@@ -49,10 +49,7 @@ async fn main() {
             "list" | "ls" => cmd_list(&engine).await,
             "stats" => cmd_stats(&engine).await,
             "help" | "h" | "?" => cmd_help(),
-            "quit" | "q" | "exit" => {
-                println!("bye.");
-                break;
-            }
+            "quit" | "q" | "exit" => { println!("bye."); break; }
             _ => {
                 if let Some(op) = OpType::parse(cmd.as_str()) {
                     if op.arity() == 1 {
