@@ -22,9 +22,7 @@ use sha2::{Digest, Sha256};
 use nex::storage::core::intent_status::IntentStatus;
 use nex::storage::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
 use nex::storage::core::store::FihStorage;
-use nex::contract::core::{GovernanceGate, HintEngine};
-use nex::storage::core::EntityStore;
-use nex::io::FileIo;
+use nex::{EntityStore, FileIo};
 use nexus_model::{Content, FihHash};
 use nexus_storage_sim::SimIo;
 
@@ -84,18 +82,12 @@ pub struct ResolvedIntent {
 /// no filesystem. Calculator logic only sees the FihStorage API.
 pub struct CalcEngine {
     storage: FihStorage<SimIo>,
-    gate: GovernanceGate,
-    hints: HintEngine,
 }
 
 impl CalcEngine {
     pub fn new() -> Self {
-        let gate = GovernanceGate::new();
-        gate.register_schema(NUMBER_MIME, NUMBER_MIME.as_bytes());
         Self {
             storage: FihStorage::new(SimIo::new(), "nex-calc"),
-            gate,
-            hints: HintEngine::new(),
         }
     }
 
@@ -112,11 +104,6 @@ impl CalcEngine {
         let data = value.to_le_bytes().to_vec();
         let blob_hash = content_hash(&data);
         let blob_path = format!("blob/{}.bin", blob_hash);
-
-        // Governance gate: admit before write (non-fatal in nex-calc)
-        if let Err(e) = self.gate.admit(NUMBER_MIME, &data) {
-            let _ = e; // non-fatal: ungoverned mode is valid
-        }
 
         // Write content blob and metadata via the IO layer.
         let _ = self.storage.io.write(&blob_path, &data).await;
@@ -250,15 +237,8 @@ impl CalcEngine {
             .apply(lhs, rhs)
             .map_err(|e| CalcError::OpError(e.to_string()))?;
 
-        // Check result constraints (engine-native + governance).
+        // Check result constraints.
         self.check_constraints(raw_result).await?;
-        if let Err(e) = self.hints.check_numeric(raw_result) {
-            return Err(CalcError::ConstraintViolated {
-                hint_id: "governance".into(),
-                constraint: e,
-                result: raw_result,
-            });
-        }
 
         // Create the result Fact (content-addressed, so deduplicated).
         let result_id = make_number_fact_id(raw_result);
