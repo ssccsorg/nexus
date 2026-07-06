@@ -17,6 +17,7 @@
 // All public storage methods are async. Sync callers use
 // futures_executor::block_on externally (see FihBlackboard).
 
+pub mod contract;
 pub mod helper;
 pub mod io;
 pub mod process;

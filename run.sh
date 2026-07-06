@@ -509,10 +509,20 @@ verify_nex_server() {
     fi
 }
 
+# ── nex-calc-fihcontract verification ─────────────────────────────────────
+
+verify_nex_calc_fihcontract() {
+    echo "=== nex-calc-fihcontract ==="
+    cargo build --manifest-path apps/nex-calc-fihcontract/Cargo.toml 2>&1 || { echo "nex-calc-fihcontract: build FAILED"; return 1; }
+    cargo test --manifest-path apps/nex-calc-fihcontract/Cargo.toml 2>&1 || { echo "nex-calc-fihcontract: tests FAILED"; return 1; }
+    echo "nex-calc-fihcontract: passed"
+}
+
 # ── App suite ─────────────────────────────────────────────────────────────
 
 run_apps() {
     local any_failed=0
+    verify_nex_calc_fihcontract || any_failed=1
     verify_nexd || any_failed=1
     # Reset ports between apps to avoid conflicts
     kill_port 30921 2>/dev/null || true
