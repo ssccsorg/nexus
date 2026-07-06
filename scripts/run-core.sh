@@ -51,6 +51,7 @@ run_wasm_check() {
         -not -path './storage/ve-composite/*' \
         -not -path './storage/sim/*' \
         -not -path './nexd/*' \
+        -not -path './nex-server/*' \
         -not -path './apps/*' \
         -not -path './playbooks/*' \
         -not -path './Cargo.toml' \
