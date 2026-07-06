@@ -308,7 +308,10 @@ fn test_two_agents_communicate_through_blackboard() {
         }),
     );
     // Result is {"fact": Fact} — Fact.id is at c["fact"]["id"]
-    assert!(c["fact"]["id"].as_str().is_some(), "concluded fact should have an id");
+    assert!(
+        c["fact"]["id"].as_str().is_some(),
+        "concluded fact should have an id"
+    );
 
     // A: sees the communication completed
     let state = d.ok("read_state", json!({}));
@@ -396,7 +399,10 @@ fn test_spawn_and_kill_agent() {
         .iter()
         .map(|a| a["pid"].as_u64().unwrap())
         .collect();
-    assert!(pids.contains(&pid), "spawned agent pid {pid} should be in list");
+    assert!(
+        pids.contains(&pid),
+        "spawned agent pid {pid} should be in list"
+    );
 
     d.ok("kill_agent", json!({"pid": pid}));
     let list = d.ok("list_agents", json!({}));
