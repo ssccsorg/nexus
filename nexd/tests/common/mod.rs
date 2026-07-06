@@ -12,9 +12,32 @@ use std::time::{Duration, Instant};
 /// Path to nexd binary. Set by cargo at compile time for integration tests.
 const NEXD_BIN: &str = env!("CARGO_BIN_EXE_nexd");
 
+/// Path to nex-server binary, derived from nexd binary path.
+fn nex_server_bin() -> std::path::PathBuf {
+    let nexd_path = std::path::Path::new(NEXD_BIN);
+    // nexd and nex-server are in the same target/{profile}/ directory
+    if let Some(parent) = nexd_path.parent() {
+        let candidate = parent.join("nex-server");
+        if candidate.exists() {
+            return candidate;
+        }
+    }
+    // Fallback: workspace root
+    let candidate = std::path::PathBuf::from("./target/debug/nex-server");
+    if candidate.exists() {
+        return candidate;
+    }
+    panic!(
+        "nex-server binary not found. Run 'cargo build -p nex-server' first. \
+         Tried: {} and ./target/debug/nex-server",
+        nexd_path.parent().map(|p| p.join("nex-server").display().to_string()).unwrap_or_default()
+    );
+}
+
 /// Manages a nexd daemon instance for testing.
 pub struct DaemonHandle {
     child: Option<Child>,
+    nex_child: Option<Child>,
     pub socket_path: PathBuf,
     #[allow(dead_code)]
     pub temp_dir: tempfile::TempDir,
@@ -22,12 +45,38 @@ pub struct DaemonHandle {
 
 impl DaemonHandle {
     /// Start nexd with a unique socket in a temp dir.
+    /// Also starts nex-server as a child process.
     pub fn start() -> Self {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let socket_path = temp_dir.path().join("nexd.sock");
+        let nex_server_socket = temp_dir.path().join("nex-server.sock");
+
+        // Start nex-server first
+        let nex_bin = nex_server_bin();
+        let nex_child = Command::new(&nex_bin)
+            .env("NEX_SOCKET_PATH", nex_server_socket.to_str().unwrap())
+            .env("RUST_LOG", "nex-server=error")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap_or_else(|e| panic!("spawn nex-server failed: {e}"));
+
+        // Wait for nex-server socket
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_secs(5) {
+            if nex_server_socket.exists() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        if !nex_server_socket.exists() {
+            panic!("nex-server not ready in 5s");
+        }
 
         let child = Command::new(NEXD_BIN)
             .env("NEXD_SOCKET_PATH", socket_path.to_str().unwrap())
+            .env("NEXD_NEX_SERVER_PATH", nex_server_bin())
+            .env("NEX_SOCKET_PATH", nex_server_socket.to_str().unwrap())
             .env("RUST_LOG", "nexd=error")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -36,6 +85,7 @@ impl DaemonHandle {
 
         let handle = Self {
             child: Some(child),
+            nex_child: Some(nex_child),
             socket_path,
             temp_dir,
         };
@@ -89,6 +139,10 @@ impl DaemonHandle {
 impl Drop for DaemonHandle {
     fn drop(&mut self) {
         if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        if let Some(mut child) = self.nex_child.take() {
             let _ = child.kill();
             let _ = child.wait();
         }
