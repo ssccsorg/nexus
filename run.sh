@@ -114,7 +114,14 @@ verify_nexd() {
     echo ""
     echo "Starting nex-server on ${NEX_SERVER_SOCKET}..."
 
-    NEX_SOCKET_PATH="$NEX_SERVER_SOCKET" ./target/debug/nex-server 2>/tmp/nex-server-debug.log &
+    local NEX_BIN
+    if [ -x "./target/debug/nex-server" ]; then
+        NEX_BIN="./target/debug/nex-server"
+    else
+        echo "nex-server binary not found at ./target/debug/nex-server (FAIL)"
+        return 1
+    fi
+    NEX_SOCKET_PATH="$NEX_SERVER_SOCKET" "$NEX_BIN" 2>/tmp/nex-server-debug.log &
     local NEX_PID=$!
 
     # Wait for nex-server socket
@@ -132,7 +139,7 @@ verify_nexd() {
 
     echo "Starting nexd on ${NEXD_SOCKET}..."
     NEXD_SOCKET_PATH="$NEXD_SOCKET" \
-      NEXD_NEX_SERVER_PATH="./target/debug/nex-server" \
+      NEXD_NEX_SERVER_PATH="$NEX_BIN" \
       NEX_SOCKET_PATH="$NEX_SERVER_SOCKET" \
       ./target/debug/nexd 2>/tmp/nexd-debug.log &
     local NEXD_PID=$!
@@ -341,13 +348,13 @@ verify_nexd() {
     local SIG_SOCKET_PATH="${SIG_SOCKET_DIR}/sigterm.sock"
     local SIG_NEX_SOCKET="${SIG_SOCKET_DIR}/nex-sigterm.sock"
 
-    NEX_SOCKET_PATH="$SIG_NEX_SOCKET" ./target/debug/nex-server 2>/dev/null &
+    NEX_SOCKET_PATH="$SIG_NEX_SOCKET" "$NEX_BIN" 2>/dev/null &
     local SIG_NEX_PID=$!
     waited=0
     while [ ! -S "$SIG_NEX_SOCKET" ] && [ "$waited" -lt 10 ]; do sleep 0.2; waited=$((waited + 1)); done
 
     NEXD_SOCKET_PATH="$SIG_SOCKET_PATH" \
-      NEXD_NEX_SERVER_PATH="./target/debug/nex-server" \
+      NEXD_NEX_SERVER_PATH="$NEX_BIN" \
       NEX_SOCKET_PATH="$SIG_NEX_SOCKET" \
       ./target/debug/nexd 2>/tmp/nexd-sig-debug.log &
     local SIG_PID=$!
