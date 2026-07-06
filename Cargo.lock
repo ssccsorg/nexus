@@ -1701,7 +1701,6 @@ dependencies = [
  "nexus-model",
  "nexus-storage-composite",
  "nexus-storage-petgraph",
- "petgraph",
  "postcard",
  "serde",
  "serde_json",

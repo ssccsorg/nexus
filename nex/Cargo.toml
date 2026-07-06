@@ -8,9 +8,6 @@ license.workspace = true
 cfg-if = "1"
 async-trait = { workspace = true }
 nexus-model = { path = "../model" }
-nexus-storage-composite = { path = "../storage/composite" }
-nexus-storage-petgraph = { path = "../storage/petgraph" }
-petgraph = { workspace = true }
 postcard = { version = "1", features = ["alloc"] }
 serde = { workspace = true }
 serde_json = "1"
@@ -29,4 +26,6 @@ worker = { version = "0.8", optional = true }
 [dev-dependencies]
 tempfile = "3"
 nexus-gateway-serde-proxy = { path = "../libs/serde-proxy" }
+nexus-storage-composite = { path = "../storage/composite" }
+nexus-storage-petgraph = { path = "../storage/petgraph" }
 ureq = { version = "3", features = ["json"] }
