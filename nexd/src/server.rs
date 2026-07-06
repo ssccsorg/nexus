@@ -180,7 +180,9 @@ fn handle_spawn_agent(id: Value, params: &Value, pm: &Arc<Mutex<ProcessManager>>
         Err(e) => return RpcResponse::error(id, -32000, format!("lock poisoned: {e}")),
     };
     match guard.spawn(&p.command, &p.args.unwrap_or_default()) {
-        Ok(pid) => RpcResponse::success(id, serde_json::json!({ "pid": pid })),
+        Ok(handle) => {
+            RpcResponse::success(id, serde_json::json!({"pid": handle.pid}))
+        }
         Err(e) => RpcResponse::error(id, -32000, e),
     }
 }
