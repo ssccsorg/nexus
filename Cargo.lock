@@ -1713,10 +1713,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "nex-client"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "nex-server"
 version = "0.1.0"
 dependencies = [
  "nex",
+ "nex-client",
  "nexus-model",
  "serde",
  "serde_json",
