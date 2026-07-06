@@ -10,7 +10,7 @@ use nexus_model::{
     Content, Fact, FihHash, Hint, Intent,
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 fn map_error(e: BlackboardError) -> (i64, String) {
     match e {
@@ -21,10 +21,7 @@ fn map_error(e: BlackboardError) -> (i64, String) {
     }
 }
 
-pub async fn dispatch(
-    req: RpcRequest,
-    storage: &Arc<FihStorage<FsIo>>,
-) -> RpcResponse {
+pub async fn dispatch(req: RpcRequest, storage: &Arc<FihStorage<FsIo>>) -> RpcResponse {
     let id = req.id;
 
     match req.method.as_str() {
@@ -71,7 +68,9 @@ async fn handle_write_fact(
             },
             other => Content {
                 mime_type: "application/json".into(),
-                data: serde_json::to_string(other).unwrap_or_default().into_bytes(),
+                data: serde_json::to_string(other)
+                    .unwrap_or_default()
+                    .into_bytes(),
             },
         },
         creator: p.creator,
@@ -86,10 +85,7 @@ async fn handle_write_fact(
     }
 }
 
-async fn handle_read_state(
-    id: Value,
-    storage: &Arc<FihStorage<FsIo>>,
-) -> RpcResponse {
+async fn handle_read_state(id: Value, storage: &Arc<FihStorage<FsIo>>) -> RpcResponse {
     let state = storage.read_state().await;
     RpcResponse::success(id, serde_json::to_value(state).unwrap_or_default())
 }
@@ -100,7 +96,9 @@ async fn handle_read_fact(
     storage: &Arc<FihStorage<FsIo>>,
 ) -> RpcResponse {
     #[derive(Deserialize)]
-    struct Params { id: String }
+    struct Params {
+        id: String,
+    }
     let p: Params = match serde_json::from_value(params.clone()) {
         Ok(v) => v,
         Err(e) => return RpcResponse::invalid_params(id, e.to_string()),
@@ -122,7 +120,9 @@ async fn handle_read_intent(
     storage: &Arc<FihStorage<FsIo>>,
 ) -> RpcResponse {
     #[derive(Deserialize)]
-    struct Params { id: String }
+    struct Params {
+        id: String,
+    }
     let p: Params = match serde_json::from_value(params.clone()) {
         Ok(v) => v,
         Err(e) => return RpcResponse::invalid_params(id, e.to_string()),
@@ -144,7 +144,9 @@ async fn handle_read_hint(
     storage: &Arc<FihStorage<FsIo>>,
 ) -> RpcResponse {
     #[derive(Deserialize)]
-    struct Params { id: String }
+    struct Params {
+        id: String,
+    }
     let p: Params = match serde_json::from_value(params.clone()) {
         Ok(v) => v,
         Err(e) => return RpcResponse::invalid_params(id, e.to_string()),
