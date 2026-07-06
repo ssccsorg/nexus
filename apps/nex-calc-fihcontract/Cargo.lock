@@ -243,9 +243,6 @@ dependencies = [
  "futures-executor",
  "log",
  "nexus-model",
- "nexus-storage-composite",
- "nexus-storage-petgraph",
- "petgraph",
  "postcard",
  "serde",
  "serde_json",
@@ -273,31 +270,6 @@ dependencies = [
  "petgraph",
  "serde",
  "sha2",
-]
-
-[[package]]
-name = "nexus-storage-composite"
-version = "0.1.0"
-dependencies = [
- "cfg-if",
- "log",
- "nexus-model",
- "nexus-storage-petgraph",
- "petgraph",
- "postcard",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "nexus-storage-petgraph"
-version = "0.1.0"
-dependencies = [
- "cfg-if",
- "nexus-model",
- "petgraph",
- "postcard",
- "serde",
 ]
 
 [[package]]
