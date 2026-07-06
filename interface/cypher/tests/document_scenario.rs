@@ -43,7 +43,6 @@
 //   - Facts are immutable and survive eviction (unless orphaned)
 //   - Snapshots preserve all Facts, Intents, and claim state
 
-use nexus_storage_composite::HybridBlackboard;
 use nex::process::scheduler::Scheduler;
 use nex::process::tasks::contradiction_detector::ContradictionDetector;
 use nex::process::tasks::gap_detector::GapDetector;

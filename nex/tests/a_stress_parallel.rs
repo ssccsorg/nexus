@@ -6,8 +6,8 @@
 //   - claim_intent while another thread concludes
 //   - heartbeat while another thread releases
 
-use nexus_storage_composite::HybridBlackboard;
 use nexus_model::{Blackboard, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
+use nexus_storage_composite::HybridBlackboard;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicU64, Ordering},

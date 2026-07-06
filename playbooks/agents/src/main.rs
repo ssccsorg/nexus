@@ -11,8 +11,8 @@
 //   cd tests/agents && cargo run
 
 use interface_cypher as cypher;
-use nexus_storage_composite::HybridBlackboard;
 use nexus_model::{Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
+use nexus_storage_composite::HybridBlackboard;
 
 fn main() {
     println!("=== Rust Privileged Agent: Direct Blackboard Access ===\n");

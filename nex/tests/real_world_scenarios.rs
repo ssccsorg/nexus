@@ -27,7 +27,6 @@
 //   5. Document revision (v1 → detector facts → v2 arrives → state change)
 //      — knowledge evolution tracked through detector observations
 
-use nexus_storage_composite::HybridBlackboard;
 use nex::process::scheduler::Scheduler;
 use nex::process::tasks::contradiction_detector::ContradictionDetector;
 use nex::process::tasks::gap_detector::GapDetector;

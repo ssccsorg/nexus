@@ -5,8 +5,8 @@
 // access patterns. Uses create_blackboard() factory — never depends on
 // HybridBlackboard directly.
 
-use nexus_storage_composite::HybridBlackboard;
 use nexus_model::{Blackboard, BlackboardError, Content, Fact, FihHash, Intent};
+use nexus_storage_composite::HybridBlackboard;
 use std::sync::{Arc, Mutex};
 use std::thread;
 

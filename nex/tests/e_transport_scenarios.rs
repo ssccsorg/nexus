@@ -3,11 +3,11 @@
 // Each scenario simulates a different real-world transport and agent type,
 // all communicating through the FIH protocol via SerdeProxy's JSON boundary.
 
-use nexus_storage_composite::HybridBlackboard;
 use nexus_gateway_serde_proxy::SerdeProxy;
 use nexus_model::{
     BlackboardError, Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead,
 };
+use nexus_storage_composite::HybridBlackboard;
 
 // ── Scenario: Intermittent agent (Bluetooth / short-range radio) ─────────
 //
