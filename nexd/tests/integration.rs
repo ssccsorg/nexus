@@ -307,7 +307,8 @@ fn test_two_agents_communicate_through_blackboard() {
             "id": intent_id, "result": "result data"
         }),
     );
-    assert!(c["id"].as_str().is_some());
+    // Result is {"fact": Fact} — Fact.id is at c["fact"]["id"]
+    assert!(c["fact"]["id"].as_str().is_some(), "concluded fact should have an id");
 
     // A: sees the communication completed
     let state = d.ok("read_state", json!({}));
@@ -386,12 +387,21 @@ fn test_spawn_and_kill_agent() {
     assert!(pid > 0);
 
     let list = d.ok("list_agents", json!({}));
-    assert_eq!(list["agents"].as_array().unwrap().len(), 1);
-    assert_eq!(list["agents"][0]["pid"], pid);
+    // 1 spawned agent + nex-server = 2
+    assert_eq!(list["agents"].as_array().unwrap().len(), 2);
+    // Verify spawned agent is in the list (nex-server is also tracked)
+    let pids: Vec<u64> = list["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["pid"].as_u64().unwrap())
+        .collect();
+    assert!(pids.contains(&pid), "spawned agent pid {pid} should be in list");
 
     d.ok("kill_agent", json!({"pid": pid}));
     let list = d.ok("list_agents", json!({}));
-    assert_eq!(list["agents"].as_array().unwrap().len(), 0);
+    // Only nex-server remains
+    assert_eq!(list["agents"].as_array().unwrap().len(), 1);
 }
 
 #[test]
@@ -411,22 +421,24 @@ fn test_multi_agent_management() {
     );
 
     d.ok("kill_agent", json!({"pid": b["pid"]}));
+    // 2 remaining agents + nex-server = 3
     assert_eq!(
         d.ok("list_agents", json!({}))["agents"]
             .as_array()
             .unwrap()
             .len(),
-        2
+        3
     );
 
     d.ok("kill_agent", json!({"pid": a["pid"]}));
     d.ok("kill_agent", json!({"pid": c["pid"]}));
+    // Only nex-server remains
     assert_eq!(
         d.ok("list_agents", json!({}))["agents"]
             .as_array()
             .unwrap()
             .len(),
-        0
+        1
     );
 }
 
@@ -456,8 +468,14 @@ fn test_sigterm_graceful_shutdown_cleans_socket() {
     let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_nexd"))
         .env("NEXD_SOCKET_PATH", socket_path.to_str().unwrap())
         .env("NEXD_NEX_SERVER_PATH", crate::common::nex_server_bin())
-        .env("NEX_SOCKET_PATH", temp_dir.path().join("nx.sock").to_str().unwrap())
-        .env("NEX_DATA_DIR", temp_dir.path().join("data").to_str().unwrap())
+        .env(
+            "NEX_SOCKET_PATH",
+            temp_dir.path().join("nx.sock").to_str().unwrap(),
+        )
+        .env(
+            "NEX_DATA_DIR",
+            temp_dir.path().join("data").to_str().unwrap(),
+        )
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
@@ -586,9 +604,7 @@ fn test_short_lived_agent_eventually_reaped() {
             break; // spawned agent was reaped
         }
         if std::time::Instant::now() > deadline {
-            panic!(
-                "agent not reaped within 12s (initial={initial}, current={count})"
-            );
+            panic!("agent not reaped within 12s (initial={initial}, current={count})");
         }
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
