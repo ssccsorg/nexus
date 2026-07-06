@@ -104,25 +104,47 @@ verify_nex_spinwasi_ssccsdocs() {
 verify_nexd() {
     local SOCKET_DIR
     SOCKET_DIR=$(mktemp -d)
-    local SOCKET_PATH="${SOCKET_DIR}/nexd.sock"
+    local NEXD_SOCKET="${SOCKET_DIR}/nexd.sock"
+    local NEX_SERVER_SOCKET="${SOCKET_DIR}/nex-server.sock"
 
     echo "=== nexd ==="
     echo "Building..."
     cargo build -p nexd 2>&1
+    cargo build -p nex-server 2>&1
     echo ""
-    echo "Starting daemon on ${SOCKET_PATH}..."
+    echo "Starting nex-server on ${NEX_SERVER_SOCKET}..."
 
-    NEXD_SOCKET_PATH="$SOCKET_PATH" ./target/debug/nexd 2>/tmp/nexd-debug.log &
-    local NEXD_PID=$!
-    trap 'kill $NEXD_PID 2>/dev/null; rm -rf "$SOCKET_DIR"' EXIT
+    NEX_SOCKET_PATH="$NEX_SERVER_SOCKET" ./target/debug/nex-server 2>/tmp/nex-server-debug.log &
+    local NEX_PID=$!
 
-    # Wait for socket
+    # Wait for nex-server socket
     local waited=0
-    while [ ! -S "$SOCKET_PATH" ] && [ "$waited" -lt 30 ]; do
+    while [ ! -S "$NEX_SERVER_SOCKET" ] && [ "$waited" -lt 15 ]; do
         sleep 0.2
         waited=$((waited + 1))
     done
-    if [ ! -S "$SOCKET_PATH" ]; then
+    if [ ! -S "$NEX_SERVER_SOCKET" ]; then
+        echo "nex-server: socket not ready (FAIL)"
+        cat /tmp/nex-server-debug.log 2>/dev/null || true
+        return 1
+    fi
+    echo "  nex-server ready"
+
+    echo "Starting nexd on ${NEXD_SOCKET}..."
+    NEXD_SOCKET_PATH="$NEXD_SOCKET" \
+      NEXD_NEX_SERVER_PATH="./target/debug/nex-server" \
+      NEX_SOCKET_PATH="$NEX_SERVER_SOCKET" \
+      ./target/debug/nexd 2>/tmp/nexd-debug.log &
+    local NEXD_PID=$!
+    trap 'kill $NEX_PID $NEXD_PID 2>/dev/null; rm -rf "$SOCKET_DIR"' EXIT
+
+    # Wait for nexd socket
+    waited=0
+    while [ ! -S "$NEXD_SOCKET" ] && [ "$waited" -lt 30 ]; do
+        sleep 0.2
+        waited=$((waited + 1))
+    done
+    if [ ! -S "$NEXD_SOCKET" ]; then
         echo "nexd: socket not ready after ${waited}s (FAIL)"
         cat /tmp/nexd-debug.log 2>/dev/null || true
         return 1
@@ -132,15 +154,15 @@ verify_nexd() {
 
     local failed=0
 
-    # Helper: send JSON-RPC, return response
+    # Helper: send JSON-RPC to nexd socket, return response
     rpc() {
-        echo "$1" | socat - "UNIX-CONNECT:${SOCKET_PATH}" 2>/dev/null || echo '{"error":"connection failed"}'
+        echo "$1" | socat - "UNIX-CONNECT:${NEXD_SOCKET}" 2>/dev/null || echo '{"error":"connection failed"}'
     }
 
     # ═══════════════════════════════════════════════════════════════════
     # Scenario 1: Basic transport — write fact, read state
     # ═══════════════════════════════════════════════════════════════════
-    echo "  [1/6] Basic FIH operations..."
+    echo "  [1/7] Basic FIH operations..."
 
     local F1
     F1=$(rpc '{"id":1,"method":"write_fact","params":{"origin":"ci","content":"smoke test","creator":"runner"}}')
@@ -306,7 +328,6 @@ verify_nexd() {
         echo "    double_claim: ok (rejected)"
     else
         echo "    double_claim: ok (concluded intent re-claimable)"
-        # not setting failed=1 - storage allows re-claiming concluded intents
     fi
 
     # ═══════════════════════════════════════════════════════════════════
@@ -318,7 +339,17 @@ verify_nexd() {
     local SIG_SOCKET_DIR
     SIG_SOCKET_DIR=$(mktemp -d)
     local SIG_SOCKET_PATH="${SIG_SOCKET_DIR}/sigterm.sock"
-    NEXD_SOCKET_PATH="$SIG_SOCKET_PATH" ./target/debug/nexd 2>/tmp/nexd-sig-debug.log &
+    local SIG_NEX_SOCKET="${SIG_SOCKET_DIR}/nex-sigterm.sock"
+
+    NEX_SOCKET_PATH="$SIG_NEX_SOCKET" ./target/debug/nex-server 2>/dev/null &
+    local SIG_NEX_PID=$!
+    waited=0
+    while [ ! -S "$SIG_NEX_SOCKET" ] && [ "$waited" -lt 10 ]; do sleep 0.2; waited=$((waited + 1)); done
+
+    NEXD_SOCKET_PATH="$SIG_SOCKET_PATH" \
+      NEXD_NEX_SERVER_PATH="./target/debug/nex-server" \
+      NEX_SOCKET_PATH="$SIG_NEX_SOCKET" \
+      ./target/debug/nexd 2>/tmp/nexd-sig-debug.log &
     local SIG_PID=$!
 
     waited=0
@@ -344,6 +375,7 @@ verify_nexd() {
             # This is soft-fail — the tmpdir cleanup handles it
         fi
         kill -9 "$SIG_PID" 2>/dev/null || true
+        kill -9 "$SIG_NEX_PID" 2>/dev/null || true
     fi
     rm -rf "$SIG_SOCKET_DIR"
 
@@ -374,10 +406,10 @@ verify_nexd() {
     # ── Summary ────────────────────────────────────────────────────────
 
     # Cleanup
-    trap - EXIT  # clear the cleanup trap set earlier
-    kill "$NEXD_PID" 2>/dev/null || true
-    wait "$NEXD_PID" 2>/dev/null || true
-    rm -f /tmp/nexd-debug.log /tmp/nexd-sig-debug.log
+    trap - EXIT
+    kill "$NEX_PID" "$NEXD_PID" 2>/dev/null || true
+    wait "$NEX_PID" "$NEXD_PID" 2>/dev/null || true
+    rm -f /tmp/nexd-debug.log /tmp/nexd-sig-debug.log /tmp/nex-server-debug.log
     rm -rf "$SOCKET_DIR"
 
     echo ""
