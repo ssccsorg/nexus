@@ -9,7 +9,7 @@
 //   6. Show that new gaps emerge after knowledge integration
 
 use interface_cypher as cypher;
-use nex::create_blackboard;
+use nexus_storage_composite::HybridBlackboard;
 use nexus_model::{
     Blackboard, BlackboardError, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead,
 };
@@ -177,7 +177,7 @@ Remaining challenges include optimal fusion of local and global representations,
 
 #[test]
 fn scenario_full_research_loop() {
-    let mut bb = create_blackboard();
+    let mut bb = HybridBlackboard::new();
 
     // ──────────────────────────────────────────────────────────────────
     // Phase 1: Ingest all 3 documents

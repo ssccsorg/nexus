@@ -6,7 +6,7 @@
 // but communicates through SerdeProxy instead of calling HybridBlackboard
 // directly.
 
-use nex::create_blackboard;
+use nexus_storage_composite::HybridBlackboard;
 use nexus_gateway_serde_proxy::SerdeProxy;
 use nexus_model::{Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
 
@@ -20,7 +20,7 @@ use nexus_model::{Content, Fact, FactCapable, FihHash, Intent, IntentCapable, St
 /// except all FIH operations pass through SerdeProxy's JSON round-trip.
 #[test]
 fn scenario_contradiction_detection_via_gateway() {
-    let gw = SerdeProxy::new(create_blackboard());
+    let gw = SerdeProxy::new(HybridBlackboard::new());
 
     // Agent-A: ingests paper claiming GNNs work fine at 50 layers
     gw.submit_fact(&Fact {
