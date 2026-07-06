@@ -35,14 +35,21 @@ pub struct RpcError {
 
 impl RpcResponse {
     pub fn success(id: Value, result: Value) -> Self {
-        Self { id, result: Some(result), error: None }
+        Self {
+            id,
+            result: Some(result),
+            error: None,
+        }
     }
 
     pub fn error(id: Value, code: i64, message: impl Into<String>) -> Self {
         Self {
             id,
             result: None,
-            error: Some(RpcError { code, message: message.into() }),
+            error: Some(RpcError {
+                code,
+                message: message.into(),
+            }),
         }
     }
 
@@ -80,11 +87,7 @@ impl NexClient {
     }
 
     /// Send a JSON-RPC request and receive the response.
-    pub async fn call(
-        &mut self,
-        method: &str,
-        params: Value,
-    ) -> Result<Value, String> {
+    pub async fn call(&mut self, method: &str, params: Value) -> Result<Value, String> {
         let id = serde_json::json!(1);
         let req = serde_json::json!({
             "id": id,
@@ -92,8 +95,7 @@ impl NexClient {
             "params": params,
         });
 
-        let mut buf = serde_json::to_string(&req)
-            .map_err(|e| format!("serialize failed: {e}"))?;
+        let mut buf = serde_json::to_string(&req).map_err(|e| format!("serialize failed: {e}"))?;
         buf.push('\n');
 
         self.writer
@@ -111,8 +113,8 @@ impl NexClient {
             return Err("empty response".into());
         }
 
-        let resp: RpcResponse = serde_json::from_str(&line)
-            .map_err(|e| format!("deserialize failed: {e}"))?;
+        let resp: RpcResponse =
+            serde_json::from_str(&line).map_err(|e| format!("deserialize failed: {e}"))?;
 
         if let Some(err) = resp.error {
             return Err(format!("RPC error [{}]: {}", err.code, err.message));
@@ -138,10 +140,7 @@ impl NexClient {
                 }),
             )
             .await?;
-        Ok(result["id"]
-            .as_str()
-            .unwrap_or("???")
-            .to_string())
+        Ok(result["id"].as_str().unwrap_or("???").to_string())
     }
 
     /// Convenience: read the full board state.
@@ -166,10 +165,7 @@ impl NexClient {
                 }),
             )
             .await?;
-        Ok(result["id"]
-            .as_str()
-            .unwrap_or("???")
-            .to_string())
+        Ok(result["id"].as_str().unwrap_or("???").to_string())
     }
 
     /// Convenience: claim an Intent.
@@ -202,7 +198,12 @@ impl NexClient {
     }
 
     /// Convenience: write a Hint.
-    pub async fn write_hint(&mut self, id: &str, content: &str, creator: &str) -> Result<(), String> {
+    pub async fn write_hint(
+        &mut self,
+        id: &str,
+        content: &str,
+        creator: &str,
+    ) -> Result<(), String> {
         self.call(
             "write_hint",
             serde_json::json!({ "id": id, "content": content, "creator": creator }),
