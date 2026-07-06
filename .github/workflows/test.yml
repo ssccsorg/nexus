@@ -9,6 +9,7 @@ on:
       - "model/**"
       - "nex/**"
       - "nexd/**"
+      - "nex-server/**"
       - "gateway/**"
       - "apps/nex-api/**"
       - "apps/nex-cf/**"
@@ -30,6 +31,7 @@ on:
       - "model/**"
       - "nex/**"
       - "nexd/**"
+      - "nex-server/**"
       - "gateway/**"
       - "apps/nex-api/**"
       - "apps/nex-cf/**"
@@ -79,6 +81,8 @@ jobs:
           cache-on-failure: true
       - name: Core checks
         run: bash ./run.sh --core
+      - name: nex-server check
+        run: cargo check -p nex-server
 
   gateway:
     runs-on: ubuntu-latest
