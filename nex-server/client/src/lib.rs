@@ -125,11 +125,7 @@ impl NexClient {
 
     /// Send a JSON-RPC request and receive the full RpcResponse.
     /// Unlike `call()`, this preserves the raw error code/message.
-    pub async fn call_raw(
-        &mut self,
-        method: &str,
-        params: Value,
-    ) -> RpcResponse {
+    pub async fn call_raw(&mut self, method: &str, params: Value) -> RpcResponse {
         let id = serde_json::json!(1);
         let req = serde_json::json!({
             "id": id,
@@ -145,9 +141,8 @@ impl NexClient {
         let mut line = String::new();
         let _ = self.reader.read_line(&mut line).await;
 
-        serde_json::from_str(line.trim()).unwrap_or_else(|_| {
-            RpcResponse::error(id, -32000, "invalid response")
-        })
+        serde_json::from_str(line.trim())
+            .unwrap_or_else(|_| RpcResponse::error(id, -32000, "invalid response"))
     }
 
     /// Convenience: write a Fact.
