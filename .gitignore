@@ -24,6 +24,9 @@ sqlite*.db
 wal
 _secret*
 
+# Sub-workspace lockfiles
+nex-server/Cargo.lock
+
 # Wrangler build output
 .wrangler/
 dist/
