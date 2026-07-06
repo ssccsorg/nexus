@@ -17,6 +17,7 @@ on:
       - "storage/**"
       - "libs/**"
       - "apps/nex-spinwasi-ssccsdocs/**"
+      - "apps/nex-calc/**"
       - "playbooks/**"
       - "scripts/**"
       - "run.sh"
@@ -38,6 +39,7 @@ on:
       - "storage/**"
       - "libs/**"
       - "apps/nex-spinwasi-ssccsdocs/**"
+      - "apps/nex-calc/**"
       - "playbooks/**"
       - "scripts/**"
       - "run.sh"
@@ -110,6 +112,7 @@ jobs:
           workspaces: |
             nexd
             apps/nex-spinwasi-ssccsdocs
+            apps/nex-calc
           cache-targets: true
           cache-on-failure: true
       - name: Install socat (required for Unix socket RPC)
