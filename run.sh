@@ -541,6 +541,11 @@ case "${1:-}" in
         run_apps
         exit 0
         ;;
+    --server)
+        shift
+        verify_nex_server
+        exit 0
+        ;;
     --playbooks)
         kill_port 30922
         exec ./playbooks/run.sh
@@ -551,6 +556,7 @@ case "${1:-}" in
         echo "  --core        Core checks only (nex, storage/*)"
         echo "  --gateway     Gateway layer checks (api, nex-cf, serde-proxy)"
         echo "  --apps        Standalone app verification (spinwasi, cf-mock, ...)"
+        echo "  --server      nex-server standalone verification"
         echo "  --playbooks   Consumer playbooks only"
         ;;
     "")
