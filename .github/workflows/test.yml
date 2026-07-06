@@ -77,12 +77,16 @@ jobs:
             storage/petgraph
             libs/serde-proxy
             playbooks/agents
+            nex-server/server
+            nex-server/client
           cache-targets: true
           cache-on-failure: true
       - name: Core checks
         run: bash ./run.sh --core
-      - name: nex-server check
+      - name: nex-server build check
         run: cargo check -p nex-server && cargo check -p nex-client
+      - name: nex-server verification
+        run: bash ./run.sh --server
 
   gateway:
     runs-on: ubuntu-latest
