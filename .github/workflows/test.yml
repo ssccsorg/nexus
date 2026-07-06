@@ -83,8 +83,23 @@ jobs:
           cache-on-failure: true
       - name: Core checks
         run: bash ./run.sh --core
-      - name: nex-server build check
-        run: cargo check -p nex-server && cargo check -p nex-client
+
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            nex-server/server
+            nex-server/client
+          cache-targets: true
+          cache-on-failure: true
+      - name: Install socat
+        run: sudo apt-get update && sudo apt-get install -y socat
+      - name: nex-server verification
+        run: bash ./run.sh --server
 
   gateway:
     runs-on: ubuntu-latest
@@ -124,8 +139,6 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - name: App verification
         run: bash ./run.sh --apps
-      - name: nex-server verification
-        run: bash ./run.sh --server
 
   playbooks:
     runs-on: ubuntu-latest
