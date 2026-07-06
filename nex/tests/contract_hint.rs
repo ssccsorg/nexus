@@ -89,7 +89,11 @@ fn test_schema_hints_always_pass_in_v1() {
 fn test_rule_describe() {
     assert_eq!(HintRule::Gt(10).describe(), "value > 10");
     assert_eq!(HintRule::Positive.describe(), "value > 0");
-    assert!(HintRule::FromSchema("s".into()).describe().contains("schema"));
+    assert!(
+        HintRule::FromSchema("s".into())
+            .describe()
+            .contains("schema")
+    );
 }
 
 #[test]

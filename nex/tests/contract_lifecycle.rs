@@ -45,9 +45,7 @@ fn test_health_status_equality() {
     assert_eq!(HealthStatus::Healthy, HealthStatus::Healthy);
     assert_ne!(
         HealthStatus::Healthy,
-        HealthStatus::Degraded {
-            reason: "x".into()
-        }
+        HealthStatus::Degraded { reason: "x".into() }
     );
 }
 
