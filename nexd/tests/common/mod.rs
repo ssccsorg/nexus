@@ -83,6 +83,7 @@ impl DaemonHandle {
             .env("NEXD_SOCKET_PATH", socket_path.to_str().unwrap())
             .env("NEXD_NEX_SERVER_PATH", nex_server_bin())
             .env("NEX_SOCKET_PATH", nex_server_socket.to_str().unwrap())
+            .env("NEX_DATA_DIR", nex_data_dir.to_str().unwrap())
             .env("RUST_LOG", "nexd=error")
             .stdout(Stdio::null())
             .stderr(Stdio::null())

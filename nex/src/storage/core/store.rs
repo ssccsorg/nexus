@@ -402,13 +402,21 @@ async fn load_blob(io: &impl FileIo, blob_hash: &str) -> Content {
         };
     }
     let key = format!("blob/{}.bin", blob_hash);
+    let meta_key = format!("blob/{}.bin.meta", blob_hash);
+
+    let mime = io.read(&meta_key).await.ok().flatten().and_then(|bytes| {
+        postcard::from_bytes::<ContentMeta>(&bytes)
+            .ok()
+            .map(|m| m.mime_type)
+    });
+
     match io.read(&key).await {
         Ok(Some(data)) => Content {
-            mime_type: "application/json".into(),
+            mime_type: mime.unwrap_or_else(|| "application/json".into()),
             data,
         },
         _ => Content {
-            mime_type: "application/json".into(),
+            mime_type: mime.unwrap_or_else(|| "application/json".into()),
             data: Vec::new(),
         },
     }

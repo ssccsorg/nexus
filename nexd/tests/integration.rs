@@ -91,7 +91,7 @@ fn test_read_hint_by_id() {
     let d = DaemonHandle::start();
     d.ok(
         "write_hint",
-        json!({"content":"readable hint","creator":"t"}),
+        json!({"id":"h_test_001","content":"readable hint","creator":"t"}),
     );
 
     let state = d.ok("read_state", json!({}));

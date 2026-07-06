@@ -437,6 +437,77 @@ verify_nex_calc() {
     echo "nex-calc: passed"
 }
 
+# ── nex-server standalone verification ────────────────────────────────────
+
+verify_nex_server() {
+    local SOCKET_DIR
+    SOCKET_DIR=$(mktemp -d)
+    local SOCKET_PATH="${SOCKET_DIR}/nx.sock"
+
+    echo "=== nex-server ==="
+    echo "Building..."
+    cargo build -p nex-server 2>&1 || { echo "nex-server: build FAILED"; return 1; }
+    echo ""
+    echo "Starting nex-server on ${SOCKET_PATH}..."
+
+    NEX_SOCKET_PATH="$SOCKET_PATH" NEX_DATA_DIR="$SOCKET_DIR/data" ./target/debug/nex-server 2>/dev/null &
+    local NEX_PID=$!
+    trap 'kill $NEX_PID 2>/dev/null; rm -rf "$SOCKET_DIR"' EXIT
+
+    local waited=0
+    while [ ! -S "$SOCKET_PATH" ] && [ "$waited" -lt 15 ]; do sleep 0.2; waited=$((waited + 1)); done
+    if [ ! -S "$SOCKET_PATH" ]; then echo "nex-server: socket not ready (FAIL)"; return 1; fi
+    echo "  server ready"
+
+    local failed=0
+
+    rpc() {
+        echo "$1" | socat - "UNIX-CONNECT:${SOCKET_PATH}" 2>/dev/null || echo '{"error":"connection failed"}'
+    }
+
+    echo "  [1/4] FIH operations..."
+    local F1
+    F1=$(rpc '{"id":1,"method":"write_fact","params":{"origin":"vt","content":"virtual test","creator":"ci"}}')
+    local FID
+    FID=$(echo "$F1" | sed 's/.*"id":"\([^"]*\)".*/\1/')
+    [ -n "$FID" ] && echo "    write_fact: ok" || { echo "    write_fact: FAIL"; failed=1; }
+
+    local S1
+    S1=$(rpc '{"id":2,"method":"read_state","params":{}}')
+    echo "$S1" | grep -q '"facts"' && echo "    read_state: ok" || { echo "    read_state: FAIL"; failed=1; }
+
+    echo "  [2/4] Intent lifecycle..."
+    local IID
+    IID=$(rpc "{\"id\":10,\"method\":\"write_intent\",\"params\":{\"from_facts\":[\"$FID\"],\"description\":\"vt intent\",\"creator\":\"ci\"}}")
+    local INTENT_ID
+    INTENT_ID=$(echo "$IID" | sed 's/.*"id":"\([^"]*\)".*/\1/')
+    [ -n "$INTENT_ID" ] && echo "    write_intent: ok" || { echo "    write_intent: FAIL ($IID)"; failed=1; }
+
+    rpc "{\"id\":11,\"method\":\"claim_intent\",\"params\":{\"id\":\"$INTENT_ID\",\"agent\":\"w\"}}" | grep -q '"result"' && echo "    claim_intent: ok" || { echo "    claim_intent: FAIL"; failed=1; }
+    rpc "{\"id\":12,\"method\":\"heartbeat_intent\",\"params\":{\"id\":\"$INTENT_ID\",\"agent\":\"w\"}}" | grep -q '"result"' && echo "    heartbeat_intent: ok" || { echo "    heartbeat_intent: FAIL"; failed=1; }
+    rpc "{\"id\":13,\"method\":\"conclude_intent\",\"params\":{\"id\":\"$INTENT_ID\",\"result\":\"done\"}}" | grep -q '"result"' && echo "    conclude_intent: ok" || { echo "    conclude_intent: FAIL"; failed=1; }
+
+    echo "  [3/4] Error handling..."
+    rpc '{"id":20,"method":"nonexistent","params":{}}' | grep -q '"error"' && echo "    unknown_method: ok" || { echo "    unknown_method: FAIL"; failed=1; }
+    rpc '{"id":21,"method":"write_intent","params":{"from_facts":[],"description":"x","creator":"x"}}' | grep -q '"error"' && echo "    no_fact_intent: ok (rejected)" || { echo "    no_fact_intent: FAIL"; failed=1; }
+
+    echo "  [4/4] Write hint..."
+    rpc '{"id":30,"method":"write_hint","params":{"id":"h_vt_1","content":"virtual hint","creator":"ci"}}' | grep -q '"result"' && echo "    write_hint: ok" || { echo "    write_hint: FAIL"; failed=1; }
+
+    trap - EXIT
+    kill "$NEX_PID" 2>/dev/null || true
+    wait "$NEX_PID" 2>/dev/null || true
+    rm -rf "$SOCKET_DIR"
+
+    echo ""
+    if [ "$failed" -eq 0 ]; then
+        echo "nex-server: all tests passed"
+    else
+        echo "nex-server: some tests FAILED"
+        return 1
+    fi
+}
+
 # ── App suite ─────────────────────────────────────────────────────────────
 
 run_apps() {
