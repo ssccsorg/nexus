@@ -1802,6 +1802,7 @@ dependencies = [
  "interface-cypher",
  "nex",
  "nexus-model",
+ "nexus-storage-composite",
  "serde_json",
 ]
 

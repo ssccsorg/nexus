@@ -7,7 +7,7 @@
 //   - Intent lifecycle completes correctly under contention
 
 use interface_cypher as cypher;
-use nex::create_blackboard;
+use nexus_storage_composite::HybridBlackboard;
 use nexus_model::{Blackboard, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
 use std::collections::HashSet;
 
@@ -160,7 +160,7 @@ impl TestRng {
 
 #[test]
 fn test_stress_many_ants() {
-    let mut bb = create_blackboard();
+    let mut bb = HybridBlackboard::new();
     let mut rng = TestRng::new(42);
 
     // Phase 1: seed with initial facts (research corpus)

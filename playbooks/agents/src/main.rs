@@ -11,13 +11,13 @@
 //   cd tests/agents && cargo run
 
 use interface_cypher as cypher;
-use nex::create_blackboard;
+use nexus_storage_composite::HybridBlackboard;
 use nexus_model::{Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
 
 fn main() {
     println!("=== Rust Privileged Agent: Direct Blackboard Access ===\n");
 
-    let bb = create_blackboard();
+    let bb = HybridBlackboard::new();
 
     // ── Phase 1: Submit facts ────────────────────────────────────────
 

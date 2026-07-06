@@ -5,7 +5,7 @@
 // access patterns. Uses create_blackboard() factory — never depends on
 // HybridBlackboard directly.
 
-use nex::create_blackboard;
+use nexus_storage_composite::HybridBlackboard;
 use nexus_model::{Blackboard, BlackboardError, Content, Fact, FihHash, Intent};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -14,7 +14,7 @@ type SharedBlackboard = Arc<Mutex<Box<dyn Blackboard + Send>>>;
 
 fn bb() -> SharedBlackboard {
     Arc::new(Mutex::new(
-        Box::new(create_blackboard()) as Box<dyn Blackboard + Send>
+        Box::new(HybridBlackboard::new()) as Box<dyn Blackboard + Send>
     ))
 }
 

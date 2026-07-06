@@ -43,7 +43,7 @@
 //   - Facts are immutable and survive eviction (unless orphaned)
 //   - Snapshots preserve all Facts, Intents, and claim state
 
-use nex::create_blackboard;
+use nexus_storage_composite::HybridBlackboard;
 use nex::process::scheduler::Scheduler;
 use nex::process::tasks::contradiction_detector::ContradictionDetector;
 use nex::process::tasks::gap_detector::GapDetector;
@@ -418,7 +418,7 @@ fn agent_resolve_contradictions(
 
 #[test]
 fn scenario_full_document_lifecycle() {
-    let mut bb = create_blackboard();
+    let mut bb = HybridBlackboard::new();
     seed_initial_corpus(&mut bb);
 
     let mut sched = Scheduler::new(bb);
@@ -542,7 +542,7 @@ fn scenario_full_document_lifecycle() {
 // ═════════════════════════════════════════════════════════════════════════
 #[test]
 fn scenario_gap_facts_are_immutable_observations() {
-    let mut bb = create_blackboard();
+    let mut bb = HybridBlackboard::new();
     seed_initial_corpus(&mut bb);
 
     let mut sched = Scheduler::new(bb);
@@ -581,7 +581,7 @@ fn scenario_gap_facts_are_immutable_observations() {
 // ═════════════════════════════════════════════════════════════════════════
 #[test]
 fn scenario_state_change_detector_facts() {
-    let bb = create_blackboard();
+    let bb = HybridBlackboard::new();
     let mut sched = Scheduler::new(bb);
     sched.register(Box::new(StateChangeDetector::new()));
 
@@ -628,7 +628,7 @@ fn scenario_state_change_detector_facts() {
 #[test]
 fn scenario_detector_state_snapshot_roundtrip() {
     // Worker A: create scheduler FIRST (0 facts), then seed
-    let bb_a = create_blackboard();
+    let bb_a = HybridBlackboard::new();
     let mut sched_a = Scheduler::new(bb_a);
     sched_a.register(Box::new(StateChangeDetector::new()));
     sched_a.register(Box::new(GapDetector::new()));
@@ -709,13 +709,13 @@ fn scenario_detector_state_snapshot_roundtrip() {
 // ═════════════════════════════════════════════════════════════════════════
 #[test]
 fn scenario_flush_then_evict() {
-    let mut bb = create_blackboard();
+    let mut bb = HybridBlackboard::new();
     seed_initial_corpus(&mut bb);
 
     let mut sched = Scheduler::new(bb);
     sched.register(Box::new(GapDetector::new()));
 
-    // tick_with_flush requires FlushCapable — now provided by create_blackboard()
+    // tick_with_flush requires FlushCapable — now provided by HybridBlackboard::new()
     let _ = sched.tick_with_flush().expect("tick with flush");
     let state = StorageRead::read_state(&sched.bb);
     assert!(
