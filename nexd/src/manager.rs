@@ -9,7 +9,7 @@ use tokio::process::{Child, Command};
 use tracing::info;
 
 /// Handle representing a managed child process.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct AgentHandle {
     pub pid: u32,
     pub command: String,
