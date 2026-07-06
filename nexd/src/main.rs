@@ -20,8 +20,8 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use nexd::daemon::{Config, Daemon, LogLevel, ShutdownHandle};
 use nex_client::NexClient;
+use nexd::daemon::{Config, Daemon, LogLevel, ShutdownHandle};
 
 #[tokio::main]
 async fn main() -> nexd::daemon::Result<()> {
@@ -134,10 +134,7 @@ async fn wait_for_socket(path: &str) -> u64 {
     waited
 }
 
-async fn scheduler_task(
-    mut shutdown: ShutdownHandle,
-    config: nexd::config::NexdConfig,
-) {
+async fn scheduler_task(mut shutdown: ShutdownHandle, config: nexd::config::NexdConfig) {
     let tick_interval = Duration::from_millis(config.tick_interval_ms);
     let heartbeat_ttl = Duration::from_secs(config.heartbeat_ttl_secs);
     let socket = config.nex_server_socket.clone();

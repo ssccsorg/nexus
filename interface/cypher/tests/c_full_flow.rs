@@ -7,7 +7,6 @@
 //   4. Read_state + unit assertions verify correctness (Cypher is for portability)
 
 use interface_cypher as cypher;
-use nexus_storage_composite::HybridBlackboard;
 use nexus_model::{
     Blackboard, BlackboardError, Content, Fact, FihHash, Intent, IntentCapable, StorageRead,
 };
@@ -169,8 +168,8 @@ fn test_full_agent_collaboration_flow() {
 
 #[test]
 fn test_petgraph_time_range() {
-    use nexus_storage_composite::HybridBlackboard;
     use nexus_model::{Fact, FactCapable, FihHash, StorageRead, TimeRangeCapable};
+    use nexus_storage_composite::HybridBlackboard;
     use nexus_storage_petgraph::PetgraphStorage;
 
     // PetgraphStorage::time_range() returns None (unbounded in-memory store).

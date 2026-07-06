@@ -30,7 +30,10 @@ fn nex_server_bin() -> std::path::PathBuf {
     panic!(
         "nex-server binary not found. Run 'cargo build -p nex-server' first. \
          Tried: {} and ./target/debug/nex-server",
-        nexd_path.parent().map(|p| p.join("nex-server").display().to_string()).unwrap_or_default()
+        nexd_path
+            .parent()
+            .map(|p| p.join("nex-server").display().to_string())
+            .unwrap_or_default()
     );
 }
 

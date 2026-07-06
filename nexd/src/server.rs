@@ -89,7 +89,8 @@ async fn handle_connection(
     let mut line = String::new();
 
     // Connect NexClient per-connection (or share via Arc)
-    let mut client = NexClient::connect(nex_socket).await
+    let mut client = NexClient::connect(nex_socket)
+        .await
         .map_err(|e| anyhow::anyhow!("nex-client connect: {e}"))?;
 
     loop {
@@ -139,16 +140,12 @@ async fn dispatch(
 
     match req.method.as_str() {
         // ── FIH methods → NexClient IPC ─────────────────────────────
-        "write_fact" | "read_state" | "read_fact"
-        | "read_intent" | "read_hint"
-        | "write_intent" | "claim_intent" | "heartbeat_intent"
-        | "release_intent" | "conclude_intent"
-        | "write_hint" => {
-            match client.call(&req.method, req.params).await {
-                Ok(result) => RpcResponse::success(id, result),
-                Err(msg) => RpcResponse::error(id, -32000, msg),
-            }
-        }
+        "write_fact" | "read_state" | "read_fact" | "read_intent" | "read_hint"
+        | "write_intent" | "claim_intent" | "heartbeat_intent" | "release_intent"
+        | "conclude_intent" | "write_hint" => match client.call(&req.method, req.params).await {
+            Ok(result) => RpcResponse::success(id, result),
+            Err(msg) => RpcResponse::error(id, -32000, msg),
+        },
 
         // ── Agent management methods → ProcessManager ──────────────
         "spawn_agent" => handle_spawn_agent(id, &req.params, pm),
@@ -163,13 +160,12 @@ async fn dispatch(
 use serde::Deserialize;
 use serde_json::Value;
 
-fn handle_spawn_agent(
-    id: Value,
-    params: &Value,
-    pm: &Arc<Mutex<ProcessManager>>,
-) -> RpcResponse {
+fn handle_spawn_agent(id: Value, params: &Value, pm: &Arc<Mutex<ProcessManager>>) -> RpcResponse {
     #[derive(Deserialize)]
-    struct Params { command: String, args: Option<Vec<String>> }
+    struct Params {
+        command: String,
+        args: Option<Vec<String>>,
+    }
     let p: Params = match serde_json::from_value(params.clone()) {
         Ok(v) => v,
         Err(e) => return RpcResponse::error(id, -32602, e.to_string()),
@@ -185,10 +181,7 @@ fn handle_spawn_agent(
     }
 }
 
-fn handle_list_agents(
-    id: Value,
-    pm: &Arc<Mutex<ProcessManager>>,
-) -> RpcResponse {
+fn handle_list_agents(id: Value, pm: &Arc<Mutex<ProcessManager>>) -> RpcResponse {
     let guard = match pm.lock() {
         Ok(g) => g,
         Err(e) => return RpcResponse::error(id, -32000, format!("lock poisoned: {e}")),
@@ -197,13 +190,11 @@ fn handle_list_agents(
     RpcResponse::success(id, serde_json::json!({ "agents": agents }))
 }
 
-fn handle_kill_agent(
-    id: Value,
-    params: &Value,
-    pm: &Arc<Mutex<ProcessManager>>,
-) -> RpcResponse {
+fn handle_kill_agent(id: Value, params: &Value, pm: &Arc<Mutex<ProcessManager>>) -> RpcResponse {
     #[derive(Deserialize)]
-    struct Params { pid: u32 }
+    struct Params {
+        pid: u32,
+    }
     let p: Params = match serde_json::from_value(params.clone()) {
         Ok(v) => v,
         Err(e) => return RpcResponse::error(id, -32602, e.to_string()),

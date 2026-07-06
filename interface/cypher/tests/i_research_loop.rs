@@ -9,7 +9,6 @@
 //   6. Show that new gaps emerge after knowledge integration
 
 use interface_cypher as cypher;
-use nexus_storage_composite::HybridBlackboard;
 use nexus_model::{
     Blackboard, BlackboardError, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead,
 };

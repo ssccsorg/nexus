@@ -6,9 +6,9 @@
 // but communicates through SerdeProxy instead of calling HybridBlackboard
 // directly.
 
-use nexus_storage_composite::HybridBlackboard;
 use nexus_gateway_serde_proxy::SerdeProxy;
 use nexus_model::{Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
+use nexus_storage_composite::HybridBlackboard;
 
 /// Contradiction Detection — via SerdeProxy (JSON transport boundary).
 ///
