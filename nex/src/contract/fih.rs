@@ -47,7 +47,8 @@ impl FihContract {
         schema: Option<&str>,
     ) -> Result<FihHash, BlackboardError> {
         let schema = schema.unwrap_or(&fact.content.mime_type);
-        self.gate.admit(schema, &fact.content.data)
+        self.gate
+            .admit(schema, &fact.content.data)
             .map_err(|e| BlackboardError::Forbidden(e.to_string()))?;
         let hash = storage.submit_fact(fact).await?;
         let ts = SystemTime::now()
@@ -66,8 +67,9 @@ impl FihContract {
         result: &str,
     ) -> Result<nexus_model::fih::Fact, BlackboardError> {
         if let Ok(numeric) = result.trim().parse::<i64>() {
-            self.hints.check_numeric(numeric)
-                .map_err(|e| BlackboardError::Forbidden(e))?;
+            self.hints
+                .check_numeric(numeric)
+                .map_err(BlackboardError::Forbidden)?;
         }
         let fact = storage.conclude_intent(intent_id, result).await?;
         let ts = SystemTime::now()
@@ -97,10 +99,22 @@ pub fn register_default_fih_schemas(gate: &GovernanceGate) {
 pub mod constraints {
     use super::HintRule;
 
-    pub fn positive() -> HintRule { HintRule::Positive }
-    pub fn even() -> HintRule { HintRule::Even }
-    pub fn gt(n: i64) -> HintRule { HintRule::Gt(n) }
-    pub fn lt(n: i64) -> HintRule { HintRule::Lt(n) }
-    pub fn non_negative() -> HintRule { HintRule::Gt(-1) }
-    pub fn eq(n: i64) -> HintRule { HintRule::Eq(n) }
+    pub fn positive() -> HintRule {
+        HintRule::Positive
+    }
+    pub fn even() -> HintRule {
+        HintRule::Even
+    }
+    pub fn gt(n: i64) -> HintRule {
+        HintRule::Gt(n)
+    }
+    pub fn lt(n: i64) -> HintRule {
+        HintRule::Lt(n)
+    }
+    pub fn non_negative() -> HintRule {
+        HintRule::Gt(-1)
+    }
+    pub fn eq(n: i64) -> HintRule {
+        HintRule::Eq(n)
+    }
 }

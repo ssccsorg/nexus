@@ -159,10 +159,7 @@ impl EvidenceChain {
 
     /// Return all entries (for inspection/export).
     pub fn entries(&self) -> Vec<EvidenceEntry> {
-        self.entries
-            .lock()
-            .expect("EvidenceChain lock")
-            .clone()
+        self.entries.lock().expect("EvidenceChain lock").clone()
     }
 
     /// Return a single entry by sequence number, if within range.

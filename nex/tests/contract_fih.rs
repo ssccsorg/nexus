@@ -17,7 +17,10 @@ fn test_register_default_fih_schemas() {
     assert!(gate.admit("text/plain", b"hello").is_ok());
     assert!(gate.admit("text/markdown", b"# Hello").is_ok());
     assert!(gate.admit("application/x-nex-calc-number", b"42").is_ok());
-    assert!(gate.admit("application/octet-stream", b"\x00\x01\x02").is_ok());
+    assert!(
+        gate.admit("application/octet-stream", b"\x00\x01\x02")
+            .is_ok()
+    );
 }
 
 #[test]
