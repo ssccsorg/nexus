@@ -66,13 +66,3 @@ pub trait AsyncTimeRangeCapable: AsyncStorageRead {
 pub trait AsyncFlushCapable: AsyncStorageRead {
     async fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String>;
 }
-
-/// Async counterpart of [`super::governance::GovernanceCapable`].
-pub trait AsyncGovernanceCapable: AsyncStorageRead {
-    async fn register_schema(&self, schema_id: &str, schema: &[u8]) -> String;
-    async fn admit_fact(&self, schema_id: &str, data: &[u8]) -> Result<(), BlackboardError>;
-    async fn check_hints(&self, value: i64) -> Result<(), BlackboardError>;
-    async fn evidence_tip(&self) -> Option<String>;
-    async fn governance_enabled(&self) -> bool;
-    async fn set_governance(&self, enabled: bool);
-}
