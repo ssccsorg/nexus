@@ -143,18 +143,11 @@ async fn dispatch(
         "write_fact" | "read_state" | "read_fact" | "read_intent" | "read_hint"
         | "write_intent" | "claim_intent" | "heartbeat_intent" | "release_intent"
         | "conclude_intent" | "write_hint" => {
-            match client.call(&req.method, req.params).await {
-                Ok(result) => RpcResponse::success(id, result),
-                Err(msg) => {
-                    // Try to extract RPC error code from nex-client error message
-                    // Format: "RPC error [-32002]: conflict: ..."
-                    let code = msg
-                        .strip_prefix("RPC error [")
-                        .and_then(|s| s.split(']').next())
-                        .and_then(|c| c.parse::<i64>().ok())
-                        .unwrap_or(-32000);
-                    RpcResponse::error(id, code, msg)
-                }
+            let resp = client.call_raw(&req.method, req.params).await;
+            RpcResponse {
+                id,
+                result: resp.result,
+                error: resp.error,
             }
         }
 
