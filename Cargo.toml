@@ -3,7 +3,8 @@ resolver = "2"
 members = [
     "model",
     "nex",
-    "nex-server",
+    "nex-server/server",
+    "nex-server/client",
     "nexd",
     "storage/duckdb",
     "libs/serde-proxy",

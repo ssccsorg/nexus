@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use nex::io::fs_io::FsIo;
 use nex::storage::core::store::FihStorage;
+use nex_client::{RpcRequest, RpcResponse};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
 use tracing::{error, info};
@@ -80,10 +81,10 @@ async fn handle_client(stream: tokio::net::UnixStream, storage: Arc<FihStorage<F
             continue;
         }
 
-        let req: handler::RpcRequest = match serde_json::from_str(&line) {
+        let req: RpcRequest = match serde_json::from_str(&line) {
             Ok(r) => r,
             Err(_) => {
-                let err = handler::RpcResponse::invalid_request(serde_json::Value::Null);
+                let err = RpcResponse::invalid_request(serde_json::Value::Null);
                 let _ = writer
                     .write_all(format!("{}\n", serde_json::to_string(&err).unwrap()).as_bytes())
                     .await;

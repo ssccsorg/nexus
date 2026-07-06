@@ -4,63 +4,13 @@ use std::sync::Arc;
 
 use nex::io::fs_io::FsIo;
 use nex::storage::core::store::FihStorage;
+use nex_client::{RpcRequest, RpcResponse};
 use nexus_model::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, BlackboardError,
     Content, Fact, FihHash, Hint, Intent,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{json, Value};
-
-/// JSON-RPC 2.0 request.
-#[derive(Deserialize)]
-pub struct RpcRequest {
-    pub id: Value,
-    pub method: String,
-    #[serde(default)]
-    pub params: Value,
-}
-
-/// JSON-RPC 2.0 response.
-#[derive(Serialize)]
-pub struct RpcResponse {
-    pub id: Value,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub result: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<RpcError>,
-}
-
-#[derive(Serialize)]
-pub struct RpcError {
-    pub code: i64,
-    pub message: String,
-}
-
-impl RpcResponse {
-    pub fn success(id: Value, result: Value) -> Self {
-        Self { id, result: Some(result), error: None }
-    }
-
-    pub fn error(id: Value, code: i64, message: impl Into<String>) -> Self {
-        Self {
-            id,
-            result: None,
-            error: Some(RpcError { code, message: message.into() }),
-        }
-    }
-
-    pub fn invalid_request(id: Value) -> Self {
-        Self::error(id, -32600, "Invalid Request")
-    }
-
-    pub fn method_not_found(id: Value, method: &str) -> Self {
-        Self::error(id, -32601, format!("Method not found: {method}"))
-    }
-
-    pub fn invalid_params(id: Value, msg: String) -> Self {
-        Self::error(id, -32602, msg)
-    }
-}
 
 fn map_error(e: BlackboardError) -> (i64, String) {
     match e {
