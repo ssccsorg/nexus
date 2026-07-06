@@ -50,8 +50,7 @@ pub use fih::{BoardState, Content, Fact, FihHash, Hint, Intent};
 #[allow(deprecated)]
 pub use interner::Interner;
 pub use storage::async_impl::{
-    AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable,
-    AsyncGovernanceCapable, AsyncHintCapable, AsyncIntentCapable, AsyncScanCapable,
-    AsyncStorageRead, AsyncTimeRangeCapable,
+    AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable, AsyncHintCapable,
+    AsyncIntentCapable, AsyncScanCapable, AsyncStorageRead, AsyncTimeRangeCapable,
 };
 pub use storage::*;
