@@ -1,0 +1,17 @@
+[package]
+name = "nex-calc-fihcontract"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "FIH-based calculator with FihContract layer — demonstrates governed FIH pipeline"
+
+[workspace]
+
+[dependencies]
+nexus-model = { path = "../../model" }
+nex = { path = "../../nex" }
+nexus-storage-sim = { path = "../../storage/sim" }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "io-util"] }
+sha2 = "0.10"
+postcard = { version = "1", features = ["alloc"] }
+serde = { version = "1", features = ["derive"] }

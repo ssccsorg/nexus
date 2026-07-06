@@ -89,3 +89,4 @@ digraph DOTGraph {
 ### Rust
 
 - Split codes as following their roles - do not code all in `lib.rs`.
+- Unit tests should be always located in `/tests` not in host code files.
