@@ -82,7 +82,7 @@ jobs:
       - name: Core checks
         run: bash ./run.sh --core
       - name: nex-server check
-        run: cargo check -p nex-server
+        run: cargo check -p nex-server && cargo check -p nex-client
 
   gateway:
     runs-on: ubuntu-latest
