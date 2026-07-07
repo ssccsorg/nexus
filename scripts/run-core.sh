@@ -92,6 +92,9 @@ run_clippy() {
 run_test()   {
     cargo test -p nex -- --nocapture 2>&1
     echo "---"
+    # build nex-server before integration tests; cargo test -p nexd does not
+    # pull in the nex-server binary as a dependency
+    cargo build -p nex-server 2>&1
     cargo test -p nexd --test integration -- --test-threads=1 --nocapture 2>&1
     echo "---"
     cargo test -p nexus-storage-sim -- --nocapture 2>&1
