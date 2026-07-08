@@ -1748,6 +1748,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "nex-tagma"
+version = "0.1.0"
+dependencies = [
+ "sha2",
+]
+
+[[package]]
 name = "nexd"
 version = "0.1.0"
 dependencies = [
