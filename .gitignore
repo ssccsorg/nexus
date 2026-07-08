@@ -15,6 +15,17 @@ __pycache__/
 venv/
 rag/lightrag-env/
 rag/lightrag/data/
+data/
+.fih_history
+fih.db
+*.snapshot
+*.parquet
+sqlite*.db
+wal
+_secret*
+
+# Sub-workspace lockfiles
+nex-server/Cargo.lock
 
 # Wrangler build output
 .wrangler/

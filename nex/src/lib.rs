@@ -32,8 +32,3 @@ pub use storage::core::{EntityStore, FihSession, FihStorage, IntentStatus, Memor
 pub use storage::fih::FihBlackboard;
 pub use storage::semantic::SemanticStore;
 pub use storage::semantic::record::{Query, RecordLoad};
-
-/// Shortcut to create a default blackboard (hot petgraph + no cold backend).
-pub fn create_blackboard() -> nexus_storage_composite::HybridBlackboard {
-    nexus_storage_composite::HybridBlackboard::new()
-}

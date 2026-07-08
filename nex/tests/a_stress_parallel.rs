@@ -6,8 +6,8 @@
 //   - claim_intent while another thread concludes
 //   - heartbeat while another thread releases
 
-use nex::create_blackboard;
 use nexus_model::{Blackboard, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
+use nexus_storage_composite::HybridBlackboard;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicU64, Ordering},
@@ -180,7 +180,7 @@ impl ParallelAnt {
 
 #[test]
 fn test_parallel_many_ants() {
-    let bb = Arc::new(Mutex::new(create_blackboard()));
+    let bb = Arc::new(Mutex::new(HybridBlackboard::new()));
 
     // Seed initial facts
     {

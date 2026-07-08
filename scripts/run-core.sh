@@ -32,7 +32,7 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
-run_check()  { cargo check -p nex && cargo check -p nexd && cargo check -p nexus-storage-duckdb; }
+run_check()  { cargo check -p nex && cargo check -p nexd && cargo check -p nexus-storage-duckdb && cargo check -p nexus-storage-sim; }
 
 # ── WASM check: ensure storage-sim builds for wasm32 target ────────────
 
@@ -51,6 +51,7 @@ run_wasm_check() {
         -not -path './storage/ve-composite/*' \
         -not -path './storage/sim/*' \
         -not -path './nexd/*' \
+        -not -path './nex-server/*' \
         -not -path './apps/*' \
         -not -path './playbooks/*' \
         -not -path './Cargo.toml' \
@@ -78,6 +79,7 @@ run_clippy() {
         nex \
         nexus-storage-composite \
         nexus-storage-petgraph \
+        nexus-storage-sim \
         nexus-model \
         interface-query \
         interface-cypher \
@@ -90,7 +92,12 @@ run_clippy() {
 run_test()   {
     cargo test -p nex -- --nocapture 2>&1
     echo "---"
+    # build nex-server before integration tests; cargo test -p nexd does not
+    # pull in the nex-server binary as a dependency
+    cargo build -p nex-server 2>&1
     cargo test -p nexd --test integration -- --test-threads=1 --nocapture 2>&1
+    echo "---"
+    cargo test -p nexus-storage-sim -- --nocapture 2>&1
 
 }
 run_all() {

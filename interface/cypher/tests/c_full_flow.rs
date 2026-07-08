@@ -7,7 +7,6 @@
 //   4. Read_state + unit assertions verify correctness (Cypher is for portability)
 
 use interface_cypher as cypher;
-use nex::create_blackboard;
 use nexus_model::{
     Blackboard, BlackboardError, Content, Fact, FihHash, Intent, IntentCapable, StorageRead,
 };
@@ -34,7 +33,7 @@ fn cypher_count(bb: &HybridBlackboard, query: &str) -> usize {
 
 #[test]
 fn test_full_agent_collaboration_flow() {
-    let bb = create_blackboard();
+    let bb = HybridBlackboard::new();
 
     // ── Phase 1: Agent-A ingests research facts ───────────────────────
 
@@ -169,8 +168,8 @@ fn test_full_agent_collaboration_flow() {
 
 #[test]
 fn test_petgraph_time_range() {
-    use nex::create_blackboard;
     use nexus_model::{Fact, FactCapable, FihHash, StorageRead, TimeRangeCapable};
+    use nexus_storage_composite::HybridBlackboard;
     use nexus_storage_petgraph::PetgraphStorage;
 
     // PetgraphStorage::time_range() returns None (unbounded in-memory store).
@@ -181,9 +180,9 @@ fn test_petgraph_time_range() {
         "petgraph hot store has no time bound"
     );
 
-    // create_blackboard() uses DualStorage internally.
+    // HybridBlackboard::new() uses DualStorage internally.
     // PetgraphStorage is the hot layer, NullStorage is the cold layer.
-    let bb = create_blackboard();
+    let bb = HybridBlackboard::new();
     bb.submit_fact(&Fact {
         id: FihHash::from_hex("f_001"),
         origin: "test".into(),

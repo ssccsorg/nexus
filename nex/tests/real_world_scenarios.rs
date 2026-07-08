@@ -27,7 +27,6 @@
 //   5. Document revision (v1 → detector facts → v2 arrives → state change)
 //      — knowledge evolution tracked through detector observations
 
-use nex::create_blackboard;
 use nex::process::scheduler::Scheduler;
 use nex::process::tasks::contradiction_detector::ContradictionDetector;
 use nex::process::tasks::gap_detector::GapDetector;
@@ -187,7 +186,7 @@ fn seed_cross_domain(bb: &mut impl Blackboard) -> Vec<String> {
 
 #[test]
 fn scenario_cross_domain_discovery() {
-    let mut bb = create_blackboard();
+    let mut bb = HybridBlackboard::new();
     let baseline = seed_cross_domain(&mut bb);
 
     let mut sched = Scheduler::new(bb);
@@ -362,7 +361,7 @@ fn seed_rust_challenge(bb: &mut impl Blackboard) {
 
 #[test]
 fn scenario_peer_review_challenge() {
-    let mut bb = create_blackboard();
+    let mut bb = HybridBlackboard::new();
     let baseline = seed_manifesto_base(&mut bb);
 
     let mut sched = Scheduler::new(bb);
@@ -472,7 +471,7 @@ fn scenario_peer_review_challenge() {
 
 #[test]
 fn scenario_incremental_knowledge_growth() {
-    let bb = create_blackboard();
+    let bb = HybridBlackboard::new();
 
     let mut sched = Scheduler::new(bb);
     sched.register(Box::new(GapDetector::new()));
@@ -601,7 +600,7 @@ fn scenario_incremental_knowledge_growth() {
 
 #[test]
 fn scenario_multi_agent_collaboration() {
-    let mut bb = create_blackboard();
+    let mut bb = HybridBlackboard::new();
     seed_cross_domain(&mut bb);
 
     let mut sched = Scheduler::new(bb);
@@ -762,7 +761,7 @@ fn scenario_multi_agent_collaboration() {
 
 #[test]
 fn scenario_document_revision() {
-    let bb = create_blackboard();
+    let bb = HybridBlackboard::new();
 
     // v1: Initial document claims
     let v1 = [
