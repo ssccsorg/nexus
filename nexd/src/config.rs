@@ -21,6 +21,10 @@ pub struct NexdConfig {
     pub agent_command: Option<String>,
     /// Arguments passed to the agent command.
     pub agent_args: Vec<String>,
+    /// Path to nex-server binary (spawned as child process).
+    pub nex_server_path: String,
+    /// Unix socket path for nex-server IPC.
+    pub nex_server_socket: String,
 }
 
 impl Default for NexdConfig {
@@ -32,6 +36,8 @@ impl Default for NexdConfig {
             unclaimed_intent_ttl_secs: 3600,
             agent_command: None,
             agent_args: Vec::new(),
+            nex_server_path: "nex-server".into(),
+            nex_server_socket: "/tmp/nex-server.sock".into(),
         }
     }
 }
@@ -58,6 +64,13 @@ impl NexdConfig {
             && let Ok(v) = secs.parse()
         {
             config.unclaimed_intent_ttl_secs = v;
+        }
+
+        if let Ok(path) = std::env::var("NEXD_NEX_SERVER_PATH") {
+            config.nex_server_path = path;
+        }
+        if let Ok(path) = std::env::var("NEX_SOCKET_PATH") {
+            config.nex_server_socket = path;
         }
 
         let args: Vec<String> = std::env::args().collect();

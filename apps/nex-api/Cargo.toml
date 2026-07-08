@@ -9,6 +9,7 @@ license = "Apache-2.0"
 [dependencies]
 nex = { path = "../../nex" }
 nexus-model = { path = "../../model" }
+nexus-storage-composite = { path = "../../storage/composite" }
 axum = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
