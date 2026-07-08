@@ -92,7 +92,12 @@ impl TagmaCoord {
 impl fmt::Display for TagmaCoord {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let (i, m, fn_) = self.decompose();
-        write!(f, "{} (U+{:04X}, i={i}, m={m}, f={fn_})", self.to_char(), self.0)
+        write!(
+            f,
+            "{} (U+{:04X}, i={i}, m={m}, f={fn_})",
+            self.to_char(),
+            self.0
+        )
     }
 }
 
