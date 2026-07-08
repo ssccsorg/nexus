@@ -47,15 +47,24 @@ fn main() {
         "compose" => {
             let i: u8 = match args.get(2).and_then(|s| s.parse().ok()) {
                 Some(v) => v,
-                None => { eprintln!("error: initial must be a number 0-18"); std::process::exit(1); }
+                None => {
+                    eprintln!("error: initial must be a number 0-18");
+                    std::process::exit(1);
+                }
             };
             let m: u8 = match args.get(3).and_then(|s| s.parse().ok()) {
                 Some(v) => v,
-                None => { eprintln!("error: medial must be a number 0-20"); std::process::exit(1); }
+                None => {
+                    eprintln!("error: medial must be a number 0-20");
+                    std::process::exit(1);
+                }
             };
             let f: u8 = match args.get(4).and_then(|s| s.parse().ok()) {
                 Some(v) => v,
-                None => { eprintln!("error: final must be a number 0-27"); std::process::exit(1); }
+                None => {
+                    eprintln!("error: final must be a number 0-27");
+                    std::process::exit(1);
+                }
             };
             match TagmaCoord::new(i, m, f) {
                 Some(c) => println!("{} (U+{:04X})", c.to_char(), c.code_point()),
@@ -84,7 +93,10 @@ fn main() {
                 eprintln!("error: provide two characters or hex values");
                 std::process::exit(1);
             };
-            match (TagmaCoord::from_code_point(a), TagmaCoord::from_code_point(b)) {
+            match (
+                TagmaCoord::from_code_point(a),
+                TagmaCoord::from_code_point(b),
+            ) {
                 (Some(ca), Some(cb)) => {
                     let (di, dm, df) = ca.hamming_distance(&cb);
                     println!("Hamming distance: initial={di}, medial={dm}, final={df}");
@@ -121,10 +133,10 @@ fn main() {
             for i in 0..n {
                 let a = (i % 19) as u8;
                 let b = ((i / 19) % 21) as u8;
-                let c = ((i / (19*21)) % 28) as u8;
-                let d = ((i / (19*21*28)) % 19) as u8;
-                let e = ((i / (19*21*28*19)) % 21) as u8;
-                let f = ((i / (19*21*28*19*21)) % 28) as u8;
+                let c = ((i / (19 * 21)) % 28) as u8;
+                let d = ((i / (19 * 21 * 28)) % 19) as u8;
+                let e = ((i / (19 * 21 * 28 * 19)) % 21) as u8;
+                let f = ((i / (19 * 21 * 28 * 19 * 21)) % 28) as u8;
                 black_box(TagmaCoord::new(a, b, c));
                 black_box(TagmaCoord::new(d, e, f));
             }
@@ -156,12 +168,30 @@ fn main() {
             let sha = start.elapsed();
 
             println!("Benchmark: {n} operations");
-            println!("  Tagma 1-syllable: {t1:?} ({:.0} ns/op)", t1.as_nanos() as f64 / n_f);
-            println!("  Tagma 2-syllable: {t2:?} ({:.0} ns/op)", t2.as_nanos() as f64 / n_f);
-            println!("  Tagma 6-syllable: {t6:?} ({:.0} ns/op)", t6.as_nanos() as f64 / n_f);
-            println!("  SHA256:           {sha:?} ({:.0} ns/op)", sha.as_nanos() as f64 / n_f);
-            println!("  Speedup 1-syll:   {:.0}x", sha.as_nanos() as f64 / t1.as_nanos() as f64);
-            println!("  Speedup 6-syll:   {:.0}x", sha.as_nanos() as f64 / t6.as_nanos() as f64);
+            println!(
+                "  Tagma 1-syllable: {t1:?} ({:.0} ns/op)",
+                t1.as_nanos() as f64 / n_f
+            );
+            println!(
+                "  Tagma 2-syllable: {t2:?} ({:.0} ns/op)",
+                t2.as_nanos() as f64 / n_f
+            );
+            println!(
+                "  Tagma 6-syllable: {t6:?} ({:.0} ns/op)",
+                t6.as_nanos() as f64 / n_f
+            );
+            println!(
+                "  SHA256:           {sha:?} ({:.0} ns/op)",
+                sha.as_nanos() as f64 / n_f
+            );
+            println!(
+                "  Speedup 1-syll:   {:.0}x",
+                sha.as_nanos() as f64 / t1.as_nanos() as f64
+            );
+            println!(
+                "  Speedup 6-syll:   {:.0}x",
+                sha.as_nanos() as f64 / t6.as_nanos() as f64
+            );
         }
         _ => {
             eprintln!("unknown command: {}", args[1]);

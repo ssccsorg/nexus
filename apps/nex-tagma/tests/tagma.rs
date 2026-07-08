@@ -32,8 +32,14 @@ fn invalid_indices() {
 
 #[test]
 fn from_code_point() {
-    assert_eq!(TagmaCoord::from_code_point(0xAC00).unwrap().decompose(), (0, 0, 0));
-    assert_eq!(TagmaCoord::from_code_point(0xAC01).unwrap().decompose(), (0, 0, 1));
+    assert_eq!(
+        TagmaCoord::from_code_point(0xAC00).unwrap().decompose(),
+        (0, 0, 0)
+    );
+    assert_eq!(
+        TagmaCoord::from_code_point(0xAC01).unwrap().decompose(),
+        (0, 0, 1)
+    );
     assert!(TagmaCoord::from_code_point(0xD7A4).is_none());
     assert!(TagmaCoord::from_code_point(0xD7AF).is_none());
 }
