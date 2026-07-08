@@ -32,8 +32,14 @@ fn invalid_indices() {
 
 #[test]
 fn from_code_point() {
-    assert_eq!(TagmaCoord::from_code_point(0xAC00).unwrap().decompose(), (0, 0, 0));
-    assert_eq!(TagmaCoord::from_code_point(0xAC01).unwrap().decompose(), (0, 0, 1));
+    assert_eq!(
+        TagmaCoord::from_code_point(0xAC00).unwrap().decompose(),
+        (0, 0, 0)
+    );
+    assert_eq!(
+        TagmaCoord::from_code_point(0xAC01).unwrap().decompose(),
+        (0, 0, 1)
+    );
     assert!(TagmaCoord::from_code_point(0xD7A4).is_none());
     assert!(TagmaCoord::from_code_point(0xD7AF).is_none());
 }
@@ -149,7 +155,8 @@ fn parse_val_single_char() {
     use std::process::Command;
     let output = Command::new(env!("CARGO_BIN_EXE_nex-tagma"))
         .args(["check", "가"])
-        .output().unwrap();
+        .output()
+        .unwrap();
     let out = String::from_utf8_lossy(&output.stdout);
     assert!(out.contains("valid"));
     assert!(out.contains("U+AC00"));
@@ -160,7 +167,8 @@ fn parse_val_hex() {
     use std::process::Command;
     let output = Command::new(env!("CARGO_BIN_EXE_nex-tagma"))
         .args(["check", "AC01"])
-        .output().unwrap();
+        .output()
+        .unwrap();
     let out = String::from_utf8_lossy(&output.stdout);
     assert!(out.contains("valid"));
 }
@@ -170,7 +178,8 @@ fn parse_val_hex_prefix() {
     use std::process::Command;
     let output = Command::new(env!("CARGO_BIN_EXE_nex-tagma"))
         .args(["check", "0xD7A3"])
-        .output().unwrap();
+        .output()
+        .unwrap();
     let out = String::from_utf8_lossy(&output.stdout);
     assert!(out.contains("힣"));
 }
@@ -180,7 +189,8 @@ fn parse_val_invalid() {
     use std::process::Command;
     let output = Command::new(env!("CARGO_BIN_EXE_nex-tagma"))
         .args(["check", "invalid"])
-        .output().unwrap();
+        .output()
+        .unwrap();
     assert!(!output.status.success());
 }
 
@@ -190,7 +200,8 @@ fn bench_runs() {
     use std::process::Command;
     let output = Command::new(env!("CARGO_BIN_EXE_nex-tagma"))
         .args(["bench"])
-        .output().unwrap();
+        .output()
+        .unwrap();
     assert!(output.status.success());
     let out = String::from_utf8_lossy(&output.stdout);
     // Verify all speedup lines are present

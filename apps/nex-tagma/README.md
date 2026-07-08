@@ -10,6 +10,8 @@ Case PoC: SHA256-free identity generation using the Hangul syllable coordinate s
     cargo run -p nex-tagma -- dist 가 각
     cargo run -p nex-tagma -- bench
 
+Issue: [#150](https://github.com/ssccsorg/nexus/issues/150) — case PoC for SHA256-free identity generation.
+
 ## Commands
 
 | Command | Description |
@@ -24,19 +26,20 @@ Case PoC: SHA256-free identity generation using the Hangul syllable coordinate s
 
 100,000 operations, single-threaded, Rust release, Apple M4:
 
-| Metric | SHA256 | Tagma 1-syllable | Tagma 6-syllable |
-|--------|--------|-----------------|-----------------|
-| Latency | 237 ns/op | 2 ns/op | 12 ns/op |
-| ID size | 32 bytes | 2 bytes | 12 bytes |
-| Addressable | 2^256 | 1.12 x 10^4 | 1.94 x 10^24 |
-| Collision | probabilistic | deterministic zero | deterministic zero |
+| Metric | SHA256 | Tagma 1-syll | Tagma 2-syll | Tagma 6-syll | Tagma 19-syll |
+|--------|--------|-------------|-------------|-------------|--------------|
+| Latency | 227 ns/op | 2 ns/op | 2 ns/op | 11 ns/op | 35 ns/op |
+| ID size | 32 bytes | 2 bytes | 4 bytes | 12 bytes | 38 bytes |
+| Addressable | $2^{256}$ | $1.12 \times 10^4$ | $1.25 \times 10^8$ | $1.94 \times 10^{24}$ | $2^{256}$ |
+| Use case | — | Sensor tags | DB records | UUID scale | SHA256-equivalent |
+| Speedup vs SHA256 | — | **115x** | **115x** | **20x** | **6x** |
 
 ## Architecture
 
 - `coord.rs` — TagmaCoord type with compose, decompose, validation, Hamming distance, dense index
 - `main.rs` — CLI dispatch
 
-11 integration tests in tests/tagma.rs covering all 11,172 valid coordinates over the full (19 x 21 x 28) space.
+20 integration tests in tests/tagma.rs covering all 11,172 valid coordinates over the full (19 x 21 x 28) space, plus dense index, parse_val, and benchmark verification.
 
 ## Relationship to Tagma
 
