@@ -155,6 +155,19 @@ fn main() {
             }
             let t6 = start.elapsed();
 
+            // Tagma: 19-syllable (same address space as SHA256: 11,172^19 ~ 2^256)
+            let start = Instant::now();
+            for i in 0..n {
+                for j in 0..19 {
+                    let idx = i * 19 + j;
+                    let init = (idx % 19) as u8;
+                    let med = ((idx / 19) % 21) as u8;
+                    let fin = ((idx / (19 * 21)) % 28) as u8;
+                    black_box(TagmaCoord::new(init, med, fin));
+                }
+            }
+            let t19 = start.elapsed();
+
             // SHA256
             let start = Instant::now();
             for i in 0..n {
@@ -168,29 +181,51 @@ fn main() {
             let sha = start.elapsed();
 
             println!("Benchmark: {n} operations");
+            println!("  {:<20} {:>12} {:>10}", "Method", "Latency", "ns/op");
+            println!("  {}", "-".repeat(44));
             println!(
-                "  Tagma 1-syllable: {t1:?} ({:.0} ns/op)",
+                "  {:<20} {:>8?} {:>8.0} ns",
+                "Tagma 1-syll",
+                t1,
                 t1.as_nanos() as f64 / n_f
             );
             println!(
-                "  Tagma 2-syllable: {t2:?} ({:.0} ns/op)",
+                "  {:<20} {:>8?} {:>8.0} ns",
+                "Tagma 2-syll",
+                t2,
                 t2.as_nanos() as f64 / n_f
             );
             println!(
-                "  Tagma 6-syllable: {t6:?} ({:.0} ns/op)",
+                "  {:<20} {:>8?} {:>8.0} ns",
+                "Tagma 6-syll",
+                t6,
                 t6.as_nanos() as f64 / n_f
             );
             println!(
-                "  SHA256:           {sha:?} ({:.0} ns/op)",
-                sha.as_nanos() as f64 / n_f
+                "  {:<20} {:>8?} {:>8.0} ns",
+                "Tagma 19-syll",
+                t19,
+                t19.as_nanos() as f64 / n_f
             );
             println!(
-                "  Speedup 1-syll:   {:.0}x",
+                "  {:<20} {:>8?} {:>8.0} ns",
+                "SHA256",
+                sha,
+                sha.as_nanos() as f64 / n_f
+            );
+            println!();
+            println!("Speedup (vs SHA256):");
+            println!(
+                "  1-syll:   {:.0}x  (space: 1.1e4)",
                 sha.as_nanos() as f64 / t1.as_nanos() as f64
             );
             println!(
-                "  Speedup 6-syll:   {:.0}x",
+                "  6-syll:   {:.0}x  (space: 1.9e24, UUID-scale)",
                 sha.as_nanos() as f64 / t6.as_nanos() as f64
+            );
+            println!(
+                "  19-syll:  {:.0}x  (space: 2^256, SHA256-equivalent)",
+                sha.as_nanos() as f64 / t19.as_nanos() as f64
             );
         }
         _ => {
