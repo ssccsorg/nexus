@@ -16,7 +16,7 @@ fn print_usage() {
 }
 
 fn parse_val(s: &str) -> Option<u16> {
-    if s.len() == 1 {
+    if s.chars().count() == 1 {
         return s.chars().next().map(|c| c as u16);
     }
     let s = s.strip_prefix("0x").unwrap_or(s);
@@ -101,7 +101,7 @@ fn main() {
             for _ in 0..1000 {
                 let _ = TagmaCoord::new(0, 0, 0);
                 let mut h = Sha256::new();
-                h.update([0u8; 3]);
+                h.update(&[0u8; 3]);
                 let _ = h.finalize();
             }
 
@@ -111,7 +111,8 @@ fn main() {
                 let init = (i % 19) as u8;
                 let med = ((i / 19) % 21) as u8;
                 let fin = ((i / (19 * 21)) % 28) as u8;
-                let _ = TagmaCoord::new(init, med, fin);
+                let coord = TagmaCoord::new(init, med, fin);
+                std::hint::black_box(coord);
             }
             let tagma_dur = start.elapsed();
 
@@ -123,7 +124,8 @@ fn main() {
                 let fin = ((i / (19 * 21)) % 28) as u8;
                 let mut hasher = Sha256::new();
                 hasher.update([init, med, fin]);
-                let _ = hasher.finalize();
+                let result = hasher.finalize();
+                std::hint::black_box(result);
             }
             let sha_dur = start.elapsed();
 
