@@ -32,14 +32,8 @@ fn invalid_indices() {
 
 #[test]
 fn from_code_point() {
-    assert_eq!(
-        TagmaCoord::from_code_point(0xAC00).unwrap().decompose(),
-        (0, 0, 0)
-    );
-    assert_eq!(
-        TagmaCoord::from_code_point(0xAC01).unwrap().decompose(),
-        (0, 0, 1)
-    );
+    assert_eq!(TagmaCoord::from_code_point(0xAC00).unwrap().decompose(), (0, 0, 0));
+    assert_eq!(TagmaCoord::from_code_point(0xAC01).unwrap().decompose(), (0, 0, 1));
     assert!(TagmaCoord::from_code_point(0xD7A4).is_none());
     assert!(TagmaCoord::from_code_point(0xD7AF).is_none());
 }
@@ -96,6 +90,34 @@ fn display_format() {
     assert!(s.contains("i=5"));
     assert!(s.contains("m=10"));
     assert!(s.contains("f=15"));
+}
+
+#[test]
+fn dense_index_roundtrip() {
+    let mut seen = std::collections::HashSet::new();
+    for i in 0..19 {
+        for m in 0..21 {
+            for f in 0..28 {
+                let coord = TagmaCoord::new(i, m, f).unwrap();
+                let idx = coord.to_dense_index();
+                assert!(idx < 11172, "index {idx} out of range");
+                assert!(seen.insert(idx), "duplicate index {idx} at ({i},{m},{f})");
+            }
+        }
+    }
+    assert_eq!(seen.len(), 11172);
+}
+
+#[test]
+fn dense_index_zero() {
+    let coord = TagmaCoord::new(0, 0, 0).unwrap();
+    assert_eq!(coord.to_dense_index(), 0);
+}
+
+#[test]
+fn dense_index_max() {
+    let coord = TagmaCoord::new(18, 20, 27).unwrap();
+    assert_eq!(coord.to_dense_index(), 11171);
 }
 
 #[test]

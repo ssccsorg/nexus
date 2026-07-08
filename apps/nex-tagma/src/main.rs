@@ -94,6 +94,7 @@ fn main() {
         }
         "bench" => {
             use sha2::{Digest, Sha256};
+            use std::hint::black_box;
             let n = 100_000usize;
             let n_f = n as f64;
 
@@ -101,22 +102,48 @@ fn main() {
             for _ in 0..1000 {
                 let _ = TagmaCoord::new(0, 0, 0);
                 let mut h = Sha256::new();
-                h.update(&[0u8; 3]);
+                h.update([0u8; 3]);
                 let _ = h.finalize();
             }
 
-            // Tagma coordinate composition
+            // Tagma: 1-syllable
             let start = Instant::now();
             for i in 0..n {
                 let init = (i % 19) as u8;
                 let med = ((i / 19) % 21) as u8;
                 let fin = ((i / (19 * 21)) % 28) as u8;
-                let coord = TagmaCoord::new(init, med, fin);
-                std::hint::black_box(coord);
+                black_box(TagmaCoord::new(init, med, fin));
             }
-            let tagma_dur = start.elapsed();
+            let t1 = start.elapsed();
 
-            // SHA256 hash
+            // Tagma: 2-syllable
+            let start = Instant::now();
+            for i in 0..n {
+                let a = (i % 19) as u8;
+                let b = ((i / 19) % 21) as u8;
+                let c = ((i / (19*21)) % 28) as u8;
+                let d = ((i / (19*21*28)) % 19) as u8;
+                let e = ((i / (19*21*28*19)) % 21) as u8;
+                let f = ((i / (19*21*28*19*21)) % 28) as u8;
+                black_box(TagmaCoord::new(a, b, c));
+                black_box(TagmaCoord::new(d, e, f));
+            }
+            let t2 = start.elapsed();
+
+            // Tagma: 6-syllable
+            let start = Instant::now();
+            for i in 0..n {
+                for j in 0..6 {
+                    let idx = i * 6 + j;
+                    let init = (idx % 19) as u8;
+                    let med = ((idx / 19) % 21) as u8;
+                    let fin = ((idx / (19 * 21)) % 28) as u8;
+                    black_box(TagmaCoord::new(init, med, fin));
+                }
+            }
+            let t6 = start.elapsed();
+
+            // SHA256
             let start = Instant::now();
             for i in 0..n {
                 let init = (i % 19) as u8;
@@ -124,18 +151,17 @@ fn main() {
                 let fin = ((i / (19 * 21)) % 28) as u8;
                 let mut hasher = Sha256::new();
                 hasher.update([init, med, fin]);
-                let result = hasher.finalize();
-                std::hint::black_box(result);
+                black_box(hasher.finalize());
             }
-            let sha_dur = start.elapsed();
+            let sha = start.elapsed();
 
             println!("Benchmark: {n} operations");
-            println!("  Tagma coordinate:  {tagma_dur:?} ({:.0} ns/op)",
-                tagma_dur.as_nanos() as f64 / n_f);
-            println!("  SHA256:            {sha_dur:?} ({:.0} ns/op)",
-                sha_dur.as_nanos() as f64 / n_f);
-            println!("  Speedup:           {:.0}x",
-                sha_dur.as_nanos() as f64 / tagma_dur.as_nanos() as f64);
+            println!("  Tagma 1-syllable: {t1:?} ({:.0} ns/op)", t1.as_nanos() as f64 / n_f);
+            println!("  Tagma 2-syllable: {t2:?} ({:.0} ns/op)", t2.as_nanos() as f64 / n_f);
+            println!("  Tagma 6-syllable: {t6:?} ({:.0} ns/op)", t6.as_nanos() as f64 / n_f);
+            println!("  SHA256:           {sha:?} ({:.0} ns/op)", sha.as_nanos() as f64 / n_f);
+            println!("  Speedup 1-syll:   {:.0}x", sha.as_nanos() as f64 / t1.as_nanos() as f64);
+            println!("  Speedup 6-syll:   {:.0}x", sha.as_nanos() as f64 / t6.as_nanos() as f64);
         }
         _ => {
             eprintln!("unknown command: {}", args[1]);

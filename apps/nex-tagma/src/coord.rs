@@ -66,6 +66,13 @@ impl TagmaCoord {
         Self::from_code_point(cp).is_some()
     }
 
+    /// Map this coordinate to a dense linear index 0..11171.
+    /// This enables array-based storage with zero hash tables.
+    pub fn to_dense_index(self) -> usize {
+        let (i, m, f) = self.decompose();
+        (i as usize) * 588 + (m as usize) * 28 + (f as usize)
+    }
+
     /// Field-wise Hamming distance between two coordinates.
     /// Returns (distance_initial, distance_medial, distance_final).
     pub fn hamming_distance(&self, other: &Self) -> (u8, u8, u8) {
@@ -85,12 +92,7 @@ impl TagmaCoord {
 impl fmt::Display for TagmaCoord {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let (i, m, fn_) = self.decompose();
-        write!(
-            f,
-            "{} (U+{:04X}, i={i}, m={m}, f={fn_})",
-            self.to_char(),
-            self.0
-        )
+        write!(f, "{} (U+{:04X}, i={i}, m={m}, f={fn_})", self.to_char(), self.0)
     }
 }
 
