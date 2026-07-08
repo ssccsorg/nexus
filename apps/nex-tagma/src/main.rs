@@ -25,9 +25,9 @@ fn parse_val(s: &str) -> Option<u16> {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
+    if args.len() < 2 || args[1] == "-h" || args[1] == "--help" {
         print_usage();
-        std::process::exit(1);
+        std::process::exit(if args.len() < 2 { 1 } else { 0 });
     }
 
     match args[1].as_str() {
