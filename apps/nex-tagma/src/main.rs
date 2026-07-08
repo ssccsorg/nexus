@@ -5,7 +5,7 @@ mod coord;
 use coord::TagmaCoord;
 
 fn print_usage() {
-    eprintln!("Usage: tagma-poc <command> [args]");
+    eprintln!("Usage: nex-tagma <command> [args]");
     eprintln!();
     eprintln!("Commands:");
     eprintln!("  check <char|hex>      Validate a Tagma coordinate");
@@ -32,7 +32,10 @@ fn main() {
 
     match args[1].as_str() {
         "check" => {
-            let cp = args.get(2).and_then(|s| parse_val(s)).unwrap_or(0);
+            let Some(cp) = args.get(2).and_then(|s| parse_val(s)) else {
+                eprintln!("error: provide a character or hex value");
+                std::process::exit(1);
+            };
             match TagmaCoord::from_code_point(cp) {
                 Some(c) => {
                     let (i, m, f) = c.decompose();
@@ -42,16 +45,28 @@ fn main() {
             }
         }
         "compose" => {
-            let i: u8 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(99);
-            let m: u8 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(99);
-            let f: u8 = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(99);
+            let i: u8 = match args.get(2).and_then(|s| s.parse().ok()) {
+                Some(v) => v,
+                None => { eprintln!("error: initial must be a number 0-18"); std::process::exit(1); }
+            };
+            let m: u8 = match args.get(3).and_then(|s| s.parse().ok()) {
+                Some(v) => v,
+                None => { eprintln!("error: medial must be a number 0-20"); std::process::exit(1); }
+            };
+            let f: u8 = match args.get(4).and_then(|s| s.parse().ok()) {
+                Some(v) => v,
+                None => { eprintln!("error: final must be a number 0-27"); std::process::exit(1); }
+            };
             match TagmaCoord::new(i, m, f) {
                 Some(c) => println!("{} (U+{:04X})", c.to_char(), c.code_point()),
                 None => eprintln!("error: invalid axes ({i},{m},{f})"),
             }
         }
         "decompose" => {
-            let cp = args.get(2).and_then(|s| parse_val(s)).unwrap_or(0);
+            let Some(cp) = args.get(2).and_then(|s| parse_val(s)) else {
+                eprintln!("error: provide a character or hex value");
+                std::process::exit(1);
+            };
             match TagmaCoord::from_code_point(cp) {
                 Some(c) => {
                     let (i, m, f) = c.decompose();
@@ -61,8 +76,14 @@ fn main() {
             }
         }
         "dist" => {
-            let a = args.get(2).and_then(|s| parse_val(s)).unwrap_or(0);
-            let b = args.get(3).and_then(|s| parse_val(s)).unwrap_or(0);
+            let Some(a) = args.get(2).and_then(|s| parse_val(s)) else {
+                eprintln!("error: provide two characters or hex values");
+                std::process::exit(1);
+            };
+            let Some(b) = args.get(3).and_then(|s| parse_val(s)) else {
+                eprintln!("error: provide two characters or hex values");
+                std::process::exit(1);
+            };
             match (TagmaCoord::from_code_point(a), TagmaCoord::from_code_point(b)) {
                 (Some(ca), Some(cb)) => {
                     let (di, dm, df) = ca.hamming_distance(&cb);
@@ -74,32 +95,43 @@ fn main() {
         "bench" => {
             use sha2::{Digest, Sha256};
             let n = 100_000usize;
-            let data: Vec<[u8; 3]> = (0..n).map(|i| {
+            let n_f = n as f64;
+
+            // Warmup
+            for _ in 0..1000 {
+                let _ = TagmaCoord::new(0, 0, 0);
+                let mut h = Sha256::new();
+                h.update([0u8; 3]);
+                let _ = h.finalize();
+            }
+
+            // Tagma coordinate composition
+            let start = Instant::now();
+            for i in 0..n {
                 let init = (i % 19) as u8;
                 let med = ((i / 19) % 21) as u8;
                 let fin = ((i / (19 * 21)) % 28) as u8;
-                [init, med, fin]
-            }).collect();
-
-            let start = Instant::now();
-            for &[i, m, f] in &data {
-                let _ = TagmaCoord::new(i, m, f);
+                let _ = TagmaCoord::new(init, med, fin);
             }
             let tagma_dur = start.elapsed();
 
+            // SHA256 hash
             let start = Instant::now();
-            for &bytes in &data {
+            for i in 0..n {
+                let init = (i % 19) as u8;
+                let med = ((i / 19) % 21) as u8;
+                let fin = ((i / (19 * 21)) % 28) as u8;
                 let mut hasher = Sha256::new();
-                hasher.update(&bytes);
+                hasher.update([init, med, fin]);
                 let _ = hasher.finalize();
             }
             let sha_dur = start.elapsed();
 
             println!("Benchmark: {n} operations");
             println!("  Tagma coordinate:  {tagma_dur:?} ({:.0} ns/op)",
-                tagma_dur.as_nanos() as f64 / n as f64);
+                tagma_dur.as_nanos() as f64 / n_f);
             println!("  SHA256:            {sha_dur:?} ({:.0} ns/op)",
-                sha_dur.as_nanos() as f64 / n as f64);
+                sha_dur.as_nanos() as f64 / n_f);
             println!("  Speedup:           {:.0}x",
                 sha_dur.as_nanos() as f64 / tagma_dur.as_nanos() as f64);
         }
