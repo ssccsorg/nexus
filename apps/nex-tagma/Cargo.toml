@@ -1,0 +1,10 @@
+[package]
+name = "nex-tagma"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Tagma coordinate PoC — SHA256-free identity generation using Hangul syllable space"
+
+[dependencies]
+tagma-core = { path = "../../libs/tagma/sw/rust/core" }
+sha2 = "0.10"
