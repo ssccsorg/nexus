@@ -1,0 +1,10 @@
+[package]
+name = "tagma-core"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Tagma: content-addressable structural primitive — Coord, CoordMap, CoordSet, TimeIndex"
+
+[dependencies]
+
+[dev-dependencies]

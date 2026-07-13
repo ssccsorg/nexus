@@ -1,0 +1,108 @@
+name: Build and Deploy Docs
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "docs/**/*.py"
+      - "docs/**/*.qmd"
+      - "docs/**/*.md"
+      - "docs/**/*.yml"
+      - "docs/**/*.txt"
+      - "docs/**/*.svg"
+      - "docs/**/*.bib"
+      - "docs/**/*.csl"
+      - ".github/workflows/deploy-docs.yml"
+      - "!docs/**/README.md"
+  workflow_dispatch:
+  repository_dispatch:
+    types: [publish-sdb-image-complete]
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "docs/**/*.py"
+      - "docs/**/*.qmd"
+      - "docs/**/*.md"
+      - "docs/**/*.yml"
+      - "docs/**/*.txt"
+      - "docs/**/*.svg"
+      - "docs/**/*.bib"
+      - "docs/**/*.csl"
+      - ".github/workflows/deploy-docs.yml"
+      - "!docs/**/README.md"
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ssccsorg/sdbs
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  packages: read
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Compute cache key
+        id: cache-key
+        run: |
+          cd ${{ github.workspace }}
+          find docs -type f \( -name "*.qmd" -o -name "*.md" -o -name "*.py" -o -name "*.txt" -o -name "*.yml" -o -name "*.svg" -o -name "*.bib" -o -name "*.csl" \) \
+            -not -path "*/_cached/*" -not -path "*/_site/*" | sort \
+            | xargs sha256sum | sha256sum | cut -d' ' -f1 > /tmp/cache_key.txt
+          echo "key=$(cat /tmp/cache_key.txt)" >> $GITHUB_OUTPUT
+
+      - name: Cache _cached directory
+        uses: actions/cache@v5
+        with:
+          path: docs/_cached
+          key: ${{ runner.os }}-cached@v1-${{ steps.cache-key.outputs.key }}
+          restore-keys: |
+            ${{ runner.os }}-cached@v1-
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull sdbs image
+        run: docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+        shell: bash
+
+      - name: Build docs
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/work \
+            -w /work \
+            -e QUARTO_PYTHON=python3 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+            sdb build docs --website
+
+      - name: Prepare Pages artifact
+        run: |
+          mkdir -p docs/_pages
+          cp -r docs/_site/. docs/_pages/
+
+      - name: Upload Pages artifact
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: docs/_pages
+
+      - name: Deploy to GitHub Pages
+        if: github.ref == 'refs/heads/main'
+        id: deployment
+        uses: actions/deploy-pages@v5

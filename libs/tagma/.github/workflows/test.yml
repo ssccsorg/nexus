@@ -1,0 +1,43 @@
+name: Test Suite
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "sw/rust/**"
+      - "run.sh"
+      - ".github/workflows/test.yml"
+      - "!sw/rust/**/*.md"
+      - "!**/*.qmd"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "sw/rust/**"
+      - "run.sh"
+      - ".github/workflows/test.yml"
+      - "!sw/rust/**/*.md"
+      - "!**/*.qmd"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sw/rust
+
+      - name: Full pipeline
+        run: bash run.sh
