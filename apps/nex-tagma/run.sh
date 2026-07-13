@@ -20,7 +20,7 @@ GIT_ROOT="$(cd "$APP_DIR" && git rev-parse --show-toplevel)"
 
 TAGMA_REPO_SSH="git@github.com:ssccsorg/tagma.git"
 TAGMA_PREFIX="libs/tagma"
-TAGMA_BRANCH="1-tagma-core-rust"
+TAGMA_BRANCH="main"
 
 # Resolve repo URL: GITHUB_TOKEN for CI, SSH for local
 # Allows override via TAGMA_REPO env var
