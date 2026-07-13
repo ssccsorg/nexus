@@ -1,43 +1,44 @@
 # nex-tagma
 
-Case PoC: SHA256-free identity generation using the Hangul syllable coordinate space.
+Reference hub that consumes Tagma coordinate space on the neXus FIH storage layer.
 
-## Quick start
+## Quick Start
 
-    cargo run -p nex-tagma -- check 가
-    cargo run -p nex-tagma -- compose 0 0 1
-    cargo run -p nex-tagma -- decompose 각
-    cargo run -p nex-tagma -- dist 가 각
-    cargo run -p nex-tagma -- bench
+```
+cargo run -p nex-tagma -- check 가
+cargo run -p nex-tagma -- compose 0 0 1
+cargo run -p nex-tagma -- decompose 각
+cargo run -p nex-tagma -- dist 가 각
+cargo run -p nex-tagma -- bench
+```
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `check <char|hex>` | Validate a Tagma coordinate |
+| `check <char\|hex>` | Validate a Tagma coordinate |
 | `compose <i> <m> <f>` | Compose three axis values into a coordinate |
 | `decompose <char>` | Decompose a coordinate into (initial, medial, final) |
 | `dist <a> <b>` | Field-wise Hamming distance between two coordinates |
 | `bench` | SHA256 vs Tagma latency comparison |
 
-## Results
+## Benchmark
 
-100,000 operations, single-threaded, Rust release, Apple M4:
+100k operations, single-threaded, Rust release, Apple M1:
 
-| Metric | SHA256 | Tagma 1-syllable | Tagma 6-syllable |
-|--------|--------|-----------------|-----------------|
-| Latency | 237 ns/op | 2 ns/op | 12 ns/op |
-| ID size | 32 bytes | 2 bytes | 12 bytes |
-| Addressable | 2^256 | 1.12 x 10^4 | 1.94 x 10^24 |
-| Collision | probabilistic | deterministic zero | deterministic zero |
+| Metric | SHA256 | Tagma 1-syll | Tagma 2-syll | Tagma 6-syll | Tagma 19-syll |
+|--------|--------|-------------|-------------|-------------|--------------|
+| Latency | 227 ns/op | 2 ns/op | 2 ns/op | 11 ns/op | 35 ns/op |
+| ID size | 32 bytes | 2 bytes | 4 bytes | 12 bytes | 38 bytes |
+| Addressable | 2^256 | 1.12e4 | 1.25e8 | 1.94e24 | 2^256 |
+| Speedup vs SHA256 | -- | 115x | 115x | 20x | 6x |
 
 ## Architecture
 
-- `coord.rs` — TagmaCoord type with compose, decompose, validation, Hamming distance, dense index
-- `main.rs` — CLI dispatch
+- `src/coord.rs` -- `Coord` type with compose, decompose, validation, Hamming distance, dense index
+- `src/main.rs` -- CLI dispatch
+- `tests/tagma.rs` -- 20 integration tests covering all 11,172 valid coordinates
 
-11 integration tests in tests/tagma.rs covering all 11,172 valid coordinates over the full (19 x 21 x 28) space.
+## Design Doc
 
-## Relationship to Tagma
-
-This is a case PoC — one application of the Tagma principle. Tagma itself (SSCCS's fundamental tag/id pillar) is broader: combinational silicon decoder, 3D SRAM, radiation-tolerant error detection. See tagma/docs/wp.qmd.
+Detailed design including 3D FIH mapping, property propagation, evolution phases, and identity flow is documented in `ssccs/docs/projects/nexus/apps/tagma.qmd`.

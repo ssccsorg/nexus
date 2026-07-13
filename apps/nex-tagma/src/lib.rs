@@ -1,2 +1,2 @@
 pub mod coord;
-pub use coord::TagmaCoord;
+pub use coord::Coord;
