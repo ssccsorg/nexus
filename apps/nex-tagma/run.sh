@@ -38,7 +38,7 @@ ensure_subtree() {
         echo "tagma: adding subtree from $TAGMA_REPO ($TAGMA_BRANCH)..."
         cd "$GIT_ROOT"
         git config user.name "nex-tagma CI" 2>/dev/null || true
-        git config user.email "ci@ssccs.org" 2>/dev/null || true
+        git config user.email "git-bot@ssccs.org" 2>/dev/null || true
         git subtree add --prefix "$TAGMA_PREFIX" --squash "$TAGMA_REPO" "$TAGMA_BRANCH"
         cd "$APP_DIR"
     fi
@@ -49,7 +49,7 @@ case "${1:-}" in
         echo "tagma: pulling latest subtree from $TAGMA_REPO ($TAGMA_BRANCH)..."
         cd "$GIT_ROOT"
         git config user.name "nex-tagma CI" 2>/dev/null || true
-        git config user.email "ci@ssccs.org" 2>/dev/null || true
+        git config user.email "git-bot@ssccs.org" 2>/dev/null || true
         git subtree pull --prefix "$TAGMA_PREFIX" --squash "$TAGMA_REPO" "$TAGMA_BRANCH"
         ;;
     --test)
