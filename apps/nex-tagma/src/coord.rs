@@ -8,7 +8,7 @@ use std::fmt;
 /// Where initial (choseong): 0-18, medial (jungseong): 0-21, final (jongseong): 0-27.
 /// Total: 19 x 21 x 28 = 11,172 valid coordinates in a 16-bit space of 65,536.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TagmaCoord(u16);
+pub struct Coord(u16);
 
 const BASE: u16 = 0xAC00;
 const N_INIT: u8 = 19;
@@ -17,7 +17,7 @@ const N_FIN: u8 = 28;
 const M1: u16 = 588;
 const M2: u16 = 28;
 
-impl TagmaCoord {
+impl Coord {
     /// Create a Tagma coordinate from initial, medial, and final indices.
     /// Returns `None` if any index is out of range.
     pub fn new(initial: u8, medial: u8, final_: u8) -> Option<Self> {
@@ -47,7 +47,7 @@ impl TagmaCoord {
     }
 
     /// The raw 16-bit Unicode code point value.
-    pub const fn code_point(&self) -> u16 {
+    pub const fn to_code_point(&self) -> u16 {
         self.0
     }
 
@@ -89,7 +89,7 @@ impl TagmaCoord {
     }
 }
 
-impl fmt::Display for TagmaCoord {
+impl fmt::Display for Coord {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let (i, m, fn_) = self.decompose();
         write!(
@@ -101,8 +101,8 @@ impl fmt::Display for TagmaCoord {
     }
 }
 
-impl From<TagmaCoord> for u16 {
-    fn from(c: TagmaCoord) -> Self {
+impl From<Coord> for u16 {
+    fn from(c: Coord) -> Self {
         c.0
     }
 }

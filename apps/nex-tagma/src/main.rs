@@ -2,7 +2,7 @@ use std::env;
 use std::time::Instant;
 
 mod coord;
-use coord::TagmaCoord;
+use coord::Coord;
 
 fn print_usage() {
     eprintln!("Usage: nex-tagma <command> [args]");
@@ -36,7 +36,7 @@ fn main() {
                 eprintln!("error: provide a character or hex value");
                 std::process::exit(1);
             };
-            match TagmaCoord::from_code_point(cp) {
+            match Coord::from_code_point(cp) {
                 Some(c) => {
                     let (i, m, f) = c.decompose();
                     println!("valid: {} (U+{:04X}, i={i}, m={m}, f={f})", c.to_char(), cp);
@@ -66,9 +66,12 @@ fn main() {
                     std::process::exit(1);
                 }
             };
-            match TagmaCoord::new(i, m, f) {
-                Some(c) => println!("{} (U+{:04X})", c.to_char(), c.code_point()),
-                None => eprintln!("error: invalid axes ({i},{m},{f})"),
+            match Coord::new(i, m, f) {
+                Some(c) => println!("{}", c.to_char()),
+                None => {
+                    eprintln!("error: invalid axes ({i},{m},{f})");
+                    std::process::exit(1);
+                }
             }
         }
         "decompose" => {
@@ -76,12 +79,15 @@ fn main() {
                 eprintln!("error: provide a character or hex value");
                 std::process::exit(1);
             };
-            match TagmaCoord::from_code_point(cp) {
+            match Coord::from_code_point(cp) {
                 Some(c) => {
                     let (i, m, f) = c.decompose();
                     println!("{}: initial={i}, medial={m}, final={f}", c.to_char());
                 }
-                None => eprintln!("error: U+{cp:04X} is not valid"),
+                None => {
+                    eprintln!("error: U+{cp:04X} is not valid");
+                    std::process::exit(1);
+                }
             }
         }
         "dist" => {
@@ -93,15 +99,15 @@ fn main() {
                 eprintln!("error: provide two characters or hex values");
                 std::process::exit(1);
             };
-            match (
-                TagmaCoord::from_code_point(a),
-                TagmaCoord::from_code_point(b),
-            ) {
+            match (Coord::from_code_point(a), Coord::from_code_point(b)) {
                 (Some(ca), Some(cb)) => {
                     let (di, dm, df) = ca.hamming_distance(&cb);
                     println!("Hamming distance: initial={di}, medial={dm}, final={df}");
                 }
-                _ => eprintln!("error: one or both values are not valid"),
+                _ => {
+                    eprintln!("error: one or both values are not valid");
+                    std::process::exit(1);
+                }
             }
         }
         "bench" => {
@@ -112,7 +118,7 @@ fn main() {
 
             // Warmup
             for _ in 0..1000 {
-                let _ = TagmaCoord::new(0, 0, 0);
+                let _ = Coord::new(0, 0, 0);
                 let mut h = Sha256::new();
                 h.update([0u8; 3]);
                 let _ = h.finalize();
@@ -124,7 +130,7 @@ fn main() {
                 let init = (i % 19) as u8;
                 let med = ((i / 19) % 21) as u8;
                 let fin = ((i / (19 * 21)) % 28) as u8;
-                black_box(TagmaCoord::new(init, med, fin));
+                black_box(Coord::new(init, med, fin));
             }
             let t1 = start.elapsed();
 
@@ -137,8 +143,8 @@ fn main() {
                 let d = ((i / (19 * 21 * 28)) % 19) as u8;
                 let e = ((i / (19 * 21 * 28 * 19)) % 21) as u8;
                 let f = ((i / (19 * 21 * 28 * 19 * 21)) % 28) as u8;
-                black_box(TagmaCoord::new(a, b, c));
-                black_box(TagmaCoord::new(d, e, f));
+                black_box(Coord::new(a, b, c));
+                black_box(Coord::new(d, e, f));
             }
             let t2 = start.elapsed();
 
@@ -150,7 +156,7 @@ fn main() {
                     let init = (idx % 19) as u8;
                     let med = ((idx / 19) % 21) as u8;
                     let fin = ((idx / (19 * 21)) % 28) as u8;
-                    black_box(TagmaCoord::new(init, med, fin));
+                    black_box(Coord::new(init, med, fin));
                 }
             }
             let t6 = start.elapsed();
@@ -163,7 +169,7 @@ fn main() {
                     let init = (idx % 19) as u8;
                     let med = ((idx / 19) % 21) as u8;
                     let fin = ((idx / (19 * 21)) % 28) as u8;
-                    black_box(TagmaCoord::new(init, med, fin));
+                    black_box(Coord::new(init, med, fin));
                 }
             }
             let t19 = start.elapsed();
