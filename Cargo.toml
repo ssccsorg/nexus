@@ -15,11 +15,11 @@ members = [
     "storage/composite",
     "storage/petgraph",
     "apps/nex-calc",
-    "apps/nex-tagma",
     ]
 exclude = [
     "apps/nex-wasmer-ssccsdocs",
     "apps/nex-spinwasi-ssccsdocs",
+    "apps/nex-tagma",
 ]
 
 [workspace.package]
@@ -28,7 +28,6 @@ edition = "2024"
 license = "Apache-2.0"
 
 [workspace.dependencies]
-tagma-core = { path = "libs/tagma/sw/rust/core" }
 petgraph = { version = "0.6", features = ["serde-1"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

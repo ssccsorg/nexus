@@ -13,10 +13,10 @@ set -euo pipefail
 #   ./run.sh --help
 #
 
-cd "$(dirname "$0")/../.."
+cd "$(dirname "$0")"
 
 TAGMA_REPO_SSH="git@github.com:ssccsorg/tagma.git"
-TAGMA_PREFIX="libs/tagma"
+TAGMA_PREFIX="../libs/tagma"
 TAGMA_BRANCH="1-tagma-core-rust"
 
 # Resolve repo URL: GITHUB_TOKEN for CI, SSH for local
@@ -45,10 +45,10 @@ case "${1:-}" in
         ;;
     --test)
         shift
-        exec cargo test -p nex-tagma "$@"
+        exec cargo test "$@"
         ;;
     --bench)
-        exec cargo run -p nex-tagma -- bench
+        exec cargo run -- bench
         ;;
     --help|-h)
         sed -n '3,14p' "$0"
@@ -57,10 +57,10 @@ case "${1:-}" in
     *)
         ensure_subtree
         echo "--- build ---"
-        cargo build -p nex-tagma 2>&1
+        cargo build 2>&1
         echo "--- test ---"
-        cargo test -p nex-tagma 2>&1
+        cargo test 2>&1
         echo "--- bench ---"
-        cargo run -p nex-tagma -- bench 2>&1
+        cargo run -- bench 2>&1
         ;;
 esac
