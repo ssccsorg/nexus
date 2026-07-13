@@ -1,0 +1,9 @@
+[package]
+name = "nex-tagma"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Case PoC: SHA256-free identity generation using Hangul syllable coordinate space"
+
+[dependencies]
+sha2 = "0.10"
