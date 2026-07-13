@@ -1,8 +1,0 @@
-[package]
-name = "base11172"
-version = "0.1.0"
-edition = "2021"
-license = "Apache-2.0"
-description = "Base11172: binary-to-text encoding using Hangul syllable space"
-
-[dependencies]

@@ -1,9 +1,0 @@
-[package]
-name = "base11172"
-version = "0.1.0"
-edition = "2021"
-license = "Apache-2.0"
-description = "Tagma native serialization format: self-validating, printable encoding via Hangul syllable space"
-
-[dependencies]
-tagma-core = { path = "../core" }
