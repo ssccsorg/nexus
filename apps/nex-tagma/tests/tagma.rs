@@ -37,14 +37,8 @@ fn invalid_indices() {
 
 #[test]
 fn from_code_point() {
-    assert_eq!(
-        Coord::from_code_point(0xAC00).unwrap().to_axes(),
-        (0, 0, 0)
-    );
-    assert_eq!(
-        Coord::from_code_point(0xAC01).unwrap().to_axes(),
-        (0, 0, 1)
-    );
+    assert_eq!(Coord::from_code_point(0xAC00).unwrap().to_axes(), (0, 0, 0));
+    assert_eq!(Coord::from_code_point(0xAC01).unwrap().to_axes(), (0, 0, 1));
     // Filler positions (U+D7A4..U+D7AF) are within the Unicode block
     // and are accepted by from_code_point; they are rejected by new().
     assert!(Coord::from_code_point(0xD7A4).is_some());
@@ -275,9 +269,7 @@ fn help_flag_exit_zero() {
 
 #[test]
 fn no_args_exit_nonzero() {
-    let output = Command::new(nex_tagma_bin())
-        .output()
-        .unwrap();
+    let output = Command::new(nex_tagma_bin()).output().unwrap();
     assert!(!output.status.success());
 }
 
