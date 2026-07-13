@@ -15,10 +15,11 @@ members = [
     "storage/composite",
     "storage/petgraph",
     "apps/nex-calc",
-]
+    ]
 exclude = [
     "apps/nex-wasmer-ssccsdocs",
     "apps/nex-spinwasi-ssccsdocs",
+    "apps/nex-tagma",
 ]
 
 [workspace.package]

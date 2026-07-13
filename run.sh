@@ -518,6 +518,14 @@ verify_nex_calc_fihcontract() {
     echo "nex-calc-fihcontract: passed"
 }
 
+# ── nex-tagma ────────────────────────────────────────────────────────────
+
+verify_nex_tagma() {
+    echo "=== nex-tagma ==="
+    (cd apps/nex-tagma && ./run.sh) 2>&1 || { echo "nex-tagma: FAILED"; return 1; }
+    echo "nex-tagma: passed"
+}
+
 # ── App suite ─────────────────────────────────────────────────────────────
 
 run_apps() {
@@ -530,7 +538,8 @@ run_apps() {
     sleep 1
     verify_nex_spinwasi_ssccsdocs || any_failed=1
     verify_nex_calc || any_failed=1
-    # Future apps go here, e.g.:
+        verify_nex_tagma || any_failed=1
+        # Future apps go here, e.g.:
     # verify_nex_cf_mock || any_failed=1
     # verify_nex_zed || any_failed=1
     return "$any_failed"
@@ -566,7 +575,7 @@ case "${1:-}" in
         echo "  (no arg)      Core + gateway + apps + playbooks [default]"
         echo "  --core        Core checks only (nex, storage/*)"
         echo "  --gateway     Gateway layer checks (api, nex-cf, serde-proxy)"
-        echo "  --apps        Standalone app verification (spinwasi, cf-mock, ...)"
+        echo "  --apps        Standalone app verification (spinwasi, nex-tagma, ...)"
         echo "  --server      nex-server standalone verification"
         echo "  --playbooks   Consumer playbooks only"
         ;;
