@@ -39,9 +39,9 @@ fn invalid_indices() {
 fn from_code_point() {
     assert_eq!(Coord::from_code_point(0xAC00).unwrap().to_axes(), (0, 0, 0));
     assert_eq!(Coord::from_code_point(0xAC01).unwrap().to_axes(), (0, 0, 1));
-    // Filler positions (U+D7A4..U+D7AF) are within the Unicode block
-    // and are accepted by from_code_point; they are rejected by new().
-    assert!(Coord::from_code_point(0xD7A4).is_some());
+    // Filler positions (U+D7A4..U+D7AF) are structurally invalid.
+    assert!(Coord::from_code_point(0xD7A4).is_none());
+    assert!(Coord::from_code_point(0xD7AF).is_none());
     // Out-of-block values are always rejected.
     assert!(Coord::from_code_point(0xABFF).is_none());
     assert!(Coord::from_code_point(0xD7B0).is_none());
@@ -73,9 +73,9 @@ fn count_11k_valid() {
 fn validate_function() {
     assert!(nex_tagma::validate(0xAC00));
     assert!(nex_tagma::validate(0xD7A3));
-    // Filler positions are within the Unicode block, so from_code_point accepts them.
-    assert!(nex_tagma::validate(0xD7A4));
-    assert!(nex_tagma::validate(0xD7AF));
+    // Filler positions are structurally invalid.
+    assert!(!nex_tagma::validate(0xD7A4));
+    assert!(!nex_tagma::validate(0xD7AF));
     assert!(!nex_tagma::validate(0xABFF));
     assert!(!nex_tagma::validate(0xD7B0));
 }
