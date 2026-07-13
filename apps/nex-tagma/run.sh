@@ -18,19 +18,18 @@ cd "$(dirname "$0")"
 APP_DIR="$(pwd)"
 GIT_ROOT="$(cd "$APP_DIR" && git rev-parse --show-toplevel)"
 
-TAGMA_REPO_SSH="git@github.com:ssccsorg/tagma.git"
+TAGMA_REPO_HTTPS="https://github.com/ssccsorg/tagma.git"
 TAGMA_PREFIX="libs/tagma"
 TAGMA_BRANCH="main"
 
-# Resolve repo URL: GITHUB_TOKEN for CI, SSH for local
+# Resolve repo URL: GITHUB_TOKEN for CI (private), HTTPS default (public repo)
 # Allows override via TAGMA_REPO env var
 if [ -z "${TAGMA_REPO:-}" ]; then
-    if [ -n "${GITHUB_TOKEN:-}" ]; then
-        TAGMA_REPO="https://x-access-token:${GITHUB_TOKEN}@github.com/ssccsorg/tagma.git"
-    elif [ -n "${GH_TOKEN:-}" ]; then
-        TAGMA_REPO="https://x-access-token:${GH_TOKEN}@github.com/ssccsorg/tagma.git"
+    if [ -n "${GITHUB_TOKEN:-}" ] || [ -n "${GH_TOKEN:-}" ]; then
+        token="${GITHUB_TOKEN:-${GH_TOKEN}}"
+        TAGMA_REPO="https://x-access-token:${token}@github.com/ssccsorg/tagma.git"
     else
-        TAGMA_REPO="$TAGMA_REPO_SSH"
+        TAGMA_REPO="$TAGMA_REPO_HTTPS"
     fi
 fi
 
