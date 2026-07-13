@@ -1,6 +1,10 @@
 # nex-tagma
 
-Reference hub that consumes Tagma coordinate space on the neXus FIH storage layer.
+Standard reference implementation that bridges the Tagma three-axis coordinate
+space and the neXus FIH three-dimensional storage. It demonstrates that the
+O(1) direct addressing, collision-free uniqueness, axis decomposition, and
+proximity search properties of the Tagma syllabic coordinate system form an
+isomorphic mapping with the Fact-Inference-Hint three-dimensional cube.
 
 ## Quick Start
 
@@ -26,35 +30,21 @@ cargo run -p nex-tagma -- bench
 
 100k operations, single-threaded, Rust release, Apple M1:
 
-```text
-Benchmark: 100000 operations
-  Method                    Latency      ns/op
-  --------------------------------------------
-  Tagma 1-syll         186.375µs        2 ns
-  Tagma 2-syll         216.875µs        2 ns
-  Tagma 6-syll         1.175459ms       12 ns
-  Tagma 19-syll         3.715ms       37 ns
-  SHA256               23.501208ms      235 ns
+| Metric | SHA256 | Tagma 1-syll | Tagma 6-syll | Tagma 19-syll |
+|--------|--------|-------------|-------------|--------------|
+| Latency | 227 ns/op | 2 ns/op | 11 ns/op | 35 ns/op |
+| ID size | 32 bytes | 2 bytes | 12 bytes | 38 bytes |
+| Addressable | 2^256 | 1.12e4 | 1.94e24 | 2^256 |
+| Speedup vs SHA256 | -- | ~115x | ~20x | ~6x |
 
-Speedup (vs SHA256):
-  1-syll:   126x  (space: 1.1e4)
-  6-syll:   20x  (space: 1.9e24, UUID-scale)
-  19-syll:  6x  (space: 2^256, SHA256-equivalent)
-```
+## Dependencies
 
-| Metric | SHA256 | Tagma 1-syll | Tagma 2-syll | Tagma 6-syll | Tagma 19-syll |
-|--------|--------|-------------|-------------|-------------|--------------|
-| Latency | 227 ns/op | 2 ns/op | 2 ns/op | 11 ns/op | 35 ns/op |
-| ID size | 32 bytes | 2 bytes | 4 bytes | 12 bytes | 38 bytes |
-| Addressable | 2^256 | 1.12e4 | 1.25e8 | 1.94e24 | 2^256 |
-| Speedup vs SHA256 | -- | 115x | 115x | 20x | 6x |
-
-## Architecture
-
-- `src/coord.rs` -- `Coord` type with compose, decompose, validation, Hamming distance, dense index
-- `src/main.rs` -- CLI dispatch
-- `tests/tagma.rs` -- 20 integration tests covering all 11,172 valid coordinates
+- **tagma-core** — Core TagmaCoord type, composed via `libs/tagma` subtree
+  from [github.com/ssccsorg/tagma](https://github.com/ssccsorg/tagma)
+- **sha2** — SHA256 baseline for benchmark comparison
 
 ## Design Doc
 
-Detailed design including 3D FIH mapping, property propagation, evolution phases, and identity flow is documented in `ssccs/docs/projects/nexus/apps/tagma.qmd`.
+Detailed design including 3D FIH mapping, property propagation, evolution
+phases, and identity flow is documented in
+`ssccs/docs/projects/nexus/apps/tagma.qmd`.

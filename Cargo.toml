@@ -16,7 +16,7 @@ members = [
     "storage/composite",
     "storage/petgraph",
     "apps/nex-calc",
-        "apps/nex-tagma",
+    "apps/nex-tagma",
     ]
 exclude = [
     "apps/nex-wasmer-ssccsdocs",
