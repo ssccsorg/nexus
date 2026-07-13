@@ -1,0 +1,169 @@
+---
+title: "타그마(Tagma) Project"
+subtitle: "Master Document"
+date: 2026-07
+date-format: "MMMM, YYYY"
+version-prefix: tagma-wp-0.1
+version-mark: true
+bibliography: ./_include/reference.bib
+csl: ./_include/ieee.csl
+date-modified: last-modified
+generate-title-meta: false
+metadata-files:
+    - ./_include/author.yml
+    - ./_include/format.pdf.yml
+    - ./_include/format.html.yml
+colorlinks: true
+abstract: |
+  Tagma is the realization that the Unicode Hangul syllable block encodes a 16-bit structural coordinate space with a closed-form composition formula, three independent axes, and a built-in invalidity margin of 54,364 of 65,536 states. This space enables hash-less, collision-free content addressing with a combinational decoder of approximately 300 gates and one cycle. We define the coordinate space, the decoder specification, a RISC-V XIF coprocessor reference implementation, and core data structures (TagmaCoord, TagmaMap, TagmaSet, TimeIndex). Tagma replaces hash-based identity generation where cryptographic integrity is not required; SHA-256 and other cryptographic primitives remain for signatures and tamper detection.
+format:
+  html:
+    number-sections: true
+    code-font: "Source Code Pro"
+    appendix-style: plain
+  pdf:
+    pdf-engine: xelatex
+    geometry:
+        - margin=26mm
+    keep-tex: true
+    number-sections: true
+    execute:
+        echo: false
+    colorlinks: true
+    linkcolor: darkgray
+    citecolor: gray
+    urlcolor: gray
+    code-block-bg: false
+    code-block-border-left: true
+    include-in-header:
+      text: |
+        \usepackage{xcolor}
+        \usepackage{microtype}
+        \usepackage{xeCJK}
+        \setCJKmainfont{Noto Sans CJK KR}
+        \setkeys{Gin}{width=\linewidth,height=\textheight,keepaspectratio}
+        \addtokomafont{disposition}{\rmfamily}
+        \input{./_files/wp_metadata.tex}
+        \DeclareTOCStyleEntry[beforeskip=6pt]{default}{section}
+        \DeclareTOCStyleEntry[beforeskip=0pt]{default}{subsection}
+        \makeatletter
+        \def\@maketitle{
+          \begin{center}
+            {\LARGE \bfseries \@title \par}
+            \vspace{1em}
+            {\large \@subtitle \par}
+            \vspace{4em}
+                {\large \@author \thanks{\authorrole; Corresponding author: \texttt{\href{mailto:\authoremail}{\authoremail}}} \par}
+                \vspace{0.3em}
+                {\normalsize \texttt{\href{\affiliationurl}{\affiliationdomain}} \par}
+            \vspace{2em}
+                {\normalsize \@date \par}
+          \end{center}
+          \vspace{4em}
+        }
+        \makeatother
+---
+
+```{python}
+#| include: false
+#| context: local
+%run ./_include/_graphviz.py
+```
+
+Tagma is a structural identity primitive: a 16-bit coordinate space embedded in the Unicode Hangul syllable block that replaces hash-based addressing with a combinational decoder. The space is an open international standard (Unicode) and a public good. Tagma was not invented; it was discovered --- an emergent structure at the intersection of a featural writing system (Hangul, 1443), a universal encoding standard (Unicode, 1991), and the needs of content-addressable computing.
+
+## Coordinate Space {#sec-coordinate-space}
+
+The Unicode Hangul syllable block is the only script whose encoding follows a closed-form composition formula:
+
+$$C(i,m,f) = \text{U+AC00} + 588i + 28m + f, \quad 0 \leq i < 19,\; 0 \leq m < 21,\; 0 \leq f < 28$$
+
+**Dimensions:** 19 (initial) × 21 (medial) × 28 (final) = 11,172 valid coordinates.  
+**Invalidity margin:** 54,364 of 65,536 representable 16-bit states are structurally invalid and hardware-detectable.
+
+Every valid 16-bit value carries three interpretations:
+
+| Interpretation | Domain | Use |
+|---------------|--------|-----|
+| 1-D address | Unicode code point U+AC00--U+D7AF | Character encoding |
+| 3-D coordinate | (initial, medial, final) | Structural positioning |
+| Semantic symbol | Hangul syllable | Debugging aid |
+
+## Decoder Specification
+
+A combinational circuit extracts three 5-bit fields from any 16-bit input in three stages:
+
+| Stage | Operation | Gate count |
+|-------|-----------|-----------|
+| 1 | Range check: input in [U+AC00, U+D7AF] | ~50 |
+| 2 | Field extraction: offset / 588 / 28 | ~140 |
+| 3 | Axis validation: initial<19, medial<21, final<28 | ~30 |
+| **Total** | | **~300 gates, 1 cycle** |
+
+Three custom instructions are defined for the RISC-V XIF coprocessor interface: coordinate decode, field-wise Hamming distance, and field-conditional select. A reference implementation targets the OpenHW CVA6 via CV-X-IF.
+
+## SSCCS Mapping
+
+| SSCCS Concept | Tagma Realization |
+|---------------|------------------|
+| **Segment** | A single 16-bit coordinate point |
+| **Scheme** | The 19×21×28 lattice defining admissible coordinates |
+| **Field** | Hardware comparators defining admissible states |
+| **Observation** | Decoder evaluation: validity flag + three axis fields |
+
+## Why Hangul Is Irreplaceable
+
+No other Unicode script provides the conjunction of properties that Tagma requires:
+
+| Script | Contiguous Address | Closed-Form Formula | Three-Axis Decomposition | Tagma-compatible? |
+|--------|-------------------|---------------------|--------------------------|-------------------|
+| **Hangul** | Y U+AC00-U+D7AF | Y 19x21x28 | Y Onset-Nucleus-Coda | **Yes** |
+| ASCII / Latin | Y U+0000-U+007F | N | N | No |
+| Hiragana / Katakana | Y U+3040-U+30FF | N | N | No |
+| CJK Unified Ideographs | Y U+4E00-U+9FFF | N | N | No |
+| Arabic | Y U+0600-U+06FF | N | N | No |
+
+## Paradigm Shift
+
+In conventional computing, identity passes through three indirections: a hash function (~10K gates, 64 rounds), a collision resolution table, and a pointer dereference. Tagma replaces all three with direct structural addressing:
+
+```text
+hash(data) → resolve → dereference               (traditional)
+C(i,m,f) = 0xAC00 + 588i + 28m + f  →  access    (Tagma, 1 cycle)
+```
+
+**What Tagma replaces:** ID generation, hash-map key indexing, associative lookup, temporal indexing, sensor identification, proximity search.  
+**What Tagma does NOT replace:** SHA-256 (signatures, Merkle proofs, integrity verification), encryption, key derivation, password hashing.
+
+## Core Data Structures
+
+The coordinate space is implemented as a library providing four fundamental types:
+
+- **TagmaCoord** -- A 16-bit value guaranteed to be structurally valid. Constructable from raw index, Unicode code point, character, or the three axes (initial, medial, final). Decomposable back to axes. Hamming distance computation. Display as Hangul syllable.
+- **TagmaMap** -- A direct-address table indexed by coordinate. Fixed capacity of 11,172 entries. O(1) insert, lookup, and delete with no collisions, no resizing, and no hashing overhead.
+- **TagmaSet** -- A bit array over the coordinate space. Insert, remove, and membership test are single-bit operations. Union, intersection, and difference are bitwise operations over 175 machine words.
+- **TagmaTimeIndex** -- Temporal indexing via linearized coordinate: `time × 11172 + coord`. A single multiply-add replaces a full hash computation.
+
+## Development Direction
+
+Tagma progresses along two parallel paths:
+
+**Path I -- Coprocessor (current).** A ~300-gate combinational decoder attached to a standard processor pipeline via the RISC-V XIF interface. Three custom instructions (decode, Hamming distance, field-conditional select) enable hash-less content addressing at one cycle per operation. Reference implementation targets the OpenHW CVA6 core.
+
+**Path II -- Memory Subsystem (future).** The same coordinate space extended into the memory controller and bitcell array. Three independent decoders (5-to-19, 5-to-21, 5-to-28) replace the conventional row-column decoder pair, enabling structural addressing at the memory level. The bitcell array remains standard 6T SRAM.
+
+Beyond these paths, the coordinate space opens directions including:
+
+- **Tagma as SSCCS foundation:** Segment → TagmaCoord, Scheme → 19×21×28 lattice, Field → axis comparators, Observation → decoder evaluation. The coordinate space provides a hardware substrate for SSCCS primitives.
+- **Tagma as neXus FIH accelerator:** Fact indexing via coordinate, Intent as movement vector, Hint as adjacency weight. The coordinate space replaces hash-based state indexing in the FIH model.
+- **Tagma as universal serializer:** Base11172 encoding maps arbitrary bytes to self-validating Hangul strings, serving as Tagma's native serialization format for storage and communication.
+
+## References
+
+For the full technical analysis including decoder specification, XIF coprocessor implementation, hardware design, benchmarks, and SEU detection analysis, see the [Tagma White Paper](https://github.com/ssccsorg/tagma/blob/main/docs/wp.qmd).
+
+1. Tagma White Paper (forthcoming) -- Zenodo DOI (TBD)
+2. ISO/IEC 10646:2020 -- Universal Coded Character Set (UCS)
+3. Unicode Standard -- Hangul Syllables (U+AC00--U+D7AF)
+4. OpenHW CV-X-IF Specification
+5. SSCCS Whitepaper -- Schema--Segment Composition Computing System (2026)
