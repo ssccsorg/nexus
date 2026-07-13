@@ -1752,6 +1752,7 @@ name = "nex-tagma"
 version = "0.1.0"
 dependencies = [
  "sha2",
+ "tagma-core",
 ]
 
 [[package]]
@@ -2827,6 +2828,10 @@ dependencies = [
  "quote",
  "syn 2.0.117",
 ]
+
+[[package]]
+name = "tagma-core"
+version = "0.1.0"
 
 [[package]]
 name = "tap"
