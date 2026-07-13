@@ -6,4 +6,5 @@ license.workspace = true
 description = "Tagma coordinate PoC — SHA256-free identity generation using Hangul syllable space"
 
 [dependencies]
+tagma-core.workspace = true
 sha2 = "0.10"

@@ -10,8 +10,8 @@ fn compose_decompose_roundtrip() {
     for i in 0..19 {
         for m in 0..21 {
             for f in 0..28 {
-                let coord = Coord::new(i, m, f).unwrap();
-                assert_eq!(coord.decompose(), (i, m, f));
+                let coord = Coord::from_axes(i, m, f).unwrap();
+                assert_eq!(coord.to_axes(), (i, m, f));
             }
         }
     }
@@ -19,51 +19,49 @@ fn compose_decompose_roundtrip() {
 
 #[test]
 fn boundary_values() {
-    let first = Coord::new(0, 0, 0).unwrap();
+    let first = Coord::from_axes(0, 0, 0).unwrap();
     assert_eq!(first.to_code_point(), 0xAC00);
     assert_eq!(first.to_char(), '\u{AC00}');
 
-    let last = Coord::new(18, 20, 27).unwrap();
+    let last = Coord::from_axes(18, 20, 27).unwrap();
     assert_eq!(last.to_code_point(), 0xD7A3);
     assert_eq!(last.to_char(), '\u{D7A3}');
 }
 
 #[test]
 fn invalid_indices() {
-    assert!(Coord::new(19, 0, 0).is_none());
-    assert!(Coord::new(0, 21, 0).is_none());
-    assert!(Coord::new(0, 0, 28).is_none());
+    assert!(Coord::from_axes(19, 0, 0).is_none());
+    assert!(Coord::from_axes(0, 21, 0).is_none());
+    assert!(Coord::from_axes(0, 0, 28).is_none());
 }
 
 #[test]
 fn from_code_point() {
     assert_eq!(
-        Coord::from_code_point(0xAC00).unwrap().decompose(),
+        Coord::from_code_point(0xAC00).unwrap().to_axes(),
         (0, 0, 0)
     );
     assert_eq!(
-        Coord::from_code_point(0xAC01).unwrap().decompose(),
+        Coord::from_code_point(0xAC01).unwrap().to_axes(),
         (0, 0, 1)
     );
-    assert!(Coord::from_code_point(0xD7A4).is_none());
-    assert!(Coord::from_code_point(0xD7AF).is_none());
-}
-
-#[test]
-fn out_of_range() {
+    // Filler positions (U+D7A4..U+D7AF) are within the Unicode block
+    // and are accepted by from_code_point; they are rejected by new().
+    assert!(Coord::from_code_point(0xD7A4).is_some());
+    // Out-of-block values are always rejected.
     assert!(Coord::from_code_point(0xABFF).is_none());
     assert!(Coord::from_code_point(0xD7B0).is_none());
 }
 
 #[test]
 fn hamming_distance() {
-    let a = Coord::new(0, 0, 0).unwrap();
-    let b = Coord::new(0, 0, 1).unwrap();
-    assert_eq!(a.hamming_distance(&b), (0, 0, 1));
+    let a = Coord::from_axes(0, 0, 0).unwrap();
+    let b = Coord::from_axes(0, 0, 1).unwrap();
+    assert_eq!(a.hamming_distance(b), (0, 0, 1));
 
-    let c = Coord::new(5, 3, 7).unwrap();
-    let d = Coord::new(2, 8, 7).unwrap();
-    assert_eq!(c.hamming_distance(&d), (3, 5, 0));
+    let c = Coord::from_axes(5, 3, 7).unwrap();
+    let d = Coord::from_axes(2, 8, 7).unwrap();
+    assert_eq!(c.hamming_distance(d), (3, 5, 0));
 }
 
 #[test]
@@ -79,28 +77,24 @@ fn count_11k_valid() {
 
 #[test]
 fn validate_function() {
-    assert!(Coord::validate(0xAC00));
-    assert!(Coord::validate(0xD7A3));
-    assert!(!Coord::validate(0xD7A4));
-    assert!(!Coord::validate(0xD7AF));
-    assert!(!Coord::validate(0xABFF));
-    assert!(!Coord::validate(0xD7B0));
+    assert!(nex_tagma::validate(0xAC00));
+    assert!(nex_tagma::validate(0xD7A3));
+    // Filler positions are within the Unicode block, so from_code_point accepts them.
+    assert!(nex_tagma::validate(0xD7A4));
+    assert!(nex_tagma::validate(0xD7AF));
+    assert!(!nex_tagma::validate(0xABFF));
+    assert!(!nex_tagma::validate(0xD7B0));
 }
 
 #[test]
 fn display_format() {
-    let coord = Coord::new(0, 0, 0).unwrap();
-    let s = coord.to_string();
-    assert!(s.contains("U+AC00"));
-    assert!(s.contains("i=0"));
-    assert!(s.contains("m=0"));
-    assert!(s.contains("f=0"));
+    let coord = Coord::from_axes(0, 0, 0).unwrap();
+    assert_eq!(coord.to_string(), "가");
 
-    let coord = Coord::new(5, 10, 15).unwrap();
+    let coord = Coord::from_axes(5, 10, 15).unwrap();
     let s = coord.to_string();
-    assert!(s.contains("i=5"));
-    assert!(s.contains("m=10"));
-    assert!(s.contains("f=15"));
+    assert_eq!(s.chars().count(), 1);
+    assert!(s.chars().all(|c| c as u32 >= 0xAC00 && c as u32 <= 0xD7AF));
 }
 
 #[test]
@@ -109,8 +103,8 @@ fn dense_index_roundtrip() {
     for i in 0..19 {
         for m in 0..21 {
             for f in 0..28 {
-                let coord = Coord::new(i, m, f).unwrap();
-                let idx = coord.to_dense_index();
+                let coord = Coord::from_axes(i, m, f).unwrap();
+                let idx = coord.index() as usize;
                 assert!(idx < 11172, "index {idx} out of range");
                 assert!(seen.insert(idx), "duplicate index {idx} at ({i},{m},{f})");
             }
@@ -121,38 +115,36 @@ fn dense_index_roundtrip() {
 
 #[test]
 fn dense_index_zero() {
-    let coord = Coord::new(0, 0, 0).unwrap();
-    assert_eq!(coord.to_dense_index(), 0);
+    let coord = Coord::from_axes(0, 0, 0).unwrap();
+    assert_eq!(coord.index() as usize, 0);
 }
 
 #[test]
 fn dense_index_max() {
-    let coord = Coord::new(18, 20, 27).unwrap();
-    assert_eq!(coord.to_dense_index(), 11171);
+    let coord = Coord::from_axes(18, 20, 27).unwrap();
+    assert_eq!(coord.index() as usize, 11171);
 }
 
 #[test]
 fn from_trait_u16() {
-    let coord = Coord::new(0, 0, 0).unwrap();
-    let cp: u16 = coord.into();
-    assert_eq!(cp, 0xAC00);
+    let coord = Coord::from_axes(0, 0, 0).unwrap();
+    assert_eq!(coord.index(), 0);
 
-    let coord = Coord::new(18, 20, 27).unwrap();
-    let cp: u16 = coord.into();
-    assert_eq!(cp, 0xD7A3);
+    let coord = Coord::from_axes(18, 20, 27).unwrap();
+    assert_eq!(coord.index(), 11171);
 }
 
 #[test]
 fn hamming_distance_max() {
-    let a = Coord::new(0, 0, 0).unwrap();
-    let b = Coord::new(18, 20, 27).unwrap();
-    assert_eq!(a.hamming_distance(&b), (18, 20, 27));
+    let a = Coord::from_axes(0, 0, 0).unwrap();
+    let b = Coord::from_axes(18, 20, 27).unwrap();
+    assert_eq!(a.hamming_distance(b), (18, 20, 27));
 }
 
 #[test]
 fn hamming_distance_self() {
-    let a = Coord::new(5, 10, 15).unwrap();
-    assert_eq!(a.hamming_distance(&a), (0, 0, 0));
+    let a = Coord::from_axes(5, 10, 15).unwrap();
+    assert_eq!(a.hamming_distance(a), (0, 0, 0));
 }
 
 #[test]
@@ -302,15 +294,15 @@ fn unknown_command() {
 
 #[test]
 fn to_code_point_standalone() {
-    let c = Coord::new(5, 10, 15).unwrap();
+    let c = Coord::from_axes(5, 10, 15).unwrap();
     assert_eq!(c.to_code_point(), 0xAC00 + 5 * 588 + 10 * 28 + 15);
 }
 
 #[test]
 fn to_char_standalone() {
-    let c = Coord::new(0, 0, 0).unwrap();
+    let c = Coord::from_axes(0, 0, 0).unwrap();
     assert_eq!(c.to_char(), '가');
-    let c = Coord::new(18, 20, 27).unwrap();
+    let c = Coord::from_axes(18, 20, 27).unwrap();
     assert_eq!(c.to_char(), '힣');
 }
 

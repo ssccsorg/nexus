@@ -26,6 +26,22 @@ cargo run -p nex-tagma -- bench
 
 100k operations, single-threaded, Rust release, Apple M1:
 
+```text
+Benchmark: 100000 operations
+  Method                    Latency      ns/op
+  --------------------------------------------
+  Tagma 1-syll         186.375µs        2 ns
+  Tagma 2-syll         216.875µs        2 ns
+  Tagma 6-syll         1.175459ms       12 ns
+  Tagma 19-syll         3.715ms       37 ns
+  SHA256               23.501208ms      235 ns
+
+Speedup (vs SHA256):
+  1-syll:   126x  (space: 1.1e4)
+  6-syll:   20x  (space: 1.9e24, UUID-scale)
+  19-syll:  6x  (space: 2^256, SHA256-equivalent)
+```
+
 | Metric | SHA256 | Tagma 1-syll | Tagma 2-syll | Tagma 6-syll | Tagma 19-syll |
 |--------|--------|-------------|-------------|-------------|--------------|
 | Latency | 227 ns/op | 2 ns/op | 2 ns/op | 11 ns/op | 35 ns/op |

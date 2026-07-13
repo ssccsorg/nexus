@@ -522,10 +522,7 @@ verify_nex_calc_fihcontract() {
 
 verify_nex_tagma() {
     echo "=== nex-tagma ==="
-    cargo build -p nex-tagma 2>&1 || { echo "nex-tagma: build FAILED"; return 1; }
-    cargo test -p nex-tagma 2>&1 || { echo "nex-tagma: tests FAILED"; return 1; }
-    echo "--- bench ---"
-    cargo run -p nex-tagma -- bench 2>&1 || { echo "nex-tagma: bench FAILED"; return 1; }
+    (cd apps/nex-tagma && ./run.sh) 2>&1 || { echo "nex-tagma: FAILED"; return 1; }
     echo "nex-tagma: passed"
 }
 
@@ -578,7 +575,7 @@ case "${1:-}" in
         echo "  (no arg)      Core + gateway + apps + playbooks [default]"
         echo "  --core        Core checks only (nex, storage/*)"
         echo "  --gateway     Gateway layer checks (api, nex-cf, serde-proxy)"
-        echo "  --apps        Standalone app verification (spinwasi, cf-mock, ...)"
+        echo "  --apps        Standalone app verification (spinwasi, nex-tagma, ...)"
         echo "  --server      nex-server standalone verification"
         echo "  --playbooks   Consumer playbooks only"
         ;;

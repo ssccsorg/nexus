@@ -1,8 +1,7 @@
 use std::env;
 use std::time::Instant;
 
-mod coord;
-use coord::Coord;
+use nex_tagma::Coord;
 
 fn print_usage() {
     eprintln!("Usage: nex-tagma <command> [args]");
@@ -38,7 +37,7 @@ fn main() {
             };
             match Coord::from_code_point(cp) {
                 Some(c) => {
-                    let (i, m, f) = c.decompose();
+                    let (i, m, f) = c.to_axes();
                     println!("valid: {} (U+{:04X}, i={i}, m={m}, f={f})", c.to_char(), cp);
                 }
                 None => println!("invalid: U+{cp:04X}"),
@@ -66,7 +65,7 @@ fn main() {
                     std::process::exit(1);
                 }
             };
-            match Coord::new(i, m, f) {
+            match Coord::from_axes(i, m, f) {
                 Some(c) => println!("{}", c.to_char()),
                 None => {
                     eprintln!("error: invalid axes ({i},{m},{f})");
@@ -81,7 +80,7 @@ fn main() {
             };
             match Coord::from_code_point(cp) {
                 Some(c) => {
-                    let (i, m, f) = c.decompose();
+                    let (i, m, f) = c.to_axes();
                     println!("{}: initial={i}, medial={m}, final={f}", c.to_char());
                 }
                 None => {
@@ -101,7 +100,7 @@ fn main() {
             };
             match (Coord::from_code_point(a), Coord::from_code_point(b)) {
                 (Some(ca), Some(cb)) => {
-                    let (di, dm, df) = ca.hamming_distance(&cb);
+                    let (di, dm, df) = ca.hamming_distance(cb);
                     println!("Hamming distance: initial={di}, medial={dm}, final={df}");
                 }
                 _ => {
@@ -118,7 +117,7 @@ fn main() {
 
             // Warmup
             for _ in 0..1000 {
-                let _ = Coord::new(0, 0, 0);
+                let _ = Coord::from_axes(0, 0, 0);
                 let mut h = Sha256::new();
                 h.update([0u8; 3]);
                 let _ = h.finalize();
@@ -130,7 +129,7 @@ fn main() {
                 let init = (i % 19) as u8;
                 let med = ((i / 19) % 21) as u8;
                 let fin = ((i / (19 * 21)) % 28) as u8;
-                black_box(Coord::new(init, med, fin));
+                black_box(Coord::from_axes(init, med, fin));
             }
             let t1 = start.elapsed();
 
@@ -143,8 +142,8 @@ fn main() {
                 let d = ((i / (19 * 21 * 28)) % 19) as u8;
                 let e = ((i / (19 * 21 * 28 * 19)) % 21) as u8;
                 let f = ((i / (19 * 21 * 28 * 19 * 21)) % 28) as u8;
-                black_box(Coord::new(a, b, c));
-                black_box(Coord::new(d, e, f));
+                black_box(Coord::from_axes(a, b, c));
+                black_box(Coord::from_axes(d, e, f));
             }
             let t2 = start.elapsed();
 
@@ -156,7 +155,7 @@ fn main() {
                     let init = (idx % 19) as u8;
                     let med = ((idx / 19) % 21) as u8;
                     let fin = ((idx / (19 * 21)) % 28) as u8;
-                    black_box(Coord::new(init, med, fin));
+                    black_box(Coord::from_axes(init, med, fin));
                 }
             }
             let t6 = start.elapsed();
@@ -169,7 +168,7 @@ fn main() {
                     let init = (idx % 19) as u8;
                     let med = ((idx / 19) % 21) as u8;
                     let fin = ((idx / (19 * 21)) % 28) as u8;
-                    black_box(Coord::new(init, med, fin));
+                    black_box(Coord::from_axes(init, med, fin));
                 }
             }
             let t19 = start.elapsed();
