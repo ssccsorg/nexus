@@ -15,8 +15,11 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+APP_DIR="$(pwd)"
+GIT_ROOT="$(cd "$APP_DIR" && git rev-parse --show-toplevel)"
+
 TAGMA_REPO_SSH="git@github.com:ssccsorg/tagma.git"
-TAGMA_PREFIX="../libs/tagma"
+TAGMA_PREFIX="libs/tagma"
 TAGMA_BRANCH="1-tagma-core-rust"
 
 # Resolve repo URL: GITHUB_TOKEN for CI, SSH for local
@@ -32,15 +35,18 @@ if [ -z "${TAGMA_REPO:-}" ]; then
 fi
 
 ensure_subtree() {
-    if [ ! -d "$TAGMA_PREFIX/sw/rust/core/src" ]; then
+    if [ ! -d "$GIT_ROOT/$TAGMA_PREFIX/sw/rust/core/src" ]; then
         echo "tagma: adding subtree from $TAGMA_REPO ($TAGMA_BRANCH)..."
+        cd "$GIT_ROOT"
         git subtree add --prefix "$TAGMA_PREFIX" --squash "$TAGMA_REPO" "$TAGMA_BRANCH"
+        cd "$APP_DIR"
     fi
 }
 
 case "${1:-}" in
     --refresh-tagma)
         echo "tagma: pulling latest subtree from $TAGMA_REPO ($TAGMA_BRANCH)..."
+        cd "$GIT_ROOT"
         git subtree pull --prefix "$TAGMA_PREFIX" --squash "$TAGMA_REPO" "$TAGMA_BRANCH"
         ;;
     --test)
