@@ -71,3 +71,6 @@ logs
 
 # Pre-compiled binaries (Helix remote_server, etc.)
 .bin/
+
+# Vendored external dependencies (cloned by run.sh)
+libs/tagma/

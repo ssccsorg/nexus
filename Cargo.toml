@@ -8,7 +8,6 @@ members = [
     "nexd",
     "storage/duckdb",
     "libs/serde-proxy",
-    "libs/tagma/sw/rust/core",
     "playbooks/agents",
     "interface/query",
     "interface/cypher",
