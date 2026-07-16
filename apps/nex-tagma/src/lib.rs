@@ -6,10 +6,10 @@ pub fn validate(cp: u16) -> bool {
 }
 
 /// In-memory key-value store backed by Tagma's hash-free direct addressing.
-/// Proxy pattern: mirrors nexus `EntityStore` interface for validation
-/// before the implementation moves into nexus core.
+/// Keys are Coord values — the application manages the key space externally.
+/// This is the hashless pattern: Tagma provides storage, not key derivation.
 pub struct MemStore<V> {
-    inner: std::cell::RefCell<CoordKeyMap<1, String, V>>,
+    inner: std::cell::RefCell<CoordKeyMap<1, Coord, V>>,
 }
 
 impl<V> MemStore<V> {
@@ -19,23 +19,23 @@ impl<V> MemStore<V> {
         }
     }
 
-    pub fn get(&self, key: &str) -> Option<V>
+    pub fn get(&self, key: Coord) -> Option<V>
     where
         V: Clone,
     {
-        self.inner.borrow().get_str(key).cloned()
+        self.inner.borrow().get(&key).cloned()
     }
 
-    pub fn insert(&self, key: String, value: V) -> Option<V> {
+    pub fn insert(&self, key: Coord, value: V) -> Option<V> {
         self.inner.borrow_mut().insert(key, value)
     }
 
-    pub fn remove(&self, key: &str) -> Option<V> {
-        self.inner.borrow_mut().remove_str(key)
+    pub fn remove(&self, key: Coord) -> Option<V> {
+        self.inner.borrow_mut().remove(&key)
     }
 
-    pub fn contains_key(&self, key: &str) -> bool {
-        self.inner.borrow().get_str(key).is_some()
+    pub fn contains_key(&self, key: Coord) -> bool {
+        self.inner.borrow().contains_key(&key)
     }
 
     pub fn len(&self) -> usize {
@@ -55,13 +55,5 @@ impl<V> MemStore<V> {
 
     pub fn clear(&self) {
         self.inner.borrow_mut().clear();
-    }
-
-    pub fn replace_from(&self, entries: Vec<(String, V)>) {
-        let mut map = self.inner.borrow_mut();
-        map.clear();
-        for (k, v) in entries {
-            map.insert(k, v);
-        }
     }
 }
