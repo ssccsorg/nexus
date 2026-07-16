@@ -1,20 +1,20 @@
-pub use tagma_core::{Coord, CoordKeyMap, CoordKey};
+pub use tagma_core::{Coord, CoordKey, CoordKeyMap};
 
 /// Convenience: check whether a Unicode code point is a valid Tagma coordinate.
 pub fn validate(cp: u16) -> bool {
     Coord::from_code_point(cp).is_some()
 }
 
-/// Simple key-value store using Tagma's hash-free direct addressing.
-/// This is the proxy pattern: wraps CoordKeyMap in an EntityStore-like API
-/// before the pattern moves into nexus core.
-pub struct TagmaStore<V> {
+/// In-memory key-value store backed by Tagma's hash-free direct addressing.
+/// Proxy pattern: mirrors nexus `EntityStore` interface for validation
+/// before the implementation moves into nexus core.
+pub struct MemStore<V> {
     inner: std::cell::RefCell<CoordKeyMap<1, String, V>>,
 }
 
-impl<V> TagmaStore<V> {
+impl<V> MemStore<V> {
     pub fn new() -> Self {
-        TagmaStore {
+        MemStore {
             inner: std::cell::RefCell::new(CoordKeyMap::new()),
         }
     }
@@ -23,7 +23,7 @@ impl<V> TagmaStore<V> {
     where
         V: Clone,
     {
-        self.inner.borrow().get(&key.to_string()).cloned()
+        self.inner.borrow().get_str(key).cloned()
     }
 
     pub fn insert(&self, key: String, value: V) -> Option<V> {
@@ -31,11 +31,11 @@ impl<V> TagmaStore<V> {
     }
 
     pub fn remove(&self, key: &str) -> Option<V> {
-        self.inner.borrow_mut().remove(&key.to_string())
+        self.inner.borrow_mut().remove_str(key)
     }
 
     pub fn contains_key(&self, key: &str) -> bool {
-        self.inner.borrow().contains_key(&key.to_string())
+        self.inner.borrow().get_str(key).is_some()
     }
 
     pub fn len(&self) -> usize {
