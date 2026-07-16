@@ -84,6 +84,7 @@ dependencies = [
 [[package]]
 name = "tagma-core"
 version = "0.1.0"
+source = "git+https://github.com/ssccsorg/tagma?branch=21-coordhashmap-nexus#82cc0aa5bf0b0782bc09998336dc940173bfa6be"
 
 [[package]]
 name = "typenum"
