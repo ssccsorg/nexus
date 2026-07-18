@@ -1,4 +1,5 @@
-pub use tagma_core::{Coord, CoordKey, CoordKeyMap};
+pub use tagma_core::Coord;
+pub use tagma_core::CoordSpace;
 
 /// Convenience: check whether a Unicode code point is a valid Tagma coordinate.
 pub fn validate(cp: u16) -> bool {
@@ -6,16 +7,16 @@ pub fn validate(cp: u16) -> bool {
 }
 
 /// In-memory key-value store backed by Tagma's hash-free direct addressing.
-/// Keys are Coord values — the application manages the key space externally.
+/// Keys are Coord values -- the application manages the key space externally.
 /// This is the hashless pattern: Tagma provides storage, not key derivation.
 pub struct MemStore<V> {
-    inner: std::cell::RefCell<CoordKeyMap<1, Coord, V>>,
+    inner: std::cell::RefCell<CoordSpace<V>>,
 }
 
 impl<V> MemStore<V> {
     pub fn new() -> Self {
         MemStore {
-            inner: std::cell::RefCell::new(CoordKeyMap::new()),
+            inner: std::cell::RefCell::new(CoordSpace::new()),
         }
     }
 
@@ -23,19 +24,19 @@ impl<V> MemStore<V> {
     where
         V: Clone,
     {
-        self.inner.borrow().get(&key).cloned()
+        self.inner.borrow().at(&key).cloned()
     }
 
     pub fn insert(&self, key: Coord, value: V) -> Option<V> {
-        self.inner.borrow_mut().insert(key, value)
+        self.inner.borrow_mut().place(key, value)
     }
 
     pub fn remove(&self, key: Coord) -> Option<V> {
-        self.inner.borrow_mut().remove(&key)
+        self.inner.borrow_mut().vacate(&key)
     }
 
     pub fn contains_key(&self, key: Coord) -> bool {
-        self.inner.borrow().contains_key(&key)
+        self.inner.borrow().occupied(&key)
     }
 
     pub fn len(&self) -> usize {
@@ -50,7 +51,7 @@ impl<V> MemStore<V> {
     where
         V: Clone,
     {
-        self.inner.borrow().values()
+        self.inner.borrow().values().cloned().collect()
     }
 
     pub fn clear(&self) {
