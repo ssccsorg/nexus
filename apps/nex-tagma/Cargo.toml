@@ -3,8 +3,8 @@ name = "nex-tagma"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
-description = "Tagma coordinate PoC — SHA256-free identity generation using Hangul syllable space"
+description = "synTagma coordinate PoC — SHA256-free identity generation using Hangul syllable space"
 
 [dependencies]
-tagma-core = { git = "https://github.com/ssccsorg/tagma", branch = "21-coordhashmap-nexus" }
+tagma-core = { git = "https://github.com/ssccsorg/syntagma", branch = "21-coordhashmap-nexus" }
 sha2 = "0.10"
