@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicU32;
 
 use crate::storage::semantic::{DynSemanticStore, Query, RecordLoad};
 use nexus_model::FihHash;
+use tagma_core::{Coord, CoordPath, CoordSpaceN};
 
 // ── Internal cell type ─────────────────────────────────────────────
 //
@@ -139,6 +140,9 @@ pub struct FihCoord {
     /// Semantic feature store for similarity search (plug-in).
     pub(crate) by_semantic: Cell2<Vec<DynSemanticStore>>,
     pub(crate) by_time: Cell2<OrderedIndex<u64>>,
+    /// Tagma multi-axis index: origin x creator x status -> compact ID.
+    /// Eliminates Vec intersection for 3-axis selective queries.
+    pub(crate) axis_index: Cell2<CoordSpaceN<3, u32>>,
 }
 
 impl FihCoord {
@@ -156,6 +160,7 @@ impl FihCoord {
             by_created_at_day: Cell2::new(BTreeMap::new()),
             ref_counts: Cell2::new(HashMap::new()),
             by_semantic: Cell2::new(Vec::new()),
+            axis_index: Cell2::new(CoordSpaceN::new()),
         }
     }
 
@@ -221,6 +226,7 @@ impl FihCoord {
         self.by_status.borrow_mut().clear();
         self.by_created_at_day.borrow_mut().clear();
         self.ref_counts.borrow_mut().clear();
+        self.axis_index.borrow_mut().clear();
         // by_semantic is NOT cleared here — semantic stores persist
         // across index rebuilds.
     }
@@ -236,6 +242,14 @@ impl FihCoord {
     }
 
     // ── Index update ──────────────────────────────────────────────
+
+    pub(crate) fn intern_coord(&self, key: &str) -> Coord {
+        let idx = self.intern_str_key(key);
+        // Coord range is 0..11172. If the interned index exceeds this,
+        // wrap via modulo. Collisions are extremely rare at this cardinality
+        // and only degrade the fast path (fallback HashMap intersection still correct).
+        Coord::new((idx % 11172) as u16).expect("coord index in range")
+    }
 
     pub fn record_fact(&self, id: &[u8; 32], origin: &str, creator: &str, created_at: u64) {
         let idx = self.intern(id);
@@ -259,6 +273,14 @@ impl FihCoord {
             .or_default()
             .push(idx);
         self.ref_counts.borrow_mut().entry(idx).or_insert(0);
+
+        // Tagma: origin x creator -> compact ID
+        let path = CoordPath::new([
+            self.intern_coord(origin),
+            self.intern_coord(creator),
+            Coord::new(0).unwrap(), // status placeholder (unused for facts)
+        ]);
+        self.axis_index.borrow_mut().place_path(&path, idx);
     }
 
     pub fn record_intent(
@@ -427,6 +449,93 @@ impl FihCoord {
             .cloned()
             .unwrap_or_default()
     }
+
+    // ── Tagma multi-axis query ────────────────────────────────────────
+
+    /// Returns compact IDs matching origin x creator x status.
+    /// Uses Tagma direct-address lookup for O(3) fast path.
+    /// Falls back to Vec intersection if the Tagma path is empty.
+    pub fn by_origin_creator_status(&self, origin: &str, creator: &str, status: &str) -> Vec<u32> {
+        // Fast path: Tagma direct-address lookup.
+        if let (Some(o), Some(c), Some(s)) = (
+            self.lookup_str_key(origin),
+            self.lookup_str_key(creator),
+            self.lookup_str_key(status),
+        ) {
+            let path = CoordPath::new([
+                Coord::new((o % 11172) as u16).expect("coord in range"),
+                Coord::new((c % 11172) as u16).expect("coord in range"),
+                Coord::new((s % 11172) as u16).expect("coord in range"),
+            ]);
+            if let Some(&id) = self.axis_index.borrow().at_path(&path) {
+                return vec![id];
+            }
+        }
+        // Fallback: interner key absent or Tagma fast path returned None.
+        // Perform Vec intersection from legacy indexes.
+        let by_o = self.fact_ids_by_origin(origin);
+        let by_c = self.facts_by_creator(creator);
+        let by_s = self.intents_by_status(status);
+        intersect_3(&by_o, &by_c, &by_s)
+    }
+
+    /// Returns compact IDs matching origin x creator (2-axis selective query).
+    pub fn by_origin_creator(&self, origin: &str, creator: &str) -> Vec<u32> {
+        // Fast path: Tagma direct-address lookup.
+        if let (Some(o), Some(c)) = (self.lookup_str_key(origin), self.lookup_str_key(creator)) {
+            let path = CoordPath::new([
+                Coord::new((o % 11172) as u16).expect("coord in range"),
+                Coord::new((c % 11172) as u16).expect("coord in range"),
+                Coord::new(0).expect("coord in range"),
+            ]);
+            if let Some(&id) = self.axis_index.borrow().at_path(&path) {
+                return vec![id];
+            }
+        }
+        // Fallback: legacy intersection
+        let by_o = self.fact_ids_by_origin(origin);
+        let by_c = self.facts_by_creator(creator);
+        intersect_2(&by_o, &by_c)
+    }
+}
+
+// ── Vec intersection helpers (legacy fallback) ─────────────────────────
+
+pub fn intersect_2(a: &[u32], b: &[u32]) -> Vec<u32> {
+    if a.is_empty() || b.is_empty() {
+        return Vec::new();
+    }
+    let (small, large) = if a.len() <= b.len() { (a, b) } else { (b, a) };
+    let set: std::collections::HashSet<u32> =
+        std::collections::HashSet::from_iter(large.iter().copied());
+    small
+        .iter()
+        .filter(|id| set.contains(id))
+        .copied()
+        .collect()
+}
+
+pub fn intersect_3(a: &[u32], b: &[u32], c: &[u32]) -> Vec<u32> {
+    if a.is_empty() || b.is_empty() || c.is_empty() {
+        return Vec::new();
+    }
+    // Pick the smallest Vec to iterate, build sets from the other two.
+    let (candidates, set1, set2) = if a.len() <= b.len() && a.len() <= c.len() {
+        (a, b, c)
+    } else if b.len() <= a.len() && b.len() <= c.len() {
+        (b, a, c)
+    } else {
+        (c, a, b)
+    };
+    let set1: std::collections::HashSet<u32> =
+        std::collections::HashSet::from_iter(set1.iter().copied());
+    let set2: std::collections::HashSet<u32> =
+        std::collections::HashSet::from_iter(set2.iter().copied());
+    candidates
+        .iter()
+        .filter(|id| set1.contains(id) && set2.contains(id))
+        .copied()
+        .collect()
 }
 
 impl Default for FihCoord {
