@@ -26,6 +26,7 @@ fn store() -> FihStorage<SimIo> {
 fn submit_fact(store: &FihStorage<SimIo>, id: &str, data: &str) {
     block_on(store.submit_fact(&Fact {
         id: FihHash::from_hex(id),
+        coord: None,
         origin: "tm".into(),
         content: Content {
             mime_type: "text/plain".into(),
@@ -39,6 +40,7 @@ fn submit_fact(store: &FihStorage<SimIo>, id: &str, data: &str) {
 fn submit_intent(store: &FihStorage<SimIo>, id: &str, from: &[&str]) {
     block_on(store.submit_intent(&Intent {
         id: FihHash::from_hex(id),
+        coord: None,
         from_facts: from.iter().map(|s| FihHash::from_hex(s)).collect(),
         description: format!("intent {}", id),
         creator: "tester".into(),

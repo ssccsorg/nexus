@@ -60,6 +60,7 @@ async fn handle_write_fact(
 
     let fact = Fact {
         id: FihHash::from_hex(&format!("fact_{}", uuid::Uuid::new_v4())),
+        coord: None,
         origin: p.origin,
         content: match &p.content {
             Value::String(s) => Content {
@@ -186,6 +187,7 @@ async fn handle_write_intent(
 
     let intent = Intent {
         id: FihHash::from_hex(&format!("intent_{}", uuid::Uuid::new_v4())),
+        coord: None,
         from_facts: p.from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
         description: p.description,
         creator: p.creator,

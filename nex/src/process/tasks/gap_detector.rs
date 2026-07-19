@@ -94,18 +94,18 @@ impl DetectionCapable for GapDetector {
                 }
                 self.seen_origin.insert(key.clone());
 
-                output.facts.push(Fact {
-                    id: FihHash::new(&[origin, "gap"], "fact"),
-                    origin: "gap-detector".into(),
-                    content: Content::from_json(&serde_json::json!({
+                output.facts.push(Fact::new(
+                    FihHash::new(&[origin, "gap"], "fact"),
+                    "gap-detector".into(),
+                    Content::from_json(&serde_json::json!({
                         "type": "gap",
                         "subtype": "origin-orphan",
                         "origin": origin,
                         "orphan_count": facts.len(),
                         "fact_ids": facts.iter().map(|f| f.id.to_string()).collect::<Vec<_>>(),
                     })),
-                    creator: "gap-detector".into(),
-                });
+                    "gap-detector".into(),
+                ));
             }
         }
 
@@ -138,10 +138,10 @@ impl DetectionCapable for GapDetector {
                     }
                     self.seen_topic.insert(key.clone());
 
-                    output.facts.push(Fact {
-                        id: FihHash::new(&[topic, oa_s, ob_s], "cross-gap"),
-                        origin: "gap-detector".into(),
-                        content: Content::from_json(&serde_json::json!({
+                    output.facts.push(Fact::new(
+                        FihHash::new(&[topic, oa_s, ob_s], "cross-gap"),
+                        "gap-detector".into(),
+                        Content::from_json(&serde_json::json!({
                             "type": "gap",
                             "subtype": "cross-origin",
                             "topic": topic,
@@ -150,8 +150,8 @@ impl DetectionCapable for GapDetector {
                             "count_a": origins[oa].len(),
                             "count_b": origins[ob].len(),
                         })),
-                        creator: "gap-detector".into(),
-                    });
+                        "gap-detector".into(),
+                    ));
                 }
             }
         }

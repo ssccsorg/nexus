@@ -96,10 +96,10 @@ impl DetectionCapable for StateChangeDetector {
             ));
         }
 
-        output.facts.push(Fact {
-            id: FihHash::new(&[&triggers.join(",")], "state-change"),
-            origin: "state-change-detector".into(),
-            content: Content::from_json(&serde_json::json!({
+        output.facts.push(Fact::new(
+            FihHash::new(&[&triggers.join(",")], "state-change"),
+            "state-change-detector".into(),
+            Content::from_json(&serde_json::json!({
                 "type": "state_change",
                 "triggers": triggers,
                 "prev_fact_count": checkpoint.fact_count,
@@ -107,8 +107,8 @@ impl DetectionCapable for StateChangeDetector {
                 "prev_open_intents": checkpoint.open_intent_count,
                 "curr_open_intents": current_open,
             })),
-            creator: "state-change-detector".into(),
-        });
+            "state-change-detector".into(),
+        ));
 
         self.checkpoint = Some(DetectionCheckpoint {
             fact_count: current_facts,

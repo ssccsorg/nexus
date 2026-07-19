@@ -59,6 +59,7 @@ use nexus_storage_petgraph::{Snapshottable, StorageSnapshot};
 fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) -> Fact {
     Fact {
         id: FihHash::from_hex(id),
+        coord: None,
         origin: origin.to_string(),
         content: Content {
             mime_type: "application/json".into(),
@@ -364,6 +365,7 @@ fn agent_resolve_contradictions(
         }
         let intent = Intent {
             id: FihHash::new(&[&fact.id.to_string(), agent_name], "resolve"),
+            coord: None,
             from_facts: vec![fact.id],
             description: format!("Resolve {}: {}", t, agent_name),
             creator: agent_name.into(),

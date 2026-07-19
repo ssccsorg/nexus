@@ -49,6 +49,7 @@ impl nexus_model::Now for FakeClock {
 pub fn fact(id: &str) -> Fact {
     Fact {
         id: FihHash::from_hex(id),
+        coord: None,
         origin: "t".into(),
         content: Content {
             mime_type: "text/plain".into(),
@@ -62,6 +63,7 @@ pub fn fact(id: &str) -> Fact {
 pub fn intent(id: &str, from: Vec<&str>) -> Intent {
     Intent {
         id: FihHash::from_hex(id),
+        coord: None,
         from_facts: from.into_iter().map(|s| FihHash::from_hex(s)).collect(),
         description: format!("intent {}", id),
         creator: "t".into(),

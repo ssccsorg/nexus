@@ -80,12 +80,12 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact {
-                id: FihHash::from_hex("f001"),
-                origin: "verify".into(),
-                content: "hello world".into(),
-                creator: "v".into(),
-            },
+            &Fact::new(
+                FihHash::from_hex("f001"),
+                "verify".into(),
+                "hello world".into(),
+                "v".into(),
+            ),
         )
         .await
         .unwrap();
@@ -100,6 +100,7 @@ fn main() {
             &store,
             &Intent {
                 id: FihHash::from_hex("i001"),
+                coord: None,
                 from_facts: vec![FihHash::from_hex("f_nonexistent")],
                 description: "test".into(),
                 creator: "v".into(),
@@ -122,12 +123,12 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact {
-                id: FihHash::from_hex("f_base"),
-                origin: "verify".into(),
-                content: "base data".into(),
-                creator: "v".into(),
-            },
+            &Fact::new(
+                FihHash::from_hex("f_base"),
+                "verify".into(),
+                "base data".into(),
+                "v".into(),
+            ),
         )
         .await
         .unwrap();
@@ -135,6 +136,7 @@ fn main() {
             &store,
             &Intent {
                 id: FihHash::from_hex("i001"),
+                coord: None,
                 from_facts: vec![FihHash::from_hex("f_base")],
                 description: "analyze base".into(),
                 creator: "v".into(),
@@ -166,12 +168,12 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact {
-                id: FihHash::from_hex("f_base"),
-                origin: "v".into(),
-                content: "x".into(),
-                creator: "v".into(),
-            },
+            &Fact::new(
+                FihHash::from_hex("f_base"),
+                "v".into(),
+                "x".into(),
+                "v".into(),
+            ),
         )
         .await
         .unwrap();
@@ -179,6 +181,7 @@ fn main() {
             &store,
             &Intent {
                 id: FihHash::from_hex("i001"),
+                coord: None,
                 from_facts: vec![FihHash::from_hex("f_base")],
                 description: "test".into(),
                 creator: "v".into(),
@@ -224,12 +227,12 @@ fn main() {
         let store = FihStorage::new(io.clone(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact {
-                id: FihHash::from_hex("f001"),
-                origin: "v".into(),
-                content: "flush test".into(),
-                creator: "v".into(),
-            },
+            &Fact::new(
+                FihHash::from_hex("f001"),
+                "v".into(),
+                "flush test".into(),
+                "v".into(),
+            ),
         )
         .await
         .unwrap();
@@ -245,12 +248,12 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact {
-                id: FihHash::from_hex("f001"),
-                origin: "v".into(),
-                content: "a".into(),
-                creator: "v".into(),
-            },
+            &Fact::new(
+                FihHash::from_hex("f001"),
+                "v".into(),
+                "a".into(),
+                "v".into(),
+            ),
         )
         .await
         .unwrap();
@@ -282,12 +285,12 @@ fn main() {
         let store = FihStorage::new(io.clone(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact {
-                id: FihHash::from_hex("f001"),
-                origin: "v".into(),
-                content: "data".into(),
-                creator: "v".into(),
-            },
+            &Fact::new(
+                FihHash::from_hex("f001"),
+                "v".into(),
+                "data".into(),
+                "v".into(),
+            ),
         )
         .await
         .unwrap();
@@ -312,12 +315,12 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact {
-                id: FihHash::from_hex("f001"),
-                origin: "v".into(),
-                content: "data".into(),
-                creator: "v".into(),
-            },
+            &Fact::new(
+                FihHash::from_hex("f001"),
+                "v".into(),
+                "data".into(),
+                "v".into(),
+            ),
         )
         .await
         .unwrap();
@@ -333,12 +336,12 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact {
-                id: FihHash::from_hex("f001"),
-                origin: "v".into(),
-                content: "data".into(),
-                creator: "v".into(),
-            },
+            &Fact::new(
+                FihHash::from_hex("f001"),
+                "v".into(),
+                "data".into(),
+                "v".into(),
+            ),
         )
         .await
         .unwrap();
@@ -378,23 +381,23 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact {
-                id: FihHash::from_hex("f_orphan"),
-                origin: "v".into(),
-                content: "orphan".into(),
-                creator: "v".into(),
-            },
+            &Fact::new(
+                FihHash::from_hex("f_orphan"),
+                "v".into(),
+                "orphan".into(),
+                "v".into(),
+            ),
         )
         .await
         .unwrap();
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact {
-                id: FihHash::from_hex("f_refd"),
-                origin: "v".into(),
-                content: "refd".into(),
-                creator: "v".into(),
-            },
+            &Fact::new(
+                FihHash::from_hex("f_refd"),
+                "v".into(),
+                "refd".into(),
+                "v".into(),
+            ),
         )
         .await
         .unwrap();
@@ -402,6 +405,7 @@ fn main() {
             &store,
             &Intent {
                 id: FihHash::from_hex("i001"),
+                coord: None,
                 from_facts: vec![FihHash::from_hex("f_refd")],
                 description: "test".into(),
                 creator: "v".into(),

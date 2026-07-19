@@ -159,6 +159,7 @@ async fn ingest_document(s: &FihStorage<impl FileIo>, text: &str, origin: &str) 
     let doc_id = format!("doc_{}", sanitize_id(origin));
     let fact = Fact {
         id: FihHash::from_hex(&doc_id),
+        coord: None,
         origin: format!("document:{origin}"),
         content: Content { mime_type: "text/markdown".into(), data: text.as_bytes().to_vec() },
         creator: "ingestion-agent".into(),
@@ -347,7 +348,7 @@ async fn handler(req: Request<Vec<u8>>) -> anyhow::Result<impl IntoResponse> {
         (Method::POST, "/fact") => {
             let params: FactParams = match serde_json::from_slice(&body) { Ok(p) => p, Err(e) => return err_json(400, "invalid_json", format!("{e}")) };
             let id = params.id.unwrap_or_else(|| format!("fact_{}", timestamp_id()));
-            let fact = Fact { id: FihHash::from_hex(&id), origin: params.origin, content: Content { mime_type: "text/plain".into(), data: params.content.into_bytes() }, creator: params.creator };
+            let fact = Fact { id: FihHash::from_hex(&id), coord: None, origin: params.origin, content: Content { mime_type: "text/plain".into(), data: params.content.into_bytes() }, creator: params.creator };
             let hash = match get_storage().submit_fact(&fact).await { Ok(h) => h, Err(e) => return err_json(500, "fact_error", format!("{e:?}")) };
             if let Err(e) = get_storage().flush_pending().await { return err_json(500, "flush_error", e); }
             ok_json(serde_json::json!({"id": hash.to_string()}))
@@ -357,7 +358,7 @@ async fn handler(req: Request<Vec<u8>>) -> anyhow::Result<impl IntoResponse> {
             let id = params.id.unwrap_or_else(|| format!("intent_{}", timestamp_id()));
             let from_facts: Vec<FihHash> = params.from.as_deref().unwrap_or("").split(',').filter(|s| !s.is_empty()).map(FihHash::from_hex).collect();
             if from_facts.is_empty() { return err_json(400, "validation_error", "intent needs at least one fact".into()); }
-            let intent = Intent { id: FihHash::from_hex(&id), from_facts, description: params.desc, creator: params.creator, worker: None, to_fact_id: None, last_heartbeat_at: None, created_at: None, is_concluded: false, concluded_at: None };
+            let intent = Intent { id: FihHash::from_hex(&id), coord: None, from_facts, description: params.desc, creator: params.creator, worker: None, to_fact_id: None, last_heartbeat_at: None, created_at: None, is_concluded: false, concluded_at: None };
             let hash = match get_storage().submit_intent(&intent).await { Ok(h) => h, Err(e) => return err_json(500, "intent_error", format!("{e:?}")) };
             ok_json(serde_json::json!({"id": hash.to_string()}))
         }

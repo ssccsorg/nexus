@@ -10,12 +10,12 @@ fn test_sim_fact_submit_and_read() {
     let io = SimIo::new();
     let storage = FihStorage::new(io, "test");
 
-    futures_executor::block_on(storage.submit_fact(&Fact {
-        id: FihHash::from_hex("f001"),
-        origin: "sim".into(),
-        content: Content::from("hello from sim"),
-        creator: "tester".into(),
-    }))
+    futures_executor::block_on(storage.submit_fact(&Fact::new(
+        FihHash::from_hex("f001"),
+        "sim".into(),
+        Content::from("hello from sim"),
+        "tester".into(),
+    )))
     .unwrap();
 
     let state = futures_executor::block_on(storage.read_state());
@@ -28,16 +28,17 @@ fn test_sim_full_lifecycle() {
     let io = SimIo::new();
     let storage = FihStorage::new(io, "test");
 
-    futures_executor::block_on(storage.submit_fact(&Fact {
-        id: FihHash::from_hex("f_base"),
-        origin: "sim".into(),
-        content: Content::from("base"),
-        creator: "alice".into(),
-    }))
+    futures_executor::block_on(storage.submit_fact(&Fact::new(
+        FihHash::from_hex("f_base"),
+        "sim".into(),
+        Content::from("base"),
+        "alice".into(),
+    )))
     .unwrap();
 
     futures_executor::block_on(storage.submit_intent(&Intent {
         id: FihHash::from_hex("i001"),
+        coord: None,
         from_facts: vec![FihHash::from_hex("f_base")],
         description: "test intent".into(),
         creator: "bob".into(),
@@ -78,6 +79,7 @@ fn test_session_hydrate_flush() {
     // Write a fact via storage
     let fact = Fact {
         id: FihHash::from_hex("f001"),
+        coord: None,
         origin: "test".into(),
         content: Content {
             mime_type: "text/plain".into(),

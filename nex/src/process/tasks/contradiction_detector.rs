@@ -92,10 +92,10 @@ impl DetectionCapable for ContradictionDetector {
                         .map(|f| f.origin.as_str())
                         .collect();
 
-                    output.facts.push(Fact {
-                        id: FihHash::new(&[topic, pa, pb], "contradiction"),
-                        origin: "contradiction-detector".into(),
-                        content: Content::from_json(&serde_json::json!({
+                    output.facts.push(Fact::new(
+                        FihHash::new(&[topic, pa, pb], "contradiction"),
+                        "contradiction-detector".into(),
+                        Content::from_json(&serde_json::json!({
                             "type": "contradiction",
                             "topic": topic,
                             "position_a": pa,
@@ -103,8 +103,8 @@ impl DetectionCapable for ContradictionDetector {
                             "origins_a": origins_a,
                             "origins_b": origins_b,
                         })),
-                        creator: "contradiction-detector".into(),
-                    });
+                        "contradiction-detector".into(),
+                    ));
                 }
             }
         }

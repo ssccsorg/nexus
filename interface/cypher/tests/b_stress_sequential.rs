@@ -31,12 +31,12 @@ impl Ant {
             // 0-2: submit facts (high probability — knowledge injection)
             0 | 1 | 2 => {
                 let id = format!("f_{}_{}", self.name, step);
-                let fact = Fact {
-                    id: FihHash::from_hex(&id),
-                    origin: self.name.clone(),
-                    content: format!("observation at step {step} by {}", self.name).into(),
-                    creator: self.name.clone(),
-                };
+                let fact = Fact::new(
+                    FihHash::from_hex(&id),
+                    self.name.clone(),
+                    format!("observation at step {step} by {}", self.name).into(),
+                    self.name.clone(),
+                );
                 bb.submit_fact(&fact).unwrap();
                 format!("{:<12} submit Fact {id}", self.name)
             }
@@ -63,6 +63,7 @@ impl Ant {
                 }
                 let intent = Intent {
                     id: FihHash::from_hex(&format!("i_{}_{}", self.name, step)),
+                    coord: None,
                     from_facts: fact_ids.clone(),
                     description: format!("hypothesis by {} at step {step}", self.name),
                     creator: self.name.clone(),
@@ -217,12 +218,12 @@ fn test_stress_many_ants() {
         ),
     ];
     for (id, origin, content) in &seed_facts {
-        let fact = Fact {
-            id: FihHash::from_hex(id),
-            origin: origin.to_string(),
-            content: (*content).into(),
-            creator: "corpus".into(),
-        };
+        let fact = Fact::new(
+            FihHash::from_hex(id),
+            origin.to_string(),
+            (*content).into(),
+            "corpus".into(),
+        );
         bb.submit_fact(&fact).unwrap();
     }
     println!("  Seeded {} facts into empty graph", seed_facts.len());

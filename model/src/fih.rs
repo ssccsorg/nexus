@@ -9,9 +9,9 @@ use tagma_core::{Coord, CoordPath};
 /// Address space: 11,172^6 = 1.94e24 unique identifiers.
 /// Generation: O(1) arithmetic, no SHA256.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CoordId(pub CoordPath<6>);
+pub struct CoordRef(pub CoordPath<6>);
 
-impl Hash for CoordId {
+impl Hash for CoordRef {
     fn hash<H: Hasher>(&self, state: &mut H) {
         for coord in self.0.iter() {
             coord.index().hash(state);
@@ -19,8 +19,8 @@ impl Hash for CoordId {
     }
 }
 
-impl CoordId {
-    /// Generate a CoordId from a 64-bit counter.
+impl CoordRef {
+    /// Generate a CoordRef from a 64-bit counter.
     /// The counter is decomposed into 6 coord indices (base 11172).
     /// Supports ~1.94e24 unique sequential IDs before wrap-around.
     pub fn new(counter: u64) -> Self {
@@ -31,20 +31,20 @@ impl CoordId {
             *c = Coord::new(idx).expect("coord index in 0..11172");
             remaining /= 11172;
         }
-        CoordId(CoordPath::new(coords))
+        CoordRef(CoordPath::new(coords))
     }
 
-    /// Generate a CoordId from raw 6 coord indices (0..11172 each).
+    /// Generate a CoordRef from raw 6 coord indices (0..11172 each).
     pub fn from_indices(indices: [u16; 6]) -> Option<Self> {
         let mut coords = [Coord::new(0).unwrap(); 6];
         for (i, &idx) in indices.iter().enumerate() {
             coords[i] = Coord::new(idx)?;
         }
-        Some(CoordId(CoordPath::new(coords)))
+        Some(CoordRef(CoordPath::new(coords)))
     }
 }
 
-impl std::fmt::Display for CoordId {
+impl std::fmt::Display for CoordRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for coord in self.0.iter() {
             write!(f, "{}", coord.to_char())?;
@@ -53,19 +53,19 @@ impl std::fmt::Display for CoordId {
     }
 }
 
-impl Serialize for CoordId {
+impl Serialize for CoordRef {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         s.serialize_str(&self.to_string())
     }
 }
 
-impl<'de> Deserialize<'de> for CoordId {
+impl<'de> Deserialize<'de> for CoordRef {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let s: String = Deserialize::deserialize(d)?;
         let chars: Vec<char> = s.chars().collect();
         if chars.len() != 6 {
             return Err(serde::de::Error::custom(format!(
-                "CoordId deserialize: expected 6 chars, got {}",
+                "CoordRef deserialize: expected 6 chars, got {}",
                 chars.len()
             )));
         }
@@ -74,12 +74,12 @@ impl<'de> Deserialize<'de> for CoordId {
             let cp = ch as u16;
             coords[i] = Coord::from_code_point(cp).ok_or_else(|| {
                 serde::de::Error::custom(format!(
-                    "CoordId deserialize: char '{}' is not a valid Tagma coordinate",
+                    "CoordRef deserialize: char '{}' is not a valid Tagma coordinate",
                     ch
                 ))
             })?;
         }
-        Ok(CoordId(CoordPath::new(coords)))
+        Ok(CoordRef(CoordPath::new(coords)))
     }
 }
 
@@ -238,14 +238,29 @@ impl PartialEq<&str> for Content {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Fact {
     pub id: FihHash,
+    /// Tagma proxy identity, assigned by the storage layer on submission.
+    /// None before recording; populated by the coordinator.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coord: Option<CoordRef>,
     pub origin: String,
     pub content: Content,
     pub creator: String,
 }
 
+impl Fact {
+    /// Create a Fact without a coord (assigned later by storage).
+    pub fn new(id: FihHash, origin: String, content: Content, creator: String) -> Self {
+        Fact { id, coord: None, origin, content, creator }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Intent {
     pub id: FihHash,
+    /// Tagma proxy identity, assigned by the storage layer on submission.
+    /// None before recording; populated by the coordinator.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coord: Option<CoordRef>,
     pub from_facts: Vec<FihHash>,
     pub to_fact_id: Option<FihHash>,
     pub description: String,
@@ -255,6 +270,31 @@ pub struct Intent {
     pub created_at: Option<u64>,
     pub is_concluded: bool,
     pub concluded_at: Option<u64>,
+}
+
+impl Intent {
+    /// Create an Intent without a coord (assigned later by storage).
+    pub fn new(
+        id: FihHash,
+        from_facts: Vec<FihHash>,
+        to_fact_id: Option<FihHash>,
+        description: String,
+        creator: String,
+    ) -> Self {
+        Intent {
+            id,
+            coord: None,
+            from_facts,
+            to_fact_id,
+            description,
+            creator,
+            worker: None,
+            last_heartbeat_at: None,
+            created_at: None,
+            is_concluded: false,
+            concluded_at: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

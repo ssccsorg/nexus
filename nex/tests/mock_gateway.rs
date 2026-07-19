@@ -5,12 +5,12 @@ use nexus_storage_composite::HybridBlackboard;
 #[test]
 fn test_serde_proxy_submit_fact() {
     let gw = SerdeProxy::new(HybridBlackboard::new());
-    let fact = Fact {
-        id: FihHash::from_hex("f_gw_001"),
-        origin: "gateway-test".into(),
-        content: "Gateway driver test".into(),
-        creator: "tester".into(),
-    };
+    let fact = Fact::new(
+        FihHash::from_hex("f_gw_001"),
+        "gateway-test".into(),
+        "Gateway driver test".into(),
+        "tester".into(),
+    );
     let hash = gw.submit_fact(&fact).unwrap();
     assert_eq!(hash, FihHash::from_hex("f_gw_001"));
 

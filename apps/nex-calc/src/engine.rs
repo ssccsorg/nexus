@@ -110,12 +110,12 @@ impl CalcEngine {
         write_blob_meta(&self.storage.io, &blob_hash, NUMBER_MIME, data.len()).await;
 
         let record = FactRecord::from_model(
-            &nexus_model::Fact {
+            &nexus_model::Fact::new(
                 id,
-                origin: "nex-calc".into(),
-                content: Content::from(""),
-                creator: "user".into(),
-            },
+                "nex-calc".into(),
+                Content::from(""),
+                "user".into(),
+            ),
             blob_hash,
             0,
         );
@@ -257,12 +257,12 @@ impl CalcEngine {
                 .await;
             write_blob_meta(&self.storage.io, &bh, NUMBER_MIME, data.len()).await;
             let rec = FactRecord::from_model(
-                &nexus_model::Fact {
-                    id: result_id,
-                    origin: format!("nex-calc:resolve:{}", intent_id),
-                    content: Content::from(""),
-                    creator: "nex-calc".into(),
-                },
+                &nexus_model::Fact::new(
+                    result_id,
+                    format!("nex-calc:resolve:{}", intent_id),
+                    Content::from(""),
+                    "nex-calc".into(),
+                ),
                 bh,
                 0,
             );

@@ -32,6 +32,7 @@ use nexus_storage_sim::{FihStorage, SimIo};
 fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) -> Fact {
     Fact {
         id: FihHash::from_hex(id),
+        coord: None,
         origin: origin.to_string(),
         content: serde_json::to_string(
             &serde_json::json!({ "claim": claim_text, "topic": topic, "position": position }),

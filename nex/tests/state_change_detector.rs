@@ -3,12 +3,12 @@ use nex::process::tasks::state_change_detector::StateChangeDetector;
 use nexus_model::{BoardState, Content, DetectionCapable, Fact, FihHash};
 
 fn make_fact(id: &str, origin: &str) -> Fact {
-    Fact {
-        id: FihHash::from_hex(id),
-        origin: origin.to_string(),
-        content: Content::from_json(&serde_json::json!({"topic": "test"})),
-        creator: "test".into(),
-    }
+    Fact::new(
+        FihHash::from_hex(id),
+        origin.to_string(),
+        Content::from_json(&serde_json::json!({"topic": "test"})),
+        "test".into(),
+    )
 }
 
 #[test]

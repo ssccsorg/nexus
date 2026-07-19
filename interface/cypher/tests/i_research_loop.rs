@@ -73,6 +73,7 @@ fn ingest_document(bb: &mut impl Blackboard, chunks: &[MdDocumentChunk]) {
         let id = FihHash::from_hex(&format!("{}::{}", chunk.source, chunk.section));
         let fact = Fact {
             id,
+            coord: None,
             origin: chunk.source.clone(),
             content: serde_json::to_string(&serde_json::json!({
                 "section": chunk.section,
@@ -313,6 +314,7 @@ fn scenario_full_research_loop() {
     // both GNN oversmoothing and transformer complexity issues.
     let intent_hybrid_synthesis = Intent {
         id: FihHash::from_hex("i_hybrid_synthesis"),
+        coord: None,
         from_facts: vec![
             gnn_benchmark_id,
             transformer_benchmark_id,
@@ -337,6 +339,7 @@ fn scenario_full_research_loop() {
     // a unified research roadmap, but are siloed by document origin.
     let intent_unified_roadmap = Intent {
         id: FihHash::from_hex("i_unified_roadmap"),
+        coord: None,
         from_facts: vec![
             gnn_future_id,
             transformer_future_id,
@@ -488,6 +491,7 @@ fn scenario_full_research_loop() {
     // New hypothesis: investigate whether the accuracy ceiling can be broken
     let intent_new_gap = Intent {
         id: FihHash::from_hex("i_accuracy_ceiling"),
+        coord: None,
         from_facts: vec![
             FihHash::from_hex(&gnn_benchmark_id_str),
             FihHash::from_hex(&hybrid_benchmark_id_str),

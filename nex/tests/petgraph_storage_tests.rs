@@ -13,12 +13,12 @@ fn storage() -> PetgraphStorage {
 }
 
 fn fact(id: &str) -> Fact {
-    Fact {
-        id: FihHash::from_hex(id),
-        origin: "test".into(),
-        content: "data".into(),
-        creator: "tester".into(),
-    }
+    Fact::new(
+        FihHash::from_hex(id),
+        "test".into(),
+        "data".into(),
+        "tester".into(),
+    )
 }
 
 fn hint(id: &str) -> Hint {
@@ -128,6 +128,7 @@ fn test_submit_intent_requires_existing_fact() {
     let s = storage();
     let intent = Intent {
         id: FihHash::from_hex("i_no_fact"),
+        coord: None,
         from_facts: vec![FihHash::from_hex("f_nonexistent")],
         description: "missing ref".into(),
         creator: "tester".into(),
@@ -154,6 +155,7 @@ fn test_conclude_intent_creates_fact() {
 
     let intent = Intent {
         id: FihHash::from_hex("i_concl"),
+        coord: None,
         from_facts: vec![FihHash::from_hex("f_base")],
         description: "test conclusion".into(),
         creator: "tester".into(),
@@ -195,6 +197,7 @@ fn test_evict_before_removes_old_concluded_intents() {
     // Submit an intent and immediately conclude it
     let intent = Intent {
         id: FihHash::from_hex("i_old"),
+        coord: None,
         from_facts: vec![FihHash::from_hex("f_ev")],
         description: "old intent".into(),
         creator: "tester".into(),

@@ -10,12 +10,12 @@ fn tick() {
 fn bb_with_facts() -> HybridBlackboard {
     let bb = HybridBlackboard::new();
     for i in 0..5 {
-        let fact = Fact {
-            id: FihHash::from_hex(&format!("f{i}")),
-            origin: "test".into(),
-            content: format!("fact #{i}").into(),
-            creator: "tester".into(),
-        };
+        let fact = Fact::new(
+            FihHash::from_hex(&format!("f{i}")),
+            "test".into(),
+            format!("fact #{i}").into(),
+            "tester".into(),
+        );
         bb.submit_fact(&fact).unwrap();
     }
     bb
@@ -47,12 +47,12 @@ fn test_consecutive_flushes_advance_cursor() {
 
     // add more facts
     for i in 5..10 {
-        let fact = Fact {
-            id: FihHash::from_hex(&format!("f{i}")),
-            origin: "test".into(),
-            content: format!("fact #{i}").into(),
-            creator: "tester".into(),
-        };
+        let fact = Fact::new(
+            FihHash::from_hex(&format!("f{i}")),
+            "test".into(),
+            format!("fact #{i}").into(),
+            "tester".into(),
+        );
         bb.submit_fact(&fact).unwrap();
     }
     tick();
@@ -100,12 +100,12 @@ fn test_flush_after_restore_continues_from_cursor() {
 
     // Add more facts to the original, restore to fresh instance.
     for i in 10..15 {
-        let fact = Fact {
-            id: FihHash::from_hex(&format!("f{i}")),
-            origin: "test".into(),
-            content: format!("fact #{i}").into(),
-            creator: "tester".into(),
-        };
+        let fact = Fact::new(
+            FihHash::from_hex(&format!("f{i}")),
+            "test".into(),
+            format!("fact #{i}").into(),
+            "tester".into(),
+        );
         restored.submit_fact(&fact).unwrap();
     }
     tick();
@@ -124,12 +124,12 @@ fn test_cursor_independent_of_graph_mutations() {
     use std::collections::HashMap;
 
     let mut bb = HybridBlackboard::new();
-    let fact = Fact {
-        id: FihHash::from_hex("f1"),
-        origin: "test".into(),
-        content: "test".into(),
-        creator: "tester".into(),
-    };
+    let fact = Fact::new(
+        FihHash::from_hex("f1"),
+        "test".into(),
+        "test".into(),
+        "tester".into(),
+    );
     bb.submit_fact(&fact).unwrap();
     bb.flush().unwrap();
     let c1 = bb.flush_cursor.clone();
@@ -207,6 +207,7 @@ fn test_storage_snapshot_roundtrip() {
     // Add intents
     let intent = Intent {
         id: FihHash::from_hex("i1"),
+        coord: None,
         from_facts: vec![],
         to_fact_id: None,
         description: "test goal".into(),

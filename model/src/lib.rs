@@ -46,7 +46,7 @@ pub use detection::{
     GapDetection, StateChangeDetection, TaskStates,
 };
 pub use error::BlackboardError;
-pub use fih::{BoardState, Content, Fact, FihHash, Hint, Intent, CoordId};
+pub use fih::{BoardState, Content, Fact, FihHash, Hint, Intent, CoordRef};
 #[allow(deprecated)]
 pub use interner::Interner;
 pub use storage::async_impl::{
