@@ -477,6 +477,7 @@ fn scenario_formal_revision_of_philosophy() {
     if let Some(cf) = field_contradiction {
         let intent = Intent {
             id: FihHash::new(&[&cf.id.to_string(), "resolve"], "intent"),
+            coord: None,
             from_facts: vec![cf.id.clone()],
             description: "Resolve field-definition across layers".into(),
             creator: "formal-reviewer".into(),
