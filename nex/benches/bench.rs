@@ -74,14 +74,16 @@ fn bench_10k(c: &mut Criterion) {
     g.bench_function("tagma_exist", |b| {
         b.iter(|| { black_box(coord.by_origin_creator(black_box(EXIST_ORIGIN), black_box(EXIST_CREATOR))); });
     });
+    // nonexist_fake: origin exists, creator doesn't (short-circuit in both)
     g.bench_function("tagma_nonexist_fake", |b| {
-        b.iter(|| { black_box(coord.by_origin_creator(black_box("org-NONEXIST"), black_box("cr-NONEXIST"))); });
+        b.iter(|| { black_box(coord.by_origin_creator(black_box(EXIST_ORIGIN), black_box("cr-NONEXIST"))); });
     });
     g.bench_function("legacy_exist", |b| {
         b.iter(|| { black_box(legacy_2axis_count(&coord, black_box(EXIST_ORIGIN), black_box(EXIST_CREATOR))); });
     });
+    // Legacy 2-axis nonexist uses same fallback path as Tagma when creator absent.
     g.bench_function("legacy_nonexist_fake", |b| {
-        b.iter(|| { black_box(coord.fact_ids_by_origin(black_box("org-NONEXIST")).is_empty()); });
+        b.iter(|| { black_box(legacy_2axis_count(&coord, black_box(EXIST_ORIGIN), black_box("cr-NONEXIST"))); });
     });
 
     g.finish();
@@ -100,10 +102,6 @@ fn bench_100k(c: &mut Criterion) {
     g.bench_function("legacy_exist", |b| {
         b.iter(|| { black_box(legacy_2axis_count(&coord, black_box(EXIST_ORIGIN), black_box(EXIST_CREATOR))); });
     });
-    g.bench_function("legacy_nonexist_fake", |b| {
-        b.iter(|| { black_box(coord.fact_ids_by_origin(black_box("org-NONEXIST")).is_empty()); });
-    });
-
     g.finish();
 }
 
