@@ -1,5 +1,87 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha256};
+use std::hash::{Hash, Hasher};
+use tagma_core::{Coord, CoordPath};
+
+// ── Tagma identity (alongside FihHash) ────────────────────────────────
+
+/// A 6-syllable Tagma coordinate path used as an alternative identity.
+/// Address space: 11,172^6 = 1.94e24 unique identifiers.
+/// Generation: O(1) arithmetic, no SHA256.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CoordId(pub CoordPath<6>);
+
+impl Hash for CoordId {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for coord in self.0.iter() {
+            coord.index().hash(state);
+        }
+    }
+}
+
+impl CoordId {
+    /// Generate a CoordId from a 64-bit counter.
+    /// The counter is decomposed into 6 coord indices (base 11172).
+    /// Supports ~1.94e24 unique sequential IDs before wrap-around.
+    pub fn new(counter: u64) -> Self {
+        let mut remaining = counter;
+        let mut coords = [Coord::new(0).unwrap(); 6];
+        for c in coords.iter_mut() {
+            let idx = (remaining % 11172) as u16;
+            *c = Coord::new(idx).expect("coord index in 0..11172");
+            remaining /= 11172;
+        }
+        CoordId(CoordPath::new(coords))
+    }
+
+    /// Generate a CoordId from raw 6 coord indices (0..11172 each).
+    pub fn from_indices(indices: [u16; 6]) -> Option<Self> {
+        let mut coords = [Coord::new(0).unwrap(); 6];
+        for (i, &idx) in indices.iter().enumerate() {
+            coords[i] = Coord::new(idx)?;
+        }
+        Some(CoordId(CoordPath::new(coords)))
+    }
+}
+
+impl std::fmt::Display for CoordId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for coord in self.0.iter() {
+            write!(f, "{}", coord.to_char())?;
+        }
+        Ok(())
+    }
+}
+
+impl Serialize for CoordId {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for CoordId {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s: String = Deserialize::deserialize(d)?;
+        let chars: Vec<char> = s.chars().collect();
+        if chars.len() != 6 {
+            return Err(serde::de::Error::custom(format!(
+                "CoordId deserialize: expected 6 chars, got {}",
+                chars.len()
+            )));
+        }
+        let mut coords = [Coord::new(0).unwrap(); 6];
+        for (i, &ch) in chars.iter().enumerate() {
+            let cp = ch as u16;
+            coords[i] = Coord::from_code_point(cp).ok_or_else(|| {
+                serde::de::Error::custom(format!(
+                    "CoordId deserialize: char '{}' is not a valid Tagma coordinate",
+                    ch
+                ))
+            })?;
+        }
+        Ok(CoordId(CoordPath::new(coords)))
+    }
+}
 
 // ── Content-addressable identifier ───────────────────────────────────────
 

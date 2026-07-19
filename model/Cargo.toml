@@ -8,3 +8,4 @@ license.workspace = true
 serde.workspace = true
 sha2 = "0.10"
 petgraph = { workspace = true }
+tagma-core = { git = "https://github.com/ssccsorg/syntagma", branch = "main" }
