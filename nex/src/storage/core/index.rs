@@ -298,7 +298,9 @@ impl FihCoord {
         let path = CoordPath::new(coords);
         match ax.at_path_mut(&path) {
             Some(vec) => vec.push(idx),
-            None => { ax.place_path(&path, vec![idx]); }
+            None => {
+                ax.place_path(&path, vec![idx]);
+            }
         }
     }
 
@@ -361,7 +363,9 @@ impl FihCoord {
         let path = CoordPath::new(coords);
         match ax.at_path_mut(&path) {
             Some(vec) => vec.push(idx),
-            None => { ax.place_path(&path, vec![idx]); }
+            None => {
+                ax.place_path(&path, vec![idx]);
+            }
         }
     }
 

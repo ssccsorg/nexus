@@ -110,12 +110,7 @@ impl CalcEngine {
         write_blob_meta(&self.storage.io, &blob_hash, NUMBER_MIME, data.len()).await;
 
         let record = FactRecord::from_model(
-            &nexus_model::Fact::new(
-                id,
-                "nex-calc".into(),
-                Content::from(""),
-                "user".into(),
-            ),
+            &nexus_model::Fact::new(id, "nex-calc".into(), Content::from(""), "user".into()),
             blob_hash,
             0,
         );

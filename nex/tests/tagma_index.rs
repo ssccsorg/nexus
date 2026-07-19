@@ -1,5 +1,5 @@
+use nex::storage::core::index::{FihCoord, intersect_2, intersect_3};
 use nexus_model::FihHash;
-use nex::storage::core::index::{intersect_2, intersect_3, FihCoord};
 
 fn make_coord() -> FihCoord {
     FihCoord::new()
@@ -65,7 +65,10 @@ fn tagma_fallback_2axis_matches_legacy() {
         &coord.fact_ids_by_origin("origin-a"),
         &coord.facts_by_creator("creator-x"),
     );
-    assert_eq!(tagma, legacy, "Tagma fast path must match legacy intersection");
+    assert_eq!(
+        tagma, legacy,
+        "Tagma fast path must match legacy intersection"
+    );
 }
 
 // ── intersect helpers ────────────────────────────────────────────────

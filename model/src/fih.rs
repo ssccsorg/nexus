@@ -250,7 +250,13 @@ pub struct Fact {
 impl Fact {
     /// Create a Fact without a coord (assigned later by storage).
     pub fn new(id: FihHash, origin: String, content: Content, creator: String) -> Self {
-        Fact { id, coord: None, origin, content, creator }
+        Fact {
+            id,
+            coord: None,
+            origin,
+            content,
+            creator,
+        }
     }
 }
 

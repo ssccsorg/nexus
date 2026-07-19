@@ -46,7 +46,9 @@ const EXIST_CREATOR: &str = "cr-0";
 const N_ORIGINS_500K: usize = 500;
 const N_CREATORS_500K: usize = 2000;
 
-fn nonexist_real_origin() -> &'static str { "org-0" }
+fn nonexist_real_origin() -> &'static str {
+    "org-0"
+}
 fn nonexist_real_creator() -> String {
     // org-0 has entries cr-0..cr-999. cr-1999 exists but not for org-0.
     format!("cr-{}", N_CREATORS_500K - 1)
@@ -72,18 +74,34 @@ fn bench_10k(c: &mut Criterion) {
     g.throughput(criterion::Throughput::Elements(1));
 
     g.bench_function("tagma_exist", |b| {
-        b.iter(|| { black_box(coord.by_origin_creator(black_box(EXIST_ORIGIN), black_box(EXIST_CREATOR))); });
+        b.iter(|| {
+            black_box(coord.by_origin_creator(black_box(EXIST_ORIGIN), black_box(EXIST_CREATOR)));
+        });
     });
     // nonexist_fake: origin exists, creator doesn't (short-circuit in both)
     g.bench_function("tagma_nonexist_fake", |b| {
-        b.iter(|| { black_box(coord.by_origin_creator(black_box(EXIST_ORIGIN), black_box("cr-NONEXIST"))); });
+        b.iter(|| {
+            black_box(coord.by_origin_creator(black_box(EXIST_ORIGIN), black_box("cr-NONEXIST")));
+        });
     });
     g.bench_function("legacy_exist", |b| {
-        b.iter(|| { black_box(legacy_2axis_count(&coord, black_box(EXIST_ORIGIN), black_box(EXIST_CREATOR))); });
+        b.iter(|| {
+            black_box(legacy_2axis_count(
+                &coord,
+                black_box(EXIST_ORIGIN),
+                black_box(EXIST_CREATOR),
+            ));
+        });
     });
     // Legacy 2-axis nonexist uses same fallback path as Tagma when creator absent.
     g.bench_function("legacy_nonexist_fake", |b| {
-        b.iter(|| { black_box(legacy_2axis_count(&coord, black_box(EXIST_ORIGIN), black_box("cr-NONEXIST"))); });
+        b.iter(|| {
+            black_box(legacy_2axis_count(
+                &coord,
+                black_box(EXIST_ORIGIN),
+                black_box("cr-NONEXIST"),
+            ));
+        });
     });
 
     g.finish();
@@ -97,10 +115,18 @@ fn bench_100k(c: &mut Criterion) {
     g.throughput(criterion::Throughput::Elements(1));
 
     g.bench_function("tagma_exist", |b| {
-        b.iter(|| { black_box(coord.by_origin_creator(black_box(EXIST_ORIGIN), black_box(EXIST_CREATOR))); });
+        b.iter(|| {
+            black_box(coord.by_origin_creator(black_box(EXIST_ORIGIN), black_box(EXIST_CREATOR)));
+        });
     });
     g.bench_function("legacy_exist", |b| {
-        b.iter(|| { black_box(legacy_2axis_count(&coord, black_box(EXIST_ORIGIN), black_box(EXIST_CREATOR))); });
+        b.iter(|| {
+            black_box(legacy_2axis_count(
+                &coord,
+                black_box(EXIST_ORIGIN),
+                black_box(EXIST_CREATOR),
+            ));
+        });
     });
     g.finish();
 }
@@ -116,15 +142,25 @@ fn bench_500k(c: &mut Criterion) {
 
     // Tagma: 2 array accesses, flat regardless of data volume
     g.bench_function("tagma_exist", |b| {
-        b.iter(|| { black_box(coord.by_origin_creator(black_box(EXIST_ORIGIN), black_box(EXIST_CREATOR))); });
+        b.iter(|| {
+            black_box(coord.by_origin_creator(black_box(EXIST_ORIGIN), black_box(EXIST_CREATOR)));
+        });
     });
     g.bench_function("tagma_nonexist_real", |b| {
-        b.iter(|| { black_box(coord.by_origin_creator(black_box(&nonexist_o), black_box(&nonexist_c))); });
+        b.iter(|| {
+            black_box(coord.by_origin_creator(black_box(&nonexist_o), black_box(&nonexist_c)));
+        });
     });
 
     // Legacy exist: Vec(1000) ∩ Vec(250) = O(min(n,m)) scan
     g.bench_function("legacy_exist", |b| {
-        b.iter(|| { black_box(legacy_2axis_count(&coord, black_box(EXIST_ORIGIN), black_box(EXIST_CREATOR))); });
+        b.iter(|| {
+            black_box(legacy_2axis_count(
+                &coord,
+                black_box(EXIST_ORIGIN),
+                black_box(EXIST_CREATOR),
+            ));
+        });
     });
     // Legacy nonexist_real: STILL fetches Vec(1000) + Vec(250) and intersects
     g.bench_function("legacy_nonexist_real", |b| {
@@ -155,10 +191,14 @@ fn bench_single_axis(c: &mut Criterion) {
     g.throughput(criterion::Throughput::Elements(1));
 
     g.bench_function("by_origin", |b| {
-        b.iter(|| { black_box(coord.fact_ids_by_origin(black_box("org-42"))); });
+        b.iter(|| {
+            black_box(coord.fact_ids_by_origin(black_box("org-42")));
+        });
     });
     g.bench_function("by_creator", |b| {
-        b.iter(|| { black_box(coord.facts_by_creator(black_box("cr-7"))); });
+        b.iter(|| {
+            black_box(coord.facts_by_creator(black_box("cr-7")));
+        });
     });
 
     g.finish();
