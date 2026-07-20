@@ -23,10 +23,10 @@ fn main() {
 
     println!("1. Submitting facts...");
     let f1 = bb
-        .submit_fact(&Fact {
-            id: FihHash::new(&["gnn-accuracy"], "fact"),
-            origin: "arxiv_2401".into(),
-            content: serde_json::to_string(&serde_json::json!({
+        .submit_fact(&Fact::new(
+            FihHash::new(&["gnn-accuracy"], "fact"),
+            "arxiv_2401".into(),
+            serde_json::to_string(&serde_json::json!({
                 "model": "GNN",
                 "accuracy": 0.92,
                 "dataset": "ogbn-arxiv",
@@ -34,21 +34,21 @@ fn main() {
             }))
             .unwrap()
             .into(),
-            creator: "agent-a".into(),
-        })
+            "agent-a".into(),
+        ))
         .unwrap();
     let f2 = bb
-        .submit_fact(&Fact {
-            id: FihHash::new(&["gnn-oversmoothing"], "fact"),
-            origin: "neurips_2023".into(),
-            content: serde_json::to_string(&serde_json::json!({
+        .submit_fact(&Fact::new(
+            FihHash::new(&["gnn-oversmoothing"], "fact"),
+            "neurips_2023".into(),
+            serde_json::to_string(&serde_json::json!({
                 "finding": "Message-passing GNNs oversmooth beyond 6 layers",
                 "threshold": 6
             }))
             .unwrap()
             .into(),
-            creator: "agent-b".into(),
-        })
+            "agent-b".into(),
+        ))
         .unwrap();
     println!("   Fact 1: {}", f1);
     println!("   Fact 2: {}", f2);
@@ -59,6 +59,7 @@ fn main() {
     let intent_id = bb
         .submit_intent(&Intent {
             id: FihHash::new(&["test-hypothesis"], "intent"),
+            coord: None,
             from_facts: vec![f1, f2],
             description: "Test shallow (3-layer) vs deep GNN on molecular benchmark".into(),
             creator: "agent-c".into(),

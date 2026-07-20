@@ -16,6 +16,7 @@ use nexus_storage_sim::{FihStorage, SimIo};
 fn fact(id: &str, data: &str) -> Fact {
     Fact {
         id: FihHash::from_hex(id),
+        coord: None,
         origin: "s".into(),
         content: Content {
             mime_type: "text/plain".into(),
@@ -28,6 +29,7 @@ fn fact(id: &str, data: &str) -> Fact {
 fn intent(id: &str, from: Vec<&str>) -> Intent {
     Intent {
         id: FihHash::from_hex(id),
+        coord: None,
         from_facts: from.into_iter().map(|s| FihHash::from_hex(s)).collect(),
         description: format!("intent {}", id),
         creator: "t".into(),

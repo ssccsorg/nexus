@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicU32;
 
 use crate::storage::semantic::{DynSemanticStore, Query, RecordLoad};
 use nexus_model::FihHash;
+use tagma_core::{Coord, CoordPath, CoordSpaceN};
 
 // ── Internal cell type ─────────────────────────────────────────────
 //
@@ -139,6 +140,9 @@ pub struct FihCoord {
     /// Semantic feature store for similarity search (plug-in).
     pub(crate) by_semantic: Cell2<Vec<DynSemanticStore>>,
     pub(crate) by_time: Cell2<OrderedIndex<u64>>,
+    /// Tagma multi-axis index: origin x creator x status -> compact ID.
+    /// Eliminates Vec intersection for 3-axis selective queries.
+    pub(crate) axis_index: Cell2<CoordSpaceN<19, Vec<u32>>>,
 }
 
 impl FihCoord {
@@ -156,6 +160,7 @@ impl FihCoord {
             by_created_at_day: Cell2::new(BTreeMap::new()),
             ref_counts: Cell2::new(HashMap::new()),
             by_semantic: Cell2::new(Vec::new()),
+            axis_index: Cell2::new(CoordSpaceN::new()),
         }
     }
 
@@ -221,6 +226,7 @@ impl FihCoord {
         self.by_status.borrow_mut().clear();
         self.by_created_at_day.borrow_mut().clear();
         self.ref_counts.borrow_mut().clear();
+        self.axis_index.borrow_mut().clear();
         // by_semantic is NOT cleared here — semantic stores persist
         // across index rebuilds.
     }
@@ -236,6 +242,18 @@ impl FihCoord {
     }
 
     // ── Index update ──────────────────────────────────────────────
+
+    /// Decompose a u32 index into three Coord values (base-11172).
+    /// Three Coords cover up to 11172^3 = ~1.39e12 distinct values, exceeding u32 range.
+    /// This replaces the old modulo-based intern_coord which had guaranteed collisions
+    /// at 11173+ unique keys.
+    fn u32_to_coord_triple(val: u32) -> (Coord, Coord, Coord) {
+        let c0 = Coord::new((val % 11172) as u16).expect("coord c0 in 0..11172");
+        let rest1 = val / 11172;
+        let c1 = Coord::new((rest1 % 11172) as u16).expect("coord c1 in 0..11172");
+        let c2 = Coord::new((rest1 / 11172) as u16).expect("coord c2 in 0..11172");
+        (c0, c1, c2)
+    }
 
     pub fn record_fact(&self, id: &[u8; 32], origin: &str, creator: &str, created_at: u64) {
         let idx = self.intern(id);
@@ -259,6 +277,31 @@ impl FihCoord {
             .or_default()
             .push(idx);
         self.ref_counts.borrow_mut().entry(idx).or_insert(0);
+
+        // Tagma address book: origin x creator -> Vec<ID>
+        // Coords decomposed from interned u32 to avoid modulo collision.
+        let mut ax = self.axis_index.borrow_mut();
+        let mut coords = [Coord::new(0).unwrap(); 19];
+        {
+            let (c0, c1, c2) = Self::u32_to_coord_triple(oid);
+            coords[0] = c0;
+            coords[1] = c1;
+            coords[2] = c2;
+        }
+        {
+            let (c0, c1, c2) = Self::u32_to_coord_triple(cid);
+            coords[3] = c0;
+            coords[4] = c1;
+            coords[5] = c2;
+        }
+        coords[9] = Coord::new((created_at % 11172) as u16).unwrap();
+        let path = CoordPath::new(coords);
+        match ax.at_path_mut(&path) {
+            Some(vec) => vec.push(idx),
+            None => {
+                ax.place_path(&path, vec![idx]);
+            }
+        }
     }
 
     pub fn record_intent(
@@ -297,6 +340,31 @@ impl FihCoord {
             let mut ref_counts = self.ref_counts.borrow_mut();
             if let Some(rc) = ref_counts.get_mut(&fact_idx) {
                 *rc += 1;
+            }
+        }
+
+        // Tagma address book: origin=sentinel(0) x creator x status="submitted" x time
+        let mut ax = self.axis_index.borrow_mut();
+        let mut coords = [Coord::new(0).unwrap(); 19];
+        // coords[0..2] = origin sentinel (0,0,0) — already default
+        {
+            let (c0, c1, c2) = Self::u32_to_coord_triple(cid);
+            coords[3] = c0;
+            coords[4] = c1;
+            coords[5] = c2;
+        }
+        {
+            let (c0, c1, c2) = Self::u32_to_coord_triple(sid);
+            coords[6] = c0;
+            coords[7] = c1;
+            coords[8] = c2;
+        }
+        coords[9] = Coord::new((created_at % 11172) as u16).unwrap();
+        let path = CoordPath::new(coords);
+        match ax.at_path_mut(&path) {
+            Some(vec) => vec.push(idx),
+            None => {
+                ax.place_path(&path, vec![idx]);
             }
         }
     }
@@ -427,6 +495,129 @@ impl FihCoord {
             .cloned()
             .unwrap_or_default()
     }
+
+    // ── Tagma multi-axis query ────────────────────────────────────────
+
+    /// Returns compact IDs matching origin x creator x status.
+    ///
+    /// Uses Tagma direct-address lookup for O(9) fast path (3 coords per axis).
+    /// Falls back to Vec intersection if the Tagma path is empty.
+    ///
+    /// Pass an empty string `""` for any axis to treat it as a wildcard sentinel.
+    /// The empty string must have been previously interned via `intern_str_key("")`
+    /// for the sentinel to register in the fast path.
+    /// Facts have `origin` + `creator` (no status); intents have `creator` + `status` (no origin).
+    /// To query facts by origin+creator:
+    ///   `by_origin_creator_status("origin-a", "creator-x", "")`
+    /// To query intents by creator+status:
+    ///   `by_origin_creator_status("", "creator-x", "submitted")`
+    pub fn by_origin_creator_status(&self, origin: &str, creator: &str, status: &str) -> Vec<u32> {
+        // Fast path: Tagma direct-address lookup.
+        if let (Some(o), Some(c), Some(s)) = (
+            self.lookup_str_key(origin),
+            self.lookup_str_key(creator),
+            self.lookup_str_key(status),
+        ) {
+            let mut coords = [Coord::new(0).unwrap(); 19];
+            {
+                let (c0, c1, c2) = Self::u32_to_coord_triple(o);
+                coords[0] = c0;
+                coords[1] = c1;
+                coords[2] = c2;
+            }
+            {
+                let (c0, c1, c2) = Self::u32_to_coord_triple(c);
+                coords[3] = c0;
+                coords[4] = c1;
+                coords[5] = c2;
+            }
+            {
+                let (c0, c1, c2) = Self::u32_to_coord_triple(s);
+                coords[6] = c0;
+                coords[7] = c1;
+                coords[8] = c2;
+            }
+            let path = CoordPath::new(coords);
+            if let Some(ids) = self.axis_index.borrow().at_path(&path) {
+                return ids.clone();
+            }
+        }
+        // Fallback: interner key absent or Tagma fast path returned None.
+        // Perform Vec intersection from legacy indexes.
+        let by_o = self.fact_ids_by_origin(origin);
+        let by_c = self.facts_by_creator(creator);
+        let by_s = self.intents_by_status(status);
+        intersect_3(&by_o, &by_c, &by_s)
+    }
+
+    /// Returns compact IDs matching origin x creator (2-axis selective query).
+    /// Uses Tagma direct-address lookup for O(6) fast path (3 coords per axis).
+    /// Falls back to Vec intersection.
+    pub fn by_origin_creator(&self, origin: &str, creator: &str) -> Vec<u32> {
+        // Fast path: Tagma direct-address lookup.
+        if let (Some(o), Some(c)) = (self.lookup_str_key(origin), self.lookup_str_key(creator)) {
+            let mut coords = [Coord::new(0).unwrap(); 19];
+            {
+                let (c0, c1, c2) = Self::u32_to_coord_triple(o);
+                coords[0] = c0;
+                coords[1] = c1;
+                coords[2] = c2;
+            }
+            {
+                let (c0, c1, c2) = Self::u32_to_coord_triple(c);
+                coords[3] = c0;
+                coords[4] = c1;
+                coords[5] = c2;
+            }
+            let path = CoordPath::new(coords);
+            if let Some(ids) = self.axis_index.borrow().at_path(&path) {
+                return ids.clone();
+            }
+        }
+        // Fallback: legacy intersection
+        let by_o = self.fact_ids_by_origin(origin);
+        let by_c = self.facts_by_creator(creator);
+        intersect_2(&by_o, &by_c)
+    }
+}
+
+// ── Vec intersection helpers (legacy fallback) ─────────────────────────
+
+pub fn intersect_2(a: &[u32], b: &[u32]) -> Vec<u32> {
+    if a.is_empty() || b.is_empty() {
+        return Vec::new();
+    }
+    let (small, large) = if a.len() <= b.len() { (a, b) } else { (b, a) };
+    let set: std::collections::HashSet<u32> =
+        std::collections::HashSet::from_iter(large.iter().copied());
+    small
+        .iter()
+        .filter(|id| set.contains(id))
+        .copied()
+        .collect()
+}
+
+pub fn intersect_3(a: &[u32], b: &[u32], c: &[u32]) -> Vec<u32> {
+    if a.is_empty() || b.is_empty() || c.is_empty() {
+        return Vec::new();
+    }
+    // Pick the smallest Vec to iterate, build sets from the other two.
+    let (candidates, set1, set2) = if a.len() <= b.len() && a.len() <= c.len() {
+        (a, b, c)
+    } else if b.len() <= a.len() && b.len() <= c.len() {
+        (b, a, c)
+    } else {
+        (c, a, b)
+    };
+    let set1: std::collections::HashSet<u32> =
+        std::collections::HashSet::from_iter(set1.iter().copied());
+    let set2: std::collections::HashSet<u32> =
+        std::collections::HashSet::from_iter(set2.iter().copied());
+    candidates
+        .iter()
+        .filter(|id| set1.contains(id) && set2.contains(id))
+        .copied()
+        .collect()
 }
 
 impl Default for FihCoord {

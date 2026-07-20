@@ -147,6 +147,7 @@ fn make_bb() -> HybridBlackboard {
 fn fact(id: &str) -> Fact {
     Fact {
         id: FihHash::from_hex(id),
+        coord: None,
         origin: "integration".into(),
         content: Content {
             mime_type: "application/json".into(),
@@ -306,6 +307,7 @@ fn test_multi_entity_persistence_through_dual_storage() {
 
     let intent = Intent {
         id: FihHash::from_hex("i_persist"),
+        coord: None,
         from_facts: vec![FihHash::from_hex("f_persist")],
         to_fact_id: None,
         description: "test intent".into(),
@@ -416,6 +418,7 @@ fn test_fih_scenario_submit_flush_read() {
 
     let intent = nexus_model::Intent {
         id: FihHash::from_hex("scn_i1"),
+        coord: None,
         from_facts: vec![FihHash::from_hex("scn_f1"), FihHash::from_hex("scn_f2")],
         to_fact_id: None,
         description: "scenario intent".into(),
@@ -514,6 +517,7 @@ fn test_fih_scenario_petgraph_blob_identity() {
     // Claim and heartbeat an intent
     let intent = nexus_model::Intent {
         id: FihHash::from_hex("id_i1"),
+        coord: None,
         from_facts: vec![FihHash::from_hex("id_f1")],
         to_fact_id: None,
         description: "identity test intent".into(),

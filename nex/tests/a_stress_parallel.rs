@@ -72,12 +72,12 @@ impl ParallelAnt {
             0 | 1 if step < 50 => {
                 // Submit fact (high prob early on)
                 let id = format!("fact_{}", step);
-                bb.submit_fact(&Fact {
-                    id: FihHash::from_hex(&id),
-                    origin: self.name.clone(),
-                    content: format!("parallel observation at step {step}").into(),
-                    creator: self.name.clone(),
-                })
+                bb.submit_fact(&Fact::new(
+                    FihHash::from_hex(&id),
+                    self.name.clone(),
+                    format!("parallel observation at step {step}").into(),
+                    self.name.clone(),
+                ))
                 .unwrap();
                 format!("{:<16} submit Fact {id}", self.name)
             }
@@ -96,6 +96,7 @@ impl ParallelAnt {
                 let id = format!("pi_{}_{}", self.name, step);
                 match bb.submit_intent(&Intent {
                     id: FihHash::from_hex(&id),
+                    coord: None,
                     from_facts: fact_ids,
                     description: format!("hypothesis at step {step}"),
                     creator: self.name.clone(),
@@ -209,12 +210,12 @@ fn test_parallel_many_ants() {
         ];
         for (id, content) in &seeds {
             guard
-                .submit_fact(&Fact {
-                    id: FihHash::from_hex(id),
-                    origin: "corpus".into(),
-                    content: (*content).into(),
-                    creator: "system".into(),
-                })
+                .submit_fact(&Fact::new(
+                    FihHash::from_hex(id),
+                    "corpus".into(),
+                    (*content).into(),
+                    "system".into(),
+                ))
                 .unwrap();
         }
     }

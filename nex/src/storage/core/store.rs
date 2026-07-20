@@ -443,6 +443,7 @@ impl<I: FileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
                     let content = load_blob(&self.io, &r.blob_hash).await;
                     facts.push(Fact {
                         id: FihHash::from_hex(&r.id),
+                        coord: None,
                         origin: r.origin.clone(),
                         content,
                         creator: r.creator.clone(),
@@ -459,6 +460,7 @@ impl<I: FileIo> nexus_model::AsyncStorageRead for FihStorage<I> {
                 {
                     intents.push(Intent {
                         id: FihHash::from_hex(&r.id),
+                        coord: None,
                         from_facts: r.from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
                         description: {
                             if r.description_hash.is_empty() {
@@ -814,6 +816,7 @@ impl<I: FileIo> nexus_model::AsyncIntentCapable for FihStorage<I> {
         let conclusion_id = format!("f_concl_{}", intent_id);
         let new_fact = Fact {
             id: FihHash::from_hex(&conclusion_id),
+            coord: None,
             origin: format!("conclusion:{}", intent_id),
             content: Content {
                 mime_type: "text/plain".into(),
@@ -986,6 +989,7 @@ impl<I: FileIo> nexus_model::AsyncFilterCapable for FihStorage<I> {
                     let content = self.load_content(&r.blob_hash, "application/octet-stream");
                     Fact {
                         id: FihHash::from_hex(&r.id),
+                        coord: None,
                         origin: r.origin,
                         content,
                         creator: r.creator,
@@ -998,6 +1002,7 @@ impl<I: FileIo> nexus_model::AsyncFilterCapable for FihStorage<I> {
                     let content = self.load_content(&r.blob_hash, "application/octet-stream");
                     Fact {
                         id: FihHash::from_hex(&r.id),
+                        coord: None,
                         origin: r.origin,
                         content,
                         creator: r.creator,
@@ -1019,6 +1024,7 @@ impl<I: FileIo> nexus_model::AsyncFilterCapable for FihStorage<I> {
                     };
                     Intent {
                         id: FihHash::from_hex(&r.id),
+                        coord: None,
                         from_facts: r.from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
                         description,
                         creator: r.creator,
@@ -1059,6 +1065,7 @@ impl<I: FileIo> nexus_model::AsyncFilterCapable for FihStorage<I> {
                     };
                     Intent {
                         id: FihHash::from_hex(&r.id),
+                        coord: None,
                         from_facts: r.from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
                         description,
                         creator: r.creator,
@@ -1228,6 +1235,7 @@ impl<I: FileIo> nexus_model::AsyncScanCapable for FihStorage<I> {
                     let content = self.load_content(&r.blob_hash, "application/octet-stream");
                     Fact {
                         id: FihHash::from_hex(&r.id),
+                        coord: None,
                         origin: r.origin,
                         content,
                         creator: r.creator,
@@ -1246,6 +1254,7 @@ impl<I: FileIo> nexus_model::AsyncScanCapable for FihStorage<I> {
                     };
                     Intent {
                         id: FihHash::from_hex(&r.id),
+                        coord: None,
                         from_facts: r.from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
                         description,
                         creator: r.creator,

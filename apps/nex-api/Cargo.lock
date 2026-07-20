@@ -850,6 +850,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "tagma-core",
  "walkdir",
 ]
 
@@ -878,6 +879,7 @@ dependencies = [
  "petgraph",
  "serde",
  "sha2",
+ "tagma-core",
 ]
 
 [[package]]
@@ -1468,6 +1470,11 @@ dependencies = [
  "core-foundation-sys",
  "libc",
 ]
+
+[[package]]
+name = "tagma-core"
+version = "0.1.0"
+source = "git+https://github.com/ssccsorg/syntagma?branch=main#205e3a0f948d583b0200dec7fa1243c474a7605a"
 
 [[package]]
 name = "tempfile"

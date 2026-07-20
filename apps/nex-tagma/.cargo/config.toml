@@ -1,0 +1,4 @@
+# Local development override: use local tagma-core checkout instead of git dependency.
+# Remove this file or comment out to use the published git dependency.
+# [patch."https://github.com/ssccsorg/syntagma"]
+# tagma-core = { path = "../../../tagma/sw/rust/core" }

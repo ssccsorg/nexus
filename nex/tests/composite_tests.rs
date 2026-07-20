@@ -104,6 +104,7 @@ fn test_flush_persists_data_to_blob() {
     let s = storage();
     let fact = nexus_model::Fact {
         id: nexus_model::FihHash::from_hex("f1"),
+        coord: None,
         origin: "t".into(),
         content: Content {
             mime_type: "text/plain".into(),
@@ -148,6 +149,7 @@ fn test_scan_partition_with_data() {
     let s = storage();
     let fact = nexus_model::Fact {
         id: nexus_model::FihHash::from_hex("f1"),
+        coord: None,
         origin: "t".into(),
         content: Content {
             mime_type: "text/plain".into(),

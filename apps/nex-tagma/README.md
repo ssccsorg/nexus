@@ -40,7 +40,7 @@ cargo run -p nex-tagma -- bench
 ## Dependencies
 
 - **tagma-core** — Core TagmaCoord type, composed via `libs/tagma` subtree
-  from [github.com/ssccsorg/tagma](https://github.com/ssccsorg/tagma)
+  from [github.com/ssccsorg/syntagma](https://github.com/ssccsorg/syntagma)
 - **sha2** — SHA256 baseline for benchmark comparison
 
 ## Design Doc

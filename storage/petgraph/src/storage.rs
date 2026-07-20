@@ -193,6 +193,7 @@ impl PetgraphStorage {
                 "Fact" => {
                     if let Ok(line) = postcard::to_allocvec(&Fact {
                         id: FihHash::from_hex(w.name.as_str()),
+                        coord: None,
                         origin: w
                             .properties
                             .get("origin")
@@ -235,6 +236,7 @@ impl PetgraphStorage {
                         .collect();
                     if let Ok(line) = postcard::to_allocvec(&Intent {
                         id: FihHash::from_hex(w.name.as_str()),
+                        coord: None,
                         from_facts: from_facts_fih,
                         description: w
                             .properties
@@ -330,6 +332,7 @@ impl StorageRead for PetgraphStorage {
                     "Fact" => {
                         facts.push(Fact {
                             id: FihHash::from_hex(w.name.as_str()),
+                            coord: None,
                             origin: w
                                 .properties
                                 .get("origin")
@@ -367,6 +370,7 @@ impl StorageRead for PetgraphStorage {
 
                         intents.push(Intent {
                             id: FihHash::from_hex(w.name.as_str()),
+                            coord: None,
                             from_facts: from_facts
                                 .iter()
                                 .map(|s| FihHash::from_hex(s.as_str()))
@@ -789,6 +793,7 @@ impl IntentCapable for PetgraphStorage {
         let new_fact_id = format!("f_concl_{}", intent_id);
         let new_fact = Fact {
             id: FihHash::from_hex(new_fact_id.as_str()),
+            coord: None,
             origin: format!("conclusion:{}", intent_id),
             content: content_for_fact,
             creator: worker,

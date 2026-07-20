@@ -909,6 +909,7 @@ fn scenario_fihstorage_e2e_auto_index() {
         // Submit a fact with meaningful text content (async path)
         let fact = Fact {
             id: FihHash::from_hex("f_e2e_001"),
+            coord: None,
             origin: "e2e-test".into(),
             content: Content {
                 mime_type: "text/plain".into(),
@@ -943,6 +944,7 @@ fn scenario_fihstorage_e2e_auto_index() {
         // Submit a conclusion fact — should NOT be auto-indexed (origin starts with "conclusion:")
         let conclusion = Fact {
             id: FihHash::from_hex("f_e2e_concl"),
+            coord: None,
             origin: "conclusion:i_e2e".into(),
             content: Content {
                 mime_type: "text/plain".into(),

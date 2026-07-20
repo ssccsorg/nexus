@@ -114,10 +114,10 @@ impl DetectionCapable for NewDocumentAnalyzer {
                     ("gap", format!("new topic '{}'", topic))
                 };
 
-            output.facts.push(Fact {
-                id: FihHash::new(&[&tid, factor], "doc-analysis"),
-                origin: "new-document-analyzer".into(),
-                content: Content::from_json(&serde_json::json!({
+            output.facts.push(Fact::new(
+                FihHash::new(&[&tid, factor], "doc-analysis"),
+                "new-document-analyzer".into(),
+                Content::from_json(&serde_json::json!({
                     "type": "doc_analysis",
                     "factor": factor,
                     "topic": topic,
@@ -125,8 +125,8 @@ impl DetectionCapable for NewDocumentAnalyzer {
                     "source": fact.origin,
                     "detail": detail,
                 })),
-                creator: "new-document-analyzer".into(),
-            });
+                "new-document-analyzer".into(),
+            ));
 
             existing_positions
                 .entry(topic)

@@ -183,6 +183,7 @@ impl DuckDbStorage {
             let creator: String = row.get(3)?;
             Ok(Fact {
                 id: FihHash::from_hex(&id),
+                coord: None,
                 origin,
                 content: match serde_json::from_str::<serde_json::Value>(&content_str) {
                     Ok(v) => match v {
@@ -231,6 +232,7 @@ impl DuckDbStorage {
                 .unwrap_or_default();
             Ok(Intent {
                 id: FihHash::from_hex(&id),
+                coord: None,
                 from_facts: from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
                 description,
                 creator,

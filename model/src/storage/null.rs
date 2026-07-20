@@ -56,12 +56,12 @@ impl IntentCapable for NullStorage {
         Ok(())
     }
     fn conclude_intent(&self, _id: &str, _result: &str) -> Result<Fact, BlackboardError> {
-        Ok(Fact {
-            id: FihHash::from_hex("null"),
-            origin: String::new(),
-            content: Content::from("null"),
-            creator: String::new(),
-        })
+        Ok(Fact::new(
+            FihHash::from_hex("null"),
+            String::new(),
+            Content::from("null"),
+            String::new(),
+        ))
     }
 }
 

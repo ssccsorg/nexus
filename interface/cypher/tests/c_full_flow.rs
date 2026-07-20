@@ -14,12 +14,12 @@ use nexus_storage_composite::HybridBlackboard;
 
 /// Helper: submit a fact with minimal boilerplate.
 fn submit_fact(bb: &impl Blackboard, id: &str, origin: &str, content: &str, creator: &str) {
-    let fact = Fact {
-        id: FihHash::from_hex(id),
-        origin: origin.into(),
-        content: content.into(),
-        creator: creator.into(),
-    };
+    let fact = Fact::new(
+        FihHash::from_hex(id),
+        origin.into(),
+        content.into(),
+        creator.into(),
+    );
     bb.submit_fact(&fact).unwrap();
 }
 
@@ -77,6 +77,7 @@ fn test_full_agent_collaboration_flow() {
     // Agent-B submits an Intent grounded in facts
     let intent = Intent {
         id: FihHash::from_hex("i001"),
+        coord: None,
         from_facts: vec![FihHash::from_hex("f001"), FihHash::from_hex("f002")],
         description: "Test shallow GNN (3 layers) vs deep GNN (10 layers) on molecular benchmark"
             .into(),
@@ -185,6 +186,7 @@ fn test_petgraph_time_range() {
     let bb = HybridBlackboard::new();
     bb.submit_fact(&Fact {
         id: FihHash::from_hex("f_001"),
+        coord: None,
         origin: "test".into(),
         content: Content {
             mime_type: "application/json".into(),

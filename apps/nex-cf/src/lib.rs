@@ -469,6 +469,7 @@ pub async fn handle_path<I: FileIo>(
         "/fact" => {
             let fact = Fact {
                 id: FihHash::from_hex(&qv(q, "id")),
+                coord: None,
                 origin: qv(q, "origin"),
                 content: Content {
                     mime_type: "text/plain".into(),
@@ -504,6 +505,7 @@ pub async fn handle_path<I: FileIo>(
         "/intent" => {
             let intent = Intent {
                 id: FihHash::from_hex(&qv(q, "id")),
+                coord: None,
                 from_facts: qv(q, "from")
                     .split(',')
                     .filter(|s| !s.is_empty())
@@ -638,6 +640,7 @@ pub async fn ingest_document<I: FileIo>(
     let doc_id = format!("doc_{}", sanitize_id(origin));
     let fact = Fact {
         id: FihHash::from_hex(&doc_id),
+        coord: None,
         origin: format!("document:{}", origin),
         content: Content {
             mime_type: "text/markdown".into(),
