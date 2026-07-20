@@ -240,7 +240,11 @@ pub struct Fact {
     pub id: FihHash,
     /// Tagma proxy identity, assigned by the storage layer on submission.
     /// None before recording; populated by the coordinator.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ///
+    /// NOTE: `skip_serializing_if` is intentionally NOT used here.
+    /// Postcard is a positional binary format — skipping a mid-struct field
+    /// misaligns all subsequent fields, causing silent deserialization failure.
+    #[serde(default)]
     pub coord: Option<CoordRef>,
     pub origin: String,
     pub content: Content,
@@ -265,7 +269,11 @@ pub struct Intent {
     pub id: FihHash,
     /// Tagma proxy identity, assigned by the storage layer on submission.
     /// None before recording; populated by the coordinator.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ///
+    /// NOTE: `skip_serializing_if` is intentionally NOT used here.
+    /// Postcard is a positional binary format — skipping a mid-struct field
+    /// misaligns all subsequent fields, causing silent deserialization failure.
+    #[serde(default)]
     pub coord: Option<CoordRef>,
     pub from_facts: Vec<FihHash>,
     pub to_fact_id: Option<FihHash>,

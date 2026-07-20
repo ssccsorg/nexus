@@ -879,6 +879,7 @@ dependencies = [
  "petgraph",
  "serde",
  "sha2",
+ "tagma-core",
 ]
 
 [[package]]
