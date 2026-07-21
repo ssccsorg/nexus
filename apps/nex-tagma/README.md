@@ -28,7 +28,7 @@ cargo run -p nex-tagma -- bench
 
 ## Benchmark
 
-100k operations, single-threaded, Rust release, Apple M1:
+100k operations, single-threaded, Rust release, ARMv8.4-A Firestorm:
 
 | Metric | SHA256 | Tagma 1-syll | Tagma 6-syll | Tagma 19-syll |
 |--------|--------|-------------|-------------|--------------|
