@@ -123,7 +123,7 @@ fn main() {
                 let _ = h.finalize();
             }
 
-            // Tagma: 1-syllable
+            // Tagma: 1-character
             let start = Instant::now();
             for i in 0..n {
                 let init = (i % 19) as u8;
@@ -133,7 +133,7 @@ fn main() {
             }
             let t1 = start.elapsed();
 
-            // Tagma: 2-syllable
+            // Tagma: 2-character
             let start = Instant::now();
             for i in 0..n {
                 let a = (i % 19) as u8;
@@ -147,7 +147,7 @@ fn main() {
             }
             let t2 = start.elapsed();
 
-            // Tagma: 6-syllable
+            // Tagma: 6-character
             let start = Instant::now();
             for i in 0..n {
                 for j in 0..6 {
@@ -160,7 +160,7 @@ fn main() {
             }
             let t6 = start.elapsed();
 
-            // Tagma: 19-syllable (same address space as SHA256: 11,172^19 ~ 2^256)
+            // Tagma: 19-character (same address space as SHA256: 11,172^19 ~ 2^256)
             let start = Instant::now();
             for i in 0..n {
                 for j in 0..19 {

@@ -5,7 +5,7 @@ use tagma_core::{Coord, CoordPath};
 
 // ── Tagma identity (alongside FihHash) ────────────────────────────────
 
-/// A 6-syllable Tagma coordinate path used as an alternative identity.
+/// A 6-character Tagma coordinate path used as an alternative identity.
 /// Address space: 11,172^6 = 1.94e24 unique identifiers.
 /// Generation: O(1) arithmetic, no SHA256.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
