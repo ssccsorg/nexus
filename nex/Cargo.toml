@@ -32,7 +32,6 @@ worker = { version = "0.8", optional = true }
 [dev-dependencies]
 criterion = { version = "0.5" }
 tempfile = "3"
+nexus-storage-sim = { path = "../storage/sim" }
 nexus-gateway-serde-proxy = { path = "../libs/serde-proxy" }
-nexus-storage-composite = { path = "../storage/composite" }
-nexus-storage-petgraph = { path = "../storage/petgraph" }
 ureq = { version = "3", features = ["json"] }

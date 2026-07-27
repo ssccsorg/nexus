@@ -17,6 +17,11 @@
 
 use crate::io::FileIo;
 use crate::storage::core::FihStorage;
+use nexus_model::{
+    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead,
+    BlackboardError, BoardState, Fact, FihHash, Hint, Intent,
+    FactCapable, HintCapable, IntentCapable, StorageRead,
+};
 
 /// Blackboard implementation backed by FihStorage.
 ///
@@ -48,5 +53,55 @@ impl<I: FileIo> FihBlackboard<I> {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn flush_pending(&self) -> Result<(), String> {
         futures_executor::block_on(self.storage.flush_pending())
+    }
+}
+
+// ── Sync trait implementations (native only, block_on) ────────────────
+
+#[cfg(not(target_arch = "wasm32"))]
+impl<I: FileIo> StorageRead for FihBlackboard<I> {
+    fn project_id(&self) -> &str {
+        self.storage.project_id()
+    }
+
+    fn read_state(&self) -> BoardState {
+        futures_executor::block_on(self.storage.read_state())
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl<I: FileIo> FactCapable for FihBlackboard<I> {
+    fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
+        futures_executor::block_on(self.storage.submit_fact(fact))
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl<I: FileIo> IntentCapable for FihBlackboard<I> {
+    fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+        futures_executor::block_on(self.storage.submit_intent(intent))
+    }
+
+    fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        futures_executor::block_on(self.storage.claim_intent(intent_id, agent))
+    }
+
+    fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        futures_executor::block_on(self.storage.heartbeat(intent_id, agent))
+    }
+
+    fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        futures_executor::block_on(self.storage.release_intent(intent_id, agent))
+    }
+
+    fn conclude_intent(&self, intent_id: &str, result: &str) -> Result<Fact, BlackboardError> {
+        futures_executor::block_on(self.storage.conclude_intent(intent_id, result))
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl<I: FileIo> HintCapable for FihBlackboard<I> {
+    fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
+        futures_executor::block_on(self.storage.submit_hint(hint))
     }
 }

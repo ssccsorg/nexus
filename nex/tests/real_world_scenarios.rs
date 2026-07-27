@@ -36,8 +36,8 @@ use nexus_model::{
     Blackboard, BoardState, Content, EvictCapable, Fact, FactCapable, FihHash, Intent,
     IntentCapable, StorageRead,
 };
-use nexus_storage_composite::HybridBlackboard;
-use nexus_storage_petgraph::{Snapshottable, StorageSnapshot};
+use nex::FihBlackboard;
+use nexus_storage_sim::SimIo;
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -187,7 +187,7 @@ fn seed_cross_domain(bb: &mut impl Blackboard) -> Vec<String> {
 
 #[test]
 fn scenario_cross_domain_discovery() {
-    let mut bb = HybridBlackboard::new();
+    let mut bb = FihBlackboard::new(SimIo::new(), "test");
     let baseline = seed_cross_domain(&mut bb);
 
     let mut sched = Scheduler::new(bb);
@@ -363,7 +363,7 @@ fn seed_rust_challenge(bb: &mut impl Blackboard) {
 
 #[test]
 fn scenario_peer_review_challenge() {
-    let mut bb = HybridBlackboard::new();
+    let mut bb = FihBlackboard::new(SimIo::new(), "test");
     let baseline = seed_manifesto_base(&mut bb);
 
     let mut sched = Scheduler::new(bb);
@@ -474,7 +474,7 @@ fn scenario_peer_review_challenge() {
 
 #[test]
 fn scenario_incremental_knowledge_growth() {
-    let bb = HybridBlackboard::new();
+    let bb = FihBlackboard::new(SimIo::new(), "test");
 
     let mut sched = Scheduler::new(bb);
     sched.register(Box::new(GapDetector::new()));
@@ -604,7 +604,7 @@ fn scenario_incremental_knowledge_growth() {
 
 #[test]
 fn scenario_multi_agent_collaboration() {
-    let mut bb = HybridBlackboard::new();
+    let mut bb = FihBlackboard::new(SimIo::new(), "test");
     seed_cross_domain(&mut bb);
 
     let mut sched = Scheduler::new(bb);
@@ -768,7 +768,7 @@ fn scenario_multi_agent_collaboration() {
 
 #[test]
 fn scenario_document_revision() {
-    let bb = HybridBlackboard::new();
+    let bb = FihBlackboard::new(SimIo::new(), "test");
 
     // v1: Initial document claims
     let v1 = [

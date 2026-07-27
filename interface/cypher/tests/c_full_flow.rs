@@ -10,7 +10,8 @@ use interface_cypher as cypher;
 use nexus_model::{
     Blackboard, BlackboardError, Content, Fact, FihHash, Intent, IntentCapable, StorageRead,
 };
-use nexus_storage_composite::HybridBlackboard;
+use nex::FihBlackboard;
+use nexus_storage_sim::SimIo;
 
 /// Helper: submit a fact with minimal boilerplate.
 fn submit_fact(bb: &impl Blackboard, id: &str, origin: &str, content: &str, creator: &str) {
@@ -33,7 +34,7 @@ fn cypher_count(bb: &HybridBlackboard, query: &str) -> usize {
 
 #[test]
 fn test_full_agent_collaboration_flow() {
-    let bb = HybridBlackboard::new();
+    let bb = FihBlackboard::new(SimIo::new(), "test");
 
     // ── Phase 1: Agent-A ingests research facts ───────────────────────
 
@@ -170,7 +171,8 @@ fn test_full_agent_collaboration_flow() {
 #[test]
 fn test_petgraph_time_range() {
     use nexus_model::{Fact, FactCapable, FihHash, StorageRead, TimeRangeCapable};
-    use nexus_storage_composite::HybridBlackboard;
+    use nex::FihBlackboard;
+use nexus_storage_sim::SimIo;
     use nexus_storage_petgraph::PetgraphStorage;
 
     // PetgraphStorage::time_range() returns None (unbounded in-memory store).
@@ -181,9 +183,9 @@ fn test_petgraph_time_range() {
         "petgraph hot store has no time bound"
     );
 
-    // HybridBlackboard::new() uses DualStorage internally.
+    // FihBlackboard::new(SimIo::new(), "test") uses DualStorage internally.
     // PetgraphStorage is the hot layer, NullStorage is the cold layer.
-    let bb = HybridBlackboard::new();
+    let bb = FihBlackboard::new(SimIo::new(), "test");
     bb.submit_fact(&Fact {
         id: FihHash::from_hex("f_001"),
         coord: None,

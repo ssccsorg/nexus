@@ -14,7 +14,6 @@
 use nexus_model::{
     BlobStore, Content, EvictCapable, FlushCapable, FlushCursor, ScanCapable, StorageRead,
 };
-use nexus_storage_composite::CompositeColdStorage;
 
 mod common;
 use common::store::{MockBlob, MockKv, MockObject};

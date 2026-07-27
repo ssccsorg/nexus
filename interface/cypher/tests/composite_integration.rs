@@ -17,12 +17,11 @@ use nexus_model::{
 use nexus_model::{
     Content, Fact, FactCapable, FihHash, HintCapable, IntentCapable, ScanCapable, StorageRead,
 };
-use nexus_storage_composite::HybridBlackboard;
+use nex::FihBlackboard;
+use nexus_storage_sim::SimIo;
 use nexus_storage_composite::{
     AsyncStoreBlob, AsyncStoreKv, AsyncStoreObject, CompositeColdStorage,
 };
-use nexus_storage_petgraph::PetgraphStorage;
-use nexus_storage_petgraph::Snapshottable;
 use serde_json::json;
 
 // ── Inline mock implementations for integration tests ───────────────────────

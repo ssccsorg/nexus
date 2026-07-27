@@ -12,7 +12,8 @@ use interface_cypher as cypher;
 use nexus_model::{
     Blackboard, BlackboardError, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead,
 };
-use nexus_storage_composite::HybridBlackboard;
+use nex::FihBlackboard;
+use nexus_storage_sim::SimIo;
 use serde_json;
 
 // ── In-memory document chunking (not in core/model yet) ───────────────────
@@ -177,7 +178,7 @@ Remaining challenges include optimal fusion of local and global representations,
 
 #[test]
 fn scenario_full_research_loop() {
-    let mut bb = HybridBlackboard::new();
+    let mut bb = FihBlackboard::new(SimIo::new(), "test");
 
     // ──────────────────────────────────────────────────────────────────
     // Phase 1: Ingest all 3 documents

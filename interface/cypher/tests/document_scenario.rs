@@ -51,8 +51,8 @@ use nex::process::tasks::state_change_detector::StateChangeDetector;
 use nexus_model::{
     Blackboard, BoardState, Content, EvictCapable, Fact, FihHash, Intent, StorageRead,
 };
-use nexus_storage_composite::HybridBlackboard;
-use nexus_storage_petgraph::{Snapshottable, StorageSnapshot};
+use nex::FihBlackboard;
+use nexus_storage_sim::SimIo;
 
 // ── Helper: construct a claim Fact with {claim, topic, position} content ─
 
@@ -419,7 +419,7 @@ fn agent_resolve_contradictions(
 
 #[test]
 fn scenario_full_document_lifecycle() {
-    let mut bb = HybridBlackboard::new();
+    let mut bb = FihBlackboard::new(SimIo::new(), "test");
     seed_initial_corpus(&mut bb);
 
     let mut sched = Scheduler::new(bb);
@@ -543,7 +543,7 @@ fn scenario_full_document_lifecycle() {
 // ═════════════════════════════════════════════════════════════════════════
 #[test]
 fn scenario_gap_facts_are_immutable_observations() {
-    let mut bb = HybridBlackboard::new();
+    let mut bb = FihBlackboard::new(SimIo::new(), "test");
     seed_initial_corpus(&mut bb);
 
     let mut sched = Scheduler::new(bb);
@@ -582,7 +582,7 @@ fn scenario_gap_facts_are_immutable_observations() {
 // ═════════════════════════════════════════════════════════════════════════
 #[test]
 fn scenario_state_change_detector_facts() {
-    let bb = HybridBlackboard::new();
+    let bb = FihBlackboard::new(SimIo::new(), "test");
     let mut sched = Scheduler::new(bb);
     sched.register(Box::new(StateChangeDetector::new()));
 
@@ -629,7 +629,7 @@ fn scenario_state_change_detector_facts() {
 #[test]
 fn scenario_detector_state_snapshot_roundtrip() {
     // Worker A: create scheduler FIRST (0 facts), then seed
-    let bb_a = HybridBlackboard::new();
+    let bb_a = FihBlackboard::new(SimIo::new(), "test");
     let mut sched_a = Scheduler::new(bb_a);
     sched_a.register(Box::new(StateChangeDetector::new()));
     sched_a.register(Box::new(GapDetector::new()));
@@ -710,13 +710,13 @@ fn scenario_detector_state_snapshot_roundtrip() {
 // ═════════════════════════════════════════════════════════════════════════
 #[test]
 fn scenario_flush_then_evict() {
-    let mut bb = HybridBlackboard::new();
+    let mut bb = FihBlackboard::new(SimIo::new(), "test");
     seed_initial_corpus(&mut bb);
 
     let mut sched = Scheduler::new(bb);
     sched.register(Box::new(GapDetector::new()));
 
-    // tick_with_flush requires FlushCapable — now provided by HybridBlackboard::new()
+    // tick_with_flush requires FlushCapable — now provided by FihBlackboard::new(SimIo::new(), "test")
     let _ = sched.tick_with_flush().expect("tick with flush");
     let state = StorageRead::read_state(&sched.bb);
     assert!(

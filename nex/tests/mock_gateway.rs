@@ -1,10 +1,11 @@
 use nexus_gateway_serde_proxy::SerdeProxy;
 use nexus_model::{Fact, FactCapable, FihHash, StorageRead};
-use nexus_storage_composite::HybridBlackboard;
+use nex::FihBlackboard;
+use nexus_storage_sim::SimIo;
 
 #[test]
 fn test_serde_proxy_submit_fact() {
-    let gw = SerdeProxy::new(HybridBlackboard::new());
+    let gw = SerdeProxy::new(FihBlackboard::new(SimIo::new(), "test"));
     let fact = Fact::new(
         FihHash::from_hex("f_gw_001"),
         "gateway-test".into(),

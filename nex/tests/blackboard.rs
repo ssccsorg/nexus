@@ -1,14 +1,13 @@
 use nexus_model::{Fact, FactCapable, FihHash, FlushCapable, FlushCursor, Intent, IntentCapable};
-use nexus_storage_composite::HybridBlackboard;
-use nexus_storage_petgraph::Snapshottable;
-use nexus_storage_petgraph::write_graph;
+use nex::FihBlackboard;
+use nexus_storage_sim::SimIo;
 
 fn tick() {
     std::thread::sleep(std::time::Duration::from_millis(1));
 }
 
 fn bb_with_facts() -> HybridBlackboard {
-    let bb = HybridBlackboard::new();
+    let bb = FihBlackboard::new(SimIo::new(), "test");
     for i in 0..5 {
         let fact = Fact::new(
             FihHash::from_hex(&format!("f{i}")),
@@ -23,7 +22,7 @@ fn bb_with_facts() -> HybridBlackboard {
 
 #[test]
 fn test_fresh_blackboard_has_empty_cursor() {
-    let bb = HybridBlackboard::new();
+    let bb = FihBlackboard::new(SimIo::new(), "test");
     assert_eq!(bb.flush_cursor, FlushCursor::default());
 }
 
@@ -84,7 +83,7 @@ fn test_old_snapshot_without_cursor_gets_default() {
     // Simulate a snapshot created by older code that did not include flush_cursor.
     // The default FlushCursor is the epoch -- a fresh blackboard with no cursor
     // should start from the beginning.
-    let bb = HybridBlackboard::new();
+    let bb = FihBlackboard::new(SimIo::new(), "test");
     assert_eq!(bb.flush_cursor, FlushCursor::default());
 }
 
@@ -123,7 +122,7 @@ fn test_cursor_independent_of_graph_mutations() {
     use nexus_storage_petgraph::NodeWeight;
     use std::collections::HashMap;
 
-    let mut bb = HybridBlackboard::new();
+    let mut bb = FihBlackboard::new(SimIo::new(), "test");
     let fact = Fact::new(
         FihHash::from_hex("f1"),
         "test".into(),
@@ -186,7 +185,7 @@ fn test_flush_cycle_with_facts() {
 
 #[test]
 fn test_flush_empty_blackboard() {
-    let mut bb = HybridBlackboard::new();
+    let mut bb = FihBlackboard::new(SimIo::new(), "test");
     bb.flush().unwrap();
 }
 

@@ -6,7 +6,8 @@
 // HybridBlackboard directly.
 
 use nexus_model::{Blackboard, BlackboardError, Content, Fact, FihHash, Intent};
-use nexus_storage_composite::HybridBlackboard;
+use nex::FihBlackboard;
+use nexus_storage_sim::SimIo;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -14,7 +15,7 @@ type SharedBlackboard = Arc<Mutex<Box<dyn Blackboard + Send>>>;
 
 fn bb() -> SharedBlackboard {
     Arc::new(Mutex::new(
-        Box::new(HybridBlackboard::new()) as Box<dyn Blackboard + Send>
+        Box::new(FihBlackboard::new(SimIo::new(), "test")) as Box<dyn Blackboard + Send>
     ))
 }
 

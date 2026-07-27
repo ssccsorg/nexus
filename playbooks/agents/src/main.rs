@@ -10,14 +10,14 @@
 // Usage:
 //   cd tests/agents && cargo run
 
-use interface_cypher as cypher;
 use nexus_model::{Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
-use nexus_storage_composite::HybridBlackboard;
+use nex::FihBlackboard;
+use nexus_storage_sim::SimIo;
 
 fn main() {
-    println!("=== Rust Privileged Agent: Direct Blackboard Access ===\n");
+    println!("=== Rust Privileged Agent: Direct Blackboard Access (FihBlackboard) ===\n");
 
-    let bb = HybridBlackboard::new();
+    let bb = FihBlackboard::new(SimIo::new(), "test");
 
     // ── Phase 1: Submit facts ────────────────────────────────────────
 
@@ -96,18 +96,6 @@ fn main() {
         )
         .unwrap();
     println!("   New fact: {} = {}", new_fact.id, new_fact.content);
-
-    // ── Phase 4: Privileged Cypher query ─────────────────────────────
-
-    println!("\n6. Privileged: Cypher MATCH query...");
-    let plan = cypher::Plan::from_internal("MATCH (f:Fact) RETURN f").unwrap();
-    // Use snapshot() which returns an RwLockReadGuard implementing GraphRead.
-    let rows = cypher::execute(&bb.snapshot(), &plan).unwrap();
-    println!("   Cypher returned {} rows (all Fact nodes)", rows.len());
-
-    let plan2 = cypher::Plan::from_internal("MATCH (i:Intent) RETURN i").unwrap();
-    let rows2 = cypher::execute(&bb.snapshot(), &plan2).unwrap();
-    println!("   Cypher returned {} rows (all Intent nodes)", rows2.len());
 
     // ── Final state ──────────────────────────────────────────────────
 

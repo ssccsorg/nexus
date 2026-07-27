@@ -8,7 +8,8 @@
 
 use interface_cypher as cypher;
 use nexus_model::{Blackboard, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
-use nexus_storage_composite::HybridBlackboard;
+use nex::FihBlackboard;
+use nexus_storage_sim::SimIo;
 use std::collections::HashSet;
 
 /// An agent that randomly reads and writes the Blackboard.
@@ -161,7 +162,7 @@ impl TestRng {
 
 #[test]
 fn test_stress_many_ants() {
-    let mut bb = HybridBlackboard::new();
+    let mut bb = FihBlackboard::new(SimIo::new(), "test");
     let mut rng = TestRng::new(42);
 
     // Phase 1: seed with initial facts (research corpus)

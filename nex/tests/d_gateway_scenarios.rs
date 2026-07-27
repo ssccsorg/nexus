@@ -8,7 +8,8 @@
 
 use nexus_gateway_serde_proxy::SerdeProxy;
 use nexus_model::{Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
-use nexus_storage_composite::HybridBlackboard;
+use nex::FihBlackboard;
+use nexus_storage_sim::SimIo;
 
 /// Contradiction Detection — via SerdeProxy (JSON transport boundary).
 ///
@@ -20,7 +21,7 @@ use nexus_storage_composite::HybridBlackboard;
 /// except all FIH operations pass through SerdeProxy's JSON round-trip.
 #[test]
 fn scenario_contradiction_detection_via_gateway() {
-    let gw = SerdeProxy::new(HybridBlackboard::new());
+    let gw = SerdeProxy::new(FihBlackboard::new(SimIo::new(), "test"));
 
     // Agent-A: ingests paper claiming GNNs work fine at 50 layers
     gw.submit_fact(&Fact {
