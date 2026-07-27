@@ -9,10 +9,10 @@
 //   6. Show that new gaps emerge after knowledge integration
 
 use interface_cypher as cypher;
+use nex::FihBlackboard;
 use nexus_model::{
     Blackboard, BlackboardError, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead,
 };
-use nex::FihBlackboard;
 use nexus_storage_sim::SimIo;
 use serde_json;
 

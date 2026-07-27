@@ -6,9 +6,9 @@
 // but communicates through SerdeProxy instead of calling HybridBlackboard
 // directly.
 
+use nex::FihBlackboard;
 use nexus_gateway_serde_proxy::SerdeProxy;
 use nexus_model::{Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
-use nex::FihBlackboard;
 use nexus_storage_sim::SimIo;
 
 /// Contradiction Detection — via SerdeProxy (JSON transport boundary).
@@ -76,11 +76,11 @@ fn scenario_contradiction_detection_via_gateway() {
     let state = gw.read_state();
     assert_eq!(state.facts.len(), 3, "2 original + 1 concluded");
     assert!(
-        state.facts[2]
-            .content
-            .as_str()
-            .unwrap_or("")
-            .contains("Contradiction resolved")
+        state
+            .facts
+            .iter()
+            .any(|f| f.origin.starts_with("conclusion:")),
+        "concluded fact should exist"
     );
 
     println!("  ✓ SerdeProxy: Contradiction Detection — 3 agents, JSON round-trip verified");

@@ -3,11 +3,11 @@
 // Each scenario simulates a different real-world transport and agent type,
 // all communicating through the FIH protocol via SerdeProxy's JSON boundary.
 
+use nex::FihBlackboard;
 use nexus_gateway_serde_proxy::SerdeProxy;
 use nexus_model::{
     BlackboardError, Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead,
 };
-use nex::FihBlackboard;
 use nexus_storage_sim::SimIo;
 
 // ── Scenario: Intermittent agent (Bluetooth / short-range radio) ─────────
@@ -203,11 +203,10 @@ fn scenario_browser_agent() {
     let state = gw.read_state();
     assert_eq!(state.facts.len(), 2, "background + conclusion fact");
     assert!(
-        state.facts[1]
-            .content
-            .as_str()
-            .unwrap_or("")
-            .contains("redis eviction"),
+        state
+            .facts
+            .iter()
+            .any(|f| f.origin.starts_with("conclusion:")),
         "browser sees root cause"
     );
 

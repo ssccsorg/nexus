@@ -5,6 +5,7 @@
 
 use interface_cypher::{Plan, execute_with_cold};
 use interface_query::ColdQuery;
+use nexus_model::storage::{EdgeWeight, NodeWeight};
 
 fn assert_label(cq: &ColdQuery, expected: &str) {
     assert_eq!(cq.label, expected);

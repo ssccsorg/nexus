@@ -18,9 +18,9 @@
 use crate::io::FileIo;
 use crate::storage::core::FihStorage;
 use nexus_model::{
-    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead,
-    BlackboardError, BoardState, Fact, FihHash, Hint, Intent,
-    FactCapable, HintCapable, IntentCapable, StorageRead,
+    AsyncEvictCapable, AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead,
+    BlackboardError, BoardState, EvictCapable, Fact, FactCapable, FihHash, Hint, HintCapable,
+    Intent, IntentCapable, StorageRead,
 };
 
 /// Blackboard implementation backed by FihStorage.
@@ -103,5 +103,20 @@ impl<I: FileIo> IntentCapable for FihBlackboard<I> {
 impl<I: FileIo> HintCapable for FihBlackboard<I> {
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         futures_executor::block_on(self.storage.submit_hint(hint))
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl<I: FileIo> EvictCapable for FihBlackboard<I> {
+    fn approximate_size(&self) -> usize {
+        futures_executor::block_on(self.storage.approximate_size())
+    }
+
+    fn evict_before(&self, before: &str) -> Result<u64, String> {
+        futures_executor::block_on(self.storage.evict_before(before))
+    }
+
+    fn evict_stale_intents(&self, older_than_secs: u64) -> Result<u64, String> {
+        futures_executor::block_on(self.storage.evict_stale_intents(older_than_secs))
     }
 }

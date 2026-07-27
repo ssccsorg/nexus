@@ -1,6 +1,6 @@
+use nex::FihBlackboard;
 use nexus_gateway_serde_proxy::SerdeProxy;
 use nexus_model::{Fact, FactCapable, FihHash, StorageRead};
-use nex::FihBlackboard;
 use nexus_storage_sim::SimIo;
 
 #[test]

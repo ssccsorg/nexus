@@ -4,10 +4,10 @@
 // research problem. No agent talks directly to another — all via Blackboard.
 
 use interface_cypher as cypher;
+use nex::FihBlackboard;
 use nexus_model::{
     Fact, FactCapable, FihHash, Hint, HintCapable, Intent, IntentCapable, StorageRead,
 };
-use nex::FihBlackboard;
 use nexus_storage_sim::SimIo;
 
 // ── Scenario 1: Contradiction Detection ───────────────────────────────────

@@ -77,8 +77,6 @@ run_clippy() {
     # Core crates only. Apps (nex-cf, wasmer, api, zed) are separate projects.
     for pkg in \
         nex \
-        nexus-storage-composite \
-        nexus-storage-petgraph \
         nexus-storage-sim \
         nexus-model \
         interface-query \

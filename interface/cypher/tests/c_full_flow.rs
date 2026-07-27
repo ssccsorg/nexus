@@ -6,11 +6,10 @@
 //   3. Agent-B claims, works on, and concludes the Intent
 //   4. Read_state + unit assertions verify correctness (Cypher is for portability)
 
-use interface_cypher as cypher;
+use nex::FihBlackboard;
 use nexus_model::{
     Blackboard, BlackboardError, Content, Fact, FihHash, Intent, IntentCapable, StorageRead,
 };
-use nex::FihBlackboard;
 use nexus_storage_sim::SimIo;
 
 /// Helper: submit a fact with minimal boilerplate.
@@ -22,14 +21,6 @@ fn submit_fact(bb: &impl Blackboard, id: &str, origin: &str, content: &str, crea
         creator.into(),
     );
     bb.submit_fact(&fact).unwrap();
-}
-
-/// Helper: run a Cypher query on a HybridBlackboard and count results.
-fn cypher_count(bb: &HybridBlackboard, query: &str) -> usize {
-    bb.with_graph(|g| {
-        let plan = cypher::Plan::from_internal(query).expect("parse failed");
-        cypher::execute(g, &plan).expect("execute failed").len()
-    })
 }
 
 #[test]
@@ -164,44 +155,4 @@ fn test_full_agent_collaboration_flow() {
     println!("  ✓ Full FIH lifecycle + Cypher queries work end-to-end");
     println!("  ✓ 3 agents (A, B, C) interacting through Blackboard alone");
     println!("  ✓ No direct agent-to-agent communication — all via FIH");
-}
-
-// ── PetgraphStorage TimeRangeCapable ────────────────────────────────────
-
-#[test]
-fn test_petgraph_time_range() {
-    use nexus_model::{Fact, FactCapable, FihHash, StorageRead, TimeRangeCapable};
-    use nex::FihBlackboard;
-use nexus_storage_sim::SimIo;
-    use nexus_storage_petgraph::PetgraphStorage;
-
-    // PetgraphStorage::time_range() returns None (unbounded in-memory store).
-    // This test verifies the trait is wired correctly.
-    let hot = PetgraphStorage::new();
-    assert!(
-        hot.time_range().is_none(),
-        "petgraph hot store has no time bound"
-    );
-
-    // FihBlackboard::new(SimIo::new(), "test") uses DualStorage internally.
-    // PetgraphStorage is the hot layer, NullStorage is the cold layer.
-    let bb = FihBlackboard::new(SimIo::new(), "test");
-    bb.submit_fact(&Fact {
-        id: FihHash::from_hex("f_001"),
-        coord: None,
-        origin: "test".into(),
-        content: Content {
-            mime_type: "application/json".into(),
-            data: serde_json::json!("data").to_string().into_bytes(),
-        },
-        creator: "tester".into(),
-    })
-    .unwrap();
-
-    let state = bb.read_state();
-    assert_eq!(state.facts.len(), 1, "fact submitted to HybridBlackboard");
-    // PetgraphStorage::time_range is None (unbounded).
-    // Direct access to DualStorage's time_range is not exposed through
-    // the Blackboard trait — this is by design (#51 will add routing).
-    // The hot layer is unbounded until #51 adds bounded range logic.
 }
