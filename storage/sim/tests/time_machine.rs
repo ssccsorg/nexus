@@ -159,9 +159,10 @@ fn test_time_travel_consistency() {
     assert_eq!(full.facts.len(), 1);
     assert_eq!(full.intents.len(), 1);
 
-    // Time-travel to t=2_500_000_000: Fact (indexed at 2G) included, Intent not yet indexed
+    // Time-travel to t=1_500_000_000: Fact (submitted_at=1G) included,
+    // Intent (created_at=2G) excluded because 2G > 1.5G.
     let past = block_on(store.read_state_filtered(&StateFilter {
-        until: Some("2500000000".to_string()),
+        until: Some("1500000000".to_string()),
         ..Default::default()
     }));
     assert_eq!(past.facts.len(), 1, "fact submitted before midpoint");
@@ -246,13 +247,10 @@ fn test_chain_order_preservation() {
         cursor.last_flushed_at = r.new_cursor.last_flushed_at;
     }
 
-    // List chain files — must exist and be ordered (SimIo sorts keys)
-    let chains = SyncFileIo::new(io.clone()).list("flush/").unwrap();
-    let chain_files: Vec<&String> = chains.iter().filter(|k| k.ends_with(".chain")).collect();
-    assert!(
-        chain_files.len() >= 5,
-        "at least 5 chain files for 5 batches"
-    );
+    // Note: chain files are no longer created by flush_since
+    // (delta index removed with FihCoord in Phase 3).
+    // The test just verifies that flush_since works without errors.
+    // Each batch flush was already asserted above.
 }
 
 // ── Test 7: Empty StateSpace is valid ───────────────────────────────────

@@ -180,7 +180,8 @@ fn test_async_time_range() {
     futures_executor::block_on(store.submit_fact(&common::fact("f_tr"))).unwrap();
 
     let range = futures_executor::block_on(store.time_range());
-    assert!(range.is_some());
+    // Time range index removed with FihCoord in Phase 3; returns None.
+    assert!(range.is_none());
 }
 
 // ── AsyncFlushCapable ─────────────────────────────────────────────────

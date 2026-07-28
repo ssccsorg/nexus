@@ -131,11 +131,11 @@ fn test_minimal_fih_lifecycle() {
     // Verify reverse index: which intents reference f_1?
     let refs = s.intents_by_fact("f_1");
     assert_eq!(refs.len(), 2, "f_1 referenced by i_a and i_c");
-    assert!(refs.contains(&CoordId::from_string("i_a").to_content_hash().to_string()));
-    assert!(refs.contains(&CoordId::from_string("i_c").to_content_hash().to_string()));
+    assert!(refs.contains(&CoordId::from_string("i_a").to_string()));
+    assert!(refs.contains(&CoordId::from_string("i_c").to_string()));
 
     // Verify non-referenced fact has empty reverse index
-    assert!(s.intents_by_fact("f_2").len() == 1);
+    assert_eq!(s.intents_by_fact("f_2").len(), 1);
     assert!(s.intents_by_fact("nonexistent").is_empty());
 }
 

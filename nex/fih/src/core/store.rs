@@ -46,7 +46,8 @@ use crate::{
 use nex_core::Now;
 
 use crate::core::entity_store::{CoordEntityStore, EntityStore};
-use crate::core::index::{Cell2, FihCoord};
+use std::collections::{HashMap, HashSet};
+use crate::core::index::Cell2;
 use crate::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
 use crate::io::file_io::{FileIo, WriteOp, default_apply_batch};
 use crate::semantic::record::{Query, RecordLoad};
@@ -78,8 +79,14 @@ pub struct FihStorage<I: FileIo> {
     pub fact_store: CoordEntityStore<6, FactRecord>,
     pub intent_store: CoordEntityStore<6, IntentRecord>,
     pub hint_store: CoordEntityStore<6, HintRecord>,
-    // Indices
-    coord: FihCoord,
+    // Fast-path lookup tables for filtered reads.
+    fact_by_origin: Cell2<HashMap<String, HashSet<String>>>,
+    fact_by_creator: Cell2<HashMap<String, HashSet<String>>>,
+    intent_by_status: Cell2<HashMap<String, HashSet<String>>>,
+    // Semantic stores (for similarity search).
+    semantic_stores: Cell2<Vec<crate::semantic::DynSemanticStore>>,
+    /// Counter for assigning semantic IDs to facts incrementally.
+    semantic_id_counter: Cell2<u32>,
     // Pending writes (for FihSession coordination).
     pub(crate) pending: Cell2<Vec<WriteOp>>,
 }
@@ -115,7 +122,11 @@ impl<I: FileIo> FihStorage<I> {
             fact_store: CoordEntityStore::<6, FactRecord>::new(),
             intent_store: CoordEntityStore::<6, IntentRecord>::new(),
             hint_store: CoordEntityStore::<6, HintRecord>::new(),
-            coord: FihCoord::new(),
+            fact_by_origin: Cell2::new(HashMap::new()),
+            fact_by_creator: Cell2::new(HashMap::new()),
+            intent_by_status: Cell2::new(HashMap::new()),
+            semantic_stores: Cell2::new(Vec::new()),
+            semantic_id_counter: Cell2::new(0u32),
             pending: Cell2::new(Vec::new()),
         }
     }
@@ -134,7 +145,11 @@ impl<I: FileIo> FihStorage<I> {
             fact_store: CoordEntityStore::<6, FactRecord>::new(),
             intent_store: CoordEntityStore::<6, IntentRecord>::new(),
             hint_store: CoordEntityStore::<6, HintRecord>::new(),
-            coord: FihCoord::new(),
+            fact_by_origin: Cell2::new(HashMap::new()),
+            fact_by_creator: Cell2::new(HashMap::new()),
+            intent_by_status: Cell2::new(HashMap::new()),
+            semantic_stores: Cell2::new(Vec::new()),
+            semantic_id_counter: Cell2::new(0u32),
             pending: Cell2::new(Vec::new()),
         }
     }
@@ -175,52 +190,69 @@ impl<I: FileIo> FihStorage<I> {
         self.intent_store.replace_from(intents).await;
         self.hint_store.replace_from(hints).await;
 
-        self.rebuild_coord().await;
+        // Rebuild fast-path lookup tables directly from entity stores.
+        // No separate coord index needed — CoordSpaceN is self-indexing.
+        self.rebuild_fastpath().await;
 
         Ok(())
     }
 
-    /// Rebuild FihCoord indices from current EntityStore contents.
-    ///
-    /// Records are sorted by submitted_at before insertion to guarantee
-    /// monotonic ordering in by_time (required by OrderedIndex's binary
-    /// search). Other indices are order-independent and built during the
-    /// same pass via FihCoord methods.
-    pub async fn rebuild_coord(&self) {
-        self.coord.clear();
-
-        let mut facts = self.fact_store.values().await;
+    /// Rebuild fast-path lookup tables from current EntityStore contents.
+    /// These provide efficient filtering for read_state_filtered without
+    /// requiring FihCoord (removed in Phase 3).
+    async fn rebuild_fastpath(&self) {
+        let facts = self.fact_store.values().await;
         let intents = self.intent_store.values().await;
 
-        // Sort facts by submitted_at to maintain OrderedIndex monotonicity
-        facts.sort_by_key(|r| r.submitted_at);
+        let mut by_origin: HashMap<String, HashSet<String>> = HashMap::new();
+        let mut by_creator: HashMap<String, HashSet<String>> = HashMap::new();
 
         for r in &facts {
-            let id_ref = CoordId::from_string(&r.id);
-            let hash = id_ref.to_content_hash();
-            let idx = self.coord.intern(&hash.0);
-            self.coord.by_time.borrow_mut().record(r.submitted_at, idx);
-            self.coord
-                .record_fact(&hash.0, &r.origin, &r.creator, r.submitted_at);
+            by_origin
+                .entry(r.origin.clone())
+                .or_default()
+                .insert(r.id.clone());
+            by_creator
+                .entry(r.creator.clone())
+                .or_default()
+                .insert(r.id.clone());
         }
 
+        let mut by_status: HashMap<String, HashSet<String>> = HashMap::new();
         for r in &intents {
-            let id_ref = CoordId::from_string(&r.id);
-            let hash = id_ref.to_content_hash();
-            let from_bytes: Vec<[u8; 32]> = r
-                .from_facts
-                .iter()
-                .map(|f| CoordId::from_string(f).to_content_hash().0)
-                .collect();
-            self.coord
-                .record_intent(&hash.0, &r.creator, r.created_at, &from_bytes);
+            let status = simple_status_key(&r.status).to_string();
+            by_status
+                .entry(status)
+                .or_default()
+                .insert(r.id.clone());
         }
+
+        *self.fact_by_origin.borrow_mut() = by_origin;
+        *self.fact_by_creator.borrow_mut() = by_creator;
+        *self.intent_by_status.borrow_mut() = by_status;
     }
 
     /// Flush pending writes to IO.
-    /// Rebuild semantic stores (BM25, Vectorize buffer) from fact_store after rebuild_cache.
-    /// Reads content blobs from IO and inserts text into all registered semantic stores.
+    pub async fn flush_pending(&self) -> Result<(), String> {
+        let ops = {
+            let mut pending = self.pending.borrow_mut();
+            if pending.is_empty() {
+                return Ok(());
+            }
+            std::mem::take(&mut *pending)
+        };
+        default_apply_batch(&self.io, &ops).await
+    }
+
+    /// Rebuild semantic stores from fact_store after rebuild_cache.
     pub async fn rebuild_semantic(&self) -> Result<(), String> {
+        // Snapshot: take stores atomically, work on them, then put back.
+        let mut stores = std::mem::take(&mut *self.semantic_stores.borrow_mut());
+        if stores.is_empty() {
+            return Ok(());
+        }
+
+        let facts = self.fact_store.values().await;
         struct TextRecord {
             text: String,
         }
@@ -233,8 +265,7 @@ impl<I: FileIo> FihStorage<I> {
             }
         }
 
-        let facts = self.fact_store.values().await;
-        for r in facts {
+        for (i, r) in facts.iter().enumerate() {
             let content = load_blob(&self.io, &r.blob_hash).await;
             if content.data.is_empty() {
                 continue;
@@ -243,68 +274,96 @@ impl<I: FileIo> FihStorage<I> {
             if text.trim().is_empty() {
                 continue;
             }
-            let id_ref = CoordId::from_string(&r.id);
-            let idx = self.coord.intern_coordref(&id_ref);
             let load = TextRecord { text };
-            self.semantic_insert(idx, &load).await.ok();
-        }
-        Ok(())
-    }
-
-    pub async fn flush_pending(&self) -> Result<(), String> {
-        let ops = {
-            let mut pending = self.pending.borrow_mut();
-            if pending.is_empty() {
-                return Ok(());
+            for store in stores.iter_mut() {
+                let _ = store.insert(i as u32, &load).await;
             }
-            std::mem::take(&mut *pending)
-        };
-        default_apply_batch(&self.io, &ops).await
+        }
+
+        // Put stores back
+        self.semantic_stores.borrow_mut().extend(stores);
+        Ok(())
     }
 
     /// Register a semantic store for auto-indexing on fact submission.
     pub fn register_semantic_store(&self, store: crate::semantic::DynSemanticStore) {
-        self.coord.by_semantic.borrow_mut().push(store);
+        self.semantic_stores.borrow_mut().push(store);
     }
 
     /// Access the semantic stores list (for downcasting to concrete types).
     pub fn semantic_stores(
         &self,
     ) -> impl std::ops::Deref<Target = Vec<crate::semantic::DynSemanticStore>> {
-        self.coord.by_semantic.borrow()
+        self.semantic_stores.borrow()
     }
 
     /// Search semantic stores with the given query.
+    ///
+    /// Uses take/extend pattern to avoid holding a non-Send MutexGuard
+    /// across an async boundary.
     pub async fn semantic_search(
         &self,
         query: &dyn Query,
         top_k: usize,
     ) -> Result<Vec<(u32, f32)>, String> {
-        self.coord.semantic_search(query, top_k).await
+        let mut stores = std::mem::take(&mut *self.semantic_stores.borrow_mut());
+        if stores.is_empty() {
+            self.semantic_stores.borrow_mut().extend(stores);
+            return Err("no semantic stores configured".into());
+        }
+        let mut results = Vec::new();
+        for store in stores.iter_mut() {
+            if let Ok(mut r) = store.search(query, top_k).await {
+                results.append(&mut r);
+            }
+        }
+        self.semantic_stores.borrow_mut().extend(stores);
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        results.truncate(top_k);
+        Ok(results)
     }
 
-    /// Insert a record into semantic stores with the given load handle.
+    /// Insert a record into semantic stores.
+    ///
+    /// Uses take/extend pattern (not borrow_mut across await) to avoid
+    /// holding a non-Send MutexGuard across an async boundary.
     pub async fn semantic_insert(&self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
-        self.coord.semantic_insert(id, load).await
+        let mut stores = std::mem::take(&mut *self.semantic_stores.borrow_mut());
+        if stores.is_empty() {
+            self.semantic_stores.borrow_mut().extend(stores);
+            return Err("no semantic stores configured".into());
+        }
+        let mut last_err: Option<String> = None;
+        for store in stores.iter_mut() {
+            if let Err(e) = store.insert(id, load).await {
+                last_err = Some(e);
+            }
+        }
+        self.semantic_stores.borrow_mut().extend(stores);
+        if let Some(e) = last_err {
+            Err(e)
+        } else {
+            Ok(())
+        }
     }
 
     /// Query intents that reference a given fact.
-    /// Returns Vec<String> (hex IDs). Each call allocates O(k) strings
-    /// where k is the number of referencing intents — acceptable for
-    /// expected fan-out sizes (< 100).
-    /// Query intents that reference a given fact.
+    /// The fact_id is normalized via CoordId::from_string to match the
+    /// canonical CoordId format stored in IntentRecord.from_facts.
     pub fn intents_by_fact(&self, fact_id: &str) -> Vec<String> {
-        let fidx = self.coord.intern_str(fact_id);
-        self.coord
-            .intents_by_fact(fidx)
-            .into_iter()
-            .map(|idx| self.coord.resolve(idx))
+        let normalized = crate::CoordId::from_string(fact_id).to_string();
+        let intent_records: Vec<IntentRecord> = futures_executor::block_on(self.intent_store.values());
+        intent_records
+            .iter()
+            .filter(|r| r.from_facts.iter().any(|f| f == &normalized))
+            .map(|r| r.id.clone())
             .collect()
     }
 
-    /// Resolve a semantic index back to its hex ID string.
+    /// Resolve a semantic index back to its ID string.
     pub fn resolve_semantic_idx(&self, idx: u32) -> String {
-        self.coord.resolve(idx)
+        let records = futures_executor::block_on(self.fact_store.values());
+        records.get(idx as usize).map(|r| r.id.clone()).unwrap_or_default()
     }
 
     /// Enqueue content as a blob write. FIH is append-only: no dedup
@@ -387,6 +446,15 @@ impl<I: FileIo> FihStorage<I> {
             mime_type: default_mime.to_string(),
             data: Vec::new(),
         }
+    }
+}
+
+/// Convert IntentStatus to a simple string key for fast-path status lookup.
+fn simple_status_key(status: &IntentStatus) -> &'static str {
+    match status {
+        IntentStatus::Submitted => "submitted",
+        IntentStatus::Claimed { .. } => "claimed",
+        IntentStatus::Concluded { .. } => "concluded",
     }
 }
 
@@ -559,14 +627,27 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
         self.fact_store.insert(record.id.clone(), record).await;
         self.pending.borrow_mut().push(op);
 
-        // Update indices via FihCoord (record_fact records by_time internally)
-        let ts = self.clock.now_nanos();
-        self.coord
-            .record_fact_coordref(&fact.id, &fact.origin, &fact.creator, ts);
+        // Update fast-path lookup tables (replaces FihCoord)
+        let id_str = fact.id.to_string();
+        self.fact_by_origin
+            .borrow_mut()
+            .entry(fact.origin.clone())
+            .or_default()
+            .insert(id_str.clone());
+        self.fact_by_creator
+            .borrow_mut()
+            .entry(fact.creator.clone())
+            .or_default()
+            .insert(id_str);
 
         // Auto-index into semantic stores (skip conclusion facts to reduce noise)
         if !fact.origin.starts_with("conclusion:") {
-            let fact_idx = self.coord.intern_coordref(&fact.id);
+            let semantic_idx = {
+                let mut ctr = self.semantic_id_counter.borrow_mut();
+                let idx = *ctr;
+                *ctr += 1;
+                idx
+            };
             let text = String::from_utf8_lossy(&fact.content.data).to_string();
             struct FactTextRecord {
                 text: String,
@@ -579,8 +660,7 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
                     None
                 }
             }
-            self.coord
-                .semantic_insert(fact_idx, &FactTextRecord { text })
+            self.semantic_insert(semantic_idx, &FactTextRecord { text })
                 .await
                 .ok();
         }
@@ -667,13 +747,13 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             data: bytes,
         };
 
-        // Record intent in coordinator (handles by_fact, ref_counts, by_status, by_creator)
-        self.coord.record_intent_coordref(
-            &intent.id,
-            &intent.creator,
-            record.created_at,
-            &intent.from_facts,
-        );
+        // Update fast-path status table
+        let id_str = intent.id.to_string();
+        self.intent_by_status
+            .borrow_mut()
+            .entry("submitted".to_string())
+            .or_default()
+            .insert(id_str);
 
         self.intent_store.insert(record.id.clone(), record).await;
         self.pending.borrow_mut().push(op);
@@ -713,8 +793,17 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.intent_store.insert(normalized.clone(), record).await;
-        self.coord
-            .update_intent_status(&FihHash::from_hex(&normalized).0, "submitted", "claimed");
+        // Update fast-path status table
+        {
+            let mut by_status = self.intent_by_status.borrow_mut();
+            if let Some(ids) = by_status.get_mut("submitted") {
+                ids.remove(&normalized);
+            }
+            by_status
+                .entry("claimed".to_string())
+                .or_default()
+                .insert(normalized.clone());
+        }
         Ok(())
     }
 
@@ -795,8 +884,20 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.flush_pending()
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let normalized = CoordId::from_string(intent_id).to_string();
+        // Update fast-path status table
+        {
+            let mut by_status = self.intent_by_status.borrow_mut();
+            if let Some(ids) = by_status.get_mut("claimed") {
+                ids.remove(&normalized);
+            }
+            by_status
+                .entry("submitted".to_string())
+                .or_default()
+                .insert(normalized.clone());
+        }
         self.intent_store
-            .insert(intent_id.to_string(), record)
+            .insert(normalized, record)
             .await;
         Ok(())
     }
@@ -870,12 +971,19 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.intent_store
-            .insert(intent_id.to_string(), record)
+            .insert(normalized.clone(), record)
             .await;
-        let cid = CoordId::from_string(&intent_id);
-        let hash = cid.to_content_hash();
-        self.coord
-            .update_intent_status(&hash.0, "claimed", "concluded");
+        // Update fast-path status table
+        {
+            let mut by_status = self.intent_by_status.borrow_mut();
+            if let Some(ids) = by_status.get_mut("claimed") {
+                ids.remove(&normalized);
+            }
+            by_status
+                .entry("concluded".to_string())
+                .or_default()
+                .insert(normalized);
+        }
 
         Ok(new_fact)
     }
@@ -885,21 +993,24 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
 
 impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
     async fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
-        use std::collections::HashSet;
-
-        // Phase 1: Resolve candidate fact IDs from indexes
+        // Phase 1: Resolve candidate fact IDs from fast-path tables
         let has_fact_index = filter.creator.is_some()
             || filter.since.is_some()
             || filter.until.is_some()
             || filter.fact_ids.is_some();
 
-        let fact_candidates: Option<HashSet<u32>> = if has_fact_index {
-            let mut c: Option<HashSet<u32>> = None;
+        let fact_candidates: Option<HashSet<String>> = if has_fact_index {
+            let mut c: Option<HashSet<String>> = None;
 
             if let Some(creator) = &filter.creator {
-                let ids: HashSet<u32> = self.coord.facts_by_creator(creator).into_iter().collect();
+                let ids: HashSet<String> = self
+                    .fact_by_creator
+                    .borrow()
+                    .get(creator)
+                    .cloned()
+                    .unwrap_or_default();
                 c = Some(match c {
-                    Some(existing) => existing.intersection(&ids).copied().collect(),
+                    Some(existing) => existing.intersection(&ids).cloned().collect(),
                     None => ids,
                 });
             }
@@ -915,43 +1026,26 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                     .as_ref()
                     .and_then(|u| u.parse::<u64>().ok())
                     .unwrap_or(u64::MAX);
-                let time_ids: HashSet<u32> = match (&filter.since, &filter.until) {
-                    (Some(_), Some(_)) => self
-                        .coord
-                        .by_time
-                        .borrow()
-                        .range(&since_ns, &until_ns)
-                        .into_iter()
-                        .map(|(_, idx)| idx)
-                        .collect(),
-                    (Some(_), None) => self
-                        .coord
-                        .by_time
-                        .borrow()
-                        .since(&since_ns)
-                        .into_iter()
-                        .map(|(_, idx)| idx)
-                        .collect(),
-                    (None, Some(_)) => self
-                        .coord
-                        .by_time
-                        .borrow()
-                        .as_of(&until_ns)
-                        .into_iter()
-                        .map(|(_, idx)| idx)
-                        .collect(),
-                    (None, None) => unreachable!(),
-                };
+                // Scan fact_store and filter by submitted_at (O(N) but simple)
+                let all_records = self.fact_store.values().await;
+                let time_ids: HashSet<String> = all_records
+                    .into_iter()
+                    .filter(|r| r.submitted_at >= since_ns && r.submitted_at <= until_ns)
+                    .map(|r| r.id)
+                    .collect();
                 c = Some(match c {
-                    Some(existing) => existing.intersection(&time_ids).copied().collect(),
+                    Some(existing) => existing.intersection(&time_ids).cloned().collect(),
                     None => time_ids,
                 });
             }
 
             if let Some(ids) = &filter.fact_ids {
-                let id_set: HashSet<u32> = ids.iter().map(|id| self.coord.intern_str(id)).collect();
+                let id_set: HashSet<String> = ids
+                    .iter()
+                    .map(|id| CoordId::from_string(id).to_string())
+                    .collect();
                 c = Some(match c {
-                    Some(existing) => existing.intersection(&id_set).copied().collect(),
+                    Some(existing) => existing.intersection(&id_set).cloned().collect(),
                     None => id_set,
                 });
             }
@@ -961,33 +1055,46 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
             None
         };
 
-        // Phase 2: Resolve candidate intent IDs from indexes
+        // Phase 2: Resolve candidate intent IDs from fast-path tables
         let has_intent_index =
             filter.creator.is_some() || filter.status.is_some() || filter.intent_ids.is_some();
 
-        let intent_candidates: Option<HashSet<u32>> = if has_intent_index {
-            let mut c: Option<HashSet<u32>> = None;
+        let intent_candidates: Option<HashSet<String>> = if has_intent_index {
+            let mut c: Option<HashSet<String>> = None;
 
             if let Some(status) = &filter.status {
-                let ids: HashSet<u32> = self.coord.intents_by_status(status).into_iter().collect();
+                let ids: HashSet<String> = self
+                    .intent_by_status
+                    .borrow()
+                    .get(status)
+                    .cloned()
+                    .unwrap_or_default();
                 c = Some(match c {
-                    Some(existing) => existing.intersection(&ids).copied().collect(),
+                    Some(existing) => existing.intersection(&ids).cloned().collect(),
                     None => ids,
                 });
             }
 
             if let Some(creator) = &filter.creator {
-                let ids: HashSet<u32> = self.coord.facts_by_creator(creator).into_iter().collect();
+                let ids: HashSet<String> = self
+                    .fact_by_creator
+                    .borrow()
+                    .get(creator)
+                    .cloned()
+                    .unwrap_or_default();
                 c = Some(match c {
-                    Some(existing) => existing.intersection(&ids).copied().collect(),
+                    Some(existing) => existing.intersection(&ids).cloned().collect(),
                     None => ids,
                 });
             }
 
             if let Some(ids) = &filter.intent_ids {
-                let id_set: HashSet<u32> = ids.iter().map(|id| self.coord.intern_str(id)).collect();
+                let id_set: HashSet<String> = ids
+                    .iter()
+                    .map(|id| CoordId::from_string(id).to_string())
+                    .collect();
                 c = Some(match c {
-                    Some(existing) => existing.intersection(&id_set).copied().collect(),
+                    Some(existing) => existing.intersection(&id_set).cloned().collect(),
                     None => id_set,
                 });
             }
@@ -1005,7 +1112,7 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
         let facts: Vec<Fact> = match fact_candidates {
             Some(ids) => all_facts
                 .into_iter()
-                .filter(|r| ids.contains(&self.coord.intern_str(&r.id)))
+                .filter(|r| ids.contains(&r.id))
                 .map(|r| {
                     let content = self.load_content(&r.blob_hash, "application/octet-stream");
                     Fact {
@@ -1043,7 +1150,7 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
         let intents: Vec<Intent> = match intent_candidates {
             Some(ids) => all_intents
                 .into_iter()
-                .filter(|r| ids.contains(&self.coord.intern_str(&r.id)))
+                .filter(|r| ids.contains(&r.id))
                 .map(|r| {
                     let description = if r.description_hash.is_empty() {
                         r.id.clone()
@@ -1343,9 +1450,9 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
 
 impl<I: FileIo> crate::AsyncTimeRangeCapable for FihStorage<I> {
     async fn time_range(&self) -> Option<Range<String>> {
-        let first = self.coord.by_time.borrow().first_key()?;
-        let last = self.coord.by_time.borrow().last_key()?;
-        Some(first.to_string()..last.to_string())
+        // Time range index removed with FihCoord in Phase 3.
+        // Return None; callers should use read_state_filtered with since/until.
+        None
     }
 }
 
@@ -1353,20 +1460,24 @@ impl<I: FileIo> crate::AsyncTimeRangeCapable for FihStorage<I> {
 
 impl<I: FileIo> crate::AsyncFlushCapable for FihStorage<I> {
     async fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
-        let since_ts = cursor.last_flushed_at;
         let now_ts = self.clock.now_nanos();
 
-        let delta_ids: Vec<(String, u64)> = self
-            .coord
-            .by_time
+        // Count pending record WriteOps (fact + intent keys) that represent
+        // entity records rather than blob data. This approximates the old
+        // by_time delta count removed with FihCoord in Phase 3.
+        let records_flushed = self
+            .pending
             .borrow()
-            .since(&since_ts)
-            .into_iter()
-            .map(|(_ts, idx)| (self.coord.resolve(idx), _ts))
-            .collect();
-        let records_flushed = delta_ids.len() as u64;
+            .iter()
+            .filter(|op| match op {
+                WriteOp::Write { path, .. } => {
+                    path.starts_with("facts/") || path.starts_with("intents/")
+                }
+                WriteOp::Delete { .. } => false,
+            })
+            .count() as u64;
 
-        if records_flushed == 0 {
+        if records_flushed == 0 && self.pending.borrow().is_empty() {
             return Ok(FlushResult {
                 records_flushed: 0,
                 new_cursor: FlushCursor {
@@ -1375,32 +1486,6 @@ impl<I: FileIo> crate::AsyncFlushCapable for FihStorage<I> {
                 },
             });
         }
-
-        let mut facts = Vec::new();
-        let mut intents = Vec::new();
-        for (id, _) in &delta_ids {
-            if let Some(record) = self.fact_store.get(id).await {
-                facts.push(record);
-            }
-            if let Some(record) = self.intent_store.get(id).await {
-                intents.push(record);
-            }
-        }
-
-        let entry = ChainEntry {
-            prev_cursor: cursor.last_flushed_at,
-            records_flushed,
-            facts,
-            intents,
-        };
-        let chain_bytes =
-            postcard::to_allocvec(&entry).map_err(|e| format!("serialize chain: {e}"))?;
-
-        let chain_path = format!("flush/{}/cursor_{}.chain", cursor.partition, now_ts);
-        self.pending.borrow_mut().push(WriteOp::Write {
-            path: chain_path,
-            data: chain_bytes,
-        });
 
         self.flush_pending().await?;
 
