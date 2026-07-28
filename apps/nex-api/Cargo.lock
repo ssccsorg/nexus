@@ -861,7 +861,7 @@ dependencies = [
  "axum",
  "nex",
  "nexus-model",
- "nexus-storage-composite",
+ "nexus-storage-sim",
  "reqwest",
  "serde",
  "serde_json",
@@ -883,26 +883,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "nexus-storage-composite"
+name = "nexus-storage-sim"
 version = "0.1.0"
 dependencies = [
  "cfg-if",
- "log",
+ "futures-executor",
+ "nex",
  "nexus-model",
- "nexus-storage-petgraph",
- "petgraph",
- "postcard",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "nexus-storage-petgraph"
-version = "0.1.0"
-dependencies = [
- "cfg-if",
- "nexus-model",
- "petgraph",
  "postcard",
  "serde",
 ]

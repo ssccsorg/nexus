@@ -17,6 +17,9 @@
 
 use crate::io::FileIo;
 use crate::storage::core::FihStorage;
+// Async* traits are needed for method resolution on FihStorage in non-WASM impl blocks.
+// The wasm32 check flags them as unused (impl blocks are cfg-gated).
+#[cfg_attr(target_arch = "wasm32", allow(unused_imports))]
 use nexus_model::{
     AsyncEvictCapable, AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead,
     BlackboardError, BoardState, EvictCapable, Fact, FactCapable, FihHash, Hint, HintCapable,
