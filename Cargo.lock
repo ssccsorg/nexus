@@ -1859,6 +1859,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "nex-core"
+version = "0.1.0"
+
+[[package]]
+name = "nex-fih"
+version = "0.1.0"
+dependencies = [
+ "nex-core",
+ "petgraph",
+ "serde",
+ "sha2",
+ "tagma-core",
+]
+
+[[package]]
 name = "nex-server"
 version = "0.1.0"
 dependencies = [
@@ -1871,6 +1886,23 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "nex-storage"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "cfg-if",
+ "futures-executor",
+ "nex-core",
+ "nex-fih",
+ "postcard",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tagma-core",
+ "walkdir",
 ]
 
 [[package]]
