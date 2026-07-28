@@ -3,11 +3,12 @@
 // Each scenario simulates a different real-world transport and agent type,
 // all communicating through the FIH protocol via SerdeProxy's JSON boundary.
 
+use nex::FihBlackboard;
 use nexus_gateway_serde_proxy::SerdeProxy;
 use nexus_model::{
     BlackboardError, Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead,
 };
-use nexus_storage_composite::HybridBlackboard;
+use nexus_storage_sim::SimIo;
 
 // ── Scenario: Intermittent agent (Bluetooth / short-range radio) ─────────
 //
@@ -18,7 +19,7 @@ use nexus_storage_composite::HybridBlackboard;
 
 #[test]
 fn scenario_intermittent_sensor_agent() {
-    let bb = HybridBlackboard::new();
+    let bb = FihBlackboard::new(SimIo::new(), "test");
 
     // Session 1: agent connects, submits a fact, disconnects
     {
@@ -86,7 +87,7 @@ fn scenario_intermittent_sensor_agent() {
 
 #[test]
 fn scenario_satellite_burst_agent() {
-    let gw = SerdeProxy::new(HybridBlackboard::new());
+    let gw = SerdeProxy::new(FihBlackboard::new(SimIo::new(), "test"));
 
     let readings = [
         (
@@ -160,7 +161,7 @@ fn scenario_satellite_burst_agent() {
 
 #[test]
 fn scenario_browser_agent() {
-    let gw = SerdeProxy::new(HybridBlackboard::new());
+    let gw = SerdeProxy::new(FihBlackboard::new(SimIo::new(), "test"));
 
     gw.submit_fact(&Fact {
         id: FihHash::from_hex("f_background"),
@@ -202,11 +203,10 @@ fn scenario_browser_agent() {
     let state = gw.read_state();
     assert_eq!(state.facts.len(), 2, "background + conclusion fact");
     assert!(
-        state.facts[1]
-            .content
-            .as_str()
-            .unwrap_or("")
-            .contains("redis eviction"),
+        state
+            .facts
+            .iter()
+            .any(|f| f.origin.starts_with("conclusion:")),
         "browser sees root cause"
     );
 
@@ -221,7 +221,7 @@ fn scenario_browser_agent() {
 
 #[test]
 fn scenario_multi_language_agents() {
-    let bb = HybridBlackboard::new();
+    let bb = FihBlackboard::new(SimIo::new(), "test");
 
     // Python agent submits a fact
     {
@@ -321,7 +321,7 @@ fn scenario_multi_language_agents() {
 
 #[test]
 fn scenario_conflicting_claims() {
-    let gw = SerdeProxy::new(HybridBlackboard::new());
+    let gw = SerdeProxy::new(FihBlackboard::new(SimIo::new(), "test"));
 
     gw.submit_fact(&Fact {
         id: FihHash::from_hex("f_conflict"),

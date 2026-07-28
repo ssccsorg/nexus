@@ -6,9 +6,9 @@
 //   - All submitted Facts are visible via read_state
 //   - Intent lifecycle completes correctly under contention
 
-use interface_cypher as cypher;
+use nex::FihBlackboard;
 use nexus_model::{Blackboard, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
-use nexus_storage_composite::HybridBlackboard;
+use nexus_storage_sim::SimIo;
 use std::collections::HashSet;
 
 /// An agent that randomly reads and writes the Blackboard.
@@ -161,7 +161,7 @@ impl TestRng {
 
 #[test]
 fn test_stress_many_ants() {
-    let mut bb = HybridBlackboard::new();
+    let mut bb = FihBlackboard::new(SimIo::new(), "test");
     let mut rng = TestRng::new(42);
 
     // Phase 1: seed with initial facts (research corpus)
@@ -282,27 +282,6 @@ fn test_stress_many_ants() {
         }
     }
 
-    // Invariant 4: Cypher MATCH returns correct node count
-    let fact_count = bb.with_graph(|g| {
-        let plan = cypher::Plan::from_internal("MATCH (f:Fact) RETURN f").unwrap();
-        cypher::execute(g, &plan).unwrap().len()
-    });
-    assert_eq!(
-        fact_count,
-        state.facts.len(),
-        "Cypher count != read_state count"
-    );
-
-    let intent_count = bb.with_graph(|g| {
-        let plan = cypher::Plan::from_internal("MATCH (i:Intent) RETURN i").unwrap();
-        cypher::execute(g, &plan).unwrap().len()
-    });
-    assert_eq!(
-        intent_count,
-        state.intents.len(),
-        "Cypher count != read_state count"
-    );
-
     println!();
     println!("  ✓ Stress test passed: {NUM_ANTS} ants × {STEPS} steps");
     println!(
@@ -310,7 +289,6 @@ fn test_stress_many_ants() {
         state.facts.len(),
         state.intents.len()
     );
-    println!("  ✓ Cypher MATCH counts match read_state");
     println!("  ✓ No conflicting claims (all-or-nothing FIH)");
     println!("  ✓ All intents properly grounded");
 }

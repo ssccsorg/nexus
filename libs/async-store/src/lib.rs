@@ -1,66 +1,28 @@
-// AsyncStore* — in-memory I/O proxies for K/V/Blob/Object.
+// AsyncStore — in-memory BlobStore, MetaStore, ObjectStore implementations.
 //
-// These implement KeyValueStore, BlobStore, and ObjectStore with plain
-// HashMap storage. Thread-safe via Arc<RwLock<...>>.
+// Thread-safe via Arc<RwLock<HashMap>>. Supports hydrate_batch() for
+// pre-population from external stores.
 //
-// These are NOT test mocks. They are production components that act as
-// the working copy between the async CF bindings layer and the sync
-// CompositeColdStorage. The async bridge handles hydrate/drain externally.
+// === CQRS commit channel pattern ===
 //
-// === CQRS commit channel ===
-//
-// CQRS separation is achieved by physical instance isolation, NOT by a
-// `track_dirty` flag. `AsyncStoreSession` owns two pairs:
+// Physical instance isolation (separate HashMap instances) separates
+// general read/write buffers from commit-channel buffers. No dirty flag
+// is needed:
 //
 //   kv / blob                  — general read/write (tracked for drain)
-//   commit_kv / commit_blob    — flush output only (separate HashMap)
+//   commit_kv / commit_blob    — flush output only (separate instances)
 //
-// Consumer drain calls `kv_buf().list()` and `blob_buf().list()`, which
-// naturally exclude commit channel data because commit_kv and commit_blob
-// are completely independent HashMap instances. No flag is needed.
-//
-// This differs from the original design which had a `track_dirty` field.
-// Physical isolation is simpler, equally safe, and doesn't require every
-// drain implementation to check a flag.
+// Consumer drain calls kv_buf().list() and blob_buf().list(), which
+// naturally exclude commit channel data because commit instances are
+// independent HashMap objects.
 
 use nexus_model::{BlobStore, MetaStore, ObjectStore};
 use std::collections::HashMap;
-
-// ── AsyncStoreSessionMeta ──────────────────────────────────────────────────
-
-/// In-memory MetaStore for AsyncStoreSession.
-/// Stores cursor position and snapshot pointers.
-/// `AsyncStoreSessionMeta` is a newtype over `AsyncStoreKv` providing the `MetaStore`
-/// trait implementation. It ensures type-level separation from general Kv usage.
-#[derive(Debug, Clone)]
-pub struct AsyncStoreSessionMeta(AsyncStoreKv);
-
-impl AsyncStoreSessionMeta {
-    pub fn new() -> Self {
-        Self(AsyncStoreKv::new())
-    }
-}
-
-impl Default for AsyncStoreSessionMeta {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl MetaStore for AsyncStoreSessionMeta {
-    fn get(&self, key: &str) -> Result<Option<String>, String> {
-        self.0.get(key)
-    }
-    fn set(&self, key: &str, value: &str) -> Result<(), String> {
-        self.0.set(key, value)
-    }
-}
-
 use std::sync::{Arc, RwLock};
 
 // ── AsyncStoreKv ──────────────────────────────────────────────────────────
 
-/// In-memory key-value store. Thread-safe via `Arc<RwLock<...>>`.
+/// In-memory key-value store backed by `Arc<RwLock<HashMap>>`.
 ///
 /// Pure HashMap storage. Physical instance isolation provides CQRS separation:
 /// general buffers and commit-channel buffers are independent HashMap instances.
@@ -106,7 +68,7 @@ impl MetaStore for AsyncStoreKv {
 
 // ── AsyncStoreBlob ────────────────────────────────────────────────────────
 
-/// In-memory blob store. Thread-safe via `Arc<RwLock<...>>`.
+/// In-memory blob store backed by `Arc<RwLock<HashMap>>`.
 ///
 /// Pure HashMap storage. Physical instance isolation provides CQRS separation.
 #[derive(Debug, Clone)]
@@ -170,7 +132,7 @@ impl BlobStore for AsyncStoreBlob {
 
 /// In-memory CAS store. Each key is an independent CAS namespace.
 ///
-/// ObjectStore does not participate in CQRS commit channel separation —
+/// ObjectStore does not participate in CQRS commit channel separation:
 /// CAS operations are inherently isolated and never bulk-drained.
 #[derive(Debug, Clone)]
 pub struct AsyncStoreObject {

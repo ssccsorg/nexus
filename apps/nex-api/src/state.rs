@@ -1,6 +1,7 @@
 // Shared application state for the gateway API server.
 
-use nexus_storage_composite::HybridBlackboard;
+use nex::FihBlackboard;
+use nexus_storage_sim::SimIo;
 use nexus_model::Blackboard;
 use std::sync::{Arc, Mutex};
 
@@ -14,7 +15,7 @@ impl AppState {
     /// Create in-memory state (no persistence).
     pub fn in_memory() -> Self {
         Self {
-            blackboard: Arc::new(Mutex::new(Box::new(HybridBlackboard::new()))),
+            blackboard: Arc::new(Mutex::new(Box::new(FihBlackboard::new(SimIo::new(), "test")))),
         }
     }
 }

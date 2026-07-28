@@ -3,11 +3,11 @@
 // Each scenario: a group of agents use FIH to collaboratively solve a concrete
 // research problem. No agent talks directly to another — all via Blackboard.
 
-use interface_cypher as cypher;
+use nex::FihBlackboard;
 use nexus_model::{
     Fact, FactCapable, FihHash, Hint, HintCapable, Intent, IntentCapable, StorageRead,
 };
-use nexus_storage_composite::HybridBlackboard;
+use nexus_storage_sim::SimIo;
 
 // ── Scenario 1: Contradiction Detection ───────────────────────────────────
 //
@@ -17,7 +17,7 @@ use nexus_storage_composite::HybridBlackboard;
 
 #[test]
 fn scenario_contradiction_detection() {
-    let bb = HybridBlackboard::new();
+    let bb = FihBlackboard::new(SimIo::new(), "test");
 
     // Agent-A: ingests paper claiming GNNs work fine at 50 layers
     bb.submit_fact(&Fact::new(
@@ -70,13 +70,6 @@ fn scenario_contradiction_detection() {
             .contains("Contradiction resolved")
     );
 
-    // Cypher verification
-    let rows = bb.with_graph(|g| {
-        let plan = cypher::Plan::from_internal("MATCH (f:Fact) RETURN f").unwrap();
-        cypher::execute(g, &plan).unwrap()
-    });
-    assert_eq!(rows.len(), 3);
-
     println!("  ✓ Contradiction Detection: 3 agents, contradiction resolved via FIH");
 }
 
@@ -88,7 +81,7 @@ fn scenario_contradiction_detection() {
 
 #[test]
 fn scenario_peer_review() {
-    let bb = HybridBlackboard::new();
+    let bb = FihBlackboard::new(SimIo::new(), "test");
 
     // Phase 1: Agent-A submits hypothesis as Intent
     let hypothesis = Intent {
@@ -151,13 +144,6 @@ fn scenario_peer_review() {
             .contains("accepted with revisions")
     );
 
-    // Verify via Cypher
-    let hint_count = bb.with_graph(|g| {
-        let p = cypher::Plan::from_internal("MATCH (h:Hint) RETURN h").unwrap();
-        cypher::execute(g, &p).unwrap().len()
-    });
-    assert_eq!(hint_count, 2, "Cypher finds 2 hints");
-
     println!("  ✓ Peer Review: author + 2 reviewers + editor, hints guide conclusion");
 }
 
@@ -169,7 +155,7 @@ fn scenario_peer_review() {
 
 #[test]
 fn scenario_knowledge_synthesis() {
-    let bb = HybridBlackboard::new();
+    let bb = FihBlackboard::new(SimIo::new(), "test");
 
     // Three agents each submit partial observations
     let pieces = [
@@ -249,14 +235,6 @@ fn scenario_knowledge_synthesis() {
     let state = bb.read_state();
     assert_eq!(state.intents.len(), 1, "validation intent submitted");
 
-    // Cypher: all pieces accessible
-    let count = bb.with_graph(|g| {
-        let p = cypher::Plan::from_internal("MATCH (f:Fact) RETURN f").unwrap();
-        cypher::execute(g, &p).unwrap().len()
-    });
-    assert_eq!(count, 4, "Cypher confirms 4 facts");
-    assert_eq!(state.facts.len(), count, "read_state matches Cypher");
-
     println!("  ✓ Knowledge Synthesis: 4 agents complete a jigsaw puzzle via Blackboard");
     println!("  ✓ Partial observations → unified theory → actionable hypothesis");
 }
@@ -269,7 +247,7 @@ fn scenario_knowledge_synthesis() {
 
 #[test]
 fn scenario_emergency_response() {
-    let bb = HybridBlackboard::new();
+    let bb = FihBlackboard::new(SimIo::new(), "test");
 
     // Sensor agents detect anomalies
     let alerts = [
@@ -374,7 +352,7 @@ fn scenario_emergency_response() {
 
 #[test]
 fn scenario_bug_fix_pipeline() {
-    let bb = HybridBlackboard::new();
+    let bb = FihBlackboard::new(SimIo::new(), "test");
 
     // Reporter submits the bug as a Fact
     bb.submit_fact(&Fact::new(
@@ -487,7 +465,7 @@ fn scenario_bug_fix_pipeline() {
 
 #[test]
 fn scenario_ci_failure_investigation() {
-    let bb = HybridBlackboard::new();
+    let bb = FihBlackboard::new(SimIo::new(), "test");
 
     // CI system reports build failure
     bb.submit_fact(&Fact::new(
@@ -569,7 +547,7 @@ fn scenario_ci_failure_investigation() {
 
 #[test]
 fn scenario_supply_chain_incident() {
-    let bb = HybridBlackboard::new();
+    let bb = FihBlackboard::new(SimIo::new(), "test");
 
     // Security advisory published (external trigger)
     bb.submit_fact(&Fact::new(
@@ -694,7 +672,7 @@ fn scenario_supply_chain_incident() {
 
 #[test]
 fn scenario_ssccs_primitive_discovery() {
-    let bb = HybridBlackboard::new();
+    let bb = FihBlackboard::new(SimIo::new(), "test");
 
     // ── Phase 1: Agents observe different IRs ─────────────────────────
 

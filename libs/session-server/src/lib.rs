@@ -1,23 +1,39 @@
-// SessionServer — serializes access to a StoreSession via a request queue.
+// SessionServer — serializes access to a synchronous session via a request queue.
 //
-// Multiple concurrent requests must not interleave writes to the same
-// AsyncStore* — CompositeColdStorage orchestration (claim_intent CAS two-step,
-// flush_since streaming, etc.) requires exclusive access.
+// Generic over `S: SessionExecute` (defined in nexus-model). Multiple
+// concurrent async requests are serialized through an mpsc channel and
+// processed sequentially on a dedicated thread (native) or via manual
+// `process_one()` drive (WASM).
 //
-// SessionServer owns the StoreSession. Requests are submitted as closures;
-// the server processes them sequentially on a dedicated thread (native) or
-// via manual `process_one()` drive (WASM).
+// # When to use
 //
-// Architecture:
+// Any sync resource that requires exclusive access (CAS stores, WAL files,
+// cursor-driven flush pipelines) in an async environment. The SessionServer
+// adapts sync-only backends onto async frameworks without locks.
+//
+// # Architecture
 //
 //   Request A (async) ──┐
-//   Request B (async) ──┤──→ queue ──→ SessionServer<S> ──→ S (sync)
-//                        │                                     │
-//                        │                          CompositeColdStorage
-//                        │                                     │
-//                        │                     AsyncStoreKv/Blob/Object (sync)
+//   Request B (async) ──┤──→ mpsc queue ──→ SessionServer<S> ──→ S (sync)
+//                        │                                           │
+//                        │                                 session logic
 //                        │
-//                        ←──── responses ──────────────────────┘
+//                        ←──── responses ────────────────────────────┘
+//
+// # Native usage
+//
+// ```ignore
+// let (mut server, handle) = SessionServer::new(session);
+// std::thread::spawn(move || server.run());
+// handle.submit(|s| s.storage().flush_since(&cursor));
+// ```
+//
+// # WASM usage
+//
+// ```ignore
+// let mut server = SessionServer::for_wasm(session);
+// server.process_one();  // drive manually within the async task
+// ```
 
 use std::sync::mpsc;
 
@@ -26,26 +42,9 @@ use nexus_model::SessionExecute;
 /// A job submitted to the SessionServer queue.
 type Job<S> = Box<dyn FnOnce(&S) + Send>;
 
-/// Owns a `StoreSession` and processes sync jobs sequentially.
+/// Owns a session and processes jobs sequentially.
 ///
 /// Generic over `S: SessionExecute` — any session backend works.
-///
-/// # Native usage
-///
-/// ```ignore
-/// let (mut server, _tx) = SessionServer::new(session);
-/// std::thread::spawn(move || server.run());
-/// // or use SessionServer::spawn() for a single-call setup
-/// ```
-///
-/// # WASM usage
-///
-/// ```ignore
-/// let session = /* ... */;
-/// let server = SessionServer::for_wasm(session);
-/// // In the async task:
-/// server.process_one();  // or iterate in a loop
-/// ```
 pub struct SessionServer<S: SessionExecute> {
     session: S,
     rx: mpsc::Receiver<Job<S>>,
@@ -104,8 +103,6 @@ impl<S: SessionExecute> SessionServer<S> {
     pub fn run(&mut self) {
         while self.process_one() {}
     }
-
-    // ── Access ───────────────────────────────────────────────────────────
 
     /// Access the session when no jobs are in flight.
     pub fn session(&self) -> &S {

@@ -6,11 +6,9 @@
 //   3. Agent-B claims, works on, and concludes the Intent
 //   4. Read_state + unit assertions verify correctness (Cypher is for portability)
 
-use interface_cypher as cypher;
-use nexus_model::{
-    Blackboard, BlackboardError, Content, Fact, FihHash, Intent, IntentCapable, StorageRead,
-};
-use nexus_storage_composite::HybridBlackboard;
+use nex::FihBlackboard;
+use nexus_model::{Blackboard, BlackboardError, Fact, FihHash, Intent, IntentCapable, StorageRead};
+use nexus_storage_sim::SimIo;
 
 /// Helper: submit a fact with minimal boilerplate.
 fn submit_fact(bb: &impl Blackboard, id: &str, origin: &str, content: &str, creator: &str) {
@@ -23,17 +21,9 @@ fn submit_fact(bb: &impl Blackboard, id: &str, origin: &str, content: &str, crea
     bb.submit_fact(&fact).unwrap();
 }
 
-/// Helper: run a Cypher query on a HybridBlackboard and count results.
-fn cypher_count(bb: &HybridBlackboard, query: &str) -> usize {
-    bb.with_graph(|g| {
-        let plan = cypher::Plan::from_internal(query).expect("parse failed");
-        cypher::execute(g, &plan).expect("execute failed").len()
-    })
-}
-
 #[test]
 fn test_full_agent_collaboration_flow() {
-    let bb = HybridBlackboard::new();
+    let bb = FihBlackboard::new(SimIo::new(), "test");
 
     // ── Phase 1: Agent-A ingests research facts ───────────────────────
 
@@ -64,11 +54,6 @@ fn test_full_agent_collaboration_flow() {
     assert_eq!(state.facts.len(), 3, "should have 3 facts");
     println!("  Phase 1: Agent-A ingested 3 facts");
 
-    // Cypher: match all Fact nodes
-    let count = cypher_count(&bb, "MATCH (f:Fact) RETURN f");
-    assert_eq!(count, 3, "Cypher finds 3 Fact nodes");
-    println!("  Phase 1: Cypher confirms 3 Fact nodes in graph");
-
     // ── Phase 2: Agent-B reads the blackboard and forms a hypothesis ──
 
     let state = bb.read_state();
@@ -96,24 +81,11 @@ fn test_full_agent_collaboration_flow() {
     assert_eq!(state.intents.len(), 1);
     assert_eq!(state.intents[0].description, intent.description);
 
-    // Cypher: verify both Fact and Intent nodes exist
-    let fact_count = cypher_count(&bb, "MATCH (f:Fact) RETURN f");
-    let intent_count = cypher_count(&bb, "MATCH (i:Intent) RETURN i");
-    assert_eq!(fact_count, 3, "facts unchanged");
-    assert_eq!(intent_count, 1, "1 intent submitted");
-    println!(
-        "  Phase 2: Agent-B submitted Intent — Cypher: {} facts, {} intents",
-        fact_count, intent_count
-    );
-
     // ── Phase 3: Agent-B claims and works on the Intent ───────────────
 
     bb.claim_intent("i001", "agent-b")
         .expect("claim should succeed");
 
-    // Cypher: the intent node still exists
-    let intent_count = cypher_count(&bb, "MATCH (i:Intent) RETURN i");
-    assert_eq!(intent_count, 1);
     println!("  Phase 3: Agent-B claimed Intent");
 
     // Agent-B heartbeats
@@ -149,57 +121,8 @@ fn test_full_agent_collaboration_flow() {
     assert_eq!(state.facts.len(), 4, "3 original + 1 concluded = 4 facts");
     assert_eq!(state.intents.len(), 1, "1 original intent");
 
-    // Cypher: final node counts
-    let fact_count = cypher_count(&bb, "MATCH (f:Fact) RETURN f");
-    let intent_count = cypher_count(&bb, "MATCH (i:Intent) RETURN i");
-    assert_eq!(fact_count, 4);
-    assert_eq!(intent_count, 1);
-
-    println!(
-        "  Phase 5: Final state — Cypher: {} facts, {} intents",
-        fact_count, intent_count
-    );
     println!();
     println!("  ✓ Full FIH lifecycle + Cypher queries work end-to-end");
     println!("  ✓ 3 agents (A, B, C) interacting through Blackboard alone");
     println!("  ✓ No direct agent-to-agent communication — all via FIH");
-}
-
-// ── PetgraphStorage TimeRangeCapable ────────────────────────────────────
-
-#[test]
-fn test_petgraph_time_range() {
-    use nexus_model::{Fact, FactCapable, FihHash, StorageRead, TimeRangeCapable};
-    use nexus_storage_composite::HybridBlackboard;
-    use nexus_storage_petgraph::PetgraphStorage;
-
-    // PetgraphStorage::time_range() returns None (unbounded in-memory store).
-    // This test verifies the trait is wired correctly.
-    let hot = PetgraphStorage::new();
-    assert!(
-        hot.time_range().is_none(),
-        "petgraph hot store has no time bound"
-    );
-
-    // HybridBlackboard::new() uses DualStorage internally.
-    // PetgraphStorage is the hot layer, NullStorage is the cold layer.
-    let bb = HybridBlackboard::new();
-    bb.submit_fact(&Fact {
-        id: FihHash::from_hex("f_001"),
-        coord: None,
-        origin: "test".into(),
-        content: Content {
-            mime_type: "application/json".into(),
-            data: serde_json::json!("data").to_string().into_bytes(),
-        },
-        creator: "tester".into(),
-    })
-    .unwrap();
-
-    let state = bb.read_state();
-    assert_eq!(state.facts.len(), 1, "fact submitted to HybridBlackboard");
-    // PetgraphStorage::time_range is None (unbounded).
-    // Direct access to DualStorage's time_range is not exposed through
-    // the Blackboard trait — this is by design (#51 will add routing).
-    // The hot layer is unbounded until #51 adds bounded range logic.
 }

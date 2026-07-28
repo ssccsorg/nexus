@@ -13,6 +13,7 @@
 //   3. Track knowledge evolution when formal §2 revises manifesto claims
 //   4. Support multi-agent review across foundational layers
 
+use nex::FihBlackboard;
 use nex::process::scheduler::Scheduler;
 use nex::process::tasks::contradiction_detector::ContradictionDetector;
 use nex::process::tasks::gap_detector::GapDetector;
@@ -22,7 +23,7 @@ use nexus_model::{
     Blackboard, BoardState, EvictCapable, Fact, FactCapable, FihHash, Intent, IntentCapable,
     StorageRead,
 };
-use nexus_storage_composite::HybridBlackboard;
+use nexus_storage_sim::SimIo;
 
 fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) -> Fact {
     Fact {
@@ -258,7 +259,7 @@ fn seed_foundational(bb: &impl Blackboard) -> Vec<String> {
 
 #[test]
 fn scenario_foundational_consistency_audit() {
-    let bb = HybridBlackboard::new();
+    let bb = FihBlackboard::new(SimIo::new(), "test");
     let baseline = seed_foundational(&bb);
 
     let mut sched = Scheduler::new(bb);
@@ -326,7 +327,7 @@ fn scenario_foundational_consistency_audit() {
 
 #[test]
 fn scenario_formal_revision_of_philosophy() {
-    let bb = HybridBlackboard::new();
+    let bb = FihBlackboard::new(SimIo::new(), "test");
 
     // Phase 1: Only manifesto + epistemology (philosophical layer)
     let phil_facts = [
@@ -494,7 +495,7 @@ fn scenario_formal_revision_of_philosophy() {
 
 #[test]
 fn scenario_theory_practice_gap() {
-    let bb = HybridBlackboard::new();
+    let bb = FihBlackboard::new(SimIo::new(), "test");
 
     // Theory layer: manifesto + epistemology
     let theory = [
@@ -640,7 +641,7 @@ fn scenario_theory_practice_gap() {
 
 #[test]
 fn scenario_epistemology_as_bridge() {
-    let bb = HybridBlackboard::new();
+    let bb = FihBlackboard::new(SimIo::new(), "test");
 
     // Manifesto (what IS) + Whitepaper §2 (formal definitions)
     let claims = [
