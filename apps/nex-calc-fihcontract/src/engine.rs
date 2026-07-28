@@ -25,7 +25,7 @@ use nex::storage::core::store::FihStorage;
 use nex::contract::fih::FihContract;
 use nex::storage::core::EntityStore;
 use nex::io::FileIo;
-use nex_fih::{Content, FihHash};
+use nex_fih::{Content, CoordId};
 use nexus_storage_sim::SimIo;
 
 use crate::hint::Constraint;
@@ -69,11 +69,11 @@ impl fmt::Display for CalcError {
 
 #[derive(Debug, Clone)]
 pub struct ResolvedIntent {
-    pub intent_id: FihHash,
+    pub intent_id: CoordId,
     pub op: OpType,
     pub lhs: i64,
     pub rhs: i64,
-    pub result_id: FihHash,
+    pub result_id: CoordId,
     pub result_value: i64,
 }
 
@@ -100,7 +100,7 @@ impl CalcEngine {
     // ── Fact operations ───────────────────────────────────────────
 
     /// Store a number as a Fact. Content-addressed via SHA256 of the value.
-    pub async fn put(&self, value: i64) -> FihHash {
+    pub async fn put(&self, value: i64) -> CoordId {
         let id = make_number_fact_id(value);
         let id_str = id.to_string();
         if self.storage.fact_store.contains_key(&id_str).await {
@@ -135,17 +135,17 @@ impl CalcEngine {
     }
 
     /// Read a number from a Fact.
-    pub async fn get(&self, fact_id: &FihHash) -> Option<i64> {
+    pub async fn get(&self, fact_id: &CoordId) -> Option<i64> {
         let record = self.storage.fact_store.get(&fact_id.to_string()).await?;
         decode_blob(&self.storage.io, &record.blob_hash).await
     }
 
     /// Look up a Fact by short hex prefix.
-    pub async fn find_fact(&self, prefix: &str) -> Option<FihHash> {
+    pub async fn find_fact(&self, prefix: &str) -> Option<CoordId> {
         let prefix_lower = prefix.to_lowercase();
         for r in self.storage.fact_store.values().await.iter() {
             if r.id.to_lowercase().starts_with(&prefix_lower) {
-                return Some(FihHash::from_hex(&r.id));
+                return Some(CoordId::from_string(&r.id));
             }
         }
         None
@@ -157,9 +157,9 @@ impl CalcEngine {
     pub async fn op(
         &self,
         op: OpType,
-        lhs_id: &FihHash,
-        rhs_id: &FihHash,
-    ) -> Result<FihHash, CalcError> {
+        lhs_id: &CoordId,
+        rhs_id: &CoordId,
+    ) -> Result<CoordId, CalcError> {
         if !self
             .storage
             .fact_store
@@ -204,7 +204,7 @@ impl CalcEngine {
     ///               ├── Intent(op) ──→ Fact(result)
     ///   Fact(rhs) ─┘        ↑
     ///                   Hint gates
-    pub async fn resolve(&self, intent_id: &FihHash) -> Result<ResolvedIntent, CalcError> {
+    pub async fn resolve(&self, intent_id: &CoordId) -> Result<ResolvedIntent, CalcError> {
         let id_str = intent_id.to_string();
         let record = self
             .storage
@@ -319,7 +319,7 @@ impl CalcEngine {
     // ── Hint operations ───────────────────────────────────────────
 
     /// Add a constraint Hint.
-    pub async fn constrain(&self, constraint: Constraint) -> FihHash {
+    pub async fn constrain(&self, constraint: Constraint) -> CoordId {
         let id = make_hint_id(&constraint);
         let id_str = id.to_string();
         if !self.storage.hint_store.contains_key(&id_str).await {
@@ -344,17 +344,17 @@ impl CalcEngine {
 
     // ── Queries ───────────────────────────────────────────────────
 
-    pub async fn list_facts(&self) -> Vec<(FihHash, i64)> {
+    pub async fn list_facts(&self) -> Vec<(CoordId, i64)> {
         let mut out = Vec::new();
         for r in self.storage.fact_store.values().await.iter() {
             if let Some(v) = decode_blob(&self.storage.io, &r.blob_hash).await {
-                out.push((FihHash::from_hex(&r.id), v));
+                out.push((CoordId::from_string(&r.id), v));
             }
         }
         out
     }
 
-    pub async fn list_intents(&self) -> Vec<(FihHash, bool)> {
+    pub async fn list_intents(&self) -> Vec<(CoordId, bool)> {
         self.storage
             .intent_store
             .values()
@@ -362,20 +362,20 @@ impl CalcEngine {
             .iter()
             .map(|r| {
                 (
-                    FihHash::from_hex(&r.id),
+                    CoordId::from_string(&r.id),
                     matches!(r.status, IntentStatus::Concluded { .. }),
                 )
             })
             .collect()
     }
 
-    pub async fn list_hints(&self) -> Vec<(FihHash, String)> {
+    pub async fn list_hints(&self) -> Vec<(CoordId, String)> {
         self.storage
             .hint_store
             .values()
             .await
             .iter()
-            .map(|r| (FihHash::from_hex(&r.id), r.content.clone()))
+            .map(|r| (CoordId::from_string(&r.id), r.content.clone()))
             .collect()
     }
 
@@ -471,18 +471,20 @@ fn nanos() -> u64 {
         .as_nanos() as u64
 }
 
-fn make_number_fact_id(value: i64) -> FihHash {
+fn make_number_fact_id(value: i64) -> CoordId {
     CoordId::from_string(&format!("{} {}", &value.to_string(), "nex-calc-number"))
 }
 
-fn make_intent_id(op: OpType, lhs_id: &FihHash, rhs_id: &FihHash) -> FihHash {
-    FihHash::new(
-        &[&lhs_id.to_string(), &rhs_id.to_string(), op.symbol()],
-        "nex-calc-intent",
-    )
+fn make_intent_id(op: OpType, lhs_id: &CoordId, rhs_id: &CoordId) -> CoordId {
+    CoordId::from_string(&format!(
+        "{}{}{}nex-calc-intent",
+        lhs_id.to_string(),
+        rhs_id.to_string(),
+        op.symbol()
+    ))
 }
 
-fn make_hint_id(constraint: &Constraint) -> FihHash {
+fn make_hint_id(constraint: &Constraint) -> CoordId {
     CoordId::from_string(&format!("{} {}", &constraint.to_string(), "nex-calc-hint"))
 }
 
