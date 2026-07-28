@@ -27,12 +27,12 @@
 ///
 /// Cold failure is non-fatal, retry next iteration.
 pub fn try_evict_flush(
-    backend: &mut (impl nexus_model::EvictCapable + nexus_model::FlushCapable),
-    cursor: &nexus_model::FlushCursor,
+    backend: &mut (impl nex_fih::EvictCapable + nex_fih::FlushCapable),
+    cursor: &nex_fih::FlushCursor,
     threshold: usize,
     cutoff_secs: u64,
-) -> Result<(u64, nexus_model::FlushCursor), String> {
-    let size = nexus_model::EvictCapable::approximate_size(&*backend);
+) -> Result<(u64, nex_fih::FlushCursor), String> {
+    let size = nex_fih::EvictCapable::approximate_size(&*backend);
     if size < threshold {
         return Ok((0, cursor.clone()));
     }

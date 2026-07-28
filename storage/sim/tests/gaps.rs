@@ -3,7 +3,7 @@
 
 mod common;
 
-use nexus_model::{
+use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, FihHash, Hint,
 };
 use nexus_storage_sim::{FihStorage, SimIo};

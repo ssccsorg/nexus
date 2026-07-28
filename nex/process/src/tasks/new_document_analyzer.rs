@@ -14,7 +14,7 @@
 
 use super::common::{position_of, topic_of};
 use crate::ContentJsonExt;
-use nexus_model::{BoardState, Content, DetectionCapable, DetectionOutput, Fact, FihHash};
+use nex_fih::{BoardState, Content, DetectionCapable, DetectionOutput, Fact, FihHash};
 use std::collections::{HashMap, HashSet};
 
 pub struct NewDocumentAnalyzer {

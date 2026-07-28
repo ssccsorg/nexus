@@ -6,6 +6,7 @@ license = "Apache-2.0"
 
 [dependencies]
 nex = { path = "../../nex/process" }
-nexus-model = { path = "../../model" }
+nex-core = { path = "../../nex/core" }
+nex-fih = { path = "../../nex/fih" }
 nexus-storage-sim = { path = "../../storage/sim" }
 serde_json = "1"

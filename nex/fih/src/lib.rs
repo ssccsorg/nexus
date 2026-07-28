@@ -13,6 +13,7 @@
 //   detection   — DetectionCapable trait family
 //   error       — BlackboardError
 //   fih         — Fact, Intent, Hint, Content, FihHash, BoardState
+//   interner    — Deprecated string interner (moved from nexus-model)
 
 pub mod blackboard;
 pub mod contract;
@@ -21,6 +22,7 @@ pub mod detection;
 pub mod error;
 pub mod fih;
 pub mod helper;
+pub mod interner;
 pub mod io;
 pub mod semantic;
 pub mod storage;

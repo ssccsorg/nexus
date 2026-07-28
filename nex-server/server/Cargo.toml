@@ -7,7 +7,8 @@ license.workspace = true
 [dependencies]
 nex = { path = "../../nex/process" }
 nex-client = { path = "../client" }
-nexus-model = { path = "../../model" }
+nex-core = { path = "../../nex/core" }
+nex-fih = { path = "../../nex/fih" }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

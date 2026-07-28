@@ -8,7 +8,8 @@ license = "Apache-2.0"
 
 [dependencies]
 nex = { path = "../../nex/process" }
-nexus-model = { path = "../../model" }
+nex-core = { path = "../../nex/core" }
+nex-fih = { path = "../../nex/fih" }
 nexus-storage-sim = { path = "../../storage/sim" }
 axum = "0.8"
 serde = { version = "1", features = ["derive"] }
@@ -20,6 +21,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
-nexus-model = { path = "../../model" }
+nex-core = { path = "../../nex/core" }
+nex-fih = { path = "../../nex/fih" }
 nex = { path = "../../nex/process" }
 reqwest = { version = "0.12", features = ["json"] }

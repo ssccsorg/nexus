@@ -1,6 +1,6 @@
 use nex::helper::ContentJsonExt;
 use nex::process::tasks::state_change_detector::StateChangeDetector;
-use nexus_model::{BoardState, Content, DetectionCapable, Fact, FihHash};
+use nex_fih::{BoardState, Content, DetectionCapable, Fact, FihHash};
 
 fn make_fact(id: &str, origin: &str) -> Fact {
     Fact::new(

@@ -16,8 +16,8 @@ use std::collections::HashMap;
 
 use crate::capable::CypherCapable;
 use crate::plan::*;
-use nexus_model::Content;
-use nexus_model::storage::GraphRead;
+use nex_fih::Content;
+use nex_fih::storage::GraphRead;
 
 /// A single query result row: map of field names to content values.
 pub type Record = HashMap<String, Content>;
@@ -490,7 +490,7 @@ fn value_as_f64(v: &Content) -> Option<f64> {
 }
 
 fn find_bound_node(
-    graph: &petgraph::Graph<nexus_model::storage::NodeWeight, nexus_model::storage::EdgeWeight>,
+    graph: &petgraph::Graph<nex_fih::storage::NodeWeight, nex_fih::storage::EdgeWeight>,
     row: &HashMap<String, Content>,
 ) -> Option<NodeIndex> {
     for val in row.values() {
@@ -507,7 +507,7 @@ fn find_bound_node(
 }
 
 fn find_edge(
-    graph: &petgraph::Graph<nexus_model::storage::NodeWeight, nexus_model::storage::EdgeWeight>,
+    graph: &petgraph::Graph<nex_fih::storage::NodeWeight, nex_fih::storage::EdgeWeight>,
     from: NodeIndex,
     to: NodeIndex,
 ) -> Option<petgraph::graph::EdgeIndex> {
@@ -525,7 +525,7 @@ fn find_edge(
 }
 
 fn find_edge_filtered(
-    graph: &petgraph::Graph<nexus_model::storage::NodeWeight, nexus_model::storage::EdgeWeight>,
+    graph: &petgraph::Graph<nex_fih::storage::NodeWeight, nex_fih::storage::EdgeWeight>,
     from: NodeIndex,
     to: NodeIndex,
     types: &[&str],
@@ -580,7 +580,7 @@ fn rows_equal(a: &HashMap<String, Content>, b: &HashMap<String, Content>) -> boo
 }
 
 fn find_nodes_by_label_str(
-    graph: &petgraph::Graph<nexus_model::storage::NodeWeight, nexus_model::storage::EdgeWeight>,
+    graph: &petgraph::Graph<nex_fih::storage::NodeWeight, nex_fih::storage::EdgeWeight>,
     label: Option<&str>,
 ) -> Vec<NodeIndex> {
     let mut results = Vec::new();

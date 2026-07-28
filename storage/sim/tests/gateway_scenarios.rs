@@ -10,7 +10,7 @@
 // interface directly on FihStorage.
 
 use futures_executor::block_on;
-use nexus_model::{
+use nex_fih::{
     AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead, Content, Fact, FihHash, Intent,
 };
 use nexus_storage_sim::FihStorage;

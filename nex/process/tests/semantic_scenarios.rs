@@ -763,7 +763,7 @@ fn scenario_fihcoord_integration() {
 
         // Record facts with different content
         // Fact 1: vector [1,0,0] + text "rust compiler verification"
-        let f1_id = nexus_model::FihHash::from_hex("f_sem_001");
+        let f1_id = nex_fih::FihHash::from_hex("f_sem_001");
         coord.record_fact(&f1_id.0, "origin-a", "creator-a", 1000);
         let idx1 = coord.intern(&f1_id.0);
         coord
@@ -778,7 +778,7 @@ fn scenario_fihcoord_integration() {
             .unwrap();
 
         // Fact 2: vector [0,1,0] + text "energy memory constraint"
-        let f2_id = nexus_model::FihHash::from_hex("f_sem_002");
+        let f2_id = nex_fih::FihHash::from_hex("f_sem_002");
         coord.record_fact(&f2_id.0, "origin-a", "creator-b", 2000);
         let idx2 = coord.intern(&f2_id.0);
         coord
@@ -793,7 +793,7 @@ fn scenario_fihcoord_integration() {
             .unwrap();
 
         // Fact 3: vector [0.9,0.1,0] + text "rust memory safety"
-        let f3_id = nexus_model::FihHash::from_hex("f_sem_003");
+        let f3_id = nex_fih::FihHash::from_hex("f_sem_003");
         coord.record_fact(&f3_id.0, "origin-b", "creator-a", 3000);
         let idx3 = coord.intern(&f3_id.0);
         coord
@@ -861,7 +861,7 @@ fn scenario_fihcoord_single_store() {
         let coord = FihCoord::new();
         coord.add_semantic_store(Box::new(MockSemanticStore::new()));
 
-        let f_id = nexus_model::FihHash::from_hex("f_inline_001");
+        let f_id = nex_fih::FihHash::from_hex("f_inline_001");
         coord.record_fact(&f_id.0, "test", "tester", 100);
         let idx = coord.intern(&f_id.0);
         coord
@@ -897,11 +897,11 @@ fn scenario_fihstorage_e2e_auto_index() {
     futures_executor::block_on(async {
         use nex::FihStorage;
         use nex::io::FsIo;
-        use nexus_model::{AsyncFactCapable, AsyncStorageRead, Content, Fact, FihHash};
+        use nex_fih::{AsyncFactCapable, AsyncStorageRead, Content, Fact, FihHash};
 
         let tmp = tempfile::TempDir::new().unwrap();
         let io = FsIo::new(tmp.path()).unwrap();
-        let storage = FihStorage::with_clock(io, "test-proj", Box::new(nexus_model::SystemClock));
+        let storage = FihStorage::with_clock(io, "test-proj", Box::new(nex_core::SystemClock));
 
         // Configure MockBm25Store for text-based semantic search
         storage.register_semantic_store(Box::new(MockBm25Store::new()));

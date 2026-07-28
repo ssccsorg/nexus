@@ -7,8 +7,8 @@
 // directly.
 
 use nex::FihBlackboard;
+use nex_fih::{Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
 use nexus_gateway_serde_proxy::SerdeProxy;
-use nexus_model::{Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
 use nexus_storage_sim::SimIo;
 
 /// Contradiction Detection — via SerdeProxy (JSON transport boundary).

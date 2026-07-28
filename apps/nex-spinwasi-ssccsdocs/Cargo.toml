@@ -11,7 +11,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 nex = { path = "../../nex/process" }
-nexus-model = { path = "../../model" }
+nex-core = { path = "../../nex/core" }
+nex-fih = { path = "../../nex/fih" }
 spin-sdk = "5.2.0"
 http = "1"
 serde = { version = "1", features = ["derive"] }

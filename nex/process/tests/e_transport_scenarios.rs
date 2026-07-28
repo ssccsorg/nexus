@@ -4,10 +4,10 @@
 // all communicating through the FIH protocol via SerdeProxy's JSON boundary.
 
 use nex::FihBlackboard;
-use nexus_gateway_serde_proxy::SerdeProxy;
-use nexus_model::{
+use nex_fih::{
     BlackboardError, Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead,
 };
+use nexus_gateway_serde_proxy::SerdeProxy;
 use nexus_storage_sim::SimIo;
 
 // ── Scenario: Intermittent agent (Bluetooth / short-range radio) ─────────

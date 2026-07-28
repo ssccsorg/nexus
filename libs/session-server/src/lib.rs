@@ -37,7 +37,7 @@
 
 use std::sync::mpsc;
 
-use nexus_model::SessionExecute;
+use nex_fih::SessionExecute;
 
 /// A job submitted to the SessionServer queue.
 type Job<S> = Box<dyn FnOnce(&S) + Send>;

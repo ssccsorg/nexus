@@ -10,7 +10,7 @@
 mod common;
 
 use futures_executor::block_on;
-use nexus_model::{
+use nex_fih::{
     AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable, AsyncHintCapable,
     AsyncIntentCapable, AsyncStorageRead, Content, Fact, FihHash, FlushCursor, FlushResult, Hint,
     Intent, StateFilter,

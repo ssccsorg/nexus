@@ -16,7 +16,7 @@
 // naturally exclude commit channel data because commit instances are
 // independent HashMap objects.
 
-use nexus_model::{BlobStore, MetaStore, ObjectStore};
+use nex_core::{BlobStore, MetaStore, ObjectStore};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 

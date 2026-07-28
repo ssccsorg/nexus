@@ -6,7 +6,7 @@
 // HybridBlackboard directly.
 
 use nex::FihBlackboard;
-use nexus_model::{Blackboard, BlackboardError, Content, Fact, FihHash, Intent};
+use nex_fih::{Blackboard, BlackboardError, Content, Fact, FihHash, Intent};
 use nexus_storage_sim::SimIo;
 use std::sync::{Arc, Mutex};
 use std::thread;

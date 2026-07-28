@@ -25,7 +25,7 @@ use nex::storage::core::store::FihStorage;
 use nex::contract::fih::FihContract;
 use nex::storage::core::EntityStore;
 use nex::io::FileIo;
-use nexus_model::{Content, FihHash};
+use nex_fih::{Content, FihHash};
 use nexus_storage_sim::SimIo;
 
 use crate::hint::Constraint;
@@ -121,7 +121,7 @@ impl CalcEngine {
         write_blob_meta(&self.storage.io, &blob_hash, NUMBER_MIME, data.len()).await;
 
         let record = FactRecord::from_model(
-            &nexus_model::Fact::new(
+            &nex_fih::Fact::new(
                 id,
                 "nex-calc".into(),
                 Content::from(""),
@@ -275,7 +275,7 @@ impl CalcEngine {
                 .await;
             write_blob_meta(&self.storage.io, &bh, NUMBER_MIME, data.len()).await;
             let rec = FactRecord::from_model(
-                &nexus_model::Fact::new(
+                &nex_fih::Fact::new(
                     result_id,
                     format!("nex-calc:resolve:{}", intent_id),
                     Content::from(""),

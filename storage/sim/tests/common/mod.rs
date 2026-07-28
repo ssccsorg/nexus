@@ -2,7 +2,7 @@
 
 use std::sync::Mutex;
 
-use nexus_model::{Content, Fact, FihHash, Intent};
+use nex_fih::{Content, Fact, FihHash, Intent};
 
 // ── FakeClock ──────────────────────────────────────────────────────────
 
@@ -29,7 +29,7 @@ impl FakeClock {
     }
 }
 
-impl nexus_model::Now for FakeClock {
+impl nex_core::Now for FakeClock {
     fn now_nanos(&self) -> u64 {
         let mut now = self.now.lock().unwrap();
         let ts = *now;

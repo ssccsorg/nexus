@@ -11,7 +11,7 @@
 //   cd tests/agents && cargo run
 
 use nex::FihBlackboard;
-use nexus_model::{Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
+use nex_fih::{Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
 use nexus_storage_sim::SimIo;
 
 fn main() {

@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-nexus-model = { path = "../../model" }
+nex-core = { path = "../../nex/core" }
+nex-fih = { path = "../../nex/fih" }
 serde = { workspace = true }
 serde_json = { workspace = true }

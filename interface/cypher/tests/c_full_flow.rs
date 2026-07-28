@@ -7,7 +7,7 @@
 //   4. Read_state + unit assertions verify correctness (Cypher is for portability)
 
 use nex::FihBlackboard;
-use nexus_model::{Blackboard, BlackboardError, Fact, FihHash, Intent, IntentCapable, StorageRead};
+use nex_fih::{Blackboard, BlackboardError, Fact, FihHash, Intent, IntentCapable, StorageRead};
 use nexus_storage_sim::SimIo;
 
 /// Helper: submit a fact with minimal boilerplate.

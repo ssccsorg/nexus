@@ -11,7 +11,7 @@
 // Detection tasks implement `DetectionCapable` (or marker traits) from nexus-model.
 
 use super::error::ProcessError;
-use nexus_model::{
+use nex_fih::{
     Blackboard, DetectionCapable, DetectionOutput, EvictCapable, StorageRead, TaskStates,
 };
 use std::time::Duration;
@@ -78,7 +78,7 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
     /// exceeds threshold. Requires the backend to implement `FlushCapable`.
     pub fn tick_with_flush(&mut self) -> Result<usize, ProcessError>
     where
-        B: nexus_model::FlushCapable,
+        B: nex_fih::FlushCapable,
     {
         let threshold = self.config.eviction_threshold;
         let cutoff_secs = self.config.eviction_cutoff_secs;
@@ -89,7 +89,7 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
                 // The gateway or higher-level orchestrator should
                 // call HybridBlackboard::flush() directly to get
                 // incremental flush with cursor persistence.
-                let cursor = nexus_model::FlushCursor {
+                let cursor = nex_fih::FlushCursor {
                     last_flushed_at: 0,
                     partition: bb.project_id().to_string(),
                 };

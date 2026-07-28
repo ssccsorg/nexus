@@ -10,7 +10,7 @@
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use nex::storage::core::index::FihCoord;
-use nexus_model::FihHash;
+use nex_fih::FihHash;
 
 // ---------------------------------------------------------------------------
 // Seed helpers

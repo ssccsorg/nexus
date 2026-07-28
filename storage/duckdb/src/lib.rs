@@ -5,7 +5,7 @@ pub mod duckdb_ext;
 
 use interface_cypher::capable::CypherCapable;
 use interface_query::ColdQuery;
-use nexus_model::{
+use nex_fih::{
     BoardState, ColdStorage, Content, EvictCapable, Fact, FihHash, FilterCapable, FlushCapable,
     FlushCursor, FlushResult, Hint, Intent, PartitionData, ScanCapable, StateFilter, StorageRead,
     TimeRangeCapable,

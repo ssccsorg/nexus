@@ -5,7 +5,7 @@
 
 mod common;
 
-use nexus_model::{AsyncFactCapable, AsyncFilterCapable, AsyncStorageRead, FihHash, StateFilter};
+use nex_fih::{AsyncFactCapable, AsyncFilterCapable, AsyncStorageRead, FihHash, StateFilter};
 use nexus_storage_sim::{FihStorage, SimIo};
 
 fn make_clocked() -> FihStorage<SimIo> {

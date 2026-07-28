@@ -4,7 +4,7 @@
 // The `dead_code` allow is intentional: this is a shared mock library.
 #![allow(dead_code)]
 
-use nexus_model::{BlobStore, MetaStore, ObjectStore};
+use nex_core::{BlobStore, MetaStore, ObjectStore};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 

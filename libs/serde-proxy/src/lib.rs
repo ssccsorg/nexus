@@ -10,7 +10,7 @@
 ///
 /// Implements `Blackboard` trait so it can be used wherever a Blackboard
 /// reference is expected.
-use nexus_model::{
+use nex_fih::{
     Blackboard, BlackboardError, BoardState, Fact, FactCapable, FihHash, Hint, HintCapable, Intent,
     IntentCapable, StorageRead,
 };

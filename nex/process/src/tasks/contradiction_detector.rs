@@ -10,7 +10,7 @@
 
 use super::common::{position_of, topic_of};
 use crate::ContentJsonExt as _;
-use nexus_model::{
+use nex_fih::{
     BoardState, Content, ContradictionDetection, DetectionCapable, DetectionOutput, Fact, FihHash,
 };
 use std::collections::{HashMap, HashSet};

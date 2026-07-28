@@ -23,7 +23,7 @@ use nex::storage::core::intent_status::IntentStatus;
 use nex::storage::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
 use nex::storage::core::store::FihStorage;
 use nex::{EntityStore, FileIo};
-use nexus_model::{Content, FihHash};
+use nex_fih::{Content, FihHash};
 use nexus_storage_sim::SimIo;
 
 use crate::hint::Constraint;
@@ -110,7 +110,7 @@ impl CalcEngine {
         write_blob_meta(&self.storage.io, &blob_hash, NUMBER_MIME, data.len()).await;
 
         let record = FactRecord::from_model(
-            &nexus_model::Fact::new(id, "nex-calc".into(), Content::from(""), "user".into()),
+            &nex_fih::Fact::new(id, "nex-calc".into(), Content::from(""), "user".into()),
             blob_hash,
             0,
         );
@@ -252,7 +252,7 @@ impl CalcEngine {
                 .await;
             write_blob_meta(&self.storage.io, &bh, NUMBER_MIME, data.len()).await;
             let rec = FactRecord::from_model(
-                &nexus_model::Fact::new(
+                &nex_fih::Fact::new(
                     result_id,
                     format!("nex-calc:resolve:{}", intent_id),
                     Content::from(""),

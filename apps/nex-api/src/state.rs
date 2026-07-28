@@ -2,7 +2,7 @@
 
 use nex::FihBlackboard;
 use nexus_storage_sim::SimIo;
-use nexus_model::Blackboard;
+use nex_fih::Blackboard;
 use std::sync::{Arc, Mutex};
 
 /// Thread-safe shared state wrapping a Blackboard.

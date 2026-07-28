@@ -5,7 +5,7 @@ use std::sync::Arc;
 use nex::io::fs_io::FsIo;
 use nex::storage::core::store::FihStorage;
 use nex_client::{RpcRequest, RpcResponse};
-use nexus_model::{
+use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, BlackboardError,
     Content, Fact, FihHash, Hint, Intent,
 };

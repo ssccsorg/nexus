@@ -4,9 +4,7 @@
 // research problem. No agent talks directly to another — all via Blackboard.
 
 use nex::FihBlackboard;
-use nexus_model::{
-    Fact, FactCapable, FihHash, Hint, HintCapable, Intent, IntentCapable, StorageRead,
-};
+use nex_fih::{Fact, FactCapable, FihHash, Hint, HintCapable, Intent, IntentCapable, StorageRead};
 use nexus_storage_sim::SimIo;
 
 // ── Scenario 1: Contradiction Detection ───────────────────────────────────

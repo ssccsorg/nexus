@@ -28,8 +28,8 @@ impl fmt::Display for ProcessError {
 
 impl std::error::Error for ProcessError {}
 
-impl From<nexus_model::BlackboardError> for ProcessError {
-    fn from(e: nexus_model::BlackboardError) -> Self {
+impl From<nex_fih::BlackboardError> for ProcessError {
+    fn from(e: nex_fih::BlackboardError) -> Self {
         Self::Blackboard(e.to_string())
     }
 }

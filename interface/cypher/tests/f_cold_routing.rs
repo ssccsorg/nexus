@@ -5,7 +5,7 @@
 
 use interface_cypher::{Plan, execute_with_cold};
 use interface_query::ColdQuery;
-use nexus_model::storage::{EdgeWeight, NodeWeight};
+use nex_fih::storage::{EdgeWeight, NodeWeight};
 
 fn assert_label(cq: &ColdQuery, expected: &str) {
     assert_eq!(cq.label, expected);
@@ -133,7 +133,7 @@ fn internal_match_where_string_eq() {
 fn execute_with_cold_non_eligible_falls_back_to_hot() {
     let g = petgraph::Graph::<NodeWeight, EdgeWeight>::new();
     let plan = Plan::from_cyrs("MATCH (f:Fact)-[:drives]->(i:Intent) RETURN f").unwrap();
-    let cold = nexus_model::NullStorage;
+    let cold = nex_fih::NullStorage;
     let result = execute_with_cold(&g, &cold, &plan);
     assert!(result.is_ok(), "expected hot fallback, got: {:?}", result);
 }
@@ -142,7 +142,7 @@ fn execute_with_cold_non_eligible_falls_back_to_hot() {
 fn execute_with_cold_eligible_errors_on_null_storage() {
     let g = petgraph::Graph::<NodeWeight, EdgeWeight>::new();
     let plan = Plan::from_cyrs("MATCH (f:Fact) RETURN f").unwrap();
-    let cold = nexus_model::NullStorage;
+    let cold = nex_fih::NullStorage;
     let result = execute_with_cold(&g, &cold, &plan);
     assert!(
         result.is_err(),
@@ -160,7 +160,7 @@ fn execute_with_cold_eligible_with_populated_graph() {
         properties: std::collections::HashMap::from([("origin".into(), "\"test-source\"".into())]),
     });
     let plan = Plan::from_internal("MATCH (f:Fact) RETURN f").unwrap();
-    let cold = nexus_model::NullStorage;
+    let cold = nex_fih::NullStorage;
     let result = execute_with_cold(&graph, &cold, &plan);
     assert!(
         result.is_err(),

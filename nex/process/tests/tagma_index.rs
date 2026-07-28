@@ -1,5 +1,5 @@
 use nex::storage::core::index::{FihCoord, intersect_2, intersect_3};
-use nexus_model::FihHash;
+use nex_fih::FihHash;
 
 fn make_coord() -> FihCoord {
     FihCoord::new()

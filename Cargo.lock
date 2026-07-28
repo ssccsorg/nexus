@@ -1526,7 +1526,8 @@ dependencies = [
  "cyrs-syntax",
  "interface-query",
  "nex",
- "nexus-model",
+ "nex-core",
+ "nex-fih",
  "nexus-storage-sim",
  "petgraph",
  "serde",
@@ -1537,7 +1538,8 @@ dependencies = [
 name = "interface-query"
 version = "0.1.0"
 dependencies = [
- "nexus-model",
+ "nex-core",
+ "nex-fih",
  "serde",
  "serde_json",
 ]
@@ -1826,7 +1828,6 @@ dependencies = [
  "nex-fih",
  "nex-io",
  "nexus-gateway-serde-proxy",
- "nexus-model",
  "nexus-storage-sim",
  "serde",
  "serde_json",
@@ -1840,7 +1841,8 @@ name = "nex-calc"
 version = "0.1.0"
 dependencies = [
  "nex",
- "nexus-model",
+ "nex-core",
+ "nex-fih",
  "nexus-storage-sim",
  "postcard",
  "sha2",
@@ -1897,7 +1899,8 @@ version = "0.1.0"
 dependencies = [
  "nex",
  "nex-client",
- "nexus-model",
+ "nex-core",
+ "nex-fih",
  "serde",
  "serde_json",
  "tokio",
@@ -1941,23 +1944,17 @@ dependencies = [
 name = "nexus-async-store"
 version = "0.1.0"
 dependencies = [
- "nexus-model",
+ "nex-core",
+ "nex-fih",
 ]
 
 [[package]]
 name = "nexus-gateway-serde-proxy"
 version = "0.1.0"
 dependencies = [
- "nexus-model",
- "serde_json",
-]
-
-[[package]]
-name = "nexus-model"
-version = "0.1.0"
-dependencies = [
  "nex-core",
  "nex-fih",
+ "serde_json",
 ]
 
 [[package]]
@@ -1965,7 +1962,8 @@ name = "nexus-privileged-agent"
 version = "0.1.0"
 dependencies = [
  "nex",
- "nexus-model",
+ "nex-core",
+ "nex-fih",
  "nexus-storage-sim",
  "serde_json",
 ]
@@ -1974,7 +1972,8 @@ dependencies = [
 name = "nexus-session-server"
 version = "0.1.0"
 dependencies = [
- "nexus-model",
+ "nex-core",
+ "nex-fih",
 ]
 
 [[package]]
@@ -1985,7 +1984,8 @@ dependencies = [
  "interface-cypher",
  "interface-query",
  "nex",
- "nexus-model",
+ "nex-core",
+ "nex-fih",
  "serde",
  "serde_json",
  "tempfile",
@@ -1998,8 +1998,9 @@ dependencies = [
  "cfg-if",
  "futures-executor",
  "nex",
+ "nex-core",
+ "nex-fih",
  "nexus-gateway-serde-proxy",
- "nexus-model",
  "postcard",
  "serde",
  "serde_json",

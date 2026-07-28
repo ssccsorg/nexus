@@ -1,7 +1,7 @@
 // Common helpers shared across detection task implementations.
 
 use crate::ContentJsonExt;
-use nexus_model::Fact;
+use nex_fih::Fact;
 
 /// Extract the `topic` field from a Fact's JSON content.
 /// Returns `None` if the field is missing or not a string.

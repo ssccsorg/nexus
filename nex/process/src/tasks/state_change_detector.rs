@@ -9,7 +9,7 @@
 // it is a separate decision for agents in later iterations.
 
 use crate::ContentJsonExt;
-use nexus_model::{
+use nex_fih::{
     BoardState, Content, DetectionCapable, DetectionCheckpoint, DetectionOutput, Fact, FihHash,
     StateChangeDetection,
 };
