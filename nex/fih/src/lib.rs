@@ -27,8 +27,8 @@ pub mod storage;
 
 pub use blackboard::Blackboard;
 pub use contract::core::{
-    EvidenceChain, EvidenceEntry, GovernanceBypassError, GovernanceGate, HealthStatus,
-    HintEngine, HintRule, NexConfig, NexInstanceInfo, NexLifecycle,
+    EvidenceChain, EvidenceEntry, GovernanceBypassError, GovernanceGate, HealthStatus, HintEngine,
+    HintRule, NexConfig, NexInstanceInfo, NexLifecycle,
 };
 pub use contract::fih::FihContract;
 pub use core::entity_store::{EntityStore, MemoryEntityStore};
@@ -46,8 +46,8 @@ pub use detection::{
 pub use error::BlackboardError;
 pub use fih::{BoardState, Content, CoordRef, Fact, FihHash, Hint, Intent};
 pub use helper::ContentJsonExt;
-pub use semantic::record::{Query, RecordLoad};
 pub use semantic::SemanticStore;
+pub use semantic::record::{Query, RecordLoad};
 pub use storage::async_impl::{
     AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable, AsyncHintCapable,
     AsyncIntentCapable, AsyncScanCapable, AsyncStorageRead, AsyncTimeRangeCapable,

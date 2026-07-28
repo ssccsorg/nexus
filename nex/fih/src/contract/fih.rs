@@ -11,8 +11,8 @@ use crate::error::BlackboardError;
 use crate::{Fact, FihHash};
 
 use crate::contract::core::{EvidenceChain, GovernanceGate, HintEngine, HintRule};
-use crate::io::FileIo;
 use crate::core::store::FihStorage;
+use crate::io::FileIo;
 use crate::{AsyncFactCapable, AsyncIntentCapable};
 
 /// Bundled FIH contract: gate + hints + evidence.

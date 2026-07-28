@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::AtomicU32;
 
-use crate::semantic::{DynSemanticStore, Query, RecordLoad};
 use crate::FihHash;
+use crate::semantic::{DynSemanticStore, Query, RecordLoad};
 use tagma_core::{Coord, CoordPath, CoordSpaceN};
 
 // ── Internal cell type ─────────────────────────────────────────────

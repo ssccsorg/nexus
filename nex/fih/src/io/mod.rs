@@ -8,9 +8,9 @@
 // All IO types are defined in the nex-io crate; this module is a
 // compatibility shim.
 
-pub use nex_io::{BatchIo, FileIo, IoFuture, SyncFileIo, WriteOp, default_apply_batch};
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub use nex_io::FsIo;
+pub use nex_io::{BatchIo, FileIo, IoFuture, SyncFileIo, WriteOp, default_apply_batch};
 
 /// Module alias so that `crate::io::file_io::FileIo` resolves.
 pub mod file_io {

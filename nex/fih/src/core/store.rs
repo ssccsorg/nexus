@@ -37,11 +37,11 @@
 
 use std::ops::Range;
 
-use nex_core::Now;
 use crate::{
     BlackboardError, BoardState, Content, Fact, FihHash, FlushCursor, FlushResult, Hint, Intent,
     PartitionData, StateFilter,
 };
+use nex_core::Now;
 
 use crate::core::entity_store::{EntityStore, MemoryEntityStore};
 use crate::core::index::{Cell2, FihCoord};

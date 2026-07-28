@@ -61,15 +61,17 @@ pub mod helper {
 // These allow `use nex::FihStorage` etc. without nesting.
 
 pub use nex_fih::{
-    Blackboard, BlackboardError, BoardState, Cell2, Content, ContentJsonExt, ContradictionDetection,
-    CoordRef, DetectionCapable, DetectionOutput, EntityStore, EvidenceChain, EvidenceEntry,
-    EvictCapable, export_from_io, Fact, FactCapable, FactRecord, FihBlackboard, FihContract,
+    Blackboard, BlackboardError, BoardState, Cell2, Content, ContentJsonExt,
+    ContradictionDetection, CoordRef, DetectionCapable, DetectionOutput, EntityStore, EvictCapable,
+    EvidenceChain, EvidenceEntry, Fact, FactCapable, FactRecord, FihBlackboard, FihContract,
     FihExport, FihHash, FihImport, FihSession, FihStorage, GapDetection, GovernanceGate,
-    HealthStatus, Hint, HintCapable, HintEngine, HintRecord, HintRule, import_into_io, Intent,
-    IntentCapable, IntentRecord, IntentStatus, MemoryEntityStore, NexConfig, NexInstanceInfo,
-    NexLifecycle, OrderedIndex, Query, RecordLoad, SemanticStore, StateChangeDetection,
-    StorageRead, TaskStates,
+    HealthStatus, Hint, HintCapable, HintEngine, HintRecord, HintRule, Intent, IntentCapable,
+    IntentRecord, IntentStatus, MemoryEntityStore, NexConfig, NexInstanceInfo, NexLifecycle,
+    OrderedIndex, Query, RecordLoad, SemanticStore, StateChangeDetection, StorageRead, TaskStates,
+    export_from_io, import_into_io,
 };
 
 // IO re-exports
-pub use nex_io::{FileIo, FsIo, SyncFileIo, WriteOp};
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+pub use nex_io::FsIo;
+pub use nex_io::{FileIo, SyncFileIo, WriteOp};
