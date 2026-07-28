@@ -6,9 +6,9 @@ pub mod duckdb_ext;
 use interface_cypher::capable::CypherCapable;
 use interface_query::ColdQuery;
 use nex_fih::{
-    BoardState, ColdStorage, Content, CoordId, EvictCapable, Fact, FilterCapable,
-    FlushCapable, FlushCursor, FlushResult, Hint, Intent, PartitionData, ScanCapable, StateFilter,
-    StorageRead, TimeRangeCapable,
+    BoardState, ColdStorage, Content, CoordId, EvictCapable, Fact, FilterCapable, FlushCapable,
+    FlushCursor, FlushResult, Hint, Intent, PartitionData, ScanCapable, StateFilter, StorageRead,
+    TimeRangeCapable,
 };
 use std::collections::HashMap;
 use std::fs;
@@ -232,7 +232,10 @@ impl DuckDbStorage {
                 .unwrap_or_default();
             Ok(Intent {
                 id: CoordId::from_string(&id),
-                from_facts: from_facts.iter().map(|s| CoordId::from_string(&s)).collect(),
+                from_facts: from_facts
+                    .iter()
+                    .map(|s| CoordId::from_string(&s))
+                    .collect(),
                 description,
                 creator,
                 worker,

@@ -7,7 +7,7 @@
 //   - heartbeat while another thread releases
 
 use nex::FihBlackboard;
-use nex_fih::{Blackboard, Fact, FactCapable, CoordId, Intent, IntentCapable, StorageRead};
+use nex_fih::{Blackboard, CoordId, Fact, FactCapable, Intent, IntentCapable, StorageRead};
 use nexus_storage_sim::SimIo;
 use std::sync::{
     Arc, Mutex,
@@ -210,7 +210,8 @@ fn test_parallel_many_ants() {
         ];
         for (id, content) in &seeds {
             guard
-                .submit_fact(&Fact::new(CoordId::from_string(&id),
+                .submit_fact(&Fact::new(
+                    CoordId::from_string(&id),
                     "corpus".into(),
                     (*content).into(),
                     "system".into(),

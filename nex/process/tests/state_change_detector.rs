@@ -3,7 +3,8 @@ use nex::process::tasks::state_change_detector::StateChangeDetector;
 use nex_fih::{BoardState, Content, CoordId, DetectionCapable, Fact};
 
 fn make_fact(id: &str, origin: &str) -> Fact {
-    Fact::new(CoordId::from_string(&id),
+    Fact::new(
+        CoordId::from_string(&id),
         origin.to_string(),
         Content::from_json(&serde_json::json!({"topic": "test"})),
         "test".into(),

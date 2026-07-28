@@ -187,7 +187,11 @@ async fn handle_write_intent(
 
     let intent = Intent {
         id: CoordId::from_string(&format!("intent_{}", uuid::Uuid::new_v4())),
-        from_facts: p.from_facts.iter().map(|s| CoordId::from_string(s)).collect(),
+        from_facts: p
+            .from_facts
+            .iter()
+            .map(|s| CoordId::from_string(s))
+            .collect(),
         description: p.description,
         creator: p.creator,
         worker: None,

@@ -80,7 +80,8 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact::new(CoordId::from_string("f001"),
+            &Fact::new(
+                CoordId::from_string("f001"),
                 "verify".into(),
                 "hello world".into(),
                 "v".into(),
@@ -121,7 +122,8 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact::new(CoordId::from_string("f_base"),
+            &Fact::new(
+                CoordId::from_string("f_base"),
                 "verify".into(),
                 "base data".into(),
                 "v".into(),
@@ -164,7 +166,8 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact::new(CoordId::from_string("f_base"),
+            &Fact::new(
+                CoordId::from_string("f_base"),
                 "v".into(),
                 "x".into(),
                 "v".into(),
@@ -202,7 +205,8 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncHintCapable::submit_hint(
             &store,
-            &Hint { id: CoordId::from_string("h001"),
+            &Hint {
+                id: CoordId::from_string("h001"),
                 content: "ephemeral note".into(),
                 creator: "v".into(),
             },
@@ -220,7 +224,8 @@ fn main() {
         let store = FihStorage::new(io.clone(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact::new(CoordId::from_string("f001"),
+            &Fact::new(
+                CoordId::from_string("f001"),
                 "v".into(),
                 "flush test".into(),
                 "v".into(),
@@ -240,7 +245,8 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact::new(CoordId::from_string("f001"),
+            &Fact::new(
+                CoordId::from_string("f001"),
                 "v".into(),
                 "a".into(),
                 "v".into(),
@@ -276,7 +282,8 @@ fn main() {
         let store = FihStorage::new(io.clone(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact::new(CoordId::from_string("f001"),
+            &Fact::new(
+                CoordId::from_string("f001"),
                 "v".into(),
                 "data".into(),
                 "v".into(),
@@ -305,7 +312,8 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact::new(CoordId::from_string("f001"),
+            &Fact::new(
+                CoordId::from_string("f001"),
                 "v".into(),
                 "data".into(),
                 "v".into(),
@@ -325,7 +333,8 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact::new(CoordId::from_string("f001"),
+            &Fact::new(
+                CoordId::from_string("f001"),
                 "v".into(),
                 "data".into(),
                 "v".into(),
@@ -347,7 +356,8 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncHintCapable::submit_hint(
             &store,
-            &Hint { id: CoordId::from_string("h001"),
+            &Hint {
+                id: CoordId::from_string("h001"),
                 content: "old hint".into(),
                 creator: "v".into(),
             },
@@ -368,7 +378,8 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact::new(CoordId::from_string("f_orphan"),
+            &Fact::new(
+                CoordId::from_string("f_orphan"),
                 "v".into(),
                 "orphan".into(),
                 "v".into(),
@@ -378,7 +389,8 @@ fn main() {
         .unwrap();
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact::new(CoordId::from_string("f_refd"),
+            &Fact::new(
+                CoordId::from_string("f_refd"),
                 "v".into(),
                 "refd".into(),
                 "v".into(),

@@ -8,8 +8,8 @@ mod common;
 
 use futures_executor::block_on;
 use nex_fih::{
-    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, Content, Fact,
-    CoordId, Hint, Intent,
+    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, Content, CoordId,
+    Fact, Hint, Intent,
 };
 use nexus_storage_sim::{FihStorage, SimIo};
 

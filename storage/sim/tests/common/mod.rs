@@ -2,7 +2,7 @@
 
 use std::sync::Mutex;
 
-use nex_fih::{Content, Fact, CoordId, Intent};
+use nex_fih::{Content, CoordId, Fact, Intent};
 
 // ── FakeClock ──────────────────────────────────────────────────────────
 

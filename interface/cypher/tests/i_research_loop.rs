@@ -10,7 +10,7 @@
 
 use nex::FihBlackboard;
 use nex_fih::{
-    Blackboard, BlackboardError, Fact, FactCapable, CoordId, Intent, IntentCapable, StorageRead,
+    Blackboard, BlackboardError, CoordId, Fact, FactCapable, Intent, IntentCapable, StorageRead,
 };
 use nexus_storage_sim::SimIo;
 use serde_json;
@@ -77,12 +77,7 @@ fn ingest_document(bb: &mut impl Blackboard, chunks: &[MdDocumentChunk]) {
         }))
         .unwrap()
         .into();
-        let fact = Fact::new(
-            id,
-            chunk.source.clone(),
-            content,
-            "ingestion-agent".into(),
-        );
+        let fact = Fact::new(id, chunk.source.clone(), content, "ingestion-agent".into());
         bb.submit_fact(&fact).unwrap();
     }
 }
@@ -286,7 +281,8 @@ fn scenario_full_research_loop() {
     // oversmoothing and transformer quadratic complexity.
 
     let gnn_benchmark_id = CoordId::from_string("arxiv_gnn_2024::Benchmark Results");
-    let transformer_benchmark_id = CoordId::from_string("arxiv_transformer_2024::Benchmark Results");
+    let transformer_benchmark_id =
+        CoordId::from_string("arxiv_transformer_2024::Benchmark Results");
     let hybrid_benchmark_id = CoordId::from_string("arxiv_hybrid_2024::Benchmark Results");
     let gnn_limitations_id = CoordId::from_string("arxiv_gnn_2024::Limitations");
     let transformer_limitations_id = CoordId::from_string("arxiv_transformer_2024::Limitations");

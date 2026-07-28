@@ -897,7 +897,7 @@ fn scenario_fihstorage_e2e_auto_index() {
     futures_executor::block_on(async {
         use nex::FihStorage;
         use nex::io::FsIo;
-        use nex_fih::{AsyncFactCapable, AsyncStorageRead, Content, Fact, CoordId};
+        use nex_fih::{AsyncFactCapable, AsyncStorageRead, Content, CoordId, Fact};
 
         let tmp = tempfile::TempDir::new().unwrap();
         let io = FsIo::new(tmp.path()).unwrap();

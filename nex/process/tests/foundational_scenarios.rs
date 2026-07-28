@@ -20,7 +20,7 @@ use nex::process::tasks::gap_detector::GapDetector;
 use nex::process::tasks::new_document_analyzer::NewDocumentAnalyzer;
 use nex::process::tasks::state_change_detector::StateChangeDetector;
 use nex_fih::{
-    Blackboard, BoardState, EvictCapable, Fact, FactCapable, CoordId, Intent, IntentCapable,
+    Blackboard, BoardState, CoordId, EvictCapable, Fact, FactCapable, Intent, IntentCapable,
     StorageRead,
 };
 use nexus_storage_sim::SimIo;

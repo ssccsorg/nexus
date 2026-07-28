@@ -470,7 +470,11 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
                 {
                     intents.push(Intent {
                         id: CoordId::from_string(&r.id),
-                        from_facts: r.from_facts.iter().map(|s| CoordId::from_string(s)).collect(),
+                        from_facts: r
+                            .from_facts
+                            .iter()
+                            .map(|s| CoordId::from_string(s))
+                            .collect(),
                         description: {
                             if r.description_hash.is_empty() {
                                 r.id.clone()
@@ -1008,10 +1012,10 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                         id: CoordId::from_string(&r.id),
                         origin: r.origin,
                         content_hash: {
-                        let mut h = sha2::Sha256::new();
-                        h.update(&content.data);
-                        FihHash(h.finalize().into())
-                    },
+                            let mut h = sha2::Sha256::new();
+                            h.update(&content.data);
+                            FihHash(h.finalize().into())
+                        },
                         content,
                         creator: r.creator,
                     }
@@ -1025,10 +1029,10 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                         id: CoordId::from_string(&r.id),
                         origin: r.origin,
                         content_hash: {
-                        let mut h = sha2::Sha256::new();
-                        h.update(&content.data);
-                        FihHash(h.finalize().into())
-                    },
+                            let mut h = sha2::Sha256::new();
+                            h.update(&content.data);
+                            FihHash(h.finalize().into())
+                        },
                         content,
                         creator: r.creator,
                     }
@@ -1049,7 +1053,11 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                     };
                     Intent {
                         id: CoordId::from_string(&r.id),
-                        from_facts: r.from_facts.iter().map(|s| CoordId::from_string(s)).collect(),
+                        from_facts: r
+                            .from_facts
+                            .iter()
+                            .map(|s| CoordId::from_string(s))
+                            .collect(),
                         description,
                         creator: r.creator,
                         worker: match &r.status {
@@ -1089,7 +1097,11 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                     };
                     Intent {
                         id: CoordId::from_string(&r.id),
-                        from_facts: r.from_facts.iter().map(|s| CoordId::from_string(s)).collect(),
+                        from_facts: r
+                            .from_facts
+                            .iter()
+                            .map(|s| CoordId::from_string(s))
+                            .collect(),
                         description,
                         creator: r.creator,
                         worker: match &r.status {
@@ -1260,10 +1272,10 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
                         id: CoordId::from_string(&r.id),
                         origin: r.origin,
                         content_hash: {
-                        let mut h = sha2::Sha256::new();
-                        h.update(&content.data);
-                        FihHash(h.finalize().into())
-                    },
+                            let mut h = sha2::Sha256::new();
+                            h.update(&content.data);
+                            FihHash(h.finalize().into())
+                        },
                         content,
                         creator: r.creator,
                     }
@@ -1281,7 +1293,11 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
                     };
                     Intent {
                         id: CoordId::from_string(&r.id),
-                        from_facts: r.from_facts.iter().map(|s| CoordId::from_string(s)).collect(),
+                        from_facts: r
+                            .from_facts
+                            .iter()
+                            .map(|s| CoordId::from_string(s))
+                            .collect(),
                         description,
                         creator: r.creator,
                         worker: match &r.status {

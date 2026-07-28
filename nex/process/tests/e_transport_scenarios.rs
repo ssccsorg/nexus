@@ -5,7 +5,7 @@
 
 use nex::FihBlackboard;
 use nex_fih::{
-    BlackboardError, Content, Fact, FactCapable, CoordId, Intent, IntentCapable, StorageRead,
+    BlackboardError, Content, CoordId, Fact, FactCapable, Intent, IntentCapable, StorageRead,
 };
 use nexus_gateway_serde_proxy::SerdeProxy;
 use nexus_storage_sim::SimIo;
@@ -105,7 +105,8 @@ fn scenario_satellite_burst_agent() {
         ),
     ];
     for (id, origin, content) in &readings {
-        gw.submit_fact(&Fact::new(CoordId::from_string(&id),
+        gw.submit_fact(&Fact::new(
+            CoordId::from_string(&id),
             origin.to_string(),
             Content::from(content.to_string()),
             "sat-1".into(),
@@ -117,7 +118,7 @@ fn scenario_satellite_burst_agent() {
     assert_eq!(state.facts.len(), 3, "burst of 3 facts received");
 
     gw.submit_intent(&Intent {
-            id: CoordId::from_string("i_sat_analysis"),
+        id: CoordId::from_string("i_sat_analysis"),
         from_facts: vec![
             CoordId::from_string("f_sat_001"),
             CoordId::from_string("f_sat_002"),
@@ -171,7 +172,7 @@ fn scenario_browser_agent() {
     .unwrap();
 
     gw.submit_intent(&Intent {
-            id: CoordId::from_string("i_investigate"),
+        id: CoordId::from_string("i_investigate"),
         from_facts: vec![CoordId::from_string("f_background")],
         description: "Find root cause of sustained high server load".into(),
         creator: "human-operator".into(),
@@ -266,7 +267,10 @@ fn scenario_multi_language_agents() {
 
         gw.submit_intent(&Intent {
             id: CoordId::from_string("i_cross_lang"),
-            from_facts: vec![CoordId::from_string("f_py_001"), CoordId::from_string("f_rs_001")],
+            from_facts: vec![
+                CoordId::from_string("f_py_001"),
+                CoordId::from_string("f_rs_001"),
+            ],
             description: "Correlate pipeline throughput with inference latency".into(),
             creator: "ts-agent".into(),
             worker: None,
@@ -326,8 +330,8 @@ fn scenario_conflicting_claims() {
     .unwrap();
 
     gw.submit_intent(&Intent {
-            id: CoordId::from_string("i_conflict"),
-            from_facts: vec![CoordId::from_string("f_conflict")],
+        id: CoordId::from_string("i_conflict"),
+        from_facts: vec![CoordId::from_string("f_conflict")],
         description: "Intent that two agents will race to claim".into(),
         creator: "system".into(),
         worker: None,

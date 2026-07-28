@@ -7,7 +7,7 @@
 // directly.
 
 use nex::FihBlackboard;
-use nex_fih::{Content, Fact, FactCapable, CoordId, Intent, IntentCapable, StorageRead};
+use nex_fih::{Content, CoordId, Fact, FactCapable, Intent, IntentCapable, StorageRead};
 use nexus_gateway_serde_proxy::SerdeProxy;
 use nexus_storage_sim::SimIo;
 
@@ -27,9 +27,7 @@ fn scenario_contradiction_detection_via_gateway() {
     gw.submit_fact(&Fact::new(
         CoordId::from_string("f_gnn_deep"),
         "paper_iclr_2024".into(),
-        Content::from(
-            "Residual GNNs maintain accuracy at 50 layers with skip connections",
-        ),
+        Content::from("Residual GNNs maintain accuracy at 50 layers with skip connections"),
         "agent-a".into(),
     ))
     .unwrap();
@@ -38,16 +36,14 @@ fn scenario_contradiction_detection_via_gateway() {
     gw.submit_fact(&Fact::new(
         CoordId::from_string("f_gnn_shallow"),
         "paper_neurips_2023".into(),
-        Content::from(
-            "Message-passing GNNs oversmooth beyond 6 layers without normalization",
-        ),
+        Content::from("Message-passing GNNs oversmooth beyond 6 layers without normalization"),
         "agent-b".into(),
     ))
     .unwrap();
 
     // Agent-C: detects the contradiction, submits hypothesis
     gw.submit_intent(&Intent {
-            id: CoordId::from_string("i_reconcile"),
+        id: CoordId::from_string("i_reconcile"),
         from_facts: vec![
             CoordId::from_string("f_gnn_deep"),
             CoordId::from_string("f_gnn_shallow"),

@@ -11,7 +11,7 @@
 
 use futures_executor::block_on;
 use nex_fih::{
-    AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead, Content, Fact, CoordId, Intent,
+    AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead, Content, CoordId, Fact, Intent,
 };
 use nexus_storage_sim::FihStorage;
 use nexus_storage_sim::SimIo;
@@ -30,9 +30,7 @@ fn scenario_contradiction_detection_via_gateway() {
     block_on(storage.submit_fact(&Fact::new(
         CoordId::from_string("f_gnn_deep"),
         "paper_iclr_2024".into(),
-        Content::from(
-            "Residual GNNs maintain accuracy at 50 layers with skip connections",
-        ),
+        Content::from("Residual GNNs maintain accuracy at 50 layers with skip connections"),
         "agent-a".into(),
     )))
     .unwrap();
@@ -41,9 +39,7 @@ fn scenario_contradiction_detection_via_gateway() {
     block_on(storage.submit_fact(&Fact::new(
         CoordId::from_string("f_gnn_shallow"),
         "paper_neurips_2023".into(),
-        Content::from(
-            "Message-passing GNNs oversmooth beyond 6 layers without normalization",
-        ),
+        Content::from("Message-passing GNNs oversmooth beyond 6 layers without normalization"),
         "agent-b".into(),
     )))
     .unwrap();

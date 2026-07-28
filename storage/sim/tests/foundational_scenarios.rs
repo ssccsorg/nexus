@@ -25,7 +25,7 @@ use nex::process::tasks::new_document_analyzer::NewDocumentAnalyzer;
 use nex::process::tasks::state_change_detector::StateChangeDetector;
 use nex_fih::DetectionCapable;
 use nex_fih::{
-    AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead, BoardState, Fact, CoordId, Intent,
+    AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead, BoardState, CoordId, Fact, Intent,
 };
 use nexus_storage_sim::{FihStorage, SimIo};
 

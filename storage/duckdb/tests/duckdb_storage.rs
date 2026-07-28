@@ -142,7 +142,10 @@ fn test_read_intents_from_parquet() {
         .unwrap();
     assert_eq!(
         intent_2.from_facts,
-        vec![CoordId::from_string("fact_1"), CoordId::from_string("fact_2")]
+        vec![
+            CoordId::from_string("fact_1"),
+            CoordId::from_string("fact_2")
+        ]
     );
     assert_eq!(intent_2.description, "do more");
     assert_eq!(intent_2.creator, "admin");
@@ -513,8 +516,18 @@ fn test_filter_combined() {
     // f_1 excluded: not in id list
     // f_4 excluded: not in id list (also out of range)
     assert_eq!(state.facts.len(), 2, "expected 2 facts");
-    assert!(state.facts.iter().any(|f| f.id == CoordId::from_string("f_2")));
-    assert!(state.facts.iter().any(|f| f.id == CoordId::from_string("f_3")));
+    assert!(
+        state
+            .facts
+            .iter()
+            .any(|f| f.id == CoordId::from_string("f_2"))
+    );
+    assert!(
+        state
+            .facts
+            .iter()
+            .any(|f| f.id == CoordId::from_string("f_3"))
+    );
 }
 
 // ── Test 15: filter by intent_ids and hint_ids ──────────────────────────

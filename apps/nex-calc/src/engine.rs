@@ -451,7 +451,9 @@ fn make_number_fact_id(value: i64) -> CoordId {
 fn make_intent_id(op: OpType, lhs_id: &CoordId, rhs_id: &CoordId) -> CoordId {
     CoordId::from_string(&format!(
         "{}{}{}nex-calc-intent",
-        lhs_id, rhs_id, op.symbol()
+        lhs_id,
+        rhs_id,
+        op.symbol()
     ))
 }
 

@@ -11,7 +11,7 @@
 mod common;
 
 use futures_executor::block_on;
-use nex_fih::{AsyncFactCapable, AsyncIntentCapable, Content, Fact, CoordId, Intent};
+use nex_fih::{AsyncFactCapable, AsyncIntentCapable, Content, CoordId, Fact, Intent};
 use nexus_storage_sim::{FihStorage, SimIo};
 
 fn storage() -> FihStorage<SimIo> {
@@ -33,7 +33,7 @@ fn fact(id: &str) -> Fact {
 fn intent(id: &str, from: Vec<&str>) -> Intent {
     Intent {
         id: CoordId::from_string(id),
-from_facts: from.into_iter().map(|s| CoordId::from_string(s)).collect(),
+        from_facts: from.into_iter().map(|s| CoordId::from_string(s)).collect(),
         description: format!("intent {}", id),
         creator: "t".into(),
         worker: None,

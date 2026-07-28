@@ -15,7 +15,8 @@ use nex_fih::{
 };
 
 pub struct StateChangeDetector {
-    checkpoint: Option<DetectionCheckpoint>}
+    checkpoint: Option<DetectionCheckpoint>,
+}
 
 impl StateChangeDetector {
     pub fn new() -> Self {
@@ -36,7 +37,8 @@ impl StateChangeDetection for StateChangeDetector {
 
     fn from_checkpoint(checkpoint: DetectionCheckpoint) -> Self {
         Self {
-            checkpoint: Some(checkpoint)}
+            checkpoint: Some(checkpoint),
+        }
     }
 }
 
@@ -68,7 +70,8 @@ impl DetectionCapable for StateChangeDetector {
         let Some(ref checkpoint) = self.checkpoint else {
             self.checkpoint = Some(DetectionCheckpoint {
                 fact_count: current_facts,
-                open_intent_count: current_open});
+                open_intent_count: current_open,
+            });
             return output;
         };
 
@@ -108,7 +111,8 @@ impl DetectionCapable for StateChangeDetector {
 
         self.checkpoint = Some(DetectionCheckpoint {
             fact_count: current_facts,
-            open_intent_count: current_open});
+            open_intent_count: current_open,
+        });
 
         output
     }
@@ -132,6 +136,7 @@ impl DetectionCapable for StateChangeDetector {
             .unwrap_or(0) as usize;
         self.checkpoint = Some(DetectionCheckpoint {
             fact_count: fc,
-            open_intent_count: oi});
+            open_intent_count: oi,
+        });
     }
 }

@@ -7,7 +7,7 @@
 //   - Intent lifecycle completes correctly under contention
 
 use nex::FihBlackboard;
-use nex_fih::{Blackboard, Fact, FactCapable, CoordId, Intent, IntentCapable, StorageRead};
+use nex_fih::{Blackboard, CoordId, Fact, FactCapable, Intent, IntentCapable, StorageRead};
 use nexus_storage_sim::SimIo;
 use std::collections::HashSet;
 

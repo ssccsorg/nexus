@@ -12,7 +12,7 @@ mod common;
 use futures_executor::block_on;
 use nex_fih::{
     AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable, AsyncHintCapable,
-    AsyncIntentCapable, AsyncStorageRead, Content, Fact, CoordId, FlushCursor, FlushResult, Hint,
+    AsyncIntentCapable, AsyncStorageRead, Content, CoordId, Fact, FlushCursor, FlushResult, Hint,
     Intent, StateFilter,
 };
 use nexus_storage_sim::{EntityStore, FihStorage, SimIo, SyncFileIo};
@@ -39,7 +39,7 @@ fn submit_fact(store: &FihStorage<SimIo>, id: &str, data: &str) {
 fn submit_intent(store: &FihStorage<SimIo>, id: &str, from: &[&str]) {
     block_on(store.submit_intent(&Intent {
         id: CoordId::from_string(id),
-from_facts: from.iter().map(|s| CoordId::from_string(s)).collect(),
+        from_facts: from.iter().map(|s| CoordId::from_string(s)).collect(),
         description: format!("intent {}", id),
         creator: "tester".into(),
         worker: None,

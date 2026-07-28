@@ -20,13 +20,15 @@ use std::collections::{HashMap, HashSet};
 
 pub struct GapDetector {
     seen_origin: HashSet<(String, String)>,
-    seen_topic: HashSet<(String, String, String)>}
+    seen_topic: HashSet<(String, String, String)>,
+}
 
 impl GapDetector {
     pub fn new() -> Self {
         Self {
             seen_origin: HashSet::new(),
-            seen_topic: HashSet::new()}
+            seen_topic: HashSet::new(),
+        }
     }
 }
 
@@ -136,7 +138,10 @@ impl DetectionCapable for GapDetector {
                     self.seen_topic.insert(key.clone());
 
                     output.facts.push(Fact::new(
-                        CoordId::from_string(&format!("{}-{}-{}-{}", topic, oa_s, ob_s, "cross-gap")),
+                        CoordId::from_string(&format!(
+                            "{}-{}-{}-{}",
+                            topic, oa_s, ob_s, "cross-gap"
+                        )),
                         "gap-detector".into(),
                         Content::from_json(&serde_json::json!({
                             "type": "gap",

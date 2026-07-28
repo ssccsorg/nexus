@@ -16,12 +16,14 @@ use nex_fih::{
 use std::collections::{HashMap, HashSet};
 
 pub struct ContradictionDetector {
-    seen: HashSet<(String, String, String)>}
+    seen: HashSet<(String, String, String)>,
+}
 
 impl ContradictionDetector {
     pub fn new() -> Self {
         Self {
-            seen: HashSet::new()}
+            seen: HashSet::new(),
+        }
     }
 }
 
@@ -91,7 +93,10 @@ impl DetectionCapable for ContradictionDetector {
                         .collect();
 
                     output.facts.push(Fact::new(
-                        CoordId::from_string(&format!("{}-{}-{}-{}", topic, pa, pb, "contradiction")),
+                        CoordId::from_string(&format!(
+                            "{}-{}-{}-{}",
+                            topic, pa, pb, "contradiction"
+                        )),
                         "contradiction-detector".into(),
                         Content::from_json(&serde_json::json!({
                             "type": "contradiction",
