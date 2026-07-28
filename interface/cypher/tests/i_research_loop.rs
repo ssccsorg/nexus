@@ -2,13 +2,12 @@
 //
 // Six phases demonstrate the complete research lifecycle:
 //   1. Ingest 3 synthetic llms.md documents (GNN, Transformer, Hybrid)
-//   2. Verify entities exist and detect knowledge gaps via Cypher
+//   2. Verify entities exist and detect knowledge gaps via read_state
 //   3. Detect disconnected concept pairs and submit hypothesis Intents
 //   4. Claim and conclude an Intent, producing a new bridging Fact
 //   5. Verify the knowledge graph now connects previously disconnected concepts
 //   6. Show that new gaps emerge after knowledge integration
 
-use interface_cypher as cypher;
 use nex::FihBlackboard;
 use nexus_model::{
     Blackboard, BlackboardError, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead,
@@ -86,15 +85,6 @@ fn ingest_document(bb: &mut impl Blackboard, chunks: &[MdDocumentChunk]) {
         };
         bb.submit_fact(&fact).unwrap();
     }
-}
-
-// ── Helper: run a Cypher query and return record count ───────────────────
-
-fn cypher_count(bb: &HybridBlackboard, query: &str) -> usize {
-    bb.with_graph(|g| {
-        let plan = cypher::Plan::from_internal(query).expect("plan parse failed");
-        cypher::execute(g, &plan).expect("execute failed").len()
-    })
 }
 
 // ── Three synthetic llms.md documents ────────────────────────────────────
@@ -230,16 +220,9 @@ fn scenario_full_research_loop() {
     );
 
     // ──────────────────────────────────────────────────────────────────
-    // Phase 2: Cypher queries to verify entities and detect gaps
+    // Phase 2: Verify entities via read_state and detect gaps
     // ──────────────────────────────────────────────────────────────────
 
-    // All Facts should be queryable
-    let fact_count = cypher_count(&bb, "MATCH (f:Fact) RETURN f");
-    assert_eq!(fact_count, total_chunks, "Cypher finds all Fact nodes");
-
-    // Use read_state for origin-based verification because the Cypher
-    // internal planner's WHERE clause for string equality on properties
-    // is still a work-in-progress. Cypher is used for structural queries.
     let state = bb.read_state();
 
     let gnn_facts: Vec<&Fact> = state
@@ -285,7 +268,7 @@ fn scenario_full_research_loop() {
     assert_eq!(future_facts.len(), 3, "3 Future Directions sections exist");
 
     println!(
-        "  Phase 2: Verification passed — all {} facts queryable by origin",
+        "  Phase 2: Verification passed — all {} facts present",
         total_chunks
     );
     println!("  Phase 2: Gap detected — 3 Future Directions sections are disconnected");

@@ -728,22 +728,7 @@ fn scenario_multi_agent_collaboration() {
     }
 
     let state = StorageRead::read_state(&sched.bb);
-    // Verify each agent's conclusions exist
-    let alpha_conclusions = state
-        .facts
-        .iter()
-        .filter(|f| content_val_of(f).get("agent").and_then(|v| v.as_str()) == Some("alpha"))
-        .count();
-    let beta_conclusions = state
-        .facts
-        .iter()
-        .filter(|f| content_val_of(f).get("agent").and_then(|v| v.as_str()) == Some("beta"))
-        .count();
-    let gamma_conclusions = state
-        .facts
-        .iter()
-        .filter(|f| content_val_of(f).get("agent").and_then(|v| v.as_str()) == Some("gamma"))
-        .count();
+
 
     // With FihStorage, concluded facts have origin starting with "conclusion:"
     // instead of JSON content. Verify agents contributed via origin-based check.

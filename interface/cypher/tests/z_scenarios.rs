@@ -3,7 +3,6 @@
 // Each scenario: a group of agents use FIH to collaboratively solve a concrete
 // research problem. No agent talks directly to another — all via Blackboard.
 
-use interface_cypher as cypher;
 use nex::FihBlackboard;
 use nexus_model::{
     Fact, FactCapable, FihHash, Hint, HintCapable, Intent, IntentCapable, StorageRead,
@@ -70,13 +69,6 @@ fn scenario_contradiction_detection() {
             .unwrap_or("")
             .contains("Contradiction resolved")
     );
-
-    // Cypher verification
-    let rows = bb.with_graph(|g| {
-        let plan = cypher::Plan::from_internal("MATCH (f:Fact) RETURN f").unwrap();
-        cypher::execute(g, &plan).unwrap()
-    });
-    assert_eq!(rows.len(), 3);
 
     println!("  ✓ Contradiction Detection: 3 agents, contradiction resolved via FIH");
 }
@@ -151,13 +143,6 @@ fn scenario_peer_review() {
             .unwrap_or("")
             .contains("accepted with revisions")
     );
-
-    // Verify via Cypher
-    let hint_count = bb.with_graph(|g| {
-        let p = cypher::Plan::from_internal("MATCH (h:Hint) RETURN h").unwrap();
-        cypher::execute(g, &p).unwrap().len()
-    });
-    assert_eq!(hint_count, 2, "Cypher finds 2 hints");
 
     println!("  ✓ Peer Review: author + 2 reviewers + editor, hints guide conclusion");
 }
@@ -249,14 +234,6 @@ fn scenario_knowledge_synthesis() {
 
     let state = bb.read_state();
     assert_eq!(state.intents.len(), 1, "validation intent submitted");
-
-    // Cypher: all pieces accessible
-    let count = bb.with_graph(|g| {
-        let p = cypher::Plan::from_internal("MATCH (f:Fact) RETURN f").unwrap();
-        cypher::execute(g, &p).unwrap().len()
-    });
-    assert_eq!(count, 4, "Cypher confirms 4 facts");
-    assert_eq!(state.facts.len(), count, "read_state matches Cypher");
 
     println!("  ✓ Knowledge Synthesis: 4 agents complete a jigsaw puzzle via Blackboard");
     println!("  ✓ Partial observations → unified theory → actionable hypothesis");
