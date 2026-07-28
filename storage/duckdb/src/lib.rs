@@ -232,10 +232,7 @@ impl DuckDbStorage {
                 .unwrap_or_default();
             Ok(Intent {
                 id: CoordId::from_string(&id),
-                from_facts: from_facts
-                    .iter()
-                    .map(|s| CoordId::from_string(s))
-                    .collect(),
+                from_facts: from_facts.iter().map(|s| CoordId::from_string(s)).collect(),
                 description,
                 creator,
                 worker,
