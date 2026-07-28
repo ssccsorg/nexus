@@ -11,7 +11,13 @@
 //   Mutex<T> on native, RefCell<T> on wasm.
 //   Same borrow()/borrow_mut() API regardless of platform.
 
-pub mod process;
+pub mod error;
+pub mod eviction;
+pub mod scheduler;
+pub mod tasks;
+
+pub use error::ProcessError;
+pub use scheduler::Scheduler;
 
 // ── Backward-compatible module aliases ──────────────────────────────────
 //
