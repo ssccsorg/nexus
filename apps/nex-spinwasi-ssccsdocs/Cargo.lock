@@ -605,7 +605,6 @@ dependencies = [
  "nex-core",
  "nex-fih",
  "nex-io",
- "nexus-model",
  "serde",
  "serde_json",
 ]
@@ -653,7 +652,8 @@ dependencies = [
  "async-trait",
  "http",
  "nex",
- "nexus-model",
+ "nex-core",
+ "nex-fih",
  "postcard",
  "serde",
  "serde_json",
@@ -662,14 +662,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "nexus-model"
-version = "0.1.0"
-dependencies = [
- "nex-core",
- "nex-fih",
 ]
 
 [[package]]

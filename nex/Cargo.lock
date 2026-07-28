@@ -829,7 +829,6 @@ dependencies = [
  "nex-fih",
  "nex-io",
  "nexus-gateway-serde-proxy",
- "nexus-model",
  "nexus-storage-sim",
  "serde",
  "serde_json",
@@ -877,16 +876,9 @@ dependencies = [
 name = "nexus-gateway-serde-proxy"
 version = "0.1.0"
 dependencies = [
- "nexus-model",
- "serde_json",
-]
-
-[[package]]
-name = "nexus-model"
-version = "0.1.0"
-dependencies = [
  "nex-core",
  "nex-fih",
+ "serde_json",
 ]
 
 [[package]]
@@ -896,7 +888,8 @@ dependencies = [
  "cfg-if",
  "futures-executor",
  "nex",
- "nexus-model",
+ "nex-core",
+ "nex-fih",
  "postcard",
  "serde",
 ]

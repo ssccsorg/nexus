@@ -847,7 +847,6 @@ dependencies = [
  "nex-core",
  "nex-fih",
  "nex-io",
- "nexus-model",
  "serde",
  "serde_json",
 ]
@@ -893,7 +892,8 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "nex",
- "nexus-model",
+ "nex-core",
+ "nex-fih",
  "nexus-storage-sim",
  "reqwest",
  "serde",
@@ -906,21 +906,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "nexus-model"
-version = "0.1.0"
-dependencies = [
- "nex-core",
- "nex-fih",
-]
-
-[[package]]
 name = "nexus-storage-sim"
 version = "0.1.0"
 dependencies = [
  "cfg-if",
  "futures-executor",
  "nex",
- "nexus-model",
+ "nex-core",
+ "nex-fih",
  "postcard",
  "serde",
 ]
