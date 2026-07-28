@@ -37,9 +37,11 @@
 
 use std::ops::Range;
 
+use sha2::Digest;
+
 use crate::{
-    BlackboardError, BoardState, Content, Fact, FihHash, FlushCursor, FlushResult, Hint, Intent,
-    PartitionData, StateFilter,
+    BlackboardError, BoardState, Content, CoordId, Fact, FihHash, FlushCursor, FlushResult, Hint,
+    Intent, PartitionData, StateFilter,
 };
 use nex_core::Now;
 
@@ -194,22 +196,24 @@ impl<I: FileIo> FihStorage<I> {
         facts.sort_by_key(|r| r.submitted_at);
 
         for r in &facts {
-            let id_bytes = FihHash::from_hex(&r.id);
-            let idx = self.coord.intern(&id_bytes.0);
+            let id_ref = CoordId::from_string(&r.id);
+            let hash = id_ref.to_content_hash();
+            let idx = self.coord.intern(&hash.0);
             self.coord.by_time.borrow_mut().record(r.submitted_at, idx);
             self.coord
-                .record_fact(&id_bytes.0, &r.origin, &r.creator, r.submitted_at);
+                .record_fact(&hash.0, &r.origin, &r.creator, r.submitted_at);
         }
 
         for r in &intents {
-            let id_bytes = FihHash::from_hex(&r.id);
+            let id_ref = CoordId::from_string(&r.id);
+            let hash = id_ref.to_content_hash();
             let from_bytes: Vec<[u8; 32]> = r
                 .from_facts
                 .iter()
-                .map(|f| FihHash::from_hex(f).0)
+                .map(|f| CoordId::from_string(f).to_content_hash().0)
                 .collect();
             self.coord
-                .record_intent(&id_bytes.0, &r.creator, r.created_at, &from_bytes);
+                .record_intent(&hash.0, &r.creator, r.created_at, &from_bytes);
         }
     }
 
@@ -239,8 +243,8 @@ impl<I: FileIo> FihStorage<I> {
             if text.trim().is_empty() {
                 continue;
             }
-            let id_bytes = FihHash::from_hex(&r.id);
-            let idx = self.coord.intern(&id_bytes.0);
+            let id_ref = CoordId::from_string(&r.id);
+            let idx = self.coord.intern_coordref(&id_ref);
             let load = TextRecord { text };
             self.semantic_insert(idx, &load).await.ok();
         }
@@ -442,9 +446,14 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
                     && let Ok(r) = postcard::from_bytes::<FactRecord>(&bytes)
                 {
                     let content = load_blob(&self.io, &r.blob_hash).await;
+                    let content_hash = {
+                        let mut h = sha2::Sha256::new();
+                        h.update(&content.data);
+                        FihHash(h.finalize().into())
+                    };
                     facts.push(Fact {
-                        id: FihHash::from_hex(&r.id),
-                        coord: None,
+                        id: CoordId::from_string(&r.id),
+                        content_hash,
                         origin: r.origin.clone(),
                         content,
                         creator: r.creator.clone(),
@@ -460,9 +469,8 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
                     && let Ok(r) = postcard::from_bytes::<IntentRecord>(&bytes)
                 {
                     intents.push(Intent {
-                        id: FihHash::from_hex(&r.id),
-                        coord: None,
-                        from_facts: r.from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
+                        id: CoordId::from_string(&r.id),
+                        from_facts: r.from_facts.iter().map(|s| CoordId::from_string(s)).collect(),
                         description: {
                             if r.description_hash.is_empty() {
                                 r.id.clone()
@@ -479,7 +487,7 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
                         },
                         to_fact_id: match &r.status {
                             IntentStatus::Concluded { to_fact, .. } => {
-                                Some(FihHash::from_hex(to_fact))
+                                Some(CoordId::from_string(to_fact))
                             }
                             _ => None,
                         },
@@ -507,7 +515,7 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
                     && let Ok(r) = postcard::from_bytes::<HintRecord>(&bytes)
                 {
                     hints.push(Hint {
-                        id: FihHash::from_hex(&r.id),
+                        id: CoordId::from_string(&r.id),
                         content: r.content.clone(),
                         creator: r.creator.clone(),
                     });
@@ -526,7 +534,7 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
 // ── AsyncFactCapable ───────────────────────────────────────────────────────
 
 impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
-    async fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
+    async fn submit_fact(&self, fact: &Fact) -> Result<CoordId, BlackboardError> {
         // Enqueue blob content and fact record in pending buffer only.
         // No direct io.write() — caller must call flush_pending() for durability.
         // This enables batch writes (N paragraphs → 1 apply_batch instead of 2N R2 PUTs).
@@ -550,11 +558,11 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
         // Update indices via FihCoord (record_fact records by_time internally)
         let ts = self.clock.now_nanos();
         self.coord
-            .record_fact(&fact.id.0, &fact.origin, &fact.creator, ts);
+            .record_fact_coordref(&fact.id, &fact.origin, &fact.creator, ts);
 
         // Auto-index into semantic stores (skip conclusion facts to reduce noise)
         if !fact.origin.starts_with("conclusion:") {
-            let fact_idx = self.coord.intern(&fact.id.0);
+            let fact_idx = self.coord.intern_coordref(&fact.id);
             let text = String::from_utf8_lossy(&fact.content.data).to_string();
             struct FactTextRecord {
                 text: String,
@@ -603,7 +611,7 @@ impl<I: FileIo> crate::AsyncHintCapable for FihStorage<I> {
 // ── AsyncIntentCapable ─────────────────────────────────────────────────────
 
 impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
-    async fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+    async fn submit_intent(&self, intent: &Intent) -> Result<CoordId, BlackboardError> {
         if intent.from_facts.is_empty() {
             return Err(BlackboardError::Forbidden(
                 "intent must reference at least one fact".into(),
@@ -656,11 +664,11 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         };
 
         // Record intent in coordinator (handles by_fact, ref_counts, by_status, by_creator)
-        self.coord.record_intent(
-            &intent.id.0,
+        self.coord.record_intent_coordref(
+            &intent.id,
             &intent.creator,
             record.created_at,
-            &intent.from_facts.iter().map(|f| f.0).collect::<Vec<_>>(),
+            &intent.from_facts,
         );
 
         self.intent_store.insert(record.id.clone(), record).await;
@@ -670,7 +678,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
 
     async fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let _ = self.flush_pending().await;
-        let normalized = FihHash::from_hex(intent_id).to_string();
+        let normalized = CoordId::from_string(&intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
             .io
@@ -708,7 +716,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
 
     async fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let _ = self.flush_pending().await;
-        let normalized = FihHash::from_hex(intent_id).to_string();
+        let normalized = CoordId::from_string(&intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
             .io
@@ -746,7 +754,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
 
     async fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let _ = self.flush_pending().await;
-        let normalized = FihHash::from_hex(intent_id).to_string();
+        let normalized = CoordId::from_string(&intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
             .io
@@ -795,7 +803,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         result: &str,
     ) -> Result<Fact, BlackboardError> {
         let _ = self.flush_pending().await;
-        let normalized = FihHash::from_hex(intent_id).to_string();
+        let normalized = CoordId::from_string(&intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
             .io
@@ -815,9 +823,15 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         };
 
         let conclusion_id = format!("f_concl_{}", intent_id);
+        let content_data = result.as_bytes().to_vec();
+        let content_hash = {
+            let mut h = sha2::Sha256::new();
+            h.update(&content_data);
+            FihHash(h.finalize().into())
+        };
         let new_fact = Fact {
-            id: FihHash::from_hex(&conclusion_id),
-            coord: None,
+            id: CoordId::from_string(&conclusion_id),
+            content_hash,
             origin: format!("conclusion:{}", intent_id),
             content: Content {
                 mime_type: "text/plain".into(),
@@ -854,8 +868,10 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.intent_store
             .insert(intent_id.to_string(), record)
             .await;
+        let cid = CoordId::from_string(&intent_id);
+        let hash = cid.to_content_hash();
         self.coord
-            .update_intent_status(&FihHash::from_hex(intent_id).0, "claimed", "concluded");
+            .update_intent_status(&hash.0, "claimed", "concluded");
 
         Ok(new_fact)
     }
@@ -989,9 +1005,13 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                 .map(|r| {
                     let content = self.load_content(&r.blob_hash, "application/octet-stream");
                     Fact {
-                        id: FihHash::from_hex(&r.id),
-                        coord: None,
+                        id: CoordId::from_string(&r.id),
                         origin: r.origin,
+                        content_hash: {
+                        let mut h = sha2::Sha256::new();
+                        h.update(&content.data);
+                        FihHash(h.finalize().into())
+                    },
                         content,
                         creator: r.creator,
                     }
@@ -1002,9 +1022,13 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                 .map(|r| {
                     let content = self.load_content(&r.blob_hash, "application/octet-stream");
                     Fact {
-                        id: FihHash::from_hex(&r.id),
-                        coord: None,
+                        id: CoordId::from_string(&r.id),
                         origin: r.origin,
+                        content_hash: {
+                        let mut h = sha2::Sha256::new();
+                        h.update(&content.data);
+                        FihHash(h.finalize().into())
+                    },
                         content,
                         creator: r.creator,
                     }
@@ -1024,9 +1048,8 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                         String::from_utf8_lossy(&c.data).to_string()
                     };
                     Intent {
-                        id: FihHash::from_hex(&r.id),
-                        coord: None,
-                        from_facts: r.from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
+                        id: CoordId::from_string(&r.id),
+                        from_facts: r.from_facts.iter().map(|s| CoordId::from_string(s)).collect(),
                         description,
                         creator: r.creator,
                         worker: match &r.status {
@@ -1036,7 +1059,7 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                         },
                         to_fact_id: match &r.status {
                             IntentStatus::Concluded { to_fact, .. } => {
-                                Some(FihHash::from_hex(to_fact))
+                                Some(CoordId::from_string(to_fact))
                             }
                             _ => None,
                         },
@@ -1065,9 +1088,8 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                         String::from_utf8_lossy(&c.data).to_string()
                     };
                     Intent {
-                        id: FihHash::from_hex(&r.id),
-                        coord: None,
-                        from_facts: r.from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
+                        id: CoordId::from_string(&r.id),
+                        from_facts: r.from_facts.iter().map(|s| CoordId::from_string(s)).collect(),
                         description,
                         creator: r.creator,
                         worker: match &r.status {
@@ -1077,7 +1099,7 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                         },
                         to_fact_id: match &r.status {
                             IntentStatus::Concluded { to_fact, .. } => {
-                                Some(FihHash::from_hex(to_fact))
+                                Some(CoordId::from_string(to_fact))
                             }
                             _ => None,
                         },
@@ -1103,7 +1125,7 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
             if has_hint_filter {
                 let hint_ids_set: Option<HashSet<String>> = filter.hint_ids.as_ref().map(|ids| {
                     ids.iter()
-                        .map(|id| FihHash::from_hex(id).to_string())
+                        .map(|id| CoordId::from_string(&id).to_string())
                         .collect()
                 });
                 match hint_ids_set {
@@ -1111,7 +1133,7 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                         .into_iter()
                         .filter(|r| ids.contains(&r.id))
                         .map(|r| Hint {
-                            id: FihHash::from_hex(&r.id),
+                            id: CoordId::from_string(&r.id),
                             content: r.content,
                             creator: r.creator,
                         })
@@ -1119,7 +1141,7 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                     None => all_hints
                         .into_iter()
                         .map(|r| Hint {
-                            id: FihHash::from_hex(&r.id),
+                            id: CoordId::from_string(&r.id),
                             content: r.content,
                             creator: r.creator,
                         })
@@ -1129,7 +1151,7 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                 all_hints
                     .into_iter()
                     .map(|r| Hint {
-                        id: FihHash::from_hex(&r.id),
+                        id: CoordId::from_string(&r.id),
                         content: r.content,
                         creator: r.creator,
                     })
@@ -1235,9 +1257,13 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
                 .map(|r| {
                     let content = self.load_content(&r.blob_hash, "application/octet-stream");
                     Fact {
-                        id: FihHash::from_hex(&r.id),
-                        coord: None,
+                        id: CoordId::from_string(&r.id),
                         origin: r.origin,
+                        content_hash: {
+                        let mut h = sha2::Sha256::new();
+                        h.update(&content.data);
+                        FihHash(h.finalize().into())
+                    },
                         content,
                         creator: r.creator,
                     }
@@ -1254,9 +1280,8 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
                         String::from_utf8_lossy(&c.data).to_string()
                     };
                     Intent {
-                        id: FihHash::from_hex(&r.id),
-                        coord: None,
-                        from_facts: r.from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
+                        id: CoordId::from_string(&r.id),
+                        from_facts: r.from_facts.iter().map(|s| CoordId::from_string(s)).collect(),
                         description,
                         creator: r.creator,
                         worker: match &r.status {
@@ -1266,7 +1291,7 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
                         },
                         to_fact_id: match &r.status {
                             IntentStatus::Concluded { to_fact, .. } => {
-                                Some(FihHash::from_hex(to_fact))
+                                Some(CoordId::from_string(to_fact))
                             }
                             _ => None,
                         },
@@ -1289,7 +1314,7 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
                 .into_iter()
                 .filter(|h| h.creator == prefix)
                 .map(|r| Hint {
-                    id: FihHash::from_hex(&r.id),
+                    id: CoordId::from_string(&r.id),
                     content: r.content,
                     creator: r.creator,
                 })

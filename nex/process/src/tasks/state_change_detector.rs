@@ -10,13 +10,12 @@
 
 use crate::ContentJsonExt;
 use nex_fih::{
-    BoardState, Content, DetectionCapable, DetectionCheckpoint, DetectionOutput, Fact, FihHash,
+    BoardState, Content, CoordId, DetectionCapable, DetectionCheckpoint, DetectionOutput, Fact,
     StateChangeDetection,
 };
 
 pub struct StateChangeDetector {
-    checkpoint: Option<DetectionCheckpoint>,
-}
+    checkpoint: Option<DetectionCheckpoint>}
 
 impl StateChangeDetector {
     pub fn new() -> Self {
@@ -37,8 +36,7 @@ impl StateChangeDetection for StateChangeDetector {
 
     fn from_checkpoint(checkpoint: DetectionCheckpoint) -> Self {
         Self {
-            checkpoint: Some(checkpoint),
-        }
+            checkpoint: Some(checkpoint)}
     }
 }
 
@@ -70,8 +68,7 @@ impl DetectionCapable for StateChangeDetector {
         let Some(ref checkpoint) = self.checkpoint else {
             self.checkpoint = Some(DetectionCheckpoint {
                 fact_count: current_facts,
-                open_intent_count: current_open,
-            });
+                open_intent_count: current_open});
             return output;
         };
 
@@ -97,7 +94,7 @@ impl DetectionCapable for StateChangeDetector {
         }
 
         output.facts.push(Fact::new(
-            FihHash::new(&[&triggers.join(",")], "state-change"),
+            CoordId::from_string(&format!("{}-{}", &triggers.join(","), "state-change")),
             "state-change-detector".into(),
             Content::from_json(&serde_json::json!({
                 "type": "state_change",
@@ -105,15 +102,13 @@ impl DetectionCapable for StateChangeDetector {
                 "prev_fact_count": checkpoint.fact_count,
                 "curr_fact_count": current_facts,
                 "prev_open_intents": checkpoint.open_intent_count,
-                "curr_open_intents": current_open,
-            })),
+                "curr_open_intents": current_open})),
             "state-change-detector".into(),
         ));
 
         self.checkpoint = Some(DetectionCheckpoint {
             fact_count: current_facts,
-            open_intent_count: current_open,
-        });
+            open_intent_count: current_open});
 
         output
     }
@@ -122,8 +117,7 @@ impl DetectionCapable for StateChangeDetector {
         self.checkpoint.as_ref().map(|cp| {
             Content::from_json(&serde_json::json!({
                 "fact_count": cp.fact_count,
-                "open_intent_count": cp.open_intent_count,
-            }))
+                "open_intent_count": cp.open_intent_count}))
         })
     }
 
@@ -138,7 +132,6 @@ impl DetectionCapable for StateChangeDetector {
             .unwrap_or(0) as usize;
         self.checkpoint = Some(DetectionCheckpoint {
             fact_count: fc,
-            open_intent_count: oi,
-        });
+            open_intent_count: oi});
     }
 }

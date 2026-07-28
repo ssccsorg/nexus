@@ -46,7 +46,7 @@ pub use detection::{
     StateChangeDetection, TaskStates,
 };
 pub use error::BlackboardError;
-pub use fih::{BoardState, Content, CoordRef, Fact, FihHash, Hint, Intent};
+pub use fih::{BoardState, Content, CoordId, Fact, FihHash, Hint, Intent};
 pub use helper::ContentJsonExt;
 pub use semantic::SemanticStore;
 pub use semantic::record::{Query, RecordLoad};

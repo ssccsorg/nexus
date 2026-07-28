@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::AtomicU32;
 
-use crate::FihHash;
+use crate::{CoordId, FihHash};
 use crate::semantic::{DynSemanticStore, Query, RecordLoad};
 use tagma_core::{Coord, CoordPath, CoordSpaceN};
 
@@ -186,7 +186,8 @@ impl FihCoord {
     }
 
     pub fn intern_str(&self, id: &str) -> u32 {
-        let hash = FihHash::from_hex(id);
+        let cid = CoordId::from_string(id);
+        let hash = cid.to_content_hash();
         self.intern(&hash.0)
     }
 
@@ -211,6 +212,40 @@ impl FihCoord {
             .get(idx as usize)
             .cloned()
             .unwrap_or_default()
+    }
+
+    /// Adapter: intern a CoordId by converting to content hash.
+    /// Temporary bridge — removed with FihCoord in Phase 3.
+    pub fn intern_coordref(&self, id: &crate::CoordId) -> u32 {
+        let hash = id.to_content_hash();
+        self.intern(&hash.0)
+    }
+
+    /// Adapter: record a Fact by CoordId.
+    /// Temporary bridge — removed with FihCoord in Phase 3.
+    pub fn record_fact_coordref(
+        &self,
+        id: &crate::CoordId,
+        origin: &str,
+        creator: &str,
+        created_at: u64,
+    ) {
+        let hash = id.to_content_hash();
+        self.record_fact(&hash.0, origin, creator, created_at);
+    }
+
+    /// Adapter: record an Intent by CoordId.
+    /// Temporary bridge — removed with FihCoord in Phase 3.
+    pub fn record_intent_coordref(
+        &self,
+        id: &crate::CoordId,
+        creator: &str,
+        created_at: u64,
+        from_facts: &[crate::CoordId],
+    ) {
+        let hash = id.to_content_hash();
+        let from_hashes: Vec<[u8; 32]> = from_facts.iter().map(|f| f.to_content_hash().0).collect();
+        self.record_intent(&hash.0, creator, created_at, &from_hashes);
     }
 
     /// Clear all indices EXCEPT semantic stores.

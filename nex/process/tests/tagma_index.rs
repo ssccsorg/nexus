@@ -1,13 +1,14 @@
 use nex::storage::core::index::{FihCoord, intersect_2, intersect_3};
-use nex_fih::FihHash;
+use nex_fih::CoordId;
 
 fn make_coord() -> FihCoord {
     FihCoord::new()
 }
 
 fn record_fact(coord: &FihCoord, tag: &str, origin: &str, creator: &str, ts: u64) {
-    let id = FihHash::from_hex(tag);
-    coord.record_fact(&id.0, origin, creator, ts);
+    let id = CoordId::from_string(&tag);
+    let hash = id.to_content_hash();
+    coord.record_fact(&hash.0, origin, creator, ts);
 }
 
 // ── Tagma query: by_origin_creator ───────────────────────────────────
@@ -18,7 +19,7 @@ fn tagma_query_2axis_exact_match() {
     record_fact(&coord, "f001", "origin-a", "creator-x", 100);
 
     let result = coord.by_origin_creator("origin-a", "creator-x");
-    let expected = coord.intern(&FihHash::from_hex("f001").0);
+    let expected = coord.intern(&(CoordId::from_string("f001").to_content_hash().0));
     assert_eq!(result, vec![expected]);
 }
 

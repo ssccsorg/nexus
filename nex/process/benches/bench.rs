@@ -10,7 +10,7 @@
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use nex::storage::core::index::FihCoord;
-use nex_fih::FihHash;
+use nex_fih::CoordId;
 
 // ---------------------------------------------------------------------------
 // Seed helpers
@@ -24,7 +24,7 @@ fn seed_coord(count: usize, n_origins: usize, n_creators: usize) -> FihCoord {
         let tag = format!("f{i:06x}");
         let origin = format!("org-{}", i % n_origins);
         let creator = format!("cr-{}", (i / n_origins) % n_creators);
-        let id = FihHash::from_hex(&tag);
+        let id = CoordId::from_string(&tag);
         coord.record_fact(&id.0, &origin, &creator, (i * 100) as u64);
     }
     coord

@@ -51,16 +51,27 @@ where
 // ── CoordEntityStore: CoordSpaceN-backed EntityStore ──────────────────
 
 /// Map a string key to a CoordPath<N> deterministically without hashing.
-/// Interprets the first N×2 bytes of the key as N u16 values, each
-/// reduced modulo 11172 to produce valid Coord indices.
+///
+/// Supports two formats:
+/// - 6-char Hangul: each character is a direct Coord (Phase 2+, CoordId format)
+/// - Other (64-char hex, etc.): byte decomposition (Phase 1 backward compat)
 fn str_to_coordpath<const N: usize>(key: &str) -> CoordPath<N> {
+    let chars: Vec<char> = key.chars().collect();
+    // Fast path: N-character Hangul key → direct Coord mapping
+    if chars.len() == N && chars.iter().all(|c| Coord::from_char(*c).is_some()) {
+        let mut coords = [Coord::new(0).unwrap(); N];
+        for (i, &ch) in chars.iter().enumerate() {
+            coords[i] = Coord::from_char(ch).unwrap();
+        }
+        return CoordPath::new(coords);
+    }
+    // Fallback: byte decomposition (backward compat with hex keys)
     let bytes = key.as_bytes();
     let mut coords = [Coord::new(0).unwrap(); N];
     for i in 0..N {
         let hi = bytes.get(i * 2).copied().unwrap_or(0) as u16;
         let lo = bytes.get(i * 2 + 1).copied().unwrap_or(0) as u16;
         let idx = (hi << 8 | lo) % 11172;
-        // idx < 11172 guaranteed by modulo
         coords[i] = Coord::new(idx as u16).unwrap();
     }
     CoordPath::new(coords)

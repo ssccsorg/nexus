@@ -7,7 +7,7 @@
 //   - heartbeat while another thread releases
 
 use nex::FihBlackboard;
-use nex_fih::{Blackboard, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
+use nex_fih::{Blackboard, Fact, FactCapable, CoordId, Intent, IntentCapable, StorageRead};
 use nexus_storage_sim::SimIo;
 use std::sync::{
     Arc, Mutex,
@@ -74,7 +74,7 @@ impl ParallelAnt {
                 // Submit fact (high prob early on)
                 let id = format!("fact_{}", step);
                 bb.submit_fact(&Fact::new(
-                    FihHash::from_hex(&id),
+                    CoordId::from_string(&id),
                     self.name.clone(),
                     format!("parallel observation at step {step}").into(),
                     self.name.clone(),
@@ -96,8 +96,7 @@ impl ParallelAnt {
                 }
                 let id = format!("pi_{}_{}", self.name, step);
                 match bb.submit_intent(&Intent {
-                    id: FihHash::from_hex(&id),
-                    coord: None,
+                    id: CoordId::from_string(&id),
                     from_facts: fact_ids,
                     description: format!("hypothesis at step {step}"),
                     creator: self.name.clone(),
@@ -211,8 +210,7 @@ fn test_parallel_many_ants() {
         ];
         for (id, content) in &seeds {
             guard
-                .submit_fact(&Fact::new(
-                    FihHash::from_hex(id),
+                .submit_fact(&Fact::new(CoordId::from_string(&id),
                     "corpus".into(),
                     (*content).into(),
                     "system".into(),

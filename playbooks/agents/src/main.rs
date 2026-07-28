@@ -11,7 +11,7 @@
 //   cd tests/agents && cargo run
 
 use nex::FihBlackboard;
-use nex_fih::{Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
+use nex_fih::{CoordId, Fact, FactCapable, Intent, IntentCapable, StorageRead};
 use nexus_storage_sim::SimIo;
 
 fn main() {
@@ -24,7 +24,7 @@ fn main() {
     println!("1. Submitting facts...");
     let f1 = bb
         .submit_fact(&Fact::new(
-            FihHash::new(&["gnn-accuracy"], "fact"),
+            CoordId::from_string("gnn-accuracy"),
             "arxiv_2401".into(),
             serde_json::to_string(&serde_json::json!({
                 "model": "GNN",
@@ -39,7 +39,7 @@ fn main() {
         .unwrap();
     let f2 = bb
         .submit_fact(&Fact::new(
-            FihHash::new(&["gnn-oversmoothing"], "fact"),
+            CoordId::from_string("gnn-oversmoothing"),
             "neurips_2023".into(),
             serde_json::to_string(&serde_json::json!({
                 "finding": "Message-passing GNNs oversmooth beyond 6 layers",
@@ -58,8 +58,7 @@ fn main() {
     println!("\n2. Submitting intent...");
     let intent_id = bb
         .submit_intent(&Intent {
-            id: FihHash::new(&["test-hypothesis"], "intent"),
-            coord: None,
+            id: CoordId::from_string("test-hypothesis"),
             from_facts: vec![f1, f2],
             description: "Test shallow (3-layer) vs deep GNN on molecular benchmark".into(),
             creator: "agent-c".into(),

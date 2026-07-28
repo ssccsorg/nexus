@@ -12,7 +12,7 @@ mod common;
 use futures_executor::block_on;
 use nex_fih::{
     AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable, AsyncHintCapable,
-    AsyncIntentCapable, AsyncStorageRead, Content, Fact, FihHash, FlushCursor, FlushResult, Hint,
+    AsyncIntentCapable, AsyncStorageRead, Content, Fact, CoordId, FlushCursor, FlushResult, Hint,
     Intent, StateFilter,
 };
 use nexus_storage_sim::{EntityStore, FihStorage, SimIo, SyncFileIo};
@@ -24,24 +24,22 @@ fn store() -> FihStorage<SimIo> {
 }
 
 fn submit_fact(store: &FihStorage<SimIo>, id: &str, data: &str) {
-    block_on(store.submit_fact(&Fact {
-        id: FihHash::from_hex(id),
-        coord: None,
-        origin: "tm".into(),
-        content: Content {
+    block_on(store.submit_fact(&Fact::new(
+        CoordId::from_string(id),
+        "tm".into(),
+        Content {
             mime_type: "text/plain".into(),
             data: data.as_bytes().to_vec(),
         },
-        creator: "tester".into(),
-    }))
+        "tester".into(),
+    )))
     .unwrap();
 }
 
 fn submit_intent(store: &FihStorage<SimIo>, id: &str, from: &[&str]) {
     block_on(store.submit_intent(&Intent {
-        id: FihHash::from_hex(id),
-        coord: None,
-        from_facts: from.iter().map(|s| FihHash::from_hex(s)).collect(),
+        id: CoordId::from_string(id),
+from_facts: from.iter().map(|s| CoordId::from_string(s)).collect(),
         description: format!("intent {}", id),
         creator: "tester".into(),
         worker: None,
@@ -206,7 +204,7 @@ fn test_full_statespace_round_trip() {
     submit_fact(&store, "f2", "two");
     submit_intent(&store, "i1", &["f1"]);
     block_on(store.submit_hint(&Hint {
-        id: FihHash::from_hex("h1"),
+        id: CoordId::from_string("h1"),
         content: "hint one".into(),
         creator: "tester".into(),
     }))
@@ -278,7 +276,7 @@ fn test_eviction_preserves_fact_removes_old_hint() {
     let store = store();
     submit_fact(&store, "f_keep", "keep me");
     block_on(store.submit_hint(&Hint {
-        id: FihHash::from_hex("h_old"),
+        id: CoordId::from_string("h_old"),
         content: "old hint".into(),
         creator: "tester".into(),
     }))

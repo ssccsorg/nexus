@@ -7,13 +7,13 @@
 //   4. Read_state + unit assertions verify correctness (Cypher is for portability)
 
 use nex::FihBlackboard;
-use nex_fih::{Blackboard, BlackboardError, Fact, FihHash, Intent, IntentCapable, StorageRead};
+use nex_fih::{Blackboard, BlackboardError, Fact, CoordId, Intent, IntentCapable, StorageRead};
 use nexus_storage_sim::SimIo;
 
 /// Helper: submit a fact with minimal boilerplate.
 fn submit_fact(bb: &impl Blackboard, id: &str, origin: &str, content: &str, creator: &str) {
     let fact = Fact::new(
-        FihHash::from_hex(id),
+        CoordId::from_string(id),
         origin.into(),
         content.into(),
         creator.into(),
@@ -61,9 +61,8 @@ fn test_full_agent_collaboration_flow() {
 
     // Agent-B submits an Intent grounded in facts
     let intent = Intent {
-        id: FihHash::from_hex("i001"),
-        coord: None,
-        from_facts: vec![FihHash::from_hex("f001"), FihHash::from_hex("f002")],
+        id: CoordId::from_string("i001"),
+        from_facts: vec![CoordId::from_string("f001"), CoordId::from_string("f002")],
         description: "Test shallow GNN (3 layers) vs deep GNN (10 layers) on molecular benchmark"
             .into(),
         creator: "agent-b".into(),

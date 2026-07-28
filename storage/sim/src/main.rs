@@ -8,7 +8,7 @@
 
 use nex_fih::{
     AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable, AsyncHintCapable,
-    AsyncIntentCapable, AsyncStorageRead, Fact, FihHash, FlushCursor, Hint, Intent, StateFilter,
+    AsyncIntentCapable, AsyncStorageRead, CoordId, Fact, FlushCursor, Hint, Intent, StateFilter,
 };
 use nexus_storage_sim::{FihStorage, SimIo, SyncFileIo, intent_status};
 
@@ -80,8 +80,7 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact::new(
-                FihHash::from_hex("f001"),
+            &Fact::new(CoordId::from_string("f001"),
                 "verify".into(),
                 "hello world".into(),
                 "v".into(),
@@ -99,9 +98,8 @@ fn main() {
         let result = AsyncIntentCapable::submit_intent(
             &store,
             &Intent {
-                id: FihHash::from_hex("i001"),
-                coord: None,
-                from_facts: vec![FihHash::from_hex("f_nonexistent")],
+                id: CoordId::from_string("i001"),
+                from_facts: vec![CoordId::from_string("f_nonexistent")],
                 description: "test".into(),
                 creator: "v".into(),
                 worker: None,
@@ -123,8 +121,7 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact::new(
-                FihHash::from_hex("f_base"),
+            &Fact::new(CoordId::from_string("f_base"),
                 "verify".into(),
                 "base data".into(),
                 "v".into(),
@@ -135,9 +132,8 @@ fn main() {
         AsyncIntentCapable::submit_intent(
             &store,
             &Intent {
-                id: FihHash::from_hex("i001"),
-                coord: None,
-                from_facts: vec![FihHash::from_hex("f_base")],
+                id: CoordId::from_string("i001"),
+                from_facts: vec![CoordId::from_string("f_base")],
                 description: "analyze base".into(),
                 creator: "v".into(),
                 worker: None,
@@ -168,8 +164,7 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact::new(
-                FihHash::from_hex("f_base"),
+            &Fact::new(CoordId::from_string("f_base"),
                 "v".into(),
                 "x".into(),
                 "v".into(),
@@ -180,9 +175,8 @@ fn main() {
         AsyncIntentCapable::submit_intent(
             &store,
             &Intent {
-                id: FihHash::from_hex("i001"),
-                coord: None,
-                from_facts: vec![FihHash::from_hex("f_base")],
+                id: CoordId::from_string("i001"),
+                from_facts: vec![CoordId::from_string("f_base")],
                 description: "test".into(),
                 creator: "v".into(),
                 worker: None,
@@ -208,8 +202,7 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncHintCapable::submit_hint(
             &store,
-            &Hint {
-                id: FihHash::from_hex("h001"),
+            &Hint { id: CoordId::from_string("h001"),
                 content: "ephemeral note".into(),
                 creator: "v".into(),
             },
@@ -227,8 +220,7 @@ fn main() {
         let store = FihStorage::new(io.clone(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact::new(
-                FihHash::from_hex("f001"),
+            &Fact::new(CoordId::from_string("f001"),
                 "v".into(),
                 "flush test".into(),
                 "v".into(),
@@ -248,8 +240,7 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact::new(
-                FihHash::from_hex("f001"),
+            &Fact::new(CoordId::from_string("f001"),
                 "v".into(),
                 "a".into(),
                 "v".into(),
@@ -285,8 +276,7 @@ fn main() {
         let store = FihStorage::new(io.clone(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact::new(
-                FihHash::from_hex("f001"),
+            &Fact::new(CoordId::from_string("f001"),
                 "v".into(),
                 "data".into(),
                 "v".into(),
@@ -315,8 +305,7 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact::new(
-                FihHash::from_hex("f001"),
+            &Fact::new(CoordId::from_string("f001"),
                 "v".into(),
                 "data".into(),
                 "v".into(),
@@ -336,8 +325,7 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact::new(
-                FihHash::from_hex("f001"),
+            &Fact::new(CoordId::from_string("f001"),
                 "v".into(),
                 "data".into(),
                 "v".into(),
@@ -359,8 +347,7 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncHintCapable::submit_hint(
             &store,
-            &Hint {
-                id: FihHash::from_hex("h001"),
+            &Hint { id: CoordId::from_string("h001"),
                 content: "old hint".into(),
                 creator: "v".into(),
             },
@@ -381,8 +368,7 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact::new(
-                FihHash::from_hex("f_orphan"),
+            &Fact::new(CoordId::from_string("f_orphan"),
                 "v".into(),
                 "orphan".into(),
                 "v".into(),
@@ -392,8 +378,7 @@ fn main() {
         .unwrap();
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact::new(
-                FihHash::from_hex("f_refd"),
+            &Fact::new(CoordId::from_string("f_refd"),
                 "v".into(),
                 "refd".into(),
                 "v".into(),
@@ -404,9 +389,8 @@ fn main() {
         AsyncIntentCapable::submit_intent(
             &store,
             &Intent {
-                id: FihHash::from_hex("i001"),
-                coord: None,
-                from_facts: vec![FihHash::from_hex("f_refd")],
+                id: CoordId::from_string("i001"),
+                from_facts: vec![CoordId::from_string("f_refd")],
                 description: "test".into(),
                 creator: "v".into(),
                 worker: None,
@@ -446,7 +430,7 @@ fn main() {
         );
         let concluded = hb.try_conclude("f_result", 300).unwrap();
         assert!(
-            matches!(&concluded, intent_status::IntentStatus::Concluded{ to_fact, .. } if to_fact == &FihHash::from_hex("f_result").to_string())
+            matches!(&concluded, intent_status::IntentStatus::Concluded{ to_fact, .. } if to_fact == &CoordId::from_string("f_result").to_string())
         );
         assert!(!concluded.is_active());
     });

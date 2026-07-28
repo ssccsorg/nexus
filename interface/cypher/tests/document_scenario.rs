@@ -49,17 +49,16 @@ use nex::process::tasks::contradiction_detector::ContradictionDetector;
 use nex::process::tasks::gap_detector::GapDetector;
 use nex::process::tasks::new_document_analyzer::NewDocumentAnalyzer;
 use nex::process::tasks::state_change_detector::StateChangeDetector;
-use nex_fih::{Blackboard, BoardState, Content, EvictCapable, Fact, FihHash, Intent, StorageRead};
+use nex_fih::{Blackboard, BoardState, Content, EvictCapable, Fact, CoordId, Intent, StorageRead};
 use nexus_storage_sim::SimIo;
 
 // ── Helper: construct a claim Fact with {claim, topic, position} content ─
 
 fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) -> Fact {
-    Fact {
-        id: FihHash::from_hex(id),
-        coord: None,
-        origin: origin.to_string(),
-        content: Content {
+    Fact::new(
+        CoordId::from_string(id),
+        origin.to_string(),
+        Content {
             mime_type: "application/json".into(),
             data: serde_json::to_string(&serde_json::json!({
                 "claim": claim_text,
@@ -69,8 +68,8 @@ fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) 
             .unwrap_or_default()
             .into_bytes(),
         },
-        creator: "ingester".into(),
-    }
+        "ingester".into(),
+    )
 }
 
 // ── Document corpus: 4 initial documents, 19 claims ────────────────────
@@ -362,8 +361,7 @@ fn agent_resolve_contradictions(
             continue;
         }
         let intent = Intent {
-            id: FihHash::new(&[&fact.id.to_string(), agent_name], "resolve"),
-            coord: None,
+            id: CoordId::from_string(&format!("resolve::{}", agent_name)),
             from_facts: vec![fact.id],
             description: format!("Resolve {}: {}", t, agent_name),
             creator: agent_name.into(),

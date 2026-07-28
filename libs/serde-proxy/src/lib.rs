@@ -11,7 +11,7 @@
 /// Implements `Blackboard` trait so it can be used wherever a Blackboard
 /// reference is expected.
 use nex_fih::{
-    Blackboard, BlackboardError, BoardState, Fact, FactCapable, FihHash, Hint, HintCapable, Intent,
+    Blackboard, BlackboardError, BoardState, CoordId, Fact, FactCapable, Hint, HintCapable, Intent,
     IntentCapable, StorageRead,
 };
 
@@ -41,7 +41,7 @@ impl<B: Blackboard> StorageRead for SerdeProxy<B> {
 // ── FactCapable — serde round-trip before delegate ───────────────────────
 
 impl<B: Blackboard> FactCapable for SerdeProxy<B> {
-    fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
+    fn submit_fact(&self, fact: &Fact) -> Result<CoordId, BlackboardError> {
         let decoded: Fact = serde_json::from_slice(&serde_json::to_vec(fact).unwrap()).unwrap();
         self.inner.submit_fact(&decoded)
     }
@@ -59,7 +59,7 @@ impl<B: Blackboard> HintCapable for SerdeProxy<B> {
 // ── IntentCapable — serde round-trip for submit, pass-through otherwise ──
 
 impl<B: Blackboard> IntentCapable for SerdeProxy<B> {
-    fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+    fn submit_intent(&self, intent: &Intent) -> Result<CoordId, BlackboardError> {
         let decoded: Intent = serde_json::from_slice(&serde_json::to_vec(intent).unwrap()).unwrap();
         self.inner.submit_intent(&decoded)
     }

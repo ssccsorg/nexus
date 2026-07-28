@@ -6,9 +6,9 @@ pub mod duckdb_ext;
 use interface_cypher::capable::CypherCapable;
 use interface_query::ColdQuery;
 use nex_fih::{
-    BoardState, ColdStorage, Content, EvictCapable, Fact, FihHash, FilterCapable, FlushCapable,
-    FlushCursor, FlushResult, Hint, Intent, PartitionData, ScanCapable, StateFilter, StorageRead,
-    TimeRangeCapable,
+    BoardState, ColdStorage, Content, CoordId, EvictCapable, Fact, FilterCapable,
+    FlushCapable, FlushCursor, FlushResult, Hint, Intent, PartitionData, ScanCapable, StateFilter,
+    StorageRead, TimeRangeCapable,
 };
 use std::collections::HashMap;
 use std::fs;
@@ -181,30 +181,30 @@ impl DuckDbStorage {
             let origin: String = row.get(1)?;
             let content_str: String = row.get(2)?;
             let creator: String = row.get(3)?;
-            Ok(Fact {
-                id: FihHash::from_hex(&id),
-                coord: None,
-                origin,
-                content: match serde_json::from_str::<serde_json::Value>(&content_str) {
-                    Ok(v) => match v {
-                        serde_json::Value::String(s) => Content {
-                            mime_type: "text/plain".into(),
-                            data: s.into_bytes(),
-                        },
-                        other => Content {
-                            mime_type: "application/json".into(),
-                            data: serde_json::to_string(&other)
-                                .unwrap_or_default()
-                                .into_bytes(),
-                        },
-                    },
-                    Err(_) => Content {
+            let content = match serde_json::from_str::<serde_json::Value>(&content_str) {
+                Ok(v) => match v {
+                    serde_json::Value::String(s) => Content {
                         mime_type: "text/plain".into(),
-                        data: content_str.into_bytes(),
+                        data: s.into_bytes(),
+                    },
+                    other => Content {
+                        mime_type: "application/json".into(),
+                        data: serde_json::to_string(&other)
+                            .unwrap_or_default()
+                            .into_bytes(),
                     },
                 },
+                Err(_) => Content {
+                    mime_type: "text/plain".into(),
+                    data: content_str.into_bytes(),
+                },
+            };
+            Ok(Fact::new(
+                CoordId::from_string(&id),
+                origin,
+                content,
                 creator,
-            })
+            ))
         }) {
             Ok(rows) => rows.filter_map(|r| r.ok()).collect(),
             Err(_) => Vec::new(),
@@ -231,13 +231,12 @@ impl DuckDbStorage {
                 .and_then(|j| serde_json::from_str(&j).ok())
                 .unwrap_or_default();
             Ok(Intent {
-                id: FihHash::from_hex(&id),
-                coord: None,
-                from_facts: from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
+                id: CoordId::from_string(&id),
+                from_facts: from_facts.iter().map(|s| CoordId::from_string(&s)).collect(),
                 description,
                 creator,
                 worker,
-                to_fact_id: to_fact_id.map(|s| FihHash::from_hex(&s)),
+                to_fact_id: to_fact_id.map(|s| CoordId::from_string(&s)),
                 last_heartbeat_at: last_hb.and_then(|s| s.parse::<u64>().ok()),
                 created_at: created_at_str.and_then(|s| s.parse::<u64>().ok()),
                 is_concluded: concluded_at_str
@@ -263,7 +262,7 @@ impl DuckDbStorage {
             let content: String = row.get(1)?;
             let creator: String = row.get(2)?;
             Ok(Hint {
-                id: FihHash::from_hex(&id),
+                id: CoordId::from_string(&id),
                 content,
                 creator,
             })

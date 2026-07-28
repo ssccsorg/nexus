@@ -14,21 +14,19 @@
 use super::common::topic_of;
 use crate::ContentJsonExt as _;
 use nex_fih::{
-    BoardState, Content, DetectionCapable, DetectionOutput, Fact, FihHash, GapDetection,
+    BoardState, Content, CoordId, DetectionCapable, DetectionOutput, Fact, GapDetection,
 };
 use std::collections::{HashMap, HashSet};
 
 pub struct GapDetector {
     seen_origin: HashSet<(String, String)>,
-    seen_topic: HashSet<(String, String, String)>,
-}
+    seen_topic: HashSet<(String, String, String)>}
 
 impl GapDetector {
     pub fn new() -> Self {
         Self {
             seen_origin: HashSet::new(),
-            seen_topic: HashSet::new(),
-        }
+            seen_topic: HashSet::new()}
     }
 }
 
@@ -95,15 +93,14 @@ impl DetectionCapable for GapDetector {
                 self.seen_origin.insert(key.clone());
 
                 output.facts.push(Fact::new(
-                    FihHash::new(&[origin, "gap"], "fact"),
+                    CoordId::from_string(&format!("{}-{}-{}", origin, "gap", "fact")),
                     "gap-detector".into(),
                     Content::from_json(&serde_json::json!({
                         "type": "gap",
                         "subtype": "origin-orphan",
                         "origin": origin,
                         "orphan_count": facts.len(),
-                        "fact_ids": facts.iter().map(|f| f.id.to_string()).collect::<Vec<_>>(),
-                    })),
+                        "fact_ids": facts.iter().map(|f| f.id.to_string()).collect::<Vec<_>>()})),
                     "gap-detector".into(),
                 ));
             }
@@ -139,7 +136,7 @@ impl DetectionCapable for GapDetector {
                     self.seen_topic.insert(key.clone());
 
                     output.facts.push(Fact::new(
-                        FihHash::new(&[topic, oa_s, ob_s], "cross-gap"),
+                        CoordId::from_string(&format!("{}-{}-{}-{}", topic, oa_s, ob_s, "cross-gap")),
                         "gap-detector".into(),
                         Content::from_json(&serde_json::json!({
                             "type": "gap",
@@ -148,8 +145,7 @@ impl DetectionCapable for GapDetector {
                             "origin_a": oa_s,
                             "origin_b": ob_s,
                             "count_a": origins[oa].len(),
-                            "count_b": origins[ob].len(),
-                        })),
+                            "count_b": origins[ob].len()})),
                         "gap-detector".into(),
                     ));
                 }

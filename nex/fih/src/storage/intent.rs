@@ -1,10 +1,10 @@
 use crate::error::BlackboardError;
-use crate::fih::{Fact, FihHash, Intent};
+use crate::fih::{CoordId, Fact, Intent};
 use crate::storage::read::StorageRead;
 
 /// Backend can manage Intents (full lifecycle).
 pub trait IntentCapable: StorageRead {
-    fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError>;
+    fn submit_intent(&self, intent: &Intent) -> Result<CoordId, BlackboardError>;
     fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
     fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
     fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
@@ -12,7 +12,7 @@ pub trait IntentCapable: StorageRead {
 }
 
 impl<T: IntentCapable> IntentCapable for &T {
-    fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+    fn submit_intent(&self, intent: &Intent) -> Result<CoordId, BlackboardError> {
         (**self).submit_intent(intent)
     }
     fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
@@ -30,7 +30,7 @@ impl<T: IntentCapable> IntentCapable for &T {
 }
 
 impl<T: IntentCapable> IntentCapable for &mut T {
-    fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+    fn submit_intent(&self, intent: &Intent) -> Result<CoordId, BlackboardError> {
         (**self).submit_intent(intent)
     }
     fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {

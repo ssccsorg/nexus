@@ -108,8 +108,7 @@ pub async fn submit_fact(
 ) -> Result<Json<SubmitFactResponse>, (StatusCode, Json<ApiError>)> {
     let id = req.id.unwrap_or_else(|| format!("fact_{}", uuid_v4()));
     let fact = Fact {
-        id: FihHash::from_hex(&id),
-        coord: None,
+        id: FihHash::from_hex(&id)
         origin: req.origin,
         content: match &req.content {
             serde_json::Value::String(s) => Content {
@@ -153,8 +152,7 @@ pub async fn submit_intent(
         )));
     }
     let intent = Intent {
-        id: FihHash::from_hex(&id),
-        coord: None,
+        id: FihHash::from_hex(&id)
         from_facts: req
             .from_facts
             .into_iter()

@@ -234,11 +234,11 @@ impl CalcEngine {
             .ok_or_else(|| CalcError::IntentNotFound("missing rhs".into()))?;
 
         let lhs = self
-            .get(&FihHash::from_hex(lhs_fid))
+            .get(&CoordId::from_string(&lhs_fid))
             .await
             .ok_or_else(|| CalcError::FactNotFound(lhs_fid.clone()))?;
         let rhs = self
-            .get(&FihHash::from_hex(rhs_fid))
+            .get(&CoordId::from_string(&rhs_fid))
             .await
             .ok_or_else(|| CalcError::FactNotFound(rhs_fid.clone()))?;
 
@@ -472,7 +472,7 @@ fn nanos() -> u64 {
 }
 
 fn make_number_fact_id(value: i64) -> FihHash {
-    FihHash::new(&[&value.to_string()], "nex-calc-number")
+    CoordId::from_string(&format!("{} {}", &value.to_string(), "nex-calc-number"))
 }
 
 fn make_intent_id(op: OpType, lhs_id: &FihHash, rhs_id: &FihHash) -> FihHash {
@@ -483,7 +483,7 @@ fn make_intent_id(op: OpType, lhs_id: &FihHash, rhs_id: &FihHash) -> FihHash {
 }
 
 fn make_hint_id(constraint: &Constraint) -> FihHash {
-    FihHash::new(&[&constraint.to_string()], "nex-calc-hint")
+    CoordId::from_string(&format!("{} {}", &constraint.to_string(), "nex-calc-hint"))
 }
 
 // ── Tests ─────────────────────────────────────────────────────────

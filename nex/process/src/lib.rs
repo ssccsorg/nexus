@@ -73,7 +73,7 @@ pub mod helper {
 
 pub use nex_fih::{
     Blackboard, BlackboardError, BoardState, Cell2, Content, ContentJsonExt,
-    ContradictionDetection, CoordRef, DetectionCapable, DetectionOutput, EntityStore, EvictCapable,
+    ContradictionDetection, CoordId, DetectionCapable, DetectionOutput, EntityStore, EvictCapable,
     EvidenceChain, EvidenceEntry, Fact, FactCapable, FactRecord, FihBlackboard, FihContract,
     FihHash, FihSession, FihStorage, GapDetection, GovernanceGate, HealthStatus, Hint, HintCapable,
     HintEngine, HintRecord, HintRule, Intent, IntentCapable, IntentRecord, IntentStatus,

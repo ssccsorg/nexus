@@ -3,15 +3,16 @@ use sha2::{Digest, Sha256};
 use std::hash::{Hash, Hasher};
 use tagma_core::{Coord, CoordPath};
 
-// ── Tagma identity (alongside FihHash) ────────────────────────────────
+// ── Tagma primary identity ─────────────────────────────────────────────
 
-/// A 6-character Tagma coordinate path used as an alternative identity.
+/// A 6-character Tagma coordinate path used as the primary identifier for
+/// FIH entities. Replaces FihHash (SHA-256) as the storage address.
 /// Address space: 11,172^6 = 1.94e24 unique identifiers.
 /// Generation: O(1) arithmetic, no SHA256.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CoordRef(pub CoordPath<6>);
+pub struct CoordId(pub CoordPath<6>);
 
-impl Hash for CoordRef {
+impl Hash for CoordId {
     fn hash<H: Hasher>(&self, state: &mut H) {
         for coord in self.0.iter() {
             coord.index().hash(state);
@@ -19,8 +20,8 @@ impl Hash for CoordRef {
     }
 }
 
-impl CoordRef {
-    /// Generate a CoordRef from a 64-bit counter.
+impl CoordId {
+    /// Generate a CoordId from a 64-bit counter.
     /// The counter is decomposed into 6 coord indices (base 11172).
     /// Supports ~1.94e24 unique sequential IDs before wrap-around.
     pub fn new(counter: u64) -> Self {
@@ -31,20 +32,62 @@ impl CoordRef {
             *c = Coord::new(idx).expect("coord index in 0..11172");
             remaining /= 11172;
         }
-        CoordRef(CoordPath::new(coords))
+        CoordId(CoordPath::new(coords))
     }
 
-    /// Generate a CoordRef from raw 6 coord indices (0..11172 each).
+    /// Generate a CoordId from raw 6 coord indices (0..11172 each).
     pub fn from_indices(indices: [u16; 6]) -> Option<Self> {
         let mut coords = [Coord::new(0).unwrap(); 6];
         for (i, &idx) in indices.iter().enumerate() {
             coords[i] = Coord::new(idx)?;
         }
-        Some(CoordRef(CoordPath::new(coords)))
+        Some(CoordId(CoordPath::new(coords)))
+    }
+
+    /// Derive a content hash from CoordId bytes (SHA-256 of the coord path).
+    /// Used for backward compatibility with FihCoord index, removed in Phase 3.
+    pub fn to_content_hash(&self) -> FihHash {
+        let mut h = Sha256::new();
+        for coord in self.0.iter() {
+            h.update(coord.index().to_le_bytes());
+        }
+        FihHash(h.finalize().into())
+    }
+
+    /// Parse a CoordId from a string that is either 6 Hangul chars (direct)
+    /// or any other format (hashed to produce deterministic coordinates).
+    pub fn from_string(s: &str) -> Self {
+        let chars: Vec<char> = s.chars().collect();
+        if chars.len() == 6 && chars.iter().all(|c| Coord::from_char(*c).is_some()) {
+            let mut coords = [Coord::new(0).unwrap(); 6];
+            for (i, &ch) in chars.iter().enumerate() {
+                coords[i] = Coord::from_char(ch).unwrap();
+            }
+            CoordId(CoordPath::new(coords))
+        } else {
+            // Fallback: hash the input to deterministic coordinates
+            let mut h = Sha256::new();
+            h.update(s.as_bytes());
+            let hash: [u8; 32] = h.finalize().into();
+            Self::from_bytes(&hash)
+        }
+    }
+
+    /// Generate from a 32-byte hash by decomposing into 6 coord indices.
+    fn from_bytes(bytes: &[u8; 32]) -> Self {
+        let mut coords = [Coord::new(0).unwrap(); 6];
+        for i in 0..6 {
+            let idx = u16::from_le_bytes([
+                bytes.get(i * 2).copied().unwrap_or(0),
+                bytes.get(i * 2 + 1).copied().unwrap_or(0),
+            ]) % 11172;
+            coords[i] = Coord::new(idx).unwrap();
+        }
+        CoordId(CoordPath::new(coords))
     }
 }
 
-impl std::fmt::Display for CoordRef {
+impl std::fmt::Display for CoordId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for coord in self.0.iter() {
             write!(f, "{}", coord.to_char())?;
@@ -53,19 +96,19 @@ impl std::fmt::Display for CoordRef {
     }
 }
 
-impl Serialize for CoordRef {
+impl Serialize for CoordId {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         s.serialize_str(&self.to_string())
     }
 }
 
-impl<'de> Deserialize<'de> for CoordRef {
+impl<'de> Deserialize<'de> for CoordId {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let s: String = Deserialize::deserialize(d)?;
         let chars: Vec<char> = s.chars().collect();
         if chars.len() != 6 {
             return Err(serde::de::Error::custom(format!(
-                "CoordRef deserialize: expected 6 chars, got {}",
+                "CoordId deserialize: expected 6 chars, got {}",
                 chars.len()
             )));
         }
@@ -74,16 +117,16 @@ impl<'de> Deserialize<'de> for CoordRef {
             let cp = ch as u16;
             coords[i] = Coord::from_code_point(cp).ok_or_else(|| {
                 serde::de::Error::custom(format!(
-                    "CoordRef deserialize: char '{}' is not a valid Tagma coordinate",
+                    "CoordId deserialize: char '{}' is not a valid Tagma coordinate",
                     ch
                 ))
             })?;
         }
-        Ok(CoordRef(CoordPath::new(coords)))
+        Ok(CoordId(CoordPath::new(coords)))
     }
 }
 
-// ── Content-addressable identifier ───────────────────────────────────────
+// ── Content-addressable identifier (demoted to content integrity only) ──
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FihHash(pub [u8; 32]);
@@ -97,8 +140,6 @@ impl Serialize for FihHash {
 impl<'de> Deserialize<'de> for FihHash {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let hex: String = Deserialize::deserialize(d)?;
-        // Serialization always produces 64-char hex from Display.
-        // Reject anything else to fail fast on data corruption.
         if hex.len() != 64 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
             return Err(serde::de::Error::custom(format!(
                 "FihHash deserialize: expected 64 hex chars, got {}",
@@ -141,8 +182,6 @@ impl FihHash {
         Self(h.finalize().into())
     }
 
-    /// Parse exactly 64 hex characters into a FihHash. Panics on invalid input.
-    /// For tests, use `FihHash::from_hex` which falls back to SHA256 for short IDs.
     fn parse_hex_strict(hex: &str) -> Self {
         assert!(
             hex.len() == 64 && hex.chars().all(|c| c.is_ascii_hexdigit()),
@@ -156,20 +195,11 @@ impl FihHash {
         Self(bytes)
     }
 
-    /// Reconstruct FihHash from a hex string or a short semantic ID.
-    ///
-    /// If `hex` is exactly 64 lowercase hex characters, it is parsed
-    /// directly into `[u8; 32]` (round-trip with `Display`).
-    /// Otherwise, the input is SHA256-hashed to produce a deterministic
-    /// FihHash. This allows short test IDs like `"f001"` via SHA256.
-    ///
-    /// For strict parsing (e.g., deserialization), use `parse_hex_strict`.
     pub fn from_hex(hex: &str) -> Self {
         let hex_clean: String = hex.chars().filter(|c| c.is_ascii_hexdigit()).collect();
         if hex_clean.len() == 64 {
             Self::parse_hex_strict(&hex_clean)
         } else {
-            // Fallback: hash the input to produce a deterministic FihHash.
             let mut h = Sha256::new();
             h.update(hex.as_bytes());
             Self(h.finalize().into())
@@ -235,28 +265,31 @@ impl PartialEq<&str> for Content {
 
 // ── FIH Primitives ───────────────────────────────────────────────────────
 
+/// Fact: an immutable state snapshot.
+/// `id` is a Tagma CoordPath (6 syllables) — the primary storage address.
+/// `content_hash` is SHA-256 of content, used for blob dedup and integrity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Fact {
-    pub id: FihHash,
-    /// Tagma proxy identity, assigned by the storage layer on submission.
-    /// None before recording; populated by the coordinator.
-    ///
-    /// NOTE: `skip_serializing_if` is intentionally NOT used here.
-    /// Postcard is a positional binary format — skipping a mid-struct field
-    /// misaligns all subsequent fields, causing silent deserialization failure.
-    #[serde(default)]
-    pub coord: Option<CoordRef>,
+    pub id: CoordId,
+    pub content_hash: FihHash,
     pub origin: String,
     pub content: Content,
     pub creator: String,
 }
 
 impl Fact {
-    /// Create a Fact without a coord (assigned later by storage).
-    pub fn new(id: FihHash, origin: String, content: Content, creator: String) -> Self {
+    pub fn new(id: CoordId, origin: String, content: Content, creator: String) -> Self {
+        let content_hash = {
+            let bytes = match &content {
+                Content { data, .. } => data,
+            };
+            let mut h = Sha256::new();
+            h.update(bytes);
+            FihHash(h.finalize().into())
+        };
         Fact {
             id,
-            coord: None,
+            content_hash,
             origin,
             content,
             creator,
@@ -266,17 +299,9 @@ impl Fact {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Intent {
-    pub id: FihHash,
-    /// Tagma proxy identity, assigned by the storage layer on submission.
-    /// None before recording; populated by the coordinator.
-    ///
-    /// NOTE: `skip_serializing_if` is intentionally NOT used here.
-    /// Postcard is a positional binary format — skipping a mid-struct field
-    /// misaligns all subsequent fields, causing silent deserialization failure.
-    #[serde(default)]
-    pub coord: Option<CoordRef>,
-    pub from_facts: Vec<FihHash>,
-    pub to_fact_id: Option<FihHash>,
+    pub id: CoordId,
+    pub from_facts: Vec<CoordId>,
+    pub to_fact_id: Option<CoordId>,
     pub description: String,
     pub creator: String,
     pub worker: Option<String>,
@@ -287,17 +312,15 @@ pub struct Intent {
 }
 
 impl Intent {
-    /// Create an Intent without a coord (assigned later by storage).
     pub fn new(
-        id: FihHash,
-        from_facts: Vec<FihHash>,
-        to_fact_id: Option<FihHash>,
+        id: CoordId,
+        from_facts: Vec<CoordId>,
+        to_fact_id: Option<CoordId>,
         description: String,
         creator: String,
     ) -> Self {
         Intent {
             id,
-            coord: None,
             from_facts,
             to_fact_id,
             description,
@@ -313,7 +336,7 @@ impl Intent {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Hint {
-    pub id: FihHash,
+    pub id: CoordId,
     pub content: String,
     pub creator: String,
 }

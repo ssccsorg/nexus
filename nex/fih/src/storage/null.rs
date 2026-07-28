@@ -2,7 +2,7 @@ use std::ops::Range;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::BlackboardError;
-use crate::fih::{BoardState, Content, Fact, FihHash, Hint, Intent};
+use crate::fih::{BoardState, Content, CoordId, Fact, Hint, Intent};
 use crate::storage::aggregate::ColdStorage;
 use crate::storage::evict::EvictCapable;
 use crate::storage::fact::FactCapable;
@@ -37,13 +37,13 @@ impl StorageRead for NullStorage {
 }
 
 impl FactCapable for NullStorage {
-    fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
+    fn submit_fact(&self, fact: &Fact) -> Result<CoordId, BlackboardError> {
         Ok(fact.id)
     }
 }
 
 impl IntentCapable for NullStorage {
-    fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+    fn submit_intent(&self, intent: &Intent) -> Result<CoordId, BlackboardError> {
         Ok(intent.id)
     }
     fn claim_intent(&self, _id: &str, _agent: &str) -> Result<(), BlackboardError> {
@@ -57,7 +57,7 @@ impl IntentCapable for NullStorage {
     }
     fn conclude_intent(&self, _id: &str, _result: &str) -> Result<Fact, BlackboardError> {
         Ok(Fact::new(
-            FihHash::from_hex("null"),
+            CoordId::from_string("null"),
             String::new(),
             Content::from("null"),
             String::new(),

@@ -14,24 +14,23 @@
 
 use super::common::{position_of, topic_of};
 use crate::ContentJsonExt;
-use nex_fih::{BoardState, Content, DetectionCapable, DetectionOutput, Fact, FihHash};
+use nex_fih::{
+    BoardState, Content, CoordId, DetectionCapable, DetectionOutput, Fact,
+};
 use std::collections::{HashMap, HashSet};
 
 pub struct NewDocumentAnalyzer {
-    seen_ids: HashSet<String>,
-}
+    seen_ids: HashSet<String>}
 
 impl NewDocumentAnalyzer {
     pub fn new() -> Self {
         Self {
-            seen_ids: HashSet::new(),
-        }
+            seen_ids: HashSet::new()}
     }
 
     pub fn with_baseline(ids: impl IntoIterator<Item = String>) -> Self {
         Self {
-            seen_ids: ids.into_iter().collect(),
-        }
+            seen_ids: ids.into_iter().collect()}
     }
 }
 
@@ -115,7 +114,7 @@ impl DetectionCapable for NewDocumentAnalyzer {
                 };
 
             output.facts.push(Fact::new(
-                FihHash::new(&[&tid, factor], "doc-analysis"),
+                CoordId::from_string(&format!("{}-{}-{}", &tid, factor, "doc-analysis")),
                 "new-document-analyzer".into(),
                 Content::from_json(&serde_json::json!({
                     "type": "doc_analysis",
@@ -123,8 +122,7 @@ impl DetectionCapable for NewDocumentAnalyzer {
                     "topic": topic,
                     "claim": claim_text,
                     "source": fact.origin,
-                    "detail": detail,
-                })),
+                    "detail": detail})),
                 "new-document-analyzer".into(),
             ));
 

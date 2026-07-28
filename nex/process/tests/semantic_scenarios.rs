@@ -763,9 +763,9 @@ fn scenario_fihcoord_integration() {
 
         // Record facts with different content
         // Fact 1: vector [1,0,0] + text "rust compiler verification"
-        let f1_id = nex_fih::FihHash::from_hex("f_sem_001");
-        coord.record_fact(&f1_id.0, "origin-a", "creator-a", 1000);
-        let idx1 = coord.intern(&f1_id.0);
+        let f1_id = nex_fih::CoordId::from_string("f_sem_001");
+        coord.record_fact(&(f1_id.to_content_hash().0), "origin-a", "creator-a", 1000);
+        let idx1 = coord.intern(&(f1_id.to_content_hash().0));
         coord
             .semantic_insert(
                 idx1,
@@ -778,9 +778,9 @@ fn scenario_fihcoord_integration() {
             .unwrap();
 
         // Fact 2: vector [0,1,0] + text "energy memory constraint"
-        let f2_id = nex_fih::FihHash::from_hex("f_sem_002");
-        coord.record_fact(&f2_id.0, "origin-a", "creator-b", 2000);
-        let idx2 = coord.intern(&f2_id.0);
+        let f2_id = nex_fih::CoordId::from_string("f_sem_002");
+        coord.record_fact(&(f2_id.to_content_hash().0), "origin-a", "creator-b", 2000);
+        let idx2 = coord.intern(&(f2_id.to_content_hash().0));
         coord
             .semantic_insert(
                 idx2,
@@ -793,9 +793,9 @@ fn scenario_fihcoord_integration() {
             .unwrap();
 
         // Fact 3: vector [0.9,0.1,0] + text "rust memory safety"
-        let f3_id = nex_fih::FihHash::from_hex("f_sem_003");
-        coord.record_fact(&f3_id.0, "origin-b", "creator-a", 3000);
-        let idx3 = coord.intern(&f3_id.0);
+        let f3_id = nex_fih::CoordId::from_string("f_sem_003");
+        coord.record_fact(&(f3_id.to_content_hash().0), "origin-b", "creator-a", 3000);
+        let idx3 = coord.intern(&(f3_id.to_content_hash().0));
         coord
             .semantic_insert(
                 idx3,
@@ -861,9 +861,9 @@ fn scenario_fihcoord_single_store() {
         let coord = FihCoord::new();
         coord.add_semantic_store(Box::new(MockSemanticStore::new()));
 
-        let f_id = nex_fih::FihHash::from_hex("f_inline_001");
-        coord.record_fact(&f_id.0, "test", "tester", 100);
-        let idx = coord.intern(&f_id.0);
+        let f_id = nex_fih::CoordId::from_string("f_inline_001");
+        coord.record_fact(&(f_id.to_content_hash().0), "test", "tester", 100);
+        let idx = coord.intern(&(f_id.to_content_hash().0));
         coord
             .semantic_insert(
                 idx,
@@ -897,7 +897,7 @@ fn scenario_fihstorage_e2e_auto_index() {
     futures_executor::block_on(async {
         use nex::FihStorage;
         use nex::io::FsIo;
-        use nex_fih::{AsyncFactCapable, AsyncStorageRead, Content, Fact, FihHash};
+        use nex_fih::{AsyncFactCapable, AsyncStorageRead, Content, Fact, CoordId};
 
         let tmp = tempfile::TempDir::new().unwrap();
         let io = FsIo::new(tmp.path()).unwrap();
@@ -907,16 +907,15 @@ fn scenario_fihstorage_e2e_auto_index() {
         storage.register_semantic_store(Box::new(MockBm25Store::new()));
 
         // Submit a fact with meaningful text content (async path)
-        let fact = Fact {
-            id: FihHash::from_hex("f_e2e_001"),
-            coord: None,
-            origin: "e2e-test".into(),
-            content: Content {
+        let fact = Fact::new(
+            CoordId::from_string("f_e2e_001"),
+            "e2e-test".into(),
+            Content {
                 mime_type: "text/plain".into(),
                 data: b"rust compiler verification memory safety".to_vec(),
             },
-            creator: "test-agent".into(),
-        };
+            "test-agent".into(),
+        );
 
         // Use async FactCapable trait — this enqueues writes to pending buffer
         // and calls record_fact + semantic_insert via .await.
@@ -942,16 +941,15 @@ fn scenario_fihstorage_e2e_auto_index() {
         );
 
         // Submit a conclusion fact — should NOT be auto-indexed (origin starts with "conclusion:")
-        let conclusion = Fact {
-            id: FihHash::from_hex("f_e2e_concl"),
-            coord: None,
-            origin: "conclusion:i_e2e".into(),
-            content: Content {
+        let conclusion = Fact::new(
+            CoordId::from_string("f_e2e_concl"),
+            "conclusion:i_e2e".into(),
+            Content {
                 mime_type: "text/plain".into(),
                 data: b"Synthesis complete".to_vec(),
             },
-            creator: "worker-1".into(),
-        };
+            "worker-1".into(),
+        );
         AsyncFactCapable::submit_fact(&storage, &conclusion)
             .await
             .unwrap();

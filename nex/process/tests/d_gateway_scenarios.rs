@@ -7,7 +7,7 @@
 // directly.
 
 use nex::FihBlackboard;
-use nex_fih::{Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead};
+use nex_fih::{Content, Fact, FactCapable, CoordId, Intent, IntentCapable, StorageRead};
 use nexus_gateway_serde_proxy::SerdeProxy;
 use nexus_storage_sim::SimIo;
 
@@ -24,36 +24,33 @@ fn scenario_contradiction_detection_via_gateway() {
     let gw = SerdeProxy::new(FihBlackboard::new(SimIo::new(), "test"));
 
     // Agent-A: ingests paper claiming GNNs work fine at 50 layers
-    gw.submit_fact(&Fact {
-        id: FihHash::from_hex("f_gnn_deep"),
-        coord: None,
-        origin: "paper_iclr_2024".into(),
-        content: Content::from(
+    gw.submit_fact(&Fact::new(
+        CoordId::from_string("f_gnn_deep"),
+        "paper_iclr_2024".into(),
+        Content::from(
             "Residual GNNs maintain accuracy at 50 layers with skip connections",
         ),
-        creator: "agent-a".into(),
-    })
+        "agent-a".into(),
+    ))
     .unwrap();
 
     // Agent-B: ingests paper claiming GNNs oversmooth at 6 layers
-    gw.submit_fact(&Fact {
-        id: FihHash::from_hex("f_gnn_shallow"),
-        coord: None,
-        origin: "paper_neurips_2023".into(),
-        content: Content::from(
+    gw.submit_fact(&Fact::new(
+        CoordId::from_string("f_gnn_shallow"),
+        "paper_neurips_2023".into(),
+        Content::from(
             "Message-passing GNNs oversmooth beyond 6 layers without normalization",
         ),
-        creator: "agent-b".into(),
-    })
+        "agent-b".into(),
+    ))
     .unwrap();
 
     // Agent-C: detects the contradiction, submits hypothesis
     gw.submit_intent(&Intent {
-        id: FihHash::from_hex("i_reconcile"),
-        coord: None,
+            id: CoordId::from_string("i_reconcile"),
         from_facts: vec![
-            FihHash::from_hex("f_gnn_deep"),
-            FihHash::from_hex("f_gnn_shallow"),
+            CoordId::from_string("f_gnn_deep"),
+            CoordId::from_string("f_gnn_shallow"),
         ],
         description: "Test whether normalization technique determines oversmoothing depth".into(),
         creator: "agent-c".into(),
