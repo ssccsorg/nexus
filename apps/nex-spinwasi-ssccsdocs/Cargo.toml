@@ -10,7 +10,7 @@ license = "Apache-2.0"
 crate-type = ["cdylib"]
 
 [dependencies]
-nex = { path = "../../nex/engine" }
+nex = { path = "../../nex/process" }
 nexus-model = { path = "../../model" }
 spin-sdk = "5.2.0"
 http = "1"

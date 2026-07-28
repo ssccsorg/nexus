@@ -1819,23 +1819,19 @@ name = "nex"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "cfg-if",
  "criterion",
  "futures-executor",
  "log",
  "nex-core",
  "nex-fih",
+ "nex-io",
  "nexus-gateway-serde-proxy",
  "nexus-model",
  "nexus-storage-sim",
- "postcard",
  "serde",
  "serde_json",
- "sha2",
- "tagma-core",
  "tempfile",
  "ureq",
- "walkdir",
  "worker",
 ]
 
@@ -1868,11 +1864,31 @@ version = "0.1.0"
 name = "nex-fih"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "cfg-if",
+ "futures-executor",
+ "log",
  "nex-core",
+ "nex-io",
  "petgraph",
+ "postcard",
  "serde",
+ "serde_json",
  "sha2",
  "tagma-core",
+ "walkdir",
+]
+
+[[package]]
+name = "nex-io"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures-executor",
+ "log",
+ "serde",
+ "serde_json",
+ "walkdir",
 ]
 
 [[package]]

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["core", "fih", "engine"]
+members = ["core", "fih", "process", "io"]
 
 [workspace.package]
 version = "0.1.0"

@@ -603,6 +603,8 @@ dependencies = [
  "cfg-if",
  "futures-executor",
  "log",
+ "nex-core",
+ "nex-fih",
  "nexus-model",
  "postcard",
  "serde",
@@ -610,6 +612,21 @@ dependencies = [
  "sha2 0.10.9",
  "tagma-core",
  "walkdir",
+]
+
+[[package]]
+name = "nex-core"
+version = "0.1.0"
+
+[[package]]
+name = "nex-fih"
+version = "0.1.0"
+dependencies = [
+ "nex-core",
+ "petgraph",
+ "serde",
+ "sha2 0.10.9",
+ "tagma-core",
 ]
 
 [[package]]
@@ -635,10 +652,8 @@ dependencies = [
 name = "nexus-model"
 version = "0.1.0"
 dependencies = [
- "petgraph",
- "serde",
- "sha2 0.10.9",
- "tagma-core",
+ "nex-core",
+ "nex-fih",
 ]
 
 [[package]]

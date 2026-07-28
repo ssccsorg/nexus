@@ -63,7 +63,10 @@ fn scenario_contradiction_detection() {
     let state = bb.read_state();
     assert_eq!(state.facts.len(), 3, "2 original + 1 concluded");
     assert!(
-        state.facts.iter().any(|f| f.origin.starts_with("conclusion:")),
+        state
+            .facts
+            .iter()
+            .any(|f| f.origin.starts_with("conclusion:")),
         "concluded fact should exist"
     );
 
@@ -197,9 +200,11 @@ fn scenario_knowledge_synthesis() {
     // Verify synthesis
     let state = bb.read_state();
     assert_eq!(state.facts.len(), 4, "3 pieces + 1 synthesis");
-    let synthesis = state.facts.iter().find(|f|
-        f.content.as_str().unwrap_or("").contains("SYNTHESIS")
-    ).expect("synthesis fact should exist");
+    let synthesis = state
+        .facts
+        .iter()
+        .find(|f| f.content.as_str().unwrap_or("").contains("SYNTHESIS"))
+        .expect("synthesis fact should exist");
     assert!(
         synthesis.content.as_str().unwrap_or("").contains("preheat"),
         "actionable solution proposed"

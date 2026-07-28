@@ -6,7 +6,7 @@ license.workspace = true
 
 [dependencies]
 nexus-model = { path = "../../model" }
-nex = { path = "../../nex/engine" }
+nex = { path = "../../nex/process" }
 serde = { version = "1", features = ["derive"] }
 postcard = { version = "1", features = ["alloc"] }
 cfg-if = "1"
