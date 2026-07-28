@@ -618,7 +618,6 @@ name = "nex-fih"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "cfg-if",
  "futures-executor",
  "log",
  "nex-core",
@@ -629,7 +628,6 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "tagma-core",
- "walkdir",
 ]
 
 [[package]]

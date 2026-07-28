@@ -86,5 +86,3 @@ pub trait StateChangeDetection: DetectionCapable {
     where
         Self: Sized;
 }
-
-

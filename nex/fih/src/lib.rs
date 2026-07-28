@@ -42,8 +42,8 @@ pub use core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
 pub use core::session::FihSession;
 pub use core::store::{ChainEntry, FihStorage};
 pub use detection::{
-    ContradictionDetection, DetectionCapable, DetectionCheckpoint, DetectionOutput,
-    GapDetection, StateChangeDetection, TaskStates,
+    ContradictionDetection, DetectionCapable, DetectionCheckpoint, DetectionOutput, GapDetection,
+    StateChangeDetection, TaskStates,
 };
 pub use error::BlackboardError;
 pub use fih::{BoardState, Content, CoordRef, Fact, FihHash, Hint, Intent};
