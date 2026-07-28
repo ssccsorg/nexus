@@ -1,6 +1,5 @@
 use super::evict::EvictCapable;
 use super::fact::FactCapable;
-use super::filter::FilterCapable;
 use super::flush::FlushCapable;
 use super::hint::HintCapable;
 use super::intent::IntentCapable;
