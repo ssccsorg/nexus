@@ -5,7 +5,5 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-serde.workspace = true
-sha2 = "0.10"
-petgraph = { version = "0.6", features = ["serde-1"] }
-tagma-core = { git = "https://github.com/ssccsorg/syntagma", branch = "main" }
+nex-core = { path = "../nex-core" }
+nex-fih = { path = "../nex-fih" }

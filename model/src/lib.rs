@@ -1,56 +1,23 @@
-// nexus-model — Blackboard trait, capability-based Storage traits, and FIH primitives.
+// nexus-model — Re-export shim for nex-core + nex-fih.
 //
-// Pure interfaces, no storage backend. Both nexus-graph and nexus-storage-composite
-// depend on this crate only.
+// This crate exists for backward compatibility. All types and traits are
+// now defined in nex-core (pure storage interfaces) and nex-fih (FIH
+// types and storage traits).
 //
-// # Capability-based trait design
-//
-// Instead of a monolithic Storage trait, functionality is split into fine-grained
-// capability traits. Each backend implements only what it provides.
-//
-//   StorageRead                  — core: project_id, read_state
-//    ├── FactCapable             — submit_fact
-//    ├── IntentCapable           — submit/claim/heartbeat/release/conclude
-//    ├── HintCapable             — submit_hint
-//    ├── FilterCapable           — read_state_filtered (partial reads)
-//    ├── ScanCapable             — scan_partition (bulk reads)
-//    ├── EvictCapable            — approximate_size + evict_before
-//    ├── FlushCapable            — flush_since (incremental export)
-//    └── TimeRangeCapable        — time_range (hot/cold routing)
-//
-//   Aggregate: FihPersistence = FactCapable + IntentCapable + HintCapable
-//   Aggregate: HotStorage     = FihPersistence + EvictCapable
-//   Aggregate: ColdStorage    = FihPersistence + FilterCapable
-//
-// # Detection capability traits (mirrors storage pattern)
-//
-//   DetectionCapable             — base: name + orient (all detectors)
-//    ├── GapDetection            — orphan/cross-origin gap discovery
-//    ├── ContradictionDetection  — conflicting claims on same topic
-//    └── StateChangeDetection    — count-based change triggers (Cairn pattern)
-//
-//   Aggregate: FullDetection = GapDetection + ContradictionDetection + StateChangeDetection
+// New code should import directly from nex-core and nex-fih.
+// This shim will be removed after the transition period.
 
-pub mod blackboard;
-pub mod clock;
-pub mod detection;
-pub mod error;
-pub mod fih;
-pub mod interner;
-pub mod storage;
+pub use nex_core::*;
+pub use nex_fih::*;
 
-pub use blackboard::Blackboard;
-pub use clock::{Now, SystemClock};
-pub use detection::{
-    ContradictionDetection, DetectionCapable, DetectionCheckpoint, DetectionOutput, FullDetection,
-    GapDetection, StateChangeDetection, TaskStates,
-};
-pub use error::BlackboardError;
-pub use fih::{BoardState, Content, CoordRef, Fact, FihHash, Hint, Intent};
+// Re-export storage module so `nexus_model::storage::GraphRead` paths work.
+pub mod storage {
+    pub use nex_fih::storage::*;
+}
+
+// ── Deprecated: kept only for existing consumers ─────────────────────────
+
+#[allow(deprecated)]
+mod interner;
 #[allow(deprecated)]
 pub use interner::Interner;
-pub use storage::async_impl::{
-    AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable, AsyncHintCapable,
-    AsyncIntentCapable, AsyncScanCapable, AsyncStorageRead, AsyncTimeRangeCapable,
-};
-pub use storage::*;

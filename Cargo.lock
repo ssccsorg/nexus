@@ -1955,10 +1955,8 @@ dependencies = [
 name = "nexus-model"
 version = "0.1.0"
 dependencies = [
- "petgraph",
- "serde",
- "sha2",
- "tagma-core",
+ "nex-core",
+ "nex-fih",
 ]
 
 [[package]]
