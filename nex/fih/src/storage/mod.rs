@@ -13,7 +13,7 @@ pub mod scan;
 pub mod session;
 pub mod time_range;
 
-pub use aggregate::{ColdStorage, FihPersistence, StorageSend};
+pub use aggregate::{ColdStorage, StorageSend};
 pub use async_impl::{
     AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable, AsyncHintCapable,
     AsyncIntentCapable, AsyncScanCapable, AsyncStorageRead, AsyncTimeRangeCapable,

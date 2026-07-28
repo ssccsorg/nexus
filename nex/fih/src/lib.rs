@@ -34,7 +34,7 @@ pub use contract::core::{
 };
 pub use contract::fih::FihContract;
 pub use core::entity_store::{EntityStore, MemoryEntityStore};
-pub use core::export::{FihExport, FihImport, export_from_io, import_into_io};
+pub use core::export::{export_from_io, import_into_io};
 pub use core::fih_blackboard::FihBlackboard;
 pub use core::index::{Cell2, OrderedIndex};
 pub use core::intent_status::IntentStatus;
@@ -42,7 +42,7 @@ pub use core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
 pub use core::session::FihSession;
 pub use core::store::{ChainEntry, FihStorage};
 pub use detection::{
-    ContradictionDetection, DetectionCapable, DetectionCheckpoint, DetectionOutput, FullDetection,
+    ContradictionDetection, DetectionCapable, DetectionCheckpoint, DetectionOutput,
     GapDetection, StateChangeDetection, TaskStates,
 };
 pub use error::BlackboardError;

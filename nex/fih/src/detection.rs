@@ -87,9 +87,4 @@ pub trait StateChangeDetection: DetectionCapable {
         Self: Sized;
 }
 
-/// Aggregate: a detector that provides all standard detection capabilities.
-/// This is the recommended default for most projects.
-pub trait FullDetection: GapDetection + ContradictionDetection + StateChangeDetection {}
 
-// Blanket impl for any type that implements all three.
-impl<T> FullDetection for T where T: GapDetection + ContradictionDetection + StateChangeDetection {}

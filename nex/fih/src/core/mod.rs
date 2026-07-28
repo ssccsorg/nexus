@@ -16,7 +16,7 @@ pub mod session;
 pub mod store;
 
 pub use entity_store::{EntityStore, MemoryEntityStore};
-pub use export::{FihExport, FihImport, export_from_io, import_into_io};
+pub use export::{export_from_io, import_into_io};
 pub use fih_blackboard::FihBlackboard;
 pub use index::{Cell2, FihCoord, OrderedIndex};
 pub use intent_status::IntentStatus;

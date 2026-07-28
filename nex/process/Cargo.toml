@@ -14,17 +14,10 @@ async-trait = "0.1"
 futures-executor = "0.3"
 log = "0.4"
 
-[features]
-default = []
-cf = ["dep:worker"]
-
 [[bench]]
 name = "bench"
 path = "benches/bench.rs"
 harness = false
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-worker = { version = "0.8", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.5" }

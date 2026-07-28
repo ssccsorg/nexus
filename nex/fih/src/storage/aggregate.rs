@@ -1,8 +1,5 @@
 use super::evict::EvictCapable;
-use super::fact::FactCapable;
 use super::flush::FlushCapable;
-use super::hint::HintCapable;
-use super::intent::IntentCapable;
 use super::scan::ScanCapable;
 use super::time_range::TimeRangeCapable;
 
@@ -22,10 +19,6 @@ pub mod send_marker {
 }
 
 pub use send_marker::StorageSend;
-
-/// Full FIH persistence: what a Blackboard backend must provide.
-pub trait FihPersistence: FactCapable + IntentCapable + HintCapable {}
-impl<T: FactCapable + IntentCapable + HintCapable> FihPersistence for T {}
 
 /// Cold storage: durable persistence — scan, flush, evict, time range.
 ///

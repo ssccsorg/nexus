@@ -39,24 +39,6 @@ struct BlobEntry {
     meta: ContentMeta,
 }
 
-// ── FihExport trait ─────────────────────────────────────────────────────
-
-/// Export full FIH StateSpace as a portable byte bundle.
-pub trait FihExport {
-    /// Export entire StateSpace into a single Vec<u8> bundle.
-    fn export_bundle(&self) -> Result<Vec<u8>, String>;
-}
-
-// ── FihImport trait ─────────────────────────────────────────────────────
-
-/// Import a previously exported FIH StateSpace bundle.
-pub trait FihImport {
-    /// Restore StateSpace from a bundle, overwriting existing data.
-    fn import_bundle(&self, bundle: &[u8]) -> Result<(), String>;
-}
-
-// ── FihExport implementation ────────────────────────────────────────────
-
 /// Export FIH StateSpace from a sync IO handle.
 ///
 /// Scans the IO for fact, intent, hint records and blob entries,
