@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-nex = { path = "../../nex" }
+nex = { path = "../../nex/engine" }
 nexus-model = { path = "../../model" }
 interface-cypher = { path = "../../interface/cypher" }
 interface-query = { path = "../../interface/query" }

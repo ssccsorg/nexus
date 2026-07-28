@@ -5,5 +5,5 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-nex-core = { path = "../nex-core" }
-nex-fih = { path = "../nex-fih" }
+nex-core = { path = "../nex/core" }
+nex-fih = { path = "../nex/fih" }

@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-nex = { path = "../../nex" }
+nex = { path = "../../nex/engine" }
 nex-client = { path = "../client" }
 nexus-model = { path = "../../model" }
 tokio = { version = "1", features = ["full"] }

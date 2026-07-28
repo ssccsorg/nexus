@@ -1,11 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-    "nex-core",
-    "nex-fih",
-    "nex-storage",
     "model",
-    "nex",
     "nex-server/server",
     "nex-server/client",
     "nexd",
