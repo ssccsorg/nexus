@@ -504,7 +504,6 @@ fn scenario_full_document_lifecycle() {
         "Phase 6: >=28 facts (19 initial + 8 new + detector + conclusions): got {}",
         total_facts
     );
-
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -584,8 +583,6 @@ fn scenario_state_change_detector_facts() {
         "Tick 4: 2 state_change Facts (0→19, then 19→27)"
     );
 }
-
-
 
 // ═════════════════════════════════════════════════════════════════════════
 //  Scenario: Flush then Evict

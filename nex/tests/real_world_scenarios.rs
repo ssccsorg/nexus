@@ -729,7 +729,6 @@ fn scenario_multi_agent_collaboration() {
 
     let state = StorageRead::read_state(&sched.bb);
 
-
     // With FihStorage, concluded facts have origin starting with "conclusion:"
     // instead of JSON content. Verify agents contributed via origin-based check.
     let conclusion_count = state
