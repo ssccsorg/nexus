@@ -234,7 +234,7 @@ impl DuckDbStorage {
                 id: CoordId::from_string(&id),
                 from_facts: from_facts
                     .iter()
-                    .map(|s| CoordId::from_string(&s))
+                    .map(|s| CoordId::from_string(s))
                     .collect(),
                 description,
                 creator,

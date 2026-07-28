@@ -68,17 +68,18 @@ fn str_to_coordpath<const N: usize>(key: &str) -> CoordPath<N> {
     // Fallback: byte decomposition (backward compat with hex keys)
     let bytes = key.as_bytes();
     let mut coords = [Coord::new(0).unwrap(); N];
-    for i in 0..N {
+    for (i, coord) in coords.iter_mut().enumerate() {
         let hi = bytes.get(i * 2).copied().unwrap_or(0) as u16;
         let lo = bytes.get(i * 2 + 1).copied().unwrap_or(0) as u16;
         let idx = (hi << 8 | lo) % 11172;
-        coords[i] = Coord::new(idx as u16).unwrap();
+        *coord = Coord::new(idx).unwrap();
     }
     CoordPath::new(coords)
 }
 
 /// Backward-compatible String-to-String mapping: convert hex key to
 /// CoordPath display string (used for `values()` / `replace_from()`).
+#[allow(dead_code)]
 fn coordpath_to_str<const N: usize>(path: &CoordPath<N>) -> String {
     let mut s = String::with_capacity(N * 3);
     for c in path.coords() {

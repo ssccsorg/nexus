@@ -46,11 +46,11 @@ use crate::{
 use nex_core::Now;
 
 use crate::core::entity_store::{CoordEntityStore, EntityStore};
-use std::collections::{HashMap, HashSet};
 use crate::core::index::Cell2;
 use crate::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
 use crate::io::file_io::{FileIo, WriteOp, default_apply_batch};
 use crate::semantic::record::{Query, RecordLoad};
+use std::collections::{HashMap, HashSet};
 
 /// Chain entry format: serialized by flush_since for delta chain files.
 /// Named struct avoids postcard tuple field ordering ambiguity with empty vecs.
@@ -221,10 +221,7 @@ impl<I: FileIo> FihStorage<I> {
         let mut by_status: HashMap<String, HashSet<String>> = HashMap::new();
         for r in &intents {
             let status = simple_status_key(&r.status).to_string();
-            by_status
-                .entry(status)
-                .or_default()
-                .insert(r.id.clone());
+            by_status.entry(status).or_default().insert(r.id.clone());
         }
 
         *self.fact_by_origin.borrow_mut() = by_origin;
@@ -352,7 +349,8 @@ impl<I: FileIo> FihStorage<I> {
     /// canonical CoordId format stored in IntentRecord.from_facts.
     pub fn intents_by_fact(&self, fact_id: &str) -> Vec<String> {
         let normalized = crate::CoordId::from_string(fact_id).to_string();
-        let intent_records: Vec<IntentRecord> = futures_executor::block_on(self.intent_store.values());
+        let intent_records: Vec<IntentRecord> =
+            futures_executor::block_on(self.intent_store.values());
         intent_records
             .iter()
             .filter(|r| r.from_facts.iter().any(|f| f == &normalized))
@@ -363,7 +361,10 @@ impl<I: FileIo> FihStorage<I> {
     /// Resolve a semantic index back to its ID string.
     pub fn resolve_semantic_idx(&self, idx: u32) -> String {
         let records = futures_executor::block_on(self.fact_store.values());
-        records.get(idx as usize).map(|r| r.id.clone()).unwrap_or_default()
+        records
+            .get(idx as usize)
+            .map(|r| r.id.clone())
+            .unwrap_or_default()
     }
 
     /// Enqueue content as a blob write. FIH is append-only: no dedup
@@ -762,7 +763,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
 
     async fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let _ = self.flush_pending().await;
-        let normalized = CoordId::from_string(&intent_id).to_string();
+        let normalized = CoordId::from_string(intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
             .io
@@ -809,7 +810,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
 
     async fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let _ = self.flush_pending().await;
-        let normalized = CoordId::from_string(&intent_id).to_string();
+        let normalized = CoordId::from_string(intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
             .io
@@ -847,7 +848,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
 
     async fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let _ = self.flush_pending().await;
-        let normalized = CoordId::from_string(&intent_id).to_string();
+        let normalized = CoordId::from_string(intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
             .io
@@ -896,9 +897,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
                 .or_default()
                 .insert(normalized.clone());
         }
-        self.intent_store
-            .insert(normalized, record)
-            .await;
+        self.intent_store.insert(normalized, record).await;
         Ok(())
     }
 
@@ -908,7 +907,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         result: &str,
     ) -> Result<Fact, BlackboardError> {
         let _ = self.flush_pending().await;
-        let normalized = CoordId::from_string(&intent_id).to_string();
+        let normalized = CoordId::from_string(intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
             .io
@@ -970,9 +969,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.flush_pending()
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.intent_store
-            .insert(normalized.clone(), record)
-            .await;
+        self.intent_store.insert(normalized.clone(), record).await;
         // Update fast-path status table
         {
             let mut by_status = self.intent_by_status.borrow_mut();
@@ -1244,7 +1241,7 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
             if has_hint_filter {
                 let hint_ids_set: Option<HashSet<String>> = filter.hint_ids.as_ref().map(|ids| {
                     ids.iter()
-                        .map(|id| CoordId::from_string(&id).to_string())
+                        .map(|id| CoordId::from_string(id).to_string())
                         .collect()
                 });
                 match hint_ids_set {

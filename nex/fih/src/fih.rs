@@ -76,12 +76,12 @@ impl CoordId {
     /// Generate from a 32-byte hash by decomposing into 6 coord indices.
     fn from_bytes(bytes: &[u8; 32]) -> Self {
         let mut coords = [Coord::new(0).unwrap(); 6];
-        for i in 0..6 {
+        for (i, coord) in coords.iter_mut().enumerate() {
             let idx = u16::from_le_bytes([
                 bytes.get(i * 2).copied().unwrap_or(0),
                 bytes.get(i * 2 + 1).copied().unwrap_or(0),
             ]) % 11172;
-            coords[i] = Coord::new(idx).unwrap();
+            *coord = Coord::new(idx).unwrap();
         }
         CoordId(CoordPath::new(coords))
     }
@@ -280,9 +280,8 @@ pub struct Fact {
 impl Fact {
     pub fn new(id: CoordId, origin: String, content: Content, creator: String) -> Self {
         let content_hash = {
-            let bytes = match &content {
-                Content { data, .. } => data,
-            };
+            let Content { data, .. } = &content;
+            let bytes = data;
             let mut h = Sha256::new();
             h.update(bytes);
             FihHash(h.finalize().into())

@@ -218,11 +218,11 @@ impl CalcEngine {
             .ok_or_else(|| CalcError::IntentNotFound("missing rhs".into()))?;
 
         let lhs = self
-            .get(&CoordId::from_string(&lhs_fid))
+            .get(&CoordId::from_string(lhs_fid))
             .await
             .ok_or_else(|| CalcError::FactNotFound(lhs_fid.clone()))?;
         let rhs = self
-            .get(&CoordId::from_string(&rhs_fid))
+            .get(&CoordId::from_string(rhs_fid))
             .await
             .ok_or_else(|| CalcError::FactNotFound(rhs_fid.clone()))?;
 
