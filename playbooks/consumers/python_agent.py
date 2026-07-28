@@ -17,6 +17,7 @@ Requires:
 """
 
 import json
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
@@ -25,7 +26,9 @@ API = "http://localhost:30922/api/v1/fih"
 
 def post(path, body):
     """POST JSON to path, return parsed response."""
-    url = f"{API}{path}"
+    # URL-encode each path segment (CoordId may contain Hangul)
+    segments = [quote(s, safe='') for s in path.split('/')]
+    url = f"{API}{'/'.join(segments)}"
     data = json.dumps(body).encode()
     req = Request(url, data=data, headers={"Content-Type": "application/json"})
     try:
@@ -37,7 +40,8 @@ def post(path, body):
 
 def get(path):
     """GET path, return parsed response."""
-    url = f"{API}{path}"
+    segments = [quote(s, safe='') for s in path.split('/')]
+    url = f"{API}{'/'.join(segments)}"
     with urlopen(url) as resp:
         return json.loads(resp.read())
 
