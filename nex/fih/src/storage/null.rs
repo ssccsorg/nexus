@@ -3,7 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::BlackboardError;
 use crate::fih::{BoardState, Content, Fact, FihHash, Hint, Intent};
-use crate::storage::aggregate::{ColdStorage, DeltaSet, HotStorage};
+use crate::storage::aggregate::ColdStorage;
 use crate::storage::evict::EvictCapable;
 use crate::storage::fact::FactCapable;
 use crate::storage::filter::{FilterCapable, StateFilter};
@@ -114,12 +114,6 @@ impl FlushCapable for NullStorage {
                 partition: cursor.partition.clone(),
             },
         })
-    }
-}
-
-impl HotStorage for NullStorage {
-    fn read_delta_since(&self, _cursor_ts: &str) -> DeltaSet {
-        (Vec::new(), Vec::new(), Vec::new())
     }
 }
 
