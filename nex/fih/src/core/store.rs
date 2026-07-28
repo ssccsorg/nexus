@@ -43,7 +43,7 @@ use crate::{
 };
 use nex_core::Now;
 
-use crate::core::entity_store::{EntityStore, MemoryEntityStore};
+use crate::core::entity_store::{CoordEntityStore, EntityStore};
 use crate::core::index::{Cell2, FihCoord};
 use crate::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
 use crate::io::file_io::{FileIo, WriteOp, default_apply_batch};
@@ -73,9 +73,9 @@ pub struct FihStorage<I: FileIo> {
     #[expect(dead_code)]
     auto_flush: bool,
     // In-memory stores: rebuilt from IO on hydrate, kept in sync for reads.
-    pub fact_store: MemoryEntityStore<FactRecord>,
-    pub intent_store: MemoryEntityStore<IntentRecord>,
-    pub hint_store: MemoryEntityStore<HintRecord>,
+    pub fact_store: CoordEntityStore<6, FactRecord>,
+    pub intent_store: CoordEntityStore<6, IntentRecord>,
+    pub hint_store: CoordEntityStore<6, HintRecord>,
     // Indices
     coord: FihCoord,
     // Pending writes (for FihSession coordination).
@@ -110,9 +110,9 @@ impl<I: FileIo> FihStorage<I> {
             project_id: project_id.to_string(),
             clock,
             auto_flush,
-            fact_store: MemoryEntityStore::<FactRecord>::new(),
-            intent_store: MemoryEntityStore::<IntentRecord>::new(),
-            hint_store: MemoryEntityStore::<HintRecord>::new(),
+            fact_store: CoordEntityStore::<6, FactRecord>::new(),
+            intent_store: CoordEntityStore::<6, IntentRecord>::new(),
+            hint_store: CoordEntityStore::<6, HintRecord>::new(),
             coord: FihCoord::new(),
             pending: Cell2::new(Vec::new()),
         }
@@ -129,9 +129,9 @@ impl<I: FileIo> FihStorage<I> {
             project_id: project_id.to_string(),
             clock,
             auto_flush: false,
-            fact_store: MemoryEntityStore::<FactRecord>::new(),
-            intent_store: MemoryEntityStore::<IntentRecord>::new(),
-            hint_store: MemoryEntityStore::<HintRecord>::new(),
+            fact_store: CoordEntityStore::<6, FactRecord>::new(),
+            intent_store: CoordEntityStore::<6, IntentRecord>::new(),
+            hint_store: CoordEntityStore::<6, HintRecord>::new(),
             coord: FihCoord::new(),
             pending: Cell2::new(Vec::new()),
         }
