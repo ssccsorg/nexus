@@ -33,7 +33,7 @@ pub use contract::core::{
     HintRule, NexConfig, NexInstanceInfo, NexLifecycle,
 };
 pub use contract::fih::FihContract;
-pub use core::entity_store::{EntityStore, MemoryEntityStore};
+pub use core::entity_store::{CoordEntityStore, EntityStore, MemoryEntityStore};
 pub use core::export::{export_from_io, import_into_io};
 pub use core::fih_blackboard::FihBlackboard;
 pub use core::index::{Cell2, OrderedIndex};
