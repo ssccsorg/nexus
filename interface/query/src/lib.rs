@@ -7,7 +7,7 @@
 ///
 /// `serde_json::Value` is retained for filter literal values because cold
 /// backends accept various literal types (strings, numbers, booleans).
-use nexus_model::Content;
+use nex_fih::Content;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -114,7 +114,7 @@ pub struct AggregateDef {
 ///
 /// Backends without a concrete implementation fall through to the default
 /// error-returning method.
-pub trait QueryCapable: nexus_model::StorageRead {
+pub trait QueryCapable: nex_fih::StorageRead {
     /// Execute a compiled query plan against this storage backend.
     ///
     /// Returns a list of result rows. Each row maps field names to Content
@@ -124,4 +124,4 @@ pub trait QueryCapable: nexus_model::StorageRead {
     }
 }
 
-impl QueryCapable for nexus_model::NullStorage {}
+impl QueryCapable for nex_fih::NullStorage {}

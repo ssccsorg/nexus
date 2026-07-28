@@ -21,7 +21,7 @@ use nex::io::FileIo;
 use nex::EntityStore;
 use nex::storage::core::FihStorage;
 use nex::storage::semantic::Query as SemanticQuery;
-use nexus_model::{
+use nex_fih::{
     AsyncFactCapable, AsyncFlushCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead,
     Content, Fact, FihHash, FlushCursor, FlushResult, Hint, Intent,
 };

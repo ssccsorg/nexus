@@ -239,10 +239,44 @@ name = "nex"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "futures-executor",
+ "log",
+ "nex-core",
+ "nex-fih",
+ "nex-io",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "nex-calc-fihcontract"
+version = "0.1.0"
+dependencies = [
+ "nex",
+ "nex-core",
+ "nex-fih",
+ "nexus-storage-sim",
+ "postcard",
+ "serde",
+ "sha2",
+ "tokio",
+]
+
+[[package]]
+name = "nex-core"
+version = "0.1.0"
+
+[[package]]
+name = "nex-fih"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
  "cfg-if",
  "futures-executor",
  "log",
- "nexus-model",
+ "nex-core",
+ "nex-io",
+ "petgraph",
  "postcard",
  "serde",
  "serde_json",
@@ -252,26 +286,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "nex-calc-fihcontract"
+name = "nex-io"
 version = "0.1.0"
 dependencies = [
- "nex",
- "nexus-model",
- "nexus-storage-sim",
- "postcard",
+ "async-trait",
+ "futures-executor",
+ "log",
  "serde",
- "sha2",
- "tokio",
-]
-
-[[package]]
-name = "nexus-model"
-version = "0.1.0"
-dependencies = [
- "petgraph",
- "serde",
- "sha2",
- "tagma-core",
+ "serde_json",
+ "walkdir",
 ]
 
 [[package]]
@@ -281,7 +304,8 @@ dependencies = [
  "cfg-if",
  "futures-executor",
  "nex",
- "nexus-model",
+ "nex-core",
+ "nex-fih",
  "postcard",
  "serde",
 ]

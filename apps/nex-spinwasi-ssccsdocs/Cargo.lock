@@ -600,15 +600,47 @@ name = "nex"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "futures-executor",
+ "log",
+ "nex-core",
+ "nex-fih",
+ "nex-io",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "nex-core"
+version = "0.1.0"
+
+[[package]]
+name = "nex-fih"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
  "cfg-if",
  "futures-executor",
  "log",
- "nexus-model",
+ "nex-core",
+ "nex-io",
+ "petgraph",
  "postcard",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "tagma-core",
+ "walkdir",
+]
+
+[[package]]
+name = "nex-io"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures-executor",
+ "log",
+ "serde",
+ "serde_json",
  "walkdir",
 ]
 
@@ -620,7 +652,8 @@ dependencies = [
  "async-trait",
  "http",
  "nex",
- "nexus-model",
+ "nex-core",
+ "nex-fih",
  "postcard",
  "serde",
  "serde_json",
@@ -629,16 +662,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "nexus-model"
-version = "0.1.0"
-dependencies = [
- "petgraph",
- "serde",
- "sha2 0.10.9",
- "tagma-core",
 ]
 
 [[package]]

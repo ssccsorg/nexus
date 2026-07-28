@@ -8,8 +8,9 @@ description = "FIH-based calculator with FihContract layer — demonstrates gove
 [workspace]
 
 [dependencies]
-nexus-model = { path = "../../model" }
-nex = { path = "../../nex" }
+nex-core = { path = "../../nex/core" }
+nex-fih = { path = "../../nex/fih" }
+nex = { path = "../../nex/process" }
 nexus-storage-sim = { path = "../../storage/sim" }
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "io-util"] }
 sha2 = "0.10"

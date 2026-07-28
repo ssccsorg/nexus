@@ -6,7 +6,7 @@
 // every verification step passes. Designed to be run as a smoke test in CI
 // or during development (cargo run, not cargo test).
 
-use nexus_model::{
+use nex_fih::{
     AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable, AsyncHintCapable,
     AsyncIntentCapable, AsyncStorageRead, Fact, FihHash, FlushCursor, Hint, Intent, StateFilter,
 };

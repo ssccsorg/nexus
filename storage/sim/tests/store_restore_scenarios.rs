@@ -7,7 +7,7 @@
 mod common;
 
 use futures_executor::block_on;
-use nexus_model::{
+use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, Content, Fact,
     FihHash, Hint, Intent,
 };

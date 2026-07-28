@@ -9,7 +9,7 @@
 //   6. Show that new gaps emerge after knowledge integration
 
 use nex::FihBlackboard;
-use nexus_model::{
+use nex_fih::{
     Blackboard, BlackboardError, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead,
 };
 use nexus_storage_sim::SimIo;
