@@ -19,6 +19,11 @@ pub mod tasks;
 pub use error::ProcessError;
 pub use scheduler::Scheduler;
 
+/// Backward compatibility: old `nex::process::scheduler` and `nex::process::tasks` paths.
+pub mod process {
+    pub use crate::{scheduler, tasks};
+}
+
 // ── Backward-compatible module aliases ──────────────────────────────────
 //
 // These modules re-export from nex-fih and nex-io so that existing
