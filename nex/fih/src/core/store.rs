@@ -45,7 +45,7 @@ use crate::{
 };
 use nex_core::Now;
 
-use crate::core::entity_store::{CoordEntityStore, EntityStore};
+use crate::core::entity_store::{EntityStore, MemoryEntityStore};
 use crate::core::index::Cell2;
 use std::collections::{HashMap, HashSet};
 use crate::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
@@ -76,9 +76,9 @@ pub struct FihStorage<I: FileIo> {
     #[expect(dead_code)]
     auto_flush: bool,
     // In-memory stores: rebuilt from IO on hydrate, kept in sync for reads.
-    pub fact_store: CoordEntityStore<6, FactRecord>,
-    pub intent_store: CoordEntityStore<6, IntentRecord>,
-    pub hint_store: CoordEntityStore<6, HintRecord>,
+    pub fact_store: MemoryEntityStore<FactRecord>,
+    pub intent_store: MemoryEntityStore<IntentRecord>,
+    pub hint_store: MemoryEntityStore<HintRecord>,
     // Semantic stores (for similarity search).
     semantic_stores: Cell2<Vec<crate::semantic::DynSemanticStore>>,
     /// Counter for assigning semantic IDs to facts incrementally.
@@ -119,9 +119,9 @@ impl<I: FileIo> FihStorage<I> {
             project_id: project_id.to_string(),
             clock,
             auto_flush,
-            fact_store: CoordEntityStore::<6, FactRecord>::new(),
-            intent_store: CoordEntityStore::<6, IntentRecord>::new(),
-            hint_store: CoordEntityStore::<6, HintRecord>::new(),
+            fact_store: MemoryEntityStore::<FactRecord>::new(),
+            intent_store: MemoryEntityStore::<IntentRecord>::new(),
+            hint_store: MemoryEntityStore::<HintRecord>::new(),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
             fact_by_creator: Cell2::new(HashMap::new()),
@@ -141,9 +141,9 @@ impl<I: FileIo> FihStorage<I> {
             project_id: project_id.to_string(),
             clock,
             auto_flush: false,
-            fact_store: CoordEntityStore::<6, FactRecord>::new(),
-            intent_store: CoordEntityStore::<6, IntentRecord>::new(),
-            hint_store: CoordEntityStore::<6, HintRecord>::new(),
+            fact_store: MemoryEntityStore::<FactRecord>::new(),
+            intent_store: MemoryEntityStore::<IntentRecord>::new(),
+            hint_store: MemoryEntityStore::<HintRecord>::new(),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
             fact_by_creator: Cell2::new(HashMap::new()),
