@@ -5,10 +5,22 @@ use tagma_core::{Coord, CoordPath};
 
 // ── Tagma primary identity ─────────────────────────────────────────────
 
-/// A 6-character Tagma coordinate path used as the primary identifier for
-/// FIH entities. Replaces FihHash (SHA-256) as the storage address.
-/// Address space: 11,172^6 = 1.94e24 unique identifiers.
+/// Tagma coordinate path depth for FIH storage addressing.
+/// Depth=6 → 11,172^6 ≈ 2×10^24 address space (default).
+/// Change to `pub struct CoordId(pub CoordPath<20>)` for SHA-256-scale space.
+pub const COORD_ID_DEPTH: usize = 6;
+
+/// A Tagma coordinate path used as the primary FIH identifier.
+/// Replaces FihHash (SHA-256) as the storage address.
 /// Generation: O(1) arithmetic, no SHA256.
+///
+/// ## Upgrading address depth
+/// Change `COORD_ID_DEPTH` to 20 and update the inner type:
+/// ```ignore
+/// pub struct CoordId(pub CoordPath<20>);
+/// ```
+/// All axis methods (axis, from_axes, with_timestamp, etc.) are N=6-specific
+/// and must be updated accordingly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CoordId(pub CoordPath<6>);
 
