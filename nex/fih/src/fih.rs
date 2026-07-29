@@ -85,6 +85,52 @@ impl CoordId {
         }
         CoordId(CoordPath::new(coords))
     }
+
+    // ── Axis accessors ───────────────────────────────────────────
+    // CoordPath<6> axis convention:
+    //   [0]: time_hi   — coarse time bucket (epoch day / session id)
+    //   [1]: time_lo   — fine time (sequence within bucket)
+    //   [2]: entity    — entity type (0=Fact, 1=Intent, 2=Hint)
+    //   [3]: origin    — origin category
+    //   [4]: creator   — creator category
+    //   [5]: serial    — uniqueness discriminator
+
+    /// Return the coordinate at the given semantic axis (0..5).
+    pub fn axis(&self, idx: usize) -> Coord {
+        self.0.coords()[idx]
+    }
+
+    /// Build a CoordId with explicit axis values.
+    pub fn from_axes(
+        time_hi: u16,
+        time_lo: u16,
+        entity: u16,
+        origin: u16,
+        creator: u16,
+        serial: u16,
+    ) -> Option<Self> {
+        let coords = [
+            Coord::new(time_hi % 11172)?,
+            Coord::new(time_lo % 11172)?,
+            Coord::new(entity % 11172)?,
+            Coord::new(origin % 11172)?,
+            Coord::new(creator % 11172)?,
+            Coord::new(serial % 11172)?,
+        ];
+        Some(CoordId(CoordPath::new(coords)))
+    }
+
+    /// Create a CoordId with time_hi/time_lo set from a nanosecond timestamp.
+    pub fn with_timestamp(ts_ns: u64, entity: u16, origin: u16, creator: u16, serial: u16) -> Self {
+        let days = (ts_ns / 86_400_000_000_000) as u16;
+        let sub = (ts_ns % 86_400_000_000_000) as u16;
+        Self::from_axes(days, sub, entity, origin, creator, serial).unwrap()
+    }
+
+    /// Extract the time_hi axis value (days since epoch).
+    pub fn time_hi(&self) -> u16 { self.axis(0).index() }
+    /// Extract the entity type axis value.
+    pub fn entity_type(&self) -> u16 { self.axis(2).index() }
 }
 
 impl std::fmt::Display for CoordId {

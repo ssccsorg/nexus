@@ -1447,9 +1447,13 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
 
 impl<I: FileIo> crate::AsyncTimeRangeCapable for FihStorage<I> {
     async fn time_range(&self) -> Option<Range<String>> {
-        // Time range index removed with FihCoord in Phase 3.
-        // Return None; callers should use read_state_filtered with since/until.
-        None
+        let facts = self.fact_store.values().await;
+        if facts.is_empty() {
+            return None;
+        }
+        let min = facts.iter().map(|r| r.submitted_at).min()?;
+        let max = facts.iter().map(|r| r.submitted_at).max()?;
+        Some(min.to_string()..max.to_string())
     }
 }
 
