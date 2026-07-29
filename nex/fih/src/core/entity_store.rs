@@ -106,6 +106,163 @@ where
             inner: Cell2::new(CoordSpaceN::new()),
         }
     }
+
+    /// Iterate over values matching a predicate, cloning only on match.
+    /// Avoids the `values()` → Vec → filter pipeline.
+    pub async fn iter_filtered<F>(&self, mut predicate: F) -> Vec<V>
+    where
+        V: Send,
+        F: FnMut(&V) -> bool + Send,
+    {
+        let space = self.inner.borrow();
+        let mut results = Vec::with_capacity(space.len().min(128));
+        for (_path, v) in space.iter_tree() {
+            if predicate(v) {
+                results.push(v.clone());
+            }
+        }
+        results
+    }
+
+    /// Filter during tree traversal using path coordinates.
+    /// For each entry, checks if `path[axis] == value` for all specified
+    /// (axis, value) pairs BEFORE cloning. Avoids string comparison
+    /// when the filter corresponds to known axis indices.
+    ///
+    /// Falls back to full scan (path coord check is still faster than
+    /// string compare), but when axes 0..k are fully specified, uses
+    /// `iter_prefix` for O(subtree) traversal.
+    pub async fn axis_filtered(
+        &self,
+        axis_checks: &[(usize, u16)],
+    ) -> Vec<V>
+    where
+        V: Send,
+    {
+        let space = self.inner.borrow();
+
+        // If axis_checks cover axes 0..k contiguously from the start,
+        // use iter_prefix for the subtree.
+        let contiguous_prefix = {
+            let mut prefix_len = 0;
+            for (i, &(axis, _val)) in axis_checks.iter().enumerate() {
+                if axis == i {
+                    prefix_len = i + 1;
+                } else {
+                    break;
+                }
+            }
+            if prefix_len > 0 && prefix_len == axis_checks.len() {
+                Some(prefix_len)
+            } else {
+                None
+            }
+        };
+
+        if let Some(prefix_len) = contiguous_prefix {
+            // Build prefix from the first prefix_len axis values
+            let mut prefix_coords = Vec::with_capacity(prefix_len);
+            for (_, val) in axis_checks.iter().take(prefix_len) {
+                if let Some(c) = tagma_core::Coord::new(*val) {
+                    prefix_coords.push(c);
+                } else {
+                    return Vec::new();
+                }
+            }
+            if let Some(iter) = space.iter_prefix(&prefix_coords) {
+                let mut results = Vec::new();
+                for (_path, v) in iter {
+                    results.push(v.clone());
+                }
+                return results;
+            }
+            return Vec::new();
+        }
+
+        // Non-contiguous: full scan with path coord check
+        let mut results = Vec::new();
+        'outer: for (path, v) in space.iter_tree() {
+            for &(axis, val) in axis_checks {
+                if axis >= N || path.coords()[axis].index() != val {
+                    continue 'outer;
+                }
+            }
+            results.push(v.clone());
+        }
+        results
+    }
+
+    /// Iterate over values under a CoordPath prefix, cloning only matching entries.
+    /// This is the axis-aware fast path — skips entire subtrees that don't match.
+    /// Returns `None` if the prefix path doesn't exist.
+    pub async fn iter_prefix_filtered<F>(
+        &self,
+        prefix: &[tagma_core::Coord],
+        mut predicate: F,
+    ) -> Option<Vec<V>>
+    where
+        V: Send,
+        F: FnMut(&V) -> bool + Send,
+    {
+        let space = self.inner.borrow();
+        let iter = space.iter_prefix(prefix)?;
+        let mut results = Vec::new();
+        for (_path, v) in iter {
+            if predicate(v) {
+                results.push(v.clone());
+            }
+        }
+        Some(results)
+    }
+
+    /// Query by axis hints: build a contiguous prefix from provided axis values
+    /// and use iter_prefix for O(subtree) traversal. Returns all values under the
+    /// prefix, or None if the prefix doesn't exist.
+    ///
+    /// Axis convention: [0]=time_hi, [1]=time_lo, [2]=entity, [3]=origin, [4]=creator, [5]=serial
+    pub async fn query_prefix(
+        &self,
+        hints: &crate::storage::filter::AxisHints,
+    ) -> Vec<V>
+    where
+        V: Send,
+    {
+        use tagma_core::Coord;
+
+        // Build contiguous prefix from hints
+        let mut prefix = Vec::with_capacity(6);
+        if let Some(v) = hints.time_hi {
+            if let Some(c) = Coord::new(v % 11172) { prefix.push(c); } else { return Vec::new(); }
+        } else { return self.values().await; } // no prefix possible, full scan
+
+        if let Some(v) = hints.time_lo {
+            if let Some(c) = Coord::new(v % 11172) { prefix.push(c); } else { return Vec::new(); }
+        } else { return self.values().await; }
+
+        if let Some(v) = hints.entity {
+            if let Some(c) = Coord::new(v % 11172) { prefix.push(c); } else { return Vec::new(); }
+        } else { return self.values().await; }
+
+        if let Some(v) = hints.origin {
+            if let Some(c) = Coord::new(v % 11172) { prefix.push(c); } else { return Vec::new(); }
+        } else {
+            // origin not specified: use prefix up to entity only
+            return self.iter_prefix_filtered(&prefix, |_| true).await.unwrap_or_default();
+        }
+
+        if let Some(v) = hints.creator {
+            if let Some(c) = Coord::new(v % 11172) { prefix.push(c); } else { return Vec::new(); }
+        } else {
+            return self.iter_prefix_filtered(&prefix, |_| true).await.unwrap_or_default();
+        }
+
+        if let Some(v) = hints.serial {
+            if let Some(c) = Coord::new(v % 11172) { prefix.push(c); } else { return Vec::new(); }
+        }
+
+        // Full prefix: all 6 axes specified
+        self.iter_prefix_filtered(&prefix, |_| true).await.unwrap_or_default()
+    }
 }
 
 impl<const N: usize, V> Default for CoordEntityStore<N, V>

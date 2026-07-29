@@ -76,9 +76,18 @@ pub struct FihStorage<I: FileIo> {
     #[expect(dead_code)]
     auto_flush: bool,
     // In-memory stores: rebuilt from IO on hydrate, kept in sync for reads.
+<<<<<<< HEAD
     pub fact_store: MemoryEntityStore<FactRecord>,
     pub intent_store: MemoryEntityStore<IntentRecord>,
     pub hint_store: MemoryEntityStore<HintRecord>,
+=======
+    pub fact_store: CoordEntityStore<6, FactRecord>,
+    pub intent_store: CoordEntityStore<6, IntentRecord>,
+    pub hint_store: CoordEntityStore<6, HintRecord>,
+    pub fact_records: Cell2<HashMap<String, FactRecord>>,
+    pub facts_by_creator: Cell2<HashMap<String, Vec<String>>>,
+    pub facts_by_origin: Cell2<HashMap<String, Vec<String>>>,
+>>>>>>> 60259d04 (nex: Add axis-filtered iteration and prefix query methods to EntityStore)
     // Semantic stores (for similarity search).
     semantic_stores: Cell2<Vec<crate::semantic::DynSemanticStore>>,
     /// Counter for assigning semantic IDs to facts incrementally.
@@ -119,9 +128,18 @@ impl<I: FileIo> FihStorage<I> {
             project_id: project_id.to_string(),
             clock,
             auto_flush,
+<<<<<<< HEAD
             fact_store: MemoryEntityStore::<FactRecord>::new(),
             intent_store: MemoryEntityStore::<IntentRecord>::new(),
             hint_store: MemoryEntityStore::<HintRecord>::new(),
+=======
+            fact_store: CoordEntityStore::<6, FactRecord>::new(),
+            intent_store: CoordEntityStore::<6, IntentRecord>::new(),
+            hint_store: CoordEntityStore::<6, HintRecord>::new(),
+            fact_records: Cell2::new(HashMap::new()),
+            facts_by_creator: Cell2::new(HashMap::new()),
+            facts_by_origin: Cell2::new(HashMap::new()),
+>>>>>>> 60259d04 (nex: Add axis-filtered iteration and prefix query methods to EntityStore)
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
             fact_by_creator: Cell2::new(HashMap::new()),
@@ -141,9 +159,18 @@ impl<I: FileIo> FihStorage<I> {
             project_id: project_id.to_string(),
             clock,
             auto_flush: false,
+<<<<<<< HEAD
             fact_store: MemoryEntityStore::<FactRecord>::new(),
             intent_store: MemoryEntityStore::<IntentRecord>::new(),
             hint_store: MemoryEntityStore::<HintRecord>::new(),
+=======
+            fact_store: CoordEntityStore::<6, FactRecord>::new(),
+            intent_store: CoordEntityStore::<6, IntentRecord>::new(),
+            hint_store: CoordEntityStore::<6, HintRecord>::new(),
+            fact_records: Cell2::new(HashMap::new()),
+            facts_by_creator: Cell2::new(HashMap::new()),
+            facts_by_origin: Cell2::new(HashMap::new()),
+>>>>>>> 60259d04 (nex: Add axis-filtered iteration and prefix query methods to EntityStore)
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
             fact_by_creator: Cell2::new(HashMap::new()),
@@ -599,8 +626,15 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
         };
 
         // Update in-memory cache immediately for subsequent reads
+<<<<<<< HEAD
         let id_clone = record.id.clone();
         self.fact_store.insert(id_clone.clone(), record).await;
+=======
+        self.fact_store.insert(record.id.clone(), record.clone()).await;
+        self.fact_records.borrow_mut().insert(record.id.clone(), record);
+        self.facts_by_creator.borrow_mut().entry(fact.creator.clone()).or_default().push(fact.id.to_string());
+        self.facts_by_origin.borrow_mut().entry(fact.origin.clone()).or_default().push(fact.id.to_string());
+>>>>>>> 60259d04 (nex: Add axis-filtered iteration and prefix query methods to EntityStore)
         self.pending.borrow_mut().push(op);
 
         // Update fast-path creator index (minimal: only creator filter)
@@ -896,7 +930,8 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             path: fact_rec.key(),
             data: fact_bytes,
         });
-        self.fact_store.insert(fact_rec.id.clone(), fact_rec).await;
+        self.fact_store.insert(fact_rec.id.clone(), fact_rec.clone()).await;
+        self.fact_records.borrow_mut().insert(fact_rec.id.clone(), fact_rec);
 
         let intent_bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -949,6 +984,7 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
             Content { mime_type: default_mime.to_string(), data: Vec::new() }
         };
 
+<<<<<<< HEAD
         // Fast path: creator-only filter uses fact_by_creator HashMap.
         // Avoids scanning all records when only filtering by creator.
         let fact_records: Vec<FactRecord> = if filter.creator.is_some()
@@ -977,6 +1013,115 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
             self.fact_store.values().await
         };
 
+=======
+        // FAST PATH 1: single or AND filter via HashMap O(1)
+        let fast_ids: Option<Vec<String>> = match (filter.creator.as_ref(), filter.origin.as_ref()) {
+            (Some(c), Some(o)) => {
+                // AND: intersect creator + origin
+                let by_c = self.facts_by_creator.borrow();
+                let by_o = self.facts_by_origin.borrow();
+                let c_ids = by_c.get(c);
+                let o_ids = by_o.get(o);
+                match (c_ids, o_ids) {
+                    (Some(cv), Some(ov)) => {
+                        if cv.len() <= ov.len() {
+                            let o_set: std::collections::HashSet<&str> = ov.iter().map(|s| s.as_str()).collect();
+                            Some(cv.iter().filter(|id| o_set.contains(id.as_str())).cloned().collect())
+                        } else {
+                            let c_set: std::collections::HashSet<&str> = cv.iter().map(|s| s.as_str()).collect();
+                            Some(ov.iter().filter(|id| c_set.contains(id.as_str())).cloned().collect())
+                        }
+                    }
+                    (Some(cv), None) => Some(cv.clone()),
+                    (None, Some(ov)) => Some(ov.clone()),
+                    (None, None) => Some(Vec::new()),
+                }
+            }
+            (Some(c), None) => self.facts_by_creator.borrow().get(c).cloned(),
+            (None, Some(o)) => self.facts_by_origin.borrow().get(o).cloned(),
+            (None, None) => None,
+        };
+        if let Some(ids) = fast_ids {
+            let recs = self.fact_records.borrow();
+            let facts: Vec<Fact> = ids.iter().filter_map(|id| {
+                recs.get(id).map(|r| Fact {
+                    id: CoordId::from_string(&r.id),
+                    origin: r.origin.clone(),
+                    content_hash: {
+                        let hex = &r.blob_hash; let mut b = [0u8; 32];
+                        for (i, c) in hex.as_bytes().chunks(2).enumerate() {
+                            let s = unsafe { std::str::from_utf8_unchecked(c) };
+                            b[i] = u8::from_str_radix(s, 16).unwrap_or(0);
+                        } FihHash(b)
+                    },
+                    content: load_content_fast(&r.blob_hash, "application/octet-stream"),
+                    creator: r.creator.clone(),
+                })
+            }).collect();
+            let intents: Vec<Intent> = Vec::new();
+            let hints: Vec<Hint> = Vec::new();
+            let mut state = BoardState { facts, intents, hints };
+            if let Some(limit) = filter.limit { state.facts = state.facts.into_iter().take(limit).collect(); }
+            return state;
+        }
+
+        // FAST PATH 2: axis_hints enable O(subtree) iter_prefix query.
+        if let Some(ref hints) = filter.axis_hints {
+            if hints.time_hi.is_some() {
+                let matched = self.fact_store.query_prefix(hints).await;
+                let facts: Vec<Fact> = matched
+                    .into_iter()
+                    .filter(|r| {
+                        if let Some(ref origin) = filter.origin {
+                            if r.origin != *origin { return false; }
+                        }
+                        if let Some(ref creator) = filter.creator {
+                            if r.creator != *creator { return false; }
+                        }
+                        if let Some(ref since) = filter.since {
+                            if let Ok(ts) = since.parse::<u64>() {
+                                if r.submitted_at < ts { return false; }
+                            }
+                        }
+                        if let Some(ref until) = filter.until {
+                            if let Ok(ts) = until.parse::<u64>() {
+                                if r.submitted_at > ts { return false; }
+                            }
+                        }
+                        true
+                    })
+                    .map(|r| {
+                        let content = load_content_fast(&r.blob_hash, "application/octet-stream");
+                        Fact {
+                            id: CoordId::from_string(&r.id),
+                            origin: r.origin,
+                            content_hash: {
+                                let hex = &r.blob_hash;
+                                let mut bytes = [0u8; 32];
+                                for (i, chunk) in hex.as_bytes().chunks(2).enumerate() {
+                                    let s = unsafe { std::str::from_utf8_unchecked(chunk) };
+                                    bytes[i] = u8::from_str_radix(s, 16).unwrap_or(0);
+                                }
+                                FihHash(bytes)
+                            },
+                            content,
+                            creator: r.creator,
+                        }
+                    })
+                    .collect();
+                let intents: Vec<Intent> = Vec::new();
+                let hints: Vec<Hint> = Vec::new();
+                let mut state = BoardState { facts, intents, hints };
+                if let Some(limit) = filter.limit {
+                    state.facts = state.facts.into_iter().take(limit).collect();
+                }
+                return state;
+            }
+        }
+
+        // FALLBACK: values() + string-based filter (no axis hints)
+        let all_facts = self.fact_store.values().await;
+>>>>>>> 60259d04 (nex: Add axis-filtered iteration and prefix query methods to EntityStore)
         let all_intents = self.intent_store.values().await;
         let all_hints = self.hint_store.values().await;
 
