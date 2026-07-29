@@ -25,17 +25,7 @@ fn test_since_returns_newer_only() {
     let state = futures_executor::block_on(store.read_state());
     assert_eq!(state.facts.len(), 2);
 
-    let filtered = futures_executor::block_on(store.read_state_filtered(&StateFilter {
-        fact_ids: None,
-        intent_ids: None,
-        hint_ids: None,
-        since: Some("1500000000".into()),
-        until: None,
-        limit: None,
-        offset: None,
-        creator: None,
-        status: None,
-    }));
+    let filtered = futures_executor::block_on(store.read_state_filtered(&StateFilter { since: Some("1500000000".into()), ..Default::default() }));
     assert_eq!(filtered.facts.len(), 1);
     assert_eq!(filtered.facts[0].id, CoordId::from_string("f_b"));
 }
@@ -88,17 +78,7 @@ fn test_range_returns_mid_only() {
 fn test_since_after_all_returns_empty() {
     let store = make_clocked();
     futures_executor::block_on(store.submit_fact(&common::fact("f_a"))).unwrap();
-    let filtered = futures_executor::block_on(store.read_state_filtered(&StateFilter {
-        fact_ids: None,
-        intent_ids: None,
-        hint_ids: None,
-        since: Some("7000000000".into()),
-        until: None,
-        limit: None,
-        offset: None,
-        creator: None,
-        status: None,
-    }));
+    let filtered = futures_executor::block_on(store.read_state_filtered(&StateFilter { since: Some("7000000000".into()), ..Default::default() }));
     assert_eq!(filtered.facts.len(), 0);
 }
 

@@ -307,3 +307,91 @@ fn test_axis_entity_type_values() {
     assert_eq!(intent_coord.entity_type(), 1, "entity type for Intent");
     assert_eq!(hint_coord.entity_type(), 2, "entity type for Hint");
 }
+
+// ── Test 7: Multi-dimensional Tagma-style query ────────────────────────
+//
+// Demonstrates the CoordId axis system's practical advantage:
+// multiple independent dimensions encoded into a single storage address.
+// Filtering by origin + creator + time_bucket is a set intersection,
+// not a sequential scan through all records.
+
+#[test]
+fn test_multi_dimensional_tagma_query() {
+    let io = SimIo::new();
+    let store = FihStorage::new(io, "tagma_query");
+
+    // Create a 3D grid of facts: 4 origins × 3 creators × 5 time buckets = 60 facts.
+    // Each fact gets a CoordId with meaningful axis values.
+    for origin_idx in 0..4 {
+        for creator_idx in 0..3 {
+            for time_bucket in 0..5 {
+                let serial = (origin_idx * 100 + creator_idx * 10 + time_bucket) as u16;
+                let coord = CoordId::from_axes(
+                    time_bucket,  // [0] time_hi
+                    0,            // [1] time_lo
+                    0,            // [2] entity type = Fact
+                    origin_idx,   // [3] origin
+                    creator_idx,  // [4] creator
+                    serial,       // [5] serial (unique)
+                )
+                .unwrap();
+                let fact = Fact::new(
+                    coord,
+                    format!("origin-{}", origin_idx),
+                    format!("content-{}-{}-{}", origin_idx, creator_idx, time_bucket).into(),
+                    format!("creator-{}", creator_idx),
+                );
+                block_on(store.submit_fact(&fact)).unwrap();
+            }
+        }
+    }
+
+    assert_eq!(block_on(store.read_state()).facts.len(), 60);
+
+    // Query 1: All facts by creator-1 (single axis via fast-path).
+    // Expected: 4 origins × 5 time buckets = 20 facts.
+    let q1 = block_on(store.read_state_filtered(&StateFilter {
+        creator: Some("creator-1".into()),
+        ..Default::default()
+    }));
+    assert_eq!(q1.facts.len(), 20, "creator-1 should match 4×5=20 facts");
+
+    // Query 2: origin-2 AND creator-1 (dual axis via set intersection).
+    // Expected: 1 origin × 1 creator × 5 time buckets = 5 facts.
+    let q2 = block_on(store.read_state_filtered(&StateFilter {
+        origin: Some("origin-2".into()),
+        creator: Some("creator-1".into()),
+        ..Default::default()
+    }));
+    assert_eq!(q2.facts.len(), 5, "origin-2 + creator-1 = 1×1×5 = 5");
+
+    // Query 3: origin-3 AND creator-0 AND time bucket 2..4 (three-axis).
+    // origin-3: 15 facts (3 creators × 5 time)
+    // creator-0: 20 facts (4 origins × 5 time)
+    // time 2..4: 36 facts (4 origins × 3 creators × 3 time)
+    // intersection: 1 origin × 1 creator × 3 time = 3 facts.
+    let q3 = block_on(store.read_state_filtered(&StateFilter {
+        origin: Some("origin-3".into()),
+        creator: Some("creator-0".into()),
+        since: Some("2".into()),
+        until: Some("4".into()),
+        ..Default::default()
+    }));
+    assert_eq!(q3.facts.len(), 3, "three-axis filter: 1×1×3 = 3");
+
+    // Query 4: origin-0 with no other filters (fast-path single key).
+    // Expected: 3 creators × 5 time = 15 facts.
+    let q4 = block_on(store.read_state_filtered(&StateFilter {
+        origin: Some("origin-0".into()),
+        ..Default::default()
+    }));
+    assert_eq!(q4.facts.len(), 15, "origin-0 should have 3×5=15");
+
+    // Verify CoordId axis values are correct for each result.
+    for fact in q2.facts.iter() {
+        // All should have origin=2, creator=1
+        let cid = &fact.id; // CoordId
+        assert_eq!(cid.axis(3).index(), 2, "origin axis should be 2");
+        assert_eq!(cid.axis(4).index(), 1, "creator axis should be 1");
+    }
+}

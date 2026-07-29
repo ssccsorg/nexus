@@ -991,13 +991,27 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
 impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
     async fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
         // Phase 1: Resolve candidate fact IDs from fast-path tables
-        let has_fact_index = filter.creator.is_some()
+        let has_fact_index = filter.origin.is_some()
+            || filter.creator.is_some()
             || filter.since.is_some()
             || filter.until.is_some()
             || filter.fact_ids.is_some();
 
         let fact_candidates: Option<HashSet<String>> = if has_fact_index {
             let mut c: Option<HashSet<String>> = None;
+
+            if let Some(origin) = &filter.origin {
+                let ids: HashSet<String> = self
+                    .fact_by_origin
+                    .borrow()
+                    .get(origin)
+                    .cloned()
+                    .unwrap_or_default();
+                c = Some(match c {
+                    Some(existing) => existing.intersection(&ids).cloned().collect(),
+                    None => ids,
+                });
+            }
 
             if let Some(creator) = &filter.creator {
                 let ids: HashSet<String> = self

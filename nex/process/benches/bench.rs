@@ -1,118 +1,260 @@
-//! Nexus Criterion benchmarks — intents_by_fact lookup latency.
+//! Nexus Criterion benchmarks — Tagma multi-dimensional query performance.
 //!
-//! Measures the intents_by_fact() scan implementation against 10K facts
-//! and 10K intents (each referencing one fact). Reports per-query latency
-//! and provides comparison against the estimated HashMap O(1) baseline.
+//! Measures query throughput across axis-filtered reads with CoordId,
+//! comparing against estimated HashMap baseline. Demonstrates the
+//! practical benefit of structural coordinate addressing: multi-axis
+//! filters resolve as set intersections rather than full scans.
 //!
 //! Run: cargo bench -p nex
+//!
+//! Key metrics:
+//!   - fih_filter_creator:     single-axis filter via fast-path table
+//!   - fih_filter_origin_and_creator: dual-axis filter (intersection)
+//!   - fih_filter_creator_time: cross-axis filter (creator + time range)
+//!   - fih_intents_by_fact:    O(fan-out) scan measurement
+//!   - fih_write_fact:         write throughput at scale
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{BatchSize, Criterion, black_box, criterion_group, criterion_main};
 use futures_executor::block_on;
 
 use nex_fih::{
-    AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead, CoordId, Content, Fact, Intent,
+    AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead, CoordId, Fact, FihStorage, Intent,
+    StateFilter,
 };
-use nexus_storage_sim::{FihStorage, SimIo};
+use nexus_storage_sim::SimIo;
 
 // ── Constants ────────────────────────────────────────────────────────────
 
-const NUM_FACTS: usize = 10_000;
-const NUM_INTS: usize = 10_000;
-const QUERY_COUNT: usize = 100;
+const N_FACTS: usize = 50_000;
+const N_ORIGINS: usize = 50;
+const N_CREATORS: usize = 20;
+const N_TIMEBUCKETS: usize = 100;
+const N_INTS: usize = 10_000;
 
-// ── Benchmark: intents_by_fact lookup latency ───────────────────────────
+// ── Build a store with controlled axis distribution ──────────────────────
+//
+// Facts are created with CoordId::from_axes() so that each axis carries
+// meaningful structural information:
+//   [0] time_hi   = i % N_TIMEBUCKETS  (time bucket)
+//   [2] entity    = 0 (Fact)
+//   [3] origin    = i % N_ORIGINS
+//   [4] creator   = i % N_CREATORS
+//   [5] serial    = i (unique)
+//
+// This lets us query by any axis or axis combination.
 
-fn bench_intents_by_fact(c: &mut Criterion) {
-    // Build store with 10K facts and 10K intents.
-    let store = build_store();
-
-    // Collect fact IDs (as strings) for sampling.
-    let state = block_on(store.read_state());
-    let fact_ids: Vec<String> = state.facts.iter().map(|f| f.id.to_string()).collect();
-
-    // Deterministic sample of QUERY_COUNT fact IDs using stride.
-    // Provides repeatable coverage without depending on rand.
-    let stride = NUM_FACTS / QUERY_COUNT;
-    let sample: Vec<&String> = fact_ids.iter().step_by(stride).take(QUERY_COUNT).collect();
-
-    let mut group = c.benchmark_group("intents_by_fact");
-    group.sample_size(10);
-
-    group.bench_function("scan_10k", |b| {
-        b.iter(|| {
-            for id in &sample {
-                let result = black_box(store.intents_by_fact(black_box(id.as_str())));
-                black_box(result);
-            }
-        });
-    });
-
-    group.finish();
-
-    // Diagnostic: print estimated O(1) vs O(fan-out) comparison.
-    eprintln!(
-        "--- intents_by_fact diagnostic ---\n\
-         Facts: {NUM_FACTS}, Intents: {NUM_INTS}\n\
-         Estimated old-HashMap O(1) lookup: ~10-50 ns\n\
-         Measured scan per query (average): {} ns (see criterion report above)\n\
-         Fan-out: all {NUM_INTS} intent records scanned per query",
-        NUM_INTS
-    );
-}
-
-// ── Helper: build a populated store ─────────────────────────────────────
-
-fn build_store() -> FihStorage<SimIo> {
+fn build_fact_store() -> FihStorage<SimIo> {
     let io = SimIo::new();
-    let store = FihStorage::with_clock(
-        io,
-        "intents_bench",
-        Box::new(nex_core::SystemClock),
-    );
+    let store = FihStorage::with_clock(io, "multi-axis", Box::new(nex_core::SystemClock));
 
-    // Create NUM_FACTS facts with distinct IDs.
-    for i in 0..NUM_FACTS {
-        let id_str = format!("fact_{:05}", i);
-        let id = CoordId::from_string(&id_str);
+    for i in 0..N_FACTS {
+        let cid = CoordId::from_axes(
+            (i % N_TIMEBUCKETS) as u16,
+            0,
+            0, // entity = Fact
+            (i % N_ORIGINS) as u16,
+            (i % N_CREATORS) as u16,
+            i as u16,
+        )
+        .unwrap();
         let fact = Fact::new(
-            id,
-            "bench".into(),
-            Content {
-                mime_type: "text/plain".into(),
-                data: format!("benchmark fact {}", i).into_bytes(),
-            },
-            "benchmarker".into(),
+            cid,
+            format!("origin-{}", i % N_ORIGINS),
+            format!("content-{}", i).into(),
+            format!("creator-{}", i % N_CREATORS),
         );
         block_on(store.submit_fact(&fact)).unwrap();
     }
+    block_on(store.flush_pending()).unwrap();
+    store
+}
 
-    // Create NUM_INTS intents, each referencing one deterministically
-    // chosen fact (strided to ensure even coverage).
-    let intent_stride = NUM_FACTS / NUM_INTS;
-    for i in 0..NUM_INTS {
-        let id_str = format!("int_{:05}", i);
-        let from_fact_idx = (i * intent_stride) % NUM_FACTS;
-        let from_id_str = format!("fact_{:05}", from_fact_idx);
-
-        let intent = Intent {
-            id: CoordId::from_string(&id_str),
-            from_facts: vec![CoordId::from_string(&from_id_str)],
-            description: format!("benchmark intent {}", i),
-            creator: "benchmarker".into(),
-            worker: None,
-            to_fact_id: None,
-            last_heartbeat_at: None,
-            created_at: None,
-            is_concluded: false,
-            concluded_at: None,
-        };
+fn build_intent_store() -> FihStorage<SimIo> {
+    let store = build_fact_store();
+    for i in 0..N_INTS {
+        let cid = CoordId::from_axes(
+            (i % 10) as u16,
+            0,
+            1, // entity = Intent
+            (i % N_ORIGINS) as u16,
+            (i % N_CREATORS) as u16,
+            (N_FACTS + i) as u16,
+        )
+        .unwrap();
+        let intent = Intent::new(
+            cid,
+            vec![CoordId::from_axes(
+                (i % N_TIMEBUCKETS) as u16,
+                0,
+                0,
+                (i % N_ORIGINS) as u16,
+                (i % N_CREATORS) as u16,
+                i as u16,
+            )
+            .unwrap()],
+            None,
+            format!("intent-{}", i),
+            format!("creator-{}", i % N_CREATORS),
+        );
         block_on(store.submit_intent(&intent)).unwrap();
     }
-
+    block_on(store.flush_pending()).unwrap();
     store
+}
+
+// ── Single-axis filter: by creator ──────────────────────────────────────
+//
+// Fast-path table delivers O(1) lookup regardless of dataset size.
+// Expected: ~10-50 µs for HashSet clone (dominated by allocation, not scan).
+
+fn bench_filter_by_creator(c: &mut Criterion) {
+    let store = build_fact_store();
+    let filter = StateFilter {
+        creator: Some("creator-5".into()),
+        ..Default::default()
+    };
+
+    c.bench_function("fih_filter_creator", |b| {
+        b.iter(|| {
+            let state = block_on(store.read_state_filtered(black_box(&filter)));
+            // creator-5 has N_FACTS / N_CREATORS = 2500 facts
+            assert_eq!(state.facts.len(), N_FACTS / N_CREATORS);
+            black_box(state);
+        });
+    });
+}
+
+// ── Dual-axis filter: origin AND creator ────────────────────────────────
+//
+// Fast-path tables: origin_set ∩ creator_set via HashSet intersection.
+// O(min(|origin|, |creator|)). With N_ORIGINS=50, N_CREATORS=20:
+//   origin=10 → N_FACTS/50 = 1000 facts
+//   creator=5 → N_FACTS/20 = 2500 facts
+//   intersection = 2500/50 = 50 facts (expected)
+
+fn bench_filter_origin_and_creator(c: &mut Criterion) {
+    let store = build_fact_store();
+    c.bench_function("fih_filter_origin_and_creator", |b| {
+        b.iter(|| {
+            // Filter by origin-10 AND creator-5 simultaneously
+            let f1 = StateFilter {
+                origin: Some("origin-10".into()),
+                creator: Some("creator-5".into()),
+                ..Default::default()
+            };
+            let state = block_on(store.read_state_filtered(black_box(&f1)));
+            // origin-10 ∩ creator-5: (N_FACTS/50) / 20 = 50 facts
+            assert_eq!(state.facts.len(), N_FACTS / N_ORIGINS / N_CREATORS);
+            black_box(state);
+        });
+    });
+}
+
+// ── Cross-axis filter: creator + time range ────────────────────────────
+//
+// Time range filtering is O(N) scan of fact_store (not Coord prefix yet).
+// This benchmark measures the practical cost.
+
+fn bench_filter_creator_and_time(c: &mut Criterion) {
+    let store = build_fact_store();
+    c.bench_function("fih_filter_creator_time", |b| {
+        b.iter(|| {
+            // time_hi ∈ [5, 95]  → ~90% of facts
+            // creator = creator-5 → N_FACTS/N_CREATORS = 2500
+            let f2 = StateFilter {
+                since: Some("5".into()),
+                until: Some("95".into()),
+                creator: Some("creator-5".into()),
+                ..Default::default()
+            };
+            let state = block_on(store.read_state_filtered(black_box(&f2)));
+            black_box(state);
+        });
+    });
+}
+
+// ── Multi-axis compound: origin + creator + time ────────────────────────
+//
+// Most selective query: three-axis filter.
+// Expected: ~5 facts (N_FACTS / N_ORIGINS / N_CREATORS / N_TIMEBUCKETS)
+
+fn bench_filter_three_axis(c: &mut Criterion) {
+    let store = build_fact_store();
+    c.bench_function("fih_filter_three_axis", |b| {
+        b.iter(|| {
+            let f3 = StateFilter {
+                since: Some("10".into()),
+                until: Some("20".into()),
+                origin: Some("origin-7".into()),
+                creator: Some("creator-3".into()),
+                ..Default::default()
+            };
+            let state = block_on(store.read_state_filtered(black_box(&f3)));
+            black_box(state);
+        });
+    });
+}
+
+// ── intents_by_fact: O(fan-out) scan benchmark ──────────────────────────
+
+fn bench_intents_by_fact(c: &mut Criterion) {
+    let store = build_intent_store();
+    let state = block_on(store.read_state());
+    let fact_ids: Vec<String> = state.facts.iter().map(|f| f.id.to_string()).collect();
+
+    let stride = N_FACTS / 100;
+    let sample: Vec<&String> = fact_ids.iter().step_by(stride).take(100).collect();
+
+    c.bench_function("fih_intents_by_fact", |b| {
+        b.iter(|| {
+            for id in &sample {
+                let r = black_box(store.intents_by_fact(black_box(id.as_str())));
+                black_box(r);
+            }
+        });
+    });
+}
+
+// ── Write throughput: batch fact submission ────────────────────────────
+
+fn bench_write_throughput(c: &mut Criterion) {
+    c.bench_function("fih_write_10k_facts", |b| {
+        b.iter_batched(
+            || SimIo::new(),
+            |io| {
+                let store =
+                    FihStorage::with_clock(io, "write", Box::new(nex_core::SystemClock));
+                for i in 0..10_000 {
+                    let cid = CoordId::from_axes(0, 0, 0, (i % 50) as u16, (i % 20) as u16, i as u16)
+                        .unwrap();
+                    let fact = Fact::new(
+                        cid,
+                        format!("origin-{}", i % 50),
+                        format!("content-{}", i).into(),
+                        format!("creator-{}", i % 20),
+                    );
+                    block_on(store.submit_fact(&fact)).unwrap();
+                }
+                block_on(store.flush_pending()).unwrap();
+            },
+            BatchSize::LargeInput,
+        )
+    });
 }
 
 // ── Criterion entry point ───────────────────────────────────────────────
 
-criterion_group!(benches, bench_intents_by_fact);
+criterion_group!(
+    name = benches;
+    config = Criterion::default()
+        .sample_size(10)
+        .measurement_time(std::time::Duration::from_secs(15));
+    targets =
+        bench_filter_by_creator,
+        bench_filter_origin_and_creator,
+        bench_filter_creator_and_time,
+        bench_filter_three_axis,
+        bench_intents_by_fact,
+        bench_write_throughput,
+);
 criterion_main!(benches);
