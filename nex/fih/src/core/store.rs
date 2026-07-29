@@ -50,7 +50,6 @@ use crate::core::index::Cell2;
 use crate::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
 use crate::io::file_io::{FileIo, WriteOp, default_apply_batch};
 use crate::semantic::record::{Query, RecordLoad};
-use std::collections::{HashMap, HashSet};
 
 /// Chain entry format: serialized by flush_since for delta chain files.
 /// Named struct avoids postcard tuple field ordering ambiguity with empty vecs.
@@ -79,10 +78,6 @@ pub struct FihStorage<I: FileIo> {
     pub fact_store: CoordEntityStore<6, FactRecord>,
     pub intent_store: CoordEntityStore<6, IntentRecord>,
     pub hint_store: CoordEntityStore<6, HintRecord>,
-    // Fast-path lookup tables for filtered reads.
-    fact_by_origin: Cell2<HashMap<String, HashSet<String>>>,
-    fact_by_creator: Cell2<HashMap<String, HashSet<String>>>,
-    intent_by_status: Cell2<HashMap<String, HashSet<String>>>,
     // Semantic stores (for similarity search).
     semantic_stores: Cell2<Vec<crate::semantic::DynSemanticStore>>,
     /// Counter for assigning semantic IDs to facts incrementally.
@@ -122,9 +117,6 @@ impl<I: FileIo> FihStorage<I> {
             fact_store: CoordEntityStore::<6, FactRecord>::new(),
             intent_store: CoordEntityStore::<6, IntentRecord>::new(),
             hint_store: CoordEntityStore::<6, HintRecord>::new(),
-            fact_by_origin: Cell2::new(HashMap::new()),
-            fact_by_creator: Cell2::new(HashMap::new()),
-            intent_by_status: Cell2::new(HashMap::new()),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
             pending: Cell2::new(Vec::new()),
@@ -145,9 +137,6 @@ impl<I: FileIo> FihStorage<I> {
             fact_store: CoordEntityStore::<6, FactRecord>::new(),
             intent_store: CoordEntityStore::<6, IntentRecord>::new(),
             hint_store: CoordEntityStore::<6, HintRecord>::new(),
-            fact_by_origin: Cell2::new(HashMap::new()),
-            fact_by_creator: Cell2::new(HashMap::new()),
-            intent_by_status: Cell2::new(HashMap::new()),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
             pending: Cell2::new(Vec::new()),
@@ -190,43 +179,7 @@ impl<I: FileIo> FihStorage<I> {
         self.intent_store.replace_from(intents).await;
         self.hint_store.replace_from(hints).await;
 
-        // Rebuild fast-path lookup tables directly from entity stores.
-        // No separate coord index needed — CoordSpaceN is self-indexing.
-        self.rebuild_fastpath().await;
-
         Ok(())
-    }
-
-    /// Rebuild fast-path lookup tables from current EntityStore contents.
-    /// These provide efficient filtering for read_state_filtered without
-    /// requiring FihCoord (removed in Phase 3).
-    async fn rebuild_fastpath(&self) {
-        let facts = self.fact_store.values().await;
-        let intents = self.intent_store.values().await;
-
-        let mut by_origin: HashMap<String, HashSet<String>> = HashMap::new();
-        let mut by_creator: HashMap<String, HashSet<String>> = HashMap::new();
-
-        for r in &facts {
-            by_origin
-                .entry(r.origin.clone())
-                .or_default()
-                .insert(r.id.clone());
-            by_creator
-                .entry(r.creator.clone())
-                .or_default()
-                .insert(r.id.clone());
-        }
-
-        let mut by_status: HashMap<String, HashSet<String>> = HashMap::new();
-        for r in &intents {
-            let status = simple_status_key(&r.status).to_string();
-            by_status.entry(status).or_default().insert(r.id.clone());
-        }
-
-        *self.fact_by_origin.borrow_mut() = by_origin;
-        *self.fact_by_creator.borrow_mut() = by_creator;
-        *self.intent_by_status.borrow_mut() = by_status;
     }
 
     /// Flush pending writes to IO.
@@ -628,19 +581,6 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
         self.fact_store.insert(record.id.clone(), record).await;
         self.pending.borrow_mut().push(op);
 
-        // Update fast-path lookup tables (replaces FihCoord)
-        let id_str = fact.id.to_string();
-        self.fact_by_origin
-            .borrow_mut()
-            .entry(fact.origin.clone())
-            .or_default()
-            .insert(id_str.clone());
-        self.fact_by_creator
-            .borrow_mut()
-            .entry(fact.creator.clone())
-            .or_default()
-            .insert(id_str);
-
         // Auto-index into semantic stores (skip conclusion facts to reduce noise)
         if !fact.origin.starts_with("conclusion:") {
             let semantic_idx = {
@@ -748,14 +688,6 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             data: bytes,
         };
 
-        // Update fast-path status table
-        let id_str = intent.id.to_string();
-        self.intent_by_status
-            .borrow_mut()
-            .entry("submitted".to_string())
-            .or_default()
-            .insert(id_str);
-
         self.intent_store.insert(record.id.clone(), record).await;
         self.pending.borrow_mut().push(op);
         Ok(intent.id)
@@ -794,17 +726,6 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.intent_store.insert(normalized.clone(), record).await;
-        // Update fast-path status table
-        {
-            let mut by_status = self.intent_by_status.borrow_mut();
-            if let Some(ids) = by_status.get_mut("submitted") {
-                ids.remove(&normalized);
-            }
-            by_status
-                .entry("claimed".to_string())
-                .or_default()
-                .insert(normalized.clone());
-        }
         Ok(())
     }
 
@@ -885,19 +806,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.flush_pending()
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        let normalized = CoordId::from_string(intent_id).to_string();
-        // Update fast-path status table
-        {
-            let mut by_status = self.intent_by_status.borrow_mut();
-            if let Some(ids) = by_status.get_mut("claimed") {
-                ids.remove(&normalized);
-            }
-            by_status
-                .entry("submitted".to_string())
-                .or_default()
-                .insert(normalized.clone());
-        }
-        self.intent_store.insert(normalized, record).await;
+        self.intent_store.insert(CoordId::from_string(intent_id).to_string(), record).await;
         Ok(())
     }
 
@@ -970,17 +879,6 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.intent_store.insert(normalized.clone(), record).await;
-        // Update fast-path status table
-        {
-            let mut by_status = self.intent_by_status.borrow_mut();
-            if let Some(ids) = by_status.get_mut("claimed") {
-                ids.remove(&normalized);
-            }
-            by_status
-                .entry("concluded".to_string())
-                .or_default()
-                .insert(normalized);
-        }
 
         Ok(new_fact)
     }
@@ -990,329 +888,179 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
 
 impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
     async fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
-        // Phase 1: Resolve candidate fact IDs from fast-path tables
-        let has_fact_index = filter.origin.is_some()
-            || filter.creator.is_some()
-            || filter.since.is_some()
-            || filter.until.is_some()
-            || filter.fact_ids.is_some();
-
-        let fact_candidates: Option<HashSet<String>> = if has_fact_index {
-            let mut c: Option<HashSet<String>> = None;
-
-            if let Some(origin) = &filter.origin {
-                let ids: HashSet<String> = self
-                    .fact_by_origin
-                    .borrow()
-                    .get(origin)
-                    .cloned()
-                    .unwrap_or_default();
-                c = Some(match c {
-                    Some(existing) => existing.intersection(&ids).cloned().collect(),
-                    None => ids,
-                });
-            }
-
-            if let Some(creator) = &filter.creator {
-                let ids: HashSet<String> = self
-                    .fact_by_creator
-                    .borrow()
-                    .get(creator)
-                    .cloned()
-                    .unwrap_or_default();
-                c = Some(match c {
-                    Some(existing) => existing.intersection(&ids).cloned().collect(),
-                    None => ids,
-                });
-            }
-
-            if filter.since.is_some() || filter.until.is_some() {
-                let since_ns = filter
-                    .since
-                    .as_ref()
-                    .and_then(|s| s.parse::<u64>().ok())
-                    .unwrap_or(0);
-                let until_ns = filter
-                    .until
-                    .as_ref()
-                    .and_then(|u| u.parse::<u64>().ok())
-                    .unwrap_or(u64::MAX);
-                // Scan fact_store and filter by submitted_at (O(N) but simple)
-                let all_records = self.fact_store.values().await;
-                let time_ids: HashSet<String> = all_records
-                    .into_iter()
-                    .filter(|r| r.submitted_at >= since_ns && r.submitted_at <= until_ns)
-                    .map(|r| r.id)
-                    .collect();
-                c = Some(match c {
-                    Some(existing) => existing.intersection(&time_ids).cloned().collect(),
-                    None => time_ids,
-                });
-            }
-
-            if let Some(ids) = &filter.fact_ids {
-                let id_set: HashSet<String> = ids
-                    .iter()
-                    .map(|id| CoordId::from_string(id).to_string())
-                    .collect();
-                c = Some(match c {
-                    Some(existing) => existing.intersection(&id_set).cloned().collect(),
-                    None => id_set,
-                });
-            }
-
-            c
-        } else {
-            None
-        };
-
-        // Phase 2: Resolve candidate intent IDs from fast-path tables
-        let has_intent_index =
-            filter.creator.is_some() || filter.status.is_some() || filter.intent_ids.is_some();
-
-        let intent_candidates: Option<HashSet<String>> = if has_intent_index {
-            let mut c: Option<HashSet<String>> = None;
-
-            if let Some(status) = &filter.status {
-                let ids: HashSet<String> = self
-                    .intent_by_status
-                    .borrow()
-                    .get(status)
-                    .cloned()
-                    .unwrap_or_default();
-                c = Some(match c {
-                    Some(existing) => existing.intersection(&ids).cloned().collect(),
-                    None => ids,
-                });
-            }
-
-            if let Some(creator) = &filter.creator {
-                let ids: HashSet<String> = self
-                    .fact_by_creator
-                    .borrow()
-                    .get(creator)
-                    .cloned()
-                    .unwrap_or_default();
-                c = Some(match c {
-                    Some(existing) => existing.intersection(&ids).cloned().collect(),
-                    None => ids,
-                });
-            }
-
-            if let Some(ids) = &filter.intent_ids {
-                let id_set: HashSet<String> = ids
-                    .iter()
-                    .map(|id| CoordId::from_string(id).to_string())
-                    .collect();
-                c = Some(match c {
-                    Some(existing) => existing.intersection(&id_set).cloned().collect(),
-                    None => id_set,
-                });
-            }
-
-            c
-        } else {
-            None
-        };
-
-        // Phase 3: Selective materialization
+        // Scan CoordSpaceN entity stores and filter by record string fields.
+        // No fast-path HashMaps: filtering is done inline on each record.
         let all_facts = self.fact_store.values().await;
         let all_intents = self.intent_store.values().await;
         let all_hints = self.hint_store.values().await;
 
-        let facts: Vec<Fact> = match fact_candidates {
-            Some(ids) => all_facts
-                .into_iter()
-                .filter(|r| ids.contains(&r.id))
-                .map(|r| {
-                    let content = self.load_content(&r.blob_hash, "application/octet-stream");
-                    Fact {
-                        id: CoordId::from_string(&r.id),
-                        origin: r.origin,
-                        content_hash: {
-                            let mut h = sha2::Sha256::new();
-                            h.update(&content.data);
-                            FihHash(h.finalize().into())
-                        },
-                        content,
-                        creator: r.creator,
+        // Filter facts using record fields directly.
+        let facts: Vec<Fact> = all_facts
+            .into_iter()
+            .filter(|r| {
+                if let Some(ref origin) = filter.origin {
+                    if r.origin != *origin {
+                        return false;
                     }
-                })
-                .collect(),
-            None => all_facts
-                .into_iter()
-                .map(|r| {
-                    let content = self.load_content(&r.blob_hash, "application/octet-stream");
-                    Fact {
-                        id: CoordId::from_string(&r.id),
-                        origin: r.origin,
-                        content_hash: {
-                            let mut h = sha2::Sha256::new();
-                            h.update(&content.data);
-                            FihHash(h.finalize().into())
-                        },
-                        content,
-                        creator: r.creator,
-                    }
-                })
-                .collect(),
-        };
-
-        let intents: Vec<Intent> = match intent_candidates {
-            Some(ids) => all_intents
-                .into_iter()
-                .filter(|r| ids.contains(&r.id))
-                .map(|r| {
-                    let description = if r.description_hash.is_empty() {
-                        r.id.clone()
-                    } else {
-                        let c = self.load_content(&r.description_hash, "text/plain");
-                        String::from_utf8_lossy(&c.data).to_string()
-                    };
-                    Intent {
-                        id: CoordId::from_string(&r.id),
-                        from_facts: r
-                            .from_facts
-                            .iter()
-                            .map(|s| CoordId::from_string(s))
-                            .collect(),
-                        description,
-                        creator: r.creator,
-                        worker: match &r.status {
-                            IntentStatus::Claimed { worker, .. }
-                            | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
-                            IntentStatus::Submitted => None,
-                        },
-                        to_fact_id: match &r.status {
-                            IntentStatus::Concluded { to_fact, .. } => {
-                                Some(CoordId::from_string(to_fact))
-                            }
-                            _ => None,
-                        },
-                        last_heartbeat_at: match &r.status {
-                            IntentStatus::Claimed {
-                                last_heartbeat_at, ..
-                            } => Some(*last_heartbeat_at),
-                            _ => None,
-                        },
-                        created_at: Some(r.created_at),
-                        is_concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
-                        concluded_at: match &r.status {
-                            IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
-                            _ => None,
-                        },
-                    }
-                })
-                .collect(),
-            None => all_intents
-                .into_iter()
-                .map(|r| {
-                    let description = if r.description_hash.is_empty() {
-                        r.id.clone()
-                    } else {
-                        let c = self.load_content(&r.description_hash, "text/plain");
-                        String::from_utf8_lossy(&c.data).to_string()
-                    };
-                    Intent {
-                        id: CoordId::from_string(&r.id),
-                        from_facts: r
-                            .from_facts
-                            .iter()
-                            .map(|s| CoordId::from_string(s))
-                            .collect(),
-                        description,
-                        creator: r.creator,
-                        worker: match &r.status {
-                            IntentStatus::Claimed { worker, .. }
-                            | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
-                            IntentStatus::Submitted => None,
-                        },
-                        to_fact_id: match &r.status {
-                            IntentStatus::Concluded { to_fact, .. } => {
-                                Some(CoordId::from_string(to_fact))
-                            }
-                            _ => None,
-                        },
-                        last_heartbeat_at: match &r.status {
-                            IntentStatus::Claimed {
-                                last_heartbeat_at, ..
-                            } => Some(*last_heartbeat_at),
-                            _ => None,
-                        },
-                        created_at: Some(r.created_at),
-                        is_concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
-                        concluded_at: match &r.status {
-                            IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
-                            _ => None,
-                        },
-                    }
-                })
-                .collect(),
-        };
-
-        let hints: Vec<Hint> = {
-            let has_hint_filter = filter.hint_ids.is_some();
-            if has_hint_filter {
-                let hint_ids_set: Option<HashSet<String>> = filter.hint_ids.as_ref().map(|ids| {
-                    ids.iter()
-                        .map(|id| CoordId::from_string(id).to_string())
-                        .collect()
-                });
-                match hint_ids_set {
-                    Some(ids) => all_hints
-                        .into_iter()
-                        .filter(|r| ids.contains(&r.id))
-                        .map(|r| Hint {
-                            id: CoordId::from_string(&r.id),
-                            content: r.content,
-                            creator: r.creator,
-                        })
-                        .collect(),
-                    None => all_hints
-                        .into_iter()
-                        .map(|r| Hint {
-                            id: CoordId::from_string(&r.id),
-                            content: r.content,
-                            creator: r.creator,
-                        })
-                        .collect(),
                 }
-            } else {
-                all_hints
-                    .into_iter()
-                    .map(|r| Hint {
-                        id: CoordId::from_string(&r.id),
-                        content: r.content,
-                        creator: r.creator,
-                    })
-                    .collect()
-            }
-        };
+                if let Some(ref creator) = filter.creator {
+                    if r.creator != *creator {
+                        return false;
+                    }
+                }
+                if let Some(ref since) = filter.since {
+                    if let Ok(ts) = since.parse::<u64>() {
+                        if r.submitted_at < ts {
+                            return false;
+                        }
+                    }
+                }
+                if let Some(ref until) = filter.until {
+                    if let Ok(ts) = until.parse::<u64>() {
+                        if r.submitted_at > ts {
+                            return false;
+                        }
+                    }
+                }
+                if let Some(ref ids) = filter.fact_ids {
+                    let normalized: Vec<String> = ids
+                        .iter()
+                        .map(|id| CoordId::from_string(id).to_string())
+                        .collect();
+                    if !normalized.iter().any(|nid| nid == &r.id) {
+                        return false;
+                    }
+                }
+                true
+            })
+            .map(|r| {
+                let content = self.load_content(&r.blob_hash, "application/octet-stream");
+                Fact {
+                    id: CoordId::from_string(&r.id),
+                    origin: r.origin,
+                    content_hash: {
+                        let mut h = sha2::Sha256::new();
+                        h.update(&content.data);
+                        FihHash(h.finalize().into())
+                    },
+                    content,
+                    creator: r.creator,
+                }
+            })
+            .collect();
 
-        // Phase 4: Post-filtering
+        // Filter intents using record fields directly.
+        let intents: Vec<Intent> = all_intents
+            .into_iter()
+            .filter(|r| {
+                if let Some(ref creator) = filter.creator {
+                    if r.creator != *creator {
+                        return false;
+                    }
+                }
+                if let Some(ref status) = filter.status {
+                    if simple_status_key(&r.status) != status.as_str() {
+                        return false;
+                    }
+                }
+                if let Some(ref since) = filter.since {
+                    if let Ok(ts) = since.parse::<u64>() {
+                        let created_ns = r.created_at * 1_000_000_000;
+                        if created_ns < ts {
+                            return false;
+                        }
+                    }
+                }
+                if let Some(ref until) = filter.until {
+                    if let Ok(ts) = until.parse::<u64>() {
+                        let created_ns = r.created_at * 1_000_000_000;
+                        if created_ns > ts {
+                            return false;
+                        }
+                    }
+                }
+                if let Some(ref ids) = filter.intent_ids {
+                    let normalized: Vec<String> = ids
+                        .iter()
+                        .map(|id| CoordId::from_string(id).to_string())
+                        .collect();
+                    if !normalized.iter().any(|nid| nid == &r.id) {
+                        return false;
+                    }
+                }
+                true
+            })
+            .map(|r| {
+                let description = if r.description_hash.is_empty() {
+                    r.id.clone()
+                } else {
+                    let c = self.load_content(&r.description_hash, "text/plain");
+                    String::from_utf8_lossy(&c.data).to_string()
+                };
+                Intent {
+                    id: CoordId::from_string(&r.id),
+                    from_facts: r
+                        .from_facts
+                        .iter()
+                        .map(|s| CoordId::from_string(s))
+                        .collect(),
+                    description,
+                    creator: r.creator,
+                    worker: match &r.status {
+                        IntentStatus::Claimed { worker, .. }
+                        | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
+                        IntentStatus::Submitted => None,
+                    },
+                    to_fact_id: match &r.status {
+                        IntentStatus::Concluded { to_fact, .. } => {
+                            Some(CoordId::from_string(to_fact))
+                        }
+                        _ => None,
+                    },
+                    last_heartbeat_at: match &r.status {
+                        IntentStatus::Claimed {
+                            last_heartbeat_at, ..
+                        } => Some(*last_heartbeat_at),
+                        _ => None,
+                    },
+                    created_at: Some(r.created_at),
+                    is_concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
+                    concluded_at: match &r.status {
+                        IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
+                        _ => None,
+                    },
+                }
+            })
+            .collect();
+
+        // Filter hints using record fields directly.
+        let hints: Vec<Hint> = all_hints
+            .into_iter()
+            .filter(|r| {
+                if let Some(ref ids) = filter.hint_ids {
+                    let normalized: Vec<String> = ids
+                        .iter()
+                        .map(|id| CoordId::from_string(id).to_string())
+                        .collect();
+                    if !normalized.iter().any(|nid| nid == &r.id) {
+                        return false;
+                    }
+                }
+                true
+            })
+            .map(|r| Hint {
+                id: CoordId::from_string(&r.id),
+                content: r.content,
+                creator: r.creator,
+            })
+            .collect();
+
+        // Apply offset/limit.
         let mut state = BoardState {
             facts,
             intents,
             hints,
         };
-
-        let has_intent_time_filter = filter.since.is_some() || filter.until.is_some();
-        if has_intent_time_filter {
-            let since_ns = filter
-                .since
-                .as_ref()
-                .and_then(|s| s.parse::<u64>().ok())
-                .unwrap_or(0);
-            let until_ns = filter
-                .until
-                .as_ref()
-                .and_then(|u| u.parse::<u64>().ok())
-                .unwrap_or(u64::MAX);
-            state.intents.retain(|i| {
-                let created_ns = i.created_at.unwrap_or(0) * 1_000_000_000;
-                created_ns > since_ns && created_ns <= until_ns
-            });
-        }
 
         let offset = filter.offset.unwrap_or(0);
         if let Some(limit) = filter.limit {
