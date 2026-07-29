@@ -567,12 +567,24 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
 
 impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
     async fn submit_fact(&self, fact: &Fact) -> Result<CoordId, BlackboardError> {
-        // Enqueue blob content and fact record in pending buffer only.
-        // No direct io.write() — caller must call flush_pending() for durability.
-        // This enables batch writes (N paragraphs → 1 apply_batch instead of 2N R2 PUTs).
-        let blob_hash = self
-            .enqueue_content(&fact.content)
-            .map_err(BlackboardError::Internal)?;
+        // content_hash is SHA-256 already computed by Fact::new — use directly.
+        let blob_hash = fact.content_hash.to_string();
+
+        // Enqueue blob data (mime from content).
+        let blob_path = format!("blob/{blob_hash}.bin");
+        self.pending.borrow_mut().push(WriteOp::Write {
+            path: blob_path,
+            data: fact.content.data.clone(),
+        });
+        let meta = ContentMeta {
+            mime_type: fact.content.mime_type.clone(),
+            size: fact.content.data.len() as u64,
+        };
+        let meta_bytes = postcard::to_allocvec(&meta).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.pending.borrow_mut().push(WriteOp::Write {
+            path: format!("blob/{blob_hash}.bin.meta"),
+            data: meta_bytes,
+        });
 
         let record = FactRecord::from_model(fact, blob_hash, self.clock.now_nanos());
         let bytes =
@@ -976,9 +988,14 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                     id: CoordId::from_string(&r.id),
                     origin: r.origin,
                     content_hash: {
-                        let mut h = sha2::Sha256::new();
-                        h.update(&content.data);
-                        FihHash(h.finalize().into())
+                        // blob_hash IS the hex-encoded content hash — parse directly.
+                        let hex = &r.blob_hash;
+                        let mut bytes = [0u8; 32];
+                        for (i, chunk) in hex.as_bytes().chunks(2).enumerate() {
+                            let s = unsafe { std::str::from_utf8_unchecked(chunk) };
+                            bytes[i] = u8::from_str_radix(s, 16).unwrap_or(0);
+                        }
+                        FihHash(bytes)
                     },
                     content,
                     creator: r.creator,
