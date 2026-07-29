@@ -47,6 +47,7 @@ use nex_core::Now;
 
 use crate::core::entity_store::{CoordEntityStore, EntityStore};
 use crate::core::index::Cell2;
+use std::collections::HashMap;
 use crate::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
 use crate::io::file_io::{FileIo, WriteOp, default_apply_batch};
 use crate::semantic::record::{Query, RecordLoad};
@@ -84,6 +85,9 @@ pub struct FihStorage<I: FileIo> {
     semantic_id_counter: Cell2<u32>,
     // Pending writes (for FihSession coordination).
     pub(crate) pending: Cell2<Vec<WriteOp>>,
+    /// Indexed view of pending blob data: blob_hash → (mime_type, data).
+    /// Updated by enqueue_content, cleared by flush_pending.
+    pending_blobs: Cell2<HashMap<String, (String, Vec<u8>)>>,
 }
 
 impl<I: FileIo> FihStorage<I> {
@@ -119,6 +123,7 @@ impl<I: FileIo> FihStorage<I> {
             hint_store: CoordEntityStore::<6, HintRecord>::new(),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
+            pending_blobs: Cell2::new(HashMap::new()),
             pending: Cell2::new(Vec::new()),
         }
     }
@@ -139,6 +144,7 @@ impl<I: FileIo> FihStorage<I> {
             hint_store: CoordEntityStore::<6, HintRecord>::new(),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
+            pending_blobs: Cell2::new(HashMap::new()),
             pending: Cell2::new(Vec::new()),
         }
     }
@@ -888,8 +894,39 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
 
 impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
     async fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
+        // Build blob lookup map once from pending writes (avoid O(N×P) scan).
+        let blob_map: HashMap<String, (String, Vec<u8>)> = self
+            .pending
+            .borrow()
+            .iter()
+            .filter_map(|op| match op {
+                WriteOp::Write { path, data } if path.ends_with(".bin") && !path.ends_with(".bin.meta") => {
+                    let blob_hash = path.strip_prefix("blob/").and_then(|p| p.strip_suffix(".bin"))?;
+                    Some((blob_hash.to_string(), (String::new(), data.clone())))
+                }
+                WriteOp::Write { path, data } if path.ends_with(".bin.meta") => {
+                    let blob_hash = path.strip_prefix("blob/").and_then(|p| p.strip_suffix(".bin.meta"))?;
+                    let meta = postcard::from_bytes::<ContentMeta>(data).ok()?;
+                    Some((blob_hash.to_string(), (meta.mime_type, Vec::new())))
+                }
+                _ => None,
+            })
+            .collect();
+
+        // Materialize content from pending blobs (no IO fallback for sync path).
+        let load_content_fast = |blob_hash: &str, default_mime: &str| -> Content {
+            if let Some((mime, data)) = blob_map.get(blob_hash) {
+                if !data.is_empty() {
+                    return Content {
+                        mime_type: if mime.is_empty() { default_mime.to_string() } else { mime.clone() },
+                        data: data.clone(),
+                    };
+                }
+            }
+            Content { mime_type: default_mime.to_string(), data: Vec::new() }
+        };
+
         // Scan CoordSpaceN entity stores and filter by record string fields.
-        // No fast-path HashMaps: filtering is done inline on each record.
         let all_facts = self.fact_store.values().await;
         let all_intents = self.intent_store.values().await;
         let all_hints = self.hint_store.values().await;
@@ -934,7 +971,7 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                 true
             })
             .map(|r| {
-                let content = self.load_content(&r.blob_hash, "application/octet-stream");
+                let content = load_content_fast(&r.blob_hash, "application/octet-stream");
                 Fact {
                     id: CoordId::from_string(&r.id),
                     origin: r.origin,
@@ -994,7 +1031,7 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                 let description = if r.description_hash.is_empty() {
                     r.id.clone()
                 } else {
-                    let c = self.load_content(&r.description_hash, "text/plain");
+                    let c = load_content_fast(&r.description_hash, "text/plain");
                     String::from_utf8_lossy(&c.data).to_string()
                 };
                 Intent {
@@ -1150,11 +1187,11 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
             intents: intents
                 .into_iter()
                 .filter(|i| i.creator == prefix)
-                .map(|r| {
-                    let description = if r.description_hash.is_empty() {
-                        r.id.clone()
-                    } else {
-                        let c = self.load_content(&r.description_hash, "text/plain");
+                                .map(|r| {
+                                    let description = if r.description_hash.is_empty() {
+                                        r.id.clone()
+                                    } else {
+                                        let c = self.load_content(&r.description_hash, "text/plain");
                         String::from_utf8_lossy(&c.data).to_string()
                     };
                     Intent {
