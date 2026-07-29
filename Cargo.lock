@@ -2011,6 +2011,7 @@ dependencies = [
  "postcard",
  "serde",
  "serde_json",
+ "tagma-core",
  "tempfile",
 ]
 
