@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+fih-model = { path = "../../fih" }
 nex-core = { path = "../core" }
 nex-io = { path = "../io" }
 serde.workspace = true

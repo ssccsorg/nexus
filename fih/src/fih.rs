@@ -133,9 +133,13 @@ impl CoordId<6> {
     }
 
     /// Extract the time_hi axis value (days since epoch).
-    pub fn time_hi(&self) -> u16 { self.axis(0).index() }
+    pub fn time_hi(&self) -> u16 {
+        self.axis(0).index()
+    }
     /// Extract the entity type axis value.
-    pub fn entity_type(&self) -> u16 { self.axis(2).index() }
+    pub fn entity_type(&self) -> u16 {
+        self.axis(2).index()
+    }
 }
 
 // Display/Serialize/Deserialize are N=6 specific. Generic versions

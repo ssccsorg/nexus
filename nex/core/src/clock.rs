@@ -1,10 +1,6 @@
 // ── Clock abstraction ───────────────────────────────────────────────────
 
-/// Clock abstraction for platform-independent timestamp generation.
-pub trait Now {
-    fn now_nanos(&self) -> u64;
-    fn now_secs(&self) -> u64;
-}
+pub use fih_model::Now;
 
 /// SystemTime-based clock. Correct for native targets.
 /// On wasm32 with wasm-bindgen, maps to `Date.now()` internally.

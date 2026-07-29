@@ -25,7 +25,10 @@ fn test_since_returns_newer_only() {
     let state = futures_executor::block_on(store.read_state());
     assert_eq!(state.facts.len(), 2);
 
-    let filtered = futures_executor::block_on(store.read_state_filtered(&StateFilter { since: Some("1500000000".into()), ..Default::default() }));
+    let filtered = futures_executor::block_on(store.read_state_filtered(&StateFilter {
+        since: Some("1500000000".into()),
+        ..Default::default()
+    }));
     assert_eq!(filtered.facts.len(), 1);
     assert_eq!(filtered.facts[0].id, CoordId::from_string("f_b"));
 }
@@ -45,6 +48,7 @@ fn test_until_as_of_time_travel() {
         until: Some("1500000000".into()),
         limit: None,
         offset: None,
+        origin: None,
         creator: None,
         status: None,
     }));
@@ -67,6 +71,7 @@ fn test_range_returns_mid_only() {
         until: Some("2500000000".into()),
         limit: None,
         offset: None,
+        origin: None,
         creator: None,
         status: None,
     }));
@@ -78,7 +83,10 @@ fn test_range_returns_mid_only() {
 fn test_since_after_all_returns_empty() {
     let store = make_clocked();
     futures_executor::block_on(store.submit_fact(&common::fact("f_a"))).unwrap();
-    let filtered = futures_executor::block_on(store.read_state_filtered(&StateFilter { since: Some("7000000000".into()), ..Default::default() }));
+    let filtered = futures_executor::block_on(store.read_state_filtered(&StateFilter {
+        since: Some("7000000000".into()),
+        ..Default::default()
+    }));
     assert_eq!(filtered.facts.len(), 0);
 }
 
@@ -94,6 +102,7 @@ fn test_until_before_all_returns_empty() {
         until: Some("1".into()),
         limit: None,
         offset: None,
+        origin: None,
         creator: None,
         status: None,
     }));
@@ -114,6 +123,7 @@ fn test_fact_ids_filter_independent_of_time() {
         until: None,
         limit: None,
         offset: None,
+        origin: None,
         creator: None,
         status: None,
     }));

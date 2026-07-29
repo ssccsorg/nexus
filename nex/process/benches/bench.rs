@@ -83,15 +83,17 @@ fn build_intent_store() -> FihStorage<SimIo> {
         .unwrap();
         let intent = Intent::new(
             cid,
-            vec![CoordId::from_axes(
-                (i % N_TIMEBUCKETS) as u16,
-                0,
-                0,
-                (i % N_ORIGINS) as u16,
-                (i % N_CREATORS) as u16,
-                i as u16,
-            )
-            .unwrap()],
+            vec![
+                CoordId::from_axes(
+                    (i % N_TIMEBUCKETS) as u16,
+                    0,
+                    0,
+                    (i % N_ORIGINS) as u16,
+                    (i % N_CREATORS) as u16,
+                    i as u16,
+                )
+                .unwrap(),
+            ],
             None,
             format!("intent-{}", i),
             format!("creator-{}", i % N_CREATORS),
@@ -222,11 +224,11 @@ fn bench_write_throughput(c: &mut Criterion) {
         b.iter_batched(
             || SimIo::new(),
             |io| {
-                let store =
-                    FihStorage::with_clock(io, "write", Box::new(nex_core::SystemClock));
+                let store = FihStorage::with_clock(io, "write", Box::new(nex_core::SystemClock));
                 for i in 0..10_000 {
-                    let cid = CoordId::from_axes(0, 0, 0, (i % 50) as u16, (i % 20) as u16, i as u16)
-                        .unwrap();
+                    let cid =
+                        CoordId::from_axes(0, 0, 0, (i % 50) as u16, (i % 20) as u16, i as u16)
+                            .unwrap();
                     let fact = Fact::new(
                         cid,
                         format!("origin-{}", i % 50),

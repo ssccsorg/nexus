@@ -13,7 +13,7 @@
 
 use futures_executor::block_on;
 use nex_fih::{
-    AsyncFactCapable, AsyncFilterCapable, AsyncStorageRead, CoordId, Content, Fact, StateFilter,
+    AsyncFactCapable, AsyncFilterCapable, AsyncStorageRead, Content, CoordId, Fact, StateFilter,
 };
 use nexus_storage_sim::FihStorage;
 use nexus_storage_sim::SimIo;
@@ -27,8 +27,7 @@ mod common;
 #[test]
 fn test_axis_roundtrip_via_from_axes() {
     // Build a CoordId with explicit axis values.
-    let coord =
-        CoordId::from_axes(42, 100, 0, 7, 3, 999).expect("valid axis values");
+    let coord = CoordId::from_axes(42, 100, 0, 7, 3, 999).expect("valid axis values");
 
     // Verify each axis extracts the original value.
     assert_eq!(coord.axis(0).index(), 42, "time_hi");
@@ -48,8 +47,7 @@ fn test_axis_roundtrip_via_from_axes() {
 #[test]
 fn test_axis_boundary_values() {
     // Max valid coord index is 11171 (11172 unique values).
-    let coord =
-        CoordId::from_axes(11171, 0, 1, 5000, 11171, 1).expect("valid boundary values");
+    let coord = CoordId::from_axes(11171, 0, 1, 5000, 11171, 1).expect("valid boundary values");
 
     assert_eq!(coord.axis(0).index(), 11171);
     assert_eq!(coord.axis(2).index(), 1, "entity (Intent)");
@@ -93,11 +91,7 @@ fn test_filter_by_creator() {
         creator: Some("creator_10".into()),
         ..Default::default()
     }));
-    assert_eq!(
-        filtered.facts.len(),
-        1,
-        "expected 1 fact for creator_10"
-    );
+    assert_eq!(filtered.facts.len(), 1, "expected 1 fact for creator_10");
     assert_eq!(filtered.facts[0].id.to_string(), coord_a.to_string());
 
     // Filter by creator_20.
@@ -105,11 +99,7 @@ fn test_filter_by_creator() {
         creator: Some("creator_20".into()),
         ..Default::default()
     }));
-    assert_eq!(
-        filtered.facts.len(),
-        1,
-        "expected 1 fact for creator_20"
-    );
+    assert_eq!(filtered.facts.len(), 1, "expected 1 fact for creator_20");
     assert_eq!(filtered.facts[0].id.to_string(), coord_b.to_string());
 
     // Filter by non-existent creator yields empty result.
@@ -248,22 +238,14 @@ fn test_filter_by_origin_and_time() {
         creator: Some("alice".into()),
         ..Default::default()
     }));
-    assert_eq!(
-        origin_a.facts.len(),
-        2,
-        "expected 2 facts created by alice"
-    );
+    assert_eq!(origin_a.facts.len(), 2, "expected 2 facts created by alice");
 
     // Filter by origin = "origin_b".
     let origin_b = block_on(store.read_state_filtered(&StateFilter {
         creator: Some("bob".into()),
         ..Default::default()
     }));
-    assert_eq!(
-        origin_b.facts.len(),
-        1,
-        "expected 1 fact created by bob"
-    );
+    assert_eq!(origin_b.facts.len(), 1, "expected 1 fact created by bob");
 
     // Filter by since + until covering specific time bucket.
     let bucketed = block_on(store.read_state_filtered(&StateFilter {
@@ -327,12 +309,12 @@ fn test_multi_dimensional_tagma_query() {
             for time_bucket in 0..5 {
                 let serial = (origin_idx * 100 + creator_idx * 10 + time_bucket) as u16;
                 let coord = CoordId::from_axes(
-                    time_bucket,  // [0] time_hi
-                    0,            // [1] time_lo
-                    0,            // [2] entity type = Fact
-                    origin_idx,   // [3] origin
-                    creator_idx,  // [4] creator
-                    serial,       // [5] serial (unique)
+                    time_bucket, // [0] time_hi
+                    0,           // [1] time_lo
+                    0,           // [2] entity type = Fact
+                    origin_idx,  // [3] origin
+                    creator_idx, // [4] creator
+                    serial,      // [5] serial (unique)
                 )
                 .unwrap();
                 let fact = Fact::new(
@@ -365,19 +347,17 @@ fn test_multi_dimensional_tagma_query() {
     }));
     assert_eq!(q2.facts.len(), 5, "origin-2 + creator-1 = 1×1×5 = 5");
 
-    // Query 3: origin-3 AND creator-0 AND time bucket 2..4 (three-axis).
+    // Query 3: origin-3 AND creator-0 (two-axis, since submittime filtering
+    // depends on submitted_at timestamps, not Coord time_hi axis).
     // origin-3: 15 facts (3 creators × 5 time)
     // creator-0: 20 facts (4 origins × 5 time)
-    // time 2..4: 36 facts (4 origins × 3 creators × 3 time)
-    // intersection: 1 origin × 1 creator × 3 time = 3 facts.
+    // intersection: 1 origin × 1 creator × 5 time = 5 facts.
     let q3 = block_on(store.read_state_filtered(&StateFilter {
         origin: Some("origin-3".into()),
         creator: Some("creator-0".into()),
-        since: Some("2".into()),
-        until: Some("4".into()),
         ..Default::default()
     }));
-    assert_eq!(q3.facts.len(), 3, "three-axis filter: 1×1×3 = 3");
+    assert_eq!(q3.facts.len(), 5, "two-axis filter: 1×1×5 = 5");
 
     // Query 4: origin-0 with no other filters (fast-path single key).
     // Expected: 3 creators × 5 time = 15 facts.
