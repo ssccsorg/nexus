@@ -6,25 +6,17 @@ use tagma_core::{Coord, CoordPath};
 // ── Tagma primary identity ─────────────────────────────────────────────
 
 /// Tagma coordinate path depth for FIH storage addressing.
-/// Depth=6 → 11,172^6 ≈ 2×10^24 address space (default).
-/// Change to `pub struct CoordId(pub CoordPath<20>)` for SHA-256-scale space.
+/// Default: 6 → 11,172^6 ≈ 2×10^24 address space.
+/// Use `CoordId<20>` for SHA-256-scale space.
 pub const COORD_ID_DEPTH: usize = 6;
 
 /// A Tagma coordinate path used as the primary FIH identifier.
-/// Replaces FihHash (SHA-256) as the storage address.
-/// Generation: O(1) arithmetic, no SHA256.
-///
-/// ## Upgrading address depth
-/// Change `COORD_ID_DEPTH` to 20 and update the inner type:
-/// ```ignore
-/// pub struct CoordId(pub CoordPath<20>);
-/// ```
-/// All axis methods (axis, from_axes, with_timestamp, etc.) are N=6-specific
-/// and must be updated accordingly.
+/// Depth defaults to `COORD_ID_DEPTH` (=6). Use `CoordId<20>` when needed.
+/// Axis methods (axis, from_axes, with_timestamp) are N=6-specific.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CoordId(pub CoordPath<6>);
+pub struct CoordId<const N: usize = COORD_ID_DEPTH>(pub CoordPath<N>);
 
-impl Hash for CoordId {
+impl<const N: usize> Hash for CoordId<N> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         for coord in self.0.iter() {
             coord.index().hash(state);
@@ -32,10 +24,53 @@ impl Hash for CoordId {
     }
 }
 
-impl CoordId {
-    /// Generate a CoordId from a 64-bit counter.
-    /// The counter is decomposed into 6 coord indices (base 11172).
-    /// Supports ~1.94e24 unique sequential IDs before wrap-around.
+// ── Generic methods (works for any depth N) ─────────────────────────
+
+impl<const N: usize> CoordId<N> {
+    /// Derive a SHA-256 content hash from coord path indices.
+    pub fn to_content_hash(&self) -> FihHash {
+        let mut h = Sha256::new();
+        for coord in self.0.iter() {
+            h.update(coord.index().to_le_bytes());
+        }
+        FihHash(h.finalize().into())
+    }
+
+    /// Parse from string. If N Hangul chars, maps directly. Otherwise hashes.
+    pub fn from_string(s: &str) -> Self {
+        let chars: Vec<char> = s.chars().collect();
+        if chars.len() == N && chars.iter().all(|c| Coord::from_char(*c).is_some()) {
+            let mut coords = [Coord::new(0).unwrap(); N];
+            for (i, &ch) in chars.iter().enumerate() {
+                coords[i] = Coord::from_char(ch).unwrap();
+            }
+            CoordId(CoordPath::new(coords))
+        } else {
+            let mut h = Sha256::new();
+            h.update(s.as_bytes());
+            let hash: [u8; 32] = h.finalize().into();
+            let mut coords = [Coord::new(0).unwrap(); N];
+            for (i, coord) in coords.iter_mut().enumerate() {
+                let idx = u16::from_le_bytes([
+                    hash.get(i * 2).copied().unwrap_or(0),
+                    hash.get(i * 2 + 1).copied().unwrap_or(0),
+                ]) % 11172;
+                *coord = Coord::new(idx).unwrap();
+            }
+            CoordId(CoordPath::new(coords))
+        }
+    }
+
+    /// Return the coordinate at the given path index.
+    pub fn coord_at(&self, idx: usize) -> Coord {
+        self.0.coords()[idx]
+    }
+}
+
+// ── N=6 specific methods (default depth) ──────────────────────────────
+
+impl CoordId<6> {
+    /// Generate from a 64-bit counter (~1.94e24 unique sequential IDs).
     pub fn new(counter: u64) -> Self {
         let mut remaining = counter;
         let mut coords = [Coord::new(0).unwrap(); 6];
@@ -56,51 +91,9 @@ impl CoordId {
         Some(CoordId(CoordPath::new(coords)))
     }
 
-    /// Derive a content hash from CoordId bytes (SHA-256 of the coord path).
-    /// Used for backward compatibility with FihCoord index, removed in Phase 3.
-    pub fn to_content_hash(&self) -> FihHash {
-        let mut h = Sha256::new();
-        for coord in self.0.iter() {
-            h.update(coord.index().to_le_bytes());
-        }
-        FihHash(h.finalize().into())
-    }
-
-    /// Parse a CoordId from a string that is either 6 Hangul chars (direct)
-    /// or any other format (hashed to produce deterministic coordinates).
-    pub fn from_string(s: &str) -> Self {
-        let chars: Vec<char> = s.chars().collect();
-        if chars.len() == 6 && chars.iter().all(|c| Coord::from_char(*c).is_some()) {
-            let mut coords = [Coord::new(0).unwrap(); 6];
-            for (i, &ch) in chars.iter().enumerate() {
-                coords[i] = Coord::from_char(ch).unwrap();
-            }
-            CoordId(CoordPath::new(coords))
-        } else {
-            // Fallback: hash the input to deterministic coordinates
-            let mut h = Sha256::new();
-            h.update(s.as_bytes());
-            let hash: [u8; 32] = h.finalize().into();
-            Self::from_bytes(&hash)
-        }
-    }
-
-    /// Generate from a 32-byte hash by decomposing into 6 coord indices.
-    fn from_bytes(bytes: &[u8; 32]) -> Self {
-        let mut coords = [Coord::new(0).unwrap(); 6];
-        for (i, coord) in coords.iter_mut().enumerate() {
-            let idx = u16::from_le_bytes([
-                bytes.get(i * 2).copied().unwrap_or(0),
-                bytes.get(i * 2 + 1).copied().unwrap_or(0),
-            ]) % 11172;
-            *coord = Coord::new(idx).unwrap();
-        }
-        CoordId(CoordPath::new(coords))
-    }
-
-    // ── Axis accessors ───────────────────────────────────────────
-    // CoordPath<6> axis convention:
-    //   [0]: time_hi   — coarse time bucket (epoch day / session id)
+    // ── Axis accessors (CoordPath<6> convention) ────────────────
+    // Axis: [0]time_hi [1]time_lo [2]entity [3]origin [4]creator [5]serial
+    //   [0]: time_hi   — coarse time bucket (epoch day)
     //   [1]: time_lo   — fine time (sequence within bucket)
     //   [2]: entity    — entity type (0=Fact, 1=Intent, 2=Hint)
     //   [3]: origin    — origin category
@@ -145,7 +138,11 @@ impl CoordId {
     pub fn entity_type(&self) -> u16 { self.axis(2).index() }
 }
 
-impl std::fmt::Display for CoordId {
+// Display/Serialize/Deserialize are N=6 specific. Generic versions
+// cause type inference failures with serde derive. Users of CoordId<20>
+// must implement these manually for their depth.
+
+impl std::fmt::Display for CoordId<6> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for coord in self.0.iter() {
             write!(f, "{}", coord.to_char())?;
@@ -154,29 +151,27 @@ impl std::fmt::Display for CoordId {
     }
 }
 
-impl Serialize for CoordId {
+impl Serialize for CoordId<6> {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         s.serialize_str(&self.to_string())
     }
 }
 
-impl<'de> Deserialize<'de> for CoordId {
+impl<'de> Deserialize<'de> for CoordId<6> {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let s: String = Deserialize::deserialize(d)?;
         let chars: Vec<char> = s.chars().collect();
         if chars.len() != 6 {
             return Err(serde::de::Error::custom(format!(
-                "CoordId deserialize: expected 6 chars, got {}",
+                "CoordId<6> deserialize: expected 6 chars, got {}",
                 chars.len()
             )));
         }
         let mut coords = [Coord::new(0).unwrap(); 6];
         for (i, &ch) in chars.iter().enumerate() {
-            let cp = ch as u16;
-            coords[i] = Coord::from_code_point(cp).ok_or_else(|| {
+            coords[i] = Coord::from_code_point(ch as u16).ok_or_else(|| {
                 serde::de::Error::custom(format!(
-                    "CoordId deserialize: char '{}' is not a valid Tagma coordinate",
-                    ch
+                    "CoordId<6> deserialize: char '{ch}' is not a valid coordinate"
                 ))
             })?;
         }
