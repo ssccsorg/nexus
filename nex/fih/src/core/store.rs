@@ -47,7 +47,7 @@ use nex_core::Now;
 
 use crate::core::entity_store::{CoordEntityStore, EntityStore};
 use crate::core::index::Cell2;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use crate::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
 use crate::io::file_io::{FileIo, WriteOp, default_apply_batch};
 use crate::semantic::record::{Query, RecordLoad};
@@ -85,8 +85,9 @@ pub struct FihStorage<I: FileIo> {
     semantic_id_counter: Cell2<u32>,
     // Pending writes (for FihSession coordination).
     pub(crate) pending: Cell2<Vec<WriteOp>>,
+    /// Minimal fast-path: creator → fact IDs (most common filter pattern).
+    fact_by_creator: Cell2<HashMap<String, HashSet<String>>>,
     /// Indexed view of pending blob data: blob_hash → (mime_type, data).
-    /// Updated by enqueue_content, cleared by flush_pending.
     pending_blobs: Cell2<HashMap<String, (String, Vec<u8>)>>,
 }
 
@@ -123,6 +124,7 @@ impl<I: FileIo> FihStorage<I> {
             hint_store: CoordEntityStore::<6, HintRecord>::new(),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
+            fact_by_creator: Cell2::new(HashMap::new()),
             pending_blobs: Cell2::new(HashMap::new()),
             pending: Cell2::new(Vec::new()),
         }
@@ -144,6 +146,7 @@ impl<I: FileIo> FihStorage<I> {
             hint_store: CoordEntityStore::<6, HintRecord>::new(),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
+            fact_by_creator: Cell2::new(HashMap::new()),
             pending_blobs: Cell2::new(HashMap::new()),
             pending: Cell2::new(Vec::new()),
         }
@@ -596,8 +599,16 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
         };
 
         // Update in-memory cache immediately for subsequent reads
-        self.fact_store.insert(record.id.clone(), record).await;
+        let id_clone = record.id.clone();
+        self.fact_store.insert(id_clone.clone(), record).await;
         self.pending.borrow_mut().push(op);
+
+        // Update fast-path creator index (minimal: only creator filter)
+        self.fact_by_creator
+            .borrow_mut()
+            .entry(fact.creator.clone())
+            .or_default()
+            .insert(id_clone);
 
         // Auto-index into semantic stores (skip conclusion facts to reduce noise)
         if !fact.origin.starts_with("conclusion:") {
@@ -938,13 +949,39 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
             Content { mime_type: default_mime.to_string(), data: Vec::new() }
         };
 
-        // Scan CoordSpaceN entity stores and filter by record string fields.
-        let all_facts = self.fact_store.values().await;
+        // Fast path: creator-only filter uses fact_by_creator HashMap.
+        // Avoids scanning all records when only filtering by creator.
+        let fact_records: Vec<FactRecord> = if filter.creator.is_some()
+            && filter.origin.is_none()
+            && filter.since.is_none()
+            && filter.until.is_none()
+            && filter.fact_ids.is_none()
+        {
+            let creator = filter.creator.as_ref().unwrap();
+            let ids: Vec<String> = self
+                .fact_by_creator
+                .borrow()
+                .get(creator)
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .collect();
+            let mut records = Vec::with_capacity(ids.len());
+            for id in ids {
+                if let Some(r) = self.fact_store.get(&id).await {
+                    records.push(r);
+                }
+            }
+            records
+        } else {
+            self.fact_store.values().await
+        };
+
         let all_intents = self.intent_store.values().await;
         let all_hints = self.hint_store.values().await;
 
         // Filter facts using record fields directly.
-        let facts: Vec<Fact> = all_facts
+        let facts: Vec<Fact> = fact_records
             .into_iter()
             .filter(|r| {
                 if let Some(ref origin) = filter.origin {
