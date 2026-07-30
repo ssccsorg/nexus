@@ -263,7 +263,9 @@ impl CalcEngine {
             };
             // Extract origin/creator from Record::Fact variant
             let (fact_origin, fact_creator) = match &rec {
-                Record::Fact { origin, creator, .. } => (origin.clone(), creator.clone()),
+                Record::Fact {
+                    origin, creator, ..
+                } => (origin.clone(), creator.clone()),
                 _ => unreachable!(),
             };
             let path = record_to_path(0u16, &fact_origin, &fact_creator, 0u16, &result_id_str, 0);
@@ -284,7 +286,14 @@ impl CalcEngine {
             worker: "nex-calc".into(),
         };
         // Remove old entry.
-        let old_path = record_to_path(1u16, "", "user", old_status_coord, &id_str, created_at * 1_000_000_000);
+        let old_path = record_to_path(
+            1u16,
+            "",
+            "user",
+            old_status_coord,
+            &id_str,
+            created_at * 1_000_000_000,
+        );
         self.storage.store.borrow_mut().vacate_path(&old_path);
         // Insert new entry.
         let new_path = record_to_path(1u16, "", "user", 2u16, &id_str, created_at * 1_000_000_000);
@@ -295,7 +304,10 @@ impl CalcEngine {
             status: new_status,
             created_at,
         };
-        self.storage.store.borrow_mut().place_path(&new_path, new_record);
+        self.storage
+            .store
+            .borrow_mut()
+            .place_path(&new_path, new_record);
 
         Ok(ResolvedIntent {
             intent_id: *intent_id,
@@ -455,7 +467,6 @@ impl Default for CalcEngine {
 ///   [0] time_hi, [1] time_lo, [2] entity, [3] origin, [4] creator,
 ///   [5] status, [6-18] identity.
 
-
 // ── Blob IO ───────────────────────────────────────────────────────
 
 async fn write_blob_meta(io: &SimIo, blob_hash: &str, mime: &str, size: usize) {
@@ -485,10 +496,7 @@ fn nanos() -> u64 {
 // ── ID generation ─────────────────────────────────────────────────
 
 fn make_number_fact_id(value: i64) -> CoordId {
-    CoordId::from_string(&format!(
-        "calc/num/{}",
-        content_hash(&value.to_le_bytes())
-    ))
+    CoordId::from_string(&format!("calc/num/{}", content_hash(&value.to_le_bytes())))
 }
 
 fn make_intent_id(op: OpType, lhs: &CoordId, rhs: &CoordId) -> CoordId {

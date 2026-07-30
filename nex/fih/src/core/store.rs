@@ -47,10 +47,10 @@ use nex_core::Now;
 
 use crate::core::entity_store::{CoordEntityStore, EntityStore};
 use crate::core::index::Cell2;
-use std::collections::HashMap;
 use crate::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
 use crate::io::file_io::{FileIo, WriteOp, default_apply_batch};
 use crate::semantic::record::{Query, RecordLoad};
+use std::collections::HashMap;
 
 /// Chain entry format: serialized by flush_since for delta chain files.
 /// Named struct avoids postcard tuple field ordering ambiguity with empty vecs.
@@ -88,7 +88,12 @@ pub enum Record {
 
 /// Build a CoordPath<19> from entity fields (for unified Record store).
 pub fn record_to_path(
-    entity: u16, origin: &str, creator: &str, status: u16, id_str: &str, ts_ns: u64,
+    entity: u16,
+    origin: &str,
+    creator: &str,
+    status: u16,
+    id_str: &str,
+    ts_ns: u64,
 ) -> tagma_core::CoordPath<19> {
     use tagma_core::{Coord, CoordPath};
     let mk = |v: u16| Coord::new(v % 11172).unwrap();
@@ -111,17 +116,13 @@ pub fn record_to_path(
     coords[3] = mk(origin_v);
     coords[4] = mk(creator_v);
     coords[5] = mk(status);
-    // [6-11]: identity from CoordId<6> coordinates directly
+    // [6-11]: identity from CoordId<6> coordinates directly (round-trip safe)
     let cid: CoordId = CoordId::from_string(id_str);
-    let cid_coords = cid.0.coords();
-    for i in 0..6 {
-        coords[6 + i] = cid_coords[i];
-    }
+    let cid_coords: &[tagma_core::Coord; 6] = cid.0.coords();
+    coords[6..12].copy_from_slice(&cid_coords[..6]);
     // [12-18]: zero padding
     let zero = Coord::new(0).unwrap();
-    for i in 12..19 {
-        coords[i] = zero;
-    }
+    coords[12..19].fill(zero);
     CoordPath::new(coords)
 }
 
@@ -129,12 +130,8 @@ pub fn record_to_path(
 fn path_to_id_str(path: &tagma_core::CoordPath<19>) -> String {
     use tagma_core::{Coord, CoordPath};
     let mut coords = [Coord::new(0).unwrap(); 6];
-    for i in 0..6 {
-        coords[i] = path.coords()[6 + i];
-    }
-    let cp = CoordPath::new(coords);
-    // Convert CoordPath<6> to CoordId (same representation)
-    let cid = CoordId::<6>(cp);
+    coords.copy_from_slice(&path.coords()[6..12]);
+    let cid = CoordId::<6>(CoordPath::new(coords));
     cid.to_string()
 }
 
@@ -169,6 +166,7 @@ pub struct FihStorage<I: FileIo> {
     pub(crate) pending: Cell2<Vec<WriteOp>>,
     /// Indexed view of pending blob data: blob_hash → (mime_type, data).
     /// Updated by enqueue_content, cleared by flush_pending.
+    #[expect(dead_code)]
     pending_blobs: Cell2<HashMap<String, (String, Vec<u8>)>>,
 }
 
@@ -420,85 +418,179 @@ impl<I: FileIo> FihStorage<I> {
             .unwrap_or_default()
     }
 
-    /// Check if a fact with the given ID exists (uses unified store).
+    /// Check if a fact with the given ID exists (fast-path: fact_records HashMap).
     pub fn fact_exists(&self, id: &str) -> bool {
-        self.store.borrow().iter_tree().any(|(path, rec)| {
-            matches!(rec, Record::Fact { .. }) && path_to_id_str(&path) == id
-        })
+        self.fact_records.borrow().contains_key(id)
+            || self.store.borrow().iter_tree().any(|(path, rec)| {
+                matches!(rec, Record::Fact { .. }) && path_to_id_str(&path) == id
+            })
     }
 
-    /// Check if an intent with the given ID exists (uses unified store).
+    /// Check if an intent with the given ID exists (fast-path: intent_records HashMap).
     pub fn intent_exists(&self, id: &str) -> bool {
-        self.store.borrow().iter_tree().any(|(path, rec)| {
-            matches!(rec, Record::Intent { .. }) && path_to_id_str(&path) == id
-        })
+        self.intent_records.borrow().contains_key(id)
+            || self.store.borrow().iter_tree().any(|(path, rec)| {
+                matches!(rec, Record::Intent { .. }) && path_to_id_str(&path) == id
+            })
     }
 
-    /// Check if a hint with the given ID exists (uses unified store).
+    /// Check if a hint with the given ID exists (fast-path: hint_records HashMap).
     pub fn hint_exists(&self, id: &str) -> bool {
-        self.store.borrow().iter_tree().any(|(path, rec)| {
-            matches!(rec, Record::Hint { .. }) && path_to_id_str(&path) == id
-        })
+        self.hint_records.borrow().contains_key(id)
+            || self.store.borrow().iter_tree().any(|(path, rec)| {
+                matches!(rec, Record::Hint { .. }) && path_to_id_str(&path) == id
+            })
     }
 
-    /// Returns all fact IDs (from unified store).
+    /// Returns all fact IDs (fast-path: HashMap keys; fallback: unified store).
     pub fn all_fact_ids(&self) -> Vec<String> {
-        self.store.borrow().iter_tree().filter_map(|(path, rec)| {
-            if matches!(rec, Record::Fact { .. }) {
-                Some(path_to_id_str(&path))
-            } else { None }
-        }).collect()
+        let recs = self.fact_records.borrow();
+        if !recs.is_empty() {
+            return recs.keys().cloned().collect();
+        }
+        // Fallback: unified store (for direct writers like nex-calc)
+        self.store
+            .borrow()
+            .iter_tree()
+            .filter_map(|(path, rec)| {
+                if matches!(rec, Record::Fact { .. }) {
+                    Some(path_to_id_str(&path))
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
-    /// Returns all intent IDs (from unified store).
+    /// Returns all intent IDs (fast-path: HashMap keys; fallback: unified store).
     pub fn all_intent_ids(&self) -> Vec<String> {
-        self.store.borrow().iter_tree().filter_map(|(path, rec)| {
-            if matches!(rec, Record::Intent { .. }) {
-                Some(path_to_id_str(&path))
-            } else { None }
-        }).collect()
+        let recs = self.intent_records.borrow();
+        if !recs.is_empty() {
+            return recs.keys().cloned().collect();
+        }
+        self.store
+            .borrow()
+            .iter_tree()
+            .filter_map(|(path, rec)| {
+                if matches!(rec, Record::Intent { .. }) {
+                    Some(path_to_id_str(&path))
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
-    /// Returns all hint IDs (from unified store).
+    /// Returns all hint IDs (fast-path: HashMap keys; fallback: unified store).
     pub fn all_hint_ids(&self) -> Vec<String> {
-        self.store.borrow().iter_tree().filter_map(|(path, rec)| {
-            if matches!(rec, Record::Hint { .. }) {
-                Some(path_to_id_str(&path))
-            } else { None }
-        }).collect()
+        let recs = self.hint_records.borrow();
+        if !recs.is_empty() {
+            return recs.keys().cloned().collect();
+        }
+        self.store
+            .borrow()
+            .iter_tree()
+            .filter_map(|(path, rec)| {
+                if matches!(rec, Record::Hint { .. }) {
+                    Some(path_to_id_str(&path))
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
-    /// Get a fact by its ID (from unified store).
+    /// Get a fact by its ID (fast-path: fact_records HashMap).
     pub fn get_fact_by_id(&self, id: &str) -> Option<(Content, FihHash, String, String)> {
+        if let Some(r) = self.fact_records.borrow().get(id) {
+            let hex = &r.blob_hash;
+            let mut bytes = [0u8; 32];
+            for (i, c) in hex.as_bytes().chunks(2).enumerate() {
+                let s = unsafe { std::str::from_utf8_unchecked(c) };
+                bytes[i] = u8::from_str_radix(s, 16).unwrap_or(0);
+            }
+            return Some((
+                Content {
+                    mime_type: "application/octet-stream".into(),
+                    data: Vec::new(),
+                },
+                FihHash(bytes),
+                r.origin.clone(),
+                r.creator.clone(),
+            ));
+        }
+        // Fallback: unified store (for direct store writers like nex-calc)
         for (_path, rec) in self.store.borrow().iter_tree() {
-            if let Record::Fact { content, content_hash, origin, creator, .. } = rec {
-                if path_to_id_str(&_path) == id {
-                    return Some((content.clone(), *content_hash, origin.clone(), creator.clone()));
-                }
+            if let Record::Fact {
+                content,
+                content_hash,
+                origin,
+                creator,
+                ..
+            } = rec
+                && path_to_id_str(&_path) == id
+            {
+                return Some((
+                    content.clone(),
+                    *content_hash,
+                    origin.clone(),
+                    creator.clone(),
+                ));
             }
         }
         None
     }
 
-    /// Get an intent by its ID (from unified store).
-    pub fn get_intent_by_id(&self, id: &str) -> Option<(Vec<String>, String, String, IntentStatus, u64)> {
+    /// Get an intent by its ID.
+    pub fn get_intent_by_id(
+        &self,
+        id: &str,
+    ) -> Option<(Vec<String>, String, String, IntentStatus, u64)> {
+        if let Some(r) = self.intent_records.borrow().get(id) {
+            return Some((
+                r.from_facts.clone(),
+                r.description_hash.clone(),
+                r.creator.clone(),
+                r.status.clone(),
+                r.created_at,
+            ));
+        }
         for (_path, rec) in self.store.borrow().iter_tree() {
-            if let Record::Intent { from_facts, description_hash, creator, status, created_at } = rec {
-                if path_to_id_str(&_path) == id {
-                    return Some((from_facts.clone(), description_hash.clone(), creator.clone(), status.clone(), *created_at));
-                }
+            if let Record::Intent {
+                from_facts,
+                description_hash,
+                creator,
+                status,
+                created_at,
+            } = rec
+                && path_to_id_str(&_path) == id
+            {
+                return Some((
+                    from_facts.clone(),
+                    description_hash.clone(),
+                    creator.clone(),
+                    status.clone(),
+                    *created_at,
+                ));
             }
         }
         None
     }
 
-    /// Get a hint by its ID (from unified store).
+    /// Get a hint by its ID.
     pub fn get_hint_by_id(&self, id: &str) -> Option<(String, String, u64)> {
+        if let Some(r) = self.hint_records.borrow().get(id) {
+            return Some((r.content.clone(), r.creator.clone(), r.submitted_at));
+        }
         for (_path, rec) in self.store.borrow().iter_tree() {
-            if let Record::Hint { content, creator, submitted_at } = rec {
-                if path_to_id_str(&_path) == id {
-                    return Some((content.clone(), creator.clone(), *submitted_at));
-                }
+            if let Record::Hint {
+                content,
+                creator,
+                submitted_at,
+            } = rec
+                && path_to_id_str(&_path) == id
+            {
+                return Some((content.clone(), creator.clone(), *submitted_at));
             }
         }
         None
@@ -507,6 +599,7 @@ impl<I: FileIo> FihStorage<I> {
     /// Enqueue content as a blob write. FIH is append-only: no dedup
     /// read needed because records are never overwritten. R2 is
     /// last-writer-wins, so duplicate blob_hash writes are harmless.
+    #[expect(dead_code)]
     fn enqueue_content(&self, content: &Content) -> Result<String, String> {
         let blob_hash = content_hash(&content.data);
         let blob_path = format!("blob/{}.bin", blob_hash);
@@ -758,7 +851,8 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
             mime_type: fact.content.mime_type.clone(),
             size: fact.content.data.len() as u64,
         };
-        let meta_bytes = postcard::to_allocvec(&meta).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let meta_bytes =
+            postcard::to_allocvec(&meta).map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.pending.borrow_mut().push(WriteOp::Write {
             path: format!("blob/{blob_hash}.bin.meta"),
             data: meta_bytes,
@@ -774,22 +868,22 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
         };
 
         // Update in-memory cache immediately for subsequent reads
-        self.fact_store.insert(record.id.clone(), record.clone()).await;
-        self.fact_records.borrow_mut().insert(record.id.clone(), record.clone());
-        // Write to unified CoordSpaceN<19, Record> store (for iter_prefix queries)
-        {
-            let mut store = self.store.borrow_mut();
-            let path = record_to_path(0, &fact.origin, &fact.creator, 0, &record.id, record.submitted_at);
-            store.place_path(&path, Record::Fact {
-                content: fact.content.clone(),
-                content_hash: fact.content_hash,
-                origin: fact.origin.clone(),
-                creator: fact.creator.clone(),
-                submitted_at: record.submitted_at,
-            });
-        }
-        self.facts_by_creator.borrow_mut().entry(fact.creator.clone()).or_default().push(fact.id.to_string());
-        self.facts_by_origin.borrow_mut().entry(fact.origin.clone()).or_default().push(fact.id.to_string());
+        self.fact_store
+            .insert(record.id.clone(), record.clone())
+            .await;
+        self.fact_records
+            .borrow_mut()
+            .insert(record.id.clone(), record);
+        self.facts_by_creator
+            .borrow_mut()
+            .entry(fact.creator.clone())
+            .or_default()
+            .push(fact.id.to_string());
+        self.facts_by_origin
+            .borrow_mut()
+            .entry(fact.origin.clone())
+            .or_default()
+            .push(fact.id.to_string());
         self.pending.borrow_mut().push(op);
 
         // Auto-index into semantic stores (skip conclusion facts to reduce noise)
@@ -838,8 +932,12 @@ impl<I: FileIo> crate::AsyncHintCapable for FihStorage<I> {
             path: record.key(),
             data: bytes,
         };
-        self.hint_store.insert(record.id.clone(), record.clone()).await;
-        self.hint_records.borrow_mut().insert(record.id.clone(), record);
+        self.hint_store
+            .insert(record.id.clone(), record.clone())
+            .await;
+        self.hint_records
+            .borrow_mut()
+            .insert(record.id.clone(), record);
         self.pending.borrow_mut().push(op);
         Ok(())
     }
@@ -900,8 +998,12 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             data: bytes,
         };
 
-        self.intent_store.insert(record.id.clone(), record.clone()).await;
-        self.intent_records.borrow_mut().insert(record.id.clone(), record);
+        self.intent_store
+            .insert(record.id.clone(), record.clone())
+            .await;
+        self.intent_records
+            .borrow_mut()
+            .insert(record.id.clone(), record);
         self.pending.borrow_mut().push(op);
         Ok(intent.id)
     }
@@ -1019,7 +1121,9 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.flush_pending()
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.intent_store.insert(CoordId::from_string(intent_id).to_string(), record).await;
+        self.intent_store
+            .insert(CoordId::from_string(intent_id).to_string(), record)
+            .await;
         Ok(())
     }
 
@@ -1080,8 +1184,12 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             path: fact_rec.key(),
             data: fact_bytes,
         });
-        self.fact_store.insert(fact_rec.id.clone(), fact_rec.clone()).await;
-        self.fact_records.borrow_mut().insert(fact_rec.id.clone(), fact_rec);
+        self.fact_store
+            .insert(fact_rec.id.clone(), fact_rec.clone())
+            .await;
+        self.fact_records
+            .borrow_mut()
+            .insert(fact_rec.id.clone(), fact_rec);
 
         let intent_bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -1108,12 +1216,18 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
             .borrow()
             .iter()
             .filter_map(|op| match op {
-                WriteOp::Write { path, data } if path.ends_with(".bin") && !path.ends_with(".bin.meta") => {
-                    let blob_hash = path.strip_prefix("blob/").and_then(|p| p.strip_suffix(".bin"))?;
+                WriteOp::Write { path, data }
+                    if path.ends_with(".bin") && !path.ends_with(".bin.meta") =>
+                {
+                    let blob_hash = path
+                        .strip_prefix("blob/")
+                        .and_then(|p| p.strip_suffix(".bin"))?;
                     Some((blob_hash.to_string(), (String::new(), data.clone())))
                 }
                 WriteOp::Write { path, data } if path.ends_with(".bin.meta") => {
-                    let blob_hash = path.strip_prefix("blob/").and_then(|p| p.strip_suffix(".bin.meta"))?;
+                    let blob_hash = path
+                        .strip_prefix("blob/")
+                        .and_then(|p| p.strip_suffix(".bin.meta"))?;
                     let meta = postcard::from_bytes::<ContentMeta>(data).ok()?;
                     Some((blob_hash.to_string(), (meta.mime_type, Vec::new())))
                 }
@@ -1123,19 +1237,27 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
 
         // Materialize content from pending blobs (no IO fallback for sync path).
         let load_content_fast = |blob_hash: &str, default_mime: &str| -> Content {
-            if let Some((mime, data)) = blob_map.get(blob_hash) {
-                if !data.is_empty() {
-                    return Content {
-                        mime_type: if mime.is_empty() { default_mime.to_string() } else { mime.clone() },
-                        data: data.clone(),
-                    };
-                }
+            if let Some((mime, data)) = blob_map.get(blob_hash)
+                && !data.is_empty()
+            {
+                return Content {
+                    mime_type: if mime.is_empty() {
+                        default_mime.to_string()
+                    } else {
+                        mime.clone()
+                    },
+                    data: data.clone(),
+                };
             }
-            Content { mime_type: default_mime.to_string(), data: Vec::new() }
+            Content {
+                mime_type: default_mime.to_string(),
+                data: Vec::new(),
+            }
         };
 
         // FAST PATH 1: single or AND filter via HashMap O(1)
-        let fast_ids: Option<Vec<String>> = match (filter.creator.as_ref(), filter.origin.as_ref()) {
+        let fast_ids: Option<Vec<String>> = match (filter.creator.as_ref(), filter.origin.as_ref())
+        {
             (Some(c), Some(o)) => {
                 // AND: intersect creator + origin
                 let by_c = self.facts_by_creator.borrow();
@@ -1145,11 +1267,23 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                 match (c_ids, o_ids) {
                     (Some(cv), Some(ov)) => {
                         if cv.len() <= ov.len() {
-                            let o_set: std::collections::HashSet<&str> = ov.iter().map(|s| s.as_str()).collect();
-                            Some(cv.iter().filter(|id| o_set.contains(id.as_str())).cloned().collect())
+                            let o_set: std::collections::HashSet<&str> =
+                                ov.iter().map(|s| s.as_str()).collect();
+                            Some(
+                                cv.iter()
+                                    .filter(|id| o_set.contains(id.as_str()))
+                                    .cloned()
+                                    .collect(),
+                            )
                         } else {
-                            let c_set: std::collections::HashSet<&str> = cv.iter().map(|s| s.as_str()).collect();
-                            Some(ov.iter().filter(|id| c_set.contains(id.as_str())).cloned().collect())
+                            let c_set: std::collections::HashSet<&str> =
+                                cv.iter().map(|s| s.as_str()).collect();
+                            Some(
+                                ov.iter()
+                                    .filter(|id| c_set.contains(id.as_str()))
+                                    .cloned()
+                                    .collect(),
+                            )
                         }
                     }
                     (Some(cv), None) => Some(cv.clone()),
@@ -1163,80 +1297,101 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
         };
         if let Some(ids) = fast_ids {
             let recs = self.fact_records.borrow();
-            let facts: Vec<Fact> = ids.iter().filter_map(|id| {
-                recs.get(id).map(|r| Fact {
-                    id: CoordId::from_string(&r.id),
-                    origin: r.origin.clone(),
-                    content_hash: {
-                        let hex = &r.blob_hash; let mut b = [0u8; 32];
-                        for (i, c) in hex.as_bytes().chunks(2).enumerate() {
-                            let s = unsafe { std::str::from_utf8_unchecked(c) };
-                            b[i] = u8::from_str_radix(s, 16).unwrap_or(0);
-                        } FihHash(b)
-                    },
-                    content: load_content_fast(&r.blob_hash, "application/octet-stream"),
-                    creator: r.creator.clone(),
+            let facts: Vec<Fact> = ids
+                .iter()
+                .filter_map(|id| {
+                    recs.get(id).map(|r| Fact {
+                        id: CoordId::from_string(&r.id),
+                        origin: r.origin.clone(),
+                        content_hash: {
+                            let hex = &r.blob_hash;
+                            let mut b = [0u8; 32];
+                            for (i, c) in hex.as_bytes().chunks(2).enumerate() {
+                                let s = unsafe { std::str::from_utf8_unchecked(c) };
+                                b[i] = u8::from_str_radix(s, 16).unwrap_or(0);
+                            }
+                            FihHash(b)
+                        },
+                        content: load_content_fast(&r.blob_hash, "application/octet-stream"),
+                        creator: r.creator.clone(),
+                    })
                 })
-            }).collect();
+                .collect();
             let intents: Vec<Intent> = Vec::new();
             let hints: Vec<Hint> = Vec::new();
-            let mut state = BoardState { facts, intents, hints };
-            if let Some(limit) = filter.limit { state.facts = state.facts.into_iter().take(limit).collect(); }
+            let mut state = BoardState {
+                facts,
+                intents,
+                hints,
+            };
+            if let Some(limit) = filter.limit {
+                state.facts = state.facts.into_iter().take(limit).collect();
+            }
             return state;
         }
 
         // FAST PATH 2: axis_hints enable O(subtree) iter_prefix query.
-        if let Some(ref hints) = filter.axis_hints {
-            if hints.time_hi.is_some() {
-                let matched = self.fact_store.query_prefix(hints).await;
-                let facts: Vec<Fact> = matched
-                    .into_iter()
-                    .filter(|r| {
-                        if let Some(ref origin) = filter.origin {
-                            if r.origin != *origin { return false; }
-                        }
-                        if let Some(ref creator) = filter.creator {
-                            if r.creator != *creator { return false; }
-                        }
-                        if let Some(ref since) = filter.since {
-                            if let Ok(ts) = since.parse::<u64>() {
-                                if r.submitted_at < ts { return false; }
+        if let Some(ref hints) = filter.axis_hints
+            && hints.time_hi.is_some()
+        {
+            let matched = self.fact_store.query_prefix(hints).await;
+            let facts: Vec<Fact> = matched
+                .into_iter()
+                .filter(|r| {
+                    if let Some(ref origin) = filter.origin
+                        && r.origin != *origin
+                    {
+                        return false;
+                    }
+                    if let Some(ref creator) = filter.creator
+                        && r.creator != *creator
+                    {
+                        return false;
+                    }
+                    if let Some(ref since) = filter.since
+                        && let Ok(ts) = since.parse::<u64>()
+                        && r.submitted_at < ts
+                    {
+                        return false;
+                    }
+                    if let Some(ref until) = filter.until
+                        && let Ok(ts) = until.parse::<u64>()
+                        && r.submitted_at > ts
+                    {
+                        return false;
+                    }
+                    true
+                })
+                .map(|r| {
+                    let content = load_content_fast(&r.blob_hash, "application/octet-stream");
+                    Fact {
+                        id: CoordId::from_string(&r.id),
+                        origin: r.origin,
+                        content_hash: {
+                            let hex = &r.blob_hash;
+                            let mut bytes = [0u8; 32];
+                            for (i, chunk) in hex.as_bytes().chunks(2).enumerate() {
+                                let s = unsafe { std::str::from_utf8_unchecked(chunk) };
+                                bytes[i] = u8::from_str_radix(s, 16).unwrap_or(0);
                             }
-                        }
-                        if let Some(ref until) = filter.until {
-                            if let Ok(ts) = until.parse::<u64>() {
-                                if r.submitted_at > ts { return false; }
-                            }
-                        }
-                        true
-                    })
-                    .map(|r| {
-                        let content = load_content_fast(&r.blob_hash, "application/octet-stream");
-                        Fact {
-                            id: CoordId::from_string(&r.id),
-                            origin: r.origin,
-                            content_hash: {
-                                let hex = &r.blob_hash;
-                                let mut bytes = [0u8; 32];
-                                for (i, chunk) in hex.as_bytes().chunks(2).enumerate() {
-                                    let s = unsafe { std::str::from_utf8_unchecked(chunk) };
-                                    bytes[i] = u8::from_str_radix(s, 16).unwrap_or(0);
-                                }
-                                FihHash(bytes)
-                            },
-                            content,
-                            creator: r.creator,
-                        }
-                    })
-                    .collect();
-                let intents: Vec<Intent> = Vec::new();
-                let hints: Vec<Hint> = Vec::new();
-                let mut state = BoardState { facts, intents, hints };
-                if let Some(limit) = filter.limit {
-                    state.facts = state.facts.into_iter().take(limit).collect();
-                }
-                return state;
+                            FihHash(bytes)
+                        },
+                        content,
+                        creator: r.creator,
+                    }
+                })
+                .collect();
+            let intents: Vec<Intent> = Vec::new();
+            let hints: Vec<Hint> = Vec::new();
+            let mut state = BoardState {
+                facts,
+                intents,
+                hints,
+            };
+            if let Some(limit) = filter.limit {
+                state.facts = state.facts.into_iter().take(limit).collect();
             }
+            return state;
         }
 
         // FALLBACK: values() + string-based filter (no axis hints)
@@ -1248,29 +1403,27 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
         let facts: Vec<Fact> = all_facts
             .into_iter()
             .filter(|r| {
-                if let Some(ref origin) = filter.origin {
-                    if r.origin != *origin {
-                        return false;
-                    }
+                if let Some(ref origin) = filter.origin
+                    && r.origin != *origin
+                {
+                    return false;
                 }
-                if let Some(ref creator) = filter.creator {
-                    if r.creator != *creator {
-                        return false;
-                    }
+                if let Some(ref creator) = filter.creator
+                    && r.creator != *creator
+                {
+                    return false;
                 }
-                if let Some(ref since) = filter.since {
-                    if let Ok(ts) = since.parse::<u64>() {
-                        if r.submitted_at < ts {
-                            return false;
-                        }
-                    }
+                if let Some(ref since) = filter.since
+                    && let Ok(ts) = since.parse::<u64>()
+                    && r.submitted_at < ts
+                {
+                    return false;
                 }
-                if let Some(ref until) = filter.until {
-                    if let Ok(ts) = until.parse::<u64>() {
-                        if r.submitted_at > ts {
-                            return false;
-                        }
-                    }
+                if let Some(ref until) = filter.until
+                    && let Ok(ts) = until.parse::<u64>()
+                    && r.submitted_at > ts
+                {
+                    return false;
                 }
                 if let Some(ref ids) = filter.fact_ids {
                     let normalized: Vec<String> = ids
@@ -1308,30 +1461,30 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
         let intents: Vec<Intent> = all_intents
             .into_iter()
             .filter(|r| {
-                if let Some(ref creator) = filter.creator {
-                    if r.creator != *creator {
+                if let Some(ref creator) = filter.creator
+                    && r.creator != *creator
+                {
+                    return false;
+                }
+                if let Some(ref status) = filter.status
+                    && simple_status_key(&r.status) != status.as_str()
+                {
+                    return false;
+                }
+                if let Some(ref since) = filter.since
+                    && let Ok(ts) = since.parse::<u64>()
+                {
+                    let created_ns = r.created_at * 1_000_000_000;
+                    if created_ns < ts {
                         return false;
                     }
                 }
-                if let Some(ref status) = filter.status {
-                    if simple_status_key(&r.status) != status.as_str() {
+                if let Some(ref until) = filter.until
+                    && let Ok(ts) = until.parse::<u64>()
+                {
+                    let created_ns = r.created_at * 1_000_000_000;
+                    if created_ns > ts {
                         return false;
-                    }
-                }
-                if let Some(ref since) = filter.since {
-                    if let Ok(ts) = since.parse::<u64>() {
-                        let created_ns = r.created_at * 1_000_000_000;
-                        if created_ns < ts {
-                            return false;
-                        }
-                    }
-                }
-                if let Some(ref until) = filter.until {
-                    if let Ok(ts) = until.parse::<u64>() {
-                        let created_ns = r.created_at * 1_000_000_000;
-                        if created_ns > ts {
-                            return false;
-                        }
                     }
                 }
                 if let Some(ref ids) = filter.intent_ids {
@@ -1505,11 +1658,11 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
             intents: intents
                 .into_iter()
                 .filter(|i| i.creator == prefix)
-                                .map(|r| {
-                                    let description = if r.description_hash.is_empty() {
-                                        r.id.clone()
-                                    } else {
-                                        let c = self.load_content(&r.description_hash, "text/plain");
+                .map(|r| {
+                    let description = if r.description_hash.is_empty() {
+                        r.id.clone()
+                    } else {
+                        let c = self.load_content(&r.description_hash, "text/plain");
                         String::from_utf8_lossy(&c.data).to_string()
                     };
                     Intent {

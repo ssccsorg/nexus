@@ -132,10 +132,7 @@ where
     /// Falls back to full scan (path coord check is still faster than
     /// string compare), but when axes 0..k are fully specified, uses
     /// `iter_prefix` for O(subtree) traversal.
-    pub async fn axis_filtered(
-        &self,
-        axis_checks: &[(usize, u16)],
-    ) -> Vec<V>
+    pub async fn axis_filtered(&self, axis_checks: &[(usize, u16)]) -> Vec<V>
     where
         V: Send,
     {
@@ -220,10 +217,7 @@ where
     /// prefix, or None if the prefix doesn't exist.
     ///
     /// Axis convention: [0]=time_hi, [1]=time_lo, [2]=entity, [3]=origin, [4]=creator, [5]=serial
-    pub async fn query_prefix(
-        &self,
-        hints: &crate::storage::filter::AxisHints,
-    ) -> Vec<V>
+    pub async fn query_prefix(&self, hints: &crate::storage::filter::AxisHints) -> Vec<V>
     where
         V: Send,
     {
@@ -232,36 +226,74 @@ where
         // Build contiguous prefix from hints
         let mut prefix = Vec::with_capacity(6);
         if let Some(v) = hints.time_hi {
-            if let Some(c) = Coord::new(v % 11172) { prefix.push(c); } else { return Vec::new(); }
-        } else { return self.values().await; } // no prefix possible, full scan
+            if let Some(c) = Coord::new(v % 11172) {
+                prefix.push(c);
+            } else {
+                return Vec::new();
+            }
+        } else {
+            return self.values().await;
+        } // no prefix possible, full scan
 
         if let Some(v) = hints.time_lo {
-            if let Some(c) = Coord::new(v % 11172) { prefix.push(c); } else { return Vec::new(); }
-        } else { return self.values().await; }
+            if let Some(c) = Coord::new(v % 11172) {
+                prefix.push(c);
+            } else {
+                return Vec::new();
+            }
+        } else {
+            return self.values().await;
+        }
 
         if let Some(v) = hints.entity {
-            if let Some(c) = Coord::new(v % 11172) { prefix.push(c); } else { return Vec::new(); }
-        } else { return self.values().await; }
+            if let Some(c) = Coord::new(v % 11172) {
+                prefix.push(c);
+            } else {
+                return Vec::new();
+            }
+        } else {
+            return self.values().await;
+        }
 
         if let Some(v) = hints.origin {
-            if let Some(c) = Coord::new(v % 11172) { prefix.push(c); } else { return Vec::new(); }
+            if let Some(c) = Coord::new(v % 11172) {
+                prefix.push(c);
+            } else {
+                return Vec::new();
+            }
         } else {
             // origin not specified: use prefix up to entity only
-            return self.iter_prefix_filtered(&prefix, |_| true).await.unwrap_or_default();
+            return self
+                .iter_prefix_filtered(&prefix, |_| true)
+                .await
+                .unwrap_or_default();
         }
 
         if let Some(v) = hints.creator {
-            if let Some(c) = Coord::new(v % 11172) { prefix.push(c); } else { return Vec::new(); }
+            if let Some(c) = Coord::new(v % 11172) {
+                prefix.push(c);
+            } else {
+                return Vec::new();
+            }
         } else {
-            return self.iter_prefix_filtered(&prefix, |_| true).await.unwrap_or_default();
+            return self
+                .iter_prefix_filtered(&prefix, |_| true)
+                .await
+                .unwrap_or_default();
         }
 
         if let Some(v) = hints.serial {
-            if let Some(c) = Coord::new(v % 11172) { prefix.push(c); } else { return Vec::new(); }
+            if let Some(c) = Coord::new(v % 11172) {
+                prefix.push(c);
+            } else {
+                return Vec::new();
+            }
         }
 
         // Full prefix: all 6 axes specified
-        self.iter_prefix_filtered(&prefix, |_| true).await.unwrap_or_default()
+        self.iter_prefix_filtered(&prefix, |_| true)
+            .await
+            .unwrap_or_default()
     }
 }
 

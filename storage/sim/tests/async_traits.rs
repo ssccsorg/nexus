@@ -136,7 +136,7 @@ fn test_async_filter() {
     }
 
     let filter = StateFilter {
-            axis_hints: None,
+        axis_hints: None,
         fact_ids: Some(vec!["f0".into(), "f2".into()]),
         ..Default::default()
     };

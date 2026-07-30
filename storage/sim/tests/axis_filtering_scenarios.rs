@@ -88,7 +88,7 @@ fn test_filter_by_creator() {
 
     // Filter by creator string (the fast-path fact_by_creator index).
     let filtered = block_on(store.read_state_filtered(&StateFilter {
-            axis_hints: None,
+        axis_hints: None,
         creator: Some("creator_10".into()),
         ..Default::default()
     }));
@@ -97,7 +97,7 @@ fn test_filter_by_creator() {
 
     // Filter by creator_20.
     let filtered = block_on(store.read_state_filtered(&StateFilter {
-            axis_hints: None,
+        axis_hints: None,
         creator: Some("creator_20".into()),
         ..Default::default()
     }));
@@ -106,7 +106,7 @@ fn test_filter_by_creator() {
 
     // Filter by non-existent creator yields empty result.
     let filtered = block_on(store.read_state_filtered(&StateFilter {
-            axis_hints: None,
+        axis_hints: None,
         creator: Some("creator_nobody".into()),
         ..Default::default()
     }));
@@ -138,7 +138,7 @@ fn test_filter_by_time_range() {
 
     // Filter with since below the first fact's timestamp → both included.
     let all = block_on(store.read_state_filtered(&StateFilter {
-            axis_hints: None,
+        axis_hints: None,
         since: Some("0".into()),
         ..Default::default()
     }));
@@ -146,7 +146,7 @@ fn test_filter_by_time_range() {
 
     // Filter with since above the second fact's timestamp → none.
     let none = block_on(store.read_state_filtered(&StateFilter {
-            axis_hints: None,
+        axis_hints: None,
         since: Some("3000000000".into()),
         ..Default::default()
     }));
@@ -158,7 +158,7 @@ fn test_filter_by_time_range() {
 
     // Filter with since between the two facts → only the late one.
     let mid = block_on(store.read_state_filtered(&StateFilter {
-            axis_hints: None,
+        axis_hints: None,
         since: Some("1500000000".into()),
         ..Default::default()
     }));
@@ -170,7 +170,7 @@ fn test_filter_by_time_range() {
 
     // Filter with until before the first fact → none.
     let none_until = block_on(store.read_state_filtered(&StateFilter {
-            axis_hints: None,
+        axis_hints: None,
         until: Some("500000000".into()),
         ..Default::default()
     }));
@@ -182,7 +182,7 @@ fn test_filter_by_time_range() {
 
     // Filter with until between the two facts → only the early one.
     let early_only = block_on(store.read_state_filtered(&StateFilter {
-            axis_hints: None,
+        axis_hints: None,
         until: Some("1500000000".into()),
         ..Default::default()
     }));
@@ -196,7 +196,7 @@ fn test_filter_by_time_range() {
     // With only 2 facts and since=1.5G, there's exactly 1 match (f_late).
     // Adding until=2.5G still includes it.
     let both = block_on(store.read_state_filtered(&StateFilter {
-            axis_hints: None,
+        axis_hints: None,
         since: Some("1500000000".into()),
         until: Some("2500000000".into()),
         ..Default::default()
@@ -244,7 +244,7 @@ fn test_filter_by_origin_and_time() {
 
     // Filter by origin = "origin_a" (exact string match via fact_by_origin).
     let origin_a = block_on(store.read_state_filtered(&StateFilter {
-            axis_hints: None,
+        axis_hints: None,
         creator: Some("alice".into()),
         ..Default::default()
     }));
@@ -252,7 +252,7 @@ fn test_filter_by_origin_and_time() {
 
     // Filter by origin = "origin_b".
     let origin_b = block_on(store.read_state_filtered(&StateFilter {
-            axis_hints: None,
+        axis_hints: None,
         creator: Some("bob".into()),
         ..Default::default()
     }));
@@ -260,7 +260,7 @@ fn test_filter_by_origin_and_time() {
 
     // Filter by since + until covering specific time bucket.
     let bucketed = block_on(store.read_state_filtered(&StateFilter {
-            axis_hints: None,
+        axis_hints: None,
         since: Some("100".into()),
         until: Some("150".into()),
         ..Default::default()
@@ -277,7 +277,7 @@ fn test_filter_by_origin_and_time() {
 
     // Filter with creator + since combined.
     let combined = block_on(store.read_state_filtered(&StateFilter {
-            axis_hints: None,
+        axis_hints: None,
         creator: Some("alice".into()),
         since: Some("0".into()),
         ..Default::default()
@@ -346,7 +346,7 @@ fn test_multi_dimensional_tagma_query() {
     // Query 1: All facts by creator-1 (single axis via fast-path).
     // Expected: 4 origins × 5 time buckets = 20 facts.
     let q1 = block_on(store.read_state_filtered(&StateFilter {
-            axis_hints: None,
+        axis_hints: None,
         creator: Some("creator-1".into()),
         ..Default::default()
     }));
@@ -355,7 +355,7 @@ fn test_multi_dimensional_tagma_query() {
     // Query 2: origin-2 AND creator-1 (dual axis via set intersection).
     // Expected: 1 origin × 1 creator × 5 time buckets = 5 facts.
     let q2 = block_on(store.read_state_filtered(&StateFilter {
-            axis_hints: None,
+        axis_hints: None,
         origin: Some("origin-2".into()),
         creator: Some("creator-1".into()),
         ..Default::default()
@@ -368,7 +368,7 @@ fn test_multi_dimensional_tagma_query() {
     // creator-0: 20 facts (4 origins × 5 time)
     // intersection: 1 origin × 1 creator × 5 time = 5 facts.
     let q3 = block_on(store.read_state_filtered(&StateFilter {
-            axis_hints: None,
+        axis_hints: None,
         origin: Some("origin-3".into()),
         creator: Some("creator-0".into()),
         ..Default::default()
@@ -378,7 +378,7 @@ fn test_multi_dimensional_tagma_query() {
     // Query 4: origin-0 with no other filters (fast-path single key).
     // Expected: 3 creators × 5 time = 15 facts.
     let q4 = block_on(store.read_state_filtered(&StateFilter {
-            axis_hints: None,
+        axis_hints: None,
         origin: Some("origin-0".into()),
         ..Default::default()
     }));

@@ -261,13 +261,14 @@ fn build_knowledge_base() -> FihStorage<SimIo> {
     // 10K documents across 10 projects, 20 authors, 50 time buckets
     for i in 0..10_000 {
         let cid = CoordId::from_axes(
-            (i / 2000) as u16,     // [0] time: every 2000 docs = 1 time bucket
-            (i % 2000) as u16,      // [1] sequence within bucket
-            0,                      // [2] entity: Fact
-            (i % 10) as u16,        // [3] origin: project (0..9)
+            (i / 2000) as u16,        // [0] time: every 2000 docs = 1 time bucket
+            (i % 2000) as u16,        // [1] sequence within bucket
+            0,                        // [2] entity: Fact
+            (i % 10) as u16,          // [3] origin: project (0..9)
             ((i / 1000) % 20) as u16, // [4] creator: author (0..19)
-            i as u16,               // [5] serial
-        ).unwrap();
+            i as u16,                 // [5] serial
+        )
+        .unwrap();
         let fact = Fact::new(
             cid,
             format!("project-{}", i % 10),
@@ -287,7 +288,8 @@ fn build_knowledge_base() -> FihStorage<SimIo> {
             (fact_idx % 10) as u16,
             ((fact_idx / 1000) % 20) as u16,
             fact_idx as u16,
-        ).unwrap();
+        )
+        .unwrap();
         let intent_id = CoordId::from_axes(50, i as u16, 1, 0, 0, (200_000 + i) as u16).unwrap();
         let intent = Intent::new(
             intent_id,
@@ -339,10 +341,14 @@ fn bench_knowledge_base_query(c: &mut Criterion) {
             for i in 0..100 {
                 let fidx = 10_000 - 1000 + i * 10;
                 let cid = CoordId::from_axes(
-                    (fidx / 2000) as u16, (fidx % 2000) as u16, 0,
-                    (fidx / 10000) as u16, ((fidx / 1000) % 20) as u16,
-                    fidx as u16
-                ).unwrap();
+                    (fidx / 2000) as u16,
+                    (fidx % 2000) as u16,
+                    0,
+                    (fidx / 10000) as u16,
+                    ((fidx / 1000) % 20) as u16,
+                    fidx as u16,
+                )
+                .unwrap();
                 black_box(store.intents_by_fact(&cid.to_string()));
             }
         });
