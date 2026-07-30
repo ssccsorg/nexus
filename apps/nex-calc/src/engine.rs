@@ -286,17 +286,10 @@ impl CalcEngine {
             worker: "nex-calc".into(),
         };
         // Remove old entry.
-        let old_path = record_to_path(
-            1u16,
-            "",
-            "user",
-            old_status_coord,
-            &id_str,
-            created_at * 1_000_000_000,
-        );
+        let old_path = record_to_path(1u16, "", "user", old_status_coord, &id_str, created_at);
         self.storage.store.borrow_mut().vacate_path(&old_path);
         // Insert new entry.
-        let new_path = record_to_path(1u16, "", "user", 2u16, &id_str, created_at * 1_000_000_000);
+        let new_path = record_to_path(1u16, "", "user", 2u16, &id_str, created_at);
         let new_record = Record::Intent {
             from_facts,
             description_hash,
