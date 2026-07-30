@@ -86,24 +86,24 @@ pub enum Record {
     },
 }
 
-/// Deterministic string to u16 coordinate (first 2 bytes, mod 11172).
-fn str_to_coord_val(s: &str) -> u16 {
-    let b = s.as_bytes();
-    let v = u16::from_le_bytes([b.first().copied().unwrap_or(0), b.get(1).copied().unwrap_or(0)]);
-    v % 11172
-}
-
 /// Build a CoordPath<19> from entity fields (for unified Record store).
-fn record_to_path(
+pub fn record_to_path(
     entity: u16, origin: &str, creator: &str, status: u16, id_str: &str, ts_ns: u64,
 ) -> tagma_core::CoordPath<19> {
     use tagma_core::{Coord, CoordPath};
     let mk = |v: u16| Coord::new(v % 11172).unwrap();
     let time_hi = (ts_ns / 86_400_000_000_000) as u16;
-    let time_lo = (ts_ns % 86_400_000_000_000) as u16;
-    let origin_v = str_to_coord_val(origin);
-    let creator_v = str_to_coord_val(creator);
-    let id_bytes = id_str.as_bytes();
+    let time_lo = (ts_ns % 86_400_000_000_000 / 1_000_000_000) as u16; // seconds, not ns
+    // Use hash-based coord for origin/creator (matches make_record_path convention)
+    fn hash_str(s: &str) -> u16 {
+        use sha2::Digest;
+        let mut h = sha2::Sha256::new();
+        h.update(s.as_bytes());
+        let hash = h.finalize();
+        u16::from_le_bytes([hash[0], hash[1]]) % 11172
+    }
+    let origin_v = hash_str(origin);
+    let creator_v = hash_str(creator);
     let mut coords = [Coord::new(0).unwrap(); 19];
     coords[0] = mk(time_hi);
     coords[1] = mk(time_lo);
@@ -111,23 +111,31 @@ fn record_to_path(
     coords[3] = mk(origin_v);
     coords[4] = mk(creator_v);
     coords[5] = mk(status);
-    for i in 6..19 {
-        let idx = id_bytes.get((i - 6) * 2).copied().unwrap_or(0) as u16
-            | (id_bytes.get((i - 6) * 2 + 1).copied().unwrap_or(0) as u16) << 8;
-        coords[i] = mk(idx);
+    // [6-11]: identity from CoordId<6> coordinates directly
+    let cid: CoordId = CoordId::from_string(id_str);
+    let cid_coords = cid.0.coords();
+    for i in 0..6 {
+        coords[6 + i] = cid_coords[i];
+    }
+    // [12-18]: zero padding
+    let zero = Coord::new(0).unwrap();
+    for i in 12..19 {
+        coords[i] = zero;
     }
     CoordPath::new(coords)
 }
 
-/// Extract id string from CoordPath<19> identity coords [6..18].
+/// Extract id string from CoordPath<19> identity coords [6..11] (CoordId<6> coordinates).
 fn path_to_id_str(path: &tagma_core::CoordPath<19>) -> String {
-    let mut bytes = Vec::with_capacity(26);
-    for i in 6..19 {
-        let idx = path.coords()[i].index();
-        bytes.push((idx & 0xff) as u8);
-        bytes.push(((idx >> 8) & 0xff) as u8);
+    use tagma_core::{Coord, CoordPath};
+    let mut coords = [Coord::new(0).unwrap(); 6];
+    for i in 0..6 {
+        coords[i] = path.coords()[6 + i];
     }
-    String::from_utf8_lossy(&bytes).into_owned()
+    let cp = CoordPath::new(coords);
+    // Convert CoordPath<6> to CoordId (same representation)
+    let cid = CoordId::<6>(cp);
+    cid.to_string()
 }
 
 /// Unified FIH storage backended by an abstract IO layer.

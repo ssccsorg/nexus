@@ -22,7 +22,7 @@ use sha2::{Digest, Sha256};
 use nex::FileIo;
 use nex::storage::core::intent_status::IntentStatus;
 use nex::storage::core::record::ContentMeta;
-use nex::storage::core::store::{FihStorage, Record};
+use nex::storage::core::store::{FihStorage, Record, record_to_path};
 use nex_fih::{Content, CoordId, FihHash};
 use nexus_storage_sim::SimIo;
 
@@ -30,9 +30,6 @@ use crate::hint::Constraint;
 use crate::ops::OpType;
 
 const NUMBER_MIME: &str = "application/x-nex-calc-number";
-/// Coord path depth for the unified store (must match STORE_DEPTH in store.rs).
-const STORE_DEPTH: usize = 19;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CalcError {
     FactNotFound(String),
@@ -125,7 +122,7 @@ impl CalcEngine {
             submitted_at: 0,
         };
 
-        let path = make_record_path(0u16, "nex-calc", "user", 0u16, &id_str, 0);
+        let path = record_to_path(0u16, "nex-calc", "user", 0u16, &id_str, 0);
         self.storage.store.borrow_mut().place_path(&path, record);
         id
     }
@@ -186,7 +183,7 @@ impl CalcEngine {
             created_at: now,
         };
 
-        let path = make_record_path(1u16, "", "user", 0u16, &id_str, now);
+        let path = record_to_path(1u16, "", "user", 0u16, &id_str, now);
         self.storage.store.borrow_mut().place_path(&path, record);
         Ok(id)
     }
@@ -264,14 +261,12 @@ impl CalcEngine {
                 creator: "nex-calc".into(),
                 submitted_at: 0,
             };
-            let path = make_record_path(
-                0u16,
-                &format!("nex-calc:resolve:{}", intent_id),
-                "nex-calc",
-                0u16,
-                &result_id_str,
-                0,
-            );
+            // Extract origin/creator from Record::Fact variant
+            let (fact_origin, fact_creator) = match &rec {
+                Record::Fact { origin, creator, .. } => (origin.clone(), creator.clone()),
+                _ => unreachable!(),
+            };
+            let path = record_to_path(0u16, &fact_origin, &fact_creator, 0u16, &result_id_str, 0);
             self.storage.store.borrow_mut().place_path(&path, rec);
         }
 
@@ -289,10 +284,10 @@ impl CalcEngine {
             worker: "nex-calc".into(),
         };
         // Remove old entry.
-        let old_path = make_record_path(1u16, "", "user", old_status_coord, &id_str, created_at);
+        let old_path = record_to_path(1u16, "", "user", old_status_coord, &id_str, created_at * 1_000_000_000);
         self.storage.store.borrow_mut().vacate_path(&old_path);
         // Insert new entry.
-        let new_path = make_record_path(1u16, "", "user", 2u16, &id_str, created_at);
+        let new_path = record_to_path(1u16, "", "user", 2u16, &id_str, created_at * 1_000_000_000);
         let new_record = Record::Intent {
             from_facts,
             description_hash,
@@ -328,7 +323,7 @@ impl CalcEngine {
                 creator: "user".into(),
                 submitted_at: now,
             };
-            let path = make_record_path(2u16, "", "user", 0u16, &id_str, now * 1_000_000_000);
+            let path = record_to_path(2u16, "", "user", 0u16, &id_str, now * 1_000_000_000);
             self.storage.store.borrow_mut().place_path(&path, record);
         }
         id
@@ -459,54 +454,7 @@ impl Default for CalcEngine {
 /// Build a CoordPath<19> matching the convention in store.rs:
 ///   [0] time_hi, [1] time_lo, [2] entity, [3] origin, [4] creator,
 ///   [5] status, [6-18] identity.
-fn make_record_path(
-    entity_type: u16,
-    origin: &str,
-    creator: &str,
-    status: u16,
-    id: &str,
-    timestamp_ns: u64,
-) -> tagma_core::CoordPath<STORE_DEPTH> {
-    use tagma_core::{Coord, CoordPath};
 
-    fn val(v: u16) -> Coord {
-        Coord::new(v % 11172).expect("coord in range")
-    }
-
-    let mut coords = [Coord::new(0).unwrap(); STORE_DEPTH];
-
-    let days = (timestamp_ns / 86_400_000_000_000) as u16;
-    let secs = (timestamp_ns % 86_400_000_000_000 / 1_000_000_000) as u16;
-    coords[0] = val(days);
-    coords[1] = val(secs);
-    coords[2] = val(entity_type);
-    coords[3] = hash_str_to_coord(origin);
-    coords[4] = hash_str_to_coord(creator);
-    coords[5] = val(status);
-
-    // [6-11]: identity from CoordId<6> coordinates directly.
-    let cid: CoordId = CoordId::from_string(id);
-    let cid_coords: &[tagma_core::Coord; 6] = cid.0.coords();
-    for i in 0..6 {
-        coords[6 + i] = cid_coords[i];
-    }
-    // [12-18]: zero padding.
-    let zero = Coord::new(0).unwrap();
-    for i in 12..STORE_DEPTH {
-        coords[i] = zero;
-    }
-
-    CoordPath::new(coords)
-}
-
-fn hash_str_to_coord(s: &str) -> tagma_core::Coord {
-    use tagma_core::Coord;
-    let mut h = Sha256::new();
-    h.update(s.as_bytes());
-    let hash = h.finalize();
-    Coord::new(u16::from_le_bytes([hash[0], hash[1]]) % 11172)
-        .expect("hash coord in range")
-}
 
 // ── Blob IO ───────────────────────────────────────────────────────
 

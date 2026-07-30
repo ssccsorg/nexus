@@ -264,13 +264,13 @@ fn build_knowledge_base() -> FihStorage<SimIo> {
             (i / 2000) as u16,     // [0] time: every 2000 docs = 1 time bucket
             (i % 2000) as u16,      // [1] sequence within bucket
             0,                      // [2] entity: Fact
-            (i / 10000) as u16,     // [3] origin: project (0..9)
+            (i % 10) as u16,        // [3] origin: project (0..9)
             ((i / 1000) % 20) as u16, // [4] creator: author (0..19)
             i as u16,               // [5] serial
         ).unwrap();
         let fact = Fact::new(
             cid,
-            format!("project-{}", i / 10000),
+            format!("project-{}", i % 10),
             format!("Document {}: research content about paradigm shift", i).into(),
             format!("author-{}", (i / 1000) % 20),
         );
@@ -284,7 +284,7 @@ fn build_knowledge_base() -> FihStorage<SimIo> {
             (fact_idx / 2000) as u16,
             (fact_idx % 2000) as u16,
             0,
-            (fact_idx / 10000) as u16,
+            (fact_idx % 10) as u16,
             ((fact_idx / 1000) % 20) as u16,
             fact_idx as u16,
         ).unwrap();
