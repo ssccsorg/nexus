@@ -122,7 +122,7 @@ impl CalcEngine {
             submitted_at: 0,
         };
 
-        let path = record_to_path(0u16, "nex-calc", "user", 0u16, &id_str, 0);
+        let path = record_to_path(0u16, "nex-calc", "user", 0u16, &id_str, 0, &content_hash);
         self.storage.store.borrow_mut().place_path(&path, record);
         id
     }
@@ -183,7 +183,7 @@ impl CalcEngine {
             created_at: now,
         };
 
-        let path = record_to_path(1u16, "", "user", 0u16, &id_str, now);
+        let path = record_to_path(1u16, "", "user", 0u16, &id_str, now, &FihHash([0u8; 32]));
         self.storage.store.borrow_mut().place_path(&path, record);
         Ok(id)
     }
@@ -268,7 +268,15 @@ impl CalcEngine {
                 } => (origin.clone(), creator.clone()),
                 _ => unreachable!(),
             };
-            let path = record_to_path(0u16, &fact_origin, &fact_creator, 0u16, &result_id_str, 0);
+            let path = record_to_path(
+                0u16,
+                &fact_origin,
+                &fact_creator,
+                0u16,
+                &result_id_str,
+                0,
+                &content_hash,
+            );
             self.storage.store.borrow_mut().place_path(&path, rec);
         }
 
@@ -286,10 +294,26 @@ impl CalcEngine {
             worker: "nex-calc".into(),
         };
         // Remove old entry.
-        let old_path = record_to_path(1u16, "", "user", old_status_coord, &id_str, created_at);
+        let old_path = record_to_path(
+            1u16,
+            "",
+            "user",
+            old_status_coord,
+            &id_str,
+            created_at,
+            &FihHash([0u8; 32]),
+        );
         self.storage.store.borrow_mut().vacate_path(&old_path);
         // Insert new entry.
-        let new_path = record_to_path(1u16, "", "user", 2u16, &id_str, created_at);
+        let new_path = record_to_path(
+            1u16,
+            "",
+            "user",
+            2u16,
+            &id_str,
+            created_at,
+            &FihHash([0u8; 32]),
+        );
         let new_record = Record::Intent {
             from_facts,
             description_hash,
@@ -328,7 +352,15 @@ impl CalcEngine {
                 creator: "user".into(),
                 submitted_at: now,
             };
-            let path = record_to_path(2u16, "", "user", 0u16, &id_str, now * 1_000_000_000);
+            let path = record_to_path(
+                2u16,
+                "",
+                "user",
+                0u16,
+                &id_str,
+                now * 1_000_000_000,
+                &FihHash([0u8; 32]),
+            );
             self.storage.store.borrow_mut().place_path(&path, record);
         }
         id

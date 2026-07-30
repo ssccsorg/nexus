@@ -86,7 +86,25 @@ pub enum Record {
     },
 }
 
+/// Encode up to 112 bits of a FihHash into 7 contiguous Coord axes.
+///
+/// Each axis holds log₂(11172) ≈ 13.45 bits. 7 axes × 13.45 ≈ 94 effective bits.
+/// Uses bytes [0..14) of the hash (112 bits), paired into 7 u16 values,
+/// each reduced modulo 11172. Zero hash (all bytes 0) keeps axes at zero.
+fn encode_hash_into_axes(hash: &FihHash, axes: &mut [tagma_core::Coord; 7]) {
+    for (i, axis) in axes.iter_mut().enumerate() {
+        let lo = hash.0.get(i * 2).copied().unwrap_or(0) as u16;
+        let hi = hash.0.get(i * 2 + 1).copied().unwrap_or(0) as u16;
+        let idx = (u16::from_le_bytes([lo as u8, hi as u8])) % 11172;
+        *axis = tagma_core::Coord::new(idx).unwrap_or_else(|| tagma_core::Coord::new(0).unwrap());
+    }
+}
+
 /// Build a CoordPath<19> from entity fields (for unified Record store).
+///
+/// `content_hash` is encoded into axes [12-18] (94 effective bits of content
+/// addressing). Pass `&FihHash([0u8; 32])` for Intent/Hint records that have
+/// no content hash.
 pub fn record_to_path(
     entity: u16,
     origin: &str,
@@ -94,6 +112,7 @@ pub fn record_to_path(
     status: u16,
     id_str: &str,
     ts_ns: u64,
+    content_hash: &FihHash,
 ) -> tagma_core::CoordPath<19> {
     use tagma_core::{Coord, CoordPath};
     let mk = |v: u16| Coord::new(v % 11172).unwrap();
@@ -120,9 +139,10 @@ pub fn record_to_path(
     let cid: CoordId = CoordId::from_string(id_str);
     let cid_coords: &[tagma_core::Coord; 6] = cid.0.coords();
     coords[6..12].copy_from_slice(&cid_coords[..6]);
-    // [12-18]: zero padding
-    let zero = Coord::new(0).unwrap();
-    coords[12..19].fill(zero);
+    // [12-18]: content hash fingerprint (94 effective bits)
+    let mut hash_axes = [Coord::new(0).unwrap(); 7];
+    encode_hash_into_axes(content_hash, &mut hash_axes);
+    coords[12..19].copy_from_slice(&hash_axes);
     CoordPath::new(coords)
 }
 
