@@ -387,7 +387,7 @@ impl CalcEngine {
         let ids = self.storage.all_hint_ids();
         let mut out = Vec::with_capacity(ids.len());
         for id_str in ids {
-            if let Some((content, _)) = self.storage.get_hint_by_id(&id_str) {
+            if let Some((content, _, _)) = self.storage.get_hint_by_id(&id_str) {
                 out.push((CoordId::from_string(&id_str), content));
             }
         }
@@ -415,7 +415,7 @@ impl CalcEngine {
 
     async fn apply_operand_transforms(&self, mut lhs: i64, mut rhs: i64) -> (i64, i64) {
         for id_str in self.storage.all_hint_ids() {
-            if let Some((content, _)) = self.storage.get_hint_by_id(&id_str) {
+            if let Some((content, _, _)) = self.storage.get_hint_by_id(&id_str) {
                 let c = match Constraint::parse_str(&content) {
                     Some(c) => c,
                     None => continue,
@@ -430,7 +430,7 @@ impl CalcEngine {
 
     async fn check_constraints(&self, result: i64) -> Result<(), CalcError> {
         for id_str in self.storage.all_hint_ids() {
-            if let Some((content, _)) = self.storage.get_hint_by_id(&id_str) {
+            if let Some((content, _, _)) = self.storage.get_hint_by_id(&id_str) {
                 let c = match Constraint::parse_str(&content) {
                     Some(c) => c,
                     None => continue,

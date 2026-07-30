@@ -62,6 +62,74 @@ pub struct ChainEntry {
     pub intents: Vec<IntentRecord>,
 }
 
+/// Unified in-memory record enum for single CoordSpaceN<19> store.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub enum Record {
+    Fact {
+        content: Content,
+        content_hash: FihHash,
+        origin: String,
+        creator: String,
+        submitted_at: u64,
+    },
+    Intent {
+        from_facts: Vec<String>,
+        description_hash: String,
+        creator: String,
+        status: IntentStatus,
+        created_at: u64,
+    },
+    Hint {
+        content: String,
+        creator: String,
+        submitted_at: u64,
+    },
+}
+
+/// Deterministic string to u16 coordinate (first 2 bytes, mod 11172).
+fn str_to_coord_val(s: &str) -> u16 {
+    let b = s.as_bytes();
+    let v = u16::from_le_bytes([b.first().copied().unwrap_or(0), b.get(1).copied().unwrap_or(0)]);
+    v % 11172
+}
+
+/// Build a CoordPath<19> from entity fields (for unified Record store).
+fn record_to_path(
+    entity: u16, origin: &str, creator: &str, status: u16, id_str: &str, ts_ns: u64,
+) -> tagma_core::CoordPath<19> {
+    use tagma_core::{Coord, CoordPath};
+    let mk = |v: u16| Coord::new(v % 11172).unwrap();
+    let time_hi = (ts_ns / 86_400_000_000_000) as u16;
+    let time_lo = (ts_ns % 86_400_000_000_000) as u16;
+    let origin_v = str_to_coord_val(origin);
+    let creator_v = str_to_coord_val(creator);
+    let id_bytes = id_str.as_bytes();
+    let mut coords = [Coord::new(0).unwrap(); 19];
+    coords[0] = mk(time_hi);
+    coords[1] = mk(time_lo);
+    coords[2] = mk(entity);
+    coords[3] = mk(origin_v);
+    coords[4] = mk(creator_v);
+    coords[5] = mk(status);
+    for i in 6..19 {
+        let idx = id_bytes.get((i - 6) * 2).copied().unwrap_or(0) as u16
+            | (id_bytes.get((i - 6) * 2 + 1).copied().unwrap_or(0) as u16) << 8;
+        coords[i] = mk(idx);
+    }
+    CoordPath::new(coords)
+}
+
+/// Extract id string from CoordPath<19> identity coords [6..18].
+fn path_to_id_str(path: &tagma_core::CoordPath<19>) -> String {
+    let mut bytes = Vec::with_capacity(26);
+    for i in 6..19 {
+        let idx = path.coords()[i].index();
+        bytes.push((idx & 0xff) as u8);
+        bytes.push(((idx >> 8) & 0xff) as u8);
+    }
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
 /// Unified FIH storage backended by an abstract IO layer.
 ///
 /// All FIH trait methods are sync. They enqueue WriteOps into a buffer
@@ -79,7 +147,10 @@ pub struct FihStorage<I: FileIo> {
     pub fact_store: CoordEntityStore<6, FactRecord>,
     pub intent_store: CoordEntityStore<6, IntentRecord>,
     pub hint_store: CoordEntityStore<6, HintRecord>,
+    pub store: Cell2<tagma_core::CoordSpaceN<19, Record>>,
     pub fact_records: Cell2<HashMap<String, FactRecord>>,
+    pub intent_records: Cell2<HashMap<String, IntentRecord>>,
+    pub hint_records: Cell2<HashMap<String, HintRecord>>,
     pub facts_by_creator: Cell2<HashMap<String, Vec<String>>>,
     pub facts_by_origin: Cell2<HashMap<String, Vec<String>>>,
     // Semantic stores (for similarity search).
@@ -124,7 +195,10 @@ impl<I: FileIo> FihStorage<I> {
             fact_store: CoordEntityStore::<6, FactRecord>::new(),
             intent_store: CoordEntityStore::<6, IntentRecord>::new(),
             hint_store: CoordEntityStore::<6, HintRecord>::new(),
+            store: Cell2::new(tagma_core::CoordSpaceN::new()),
             fact_records: Cell2::new(HashMap::new()),
+            intent_records: Cell2::new(HashMap::new()),
+            hint_records: Cell2::new(HashMap::new()),
             facts_by_creator: Cell2::new(HashMap::new()),
             facts_by_origin: Cell2::new(HashMap::new()),
             semantic_stores: Cell2::new(Vec::new()),
@@ -148,7 +222,10 @@ impl<I: FileIo> FihStorage<I> {
             fact_store: CoordEntityStore::<6, FactRecord>::new(),
             intent_store: CoordEntityStore::<6, IntentRecord>::new(),
             hint_store: CoordEntityStore::<6, HintRecord>::new(),
+            store: Cell2::new(tagma_core::CoordSpaceN::new()),
             fact_records: Cell2::new(HashMap::new()),
+            intent_records: Cell2::new(HashMap::new()),
+            hint_records: Cell2::new(HashMap::new()),
             facts_by_creator: Cell2::new(HashMap::new()),
             facts_by_origin: Cell2::new(HashMap::new()),
             semantic_stores: Cell2::new(Vec::new()),
@@ -333,6 +410,90 @@ impl<I: FileIo> FihStorage<I> {
             .get(idx as usize)
             .map(|r| r.id.clone())
             .unwrap_or_default()
+    }
+
+    /// Check if a fact with the given ID exists (uses unified store).
+    pub fn fact_exists(&self, id: &str) -> bool {
+        self.store.borrow().iter_tree().any(|(path, rec)| {
+            matches!(rec, Record::Fact { .. }) && path_to_id_str(&path) == id
+        })
+    }
+
+    /// Check if an intent with the given ID exists (uses unified store).
+    pub fn intent_exists(&self, id: &str) -> bool {
+        self.store.borrow().iter_tree().any(|(path, rec)| {
+            matches!(rec, Record::Intent { .. }) && path_to_id_str(&path) == id
+        })
+    }
+
+    /// Check if a hint with the given ID exists (uses unified store).
+    pub fn hint_exists(&self, id: &str) -> bool {
+        self.store.borrow().iter_tree().any(|(path, rec)| {
+            matches!(rec, Record::Hint { .. }) && path_to_id_str(&path) == id
+        })
+    }
+
+    /// Returns all fact IDs (from unified store).
+    pub fn all_fact_ids(&self) -> Vec<String> {
+        self.store.borrow().iter_tree().filter_map(|(path, rec)| {
+            if matches!(rec, Record::Fact { .. }) {
+                Some(path_to_id_str(&path))
+            } else { None }
+        }).collect()
+    }
+
+    /// Returns all intent IDs (from unified store).
+    pub fn all_intent_ids(&self) -> Vec<String> {
+        self.store.borrow().iter_tree().filter_map(|(path, rec)| {
+            if matches!(rec, Record::Intent { .. }) {
+                Some(path_to_id_str(&path))
+            } else { None }
+        }).collect()
+    }
+
+    /// Returns all hint IDs (from unified store).
+    pub fn all_hint_ids(&self) -> Vec<String> {
+        self.store.borrow().iter_tree().filter_map(|(path, rec)| {
+            if matches!(rec, Record::Hint { .. }) {
+                Some(path_to_id_str(&path))
+            } else { None }
+        }).collect()
+    }
+
+    /// Get a fact by its ID (from unified store).
+    pub fn get_fact_by_id(&self, id: &str) -> Option<(Content, FihHash, String, String)> {
+        for (_path, rec) in self.store.borrow().iter_tree() {
+            if let Record::Fact { content, content_hash, origin, creator, .. } = rec {
+                if path_to_id_str(&_path) == id {
+                    return Some((content.clone(), *content_hash, origin.clone(), creator.clone()));
+                }
+            }
+        }
+        None
+    }
+
+    /// Get an intent by its ID (from unified store).
+    pub fn get_intent_by_id(&self, id: &str) -> Option<(Vec<String>, String, String, IntentStatus, u64)> {
+        for (_path, rec) in self.store.borrow().iter_tree() {
+            if let Record::Intent { from_facts, description_hash, creator, status, created_at } = rec {
+                if path_to_id_str(&_path) == id {
+                    return Some((from_facts.clone(), description_hash.clone(), creator.clone(), status.clone(), *created_at));
+                }
+            }
+        }
+        None
+    }
+
+    /// Get a hint by its ID (from unified store).
+    pub fn get_hint_by_id(&self, id: &str) -> Option<(String, String, u64)> {
+        for (_path, rec) in self.store.borrow().iter_tree() {
+            if let Record::Hint { content, creator, submitted_at } = rec {
+                if path_to_id_str(&_path) == id {
+                    return Some((content.clone(), creator.clone(), *submitted_at));
+                }
+            }
+        }
+        None
     }
 
     /// Enqueue content as a blob write. FIH is append-only: no dedup
@@ -606,7 +767,19 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
 
         // Update in-memory cache immediately for subsequent reads
         self.fact_store.insert(record.id.clone(), record.clone()).await;
-        self.fact_records.borrow_mut().insert(record.id.clone(), record);
+        self.fact_records.borrow_mut().insert(record.id.clone(), record.clone());
+        // Write to unified CoordSpaceN<19, Record> store (for iter_prefix queries)
+        {
+            let mut store = self.store.borrow_mut();
+            let path = record_to_path(0, &fact.origin, &fact.creator, 0, &record.id, record.submitted_at);
+            store.place_path(&path, Record::Fact {
+                content: fact.content.clone(),
+                content_hash: fact.content_hash,
+                origin: fact.origin.clone(),
+                creator: fact.creator.clone(),
+                submitted_at: record.submitted_at,
+            });
+        }
         self.facts_by_creator.borrow_mut().entry(fact.creator.clone()).or_default().push(fact.id.to_string());
         self.facts_by_origin.borrow_mut().entry(fact.origin.clone()).or_default().push(fact.id.to_string());
         self.pending.borrow_mut().push(op);
@@ -657,7 +830,8 @@ impl<I: FileIo> crate::AsyncHintCapable for FihStorage<I> {
             path: record.key(),
             data: bytes,
         };
-        self.hint_store.insert(record.id.clone(), record).await;
+        self.hint_store.insert(record.id.clone(), record.clone()).await;
+        self.hint_records.borrow_mut().insert(record.id.clone(), record);
         self.pending.borrow_mut().push(op);
         Ok(())
     }
@@ -718,7 +892,8 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             data: bytes,
         };
 
-        self.intent_store.insert(record.id.clone(), record).await;
+        self.intent_store.insert(record.id.clone(), record.clone()).await;
+        self.intent_records.borrow_mut().insert(record.id.clone(), record);
         self.pending.borrow_mut().push(op);
         Ok(intent.id)
     }

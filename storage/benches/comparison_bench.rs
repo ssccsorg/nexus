@@ -42,6 +42,7 @@ fn baseline_concentrated_10k() {
     let t = Instant::now();
     for _ in 0..5 {
         let state = block_on(store.read_state_filtered(&StateFilter {
+            axis_hints: None,
             creator: Some("creator-5".into()),
             ..Default::default()
         }));
@@ -85,6 +86,7 @@ fn proper_distribution_10k() {
     let t = Instant::now();
     for _ in 0..5 {
         let state = block_on(store.read_state_filtered(&StateFilter {
+            axis_hints: None,
             creator: Some("creator-5".into()),
             ..Default::default()
         }));

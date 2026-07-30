@@ -26,6 +26,7 @@ fn test_since_returns_newer_only() {
     assert_eq!(state.facts.len(), 2);
 
     let filtered = futures_executor::block_on(store.read_state_filtered(&StateFilter {
+            axis_hints: None,
         since: Some("1500000000".into()),
         ..Default::default()
     }));
@@ -41,6 +42,7 @@ fn test_until_as_of_time_travel() {
     futures_executor::block_on(store.submit_fact(&common::fact("f_c"))).unwrap();
 
     let filtered = futures_executor::block_on(store.read_state_filtered(&StateFilter {
+            axis_hints: None,
         fact_ids: None,
         intent_ids: None,
         hint_ids: None,
@@ -64,6 +66,7 @@ fn test_range_returns_mid_only() {
     futures_executor::block_on(store.submit_fact(&common::fact("f_c"))).unwrap();
 
     let filtered = futures_executor::block_on(store.read_state_filtered(&StateFilter {
+            axis_hints: None,
         fact_ids: None,
         intent_ids: None,
         hint_ids: None,
@@ -84,6 +87,7 @@ fn test_since_after_all_returns_empty() {
     let store = make_clocked();
     futures_executor::block_on(store.submit_fact(&common::fact("f_a"))).unwrap();
     let filtered = futures_executor::block_on(store.read_state_filtered(&StateFilter {
+            axis_hints: None,
         since: Some("7000000000".into()),
         ..Default::default()
     }));
@@ -95,6 +99,7 @@ fn test_until_before_all_returns_empty() {
     let store = make_clocked();
     futures_executor::block_on(store.submit_fact(&common::fact("f_a"))).unwrap();
     let filtered = futures_executor::block_on(store.read_state_filtered(&StateFilter {
+            axis_hints: None,
         fact_ids: None,
         intent_ids: None,
         hint_ids: None,
@@ -116,6 +121,7 @@ fn test_fact_ids_filter_independent_of_time() {
     futures_executor::block_on(store.submit_fact(&common::fact("f_b"))).unwrap();
 
     let filtered = futures_executor::block_on(store.read_state_filtered(&StateFilter {
+            axis_hints: None,
         fact_ids: Some(vec!["f_a".into()]),
         intent_ids: None,
         hint_ids: None,

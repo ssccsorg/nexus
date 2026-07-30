@@ -162,6 +162,7 @@ fn test_time_travel_consistency() {
     // Time-travel to t=1_500_000_000: Fact (submitted_at=1G) included,
     // Intent (created_at=2G) excluded because 2G > 1.5G.
     let past = block_on(store.read_state_filtered(&StateFilter {
+            axis_hints: None,
         until: Some("1500000000".to_string()),
         ..Default::default()
     }));

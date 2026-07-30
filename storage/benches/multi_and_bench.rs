@@ -24,6 +24,7 @@ fn new_pure_and_scaling() {
     println!("═══ NEW Pure HashMap AND (50K entries) ═══");
     let t = Instant::now();
     for _ in 0..10 { block_on(store.read_state_filtered(&StateFilter {
+            axis_hints: None,
         creator: Some("creator-7".into()), ..Default::default()
     })); }
     let t1 = t.elapsed();
@@ -31,6 +32,7 @@ fn new_pure_and_scaling() {
 
     let t = Instant::now();
     for _ in 0..10 { block_on(store.read_state_filtered(&StateFilter {
+            axis_hints: None,
         creator: Some("creator-7".into()), origin: Some("origin-7".into()), ..Default::default()
     })); }
     let t2 = t.elapsed();
