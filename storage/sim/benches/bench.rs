@@ -45,16 +45,6 @@ fn raw_iter_prefix_vs_full_scan() {
     let full = t.elapsed();
 
     let t = Instant::now();
-    let mut n = 0u32;
-    for (_p, _v) in space.iter_tree() {
-        if _p.coords()[3].index() == 7 && _p.coords()[4].index() == 7 {
-            n += 1;
-        }
-    }
-    let scan = t.elapsed();
-
-    let t = Instant::now();
-    n = 0;
     for th in 0..5u16 {
         for tl in 0..100u16 {
             if let Some(iter) = space.iter_prefix(&[
@@ -64,20 +54,15 @@ fn raw_iter_prefix_vs_full_scan() {
                 Coord::new(7).unwrap(),
                 Coord::new(7).unwrap(),
             ]) {
-                for (_p, _v) in iter {
-                    n += 1;
-                }
+                for (_p, _v) in iter {}
             }
         }
     }
     let prefix = t.elapsed();
 
     println!(
-        "[RAW] full={:?} scan={:?} prefix={:?} ({:.0}x vs scan)",
-        full,
-        scan,
-        prefix,
-        scan.as_nanos() as f64 / prefix.as_nanos().max(1) as f64
+        "[RAW] full={:?} prefix={:?} (iter_prefix, 5×100 prefixes)",
+        full, prefix,
     );
 }
 
@@ -294,7 +279,7 @@ fn coord_space_type_cmp() {
         );
     }
     let t = Instant::now();
-    for (i, a) in axes.iter().enumerate() {
+    for a in axes.iter() {
         let _ = csn.at_path(&CoordPath::new([
             Coord::new(a[0]).unwrap(),
             Coord::new(a[1]).unwrap(),
@@ -323,7 +308,7 @@ fn coord_space_type_cmp() {
         cs2.place_path(&pack(a), i as u64);
     }
     let t = Instant::now();
-    for (i, a) in axes.iter().enumerate() {
+    for a in axes.iter() {
         let _ = cs2.at_path(&pack(a));
     }
     let cs2_read = t.elapsed();
