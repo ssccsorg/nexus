@@ -767,7 +767,7 @@ fn scenario_fihstorage_e2e_auto_index() {
         storage.register_semantic_store(Box::new(MockBm25Store::new()));
 
         // Submit a fact with meaningful text content (async path)
-        let fact = Fact::new(
+        let fact = Fact::with_id(
             CoordId::from_string("f_e2e_001"),
             "e2e-test".into(),
             Content {
@@ -801,7 +801,7 @@ fn scenario_fihstorage_e2e_auto_index() {
         );
 
         // Submit a conclusion fact — should NOT be auto-indexed (origin starts with "conclusion:")
-        let conclusion = Fact::new(
+        let conclusion = Fact::with_id(
             CoordId::from_string("f_e2e_concl"),
             "conclusion:i_e2e".into(),
             Content {

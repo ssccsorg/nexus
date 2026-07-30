@@ -18,7 +18,7 @@ fn scenario_contradiction_detection() {
     let bb = FihBlackboard::new(SimIo::new(), "test");
 
     // Agent-A: ingests paper claiming GNNs work fine at 50 layers
-    bb.submit_fact(&Fact::new(
+    bb.submit_fact(&Fact::with_id(
         CoordId::from_string("f_gnn_deep"),
         "paper_iclr_2024".into(),
         "Residual GNNs maintain accuracy at 50 layers with skip connections".into(),
@@ -27,7 +27,7 @@ fn scenario_contradiction_detection() {
     .unwrap();
 
     // Agent-B: ingests paper claiming GNNs oversmooth at 6 layers
-    bb.submit_fact(&Fact::new(
+    bb.submit_fact(&Fact::with_id(
         CoordId::from_string("f_gnn_shallow"),
         "paper_neurips_2023".into(),
         "Message-passing GNNs oversmooth beyond 6 layers without normalization".into(),
@@ -94,7 +94,7 @@ fn scenario_peer_review() {
         concluded_at: None,
     };
     // Need a grounding fact first
-    bb.submit_fact(&Fact::new(
+    bb.submit_fact(&Fact::with_id(
         CoordId::from_string("f_background"),
         "background".into(),
         "Surface codes are the leading QEC candidate".into(),
@@ -172,7 +172,7 @@ fn scenario_knowledge_synthesis() {
         ),
     ];
     for (id, creator, content) in &pieces {
-        bb.submit_fact(&Fact::new(
+        bb.submit_fact(&Fact::with_id(
             CoordId::from_string(id),
             "experiment".into(),
             (*content).into(),
@@ -186,7 +186,7 @@ fn scenario_knowledge_synthesis() {
     assert_eq!(state.facts.len(), 3);
 
     // Agent-D recognizes the pattern: cold + high rate = lithium plating
-    bb.submit_fact(&Fact::new(
+    bb.submit_fact(&Fact::with_id(
         CoordId::from_string("f_synthesis"),
         "synthesis".into(),
         "SYNTHESIS: Low temperature (-10°C) increases electrolyte viscosity, reducing ion mobility. High discharge rate (2C) generates heat (15°C rise). Combined high charge rate (>1C) below 0°C causes anode lithium plating. Solution: preheat battery to 10°C before fast charging in cold environments.".into(),
@@ -259,7 +259,7 @@ fn scenario_emergency_response() {
         ),
     ];
     for (id, creator, content) in &alerts {
-        bb.submit_fact(&Fact::new(
+        bb.submit_fact(&Fact::with_id(
             CoordId::from_string(id),
             "sensor".into(),
             (*content).into(),
@@ -345,7 +345,7 @@ fn scenario_bug_fix_pipeline() {
     let bb = FihBlackboard::new(SimIo::new(), "test");
 
     // Reporter submits the bug as a Fact
-    bb.submit_fact(&Fact::new(
+    bb.submit_fact(&Fact::with_id(
         CoordId::from_string("f_bug_1337"),
         "production".into(),
         "CRITICAL: Payment API returns 500 for amounts > $10,000 since deploy v2.3.1 at 2026-06-15T14:32Z. Affects 12% of enterprise transactions.".into(),
@@ -455,7 +455,7 @@ fn scenario_ci_failure_investigation() {
     let bb = FihBlackboard::new(SimIo::new(), "test");
 
     // CI system reports build failure
-    bb.submit_fact(&Fact::new(
+    bb.submit_fact(&Fact::with_id(
         CoordId::from_string("f_build_404"),
         "ci".into(),
         "BUILD FAILED: main branch, commit a1b2c3d, pipeline #8421. 23 test failures, 5 compile errors, 3 dependency warnings.".into(),
@@ -463,7 +463,7 @@ fn scenario_ci_failure_investigation() {
     )).unwrap();
 
     // Agent-A investigates compile errors
-    bb.submit_fact(&Fact::new(
+    bb.submit_fact(&Fact::with_id(
         CoordId::from_string("f_compile"),
         "investigation".into(),
         "Compile errors: all 5 are in protocol/buffer.rs — 'PacketHeader' struct size mismatch after adding new field. Missing #[repr(C)] attribute.".into(),
@@ -471,7 +471,7 @@ fn scenario_ci_failure_investigation() {
     )).unwrap();
 
     // Agent-B investigates test failures (independently, same time)
-    bb.submit_fact(&Fact::new(
+    bb.submit_fact(&Fact::with_id(
         CoordId::from_string("f_tests"),
         "investigation".into(),
         "Test failures: 23/23 are serialization round-trip tests. All fail with 'buffer size mismatch'. Consistent with struct layout change.".into(),
@@ -479,7 +479,7 @@ fn scenario_ci_failure_investigation() {
     )).unwrap();
 
     // Agent-C checks dependencies
-    bb.submit_fact(&Fact::new(
+    bb.submit_fact(&Fact::with_id(
         CoordId::from_string("f_deps"),
         "investigation".into(),
         "Dependencies: proto-rs v2.4.0 released yesterday — includes automated PacketHeader generator that changed alignment. No API change, but layout differs.".into(),
@@ -536,7 +536,7 @@ fn scenario_supply_chain_incident() {
     let bb = FihBlackboard::new(SimIo::new(), "test");
 
     // Security advisory published (external trigger)
-    bb.submit_fact(&Fact::new(
+    bb.submit_fact(&Fact::with_id(
         CoordId::from_string("f_advisory_GHSA"),
         "github-advisory".into(),
         "CRITICAL: CVE-2026-4413 in openssl-sys v0.9.100 — remote buffer overflow in TLS handshake. CVSS 9.8. Affects all services using TLS.".into(),
@@ -660,7 +660,7 @@ fn scenario_ssccs_primitive_discovery() {
     // ── Phase 1: Agents observe different IRs ─────────────────────────
 
     // Agent-A analyzes memory access patterns in LLVM IR
-    bb.submit_fact(&Fact::new(
+    bb.submit_fact(&Fact::with_id(
         CoordId::from_string("f_memory_pattern"),
         "llvm-ir".into(),
         "OBSERVATION: 73% of loads/stores in hot loops access consecutive addresses (stride=1). 18% show strided access (stride=4/8). 9% are gather/scatter. Spatial locality is the dominant pattern, not random access.".into(),
@@ -668,7 +668,7 @@ fn scenario_ssccs_primitive_discovery() {
     )).unwrap();
 
     // Agent-B analyzes data flow graphs in MLIR
-    bb.submit_fact(&Fact::new(
+    bb.submit_fact(&Fact::with_id(
         CoordId::from_string("f_dataflow_pattern"),
         "mlir".into(),
         "OBSERVATION: Data flow subgraphs show strong temporal locality — 89% of SSA values are used within 12 instructions of definition. Def-use chains form natural clusters: compute kernels, memory fences, control boundaries.".into(),
@@ -676,7 +676,7 @@ fn scenario_ssccs_primitive_discovery() {
     )).unwrap();
 
     // Agent-C analyzes control flow structure (CFG)
-    bb.submit_fact(&Fact::new(
+    bb.submit_fact(&Fact::with_id(
         CoordId::from_string("f_cfg_pattern"),
         "cfg-analysis".into(),
         "OBSERVATION: CFG natural loops have clear entry/exit points. 94% of basic blocks belong to exactly one loop nest. Loop boundaries are stable across optimization passes — they are structural invariants of the computation, not artifacts.".into(),
@@ -704,7 +704,7 @@ fn scenario_ssccs_primitive_discovery() {
     }).unwrap();
 
     // Agent-C notes: all three dimensions converge on the same structural unit
-    bb.submit_fact(&Fact::new(
+    bb.submit_fact(&Fact::with_id(
         CoordId::from_string("f_convergence"),
         "cross-reference".into(),
         "CONVERGENCE: Memory (spatial), data flow (temporal), and control flow (structural) all identify the same atomic unit: a self-contained loop nest with bounded memory access and localized def-use chains. This unit is universal across the three IRs.".into(),

@@ -10,7 +10,7 @@ fn test_sim_fact_submit_and_read() {
     let io = SimIo::new();
     let storage = FihStorage::new(io, "test");
 
-    futures_executor::block_on(storage.submit_fact(&Fact::new(
+    futures_executor::block_on(storage.submit_fact(&Fact::with_id(
         CoordId::from_string("f001"),
         "sim".into(),
         Content::from("hello from sim"),
@@ -28,7 +28,7 @@ fn test_sim_full_lifecycle() {
     let io = SimIo::new();
     let storage = FihStorage::new(io, "test");
 
-    futures_executor::block_on(storage.submit_fact(&Fact::new(
+    futures_executor::block_on(storage.submit_fact(&Fact::with_id(
         CoordId::from_string("f_base"),
         "sim".into(),
         Content::from("base"),
@@ -76,7 +76,7 @@ fn test_session_hydrate_flush() {
     let mut session = FihSession::new(io.clone(), "test");
 
     // Write a fact via storage
-    let fact = Fact::new(
+    let fact = Fact::with_id(
         CoordId::from_string("f001"),
         "test".into(),
         Content {

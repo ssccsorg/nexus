@@ -24,7 +24,7 @@ fn scenario_intermittent_sensor_agent() {
     // Session 1: agent connects, submits a fact, disconnects
     {
         let gw = SerdeProxy::new(&bb);
-        gw.submit_fact(&Fact::new(
+        gw.submit_fact(&Fact::with_id(
             CoordId::from_string("f_temp_001"),
             "sensor-alpha".into(),
             Content {
@@ -52,7 +52,7 @@ fn scenario_intermittent_sensor_agent() {
         assert_eq!(state.facts.len(), 1, "fact persisted across sessions");
         assert_eq!(state.facts[0].origin, "sensor-alpha");
 
-        gw.submit_fact(&Fact::new(
+        gw.submit_fact(&Fact::with_id(
             CoordId::from_string("f_temp_002"),
             "sensor-alpha".into(),
             Content {
@@ -105,7 +105,7 @@ fn scenario_satellite_burst_agent() {
         ),
     ];
     for (id, origin, content) in &readings {
-        gw.submit_fact(&Fact::new(
+        gw.submit_fact(&Fact::with_id(
             CoordId::from_string(&id),
             origin.to_string(),
             Content::from(content.to_string()),
@@ -160,7 +160,7 @@ fn scenario_satellite_burst_agent() {
 fn scenario_browser_agent() {
     let gw = SerdeProxy::new(FihBlackboard::new(SimIo::new(), "test"));
 
-    gw.submit_fact(&Fact::new(
+    gw.submit_fact(&Fact::with_id(
         CoordId::from_string("f_background"),
         "system".into(),
         Content {
@@ -221,7 +221,7 @@ fn scenario_multi_language_agents() {
     // Python agent submits a fact
     {
         let gw = SerdeProxy::new(&bb);
-        gw.submit_fact(&Fact::new(
+        gw.submit_fact(&Fact::with_id(
             CoordId::from_string("f_py_001"),
             "python-etl".into(),
             Content {
@@ -236,7 +236,7 @@ fn scenario_multi_language_agents() {
     // Rust agent submits a fact
     {
         let gw = SerdeProxy::new(&bb);
-        gw.submit_fact(&Fact::new(
+        gw.submit_fact(&Fact::with_id(
             CoordId::from_string("f_rs_001"),
             "rust-analyzer".into(),
             Content {
@@ -318,7 +318,7 @@ fn scenario_multi_language_agents() {
 fn scenario_conflicting_claims() {
     let gw = SerdeProxy::new(FihBlackboard::new(SimIo::new(), "test"));
 
-    gw.submit_fact(&Fact::new(
+    gw.submit_fact(&Fact::with_id(
         CoordId::from_string("f_conflict"),
         "test".into(),
         Content {

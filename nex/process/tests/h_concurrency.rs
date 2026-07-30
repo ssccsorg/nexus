@@ -20,7 +20,7 @@ fn bb() -> SharedBlackboard {
 }
 
 fn fact(id: &str) -> Fact {
-    Fact::new(
+    Fact::with_id(
         CoordId::from_string(&id),
         "test".into(),
         Content {

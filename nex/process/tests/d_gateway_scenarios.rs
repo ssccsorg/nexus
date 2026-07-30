@@ -24,7 +24,7 @@ fn scenario_contradiction_detection_via_gateway() {
     let gw = SerdeProxy::new(FihBlackboard::new(SimIo::new(), "test"));
 
     // Agent-A: ingests paper claiming GNNs work fine at 50 layers
-    gw.submit_fact(&Fact::new(
+    gw.submit_fact(&Fact::with_id(
         CoordId::from_string("f_gnn_deep"),
         "paper_iclr_2024".into(),
         Content::from("Residual GNNs maintain accuracy at 50 layers with skip connections"),
@@ -33,7 +33,7 @@ fn scenario_contradiction_detection_via_gateway() {
     .unwrap();
 
     // Agent-B: ingests paper claiming GNNs oversmooth at 6 layers
-    gw.submit_fact(&Fact::new(
+    gw.submit_fact(&Fact::with_id(
         CoordId::from_string("f_gnn_shallow"),
         "paper_neurips_2023".into(),
         Content::from("Message-passing GNNs oversmooth beyond 6 layers without normalization"),

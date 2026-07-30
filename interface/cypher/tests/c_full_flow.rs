@@ -12,7 +12,7 @@ use nexus_storage_sim::SimIo;
 
 /// Helper: submit a fact with minimal boilerplate.
 fn submit_fact(bb: &impl Blackboard, id: &str, origin: &str, content: &str, creator: &str) {
-    let fact = Fact::new(
+    let fact = Fact::with_id(
         CoordId::from_string(id),
         origin.into(),
         content.into(),

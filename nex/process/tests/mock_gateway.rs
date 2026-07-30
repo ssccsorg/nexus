@@ -6,7 +6,7 @@ use nexus_storage_sim::SimIo;
 #[test]
 fn test_serde_proxy_submit_fact() {
     let gw = SerdeProxy::new(FihBlackboard::new(SimIo::new(), "test"));
-    let fact = Fact::new(
+    let fact = Fact::with_id(
         CoordId::from_string("f_gw_001"),
         "gateway-test".into(),
         "Gateway driver test".into(),

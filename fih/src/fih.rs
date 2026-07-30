@@ -335,12 +335,38 @@ pub struct Fact {
 }
 
 impl Fact {
-    pub fn new(id: CoordId, origin: String, content: Content, creator: String) -> Self {
+    /// Create a content-addressed Fact.
+    ///
+    /// `CoordId` is derived internally from SHA-256(content) + origin + creator,
+    /// making the ID deterministic: same content + origin + creator always
+    /// produces the same CoordId. `content_hash` is computed simultaneously
+    /// so only one SHA-256 pass is needed.
+    pub fn new(origin: String, content: Content, creator: String) -> Self {
         let content_hash = {
             let Content { data, .. } = &content;
-            let bytes = data;
             let mut h = Sha256::new();
-            h.update(bytes);
+            h.update(data);
+            FihHash(h.finalize().into())
+        };
+        let id_seed = format!("{}-{}-{}", origin, creator, content_hash);
+        let id = CoordId::from_string(&id_seed);
+        Fact {
+            id,
+            content_hash,
+            origin,
+            content,
+            creator,
+        }
+    }
+
+    /// Create a Fact with an explicit CoordId (opt out of content-addressed ID).
+    /// Use when the caller needs a specific ID (e.g., for pre-coordinated references
+    /// in tests, or when ID format is dictated by external protocol).
+    pub fn with_id(id: CoordId, origin: String, content: Content, creator: String) -> Self {
+        let content_hash = {
+            let Content { data, .. } = &content;
+            let mut h = Sha256::new();
+            h.update(data);
             FihHash(h.finalize().into())
         };
         Fact {

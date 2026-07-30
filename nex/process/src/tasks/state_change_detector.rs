@@ -10,7 +10,7 @@
 
 use crate::ContentJsonExt;
 use nex_fih::{
-    BoardState, Content, CoordId, DetectionCapable, DetectionCheckpoint, DetectionOutput, Fact,
+    BoardState, Content, DetectionCapable, DetectionCheckpoint, DetectionOutput, Fact,
     StateChangeDetection,
 };
 
@@ -97,7 +97,6 @@ impl DetectionCapable for StateChangeDetector {
         }
 
         output.facts.push(Fact::new(
-            CoordId::from_string(&format!("{}-{}", &triggers.join(","), "state-change")),
             "state-change-detector".into(),
             Content::from_json(&serde_json::json!({
                 "type": "state_change",

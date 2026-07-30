@@ -13,9 +13,7 @@
 
 use super::common::topic_of;
 use crate::ContentJsonExt as _;
-use nex_fih::{
-    BoardState, Content, CoordId, DetectionCapable, DetectionOutput, Fact, GapDetection,
-};
+use nex_fih::{BoardState, Content, DetectionCapable, DetectionOutput, Fact, GapDetection};
 use std::collections::{HashMap, HashSet};
 
 pub struct GapDetector {
@@ -95,7 +93,6 @@ impl DetectionCapable for GapDetector {
                 self.seen_origin.insert(key.clone());
 
                 output.facts.push(Fact::new(
-                    CoordId::from_string(&format!("{}-{}-{}", origin, "gap", "fact")),
                     "gap-detector".into(),
                     Content::from_json(&serde_json::json!({
                         "type": "gap",
@@ -138,10 +135,6 @@ impl DetectionCapable for GapDetector {
                     self.seen_topic.insert(key.clone());
 
                     output.facts.push(Fact::new(
-                        CoordId::from_string(&format!(
-                            "{}-{}-{}-{}",
-                            topic, oa_s, ob_s, "cross-gap"
-                        )),
                         "gap-detector".into(),
                         Content::from_json(&serde_json::json!({
                             "type": "gap",

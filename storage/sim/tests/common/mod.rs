@@ -47,7 +47,7 @@ impl nex_core::Now for FakeClock {
 
 #[allow(dead_code)]
 pub fn fact(id: &str) -> Fact {
-    Fact::new(
+    Fact::with_id(
         CoordId::from_string(id),
         "t".into(),
         Content {

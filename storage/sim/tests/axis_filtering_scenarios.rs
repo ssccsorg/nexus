@@ -63,7 +63,7 @@ fn test_filter_by_creator() {
 
     // Facts with distinct creators encoded in the axis.
     let coord_a = CoordId::from_axes(1, 1, 0, 0, 10, 1).unwrap();
-    let fact_a = Fact::new(
+    let fact_a = Fact::with_id(
         coord_a,
         "origin_0".into(),
         Content {
@@ -75,7 +75,7 @@ fn test_filter_by_creator() {
     block_on(store.submit_fact(&fact_a)).unwrap();
 
     let coord_b = CoordId::from_axes(1, 2, 0, 0, 20, 1).unwrap();
-    let fact_b = Fact::new(
+    let fact_b = Fact::with_id(
         coord_b,
         "origin_0".into(),
         Content {
@@ -226,7 +226,7 @@ fn test_filter_by_origin_and_time() {
     for (id_str, time_hi, time_lo, serial, origin, creator) in &facts {
         let coord = CoordId::from_axes(*time_hi, *time_lo, 0, *time_hi, *time_lo, *serial)
             .expect("valid coord");
-        let fact = Fact::new(
+        let fact = Fact::with_id(
             coord,
             origin.to_string(),
             Content {
@@ -330,7 +330,7 @@ fn test_multi_dimensional_tagma_query() {
                     serial,      // [5] serial (unique)
                 )
                 .unwrap();
-                let fact = Fact::new(
+                let fact = Fact::with_id(
                     coord,
                     format!("origin-{}", origin_idx),
                     format!("content-{}-{}-{}", origin_idx, creator_idx, time_bucket).into(),

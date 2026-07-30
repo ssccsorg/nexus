@@ -57,7 +57,7 @@ fn build_fact_store() -> FihStorage<SimIo> {
             i as u16,
         )
         .unwrap();
-        let fact = Fact::new(
+        let fact = Fact::with_id(
             cid,
             format!("origin-{}", i % N_ORIGINS),
             format!("content-{}", i).into(),
@@ -226,7 +226,7 @@ fn bench_write_throughput(c: &mut Criterion) {
                     let cid =
                         CoordId::from_axes(0, 0, 0, (i % 50) as u16, (i % 20) as u16, i as u16)
                             .unwrap();
-                    let fact = Fact::new(
+                    let fact = Fact::with_id(
                         cid,
                         format!("origin-{}", i % 50),
                         format!("content-{}", i).into(),
@@ -269,7 +269,7 @@ fn build_knowledge_base() -> FihStorage<SimIo> {
             i as u16,                 // [5] serial
         )
         .unwrap();
-        let fact = Fact::new(
+        let fact = Fact::with_id(
             cid,
             format!("project-{}", i % 10),
             format!("Document {}: research content about paradigm shift", i).into(),

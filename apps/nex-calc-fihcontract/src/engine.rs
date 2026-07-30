@@ -121,7 +121,7 @@ impl CalcEngine {
         write_blob_meta(&self.storage.io, &blob_hash, NUMBER_MIME, data.len()).await;
 
         let record = FactRecord::from_model(
-            &nex_fih::Fact::new(
+            &nex_fih::Fact::with_id(
                 id,
                 "nex-calc".into(),
                 Content::from(""),
@@ -275,7 +275,7 @@ impl CalcEngine {
                 .await;
             write_blob_meta(&self.storage.io, &bh, NUMBER_MIME, data.len()).await;
             let rec = FactRecord::from_model(
-                &nex_fih::Fact::new(
+                &nex_fih::Fact::with_id(
                     result_id,
                     format!("nex-calc:resolve:{}", intent_id),
                     Content::from(""),

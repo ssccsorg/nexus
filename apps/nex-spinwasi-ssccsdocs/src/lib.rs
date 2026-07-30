@@ -157,7 +157,7 @@ async fn ingest_document(s: &FihStorage<impl FileIo>, text: &str, origin: &str) 
     let text = text.trim();
     if text.is_empty() { return Err("empty".into()); }
     let doc_id = format!("doc_{}", sanitize_id(origin));
-    let fact = Fact::new(
+    let fact = Fact::with_id(
         CoordId::from_string(&doc_id),
         format!("document:{origin}"),
         Content { mime_type: "text/markdown".into(), data: text.as_bytes().to_vec() },
@@ -347,7 +347,7 @@ async fn handler(req: Request<Vec<u8>>) -> anyhow::Result<impl IntoResponse> {
         (Method::POST, "/fact") => {
             let params: FactParams = match serde_json::from_slice(&body) { Ok(p) => p, Err(e) => return err_json(400, "invalid_json", format!("{e}")) };
             let id = params.id.unwrap_or_else(|| format!("fact_{}", timestamp_id()));
-            let fact = Fact::new(
+            let fact = Fact::with_id(
                 CoordId::from_string(&id),
                 params.origin,
                 Content { mime_type: "text/plain".into(), data: params.content.into_bytes() },

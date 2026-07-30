@@ -199,7 +199,7 @@ impl DuckDbStorage {
                     data: content_str.into_bytes(),
                 },
             };
-            Ok(Fact::new(
+            Ok(Fact::with_id(
                 CoordId::from_string(&id),
                 origin,
                 content,

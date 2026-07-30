@@ -11,7 +11,7 @@
 use super::common::{position_of, topic_of};
 use crate::ContentJsonExt as _;
 use nex_fih::{
-    BoardState, Content, ContradictionDetection, CoordId, DetectionCapable, DetectionOutput, Fact,
+    BoardState, Content, ContradictionDetection, DetectionCapable, DetectionOutput, Fact,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -93,10 +93,6 @@ impl DetectionCapable for ContradictionDetector {
                         .collect();
 
                     output.facts.push(Fact::new(
-                        CoordId::from_string(&format!(
-                            "{}-{}-{}-{}",
-                            topic, pa, pb, "contradiction"
-                        )),
                         "contradiction-detector".into(),
                         Content::from_json(&serde_json::json!({
                             "type": "contradiction",

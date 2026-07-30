@@ -80,12 +80,7 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact::new(
-                CoordId::from_string("f001"),
-                "verify".into(),
-                "hello world".into(),
-                "v".into(),
-            ),
+            &Fact::new("verify".into(), "hello world".into(), "v".into()),
         )
         .await
         .unwrap();
@@ -122,12 +117,7 @@ fn main() {
         let store = FihStorage::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact::new(
-                CoordId::from_string("f_base"),
-                "verify".into(),
-                "base data".into(),
-                "v".into(),
-            ),
+            &Fact::new("verify".into(), "base data".into(), "v".into()),
         )
         .await
         .unwrap();
@@ -164,17 +154,9 @@ fn main() {
 
     check_async!("double claim rejected", {
         let store = FihStorage::new(SimIo::new(), "verify");
-        AsyncFactCapable::submit_fact(
-            &store,
-            &Fact::new(
-                CoordId::from_string("f_base"),
-                "v".into(),
-                "x".into(),
-                "v".into(),
-            ),
-        )
-        .await
-        .unwrap();
+        AsyncFactCapable::submit_fact(&store, &Fact::new("v".into(), "x".into(), "v".into()))
+            .await
+            .unwrap();
         AsyncIntentCapable::submit_intent(
             &store,
             &Intent {
@@ -224,12 +206,7 @@ fn main() {
         let store = FihStorage::new(io.clone(), "verify");
         AsyncFactCapable::submit_fact(
             &store,
-            &Fact::new(
-                CoordId::from_string("f001"),
-                "v".into(),
-                "flush test".into(),
-                "v".into(),
-            ),
+            &Fact::new("v".into(), "flush test".into(), "v".into()),
         )
         .await
         .unwrap();
@@ -243,17 +220,9 @@ fn main() {
 
     check_async!("flush_cursor advances", {
         let store = FihStorage::new(SimIo::new(), "verify");
-        AsyncFactCapable::submit_fact(
-            &store,
-            &Fact::new(
-                CoordId::from_string("f001"),
-                "v".into(),
-                "a".into(),
-                "v".into(),
-            ),
-        )
-        .await
-        .unwrap();
+        AsyncFactCapable::submit_fact(&store, &Fact::new("v".into(), "a".into(), "v".into()))
+            .await
+            .unwrap();
         let cursor = FlushCursor {
             last_flushed_at: 0,
             partition: "default".into(),
@@ -280,17 +249,9 @@ fn main() {
     check_async!("flush writes to io", {
         let io = SimIo::new();
         let store = FihStorage::new(io.clone(), "verify");
-        AsyncFactCapable::submit_fact(
-            &store,
-            &Fact::new(
-                CoordId::from_string("f001"),
-                "v".into(),
-                "data".into(),
-                "v".into(),
-            ),
-        )
-        .await
-        .unwrap();
+        AsyncFactCapable::submit_fact(&store, &Fact::new("v".into(), "data".into(), "v".into()))
+            .await
+            .unwrap();
         let cursor = FlushCursor {
             last_flushed_at: 0,
             partition: "default".into(),
@@ -310,17 +271,9 @@ fn main() {
 
     check_async!("time_index since filter", {
         let store = FihStorage::new(SimIo::new(), "verify");
-        AsyncFactCapable::submit_fact(
-            &store,
-            &Fact::new(
-                CoordId::from_string("f001"),
-                "v".into(),
-                "data".into(),
-                "v".into(),
-            ),
-        )
-        .await
-        .unwrap();
+        AsyncFactCapable::submit_fact(&store, &Fact::new("v".into(), "data".into(), "v".into()))
+            .await
+            .unwrap();
         let filter = StateFilter {
             since: Some("0".to_string()),
             ..Default::default()
@@ -331,17 +284,9 @@ fn main() {
 
     check_async!("time_index until filter (time travel)", {
         let store = FihStorage::new(SimIo::new(), "verify");
-        AsyncFactCapable::submit_fact(
-            &store,
-            &Fact::new(
-                CoordId::from_string("f001"),
-                "v".into(),
-                "data".into(),
-                "v".into(),
-            ),
-        )
-        .await
-        .unwrap();
+        AsyncFactCapable::submit_fact(&store, &Fact::new("v".into(), "data".into(), "v".into()))
+            .await
+            .unwrap();
         let filter = StateFilter {
             until: Some("0".to_string()),
             ..Default::default()
@@ -376,28 +321,12 @@ fn main() {
 
     check_async!("ref_count orphan detection via conclude", {
         let store = FihStorage::new(SimIo::new(), "verify");
-        AsyncFactCapable::submit_fact(
-            &store,
-            &Fact::new(
-                CoordId::from_string("f_orphan"),
-                "v".into(),
-                "orphan".into(),
-                "v".into(),
-            ),
-        )
-        .await
-        .unwrap();
-        AsyncFactCapable::submit_fact(
-            &store,
-            &Fact::new(
-                CoordId::from_string("f_refd"),
-                "v".into(),
-                "refd".into(),
-                "v".into(),
-            ),
-        )
-        .await
-        .unwrap();
+        AsyncFactCapable::submit_fact(&store, &Fact::new("v".into(), "orphan".into(), "v".into()))
+            .await
+            .unwrap();
+        AsyncFactCapable::submit_fact(&store, &Fact::new("v".into(), "refd".into(), "v".into()))
+            .await
+            .unwrap();
         AsyncIntentCapable::submit_intent(
             &store,
             &Intent {

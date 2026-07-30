@@ -26,7 +26,7 @@ use nex_fih::{
 use nexus_storage_sim::SimIo;
 
 fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) -> Fact {
-    Fact::new(
+    Fact::with_id(
         CoordId::from_string(&id),
         origin.to_string(),
         serde_json::to_string(

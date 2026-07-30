@@ -14,7 +14,7 @@ use nex_fih::{
 use nexus_storage_sim::{FihStorage, SimIo};
 
 fn fact(id: &str, data: &str) -> Fact {
-    Fact::new(
+    Fact::with_id(
         CoordId::from_string(id),
         "s".into(),
         Content {

@@ -73,7 +73,7 @@ impl ParallelAnt {
             0 | 1 if step < 50 => {
                 // Submit fact (high prob early on)
                 let id = format!("fact_{}", step);
-                bb.submit_fact(&Fact::new(
+                bb.submit_fact(&Fact::with_id(
                     CoordId::from_string(&id),
                     self.name.clone(),
                     format!("parallel observation at step {step}").into(),
@@ -210,7 +210,7 @@ fn test_parallel_many_ants() {
         ];
         for (id, content) in &seeds {
             guard
-                .submit_fact(&Fact::new(
+                .submit_fact(&Fact::with_id(
                     CoordId::from_string(&id),
                     "corpus".into(),
                     (*content).into(),

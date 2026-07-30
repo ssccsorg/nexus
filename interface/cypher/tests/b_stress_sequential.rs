@@ -31,7 +31,7 @@ impl Ant {
             // 0-2: submit facts (high probability — knowledge injection)
             0 | 1 | 2 => {
                 let id = format!("f_{}_{}", self.name, step);
-                let fact = Fact::new(
+                let fact = Fact::with_id(
                     CoordId::from_string(&id),
                     self.name.clone(),
                     format!("observation at step {step} by {}", self.name).into(),
@@ -217,7 +217,7 @@ fn test_stress_many_ants() {
         ),
     ];
     for (id, origin, content) in &seed_facts {
-        let fact = Fact::new(
+        let fact = Fact::with_id(
             CoordId::from_string(id),
             origin.to_string(),
             (*content).into(),

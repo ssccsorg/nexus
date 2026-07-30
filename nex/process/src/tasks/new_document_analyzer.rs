@@ -14,7 +14,7 @@
 
 use super::common::{position_of, topic_of};
 use crate::ContentJsonExt;
-use nex_fih::{BoardState, Content, CoordId, DetectionCapable, DetectionOutput, Fact};
+use nex_fih::{BoardState, Content, DetectionCapable, DetectionOutput, Fact};
 use std::collections::{HashMap, HashSet};
 
 pub struct NewDocumentAnalyzer {
@@ -115,7 +115,6 @@ impl DetectionCapable for NewDocumentAnalyzer {
                 };
 
             output.facts.push(Fact::new(
-                CoordId::from_string(&format!("{}-{}-{}", &tid, factor, "doc-analysis")),
                 "new-document-analyzer".into(),
                 Content::from_json(&serde_json::json!({
                     "type": "doc_analysis",

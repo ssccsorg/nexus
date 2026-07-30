@@ -70,7 +70,7 @@ async fn handle_write_fact(
                 .into_bytes(),
         },
     };
-    let fact = Fact::new(
+    let fact = Fact::with_id(
         CoordId::from_string(&format!("fact_{}", uuid::Uuid::new_v4())),
         p.origin,
         content,

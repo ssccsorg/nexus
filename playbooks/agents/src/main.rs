@@ -23,7 +23,7 @@ fn main() {
 
     println!("1. Submitting facts...");
     let f1 = bb
-        .submit_fact(&Fact::new(
+        .submit_fact(&Fact::with_id(
             CoordId::from_string("gnn-accuracy"),
             "arxiv_2401".into(),
             serde_json::to_string(&serde_json::json!({
@@ -38,7 +38,7 @@ fn main() {
         ))
         .unwrap();
     let f2 = bb
-        .submit_fact(&Fact::new(
+        .submit_fact(&Fact::with_id(
             CoordId::from_string("gnn-oversmoothing"),
             "neurips_2023".into(),
             serde_json::to_string(&serde_json::json!({

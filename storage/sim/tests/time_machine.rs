@@ -24,7 +24,7 @@ fn store() -> FihStorage<SimIo> {
 }
 
 fn submit_fact(store: &FihStorage<SimIo>, id: &str, data: &str) {
-    block_on(store.submit_fact(&Fact::new(
+    block_on(store.submit_fact(&Fact::with_id(
         CoordId::from_string(id),
         "tm".into(),
         Content {

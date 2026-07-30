@@ -120,7 +120,7 @@ pub async fn submit_fact(
                 .into_bytes(),
         },
     };
-    let fact = Fact::new(CoordId::from_string(&id), origin, content, req.creator);
+    let fact = Fact::with_id(CoordId::from_string(&id), origin, content, req.creator);
     let hash = {
         let bb = state.blackboard.lock().unwrap();
         bb.submit_fact(&fact).map_err(err_response)?

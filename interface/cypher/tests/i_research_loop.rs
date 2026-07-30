@@ -77,7 +77,7 @@ fn ingest_document(bb: &mut impl Blackboard, chunks: &[MdDocumentChunk]) {
         }))
         .unwrap()
         .into();
-        let fact = Fact::new(id, chunk.source.clone(), content, "ingestion-agent".into());
+        let fact = Fact::with_id(id, chunk.source.clone(), content, "ingestion-agent".into());
         bb.submit_fact(&fact).unwrap();
     }
 }

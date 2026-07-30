@@ -85,7 +85,7 @@ fn populate_10k(store: &FihStorage<SimIo>) -> u64 {
             (i / 1000) as u16,
         )
         .unwrap();
-        block_on(store.submit_fact(&Fact::new(
+        block_on(store.submit_fact(&Fact::with_id(
             cid,
             format!("origin-{}", i % 50),
             format!("c-{}", i).into(),
@@ -145,7 +145,7 @@ fn fih_benchmark_10k() {
 
 fn populate_50k(store: &FihStorage<SimIo>) {
     for i in 0..50_000u32 {
-        block_on(store.submit_fact(&Fact::new(
+        block_on(store.submit_fact(&Fact::with_id(
             CoordId::new(i as u64),
             format!("origin-{}", i % 500),
             format!("c-{}", i).into(),
