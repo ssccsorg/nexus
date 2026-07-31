@@ -123,7 +123,7 @@ impl CalcEngine {
         };
 
         let path = record_to_path(0u16, "nex-calc", "user", 0u16, &id_str, 0, &content_hash);
-        self.storage.store.borrow_mut().place_path(&path, record);
+        self.storage.place_record(&path, record);
         id
     }
 
@@ -184,7 +184,7 @@ impl CalcEngine {
         };
 
         let path = record_to_path(1u16, "", "user", 0u16, &id_str, now, &FihHash([0u8; 32]));
-        self.storage.store.borrow_mut().place_path(&path, record);
+        self.storage.place_record(&path, record);
         Ok(id)
     }
 
@@ -277,7 +277,7 @@ impl CalcEngine {
                 0,
                 &content_hash,
             );
-            self.storage.store.borrow_mut().place_path(&path, rec);
+            self.storage.place_record(&path, rec);
         }
 
         // Mark intent concluded: vacate old path, insert at new path with Concluded status.
@@ -303,7 +303,7 @@ impl CalcEngine {
             created_at,
             &FihHash([0u8; 32]),
         );
-        self.storage.store.borrow_mut().vacate_path(&old_path);
+        self.storage.vacate_record(&old_path);
         // Insert new entry.
         let new_path = record_to_path(
             1u16,
@@ -321,10 +321,7 @@ impl CalcEngine {
             status: new_status,
             created_at,
         };
-        self.storage
-            .store
-            .borrow_mut()
-            .place_path(&new_path, new_record);
+        self.storage.place_record(&new_path, new_record);
 
         Ok(ResolvedIntent {
             intent_id: *intent_id,
@@ -361,26 +358,26 @@ impl CalcEngine {
                 now * 1_000_000_000,
                 &FihHash([0u8; 32]),
             );
-            self.storage.store.borrow_mut().place_path(&path, record);
+            self.storage.place_record(&path, record);
         }
         id
     }
 
     pub async fn clear_hints(&self) {
-        // Collect paths of all hint records, then remove them.
-        let paths: Vec<_> = {
-            let store = self.storage.store.borrow();
-            store
-                .iter_tree()
-                .filter_map(|(path, record)| match record {
-                    Record::Hint { .. } => Some(path),
-                    _ => None,
-                })
-                .collect()
-        };
-        let mut store = self.storage.store.borrow_mut();
-        for path in &paths {
-            store.vacate_path(path);
+        let ids: Vec<String> = self.storage.all_hint_ids();
+        for id_str in ids {
+            if let Some((_content, _creator, submitted_at)) = self.storage.get_hint_by_id(&id_str) {
+                let path = record_to_path(
+                    2u16,
+                    "",
+                    "user",
+                    0u16,
+                    &id_str,
+                    submitted_at * 1_000_000_000,
+                    &nex_fih::FihHash([0u8; 32]),
+                );
+                self.storage.vacate_record(&path);
+            }
         }
     }
 

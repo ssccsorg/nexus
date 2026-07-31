@@ -92,11 +92,12 @@ pub enum Record {
 /// Uses bytes [0..14) of the hash (112 bits), paired into 7 u16 values,
 /// each reduced modulo 11172. Zero hash (all bytes 0) keeps axes at zero.
 fn encode_hash_into_axes(hash: &FihHash, axes: &mut [tagma_core::Coord; 7]) {
+    use tagma_core::Coord;
     for (i, axis) in axes.iter_mut().enumerate() {
         let lo = hash.0.get(i * 2).copied().unwrap_or(0) as u16;
         let hi = hash.0.get(i * 2 + 1).copied().unwrap_or(0) as u16;
         let idx = (u16::from_le_bytes([lo as u8, hi as u8])) % 11172;
-        *axis = tagma_core::Coord::new(idx).unwrap_or_else(|| tagma_core::Coord::new(0).unwrap());
+        *axis = Coord::new(idx).unwrap_or_else(|| Coord::new(0).unwrap());
     }
 }
 
@@ -172,7 +173,7 @@ pub struct FihStorage<I: FileIo> {
     pub fact_store: CoordEntityStore<6, FactRecord>,
     pub intent_store: CoordEntityStore<6, IntentRecord>,
     pub hint_store: CoordEntityStore<6, HintRecord>,
-    pub store: Cell2<tagma_core::CoordSpaceN<19, Record>>,
+    store: Cell2<tagma_core::CoordSpaceN<19, Record>>,
     pub fact_records: Cell2<HashMap<String, FactRecord>>,
     pub intent_records: Cell2<HashMap<String, IntentRecord>>,
     pub hint_records: Cell2<HashMap<String, HintRecord>>,
@@ -184,10 +185,6 @@ pub struct FihStorage<I: FileIo> {
     semantic_id_counter: Cell2<u32>,
     // Pending writes (for FihSession coordination).
     pub(crate) pending: Cell2<Vec<WriteOp>>,
-    /// Indexed view of pending blob data: blob_hash → (mime_type, data).
-    /// Updated by enqueue_content, cleared by flush_pending.
-    #[expect(dead_code)]
-    pending_blobs: Cell2<HashMap<String, (String, Vec<u8>)>>,
 }
 
 impl<I: FileIo> FihStorage<I> {
@@ -229,7 +226,6 @@ impl<I: FileIo> FihStorage<I> {
             facts_by_origin: Cell2::new(HashMap::new()),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
-            pending_blobs: Cell2::new(HashMap::new()),
             pending: Cell2::new(Vec::new()),
         }
     }
@@ -256,7 +252,6 @@ impl<I: FileIo> FihStorage<I> {
             facts_by_origin: Cell2::new(HashMap::new()),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
-            pending_blobs: Cell2::new(HashMap::new()),
             pending: Cell2::new(Vec::new()),
         }
     }
@@ -427,6 +422,17 @@ impl<I: FileIo> FihStorage<I> {
             .filter(|r| r.from_facts.iter().any(|f| f == &normalized))
             .map(|r| r.id.clone())
             .collect()
+    }
+
+    /// Direct record placement (for special cases like nex-calc).
+    /// Skips blob enqueue and fast-path index maintenance.
+    pub fn place_record(&self, path: &tagma_core::CoordPath<19>, record: Record) {
+        self.store.borrow_mut().place_path(path, record);
+    }
+
+    /// Direct record removal (for special cases like nex-calc).
+    pub fn vacate_record(&self, path: &tagma_core::CoordPath<19>) {
+        self.store.borrow_mut().vacate_path(path);
     }
 
     /// Resolve a semantic index back to its ID string.
@@ -614,43 +620,6 @@ impl<I: FileIo> FihStorage<I> {
             }
         }
         None
-    }
-
-    /// Enqueue content as a blob write. FIH is append-only: no dedup
-    /// read needed because records are never overwritten. R2 is
-    /// last-writer-wins, so duplicate blob_hash writes are harmless.
-    #[expect(dead_code)]
-    fn enqueue_content(&self, content: &Content) -> Result<String, String> {
-        let blob_hash = content_hash(&content.data);
-        let blob_path = format!("blob/{}.bin", blob_hash);
-
-        // Check pending buffer first to avoid duplicate PUTs.
-        // Cheap: linear scan over pending ops (typically < 100).
-        if self
-            .pending
-            .borrow()
-            .iter()
-            .any(|op| matches!(op, WriteOp::Write { path, .. } if *path == blob_path))
-        {
-            return Ok(blob_hash);
-        }
-
-        self.pending.borrow_mut().push(WriteOp::Write {
-            path: blob_path,
-            data: content.data.clone(),
-        });
-
-        let meta = ContentMeta {
-            mime_type: content.mime_type.clone(),
-            size: content.data.len() as u64,
-        };
-        let meta_bytes = postcard::to_allocvec(&meta).map_err(|e| e.to_string())?;
-        self.pending.borrow_mut().push(WriteOp::Write {
-            path: format!("blob/{}.bin.meta", blob_hash),
-            data: meta_bytes,
-        });
-
-        Ok(blob_hash)
     }
 
     /// Load blob content from pending writes. No IO fallback — FIH is
