@@ -14,13 +14,7 @@ async-trait = "0.1"
 futures-executor = "0.3"
 log = "0.4"
 
-[[bench]]
-name = "bench"
-path = "benches/bench.rs"
-harness = false
-
 [dev-dependencies]
-criterion = { version = "0.5" }
 tempfile = "3"
 nexus-storage-sim = { path = "../../storage/sim" }
 nexus-gateway-serde-proxy = { path = "../../libs/serde-proxy" }

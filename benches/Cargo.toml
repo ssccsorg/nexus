@@ -1,0 +1,22 @@
+[package]
+name = "nexus-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Unified benchmark suite for nexus FIH storage (CoordSpaceN + HashMap)"
+
+[dependencies]
+futures-executor = "0.3"
+nex-core = { path = "../nex/core" }
+nex-fih = { path = "../nex/fih" }
+nexus-storage-sim = { path = "../storage/sim" }
+tagma-core = { git = "https://github.com/ssccsorg/syntagma", branch = "main" }
+
+[dev-dependencies]
+criterion = { version = "0.5" }
+
+[[bench]]
+name = "bench"
+path = "benches/bench.rs"
+harness = false

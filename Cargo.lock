@@ -1827,7 +1827,6 @@ name = "nex"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "criterion",
  "futures-executor",
  "log",
  "nex-core",
@@ -1957,6 +1956,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexus-bench"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "futures-executor",
+ "nex-core",
+ "nex-fih",
+ "nexus-storage-sim",
+ "tagma-core",
+]
+
+[[package]]
 name = "nexus-gateway-serde-proxy"
 version = "0.1.0"
 dependencies = [
@@ -2012,7 +2023,6 @@ dependencies = [
  "postcard",
  "serde",
  "serde_json",
- "tagma-core",
  "tempfile",
 ]
 
