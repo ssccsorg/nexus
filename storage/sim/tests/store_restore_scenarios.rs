@@ -8,29 +8,27 @@ mod common;
 
 use futures_executor::block_on;
 use nex_fih::{
-    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, Content, Fact,
-    FihHash, Hint, Intent,
+    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, Content, CoordId,
+    Fact, Hint, Intent,
 };
 use nexus_storage_sim::{FihStorage, SimIo};
 
 fn fact(id: &str, data: &str) -> Fact {
-    Fact {
-        id: FihHash::from_hex(id),
-        coord: None,
-        origin: "s".into(),
-        content: Content {
+    Fact::with_id(
+        CoordId::from_string(id),
+        "s".into(),
+        Content {
             mime_type: "text/plain".into(),
             data: data.as_bytes().to_vec(),
         },
-        creator: "t".into(),
-    }
+        "t".into(),
+    )
 }
 
 fn intent(id: &str, from: Vec<&str>) -> Intent {
     Intent {
-        id: FihHash::from_hex(id),
-        coord: None,
-        from_facts: from.into_iter().map(|s| FihHash::from_hex(s)).collect(),
+        id: CoordId::from_string(id),
+        from_facts: from.into_iter().map(|s| CoordId::from_string(s)).collect(),
         description: format!("intent {}", id),
         creator: "t".into(),
         worker: None,
@@ -136,7 +134,7 @@ fn test_scenario_hints_preserved_via_rebuild() {
 
     block_on(store.submit_fact(&fact("f_h", "hint test"))).unwrap();
     block_on(store.submit_hint(&Hint {
-        id: FihHash::from_hex("h1"),
+        id: CoordId::from_string("h1"),
         content: "ephemeral hint".into(),
         creator: "t".into(),
     }))
@@ -183,7 +181,7 @@ fn test_scenario_hints_only() {
     let store = FihStorage::new(io.clone(), "s");
 
     block_on(store.submit_hint(&Hint {
-        id: FihHash::from_hex("h_feature"),
+        id: CoordId::from_string("h_feature"),
         content: "consider adding time travel".into(),
         creator: "reviewer".into(),
     }))

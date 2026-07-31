@@ -6,7 +6,7 @@
 // HybridBlackboard directly.
 
 use nex::FihBlackboard;
-use nex_fih::{Blackboard, BlackboardError, Content, Fact, FihHash, Intent};
+use nex_fih::{Blackboard, BlackboardError, Content, CoordId, Fact, Intent};
 use nexus_storage_sim::SimIo;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -20,23 +20,21 @@ fn bb() -> SharedBlackboard {
 }
 
 fn fact(id: &str) -> Fact {
-    Fact {
-        id: FihHash::from_hex(id),
-        coord: None,
-        origin: "test".into(),
-        content: Content {
+    Fact::with_id(
+        CoordId::from_string(&id),
+        "test".into(),
+        Content {
             mime_type: "application/json".into(),
             data: serde_json::json!("data").to_string().into_bytes(),
         },
-        creator: "tester".into(),
-    }
+        "tester".into(),
+    )
 }
 
 fn intent(id: &str, from: Vec<&str>) -> Intent {
     Intent {
-        id: FihHash::from_hex(id),
-        coord: None,
-        from_facts: from.into_iter().map(|s| FihHash::from_hex(s)).collect(),
+        id: CoordId::from_string(&id),
+        from_facts: from.into_iter().map(|s| CoordId::from_string(&s)).collect(),
         description: format!("intent {}", id),
         creator: "tester".into(),
         worker: None,

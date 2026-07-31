@@ -8,7 +8,7 @@
 use std::time::SystemTime;
 
 use crate::error::BlackboardError;
-use crate::{Fact, FihHash};
+use crate::{CoordId, Fact};
 
 use crate::contract::core::{EvidenceChain, GovernanceGate, HintEngine, HintRule};
 use crate::core::store::FihStorage;
@@ -45,7 +45,7 @@ impl FihContract {
         storage: &FihStorage<I>,
         fact: &Fact,
         schema: Option<&str>,
-    ) -> Result<FihHash, BlackboardError> {
+    ) -> Result<CoordId, BlackboardError> {
         let schema = schema.unwrap_or(&fact.content.mime_type);
         self.gate
             .admit(schema, &fact.content.data)

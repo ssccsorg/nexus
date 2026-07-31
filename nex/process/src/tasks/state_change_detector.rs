@@ -10,7 +10,7 @@
 
 use crate::ContentJsonExt;
 use nex_fih::{
-    BoardState, Content, DetectionCapable, DetectionCheckpoint, DetectionOutput, Fact, FihHash,
+    BoardState, Content, DetectionCapable, DetectionCheckpoint, DetectionOutput, Fact,
     StateChangeDetection,
 };
 
@@ -97,7 +97,6 @@ impl DetectionCapable for StateChangeDetector {
         }
 
         output.facts.push(Fact::new(
-            FihHash::new(&[&triggers.join(",")], "state-change"),
             "state-change-detector".into(),
             Content::from_json(&serde_json::json!({
                 "type": "state_change",
@@ -105,8 +104,7 @@ impl DetectionCapable for StateChangeDetector {
                 "prev_fact_count": checkpoint.fact_count,
                 "curr_fact_count": current_facts,
                 "prev_open_intents": checkpoint.open_intent_count,
-                "curr_open_intents": current_open,
-            })),
+                "curr_open_intents": current_open})),
             "state-change-detector".into(),
         ));
 
@@ -122,8 +120,7 @@ impl DetectionCapable for StateChangeDetector {
         self.checkpoint.as_ref().map(|cp| {
             Content::from_json(&serde_json::json!({
                 "fact_count": cp.fact_count,
-                "open_intent_count": cp.open_intent_count,
-            }))
+                "open_intent_count": cp.open_intent_count}))
         })
     }
 

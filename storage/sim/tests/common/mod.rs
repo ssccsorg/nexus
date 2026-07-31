@@ -2,7 +2,7 @@
 
 use std::sync::Mutex;
 
-use nex_fih::{Content, Fact, FihHash, Intent};
+use nex_fih::{Content, CoordId, Fact, Intent};
 
 // ── FakeClock ──────────────────────────────────────────────────────────
 
@@ -47,24 +47,22 @@ impl nex_core::Now for FakeClock {
 
 #[allow(dead_code)]
 pub fn fact(id: &str) -> Fact {
-    Fact {
-        id: FihHash::from_hex(id),
-        coord: None,
-        origin: "t".into(),
-        content: Content {
+    Fact::with_id(
+        CoordId::from_string(id),
+        "t".into(),
+        Content {
             mime_type: "text/plain".into(),
             data: id.as_bytes().to_vec(),
         },
-        creator: "t".into(),
-    }
+        "t".into(),
+    )
 }
 
 #[allow(dead_code)]
 pub fn intent(id: &str, from: Vec<&str>) -> Intent {
     Intent {
-        id: FihHash::from_hex(id),
-        coord: None,
-        from_facts: from.into_iter().map(|s| FihHash::from_hex(s)).collect(),
+        id: CoordId::from_string(id),
+        from_facts: from.into_iter().map(|s| CoordId::from_string(s)).collect(),
         description: format!("intent {}", id),
         creator: "t".into(),
         worker: None,

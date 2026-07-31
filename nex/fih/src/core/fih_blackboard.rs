@@ -22,7 +22,7 @@ use crate::io::FileIo;
 #[cfg_attr(target_arch = "wasm32", allow(unused_imports))]
 use crate::{
     AsyncEvictCapable, AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead,
-    BlackboardError, BoardState, EvictCapable, Fact, FactCapable, FihHash, Hint, HintCapable,
+    BlackboardError, BoardState, CoordId, EvictCapable, Fact, FactCapable, Hint, HintCapable,
     Intent, IntentCapable, StorageRead,
 };
 
@@ -74,14 +74,14 @@ impl<I: FileIo> StorageRead for FihBlackboard<I> {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl<I: FileIo> FactCapable for FihBlackboard<I> {
-    fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
+    fn submit_fact(&self, fact: &Fact) -> Result<CoordId, BlackboardError> {
         futures_executor::block_on(self.storage.submit_fact(fact))
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl<I: FileIo> IntentCapable for FihBlackboard<I> {
-    fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+    fn submit_intent(&self, intent: &Intent) -> Result<CoordId, BlackboardError> {
         futures_executor::block_on(self.storage.submit_intent(intent))
     }
 

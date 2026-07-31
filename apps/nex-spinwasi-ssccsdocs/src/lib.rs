@@ -23,7 +23,7 @@ use nex::storage::core::FihStorage;
 use nex::storage::semantic::Query as SemanticQuery;
 use nex_fih::{
     AsyncFactCapable, AsyncFlushCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead,
-    Content, Fact, FihHash, FlushCursor, FlushResult, Hint, Intent,
+    Content, CoordId, Fact, FlushCursor, FlushResult, Hint, Intent,
 };
 use serde::{Deserialize, Serialize};
 
@@ -147,7 +147,7 @@ async fn restore_from_snapshot(s: &AppStorage) -> Result<bool, String> {
             result.records_flushed
         );
     }
-    s.rebuild_coord().await;
+    let _ = s.rebuild_cache().await;
     Ok(true)
 }
 
@@ -157,13 +157,12 @@ async fn ingest_document(s: &FihStorage<impl FileIo>, text: &str, origin: &str) 
     let text = text.trim();
     if text.is_empty() { return Err("empty".into()); }
     let doc_id = format!("doc_{}", sanitize_id(origin));
-    let fact = Fact {
-        id: FihHash::from_hex(&doc_id),
-        coord: None,
-        origin: format!("document:{origin}"),
-        content: Content { mime_type: "text/markdown".into(), data: text.as_bytes().to_vec() },
-        creator: "ingestion-agent".into(),
-    };
+    let fact = Fact::with_id(
+        CoordId::from_string(&doc_id),
+        format!("document:{origin}"),
+        Content { mime_type: "text/markdown".into(), data: text.as_bytes().to_vec() },
+        "ingestion-agent".into(),
+    );
     AsyncFactCapable::submit_fact(s, &fact).await.map_err(|e| format!("submit: {e:?}"))?;
     // Write delta chain (O(delta)) and persist cursor
     if let Err(e) = write_delta(s).await { tracing::warn!("delta: {e}"); }
@@ -247,7 +246,7 @@ async fn fetch_ssccs_docs(s: &AppStorage) -> (usize, Vec<String>) {
     }
     cache.llms_txt_hash = llms_hash; cache.docs = new_cache; write_cache(&cache).await;
     if total > 0 {
-        s.rebuild_coord().await; s.rebuild_semantic().await.ok();
+        let _ = s.rebuild_cache().await; s.rebuild_semantic().await.ok();
         if let Err(e) = write_checkpoint(s).await { tracing::warn!("checkpoint: {e}"); }
     }
     (total, errors)
@@ -348,7 +347,12 @@ async fn handler(req: Request<Vec<u8>>) -> anyhow::Result<impl IntoResponse> {
         (Method::POST, "/fact") => {
             let params: FactParams = match serde_json::from_slice(&body) { Ok(p) => p, Err(e) => return err_json(400, "invalid_json", format!("{e}")) };
             let id = params.id.unwrap_or_else(|| format!("fact_{}", timestamp_id()));
-            let fact = Fact { id: FihHash::from_hex(&id), coord: None, origin: params.origin, content: Content { mime_type: "text/plain".into(), data: params.content.into_bytes() }, creator: params.creator };
+            let fact = Fact::with_id(
+                CoordId::from_string(&id),
+                params.origin,
+                Content { mime_type: "text/plain".into(), data: params.content.into_bytes() },
+                params.creator,
+            );
             let hash = match get_storage().submit_fact(&fact).await { Ok(h) => h, Err(e) => return err_json(500, "fact_error", format!("{e:?}")) };
             if let Err(e) = get_storage().flush_pending().await { return err_json(500, "flush_error", e); }
             ok_json(serde_json::json!({"id": hash.to_string()}))
@@ -356,9 +360,15 @@ async fn handler(req: Request<Vec<u8>>) -> anyhow::Result<impl IntoResponse> {
         (Method::POST, "/intent") => {
             let params: IntentParams = match serde_json::from_slice(&body) { Ok(p) => p, Err(e) => return err_json(400, "invalid_json", format!("{e}")) };
             let id = params.id.unwrap_or_else(|| format!("intent_{}", timestamp_id()));
-            let from_facts: Vec<FihHash> = params.from.as_deref().unwrap_or("").split(',').filter(|s| !s.is_empty()).map(FihHash::from_hex).collect();
+            let from_facts: Vec<CoordId> = params.from.as_deref().unwrap_or("").split(',').filter(|s| !s.is_empty()).map(CoordId::from_string).collect();
             if from_facts.is_empty() { return err_json(400, "validation_error", "intent needs at least one fact".into()); }
-            let intent = Intent { id: FihHash::from_hex(&id), coord: None, from_facts, description: params.desc, creator: params.creator, worker: None, to_fact_id: None, last_heartbeat_at: None, created_at: None, is_concluded: false, concluded_at: None };
+            let intent = Intent::new(
+                CoordId::from_string(&id),
+                from_facts,
+                None,
+                params.desc,
+                params.creator,
+            );
             let hash = match get_storage().submit_intent(&intent).await { Ok(h) => h, Err(e) => return err_json(500, "intent_error", format!("{e:?}")) };
             ok_json(serde_json::json!({"id": hash.to_string()}))
         }
@@ -382,7 +392,7 @@ async fn handler(req: Request<Vec<u8>>) -> anyhow::Result<impl IntoResponse> {
         (Method::POST, "/hint") => {
             let params: HintParams = match serde_json::from_slice(&body) { Ok(p) => p, Err(e) => return err_json(400, "invalid_json", format!("{e}")) };
             let id = params.id.unwrap_or_else(|| format!("hint_{}", timestamp_id()));
-            let hint = Hint { id: FihHash::from_hex(&id), content: params.content, creator: params.creator };
+            let hint = Hint { id: CoordId::from_string(&id), content: params.content, creator: params.creator };
             if let Err(e) = get_storage().submit_hint(&hint).await { return err_json(500, "hint_error", format!("{e:?}")); }
             ok_json(serde_json::json!({"status": "ok"}))
         }

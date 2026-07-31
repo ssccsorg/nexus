@@ -20,23 +20,22 @@ use nex::process::tasks::gap_detector::GapDetector;
 use nex::process::tasks::new_document_analyzer::NewDocumentAnalyzer;
 use nex::process::tasks::state_change_detector::StateChangeDetector;
 use nex_fih::{
-    Blackboard, BoardState, EvictCapable, Fact, FactCapable, FihHash, Intent, IntentCapable,
+    Blackboard, BoardState, CoordId, EvictCapable, Fact, FactCapable, Intent, IntentCapable,
     StorageRead,
 };
 use nexus_storage_sim::SimIo;
 
 fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) -> Fact {
-    Fact {
-        id: FihHash::from_hex(id),
-        coord: None,
-        origin: origin.to_string(),
-        content: serde_json::to_string(
+    Fact::with_id(
+        CoordId::from_string(&id),
+        origin.to_string(),
+        serde_json::to_string(
             &serde_json::json!({ "claim": claim_text, "topic": topic, "position": position }),
         )
         .unwrap_or_default()
         .into(),
-        creator: "ingester".into(),
-    }
+        "ingester".into(),
+    )
 }
 
 fn do_tick(sched: &mut Scheduler<impl Blackboard + EvictCapable>) -> usize {
@@ -457,8 +456,7 @@ fn scenario_formal_revision_of_philosophy() {
     });
     if let Some(cf) = field_contradiction {
         let intent = Intent {
-            id: FihHash::new(&[&cf.id.to_string(), "resolve"], "intent"),
-            coord: None,
+            id: CoordId::from_string(&format!("{} resolve intent", &cf.id.to_string())),
             from_facts: vec![cf.id.clone()],
             description: "Resolve field-definition across layers".into(),
             creator: "formal-reviewer".into(),

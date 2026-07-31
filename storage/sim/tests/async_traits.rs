@@ -6,7 +6,7 @@
 
 use nex_fih::{
     AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable, AsyncHintCapable,
-    AsyncIntentCapable, AsyncScanCapable, AsyncStorageRead, AsyncTimeRangeCapable, FihHash,
+    AsyncIntentCapable, AsyncScanCapable, AsyncStorageRead, AsyncTimeRangeCapable, CoordId,
     FlushCursor, Hint, StateFilter,
 };
 use nexus_storage_sim::FihStorage;
@@ -28,11 +28,11 @@ fn test_async_submit_and_read_fact() {
     let fact = common::fact("f1");
 
     let hash = futures_executor::block_on(store.submit_fact(&fact)).unwrap();
-    assert_eq!(hash, FihHash::from_hex("f1"));
+    assert_eq!(hash, CoordId::from_string("f1"));
 
     let state = futures_executor::block_on(store.read_state());
     assert_eq!(state.facts.len(), 1);
-    assert_eq!(state.facts[0].id, FihHash::from_hex("f1"));
+    assert_eq!(state.facts[0].id, CoordId::from_string("f1"));
 }
 
 #[test]
@@ -53,7 +53,7 @@ fn test_async_submit_multiple_facts() {
 fn test_async_submit_hint() {
     let store = setup();
     let hint = Hint {
-        id: FihHash::from_hex("h1"),
+        id: CoordId::from_string("h1"),
         content: "test hint".into(),
         creator: "t".into(),
     };
@@ -93,9 +93,9 @@ fn test_async_conclude_intent() {
     assert!(result.is_ok());
     let fact = result.unwrap();
     assert_eq!(
-        fact.id.to_string().len(),
-        64,
-        "FihHash should be 64-char hex"
+        fact.id.to_string().chars().count(),
+        6,
+        "CoordId should be 6 Hangul characters"
     );
 }
 
@@ -121,7 +121,7 @@ fn test_async_submit_intent() {
 
     let intent = common::intent("i1", vec!["f_base"]);
     let hash = futures_executor::block_on(store.submit_intent(&intent)).unwrap();
-    assert_eq!(hash, FihHash::from_hex("i1"));
+    assert_eq!(hash, CoordId::from_string("i1"));
 }
 
 // ── AsyncFilterCapable (delegates to sync) ────────────────────────────
@@ -136,6 +136,7 @@ fn test_async_filter() {
     }
 
     let filter = StateFilter {
+        axis_hints: None,
         fact_ids: Some(vec!["f0".into(), "f2".into()]),
         ..Default::default()
     };
@@ -149,7 +150,7 @@ fn test_async_filter() {
 fn test_async_evict() {
     let store = setup();
     let hint = Hint {
-        id: FihHash::from_hex("h_old"),
+        id: CoordId::from_string("h_old"),
         content: "old".into(),
         creator: "t".into(),
     };
@@ -180,7 +181,13 @@ fn test_async_time_range() {
     futures_executor::block_on(store.submit_fact(&common::fact("f_tr"))).unwrap();
 
     let range = futures_executor::block_on(store.time_range());
-    assert!(range.is_some());
+    // time_range now scans fact_store for min/max submitted_at.
+    // With FakeClock starting at 1_000_000_000, the single fact has
+    // submitted_at = 1_000_000_000, so range = Some("1000000000".."1000000000").
+    assert!(range.is_some(), "expected Some range after fact submission");
+    let r = range.unwrap();
+    assert_eq!(r.start, "1000000000");
+    assert_eq!(r.end, "1000000000");
 }
 
 // ── AsyncFlushCapable ─────────────────────────────────────────────────

@@ -747,157 +747,17 @@ fn scenario_manual_score_verification() {
     });
 }
 
-// ── FihCoord integration tests ──────────────────────────────────────────
+// ── FihStorage end-to-end: auto-index into semantic stores ─────────────
 
-/// Full integration: FihCoord + multiple semantic stores (vector + text)
-#[test]
-fn scenario_fihcoord_integration() {
-    futures_executor::block_on(async {
-        use nex::storage::core::index::FihCoord;
-
-        let coord = FihCoord::new();
-
-        // Configure two semantic stores: vector (MockSemanticStore) + text (MockBm25Store)
-        coord.add_semantic_store(Box::new(MockSemanticStore::new()));
-        coord.add_semantic_store(Box::new(MockBm25Store::new()));
-
-        // Record facts with different content
-        // Fact 1: vector [1,0,0] + text "rust compiler verification"
-        let f1_id = nex_fih::FihHash::from_hex("f_sem_001");
-        coord.record_fact(&f1_id.0, "origin-a", "creator-a", 1000);
-        let idx1 = coord.intern(&f1_id.0);
-        coord
-            .semantic_insert(
-                idx1,
-                &common::semantic::FeatureLoad::new(
-                    vec![1.0, 0.0, 0.0],
-                    Some("rust compiler verification".into()),
-                ),
-            )
-            .await
-            .unwrap();
-
-        // Fact 2: vector [0,1,0] + text "energy memory constraint"
-        let f2_id = nex_fih::FihHash::from_hex("f_sem_002");
-        coord.record_fact(&f2_id.0, "origin-a", "creator-b", 2000);
-        let idx2 = coord.intern(&f2_id.0);
-        coord
-            .semantic_insert(
-                idx2,
-                &common::semantic::FeatureLoad::new(
-                    vec![0.0, 1.0, 0.0],
-                    Some("energy memory constraint".into()),
-                ),
-            )
-            .await
-            .unwrap();
-
-        // Fact 3: vector [0.9,0.1,0] + text "rust memory safety"
-        let f3_id = nex_fih::FihHash::from_hex("f_sem_003");
-        coord.record_fact(&f3_id.0, "origin-b", "creator-a", 3000);
-        let idx3 = coord.intern(&f3_id.0);
-        coord
-            .semantic_insert(
-                idx3,
-                &common::semantic::FeatureLoad::new(
-                    vec![0.9, 0.1, 0.0],
-                    Some("rust memory safety".into()),
-                ),
-            )
-            .await
-            .unwrap();
-
-        // Search by vector [1,0,0] — should find f_sem_001 first (cosine ~1.0), then f_sem_003 (~0.9)
-        let results = coord
-            .semantic_search(
-                &common::semantic::FeatureLoad::new(vec![1.0, 0.0, 0.0], None),
-                3,
-            )
-            .await
-            .unwrap();
-        assert_eq!(results.len(), 3, "should return results from both stores");
-        // First result should be f_sem_001 (from MockSemanticStore, score ~1.0)
-        assert_eq!(results[0].0, idx1, "most similar should be f_sem_001");
-
-        // Verify that Bm25Store contributed results too (text overlap with "rust")
-        let bm25_results: Vec<(u32, f32)> = results
-            .iter()
-            .filter(|(id, _)| *id == idx1 || *id == idx2 || *id == idx3)
-            .copied()
-            .collect();
-        assert!(
-            !bm25_results.is_empty(),
-            "BM25 store should have contributed results"
-        );
-    });
-}
-
-/// FihCoord with a single MockSemanticStore — basic sanity check
-#[test]
-fn scenario_fihcoord_single_store() {
-    futures_executor::block_on(async {
-        use nex::storage::core::index::FihCoord;
-
-        struct InlineLoad {
-            feats: Vec<f32>,
-        }
-        impl RecordLoad for InlineLoad {
-            fn content(&self, _id: u32) -> Option<Vec<u8>> {
-                None
-            }
-            fn features(&self, _id: u32) -> Option<Vec<f32>> {
-                Some(self.feats.clone())
-            }
-        }
-        impl Query for InlineLoad {
-            fn features(&self) -> Option<Vec<f32>> {
-                Some(self.feats.clone())
-            }
-            fn text(&self) -> Option<String> {
-                None
-            }
-        }
-
-        let coord = FihCoord::new();
-        coord.add_semantic_store(Box::new(MockSemanticStore::new()));
-
-        let f_id = nex_fih::FihHash::from_hex("f_inline_001");
-        coord.record_fact(&f_id.0, "test", "tester", 100);
-        let idx = coord.intern(&f_id.0);
-        coord
-            .semantic_insert(
-                idx,
-                &InlineLoad {
-                    feats: vec![1.0, 0.0],
-                },
-            )
-            .await
-            .unwrap();
-
-        let results = coord
-            .semantic_search(
-                &InlineLoad {
-                    feats: vec![1.0, 0.0],
-                },
-                5,
-            )
-            .await
-            .unwrap();
-        assert!(!results.is_empty(), "should find the inserted record");
-        assert_eq!(results[0].0, idx, "should match the inserted record");
-    });
-}
-
-/// FihStorage end-to-end: submit fact via FihStorage → auto-index into
-/// MockBm25Store → search via FihCoord and verify result.
-///
-/// Uses AsyncFactCapable path to exercise the async semantic_insert.
+/// Submit fact via FihStorage → auto-index into MockBm25Store →
+/// search and verify result. Uses AsyncFactCapable path to exercise
+/// the async semantic_insert replacement (FihCoord removed).
 #[test]
 fn scenario_fihstorage_e2e_auto_index() {
     futures_executor::block_on(async {
         use nex::FihStorage;
         use nex::io::FsIo;
-        use nex_fih::{AsyncFactCapable, AsyncStorageRead, Content, Fact, FihHash};
+        use nex_fih::{AsyncFactCapable, AsyncStorageRead, Content, CoordId, Fact};
 
         let tmp = tempfile::TempDir::new().unwrap();
         let io = FsIo::new(tmp.path()).unwrap();
@@ -907,16 +767,15 @@ fn scenario_fihstorage_e2e_auto_index() {
         storage.register_semantic_store(Box::new(MockBm25Store::new()));
 
         // Submit a fact with meaningful text content (async path)
-        let fact = Fact {
-            id: FihHash::from_hex("f_e2e_001"),
-            coord: None,
-            origin: "e2e-test".into(),
-            content: Content {
+        let fact = Fact::with_id(
+            CoordId::from_string("f_e2e_001"),
+            "e2e-test".into(),
+            Content {
                 mime_type: "text/plain".into(),
                 data: b"rust compiler verification memory safety".to_vec(),
             },
-            creator: "test-agent".into(),
-        };
+            "test-agent".into(),
+        );
 
         // Use async FactCapable trait — this enqueues writes to pending buffer
         // and calls record_fact + semantic_insert via .await.
@@ -942,16 +801,15 @@ fn scenario_fihstorage_e2e_auto_index() {
         );
 
         // Submit a conclusion fact — should NOT be auto-indexed (origin starts with "conclusion:")
-        let conclusion = Fact {
-            id: FihHash::from_hex("f_e2e_concl"),
-            coord: None,
-            origin: "conclusion:i_e2e".into(),
-            content: Content {
+        let conclusion = Fact::with_id(
+            CoordId::from_string("f_e2e_concl"),
+            "conclusion:i_e2e".into(),
+            Content {
                 mime_type: "text/plain".into(),
                 data: b"Synthesis complete".to_vec(),
             },
-            creator: "worker-1".into(),
-        };
+            "worker-1".into(),
+        );
         AsyncFactCapable::submit_fact(&storage, &conclusion)
             .await
             .unwrap();

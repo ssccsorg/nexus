@@ -34,7 +34,7 @@ use nex::process::tasks::gap_detector::GapDetector;
 use nex::process::tasks::new_document_analyzer::NewDocumentAnalyzer;
 use nex::process::tasks::state_change_detector::StateChangeDetector;
 use nex_fih::{
-    Blackboard, BoardState, Content, EvictCapable, Fact, FactCapable, FihHash, Intent,
+    Blackboard, BoardState, Content, CoordId, EvictCapable, Fact, FactCapable, Intent,
     IntentCapable, StorageRead,
 };
 use nexus_storage_sim::SimIo;
@@ -42,11 +42,10 @@ use nexus_storage_sim::SimIo;
 // ── Helpers ────────────────────────────────────────────────────────────
 
 fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) -> Fact {
-    Fact {
-        id: FihHash::from_hex(id),
-        coord: None,
-        origin: origin.to_string(),
-        content: Content {
+    Fact::with_id(
+        CoordId::from_string(&id),
+        origin.to_string(),
+        Content {
             mime_type: "application/json".into(),
             data: serde_json::to_string(
                 &serde_json::json!({ "claim": claim_text, "topic": topic, "position": position }),
@@ -54,8 +53,8 @@ fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) 
             .unwrap_or_default()
             .into_bytes(),
         },
-        creator: "ingester".into(),
-    }
+        "ingester".into(),
+    )
 }
 
 fn count_by_creator(state: &BoardState, creator: &str) -> usize {
@@ -231,8 +230,7 @@ fn scenario_cross_domain_discovery() {
         .collect();
     for cf in &contradiction_facts {
         let intent = Intent {
-            id: FihHash::new(&[&cf.id.to_string(), "resolve"], "intent"),
-            coord: None,
+            id: CoordId::from_string(&format!("{} resolve intent", &cf.id.to_string())),
             from_facts: vec![cf.id.clone()],
             description: format!(
                 "Resolve: {}",
@@ -436,8 +434,7 @@ fn scenario_peer_review_challenge() {
     });
     if let Some(cf) = contradiction_fact {
         let intent = Intent {
-            id: FihHash::new(&[&cf.id.to_string(), "peer-review"], "intent"),
-            coord: None,
+            id: CoordId::from_string(&format!("{} peer-review intent", &cf.id.to_string())),
             from_facts: vec![cf.id.clone()],
             description: "Peer review: resolve computation-ontology contradiction".into(),
             creator: "reviewer".into(),
@@ -538,11 +535,7 @@ fn scenario_incremental_knowledge_growth() {
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
             let intent = Intent {
-                id: FihHash::new(
-                    &[&cf.id.to_string(), &format!("iter-{}", iteration)],
-                    "intent",
-                ),
-                coord: None,
+                id: CoordId::from_string(&format!("{}::iter-{}::intent", cf.id, iteration)),
                 from_facts: vec![cf.id.clone()],
                 description: format!("Iteration {}: resolve {}", iteration, topic),
                 creator: "agent-loop".into(),
@@ -623,8 +616,7 @@ fn scenario_multi_agent_collaboration() {
         .collect();
     for gf in &gap_facts {
         let intent = Intent {
-            id: FihHash::new(&[&gf.id.to_string(), "alpha"], "intent"),
-            coord: None,
+            id: CoordId::from_string(&format!("{} alpha intent", &gf.id.to_string())),
             from_facts: vec![gf.id.clone()],
             description: "Hardware gap analysis".into(),
             creator: "agent-alpha".into(),
@@ -663,8 +655,7 @@ fn scenario_multi_agent_collaboration() {
         .collect();
     for gf in &compiler_gaps {
         let intent = Intent {
-            id: FihHash::new(&[&gf.id.to_string(), "beta"], "intent"),
-            coord: None,
+            id: CoordId::from_string(&format!("{} beta intent", &gf.id.to_string())),
             from_facts: vec![gf.id.clone()],
             description: "Compiler gap analysis".into(),
             creator: "agent-beta".into(),
@@ -703,8 +694,7 @@ fn scenario_multi_agent_collaboration() {
         .collect();
     for cf in &contradiction_facts {
         let intent = Intent {
-            id: FihHash::new(&[&cf.id.to_string(), "gamma"], "intent"),
-            coord: None,
+            id: CoordId::from_string(&format!("{} gamma intent", &cf.id.to_string())),
             from_facts: vec![cf.id.clone()],
             description: "Philosophical resolution".into(),
             creator: "agent-gamma".into(),

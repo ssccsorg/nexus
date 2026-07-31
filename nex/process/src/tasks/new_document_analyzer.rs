@@ -14,7 +14,7 @@
 
 use super::common::{position_of, topic_of};
 use crate::ContentJsonExt;
-use nex_fih::{BoardState, Content, DetectionCapable, DetectionOutput, Fact, FihHash};
+use nex_fih::{BoardState, Content, DetectionCapable, DetectionOutput, Fact};
 use std::collections::{HashMap, HashSet};
 
 pub struct NewDocumentAnalyzer {
@@ -115,7 +115,6 @@ impl DetectionCapable for NewDocumentAnalyzer {
                 };
 
             output.facts.push(Fact::new(
-                FihHash::new(&[&tid, factor], "doc-analysis"),
                 "new-document-analyzer".into(),
                 Content::from_json(&serde_json::json!({
                     "type": "doc_analysis",
@@ -123,8 +122,7 @@ impl DetectionCapable for NewDocumentAnalyzer {
                     "topic": topic,
                     "claim": claim_text,
                     "source": fact.origin,
-                    "detail": detail,
-                })),
+                    "detail": detail})),
                 "new-document-analyzer".into(),
             ));
 

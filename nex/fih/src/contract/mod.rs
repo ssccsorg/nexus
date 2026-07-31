@@ -12,3 +12,8 @@ pub mod core;
 pub mod fih;
 
 pub use core::*;
+
+// Backward-compatible re-exports from fih-model (these types are defined
+// in fih-model and re-exported at the crate root of nex-fih, but also
+// available here for legacy paths like `nex::contract::HealthStatus`).
+pub use crate::{HealthStatus, NexConfig, NexInstanceInfo, NexLifecycle};

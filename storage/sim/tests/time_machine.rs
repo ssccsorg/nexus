@@ -12,7 +12,7 @@ mod common;
 use futures_executor::block_on;
 use nex_fih::{
     AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable, AsyncHintCapable,
-    AsyncIntentCapable, AsyncStorageRead, Content, Fact, FihHash, FlushCursor, FlushResult, Hint,
+    AsyncIntentCapable, AsyncStorageRead, Content, CoordId, Fact, FlushCursor, FlushResult, Hint,
     Intent, StateFilter,
 };
 use nexus_storage_sim::{EntityStore, FihStorage, SimIo, SyncFileIo};
@@ -24,24 +24,22 @@ fn store() -> FihStorage<SimIo> {
 }
 
 fn submit_fact(store: &FihStorage<SimIo>, id: &str, data: &str) {
-    block_on(store.submit_fact(&Fact {
-        id: FihHash::from_hex(id),
-        coord: None,
-        origin: "tm".into(),
-        content: Content {
+    block_on(store.submit_fact(&Fact::with_id(
+        CoordId::from_string(id),
+        "tm".into(),
+        Content {
             mime_type: "text/plain".into(),
             data: data.as_bytes().to_vec(),
         },
-        creator: "tester".into(),
-    }))
+        "tester".into(),
+    )))
     .unwrap();
 }
 
 fn submit_intent(store: &FihStorage<SimIo>, id: &str, from: &[&str]) {
     block_on(store.submit_intent(&Intent {
-        id: FihHash::from_hex(id),
-        coord: None,
-        from_facts: from.iter().map(|s| FihHash::from_hex(s)).collect(),
+        id: CoordId::from_string(id),
+        from_facts: from.iter().map(|s| CoordId::from_string(s)).collect(),
         description: format!("intent {}", id),
         creator: "tester".into(),
         worker: None,
@@ -161,9 +159,11 @@ fn test_time_travel_consistency() {
     assert_eq!(full.facts.len(), 1);
     assert_eq!(full.intents.len(), 1);
 
-    // Time-travel to t=2_500_000_000: Fact (indexed at 2G) included, Intent not yet indexed
+    // Time-travel to t=1_500_000_000: Fact (submitted_at=1G) included,
+    // Intent (created_at=2G) excluded because 2G > 1.5G.
     let past = block_on(store.read_state_filtered(&StateFilter {
-        until: Some("2500000000".to_string()),
+        axis_hints: None,
+        until: Some("1500000000".to_string()),
         ..Default::default()
     }));
     assert_eq!(past.facts.len(), 1, "fact submitted before midpoint");
@@ -206,7 +206,7 @@ fn test_full_statespace_round_trip() {
     submit_fact(&store, "f2", "two");
     submit_intent(&store, "i1", &["f1"]);
     block_on(store.submit_hint(&Hint {
-        id: FihHash::from_hex("h1"),
+        id: CoordId::from_string("h1"),
         content: "hint one".into(),
         creator: "tester".into(),
     }))
@@ -248,13 +248,10 @@ fn test_chain_order_preservation() {
         cursor.last_flushed_at = r.new_cursor.last_flushed_at;
     }
 
-    // List chain files — must exist and be ordered (SimIo sorts keys)
-    let chains = SyncFileIo::new(io.clone()).list("flush/").unwrap();
-    let chain_files: Vec<&String> = chains.iter().filter(|k| k.ends_with(".chain")).collect();
-    assert!(
-        chain_files.len() >= 5,
-        "at least 5 chain files for 5 batches"
-    );
+    // Note: chain files are no longer created by flush_since
+    // (delta index removed with FihCoord in Phase 3).
+    // The test just verifies that flush_since works without errors.
+    // Each batch flush was already asserted above.
 }
 
 // ── Test 7: Empty StateSpace is valid ───────────────────────────────────
@@ -278,7 +275,7 @@ fn test_eviction_preserves_fact_removes_old_hint() {
     let store = store();
     submit_fact(&store, "f_keep", "keep me");
     block_on(store.submit_hint(&Hint {
-        id: FihHash::from_hex("h_old"),
+        id: CoordId::from_string("h_old"),
         content: "old hint".into(),
         creator: "tester".into(),
     }))

@@ -972,6 +972,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "fih-model"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures-executor",
+ "log",
+ "petgraph",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tagma-core",
+]
+
+[[package]]
 name = "filetime"
 version = "0.2.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1837,6 +1851,7 @@ dependencies = [
  "nexus-storage-sim",
  "postcard",
  "sha2",
+ "tagma-core",
  "tokio",
 ]
 
@@ -1852,12 +1867,16 @@ dependencies = [
 [[package]]
 name = "nex-core"
 version = "0.1.0"
+dependencies = [
+ "fih-model",
+]
 
 [[package]]
 name = "nex-fih"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "fih-model",
  "futures-executor",
  "log",
  "nex-core",
@@ -1993,6 +2012,7 @@ dependencies = [
  "postcard",
  "serde",
  "serde_json",
+ "tagma-core",
  "tempfile",
 ]
 

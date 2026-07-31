@@ -8,7 +8,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
 };
-use nex_fih::{BlackboardError, Content, Fact, FihHash, Hint, Intent};
+use nex_fih::{BlackboardError, Content, CoordId, Fact, Hint, Intent};
 use serde::{Deserialize, Serialize};
 
 use crate::state::AppState;
@@ -107,24 +107,20 @@ pub async fn submit_fact(
     Json(req): Json<SubmitFactRequest>,
 ) -> Result<Json<SubmitFactResponse>, (StatusCode, Json<ApiError>)> {
     let id = req.id.unwrap_or_else(|| format!("fact_{}", uuid_v4()));
-    let fact = Fact {
-        id: FihHash::from_hex(&id),
-        coord: None,
-        origin: req.origin,
-        content: match &req.content {
-            serde_json::Value::String(s) => Content {
-                mime_type: "text/plain".into(),
-                data: s.clone().into_bytes(),
-            },
-            other => Content {
-                mime_type: "application/json".into(),
-                data: serde_json::to_string(other)
-                    .unwrap_or_default()
-                    .into_bytes(),
-            },
+    let origin = req.origin;
+    let content = match &req.content {
+        serde_json::Value::String(s) => Content {
+            mime_type: "text/plain".into(),
+            data: s.clone().into_bytes(),
         },
-        creator: req.creator,
+        other => Content {
+            mime_type: "application/json".into(),
+            data: serde_json::to_string(other)
+                .unwrap_or_default()
+                .into_bytes(),
+        },
     };
+    let fact = Fact::with_id(CoordId::from_string(&id), origin, content, req.creator);
     let hash = {
         let bb = state.blackboard.lock().unwrap();
         bb.submit_fact(&fact).map_err(err_response)?
@@ -153,13 +149,8 @@ pub async fn submit_intent(
         )));
     }
     let intent = Intent {
-        id: FihHash::from_hex(&id),
-        coord: None,
-        from_facts: req
-            .from_facts
-            .into_iter()
-            .map(|s| FihHash::from_hex(&s))
-            .collect(),
+        id: CoordId::from_string(&id),
+        from_facts: req.from_facts.iter().map(|s| CoordId::from_string(s)).collect(),
         description: req.description,
         creator: req.creator,
         worker: None,
@@ -237,7 +228,7 @@ pub async fn submit_hint(
 ) -> Result<Json<()>, (StatusCode, Json<ApiError>)> {
     let id = req.id.unwrap_or_else(|| format!("hint_{}", uuid_v4()));
     let hint = Hint {
-        id: FihHash::from_hex(&id),
+        id: CoordId::from_string(&id),
         content: req.content,
         creator: req.creator,
     };

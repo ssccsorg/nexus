@@ -264,7 +264,7 @@ fn cmd_help() {
     println!("  Hint = constraint or transform (dynamic boundary)");
 }
 
-fn short(hash: &nex_fih::FihHash) -> String {
+fn short(hash: &nex_fih::CoordId) -> String {
     let full = hash.to_string();
     format!("{}..{}", &full[..4], &full[full.len() - 4..])
 }

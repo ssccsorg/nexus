@@ -5,7 +5,7 @@
 
 use nex::FihBlackboard;
 use nex_fih::{
-    BlackboardError, Content, Fact, FactCapable, FihHash, Intent, IntentCapable, StorageRead,
+    BlackboardError, Content, CoordId, Fact, FactCapable, Intent, IntentCapable, StorageRead,
 };
 use nexus_gateway_serde_proxy::SerdeProxy;
 use nexus_storage_sim::SimIo;
@@ -24,11 +24,10 @@ fn scenario_intermittent_sensor_agent() {
     // Session 1: agent connects, submits a fact, disconnects
     {
         let gw = SerdeProxy::new(&bb);
-        gw.submit_fact(&Fact {
-            id: FihHash::from_hex("f_temp_001"),
-            coord: None,
-            origin: "sensor-alpha".into(),
-            content: Content {
+        gw.submit_fact(&Fact::with_id(
+            CoordId::from_string("f_temp_001"),
+            "sensor-alpha".into(),
+            Content {
                 mime_type: "application/json".into(),
                 data: serde_json::to_string(&serde_json::json!({
                     "type": "temperature",
@@ -39,8 +38,8 @@ fn scenario_intermittent_sensor_agent() {
                 .unwrap_or_default()
                 .into_bytes(),
             },
-            creator: "drone-a".into(),
-        })
+            "drone-a".into(),
+        ))
         .unwrap();
         // gw dropped — borrow released
     }
@@ -53,11 +52,10 @@ fn scenario_intermittent_sensor_agent() {
         assert_eq!(state.facts.len(), 1, "fact persisted across sessions");
         assert_eq!(state.facts[0].origin, "sensor-alpha");
 
-        gw.submit_fact(&Fact {
-            id: FihHash::from_hex("f_temp_002"),
-            coord: None,
-            origin: "sensor-alpha".into(),
-            content: Content {
+        gw.submit_fact(&Fact::with_id(
+            CoordId::from_string("f_temp_002"),
+            "sensor-alpha".into(),
+            Content {
                 mime_type: "application/json".into(),
                 data: serde_json::to_string(&serde_json::json!({
                     "type": "temperature",
@@ -68,8 +66,8 @@ fn scenario_intermittent_sensor_agent() {
                 .unwrap_or_default()
                 .into_bytes(),
             },
-            creator: "drone-a".into(),
-        })
+            "drone-a".into(),
+        ))
         .unwrap();
 
         let state = gw.read_state();
@@ -107,8 +105,8 @@ fn scenario_satellite_burst_agent() {
         ),
     ];
     for (id, origin, content) in &readings {
-        gw.submit_fact(&Fact::new(
-            FihHash::from_hex(id),
+        gw.submit_fact(&Fact::with_id(
+            CoordId::from_string(&id),
             origin.to_string(),
             Content::from(content.to_string()),
             "sat-1".into(),
@@ -120,11 +118,10 @@ fn scenario_satellite_burst_agent() {
     assert_eq!(state.facts.len(), 3, "burst of 3 facts received");
 
     gw.submit_intent(&Intent {
-        id: FihHash::from_hex("i_sat_analysis"),
-        coord: None,
+        id: CoordId::from_string("i_sat_analysis"),
         from_facts: vec![
-            FihHash::from_hex("f_sat_001"),
-            FihHash::from_hex("f_sat_002"),
+            CoordId::from_string("f_sat_001"),
+            CoordId::from_string("f_sat_002"),
         ],
         description: "Analyze band-x SNR degradation trend".into(),
         creator: "ground-station".into(),
@@ -163,22 +160,20 @@ fn scenario_satellite_burst_agent() {
 fn scenario_browser_agent() {
     let gw = SerdeProxy::new(FihBlackboard::new(SimIo::new(), "test"));
 
-    gw.submit_fact(&Fact {
-        id: FihHash::from_hex("f_background"),
-        coord: None,
-        origin: "system".into(),
-        content: Content {
+    gw.submit_fact(&Fact::with_id(
+        CoordId::from_string("f_background"),
+        "system".into(),
+        Content {
             mime_type: "text/plain".into(),
             data: "Server load exceeds 85% for 3 consecutive hours".into(),
         },
-        creator: "monitor".into(),
-    })
+        "monitor".into(),
+    ))
     .unwrap();
 
     gw.submit_intent(&Intent {
-        id: FihHash::from_hex("i_investigate"),
-        coord: None,
-        from_facts: vec![FihHash::from_hex("f_background")],
+        id: CoordId::from_string("i_investigate"),
+        from_facts: vec![CoordId::from_string("f_background")],
         description: "Find root cause of sustained high server load".into(),
         creator: "human-operator".into(),
         worker: None,
@@ -226,27 +221,25 @@ fn scenario_multi_language_agents() {
     // Python agent submits a fact
     {
         let gw = SerdeProxy::new(&bb);
-        gw.submit_fact(&Fact {
-            id: FihHash::from_hex("f_py_001"),
-            coord: None,
-            origin: "python-etl".into(),
-            content: Content {
+        gw.submit_fact(&Fact::with_id(
+            CoordId::from_string("f_py_001"),
+            "python-etl".into(),
+            Content {
                 mime_type: "text/plain".into(),
                 data: "Data pipeline processed 15K records".into(),
             },
-            creator: "py-agent".into(),
-        })
+            "py-agent".into(),
+        ))
         .unwrap();
     }
 
     // Rust agent submits a fact
     {
         let gw = SerdeProxy::new(&bb);
-        gw.submit_fact(&Fact {
-            id: FihHash::from_hex("f_rs_001"),
-            coord: None,
-            origin: "rust-analyzer".into(),
-            content: Content {
+        gw.submit_fact(&Fact::with_id(
+            CoordId::from_string("f_rs_001"),
+            "rust-analyzer".into(),
+            Content {
                 mime_type: "application/json".into(),
                 data: serde_json::to_string(&serde_json::json!({
                     "module": "inference",
@@ -256,8 +249,8 @@ fn scenario_multi_language_agents() {
                 .unwrap_or_default()
                 .into_bytes(),
             },
-            creator: "rs-agent".into(),
-        })
+            "rs-agent".into(),
+        ))
         .unwrap();
     }
 
@@ -273,9 +266,11 @@ fn scenario_multi_language_agents() {
         );
 
         gw.submit_intent(&Intent {
-            id: FihHash::from_hex("i_cross_lang"),
-            coord: None,
-            from_facts: vec![FihHash::from_hex("f_py_001"), FihHash::from_hex("f_rs_001")],
+            id: CoordId::from_string("i_cross_lang"),
+            from_facts: vec![
+                CoordId::from_string("f_py_001"),
+                CoordId::from_string("f_rs_001"),
+            ],
             description: "Correlate pipeline throughput with inference latency".into(),
             creator: "ts-agent".into(),
             worker: None,
@@ -323,22 +318,20 @@ fn scenario_multi_language_agents() {
 fn scenario_conflicting_claims() {
     let gw = SerdeProxy::new(FihBlackboard::new(SimIo::new(), "test"));
 
-    gw.submit_fact(&Fact {
-        id: FihHash::from_hex("f_conflict"),
-        coord: None,
-        origin: "test".into(),
-        content: Content {
+    gw.submit_fact(&Fact::with_id(
+        CoordId::from_string("f_conflict"),
+        "test".into(),
+        Content {
             mime_type: "text/plain".into(),
             data: "Conflict test ground truth".into(),
         },
-        creator: "system".into(),
-    })
+        "system".into(),
+    ))
     .unwrap();
 
     gw.submit_intent(&Intent {
-        id: FihHash::from_hex("i_conflict"),
-        coord: None,
-        from_facts: vec![FihHash::from_hex("f_conflict")],
+        id: CoordId::from_string("i_conflict"),
+        from_facts: vec![CoordId::from_string("f_conflict")],
         description: "Intent that two agents will race to claim".into(),
         creator: "system".into(),
         worker: None,

@@ -7,7 +7,7 @@ use nex::storage::core::store::FihStorage;
 use nex_client::{RpcRequest, RpcResponse};
 use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, BlackboardError,
-    Content, Fact, FihHash, Hint, Intent,
+    Content, CoordId, Fact, Hint, Intent,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -58,24 +58,24 @@ async fn handle_write_fact(
         Err(e) => return RpcResponse::invalid_params(id, e.to_string()),
     };
 
-    let fact = Fact {
-        id: FihHash::from_hex(&format!("fact_{}", uuid::Uuid::new_v4())),
-        coord: None,
-        origin: p.origin,
-        content: match &p.content {
-            Value::String(s) => Content {
-                mime_type: "text/plain".into(),
-                data: s.clone().into_bytes(),
-            },
-            other => Content {
-                mime_type: "application/json".into(),
-                data: serde_json::to_string(other)
-                    .unwrap_or_default()
-                    .into_bytes(),
-            },
+    let content = match &p.content {
+        Value::String(s) => Content {
+            mime_type: "text/plain".into(),
+            data: s.clone().into_bytes(),
         },
-        creator: p.creator,
+        other => Content {
+            mime_type: "application/json".into(),
+            data: serde_json::to_string(other)
+                .unwrap_or_default()
+                .into_bytes(),
+        },
     };
+    let fact = Fact::with_id(
+        CoordId::from_string(&format!("fact_{}", uuid::Uuid::new_v4())),
+        p.origin,
+        content,
+        p.creator,
+    );
 
     match storage.submit_fact(&fact).await {
         Ok(hash) => RpcResponse::success(id, json!({"id": hash.to_string()})),
@@ -106,7 +106,7 @@ async fn handle_read_fact(
     };
 
     let state = storage.read_state().await;
-    let target = FihHash::from_hex(&p.id).to_string();
+    let target = CoordId::from_string(&p.id).to_string();
     for fact in &state.facts {
         if fact.id.to_string() == target {
             return RpcResponse::success(id, serde_json::to_value(fact).unwrap_or_default());
@@ -130,7 +130,7 @@ async fn handle_read_intent(
     };
 
     let state = storage.read_state().await;
-    let target = FihHash::from_hex(&p.id).to_string();
+    let target = CoordId::from_string(&p.id).to_string();
     for intent in &state.intents {
         if intent.id.to_string() == target {
             return RpcResponse::success(id, serde_json::to_value(intent).unwrap_or_default());
@@ -154,7 +154,7 @@ async fn handle_read_hint(
     };
 
     let state = storage.read_state().await;
-    let target = FihHash::from_hex(&p.id).to_string();
+    let target = CoordId::from_string(&p.id).to_string();
     for hint in &state.hints {
         if hint.id.to_string() == target {
             return RpcResponse::success(id, serde_json::to_value(hint).unwrap_or_default());
@@ -186,9 +186,12 @@ async fn handle_write_intent(
     }
 
     let intent = Intent {
-        id: FihHash::from_hex(&format!("intent_{}", uuid::Uuid::new_v4())),
-        coord: None,
-        from_facts: p.from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
+        id: CoordId::from_string(&format!("intent_{}", uuid::Uuid::new_v4())),
+        from_facts: p
+            .from_facts
+            .iter()
+            .map(|s| CoordId::from_string(s))
+            .collect(),
         description: p.description,
         creator: p.creator,
         worker: None,
@@ -328,7 +331,7 @@ async fn handle_write_hint(
     };
 
     let hint = Hint {
-        id: FihHash::from_hex(&p.id),
+        id: CoordId::from_string(&p.id),
         content: p.content,
         creator: p.creator,
     };

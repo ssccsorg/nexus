@@ -1,39 +1,33 @@
 // ── nex-fih: FIH primitives ─────────────────────────────────────────────
 //
 // FIH (Fact-Intent-Hint) primitive types, storage traits, and
-// implementation layer. This crate defines everything FIH-related:
+// implementation layer. This crate extends fih-model with
+// nex-specific implementations.
 //
-//   storage/    — FIH storage traits (StorageRead, FactCapable, etc.)
 //   core/       — FihStorage, EntityStore, FihSession, records
-//   semantic/   — SemanticStore, RecordLoad, Query
 //   contract/   — GovernanceGate, EvidenceChain, HintEngine, FihContract
 //   helper/     — ContentJsonExt
 //   io/         — IO re-exports from nex-io (compatibility shim)
-//   blackboard  — Blackboard aggregate trait
 //   detection   — DetectionCapable trait family
-//   error       — BlackboardError
-//   fih         — Fact, Intent, Hint, Content, FihHash, BoardState
 //   interner    — Deprecated string interner (moved from nexus-model)
 
-pub mod blackboard;
+// Re-export everything from fih-model (pure types + traits)
+pub use fih_model::*;
+
+// Remaining modules defined in this crate
 pub mod contract;
 pub mod core;
 pub mod detection;
-pub mod error;
-pub mod fih;
 pub mod helper;
 pub mod interner;
 pub mod io;
-pub mod semantic;
-pub mod storage;
 
-pub use blackboard::Blackboard;
+// Re-exports of items still defined in nex-fih
 pub use contract::core::{
-    EvidenceChain, EvidenceEntry, GovernanceBypassError, GovernanceGate, HealthStatus, HintEngine,
-    HintRule, NexConfig, NexInstanceInfo, NexLifecycle,
+    EvidenceChain, EvidenceEntry, GovernanceBypassError, GovernanceGate, HintEngine, HintRule,
 };
 pub use contract::fih::FihContract;
-pub use core::entity_store::{EntityStore, MemoryEntityStore};
+pub use core::entity_store::{CoordEntityStore, EntityStore, MemoryEntityStore};
 pub use core::export::{export_from_io, import_into_io};
 pub use core::fih_blackboard::FihBlackboard;
 pub use core::index::{Cell2, OrderedIndex};
@@ -45,13 +39,4 @@ pub use detection::{
     ContradictionDetection, DetectionCapable, DetectionCheckpoint, DetectionOutput, GapDetection,
     StateChangeDetection, TaskStates,
 };
-pub use error::BlackboardError;
-pub use fih::{BoardState, Content, CoordRef, Fact, FihHash, Hint, Intent};
 pub use helper::ContentJsonExt;
-pub use semantic::SemanticStore;
-pub use semantic::record::{Query, RecordLoad};
-pub use storage::async_impl::{
-    AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable, AsyncHintCapable,
-    AsyncIntentCapable, AsyncScanCapable, AsyncStorageRead, AsyncTimeRangeCapable,
-};
-pub use storage::*;

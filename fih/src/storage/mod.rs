@@ -20,7 +20,7 @@ pub use async_impl::{
 };
 pub use evict::EvictCapable;
 pub use fact::FactCapable;
-pub use filter::{FilterCapable, StateFilter};
+pub use filter::{AxisHints, FilterCapable, StateFilter};
 pub use flush::{FlushCapable, FlushCursor, FlushResult};
 pub use graph::{EdgeWeight, GraphRead, GraphWrite, NodeWeight};
 pub use hint::HintCapable;

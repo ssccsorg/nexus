@@ -7,7 +7,7 @@
 #![allow(async_fn_in_trait)]
 
 use crate::error::BlackboardError;
-use crate::fih::{BoardState, Fact, FihHash, Hint, Intent};
+use crate::fih::{BoardState, CoordId, Fact, Hint, Intent};
 use crate::storage::{FlushCursor, FlushResult, PartitionData, StateFilter};
 use std::ops::Range;
 
@@ -19,7 +19,7 @@ pub trait AsyncStorageRead {
 
 /// Async counterpart of [`super::fact::FactCapable`].
 pub trait AsyncFactCapable: AsyncStorageRead {
-    async fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError>;
+    async fn submit_fact(&self, fact: &Fact) -> Result<CoordId, BlackboardError>;
 }
 
 /// Async counterpart of [`super::hint::HintCapable`].
@@ -29,7 +29,7 @@ pub trait AsyncHintCapable: AsyncStorageRead {
 
 /// Async counterpart of [`super::intent::IntentCapable`].
 pub trait AsyncIntentCapable: AsyncStorageRead {
-    async fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError>;
+    async fn submit_intent(&self, intent: &Intent) -> Result<CoordId, BlackboardError>;
     async fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
     async fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;
     async fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError>;

@@ -37,17 +37,20 @@
 
 use std::ops::Range;
 
+use sha2::Digest;
+
 use crate::{
-    BlackboardError, BoardState, Content, Fact, FihHash, FlushCursor, FlushResult, Hint, Intent,
-    PartitionData, StateFilter,
+    BlackboardError, BoardState, Content, CoordId, Fact, FihHash, FlushCursor, FlushResult, Hint,
+    Intent, PartitionData, StateFilter,
 };
 use nex_core::Now;
 
-use crate::core::entity_store::{EntityStore, MemoryEntityStore};
-use crate::core::index::{Cell2, FihCoord};
+use crate::core::entity_store::{CoordEntityStore, EntityStore};
+use crate::core::index::Cell2;
 use crate::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
 use crate::io::file_io::{FileIo, WriteOp, default_apply_batch};
 use crate::semantic::record::{Query, RecordLoad};
+use std::collections::HashMap;
 
 /// Chain entry format: serialized by flush_since for delta chain files.
 /// Named struct avoids postcard tuple field ordering ambiguity with empty vecs.
@@ -57,6 +60,79 @@ pub struct ChainEntry {
     pub records_flushed: u64,
     pub facts: Vec<FactRecord>,
     pub intents: Vec<IntentRecord>,
+}
+
+/// Unified in-memory record enum for single CoordSpaceN<19> store.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub enum Record {
+    Fact {
+        content: Content,
+        content_hash: FihHash,
+        origin: String,
+        creator: String,
+        submitted_at: u64,
+    },
+    Intent {
+        from_facts: Vec<String>,
+        description_hash: String,
+        creator: String,
+        status: IntentStatus,
+        created_at: u64,
+    },
+    Hint {
+        content: String,
+        creator: String,
+        submitted_at: u64,
+    },
+}
+
+/// Build a CoordPath<19> from entity fields (for unified Record store).
+pub fn record_to_path(
+    entity: u16,
+    origin: &str,
+    creator: &str,
+    status: u16,
+    id_str: &str,
+    ts_ns: u64,
+) -> tagma_core::CoordPath<19> {
+    use tagma_core::{Coord, CoordPath};
+    let mk = |v: u16| Coord::new(v % 11172).unwrap();
+    let time_hi = (ts_ns / 86_400_000_000_000) as u16;
+    let time_lo = (ts_ns % 86_400_000_000_000 / 1_000_000_000) as u16; // seconds, not ns
+    // Use hash-based coord for origin/creator (matches make_record_path convention)
+    fn hash_str(s: &str) -> u16 {
+        use sha2::Digest;
+        let mut h = sha2::Sha256::new();
+        h.update(s.as_bytes());
+        let hash = h.finalize();
+        u16::from_le_bytes([hash[0], hash[1]]) % 11172
+    }
+    let origin_v = hash_str(origin);
+    let creator_v = hash_str(creator);
+    let mut coords = [Coord::new(0).unwrap(); 19];
+    coords[0] = mk(time_hi);
+    coords[1] = mk(time_lo);
+    coords[2] = mk(entity);
+    coords[3] = mk(origin_v);
+    coords[4] = mk(creator_v);
+    coords[5] = mk(status);
+    // [6-11]: identity from CoordId<6> coordinates directly (round-trip safe)
+    let cid: CoordId = CoordId::from_string(id_str);
+    let cid_coords: &[tagma_core::Coord; 6] = cid.0.coords();
+    coords[6..12].copy_from_slice(&cid_coords[..6]);
+    // [12-18]: zero padding
+    let zero = Coord::new(0).unwrap();
+    coords[12..19].fill(zero);
+    CoordPath::new(coords)
+}
+
+/// Extract id string from CoordPath<19> identity coords [6..11] (CoordId<6> coordinates).
+fn path_to_id_str(path: &tagma_core::CoordPath<19>) -> String {
+    use tagma_core::{Coord, CoordPath};
+    let mut coords = [Coord::new(0).unwrap(); 6];
+    coords.copy_from_slice(&path.coords()[6..12]);
+    let cid = CoordId::<6>(CoordPath::new(coords));
+    cid.to_string()
 }
 
 /// Unified FIH storage backended by an abstract IO layer.
@@ -73,13 +149,25 @@ pub struct FihStorage<I: FileIo> {
     #[expect(dead_code)]
     auto_flush: bool,
     // In-memory stores: rebuilt from IO on hydrate, kept in sync for reads.
-    pub fact_store: MemoryEntityStore<FactRecord>,
-    pub intent_store: MemoryEntityStore<IntentRecord>,
-    pub hint_store: MemoryEntityStore<HintRecord>,
-    // Indices
-    coord: FihCoord,
+    pub fact_store: CoordEntityStore<6, FactRecord>,
+    pub intent_store: CoordEntityStore<6, IntentRecord>,
+    pub hint_store: CoordEntityStore<6, HintRecord>,
+    pub store: Cell2<tagma_core::CoordSpaceN<19, Record>>,
+    pub fact_records: Cell2<HashMap<String, FactRecord>>,
+    pub intent_records: Cell2<HashMap<String, IntentRecord>>,
+    pub hint_records: Cell2<HashMap<String, HintRecord>>,
+    pub facts_by_creator: Cell2<HashMap<String, Vec<String>>>,
+    pub facts_by_origin: Cell2<HashMap<String, Vec<String>>>,
+    // Semantic stores (for similarity search).
+    semantic_stores: Cell2<Vec<crate::semantic::DynSemanticStore>>,
+    /// Counter for assigning semantic IDs to facts incrementally.
+    semantic_id_counter: Cell2<u32>,
     // Pending writes (for FihSession coordination).
     pub(crate) pending: Cell2<Vec<WriteOp>>,
+    /// Indexed view of pending blob data: blob_hash → (mime_type, data).
+    /// Updated by enqueue_content, cleared by flush_pending.
+    #[expect(dead_code)]
+    pending_blobs: Cell2<HashMap<String, (String, Vec<u8>)>>,
 }
 
 impl<I: FileIo> FihStorage<I> {
@@ -110,10 +198,18 @@ impl<I: FileIo> FihStorage<I> {
             project_id: project_id.to_string(),
             clock,
             auto_flush,
-            fact_store: MemoryEntityStore::<FactRecord>::new(),
-            intent_store: MemoryEntityStore::<IntentRecord>::new(),
-            hint_store: MemoryEntityStore::<HintRecord>::new(),
-            coord: FihCoord::new(),
+            fact_store: CoordEntityStore::<6, FactRecord>::new(),
+            intent_store: CoordEntityStore::<6, IntentRecord>::new(),
+            hint_store: CoordEntityStore::<6, HintRecord>::new(),
+            store: Cell2::new(tagma_core::CoordSpaceN::new()),
+            fact_records: Cell2::new(HashMap::new()),
+            intent_records: Cell2::new(HashMap::new()),
+            hint_records: Cell2::new(HashMap::new()),
+            facts_by_creator: Cell2::new(HashMap::new()),
+            facts_by_origin: Cell2::new(HashMap::new()),
+            semantic_stores: Cell2::new(Vec::new()),
+            semantic_id_counter: Cell2::new(0u32),
+            pending_blobs: Cell2::new(HashMap::new()),
             pending: Cell2::new(Vec::new()),
         }
     }
@@ -129,10 +225,18 @@ impl<I: FileIo> FihStorage<I> {
             project_id: project_id.to_string(),
             clock,
             auto_flush: false,
-            fact_store: MemoryEntityStore::<FactRecord>::new(),
-            intent_store: MemoryEntityStore::<IntentRecord>::new(),
-            hint_store: MemoryEntityStore::<HintRecord>::new(),
-            coord: FihCoord::new(),
+            fact_store: CoordEntityStore::<6, FactRecord>::new(),
+            intent_store: CoordEntityStore::<6, IntentRecord>::new(),
+            hint_store: CoordEntityStore::<6, HintRecord>::new(),
+            store: Cell2::new(tagma_core::CoordSpaceN::new()),
+            fact_records: Cell2::new(HashMap::new()),
+            intent_records: Cell2::new(HashMap::new()),
+            hint_records: Cell2::new(HashMap::new()),
+            facts_by_creator: Cell2::new(HashMap::new()),
+            facts_by_origin: Cell2::new(HashMap::new()),
+            semantic_stores: Cell2::new(Vec::new()),
+            semantic_id_counter: Cell2::new(0u32),
+            pending_blobs: Cell2::new(HashMap::new()),
             pending: Cell2::new(Vec::new()),
         }
     }
@@ -173,50 +277,30 @@ impl<I: FileIo> FihStorage<I> {
         self.intent_store.replace_from(intents).await;
         self.hint_store.replace_from(hints).await;
 
-        self.rebuild_coord().await;
-
         Ok(())
     }
 
-    /// Rebuild FihCoord indices from current EntityStore contents.
-    ///
-    /// Records are sorted by submitted_at before insertion to guarantee
-    /// monotonic ordering in by_time (required by OrderedIndex's binary
-    /// search). Other indices are order-independent and built during the
-    /// same pass via FihCoord methods.
-    pub async fn rebuild_coord(&self) {
-        self.coord.clear();
-
-        let mut facts = self.fact_store.values().await;
-        let intents = self.intent_store.values().await;
-
-        // Sort facts by submitted_at to maintain OrderedIndex monotonicity
-        facts.sort_by_key(|r| r.submitted_at);
-
-        for r in &facts {
-            let id_bytes = FihHash::from_hex(&r.id);
-            let idx = self.coord.intern(&id_bytes.0);
-            self.coord.by_time.borrow_mut().record(r.submitted_at, idx);
-            self.coord
-                .record_fact(&id_bytes.0, &r.origin, &r.creator, r.submitted_at);
-        }
-
-        for r in &intents {
-            let id_bytes = FihHash::from_hex(&r.id);
-            let from_bytes: Vec<[u8; 32]> = r
-                .from_facts
-                .iter()
-                .map(|f| FihHash::from_hex(f).0)
-                .collect();
-            self.coord
-                .record_intent(&id_bytes.0, &r.creator, r.created_at, &from_bytes);
-        }
+    /// Flush pending writes to IO.
+    pub async fn flush_pending(&self) -> Result<(), String> {
+        let ops = {
+            let mut pending = self.pending.borrow_mut();
+            if pending.is_empty() {
+                return Ok(());
+            }
+            std::mem::take(&mut *pending)
+        };
+        default_apply_batch(&self.io, &ops).await
     }
 
-    /// Flush pending writes to IO.
-    /// Rebuild semantic stores (BM25, Vectorize buffer) from fact_store after rebuild_cache.
-    /// Reads content blobs from IO and inserts text into all registered semantic stores.
+    /// Rebuild semantic stores from fact_store after rebuild_cache.
     pub async fn rebuild_semantic(&self) -> Result<(), String> {
+        // Snapshot: take stores atomically, work on them, then put back.
+        let mut stores = std::mem::take(&mut *self.semantic_stores.borrow_mut());
+        if stores.is_empty() {
+            return Ok(());
+        }
+
+        let facts = self.fact_store.values().await;
         struct TextRecord {
             text: String,
         }
@@ -229,8 +313,7 @@ impl<I: FileIo> FihStorage<I> {
             }
         }
 
-        let facts = self.fact_store.values().await;
-        for r in facts {
+        for (i, r) in facts.iter().enumerate() {
             let content = load_blob(&self.io, &r.blob_hash).await;
             if content.data.is_empty() {
                 continue;
@@ -239,73 +322,284 @@ impl<I: FileIo> FihStorage<I> {
             if text.trim().is_empty() {
                 continue;
             }
-            let id_bytes = FihHash::from_hex(&r.id);
-            let idx = self.coord.intern(&id_bytes.0);
             let load = TextRecord { text };
-            self.semantic_insert(idx, &load).await.ok();
-        }
-        Ok(())
-    }
-
-    pub async fn flush_pending(&self) -> Result<(), String> {
-        let ops = {
-            let mut pending = self.pending.borrow_mut();
-            if pending.is_empty() {
-                return Ok(());
+            for store in stores.iter_mut() {
+                let _ = store.insert(i as u32, &load).await;
             }
-            std::mem::take(&mut *pending)
-        };
-        default_apply_batch(&self.io, &ops).await
+        }
+
+        // Put stores back
+        self.semantic_stores.borrow_mut().extend(stores);
+        Ok(())
     }
 
     /// Register a semantic store for auto-indexing on fact submission.
     pub fn register_semantic_store(&self, store: crate::semantic::DynSemanticStore) {
-        self.coord.by_semantic.borrow_mut().push(store);
+        self.semantic_stores.borrow_mut().push(store);
     }
 
     /// Access the semantic stores list (for downcasting to concrete types).
     pub fn semantic_stores(
         &self,
     ) -> impl std::ops::Deref<Target = Vec<crate::semantic::DynSemanticStore>> {
-        self.coord.by_semantic.borrow()
+        self.semantic_stores.borrow()
     }
 
     /// Search semantic stores with the given query.
+    ///
+    /// Uses take/extend pattern to avoid holding a non-Send MutexGuard
+    /// across an async boundary.
     pub async fn semantic_search(
         &self,
         query: &dyn Query,
         top_k: usize,
     ) -> Result<Vec<(u32, f32)>, String> {
-        self.coord.semantic_search(query, top_k).await
+        let mut stores = std::mem::take(&mut *self.semantic_stores.borrow_mut());
+        if stores.is_empty() {
+            self.semantic_stores.borrow_mut().extend(stores);
+            return Err("no semantic stores configured".into());
+        }
+        let mut results = Vec::new();
+        for store in stores.iter_mut() {
+            if let Ok(mut r) = store.search(query, top_k).await {
+                results.append(&mut r);
+            }
+        }
+        self.semantic_stores.borrow_mut().extend(stores);
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        results.truncate(top_k);
+        Ok(results)
     }
 
-    /// Insert a record into semantic stores with the given load handle.
+    /// Insert a record into semantic stores.
+    ///
+    /// Uses take/extend pattern (not borrow_mut across await) to avoid
+    /// holding a non-Send MutexGuard across an async boundary.
     pub async fn semantic_insert(&self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
-        self.coord.semantic_insert(id, load).await
+        let mut stores = std::mem::take(&mut *self.semantic_stores.borrow_mut());
+        if stores.is_empty() {
+            self.semantic_stores.borrow_mut().extend(stores);
+            return Err("no semantic stores configured".into());
+        }
+        let mut last_err: Option<String> = None;
+        for store in stores.iter_mut() {
+            if let Err(e) = store.insert(id, load).await {
+                last_err = Some(e);
+            }
+        }
+        self.semantic_stores.borrow_mut().extend(stores);
+        if let Some(e) = last_err {
+            Err(e)
+        } else {
+            Ok(())
+        }
     }
 
     /// Query intents that reference a given fact.
-    /// Returns Vec<String> (hex IDs). Each call allocates O(k) strings
-    /// where k is the number of referencing intents — acceptable for
-    /// expected fan-out sizes (< 100).
-    /// Query intents that reference a given fact.
+    /// The fact_id is normalized via CoordId::from_string to match the
+    /// canonical CoordId format stored in IntentRecord.from_facts.
     pub fn intents_by_fact(&self, fact_id: &str) -> Vec<String> {
-        let fidx = self.coord.intern_str(fact_id);
-        self.coord
-            .intents_by_fact(fidx)
-            .into_iter()
-            .map(|idx| self.coord.resolve(idx))
+        let normalized = crate::CoordId::from_string(fact_id).to_string();
+        let intent_records: Vec<IntentRecord> =
+            futures_executor::block_on(self.intent_store.values());
+        intent_records
+            .iter()
+            .filter(|r| r.from_facts.iter().any(|f| f == &normalized))
+            .map(|r| r.id.clone())
             .collect()
     }
 
-    /// Resolve a semantic index back to its hex ID string.
+    /// Resolve a semantic index back to its ID string.
     pub fn resolve_semantic_idx(&self, idx: u32) -> String {
-        self.coord.resolve(idx)
+        let records = futures_executor::block_on(self.fact_store.values());
+        records
+            .get(idx as usize)
+            .map(|r| r.id.clone())
+            .unwrap_or_default()
+    }
+
+    /// Check if a fact with the given ID exists (fast-path: fact_records HashMap).
+    pub fn fact_exists(&self, id: &str) -> bool {
+        self.fact_records.borrow().contains_key(id)
+            || self.store.borrow().iter_tree().any(|(path, rec)| {
+                matches!(rec, Record::Fact { .. }) && path_to_id_str(&path) == id
+            })
+    }
+
+    /// Check if an intent with the given ID exists (fast-path: intent_records HashMap).
+    pub fn intent_exists(&self, id: &str) -> bool {
+        self.intent_records.borrow().contains_key(id)
+            || self.store.borrow().iter_tree().any(|(path, rec)| {
+                matches!(rec, Record::Intent { .. }) && path_to_id_str(&path) == id
+            })
+    }
+
+    /// Check if a hint with the given ID exists (fast-path: hint_records HashMap).
+    pub fn hint_exists(&self, id: &str) -> bool {
+        self.hint_records.borrow().contains_key(id)
+            || self.store.borrow().iter_tree().any(|(path, rec)| {
+                matches!(rec, Record::Hint { .. }) && path_to_id_str(&path) == id
+            })
+    }
+
+    /// Returns all fact IDs (fast-path: HashMap keys; fallback: unified store).
+    pub fn all_fact_ids(&self) -> Vec<String> {
+        let recs = self.fact_records.borrow();
+        if !recs.is_empty() {
+            return recs.keys().cloned().collect();
+        }
+        // Fallback: unified store (for direct writers like nex-calc)
+        self.store
+            .borrow()
+            .iter_tree()
+            .filter_map(|(path, rec)| {
+                if matches!(rec, Record::Fact { .. }) {
+                    Some(path_to_id_str(&path))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Returns all intent IDs (fast-path: HashMap keys; fallback: unified store).
+    pub fn all_intent_ids(&self) -> Vec<String> {
+        let recs = self.intent_records.borrow();
+        if !recs.is_empty() {
+            return recs.keys().cloned().collect();
+        }
+        self.store
+            .borrow()
+            .iter_tree()
+            .filter_map(|(path, rec)| {
+                if matches!(rec, Record::Intent { .. }) {
+                    Some(path_to_id_str(&path))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Returns all hint IDs (fast-path: HashMap keys; fallback: unified store).
+    pub fn all_hint_ids(&self) -> Vec<String> {
+        let recs = self.hint_records.borrow();
+        if !recs.is_empty() {
+            return recs.keys().cloned().collect();
+        }
+        self.store
+            .borrow()
+            .iter_tree()
+            .filter_map(|(path, rec)| {
+                if matches!(rec, Record::Hint { .. }) {
+                    Some(path_to_id_str(&path))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Get a fact by its ID (fast-path: fact_records HashMap).
+    pub fn get_fact_by_id(&self, id: &str) -> Option<(Content, FihHash, String, String)> {
+        if let Some(r) = self.fact_records.borrow().get(id) {
+            let hex = &r.blob_hash;
+            let mut bytes = [0u8; 32];
+            for (i, c) in hex.as_bytes().chunks(2).enumerate() {
+                let s = unsafe { std::str::from_utf8_unchecked(c) };
+                bytes[i] = u8::from_str_radix(s, 16).unwrap_or(0);
+            }
+            return Some((
+                Content {
+                    mime_type: "application/octet-stream".into(),
+                    data: Vec::new(),
+                },
+                FihHash(bytes),
+                r.origin.clone(),
+                r.creator.clone(),
+            ));
+        }
+        // Fallback: unified store (for direct store writers like nex-calc)
+        for (_path, rec) in self.store.borrow().iter_tree() {
+            if let Record::Fact {
+                content,
+                content_hash,
+                origin,
+                creator,
+                ..
+            } = rec
+                && path_to_id_str(&_path) == id
+            {
+                return Some((
+                    content.clone(),
+                    *content_hash,
+                    origin.clone(),
+                    creator.clone(),
+                ));
+            }
+        }
+        None
+    }
+
+    /// Get an intent by its ID.
+    pub fn get_intent_by_id(
+        &self,
+        id: &str,
+    ) -> Option<(Vec<String>, String, String, IntentStatus, u64)> {
+        if let Some(r) = self.intent_records.borrow().get(id) {
+            return Some((
+                r.from_facts.clone(),
+                r.description_hash.clone(),
+                r.creator.clone(),
+                r.status.clone(),
+                r.created_at,
+            ));
+        }
+        for (_path, rec) in self.store.borrow().iter_tree() {
+            if let Record::Intent {
+                from_facts,
+                description_hash,
+                creator,
+                status,
+                created_at,
+            } = rec
+                && path_to_id_str(&_path) == id
+            {
+                return Some((
+                    from_facts.clone(),
+                    description_hash.clone(),
+                    creator.clone(),
+                    status.clone(),
+                    *created_at,
+                ));
+            }
+        }
+        None
+    }
+
+    /// Get a hint by its ID.
+    pub fn get_hint_by_id(&self, id: &str) -> Option<(String, String, u64)> {
+        if let Some(r) = self.hint_records.borrow().get(id) {
+            return Some((r.content.clone(), r.creator.clone(), r.submitted_at));
+        }
+        for (_path, rec) in self.store.borrow().iter_tree() {
+            if let Record::Hint {
+                content,
+                creator,
+                submitted_at,
+            } = rec
+                && path_to_id_str(&_path) == id
+            {
+                return Some((content.clone(), creator.clone(), *submitted_at));
+            }
+        }
+        None
     }
 
     /// Enqueue content as a blob write. FIH is append-only: no dedup
     /// read needed because records are never overwritten. R2 is
     /// last-writer-wins, so duplicate blob_hash writes are harmless.
+    #[expect(dead_code)]
     fn enqueue_content(&self, content: &Content) -> Result<String, String> {
         let blob_hash = content_hash(&content.data);
         let blob_path = format!("blob/{}.bin", blob_hash);
@@ -386,6 +680,15 @@ impl<I: FileIo> FihStorage<I> {
     }
 }
 
+/// Convert IntentStatus to a simple string key for fast-path status lookup.
+fn simple_status_key(status: &IntentStatus) -> &'static str {
+    match status {
+        IntentStatus::Submitted => "submitted",
+        IntentStatus::Claimed { .. } => "claimed",
+        IntentStatus::Concluded { .. } => "concluded",
+    }
+}
+
 fn content_hash(data: &[u8]) -> String {
     // SHA-256 content hash. WASM-compatible (sha2 crate works on wasm32).
     use sha2::{Digest, Sha256};
@@ -442,9 +745,14 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
                     && let Ok(r) = postcard::from_bytes::<FactRecord>(&bytes)
                 {
                     let content = load_blob(&self.io, &r.blob_hash).await;
+                    let content_hash = {
+                        let mut h = sha2::Sha256::new();
+                        h.update(&content.data);
+                        FihHash(h.finalize().into())
+                    };
                     facts.push(Fact {
-                        id: FihHash::from_hex(&r.id),
-                        coord: None,
+                        id: CoordId::from_string(&r.id),
+                        content_hash,
                         origin: r.origin.clone(),
                         content,
                         creator: r.creator.clone(),
@@ -460,9 +768,12 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
                     && let Ok(r) = postcard::from_bytes::<IntentRecord>(&bytes)
                 {
                     intents.push(Intent {
-                        id: FihHash::from_hex(&r.id),
-                        coord: None,
-                        from_facts: r.from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
+                        id: CoordId::from_string(&r.id),
+                        from_facts: r
+                            .from_facts
+                            .iter()
+                            .map(|s| CoordId::from_string(s))
+                            .collect(),
                         description: {
                             if r.description_hash.is_empty() {
                                 r.id.clone()
@@ -479,7 +790,7 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
                         },
                         to_fact_id: match &r.status {
                             IntentStatus::Concluded { to_fact, .. } => {
-                                Some(FihHash::from_hex(to_fact))
+                                Some(CoordId::from_string(to_fact))
                             }
                             _ => None,
                         },
@@ -507,7 +818,7 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
                     && let Ok(r) = postcard::from_bytes::<HintRecord>(&bytes)
                 {
                     hints.push(Hint {
-                        id: FihHash::from_hex(&r.id),
+                        id: CoordId::from_string(&r.id),
                         content: r.content.clone(),
                         creator: r.creator.clone(),
                     });
@@ -526,13 +837,26 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
 // ── AsyncFactCapable ───────────────────────────────────────────────────────
 
 impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
-    async fn submit_fact(&self, fact: &Fact) -> Result<FihHash, BlackboardError> {
-        // Enqueue blob content and fact record in pending buffer only.
-        // No direct io.write() — caller must call flush_pending() for durability.
-        // This enables batch writes (N paragraphs → 1 apply_batch instead of 2N R2 PUTs).
-        let blob_hash = self
-            .enqueue_content(&fact.content)
-            .map_err(BlackboardError::Internal)?;
+    async fn submit_fact(&self, fact: &Fact) -> Result<CoordId, BlackboardError> {
+        // content_hash is SHA-256 already computed by Fact::new — use directly.
+        let blob_hash = fact.content_hash.to_string();
+
+        // Enqueue blob data (mime from content).
+        let blob_path = format!("blob/{blob_hash}.bin");
+        self.pending.borrow_mut().push(WriteOp::Write {
+            path: blob_path,
+            data: fact.content.data.clone(),
+        });
+        let meta = ContentMeta {
+            mime_type: fact.content.mime_type.clone(),
+            size: fact.content.data.len() as u64,
+        };
+        let meta_bytes =
+            postcard::to_allocvec(&meta).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.pending.borrow_mut().push(WriteOp::Write {
+            path: format!("blob/{blob_hash}.bin.meta"),
+            data: meta_bytes,
+        });
 
         let record = FactRecord::from_model(fact, blob_hash, self.clock.now_nanos());
         let bytes =
@@ -544,17 +868,32 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
         };
 
         // Update in-memory cache immediately for subsequent reads
-        self.fact_store.insert(record.id.clone(), record).await;
+        self.fact_store
+            .insert(record.id.clone(), record.clone())
+            .await;
+        self.fact_records
+            .borrow_mut()
+            .insert(record.id.clone(), record);
+        self.facts_by_creator
+            .borrow_mut()
+            .entry(fact.creator.clone())
+            .or_default()
+            .push(fact.id.to_string());
+        self.facts_by_origin
+            .borrow_mut()
+            .entry(fact.origin.clone())
+            .or_default()
+            .push(fact.id.to_string());
         self.pending.borrow_mut().push(op);
-
-        // Update indices via FihCoord (record_fact records by_time internally)
-        let ts = self.clock.now_nanos();
-        self.coord
-            .record_fact(&fact.id.0, &fact.origin, &fact.creator, ts);
 
         // Auto-index into semantic stores (skip conclusion facts to reduce noise)
         if !fact.origin.starts_with("conclusion:") {
-            let fact_idx = self.coord.intern(&fact.id.0);
+            let semantic_idx = {
+                let mut ctr = self.semantic_id_counter.borrow_mut();
+                let idx = *ctr;
+                *ctr += 1;
+                idx
+            };
             let text = String::from_utf8_lossy(&fact.content.data).to_string();
             struct FactTextRecord {
                 text: String,
@@ -567,8 +906,7 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
                     None
                 }
             }
-            self.coord
-                .semantic_insert(fact_idx, &FactTextRecord { text })
+            self.semantic_insert(semantic_idx, &FactTextRecord { text })
                 .await
                 .ok();
         }
@@ -594,7 +932,12 @@ impl<I: FileIo> crate::AsyncHintCapable for FihStorage<I> {
             path: record.key(),
             data: bytes,
         };
-        self.hint_store.insert(record.id.clone(), record).await;
+        self.hint_store
+            .insert(record.id.clone(), record.clone())
+            .await;
+        self.hint_records
+            .borrow_mut()
+            .insert(record.id.clone(), record);
         self.pending.borrow_mut().push(op);
         Ok(())
     }
@@ -603,7 +946,7 @@ impl<I: FileIo> crate::AsyncHintCapable for FihStorage<I> {
 // ── AsyncIntentCapable ─────────────────────────────────────────────────────
 
 impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
-    async fn submit_intent(&self, intent: &Intent) -> Result<FihHash, BlackboardError> {
+    async fn submit_intent(&self, intent: &Intent) -> Result<CoordId, BlackboardError> {
         if intent.from_facts.is_empty() {
             return Err(BlackboardError::Forbidden(
                 "intent must reference at least one fact".into(),
@@ -655,22 +998,19 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             data: bytes,
         };
 
-        // Record intent in coordinator (handles by_fact, ref_counts, by_status, by_creator)
-        self.coord.record_intent(
-            &intent.id.0,
-            &intent.creator,
-            record.created_at,
-            &intent.from_facts.iter().map(|f| f.0).collect::<Vec<_>>(),
-        );
-
-        self.intent_store.insert(record.id.clone(), record).await;
+        self.intent_store
+            .insert(record.id.clone(), record.clone())
+            .await;
+        self.intent_records
+            .borrow_mut()
+            .insert(record.id.clone(), record);
         self.pending.borrow_mut().push(op);
         Ok(intent.id)
     }
 
     async fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let _ = self.flush_pending().await;
-        let normalized = FihHash::from_hex(intent_id).to_string();
+        let normalized = CoordId::from_string(intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
             .io
@@ -701,14 +1041,12 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.intent_store.insert(normalized.clone(), record).await;
-        self.coord
-            .update_intent_status(&FihHash::from_hex(&normalized).0, "submitted", "claimed");
         Ok(())
     }
 
     async fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let _ = self.flush_pending().await;
-        let normalized = FihHash::from_hex(intent_id).to_string();
+        let normalized = CoordId::from_string(intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
             .io
@@ -746,7 +1084,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
 
     async fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
         let _ = self.flush_pending().await;
-        let normalized = FihHash::from_hex(intent_id).to_string();
+        let normalized = CoordId::from_string(intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
             .io
@@ -784,7 +1122,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.intent_store
-            .insert(intent_id.to_string(), record)
+            .insert(CoordId::from_string(intent_id).to_string(), record)
             .await;
         Ok(())
     }
@@ -795,7 +1133,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         result: &str,
     ) -> Result<Fact, BlackboardError> {
         let _ = self.flush_pending().await;
-        let normalized = FihHash::from_hex(intent_id).to_string();
+        let normalized = CoordId::from_string(intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
             .io
@@ -815,9 +1153,15 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         };
 
         let conclusion_id = format!("f_concl_{}", intent_id);
+        let content_data = result.as_bytes().to_vec();
+        let content_hash = {
+            let mut h = sha2::Sha256::new();
+            h.update(&content_data);
+            FihHash(h.finalize().into())
+        };
         let new_fact = Fact {
-            id: FihHash::from_hex(&conclusion_id),
-            coord: None,
+            id: CoordId::from_string(&conclusion_id),
+            content_hash,
             origin: format!("conclusion:{}", intent_id),
             content: Content {
                 mime_type: "text/plain".into(),
@@ -840,7 +1184,12 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             path: fact_rec.key(),
             data: fact_bytes,
         });
-        self.fact_store.insert(fact_rec.id.clone(), fact_rec).await;
+        self.fact_store
+            .insert(fact_rec.id.clone(), fact_rec.clone())
+            .await;
+        self.fact_records
+            .borrow_mut()
+            .insert(fact_rec.id.clone(), fact_rec);
 
         let intent_bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -851,11 +1200,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.flush_pending()
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.intent_store
-            .insert(intent_id.to_string(), record)
-            .await;
-        self.coord
-            .update_intent_status(&FihHash::from_hex(intent_id).0, "claimed", "concluded");
+        self.intent_store.insert(normalized.clone(), record).await;
 
         Ok(new_fact)
     }
@@ -865,302 +1210,365 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
 
 impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
     async fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
-        use std::collections::HashSet;
+        // Build blob lookup map once from pending writes (avoid O(N×P) scan).
+        let blob_map: HashMap<String, (String, Vec<u8>)> = self
+            .pending
+            .borrow()
+            .iter()
+            .filter_map(|op| match op {
+                WriteOp::Write { path, data }
+                    if path.ends_with(".bin") && !path.ends_with(".bin.meta") =>
+                {
+                    let blob_hash = path
+                        .strip_prefix("blob/")
+                        .and_then(|p| p.strip_suffix(".bin"))?;
+                    Some((blob_hash.to_string(), (String::new(), data.clone())))
+                }
+                WriteOp::Write { path, data } if path.ends_with(".bin.meta") => {
+                    let blob_hash = path
+                        .strip_prefix("blob/")
+                        .and_then(|p| p.strip_suffix(".bin.meta"))?;
+                    let meta = postcard::from_bytes::<ContentMeta>(data).ok()?;
+                    Some((blob_hash.to_string(), (meta.mime_type, Vec::new())))
+                }
+                _ => None,
+            })
+            .collect();
 
-        // Phase 1: Resolve candidate fact IDs from indexes
-        let has_fact_index = filter.creator.is_some()
-            || filter.since.is_some()
-            || filter.until.is_some()
-            || filter.fact_ids.is_some();
-
-        let fact_candidates: Option<HashSet<u32>> = if has_fact_index {
-            let mut c: Option<HashSet<u32>> = None;
-
-            if let Some(creator) = &filter.creator {
-                let ids: HashSet<u32> = self.coord.facts_by_creator(creator).into_iter().collect();
-                c = Some(match c {
-                    Some(existing) => existing.intersection(&ids).copied().collect(),
-                    None => ids,
-                });
-            }
-
-            if filter.since.is_some() || filter.until.is_some() {
-                let since_ns = filter
-                    .since
-                    .as_ref()
-                    .and_then(|s| s.parse::<u64>().ok())
-                    .unwrap_or(0);
-                let until_ns = filter
-                    .until
-                    .as_ref()
-                    .and_then(|u| u.parse::<u64>().ok())
-                    .unwrap_or(u64::MAX);
-                let time_ids: HashSet<u32> = match (&filter.since, &filter.until) {
-                    (Some(_), Some(_)) => self
-                        .coord
-                        .by_time
-                        .borrow()
-                        .range(&since_ns, &until_ns)
-                        .into_iter()
-                        .map(|(_, idx)| idx)
-                        .collect(),
-                    (Some(_), None) => self
-                        .coord
-                        .by_time
-                        .borrow()
-                        .since(&since_ns)
-                        .into_iter()
-                        .map(|(_, idx)| idx)
-                        .collect(),
-                    (None, Some(_)) => self
-                        .coord
-                        .by_time
-                        .borrow()
-                        .as_of(&until_ns)
-                        .into_iter()
-                        .map(|(_, idx)| idx)
-                        .collect(),
-                    (None, None) => unreachable!(),
+        // Materialize content from pending blobs (no IO fallback for sync path).
+        let load_content_fast = |blob_hash: &str, default_mime: &str| -> Content {
+            if let Some((mime, data)) = blob_map.get(blob_hash)
+                && !data.is_empty()
+            {
+                return Content {
+                    mime_type: if mime.is_empty() {
+                        default_mime.to_string()
+                    } else {
+                        mime.clone()
+                    },
+                    data: data.clone(),
                 };
-                c = Some(match c {
-                    Some(existing) => existing.intersection(&time_ids).copied().collect(),
-                    None => time_ids,
-                });
             }
-
-            if let Some(ids) = &filter.fact_ids {
-                let id_set: HashSet<u32> = ids.iter().map(|id| self.coord.intern_str(id)).collect();
-                c = Some(match c {
-                    Some(existing) => existing.intersection(&id_set).copied().collect(),
-                    None => id_set,
-                });
+            Content {
+                mime_type: default_mime.to_string(),
+                data: Vec::new(),
             }
-
-            c
-        } else {
-            None
         };
 
-        // Phase 2: Resolve candidate intent IDs from indexes
-        let has_intent_index =
-            filter.creator.is_some() || filter.status.is_some() || filter.intent_ids.is_some();
-
-        let intent_candidates: Option<HashSet<u32>> = if has_intent_index {
-            let mut c: Option<HashSet<u32>> = None;
-
-            if let Some(status) = &filter.status {
-                let ids: HashSet<u32> = self.coord.intents_by_status(status).into_iter().collect();
-                c = Some(match c {
-                    Some(existing) => existing.intersection(&ids).copied().collect(),
-                    None => ids,
-                });
+        // FAST PATH 1: single or AND filter via HashMap O(1)
+        let fast_ids: Option<Vec<String>> = match (filter.creator.as_ref(), filter.origin.as_ref())
+        {
+            (Some(c), Some(o)) => {
+                // AND: intersect creator + origin
+                let by_c = self.facts_by_creator.borrow();
+                let by_o = self.facts_by_origin.borrow();
+                let c_ids = by_c.get(c);
+                let o_ids = by_o.get(o);
+                match (c_ids, o_ids) {
+                    (Some(cv), Some(ov)) => {
+                        if cv.len() <= ov.len() {
+                            let o_set: std::collections::HashSet<&str> =
+                                ov.iter().map(|s| s.as_str()).collect();
+                            Some(
+                                cv.iter()
+                                    .filter(|id| o_set.contains(id.as_str()))
+                                    .cloned()
+                                    .collect(),
+                            )
+                        } else {
+                            let c_set: std::collections::HashSet<&str> =
+                                cv.iter().map(|s| s.as_str()).collect();
+                            Some(
+                                ov.iter()
+                                    .filter(|id| c_set.contains(id.as_str()))
+                                    .cloned()
+                                    .collect(),
+                            )
+                        }
+                    }
+                    (Some(cv), None) => Some(cv.clone()),
+                    (None, Some(ov)) => Some(ov.clone()),
+                    (None, None) => Some(Vec::new()),
+                }
             }
-
-            if let Some(creator) = &filter.creator {
-                let ids: HashSet<u32> = self.coord.facts_by_creator(creator).into_iter().collect();
-                c = Some(match c {
-                    Some(existing) => existing.intersection(&ids).copied().collect(),
-                    None => ids,
-                });
-            }
-
-            if let Some(ids) = &filter.intent_ids {
-                let id_set: HashSet<u32> = ids.iter().map(|id| self.coord.intern_str(id)).collect();
-                c = Some(match c {
-                    Some(existing) => existing.intersection(&id_set).copied().collect(),
-                    None => id_set,
-                });
-            }
-
-            c
-        } else {
-            None
+            (Some(c), None) => self.facts_by_creator.borrow().get(c).cloned(),
+            (None, Some(o)) => self.facts_by_origin.borrow().get(o).cloned(),
+            (None, None) => None,
         };
+        if let Some(ids) = fast_ids {
+            let recs = self.fact_records.borrow();
+            let facts: Vec<Fact> = ids
+                .iter()
+                .filter_map(|id| {
+                    recs.get(id).map(|r| Fact {
+                        id: CoordId::from_string(&r.id),
+                        origin: r.origin.clone(),
+                        content_hash: {
+                            let hex = &r.blob_hash;
+                            let mut b = [0u8; 32];
+                            for (i, c) in hex.as_bytes().chunks(2).enumerate() {
+                                let s = unsafe { std::str::from_utf8_unchecked(c) };
+                                b[i] = u8::from_str_radix(s, 16).unwrap_or(0);
+                            }
+                            FihHash(b)
+                        },
+                        content: load_content_fast(&r.blob_hash, "application/octet-stream"),
+                        creator: r.creator.clone(),
+                    })
+                })
+                .collect();
+            let intents: Vec<Intent> = Vec::new();
+            let hints: Vec<Hint> = Vec::new();
+            let mut state = BoardState {
+                facts,
+                intents,
+                hints,
+            };
+            if let Some(limit) = filter.limit {
+                state.facts = state.facts.into_iter().take(limit).collect();
+            }
+            return state;
+        }
 
-        // Phase 3: Selective materialization
+        // FAST PATH 2: axis_hints enable O(subtree) iter_prefix query.
+        if let Some(ref hints) = filter.axis_hints
+            && hints.time_hi.is_some()
+        {
+            let matched = self.fact_store.query_prefix(hints).await;
+            let facts: Vec<Fact> = matched
+                .into_iter()
+                .filter(|r| {
+                    if let Some(ref origin) = filter.origin
+                        && r.origin != *origin
+                    {
+                        return false;
+                    }
+                    if let Some(ref creator) = filter.creator
+                        && r.creator != *creator
+                    {
+                        return false;
+                    }
+                    if let Some(ref since) = filter.since
+                        && let Ok(ts) = since.parse::<u64>()
+                        && r.submitted_at < ts
+                    {
+                        return false;
+                    }
+                    if let Some(ref until) = filter.until
+                        && let Ok(ts) = until.parse::<u64>()
+                        && r.submitted_at > ts
+                    {
+                        return false;
+                    }
+                    true
+                })
+                .map(|r| {
+                    let content = load_content_fast(&r.blob_hash, "application/octet-stream");
+                    Fact {
+                        id: CoordId::from_string(&r.id),
+                        origin: r.origin,
+                        content_hash: {
+                            let hex = &r.blob_hash;
+                            let mut bytes = [0u8; 32];
+                            for (i, chunk) in hex.as_bytes().chunks(2).enumerate() {
+                                let s = unsafe { std::str::from_utf8_unchecked(chunk) };
+                                bytes[i] = u8::from_str_radix(s, 16).unwrap_or(0);
+                            }
+                            FihHash(bytes)
+                        },
+                        content,
+                        creator: r.creator,
+                    }
+                })
+                .collect();
+            let intents: Vec<Intent> = Vec::new();
+            let hints: Vec<Hint> = Vec::new();
+            let mut state = BoardState {
+                facts,
+                intents,
+                hints,
+            };
+            if let Some(limit) = filter.limit {
+                state.facts = state.facts.into_iter().take(limit).collect();
+            }
+            return state;
+        }
+
+        // FALLBACK: values() + string-based filter (no axis hints)
         let all_facts = self.fact_store.values().await;
         let all_intents = self.intent_store.values().await;
         let all_hints = self.hint_store.values().await;
 
-        let facts: Vec<Fact> = match fact_candidates {
-            Some(ids) => all_facts
-                .into_iter()
-                .filter(|r| ids.contains(&self.coord.intern_str(&r.id)))
-                .map(|r| {
-                    let content = self.load_content(&r.blob_hash, "application/octet-stream");
-                    Fact {
-                        id: FihHash::from_hex(&r.id),
-                        coord: None,
-                        origin: r.origin,
-                        content,
-                        creator: r.creator,
-                    }
-                })
-                .collect(),
-            None => all_facts
-                .into_iter()
-                .map(|r| {
-                    let content = self.load_content(&r.blob_hash, "application/octet-stream");
-                    Fact {
-                        id: FihHash::from_hex(&r.id),
-                        coord: None,
-                        origin: r.origin,
-                        content,
-                        creator: r.creator,
-                    }
-                })
-                .collect(),
-        };
-
-        let intents: Vec<Intent> = match intent_candidates {
-            Some(ids) => all_intents
-                .into_iter()
-                .filter(|r| ids.contains(&self.coord.intern_str(&r.id)))
-                .map(|r| {
-                    let description = if r.description_hash.is_empty() {
-                        r.id.clone()
-                    } else {
-                        let c = self.load_content(&r.description_hash, "text/plain");
-                        String::from_utf8_lossy(&c.data).to_string()
-                    };
-                    Intent {
-                        id: FihHash::from_hex(&r.id),
-                        coord: None,
-                        from_facts: r.from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
-                        description,
-                        creator: r.creator,
-                        worker: match &r.status {
-                            IntentStatus::Claimed { worker, .. }
-                            | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
-                            IntentStatus::Submitted => None,
-                        },
-                        to_fact_id: match &r.status {
-                            IntentStatus::Concluded { to_fact, .. } => {
-                                Some(FihHash::from_hex(to_fact))
-                            }
-                            _ => None,
-                        },
-                        last_heartbeat_at: match &r.status {
-                            IntentStatus::Claimed {
-                                last_heartbeat_at, ..
-                            } => Some(*last_heartbeat_at),
-                            _ => None,
-                        },
-                        created_at: Some(r.created_at),
-                        is_concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
-                        concluded_at: match &r.status {
-                            IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
-                            _ => None,
-                        },
-                    }
-                })
-                .collect(),
-            None => all_intents
-                .into_iter()
-                .map(|r| {
-                    let description = if r.description_hash.is_empty() {
-                        r.id.clone()
-                    } else {
-                        let c = self.load_content(&r.description_hash, "text/plain");
-                        String::from_utf8_lossy(&c.data).to_string()
-                    };
-                    Intent {
-                        id: FihHash::from_hex(&r.id),
-                        coord: None,
-                        from_facts: r.from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
-                        description,
-                        creator: r.creator,
-                        worker: match &r.status {
-                            IntentStatus::Claimed { worker, .. }
-                            | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
-                            IntentStatus::Submitted => None,
-                        },
-                        to_fact_id: match &r.status {
-                            IntentStatus::Concluded { to_fact, .. } => {
-                                Some(FihHash::from_hex(to_fact))
-                            }
-                            _ => None,
-                        },
-                        last_heartbeat_at: match &r.status {
-                            IntentStatus::Claimed {
-                                last_heartbeat_at, ..
-                            } => Some(*last_heartbeat_at),
-                            _ => None,
-                        },
-                        created_at: Some(r.created_at),
-                        is_concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
-                        concluded_at: match &r.status {
-                            IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
-                            _ => None,
-                        },
-                    }
-                })
-                .collect(),
-        };
-
-        let hints: Vec<Hint> = {
-            let has_hint_filter = filter.hint_ids.is_some();
-            if has_hint_filter {
-                let hint_ids_set: Option<HashSet<String>> = filter.hint_ids.as_ref().map(|ids| {
-                    ids.iter()
-                        .map(|id| FihHash::from_hex(id).to_string())
-                        .collect()
-                });
-                match hint_ids_set {
-                    Some(ids) => all_hints
-                        .into_iter()
-                        .filter(|r| ids.contains(&r.id))
-                        .map(|r| Hint {
-                            id: FihHash::from_hex(&r.id),
-                            content: r.content,
-                            creator: r.creator,
-                        })
-                        .collect(),
-                    None => all_hints
-                        .into_iter()
-                        .map(|r| Hint {
-                            id: FihHash::from_hex(&r.id),
-                            content: r.content,
-                            creator: r.creator,
-                        })
-                        .collect(),
+        // Filter facts using record fields directly.
+        let facts: Vec<Fact> = all_facts
+            .into_iter()
+            .filter(|r| {
+                if let Some(ref origin) = filter.origin
+                    && r.origin != *origin
+                {
+                    return false;
                 }
-            } else {
-                all_hints
-                    .into_iter()
-                    .map(|r| Hint {
-                        id: FihHash::from_hex(&r.id),
-                        content: r.content,
-                        creator: r.creator,
-                    })
-                    .collect()
-            }
-        };
+                if let Some(ref creator) = filter.creator
+                    && r.creator != *creator
+                {
+                    return false;
+                }
+                if let Some(ref since) = filter.since
+                    && let Ok(ts) = since.parse::<u64>()
+                    && r.submitted_at < ts
+                {
+                    return false;
+                }
+                if let Some(ref until) = filter.until
+                    && let Ok(ts) = until.parse::<u64>()
+                    && r.submitted_at > ts
+                {
+                    return false;
+                }
+                if let Some(ref ids) = filter.fact_ids {
+                    let normalized: Vec<String> = ids
+                        .iter()
+                        .map(|id| CoordId::from_string(id).to_string())
+                        .collect();
+                    if !normalized.iter().any(|nid| nid == &r.id) {
+                        return false;
+                    }
+                }
+                true
+            })
+            .map(|r| {
+                let content = load_content_fast(&r.blob_hash, "application/octet-stream");
+                Fact {
+                    id: CoordId::from_string(&r.id),
+                    origin: r.origin,
+                    content_hash: {
+                        // blob_hash IS the hex-encoded content hash — parse directly.
+                        let hex = &r.blob_hash;
+                        let mut bytes = [0u8; 32];
+                        for (i, chunk) in hex.as_bytes().chunks(2).enumerate() {
+                            let s = unsafe { std::str::from_utf8_unchecked(chunk) };
+                            bytes[i] = u8::from_str_radix(s, 16).unwrap_or(0);
+                        }
+                        FihHash(bytes)
+                    },
+                    content,
+                    creator: r.creator,
+                }
+            })
+            .collect();
 
-        // Phase 4: Post-filtering
+        // Filter intents using record fields directly.
+        let intents: Vec<Intent> = all_intents
+            .into_iter()
+            .filter(|r| {
+                if let Some(ref creator) = filter.creator
+                    && r.creator != *creator
+                {
+                    return false;
+                }
+                if let Some(ref status) = filter.status
+                    && simple_status_key(&r.status) != status.as_str()
+                {
+                    return false;
+                }
+                if let Some(ref since) = filter.since
+                    && let Ok(ts) = since.parse::<u64>()
+                {
+                    let created_ns = r.created_at * 1_000_000_000;
+                    if created_ns < ts {
+                        return false;
+                    }
+                }
+                if let Some(ref until) = filter.until
+                    && let Ok(ts) = until.parse::<u64>()
+                {
+                    let created_ns = r.created_at * 1_000_000_000;
+                    if created_ns > ts {
+                        return false;
+                    }
+                }
+                if let Some(ref ids) = filter.intent_ids {
+                    let normalized: Vec<String> = ids
+                        .iter()
+                        .map(|id| CoordId::from_string(id).to_string())
+                        .collect();
+                    if !normalized.iter().any(|nid| nid == &r.id) {
+                        return false;
+                    }
+                }
+                true
+            })
+            .map(|r| {
+                let description = if r.description_hash.is_empty() {
+                    r.id.clone()
+                } else {
+                    let c = load_content_fast(&r.description_hash, "text/plain");
+                    String::from_utf8_lossy(&c.data).to_string()
+                };
+                Intent {
+                    id: CoordId::from_string(&r.id),
+                    from_facts: r
+                        .from_facts
+                        .iter()
+                        .map(|s| CoordId::from_string(s))
+                        .collect(),
+                    description,
+                    creator: r.creator,
+                    worker: match &r.status {
+                        IntentStatus::Claimed { worker, .. }
+                        | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
+                        IntentStatus::Submitted => None,
+                    },
+                    to_fact_id: match &r.status {
+                        IntentStatus::Concluded { to_fact, .. } => {
+                            Some(CoordId::from_string(to_fact))
+                        }
+                        _ => None,
+                    },
+                    last_heartbeat_at: match &r.status {
+                        IntentStatus::Claimed {
+                            last_heartbeat_at, ..
+                        } => Some(*last_heartbeat_at),
+                        _ => None,
+                    },
+                    created_at: Some(r.created_at),
+                    is_concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
+                    concluded_at: match &r.status {
+                        IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
+                        _ => None,
+                    },
+                }
+            })
+            .collect();
+
+        // Filter hints using record fields directly.
+        let hints: Vec<Hint> = all_hints
+            .into_iter()
+            .filter(|r| {
+                if let Some(ref ids) = filter.hint_ids {
+                    let normalized: Vec<String> = ids
+                        .iter()
+                        .map(|id| CoordId::from_string(id).to_string())
+                        .collect();
+                    if !normalized.iter().any(|nid| nid == &r.id) {
+                        return false;
+                    }
+                }
+                true
+            })
+            .map(|r| Hint {
+                id: CoordId::from_string(&r.id),
+                content: r.content,
+                creator: r.creator,
+            })
+            .collect();
+
+        // Apply offset/limit.
         let mut state = BoardState {
             facts,
             intents,
             hints,
         };
-
-        let has_intent_time_filter = filter.since.is_some() || filter.until.is_some();
-        if has_intent_time_filter {
-            let since_ns = filter
-                .since
-                .as_ref()
-                .and_then(|s| s.parse::<u64>().ok())
-                .unwrap_or(0);
-            let until_ns = filter
-                .until
-                .as_ref()
-                .and_then(|u| u.parse::<u64>().ok())
-                .unwrap_or(u64::MAX);
-            state.intents.retain(|i| {
-                let created_ns = i.created_at.unwrap_or(0) * 1_000_000_000;
-                created_ns > since_ns && created_ns <= until_ns
-            });
-        }
 
         let offset = filter.offset.unwrap_or(0);
         if let Some(limit) = filter.limit {
@@ -1235,9 +1643,13 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
                 .map(|r| {
                     let content = self.load_content(&r.blob_hash, "application/octet-stream");
                     Fact {
-                        id: FihHash::from_hex(&r.id),
-                        coord: None,
+                        id: CoordId::from_string(&r.id),
                         origin: r.origin,
+                        content_hash: {
+                            let mut h = sha2::Sha256::new();
+                            h.update(&content.data);
+                            FihHash(h.finalize().into())
+                        },
                         content,
                         creator: r.creator,
                     }
@@ -1254,9 +1666,12 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
                         String::from_utf8_lossy(&c.data).to_string()
                     };
                     Intent {
-                        id: FihHash::from_hex(&r.id),
-                        coord: None,
-                        from_facts: r.from_facts.iter().map(|s| FihHash::from_hex(s)).collect(),
+                        id: CoordId::from_string(&r.id),
+                        from_facts: r
+                            .from_facts
+                            .iter()
+                            .map(|s| CoordId::from_string(s))
+                            .collect(),
                         description,
                         creator: r.creator,
                         worker: match &r.status {
@@ -1266,7 +1681,7 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
                         },
                         to_fact_id: match &r.status {
                             IntentStatus::Concluded { to_fact, .. } => {
-                                Some(FihHash::from_hex(to_fact))
+                                Some(CoordId::from_string(to_fact))
                             }
                             _ => None,
                         },
@@ -1289,7 +1704,7 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
                 .into_iter()
                 .filter(|h| h.creator == prefix)
                 .map(|r| Hint {
-                    id: FihHash::from_hex(&r.id),
+                    id: CoordId::from_string(&r.id),
                     content: r.content,
                     creator: r.creator,
                 })
@@ -1302,9 +1717,13 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
 
 impl<I: FileIo> crate::AsyncTimeRangeCapable for FihStorage<I> {
     async fn time_range(&self) -> Option<Range<String>> {
-        let first = self.coord.by_time.borrow().first_key()?;
-        let last = self.coord.by_time.borrow().last_key()?;
-        Some(first.to_string()..last.to_string())
+        let facts = self.fact_store.values().await;
+        if facts.is_empty() {
+            return None;
+        }
+        let min = facts.iter().map(|r| r.submitted_at).min()?;
+        let max = facts.iter().map(|r| r.submitted_at).max()?;
+        Some(min.to_string()..max.to_string())
     }
 }
 
@@ -1312,20 +1731,24 @@ impl<I: FileIo> crate::AsyncTimeRangeCapable for FihStorage<I> {
 
 impl<I: FileIo> crate::AsyncFlushCapable for FihStorage<I> {
     async fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
-        let since_ts = cursor.last_flushed_at;
         let now_ts = self.clock.now_nanos();
 
-        let delta_ids: Vec<(String, u64)> = self
-            .coord
-            .by_time
+        // Count pending record WriteOps (fact + intent keys) that represent
+        // entity records rather than blob data. This approximates the old
+        // by_time delta count removed with FihCoord in Phase 3.
+        let records_flushed = self
+            .pending
             .borrow()
-            .since(&since_ts)
-            .into_iter()
-            .map(|(_ts, idx)| (self.coord.resolve(idx), _ts))
-            .collect();
-        let records_flushed = delta_ids.len() as u64;
+            .iter()
+            .filter(|op| match op {
+                WriteOp::Write { path, .. } => {
+                    path.starts_with("facts/") || path.starts_with("intents/")
+                }
+                WriteOp::Delete { .. } => false,
+            })
+            .count() as u64;
 
-        if records_flushed == 0 {
+        if records_flushed == 0 && self.pending.borrow().is_empty() {
             return Ok(FlushResult {
                 records_flushed: 0,
                 new_cursor: FlushCursor {
@@ -1334,32 +1757,6 @@ impl<I: FileIo> crate::AsyncFlushCapable for FihStorage<I> {
                 },
             });
         }
-
-        let mut facts = Vec::new();
-        let mut intents = Vec::new();
-        for (id, _) in &delta_ids {
-            if let Some(record) = self.fact_store.get(id).await {
-                facts.push(record);
-            }
-            if let Some(record) = self.intent_store.get(id).await {
-                intents.push(record);
-            }
-        }
-
-        let entry = ChainEntry {
-            prev_cursor: cursor.last_flushed_at,
-            records_flushed,
-            facts,
-            intents,
-        };
-        let chain_bytes =
-            postcard::to_allocvec(&entry).map_err(|e| format!("serialize chain: {e}"))?;
-
-        let chain_path = format!("flush/{}/cursor_{}.chain", cursor.partition, now_ts);
-        self.pending.borrow_mut().push(WriteOp::Write {
-            path: chain_path,
-            data: chain_bytes,
-        });
 
         self.flush_pending().await?;
 

@@ -11,7 +11,7 @@
 mod common;
 
 use futures_executor::block_on;
-use nex_fih::{AsyncFactCapable, AsyncIntentCapable, Content, Fact, FihHash, Intent};
+use nex_fih::{AsyncFactCapable, AsyncIntentCapable, Content, CoordId, Fact, Intent};
 use nexus_storage_sim::{FihStorage, SimIo};
 
 fn storage() -> FihStorage<SimIo> {
@@ -19,23 +19,21 @@ fn storage() -> FihStorage<SimIo> {
 }
 
 fn fact(id: &str) -> Fact {
-    Fact {
-        id: FihHash::from_hex(id),
-        coord: None,
-        origin: "t".into(),
-        content: Content {
+    Fact::with_id(
+        CoordId::from_string(id),
+        "t".into(),
+        Content {
             mime_type: "text/plain".into(),
             data: id.as_bytes().to_vec(),
         },
-        creator: "t".into(),
-    }
+        "t".into(),
+    )
 }
 
 fn intent(id: &str, from: Vec<&str>) -> Intent {
     Intent {
-        id: FihHash::from_hex(id),
-        coord: None,
-        from_facts: from.into_iter().map(|s| FihHash::from_hex(s)).collect(),
+        id: CoordId::from_string(id),
+        from_facts: from.into_iter().map(|s| CoordId::from_string(s)).collect(),
         description: format!("intent {}", id),
         creator: "t".into(),
         worker: None,
@@ -59,14 +57,14 @@ fn test_by_from_fact_returns_intents_for_fact() {
 
     let refs_a = store.intents_by_fact("f_a");
     assert_eq!(refs_a.len(), 2);
-    let hex_i1 = FihHash::from_hex("i1").to_string();
-    let hex_i2 = FihHash::from_hex("i2").to_string();
-    assert!(refs_a.iter().any(|s| *s == hex_i1));
-    assert!(refs_a.iter().any(|s| *s == hex_i2));
+    let id_i1 = CoordId::from_string("i1").to_string();
+    let id_i2 = CoordId::from_string("i2").to_string();
+    assert!(refs_a.iter().any(|s| *s == id_i1));
+    assert!(refs_a.iter().any(|s| *s == id_i2));
 
     let refs_b = store.intents_by_fact("f_b");
     assert_eq!(refs_b.len(), 1);
-    assert!(refs_b.iter().any(|s| *s == hex_i2));
+    assert!(refs_b.iter().any(|s| *s == id_i2));
 
     assert!(store.intents_by_fact("nonexistent").is_empty());
 }
@@ -86,7 +84,7 @@ fn test_by_from_fact_cleared_on_conclude() {
     // Note: after conclude, the intent remains in the by_from_fact reverse
     // index but its status changes to Concluded (see test_scenario_concluded_intent_references_preserved
     // in store_restore_scenarios for the rebuild-based reference check).
-    assert!(store.intents_by_fact("f_base").len() == 1);
+    assert_eq!(store.intents_by_fact("f_base").len(), 1);
 }
 
 #[test]
@@ -104,6 +102,6 @@ fn test_by_from_fact_rebuild_from_io() {
 
     let refs = store2.intents_by_fact("f_x");
     assert_eq!(refs.len(), 1);
-    let hex_i_ref = FihHash::from_hex("i_ref").to_string();
-    assert!(refs.iter().any(|s| *s == hex_i_ref));
+    let id_i_ref = CoordId::from_string("i_ref").to_string();
+    assert!(refs.iter().any(|s| *s == id_i_ref));
 }
