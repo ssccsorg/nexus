@@ -18,5 +18,5 @@ criterion = { version = "0.5" }
 
 [[bench]]
 name = "bench"
-path = "benches/bench.rs"
+path = "bench.rs"
 harness = false
