@@ -468,9 +468,11 @@ dependencies = [
 [[package]]
 name = "chton"
 version = "0.1.0"
-source = "git+https://github.com/ssccsorg/chton#811366bcce75f6f80b69020bea0b1ae19004286f"
+source = "git+https://github.com/ssccsorg/chton#daf24f9f3048cc139952e77560de1707c743f269"
 dependencies = [
+ "futures-executor",
  "tagma-core",
+ "walkdir",
 ]
 
 [[package]]
@@ -1901,12 +1903,7 @@ dependencies = [
 name = "nex-io"
 version = "0.1.0"
 dependencies = [
- "async-trait",
- "futures-executor",
- "log",
- "serde",
- "serde_json",
- "walkdir",
+ "chton",
 ]
 
 [[package]]
@@ -3022,7 +3019,7 @@ dependencies = [
 [[package]]
 name = "tagma-core"
 version = "0.1.0"
-source = "git+https://github.com/ssccsorg/syntagma?branch=main#205e3a0f948d583b0200dec7fa1243c474a7605a"
+source = "git+https://github.com/ssccsorg/syntagma?branch=main#9bc1472cb8e114b4b7ae841cb7e34cc2bd3b126d"
 
 [[package]]
 name = "tap"

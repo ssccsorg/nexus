@@ -78,6 +78,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
+name = "chton"
+version = "0.1.0"
+source = "git+https://github.com/ssccsorg/chton#daf24f9f3048cc139952e77560de1707c743f269"
+dependencies = [
+ "futures-executor",
+ "tagma-core",
+ "walkdir",
+]
+
+[[package]]
 name = "cobs"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -224,6 +234,7 @@ name = "fih-model"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chton",
  "futures-executor",
  "log",
  "petgraph",
@@ -597,12 +608,7 @@ dependencies = [
 name = "nex-io"
 version = "0.1.0"
 dependencies = [
- "async-trait",
- "futures-executor",
- "log",
- "serde",
- "serde_json",
- "walkdir",
+ "chton",
 ]
 
 [[package]]
@@ -942,7 +948,7 @@ dependencies = [
 [[package]]
 name = "tagma-core"
 version = "0.1.0"
-source = "git+https://github.com/ssccsorg/syntagma?branch=main#646d7d0df93ceebdaa62ccaaecde470c0375c1e4"
+source = "git+https://github.com/ssccsorg/syntagma?branch=main#9bc1472cb8e114b4b7ae841cb7e34cc2bd3b126d"
 
 [[package]]
 name = "tempfile"
@@ -1128,7 +1134,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
