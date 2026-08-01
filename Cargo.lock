@@ -466,6 +466,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "chton"
+version = "0.1.0"
+source = "git+https://github.com/ssccsorg/chton#811366bcce75f6f80b69020bea0b1ae19004286f"
+dependencies = [
+ "tagma-core",
+]
+
+[[package]]
 name = "ciborium"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -976,6 +984,7 @@ name = "fih-model"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chton",
  "futures-executor",
  "log",
  "petgraph",
