@@ -140,7 +140,7 @@ dependencies = [
 [[package]]
 name = "chton"
 version = "0.1.0"
-source = "git+https://github.com/ssccsorg/chton#ac881f5461e2a9bef142dad09ed60872208bc306"
+source = "git+https://github.com/ssccsorg/chton?rev=ac881f5461e2a9bef142dad09ed60872208bc306#ac881f5461e2a9bef142dad09ed60872208bc306"
 dependencies = [
  "futures-executor",
  "tagma-core",
@@ -293,7 +293,6 @@ name = "fih-model"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "chton",
  "futures-executor",
  "log",
  "petgraph",

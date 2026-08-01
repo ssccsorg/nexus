@@ -6,7 +6,6 @@ license = "Apache-2.0"
 
 [dependencies]
 tagma-core = { git = "https://github.com/ssccsorg/syntagma", branch = "main" }
-chton.workspace = true
 sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

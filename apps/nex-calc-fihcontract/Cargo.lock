@@ -52,7 +52,7 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 [[package]]
 name = "chton"
 version = "0.1.0"
-source = "git+https://github.com/ssccsorg/chton#235cb33e60af157f848bab5c43e44a9cf4f28a4c"
+source = "git+https://github.com/ssccsorg/chton?rev=ac881f5461e2a9bef142dad09ed60872208bc306#ac881f5461e2a9bef142dad09ed60872208bc306"
 dependencies = [
  "futures-executor",
  "tagma-core",
@@ -126,7 +126,6 @@ name = "fih-model"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "chton",
  "futures-executor",
  "log",
  "petgraph",
@@ -500,7 +499,7 @@ dependencies = [
 [[package]]
 name = "tagma-core"
 version = "0.1.0"
-source = "git+https://github.com/ssccsorg/syntagma?branch=main#205e3a0f948d583b0200dec7fa1243c474a7605a"
+source = "git+https://github.com/ssccsorg/syntagma?branch=main#9bc1472cb8e114b4b7ae841cb7e34cc2bd3b126d"
 
 [[package]]
 name = "thiserror"
