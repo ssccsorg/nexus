@@ -723,8 +723,12 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
     }
 
     async fn read_state(&self) -> BoardState {
-        // Flush any pending writes so IO reflects the latest state.
-        let _ = self.flush_pending().await;
+        // Flush any pending writes so IO reflects the latest state. The
+        // signature has no error channel, so a failed flush is logged
+        // instead of silently returning stale state.
+        if let Err(e) = self.flush_pending().await {
+            log::warn!("read_state: flush pending failed: {e}");
+        }
 
         // Direct async IO: list + read from backing store, no block_on.
         let mut facts = Vec::new();
@@ -998,7 +1002,9 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
     }
 
     async fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let _ = self.flush_pending().await;
+        self.flush_pending()
+            .await
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         let normalized = CoordId::from_string(intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
@@ -1034,7 +1040,9 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
     }
 
     async fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let _ = self.flush_pending().await;
+        self.flush_pending()
+            .await
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         let normalized = CoordId::from_string(intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
@@ -1072,7 +1080,9 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
     }
 
     async fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
-        let _ = self.flush_pending().await;
+        self.flush_pending()
+            .await
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         let normalized = CoordId::from_string(intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
@@ -1121,7 +1131,9 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         intent_id: &str,
         result: &str,
     ) -> Result<Fact, BlackboardError> {
-        let _ = self.flush_pending().await;
+        self.flush_pending()
+            .await
+            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         let normalized = CoordId::from_string(intent_id).to_string();
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
