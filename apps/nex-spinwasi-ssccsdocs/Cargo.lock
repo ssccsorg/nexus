@@ -140,10 +140,13 @@ dependencies = [
 [[package]]
 name = "chton"
 version = "0.1.0"
-source = "git+https://github.com/ssccsorg/chton?rev=ac881f5461e2a9bef142dad09ed60872208bc306#ac881f5461e2a9bef142dad09ed60872208bc306"
+source = "git+https://github.com/ssccsorg/chton?branch=main#5aa39b6af83a234b119b05dbcee266d66c9b54c5"
 dependencies = [
  "futures-executor",
+ "memmap2",
  "tagma-core",
+ "tagma-geo",
+ "tagma-kv",
  "walkdir",
 ]
 
@@ -618,6 +621,15 @@ name = "memchr"
 version = "2.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
+
+[[package]]
+name = "memmap2"
+version = "0.9.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1219ed1b7f229ee7104d281dd01d6802fe28bb6e95d292942c4daacdeb798c0"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "nex"
@@ -1102,6 +1114,23 @@ dependencies = [
 name = "tagma-core"
 version = "0.1.0"
 source = "git+https://github.com/ssccsorg/syntagma?branch=main#9bc1472cb8e114b4b7ae841cb7e34cc2bd3b126d"
+
+[[package]]
+name = "tagma-geo"
+version = "0.1.0"
+source = "git+https://github.com/ssccsorg/syntagma?branch=main#9bc1472cb8e114b4b7ae841cb7e34cc2bd3b126d"
+dependencies = [
+ "tagma-core",
+]
+
+[[package]]
+name = "tagma-kv"
+version = "0.1.0"
+source = "git+https://github.com/ssccsorg/syntagma?branch=main#9bc1472cb8e114b4b7ae841cb7e34cc2bd3b126d"
+dependencies = [
+ "tagma-core",
+ "tagma-geo",
+]
 
 [[package]]
 name = "tempfile"
