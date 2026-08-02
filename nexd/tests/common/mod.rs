@@ -57,49 +57,23 @@ pub fn nex_server_bin() -> std::path::PathBuf {
 /// Manages a nexd daemon instance for testing.
 pub struct DaemonHandle {
     child: Option<Child>,
-    nex_child: Option<Child>,
     pub socket_path: PathBuf,
     #[allow(dead_code)]
     pub temp_dir: tempfile::TempDir,
 }
 
 impl DaemonHandle {
-    /// Start nexd with a unique socket in a temp dir.
-    /// Also starts nex-server as a child process.
+    /// Start nexd with a unique socket in a temp dir. nexd spawns
+    /// nex-server as a managed child process, so only nexd is started
+    /// here; the socket and data dir are passed to nexd and inherited by
+    /// the spawned nex-server.
     pub fn start() -> Self {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let socket_path = temp_dir.path().join("nexd.sock");
         let nex_server_socket = temp_dir.path().join("nex-server.sock");
 
-        // Start nex-server first with unique data dir
         let nex_data_dir = temp_dir.path().join("fih-data");
         std::fs::create_dir_all(&nex_data_dir).expect("create nex-data dir");
-        let nex_bin = nex_server_bin();
-        let nex_stderr_path = temp_dir.path().join("nex-server.stderr");
-        let nex_stderr_file =
-            std::fs::File::create(&nex_stderr_path).expect("create nex-server.stderr");
-        let nex_child = Command::new(&nex_bin)
-            .env("NEX_SOCKET_PATH", nex_server_socket.to_str().unwrap())
-            .env("NEX_DATA_DIR", nex_data_dir.to_str().unwrap())
-            .env("RUST_LOG", "nex-server=error")
-            .stdout(Stdio::null())
-            .stderr(nex_stderr_file)
-            .spawn()
-            .unwrap_or_else(|e| panic!("spawn nex-server failed: {e}"));
-
-        // Wait for nex-server socket
-        let start = Instant::now();
-        while start.elapsed() < Duration::from_secs(5) {
-            if nex_server_socket.exists() {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(50));
-        }
-        if !nex_server_socket.exists() {
-            let stderr_log = std::fs::read_to_string(&nex_stderr_path).unwrap_or_default();
-            panic!("nex-server not ready in 5s. stderr:\n{}", stderr_log);
-        }
-
         let nexd_stderr_path = temp_dir.path().join("nexd.stderr");
         let nexd_stderr_file =
             std::fs::File::create(&nexd_stderr_path).expect("create nexd.stderr");
@@ -108,25 +82,37 @@ impl DaemonHandle {
             .env("NEXD_NEX_SERVER_PATH", nex_server_bin())
             .env("NEX_SOCKET_PATH", nex_server_socket.to_str().unwrap())
             .env("NEX_DATA_DIR", nex_data_dir.to_str().unwrap())
-            .env("RUST_LOG", "nexd=error")
+            .env("RUST_LOG", "nexd=error,nex-server=error")
             .stdout(Stdio::null())
             .stderr(nexd_stderr_file)
             .spawn()
             .unwrap_or_else(|e| panic!("spawn nexd ({NEXD_BIN}) failed: {e}"));
 
+        // Wait for the nex-server socket, which nexd creates by spawning
+        // nex-server as a managed agent.
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_secs(10) {
+            if nex_server_socket.exists() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        if !nex_server_socket.exists() {
+            let stderr_log = std::fs::read_to_string(&nexd_stderr_path).unwrap_or_default();
+            panic!(
+                "nex-server not ready in 10s (spawned by nexd). nexd stderr:\n{}",
+                stderr_log
+            );
+        }
+
         let handle = Self {
             child: Some(child),
-            nex_child: Some(nex_child),
             socket_path: socket_path.clone(),
             temp_dir,
         };
         if let Err(msg) = handle.wait_ready(5) {
             let nexd_stderr = std::fs::read_to_string(&nexd_stderr_path).unwrap_or_default();
-            let nex_stderr = std::fs::read_to_string(&nex_stderr_path).unwrap_or_default();
-            panic!(
-                "{}.\nnex-server stderr:\n{}\nnexd stderr:\n{}",
-                msg, nex_stderr, nexd_stderr
-            );
+            panic!("{msg}.\nnexd stderr:\n{nexd_stderr}");
         }
         handle
     }
@@ -162,8 +148,12 @@ impl DaemonHandle {
             panic!("read_line failed for {method}: {e}");
         });
         if n == 0 {
+            let temp = self.temp_dir.path();
+            let nexd_stderr = std::fs::read_to_string(temp.join("nexd.stderr")).unwrap_or_default();
+            let nex_stderr =
+                std::fs::read_to_string(temp.join("nex-server.stderr")).unwrap_or_default();
             panic!(
-                "nexd closed connection for {method} (EOF). Check nexd.stderr and nex-server.stderr in temp dir."
+                "nexd closed connection for {method} (EOF).\nnex-server stderr:\n{nex_stderr}\nnexd stderr:\n{nexd_stderr}"
             );
         }
         serde_json::from_str(line.trim()).unwrap_or_else(|e| {
@@ -189,10 +179,6 @@ impl DaemonHandle {
 impl Drop for DaemonHandle {
     fn drop(&mut self) {
         if let Some(mut child) = self.child.take() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-        if let Some(mut child) = self.nex_child.take() {
             let _ = child.kill();
             let _ = child.wait();
         }
