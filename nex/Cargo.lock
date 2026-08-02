@@ -80,10 +80,13 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 [[package]]
 name = "chton"
 version = "0.1.0"
-source = "git+https://github.com/ssccsorg/chton?branch=main#cd78a865b0cabd336f0814dc5070b1800daa2f96"
+source = "git+https://github.com/ssccsorg/chton?branch=main#5aa39b6af83a234b119b05dbcee266d66c9b54c5"
 dependencies = [
  "futures-executor",
+ "memmap2",
  "tagma-core",
+ "tagma-geo",
+ "tagma-kv",
  "walkdir",
 ]
 
@@ -551,6 +554,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
+name = "memmap2"
+version = "0.9.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1219ed1b7f229ee7104d281dd01d6802fe28bb6e95d292942c4daacdeb798c0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "miniz_oxide"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -948,6 +960,23 @@ dependencies = [
 name = "tagma-core"
 version = "0.1.0"
 source = "git+https://github.com/ssccsorg/syntagma?branch=main#9bc1472cb8e114b4b7ae841cb7e34cc2bd3b126d"
+
+[[package]]
+name = "tagma-geo"
+version = "0.1.0"
+source = "git+https://github.com/ssccsorg/syntagma?branch=main#9bc1472cb8e114b4b7ae841cb7e34cc2bd3b126d"
+dependencies = [
+ "tagma-core",
+]
+
+[[package]]
+name = "tagma-kv"
+version = "0.1.0"
+source = "git+https://github.com/ssccsorg/syntagma?branch=main#9bc1472cb8e114b4b7ae841cb7e34cc2bd3b126d"
+dependencies = [
+ "tagma-core",
+ "tagma-geo",
+]
 
 [[package]]
 name = "tempfile"
