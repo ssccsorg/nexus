@@ -59,15 +59,21 @@ fn intent(id: &str) -> Intent {
     }
 }
 
+/// Submit the base fact and an intent referencing it; submit only enqueues,
+/// so this succeeds even with a failing IO backend.
+async fn seed(storage: &FihStorage<FailingIo>) {
+    storage.submit_fact(&fact("f_base")).await.unwrap();
+    storage.submit_intent(&intent("i_flush")).await.unwrap();
+}
+
 #[test]
 fn claim_flush_failure_is_internal_not_not_found() {
     block_on(async {
         let storage = FihStorage::new(FailingIo, "flush-error");
-        storage.submit_fact(&fact("f_base")).await.unwrap();
-        storage.submit_intent(&intent("i_flush")).await.unwrap();
+        seed(&storage).await;
 
-        // submit only enqueues; the pre-read flush in claim fails, and
-        // the failure must surface as Internal, not NotFound.
+        // The pre-read flush in claim fails, and the failure must surface
+        // as Internal, not NotFound.
         let err = storage.claim_intent("i_flush", "worker").await.unwrap_err();
         assert!(matches!(err, BlackboardError::Internal(_)));
     });
@@ -77,10 +83,37 @@ fn claim_flush_failure_is_internal_not_not_found() {
 fn heartbeat_flush_failure_is_internal_not_not_found() {
     block_on(async {
         let storage = FihStorage::new(FailingIo, "flush-error");
-        storage.submit_fact(&fact("f_base")).await.unwrap();
-        storage.submit_intent(&intent("i_flush")).await.unwrap();
+        seed(&storage).await;
 
         let err = storage.heartbeat("i_flush", "worker").await.unwrap_err();
+        assert!(matches!(err, BlackboardError::Internal(_)));
+    });
+}
+
+#[test]
+fn release_flush_failure_is_internal_not_not_found() {
+    block_on(async {
+        let storage = FihStorage::new(FailingIo, "flush-error");
+        seed(&storage).await;
+
+        let err = storage
+            .release_intent("i_flush", "worker")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, BlackboardError::Internal(_)));
+    });
+}
+
+#[test]
+fn conclude_flush_failure_is_internal_not_not_found() {
+    block_on(async {
+        let storage = FihStorage::new(FailingIo, "flush-error");
+        seed(&storage).await;
+
+        let err = storage
+            .conclude_intent("i_flush", "done")
+            .await
+            .unwrap_err();
         assert!(matches!(err, BlackboardError::Internal(_)));
     });
 }
