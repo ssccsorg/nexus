@@ -108,10 +108,10 @@ impl<const N: usize> FileIo for CoordKvIo<N> {
             let entries = guard.iter().map_err(|e| e.to_string())?;
             let mut out = Vec::new();
             for (_, value) in entries {
-                if let Ok((path, _)) = decode_value(&value) {
-                    if path.starts_with(prefix) {
-                        out.push(path);
-                    }
+                if let Ok((path, _)) = decode_value(&value)
+                    && path.starts_with(prefix)
+                {
+                    out.push(path);
                 }
             }
             Ok(out)
