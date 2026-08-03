@@ -5,7 +5,6 @@ members = [
     "nex-server/server",
     "nex-server/client",
     "nexd",
-    "storage/duckdb",
     "libs/serde-proxy",
     "libs/session-server",
     "libs/async-store",

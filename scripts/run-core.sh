@@ -32,13 +32,13 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
-run_check()  { cargo check -p nex && cargo check -p nexd && cargo check -p nexus-storage-duckdb && cargo check -p nexus-storage-sim; }
+run_check()  { cargo check -p nex && cargo check -p nexd && cargo check -p nexus-storage-sim; }
 
 # ── WASM check: ensure storage-sim builds for wasm32 target ────────────
 
 run_wasm_check() {
     # Find all Cargo.toml under core directories, excluding non-WASM targets.
-    # Exclusions: storage/duckdb (crossterm), storage/ve-composite (tokio),
+    # Exclusions: storage/ve-composite (tokio),
     # storage/sim (tokio), apps/* (HTTP server), playbooks/* (scripts),
     # target/ (build artifacts).
     # apps/ is excluded: each app has its own build target (native, container, etc.)
@@ -47,7 +47,6 @@ run_wasm_check() {
         -not -path './target/*' \
         -not -path './ext/*' \
         -not -path './apps/*' \
-        -not -path './storage/duckdb/*' \
         -not -path './storage/ve-composite/*' \
         -not -path './storage/sim/*' \
         -not -path './nexd/*' \

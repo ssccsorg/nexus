@@ -109,10 +109,8 @@ pub struct AggregateDef {
 /// Storage backend that can execute tabular query plans.
 ///
 /// Backends that can answer tabular queries (filter, project, aggregate)
-/// implement this trait. The primary implementation is `DuckDbStorage`,
-/// which translates `ColdQuery` into DuckDB SQL.
-///
-/// Backends without a concrete implementation fall through to the default
+/// implement this trait. Concrete cold backends register here as they
+/// materialize; without one, calls fall through to the default
 /// error-returning method.
 pub trait QueryCapable: nex_fih::StorageRead {
     /// Execute a compiled query plan against this storage backend.
