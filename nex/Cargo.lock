@@ -587,6 +587,8 @@ dependencies = [
  "nexus-storage-sim",
  "serde",
  "serde_json",
+ "tagma-core",
+ "tagma-kv",
  "tempfile",
  "ureq",
 ]

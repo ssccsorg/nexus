@@ -20,3 +20,5 @@ tempfile = "3"
 nexus-storage-sim = { path = "../../storage/sim" }
 nexus-gateway-serde-proxy = { path = "../../libs/serde-proxy" }
 ureq = { version = "3", features = ["json"] }
+tagma-core.workspace = true
+tagma-kv.workspace = true
