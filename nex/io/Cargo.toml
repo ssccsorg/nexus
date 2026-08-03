@@ -5,9 +5,4 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-serde.workspace = true
-serde_json.workspace = true
-log.workspace = true
-async-trait.workspace = true
-futures-executor = "0.3"
-walkdir = "2"
+chton.workspace = true
