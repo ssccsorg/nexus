@@ -296,6 +296,10 @@ impl<I: FileIo> FihStorage<I> {
     }
 
     /// Flush pending writes to IO.
+    ///
+    /// On apply failure the batch is re-queued at the front of `pending`
+    /// so a later flush retries it. Write and Delete are idempotent, so
+    /// re-applying an already-applied prefix is safe.
     pub async fn flush_pending(&self) -> Result<(), String> {
         let ops = {
             let mut pending = self.pending.borrow_mut();
@@ -304,7 +308,12 @@ impl<I: FileIo> FihStorage<I> {
             }
             std::mem::take(&mut *pending)
         };
-        default_apply_batch(&self.io, &ops).await
+        if let Err(e) = default_apply_batch(&self.io, &ops).await {
+            let mut pending = self.pending.borrow_mut();
+            pending.splice(0..0, ops);
+            return Err(e);
+        }
+        Ok(())
     }
 
     /// Rebuild semantic stores from fact_store after rebuild_cache.
