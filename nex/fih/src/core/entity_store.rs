@@ -56,9 +56,11 @@ where
 
 /// Map a string key to a CoordPath<N> deterministically without hashing.
 ///
-/// Supports two formats:
-/// - 6-char Hangul: each character is a direct Coord (Phase 2+, CoordId format)
-/// - Other (64-char hex, etc.): byte decomposition (Phase 1 backward compat)
+/// Two formats:
+/// - N-character Hangul: each character is a direct Coord (Phase 2+, CoordId format)
+/// - Other keys: the tagma-kv ByteWise mapping, one Coord per UTF-8 byte.
+///   Injective for keys of at most N bytes; shorter keys zero-pad and
+///   longer keys truncate at the first N bytes.
 fn str_to_coordpath<const N: usize>(key: &str) -> CoordPath<N> {
     let chars: Vec<char> = key.chars().collect();
     // Fast path: N-character Hangul key → direct Coord mapping
@@ -69,27 +71,17 @@ fn str_to_coordpath<const N: usize>(key: &str) -> CoordPath<N> {
         }
         return CoordPath::new(coords);
     }
-    // Fallback: byte decomposition (backward compat with hex keys)
-    let bytes = key.as_bytes();
+    // ByteWise fallback: each UTF-8 byte is one Coord. The generated
+    // vector is at most N coords for keys of at most N bytes; longer keys
+    // truncate and shorter keys keep the zero padding below.
+    let generated = tagma_kv::string_to_coord_path(key).unwrap_or_default();
     let mut coords = [Coord::new(0).unwrap(); N];
     for (i, coord) in coords.iter_mut().enumerate() {
-        let hi = bytes.get(i * 2).copied().unwrap_or(0) as u16;
-        let lo = bytes.get(i * 2 + 1).copied().unwrap_or(0) as u16;
-        let idx = (hi << 8 | lo) % 11172;
-        *coord = Coord::new(idx).unwrap();
+        if let Some(c) = generated.get(i) {
+            *coord = *c;
+        }
     }
     CoordPath::new(coords)
-}
-
-/// Backward-compatible String-to-String mapping: convert hex key to
-/// CoordPath display string (used for `values()` / `replace_from()`).
-#[allow(dead_code)]
-fn coordpath_to_str<const N: usize>(path: &CoordPath<N>) -> String {
-    let mut s = String::with_capacity(N * 3);
-    for c in path.coords() {
-        s.push(c.to_char());
-    }
-    s
 }
 
 /// EntityStore backed by CoordSpaceN instead of HashMap.
