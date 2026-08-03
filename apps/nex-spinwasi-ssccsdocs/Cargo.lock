@@ -140,7 +140,7 @@ dependencies = [
 [[package]]
 name = "chton"
 version = "0.1.0"
-source = "git+https://github.com/ssccsorg/chton?branch=main#5aa39b6af83a234b119b05dbcee266d66c9b54c5"
+source = "git+https://github.com/ssccsorg/chton?branch=main#4bf4d72b536e1ecb5fb091d82110a2ce10b1e579"
 dependencies = [
  "futures-executor",
  "memmap2",
@@ -636,6 +636,7 @@ name = "nex"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chton",
  "futures-executor",
  "log",
  "nex-core",
@@ -657,6 +658,7 @@ name = "nex-fih"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chton",
  "fih-model",
  "futures-executor",
  "log",
@@ -668,6 +670,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "tagma-core",
+ "tagma-kv",
 ]
 
 [[package]]
