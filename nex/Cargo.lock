@@ -585,6 +585,7 @@ dependencies = [
  "nex-io",
  "nexus-gateway-serde-proxy",
  "nexus-storage-sim",
+ "postcard",
  "serde",
  "serde_json",
  "tagma-core",

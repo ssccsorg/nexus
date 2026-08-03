@@ -316,6 +316,31 @@ impl<I: FileIo> FihStorage<I> {
         Ok(())
     }
 
+    /// Read and decode durable records under `prefix` whose timestamp
+    /// passes `filter`, in io order. Undecodable files are skipped: a
+    /// prefix may hold artifacts that are not records, and a future
+    /// layout change should not fail the scan.
+    async fn scan_durable_records<R>(
+        &self,
+        prefix: &str,
+        filter: impl Fn(&R) -> bool,
+    ) -> Result<Vec<R>, String>
+    where
+        R: serde::de::DeserializeOwned,
+    {
+        let keys = self.io.list(prefix).await?;
+        let mut out = Vec::new();
+        for key in keys {
+            if let Some(bytes) = self.io.read(&key).await?
+                && let Ok(record) = postcard::from_bytes::<R>(&bytes)
+                && filter(&record)
+            {
+                out.push(record);
+            }
+        }
+        Ok(out)
+    }
+
     /// Rebuild semantic stores from fact_store after rebuild_cache.
     pub async fn rebuild_semantic(&self) -> Result<(), String> {
         // Snapshot: take stores atomically, work on them, then put back.
@@ -1743,32 +1768,43 @@ impl<I: FileIo> crate::AsyncFlushCapable for FihStorage<I> {
     async fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
         let now_ts = self.clock.now_nanos();
 
-        // Count pending record WriteOps (fact + intent keys) that represent
-        // entity records rather than blob data. This approximates the old
-        // by_time delta count removed with FihCoord in Phase 3.
-        let records_flushed = self
-            .pending
-            .borrow()
-            .iter()
-            .filter(|op| match op {
-                WriteOp::Write { path, .. } => {
-                    path.starts_with("facts/") || path.starts_with("intents/")
-                }
-                WriteOp::Delete { .. } => false,
-            })
-            .count() as u64;
-
-        if records_flushed == 0 && self.pending.borrow().is_empty() {
-            return Ok(FlushResult {
-                records_flushed: 0,
-                new_cursor: FlushCursor {
-                    last_flushed_at: now_ts,
-                    partition: cursor.partition.clone(),
-                },
-            });
-        }
-
+        // Make pending writes durable first.
         self.flush_pending().await?;
+
+        // Collect the durable delta since the cursor: facts and intents on
+        // io with a timestamp newer than the cursor. This catches records
+        // that were flushed earlier (or by a previous process) but never
+        // acked by a cursor, so a reopened store reports the same delta
+        // instead of a zero based on the empty pending buffer.
+        let facts = self
+            .scan_durable_records::<FactRecord>("facts/", |r| {
+                r.submitted_at > cursor.last_flushed_at
+            })
+            .await?;
+        let intents = self
+            .scan_durable_records::<IntentRecord>("intents/", |r| {
+                r.created_at > cursor.last_flushed_at
+            })
+            .await?;
+
+        let records_flushed = (facts.len() + intents.len()) as u64;
+
+        // Write the delta chain only when there is a delta. The chain file
+        // name carries the partition and the flush timestamp, so repeated
+        // flushes append one chain per export window. Hints are ephemeral
+        // and excluded from the delta, matching the ChainEntry shape.
+        if records_flushed > 0 {
+            let entry = ChainEntry {
+                prev_cursor: cursor.last_flushed_at,
+                records_flushed,
+                facts,
+                intents,
+            };
+            let bytes = postcard::to_allocvec(&entry)
+                .map_err(|e| format!("flush chain encode failed: {e}"))?;
+            let chain_key = format!("flush/{}/cursor_{}.chain", cursor.partition, now_ts);
+            self.io.write(&chain_key, &bytes).await?;
+        }
 
         Ok(FlushResult {
             records_flushed,

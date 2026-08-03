@@ -22,3 +22,4 @@ nexus-gateway-serde-proxy = { path = "../../libs/serde-proxy" }
 ureq = { version = "3", features = ["json"] }
 tagma-core.workspace = true
 tagma-kv.workspace = true
+postcard = { version = "1", features = ["alloc"] }
