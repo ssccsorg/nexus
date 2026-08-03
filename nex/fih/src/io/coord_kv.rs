@@ -11,7 +11,7 @@
 
 use std::sync::Mutex;
 
-use crate::io::file_io::{FileIo, IoFuture};
+use crate::io::file_io::{BufferIo, FileIo, IoFuture};
 use sha2::Digest;
 use tagma_kv::coord_gen::CoordKey;
 
@@ -62,10 +62,16 @@ impl<const N: usize> CoordKvIo<N> {
     pub fn new(kv: MaterialKv<N>) -> Self {
         Self { kv: Mutex::new(kv) }
     }
+}
 
-    /// Persist the kv header and origin to the medium.
-    pub fn flush(&self) -> Result<(), String> {
-        self.kv.lock().unwrap().flush().map_err(|e| e.to_string())
+impl<const N: usize> BufferIo for CoordKvIo<N> {
+    fn is_buffered(&self) -> bool {
+        self.kv.lock().unwrap().is_buffered()
+    }
+
+    fn flush<'a>(&'a self) -> IoFuture<'a, ()> {
+        let kv = &self.kv;
+        Box::pin(async move { kv.lock().unwrap().flush().map_err(|e| e.to_string()) })
     }
 }
 

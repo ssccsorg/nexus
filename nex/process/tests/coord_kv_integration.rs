@@ -6,6 +6,7 @@ use chton::kv::MaterialKv;
 use chton::origin::FileOrigin;
 use futures_executor::block_on;
 use nex_fih::io::coord_kv::CoordKvIo;
+use nex_fih::io::file_io::BufferIo;
 use nex_fih::{AsyncFactCapable, AsyncStorageRead, Content, CoordId, Fact, FihStorage};
 
 fn fact(id: &str) -> Fact {
@@ -34,8 +35,10 @@ fn fih_over_materialized_coordkv_persists_across_reopen() {
             let storage = FihStorage::new(CoordKvIo::new(kv), "coordkv");
             storage.submit_fact(&fact("f_persist")).await.unwrap();
             storage.flush_pending().await.unwrap();
-            // Persist the kv header and the file bytes.
-            storage.io.flush().unwrap();
+            // Persist the buffered kv header and the file bytes.
+            assert!(storage.io.is_buffered());
+            storage.io.flush().await.unwrap();
+            assert!(!storage.io.is_buffered());
         }
 
         // Second session: reopen the file into a fresh kv, rebuild, read.
