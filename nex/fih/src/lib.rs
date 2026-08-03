@@ -27,7 +27,7 @@ pub use contract::core::{
     EvidenceChain, EvidenceEntry, GovernanceBypassError, GovernanceGate, HintEngine, HintRule,
 };
 pub use contract::fih::FihContract;
-pub use core::entity_store::{CoordEntityStore, EntityStore, MemoryEntityStore};
+pub use core::entity_store::{CoordEntityStore, EntityStore, KvEntityStore, MemoryEntityStore};
 pub use core::export::{export_from_io, import_into_io};
 pub use core::fih_blackboard::FihBlackboard;
 pub use core::index::{Cell2, OrderedIndex};
