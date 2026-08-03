@@ -11,8 +11,8 @@ use nex_fih::{
     Intent,
 };
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// A FileIo backend whose writes always fail.
 struct FailingIo;
