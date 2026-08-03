@@ -112,6 +112,11 @@ pub struct AggregateDef {
 /// implement this trait. Concrete cold backends register here as they
 /// materialize; without one, calls fall through to the default
 /// error-returning method.
+///
+/// The ColdQuery-to-SQL emitter that was the reference implementation
+/// (DuckDB dialect over parquet-backed FIH views) was removed together
+/// with the DuckDB backend and is recoverable from git history. ColdQuery
+/// is the intended endpoint of the cold-routing pipeline.
 pub trait QueryCapable: nex_fih::StorageRead {
     /// Execute a compiled query plan against this storage backend.
     ///
