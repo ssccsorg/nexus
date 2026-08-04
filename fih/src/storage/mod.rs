@@ -3,7 +3,6 @@ pub mod async_impl;
 pub mod evict;
 pub mod fact;
 pub mod filter;
-pub mod flush;
 pub mod graph;
 pub mod hint;
 pub mod intent;
@@ -15,13 +14,12 @@ pub mod time_range;
 
 pub use aggregate::{ColdStorage, StorageSend};
 pub use async_impl::{
-    AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable, AsyncHintCapable,
-    AsyncIntentCapable, AsyncScanCapable, AsyncStorageRead, AsyncTimeRangeCapable,
+    AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncHintCapable, AsyncIntentCapable,
+    AsyncScanCapable, AsyncStorageRead, AsyncTimeRangeCapable,
 };
 pub use evict::EvictCapable;
 pub use fact::FactCapable;
 pub use filter::{AxisHints, FilterCapable, StateFilter};
-pub use flush::{FlushCapable, FlushCursor, FlushResult};
 pub use graph::{EdgeWeight, GraphRead, GraphWrite, NodeWeight};
 pub use hint::HintCapable;
 pub use intent::IntentCapable;

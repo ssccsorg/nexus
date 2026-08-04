@@ -1,5 +1,4 @@
 use std::ops::Range;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::BlackboardError;
 use crate::fih::{BoardState, Content, CoordId, Fact, Hint, Intent};
@@ -7,7 +6,6 @@ use crate::storage::aggregate::ColdStorage;
 use crate::storage::evict::EvictCapable;
 use crate::storage::fact::FactCapable;
 use crate::storage::filter::{FilterCapable, StateFilter};
-use crate::storage::flush::{FlushCapable, FlushCursor, FlushResult};
 use crate::storage::hint::HintCapable;
 use crate::storage::intent::IntentCapable;
 use crate::storage::read::StorageRead;
@@ -98,22 +96,6 @@ impl EvictCapable for NullStorage {
     }
     fn evict_before(&self, _before: &str) -> Result<u64, String> {
         Ok(0)
-    }
-}
-
-impl FlushCapable for NullStorage {
-    fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
-        let now_ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        Ok(FlushResult {
-            records_flushed: 0,
-            new_cursor: FlushCursor {
-                last_flushed_at: now_ts,
-                partition: cursor.partition.clone(),
-            },
-        })
     }
 }
 

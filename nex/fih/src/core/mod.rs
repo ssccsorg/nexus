@@ -22,4 +22,4 @@ pub use index::{Cell2, OrderedIndex};
 pub use intent_status::IntentStatus;
 pub use record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
 pub use session::FihSession;
-pub use store::{ChainEntry, FihStorage};
+pub use store::FihStorage;

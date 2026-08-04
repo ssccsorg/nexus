@@ -5,9 +5,8 @@
 // to drive async in test context (native only, not WASM).
 
 use nex_fih::{
-    AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable, AsyncHintCapable,
-    AsyncIntentCapable, AsyncScanCapable, AsyncStorageRead, AsyncTimeRangeCapable, CoordId,
-    FlushCursor, Hint, StateFilter,
+    AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncHintCapable, AsyncIntentCapable,
+    AsyncScanCapable, AsyncStorageRead, AsyncTimeRangeCapable, CoordId, Hint, StateFilter,
 };
 use nexus_storage_sim::FihStorage;
 use nexus_storage_sim::SimIo;
@@ -188,30 +187,4 @@ fn test_async_time_range() {
     let r = range.unwrap();
     assert_eq!(r.start, "1000000000");
     assert_eq!(r.end, "1000000000");
-}
-
-// ── AsyncFlushCapable ─────────────────────────────────────────────────
-
-#[test]
-fn test_async_flush_empty() {
-    let store = setup();
-    let cursor = FlushCursor {
-        last_flushed_at: 0,
-        partition: "test".into(),
-    };
-    let result = futures_executor::block_on(store.flush_since(&cursor)).unwrap();
-    assert_eq!(result.records_flushed, 0);
-}
-
-#[test]
-fn test_async_flush_with_records() {
-    let store = setup();
-    futures_executor::block_on(store.submit_fact(&common::fact("f_flush"))).unwrap();
-
-    let cursor = FlushCursor {
-        last_flushed_at: 0,
-        partition: "test".into(),
-    };
-    let result = futures_executor::block_on(store.flush_since(&cursor)).unwrap();
-    assert_eq!(result.records_flushed, 1);
 }

@@ -7,11 +7,10 @@
 // or during development (cargo run, not cargo test).
 
 use nex_fih::{
-    AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable, AsyncHintCapable,
-    AsyncIntentCapable, AsyncStorageRead, Content, CoordId, Fact, FlushCursor, Hint, Intent,
-    StateFilter,
+    AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncHintCapable, AsyncIntentCapable,
+    AsyncStorageRead, Content, CoordId, Fact, Hint, Intent, StateFilter,
 };
-use nexus_storage_sim::{FihStorage, FileIo, SimIo, intent_status};
+use nexus_storage_sim::{FihStorage, SimIo, intent_status};
 
 fn fact(id: &str, data: &[u8]) -> Fact {
     Fact::with_id(
@@ -43,7 +42,7 @@ fn intent(id: &str, from_fact: &str) -> Intent {
 fn main() {
     eprintln!("+-----------------------------------------------------------+");
     eprintln!("| nexus-storage-sim verification runner                      |");
-    eprintln!("| Phase 3: FileIo + FlushCapable + FsIo                    |");
+    eprintln!("| Phase 3: FileIo + durable eviction + FsIo            |");
     eprintln!("+-----------------------------------------------------------+");
     eprintln!();
 
@@ -179,7 +178,7 @@ fn main() {
         assert_eq!(state.hints.len(), 1);
     });
 
-    // ── 3. Flush + rebuild ────────────────────────────────────────────
+    // ── 3. Rebuild ────────────────────────────────────────────────────
 
     check_async!("flush + rebuild preserves data", {
         let io = SimIo::new();
@@ -193,55 +192,6 @@ fn main() {
         let state = AsyncStorageRead::read_state(&store2).await;
         assert_eq!(state.facts.len(), 1);
         assert_eq!(state.facts[0].content.data, b"flush test");
-    });
-
-    check_async!("flush_cursor advances", {
-        let store = FihStorage::new(SimIo::new(), "verify");
-        AsyncFactCapable::submit_fact(&store, &fact("f_adv", b"a"))
-            .await
-            .unwrap();
-        let cursor = FlushCursor {
-            last_flushed_at: 0,
-            partition: "default".into(),
-        };
-        let result = AsyncFlushCapable::flush_since(&store, &cursor)
-            .await
-            .unwrap();
-        assert!(result.records_flushed > 0);
-        assert!(result.new_cursor.last_flushed_at > 0);
-    });
-
-    check_async!("flush_empty_delta", {
-        let store = FihStorage::new(SimIo::new(), "verify");
-        let cursor = FlushCursor {
-            last_flushed_at: u64::MAX,
-            partition: "default".into(),
-        };
-        let result = AsyncFlushCapable::flush_since(&store, &cursor)
-            .await
-            .unwrap();
-        assert_eq!(result.records_flushed, 0);
-    });
-
-    check_async!("flush writes to io", {
-        let io = SimIo::new();
-        let store = FihStorage::new(io.clone(), "verify");
-        AsyncFactCapable::submit_fact(&store, &fact("f_chain", b"data"))
-            .await
-            .unwrap();
-        let cursor = FlushCursor {
-            last_flushed_at: 0,
-            partition: "default".into(),
-        };
-        AsyncFlushCapable::flush_since(&store, &cursor)
-            .await
-            .unwrap();
-        let keys = io.list("flush/").await.unwrap();
-        assert!(!keys.is_empty(), "flush should write to io");
-        assert!(
-            keys.iter().any(|k| k.ends_with(".chain")),
-            "expected .chain file in flush output"
-        );
     });
 
     // ── 4. Filtering ──────────────────────────────────────────────────

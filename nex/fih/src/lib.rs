@@ -34,7 +34,7 @@ pub use core::index::{Cell2, OrderedIndex};
 pub use core::intent_status::IntentStatus;
 pub use core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
 pub use core::session::FihSession;
-pub use core::store::{ChainEntry, FihStorage};
+pub use core::store::FihStorage;
 pub use detection::{
     ContradictionDetection, DetectionCapable, DetectionCheckpoint, DetectionOutput, GapDetection,
     StateChangeDetection, TaskStates,

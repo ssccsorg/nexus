@@ -44,7 +44,11 @@ macro_rules! impl_semantic_store_for_inmemory_bm25 {
                 Ok(())
             }
 
-            async fn search(&self, query: &dyn Query, top_k: usize) -> Result<Vec<(u32, f32)>, String> {
+            async fn search(
+                &self,
+                query: &dyn Query,
+                top_k: usize,
+            ) -> Result<Vec<(u32, f32)>, String> {
                 let qt = match query.text() {
                     Some(t) if !t.trim().is_empty() => t,
                     _ => return Ok(Vec::new()),
@@ -98,8 +102,8 @@ macro_rules! impl_semantic_store_for_inmemory_bm25 {
                             }
                             let d = *df.get(t.as_str()).unwrap_or(&0) as f64;
                             let idf = ((n as f64 - d + 0.5) / (d + 0.5) + 1.0).ln();
-                            score +=
-                                idf * (tf * (k1 + 1.0)) / (tf + k1 * (1.0 - b + b * dl / avg_len.max(1.0)));
+                            score += idf * (tf * (k1 + 1.0))
+                                / (tf + k1 * (1.0 - b + b * dl / avg_len.max(1.0)));
                         }
                         (id, score as f32)
                     })
