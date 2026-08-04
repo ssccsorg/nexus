@@ -283,14 +283,14 @@ fn test_eviction_preserves_fact_removes_old_hint() {
 
     block_on(store.evict_before("99999999999")).unwrap();
 
-    // Note: evict_before only removes from the in-memory hint store.
-    // read_state reads from IO (which still has the hint), so we check
-    // the in-memory store directly.
+    // Eviction deletes the record files from io, so the state read and
+    // the in-memory store agree: the hint is gone from both.
     assert_eq!(
         block_on(store.hint_store.len()),
         0,
         "old hint must be evicted from memory"
     );
     let state = block_on(store.read_state());
+    assert_eq!(state.hints.len(), 0, "old hint must be evicted from io");
     assert_eq!(state.facts.len(), 1, "fact must survive eviction");
 }

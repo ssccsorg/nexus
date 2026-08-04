@@ -1,13 +1,16 @@
 // ── Test helpers: shared across all storage/sim test files ─────────────
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use nex_fih::{Content, CoordId, Fact, Intent};
 
 // ── FakeClock ──────────────────────────────────────────────────────────
 
+/// Cloneable fake clock: the shared handle lets a test advance the clock
+/// after it has been moved into a `FihStorage` via `with_clock`.
+#[derive(Clone)]
 pub struct FakeClock {
-    now: Mutex<u64>,
+    now: Arc<Mutex<u64>>,
     step_ns: u64,
 }
 
@@ -15,7 +18,7 @@ pub struct FakeClock {
 impl FakeClock {
     pub fn new(start_ns: u64) -> Self {
         Self {
-            now: Mutex::new(start_ns),
+            now: Arc::new(Mutex::new(start_ns)),
             step_ns: 1_000_000,
         }
     }
@@ -23,9 +26,17 @@ impl FakeClock {
     #[allow(dead_code)]
     pub fn with_step(start_ns: u64, step_ns: u64) -> Self {
         Self {
-            now: Mutex::new(start_ns),
+            now: Arc::new(Mutex::new(start_ns)),
             step_ns,
         }
+    }
+
+    /// Advance the clock by whole seconds, for second-granularity
+    /// timestamps such as hint and intent submission times.
+    #[allow(dead_code)]
+    pub fn advance_secs(&self, secs: u64) {
+        let mut now = self.now.lock().unwrap();
+        *now += secs * 1_000_000_000;
     }
 }
 
