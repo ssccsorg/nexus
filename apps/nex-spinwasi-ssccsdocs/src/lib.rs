@@ -92,9 +92,18 @@ use nex::storage::core::record::{FactRecord, IntentRecord};
 
 const SNAPSHOT_KEY: &str = "_snapshot/facts.bin";
 
+/// Current snapshot format version. Bump on any layout change; the
+/// restore path rejects mismatched versions with a clear error instead
+/// of a cryptic decode failure.
+///
+/// Note: snapshots written before versioning (the ChainEntry layout)
+/// are incompatible and must be regenerated via /checkpoint.
+const SNAPSHOT_VERSION: u8 = 1;
+
 /// Snapshot format: a full checkpoint of the record stores.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Snapshot {
+    version: u8,
     facts: Vec<FactRecord>,
     intents: Vec<IntentRecord>,
 }
@@ -103,7 +112,11 @@ struct Snapshot {
 async fn write_checkpoint(s: &FihStorage<impl FileIo>) -> Result<(), String> {
     let facts: Vec<FactRecord> = s.fact_store.values().await;
     let intents: Vec<IntentRecord> = s.intent_store.values().await;
-    let snapshot = Snapshot { facts, intents };
+    let snapshot = Snapshot {
+        version: SNAPSHOT_VERSION,
+        facts,
+        intents,
+    };
     let bytes = postcard::to_allocvec(&snapshot).map_err(|e| format!("serialize: {e}"))?;
     s.io.write(SNAPSHOT_KEY, &bytes).await
 }
@@ -116,6 +129,12 @@ async fn restore_from_snapshot(s: &AppStorage) -> Result<bool, String> {
     };
     let snapshot: Snapshot =
         postcard::from_bytes(&bytes).map_err(|e| format!("deserialize: {e}"))?;
+    if snapshot.version != SNAPSHOT_VERSION {
+        return Err(format!(
+            "snapshot version {} != current {SNAPSHOT_VERSION}; regenerate via /checkpoint",
+            snapshot.version
+        ));
+    }
     s.fact_store
         .replace_from(
             snapshot
