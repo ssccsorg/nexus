@@ -1,6 +1,4 @@
-// DuckDB-specific query types moved to storage/duckdb/src/duckdb_ext.rs.
-// Common types (ColdQuery, ColdFilter, ColdOrder, AggregateDef) moved to
-// interface/query/src/lib.rs.
-//
-// This module is retained as a thin re-export for backward compatibility.
+// Common cold-query types (ColdQuery, ColdFilter, ColdOrder, AggregateDef)
+// live in interface/query. This module re-exports them under the cypher
+// crate name for backward compatibility.
 pub use interface_query::{AggregateDef, ColdFilter, ColdOrder, ColdQuery};

@@ -10,6 +10,9 @@ use nex_fih::{
     AsyncFactCapable, AsyncIntentCapable, BlackboardError, Content, CoordId, Fact, FihStorage,
     Intent,
 };
+use std::collections::HashMap;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// A FileIo backend whose writes always fail.
 struct FailingIo;
@@ -29,6 +32,63 @@ impl FileIo for FailingIo {
 
     fn delete<'a>(&'a self, _path: &'a str) -> IoFuture<'a, ()> {
         Box::pin(async move { Ok(()) })
+    }
+}
+
+/// An in-memory FileIo whose first write fails, then behaves normally.
+/// Used to prove that a failed flush re-queues its ops instead of losing
+/// them.
+struct FlakyIo {
+    map: Mutex<HashMap<String, Vec<u8>>>,
+    fail_first_write: AtomicBool,
+}
+
+impl FlakyIo {
+    fn new() -> Self {
+        Self {
+            map: Mutex::new(HashMap::new()),
+            fail_first_write: AtomicBool::new(true),
+        }
+    }
+}
+
+impl FileIo for FlakyIo {
+    fn read<'a>(&'a self, path: &'a str) -> IoFuture<'a, Option<Vec<u8>>> {
+        let map = &self.map;
+        Box::pin(async move { Ok(map.lock().unwrap().get(path).cloned()) })
+    }
+
+    fn write<'a>(&'a self, path: &'a str, data: &'a [u8]) -> IoFuture<'a, ()> {
+        let should_fail = self.fail_first_write.swap(false, Ordering::SeqCst);
+        let map = &self.map;
+        Box::pin(async move {
+            if should_fail {
+                return Err(format!("injected write failure: {path}"));
+            }
+            map.lock().unwrap().insert(path.to_string(), data.to_vec());
+            Ok(())
+        })
+    }
+
+    fn list<'a>(&'a self, prefix: &'a str) -> IoFuture<'a, Vec<String>> {
+        let map = &self.map;
+        Box::pin(async move {
+            Ok(map
+                .lock()
+                .unwrap()
+                .keys()
+                .filter(|k| k.starts_with(prefix))
+                .cloned()
+                .collect())
+        })
+    }
+
+    fn delete<'a>(&'a self, path: &'a str) -> IoFuture<'a, ()> {
+        let map = &self.map;
+        Box::pin(async move {
+            map.lock().unwrap().remove(path);
+            Ok(())
+        })
     }
 }
 
@@ -115,5 +175,24 @@ fn conclude_flush_failure_is_internal_not_not_found() {
             .await
             .unwrap_err();
         assert!(matches!(err, BlackboardError::Internal(_)));
+    });
+}
+
+#[test]
+fn failed_flush_requeues_ops_for_retry() {
+    block_on(async {
+        let storage = FihStorage::new(FlakyIo::new(), "retry");
+        storage.submit_fact(&fact("f_base")).await.unwrap();
+        storage.submit_intent(&intent("i_retry")).await.unwrap();
+
+        // The first flush fails on the first write; the batch must be
+        // re-queued, not lost.
+        let err = storage.flush_pending().await.unwrap_err();
+        assert!(err.contains("injected"), "got: {err}");
+
+        // The retried flush applies the same ops, and the intent becomes
+        // claimable: nothing was lost by the failed attempt.
+        storage.flush_pending().await.unwrap();
+        storage.claim_intent("i_retry", "worker").await.unwrap();
     });
 }

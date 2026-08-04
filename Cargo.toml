@@ -5,7 +5,6 @@ members = [
     "nex-server/server",
     "nex-server/client",
     "nexd",
-    "storage/duckdb",
     "libs/serde-proxy",
     "libs/session-server",
     "libs/async-store",
@@ -33,6 +32,8 @@ serde_json = "1"
 log = "0.4"
 async-trait = "0.1"
 chton = { git = "https://github.com/ssccsorg/chton", branch = "main" }
+tagma-core = { git = "https://github.com/ssccsorg/syntagma", branch = "main" }
+tagma-kv = { git = "https://github.com/ssccsorg/syntagma", branch = "main" }
 
 [profile.release]
 lto = "thin"

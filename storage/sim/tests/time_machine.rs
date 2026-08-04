@@ -1,19 +1,18 @@
 // ── Time Machine tests ──────────────────────────────────────────────────
 //
 // Validates FIH StateSpace as a 4D time-travelable storage:
-//   1. Delta chain reconstruction (cursor-based replay)
-//   2. Storage migration (SimIo → fresh FihStorage)
-//   3. Time-travel consistency (as_of window excludes future)
-//   4. Content deduplication (same blob stored once)
-//   5. Full StateSpace round-trip (submit → flush → rebuild → verify)
+//   1. Storage migration (SimIo → fresh FihStorage)
+//   2. Time-travel consistency (as_of window excludes future)
+//   3. Content deduplication (same blob stored once)
+//   4. Full StateSpace round-trip (submit → flush → rebuild → verify)
+//   5. Eviction durability (records deleted from io)
 
 mod common;
 
 use futures_executor::block_on;
 use nex_fih::{
-    AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncFlushCapable, AsyncHintCapable,
-    AsyncIntentCapable, AsyncStorageRead, Content, CoordId, Fact, FlushCursor, FlushResult, Hint,
-    Intent, StateFilter,
+    AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncHintCapable, AsyncIntentCapable,
+    AsyncStorageRead, Content, CoordId, Fact, Hint, Intent, StateFilter,
 };
 use nexus_storage_sim::{EntityStore, FihStorage, SimIo, SyncFileIo};
 
@@ -50,66 +49,6 @@ fn submit_intent(store: &FihStorage<SimIo>, id: &str, from: &[&str]) {
         concluded_at: None,
     }))
     .unwrap();
-}
-
-fn flush_at(store: &FihStorage<SimIo>, cursor: &FlushCursor) -> FlushResult {
-    block_on(store.flush_since(cursor)).unwrap()
-}
-
-// ── Test 1: Delta chain reconstruction ───────────────────────────────────
-//
-// Submit data in 3 epochs, flush after each. Read chain files back and
-// verify cumulative state matches original.
-
-#[test]
-fn test_delta_chain_reconstruction() {
-    let io = SimIo::new();
-    let store = FihStorage::new(io.clone(), "tm");
-
-    // Epoch 1: submit f_a
-    submit_fact(&store, "f_a", "alpha");
-    let r1 = flush_at(
-        &store,
-        &FlushCursor {
-            last_flushed_at: 0,
-            partition: "default".into(),
-        },
-    );
-    assert_eq!(r1.records_flushed, 1);
-
-    // Epoch 2: submit f_b
-    submit_fact(&store, "f_b", "beta");
-    let r2 = flush_at(
-        &store,
-        &FlushCursor {
-            last_flushed_at: r1.new_cursor.last_flushed_at,
-            partition: "default".into(),
-        },
-    );
-    assert_eq!(r2.records_flushed, 1);
-
-    // Epoch 3: submit f_c
-    submit_fact(&store, "f_c", "gamma");
-    let _r3 = flush_at(
-        &store,
-        &FlushCursor {
-            last_flushed_at: r2.new_cursor.last_flushed_at,
-            partition: "default".into(),
-        },
-    );
-
-    // Reconstruct from IO — all 3 facts should be present
-    let store2 = FihStorage::new(io, "tm");
-    block_on(store2.rebuild_cache()).unwrap();
-    let state = block_on(store2.read_state());
-    assert_eq!(
-        state.facts.len(),
-        3,
-        "all 3 facts reconstructed from chains"
-    );
-    let ids: Vec<_> = state.facts.iter().map(|f| f.id.to_string()).collect();
-    // Verify all 3 facts are present
-    assert_eq!(ids.len(), 3, "expected 3 facts ids: {:?}", ids);
 }
 
 // ── Test 2: Storage migration (SimIo → fresh FihStorage) ────────
@@ -225,35 +164,6 @@ fn test_full_statespace_round_trip() {
     assert!(state.intents[0].concluded_at.unwrap() > 0);
 }
 
-// ── Test 6: Flush chain append-only order preservation ──────────────────
-//
-// Multiple flushes must produce chain files in strictly increasing timestamp
-// order. This guarantees replay order = chronological order.
-
-#[test]
-fn test_chain_order_preservation() {
-    let io = SimIo::new();
-    let store = FihStorage::new(io.clone(), "tm");
-
-    let mut cursor = FlushCursor {
-        last_flushed_at: 0,
-        partition: "default".into(),
-    };
-
-    // Submit and flush in 5 batches
-    for i in 0..5 {
-        submit_fact(&store, &format!("f_batch_{i}"), &format!("batch {i}"));
-        let r = flush_at(&store, &cursor);
-        assert!(r.records_flushed > 0);
-        cursor.last_flushed_at = r.new_cursor.last_flushed_at;
-    }
-
-    // Note: chain files are no longer created by flush_since
-    // (delta index removed with FihCoord in Phase 3).
-    // The test just verifies that flush_since works without errors.
-    // Each batch flush was already asserted above.
-}
-
 // ── Test 7: Empty StateSpace is valid ───────────────────────────────────
 
 #[test]
@@ -283,14 +193,14 @@ fn test_eviction_preserves_fact_removes_old_hint() {
 
     block_on(store.evict_before("99999999999")).unwrap();
 
-    // Note: evict_before only removes from the in-memory hint store.
-    // read_state reads from IO (which still has the hint), so we check
-    // the in-memory store directly.
+    // Eviction deletes the record files from io, so the state read and
+    // the in-memory store agree: the hint is gone from both.
     assert_eq!(
         block_on(store.hint_store.len()),
         0,
         "old hint must be evicted from memory"
     );
     let state = block_on(store.read_state());
+    assert_eq!(state.hints.len(), 0, "old hint must be evicted from io");
     assert_eq!(state.facts.len(), 1, "fact must survive eviction");
 }

@@ -1,5 +1,4 @@
 use super::evict::EvictCapable;
-use super::flush::FlushCapable;
 use super::scan::ScanCapable;
 use super::time_range::TimeRangeCapable;
 
@@ -20,13 +19,10 @@ pub mod send_marker {
 
 pub use send_marker::StorageSend;
 
-/// Cold storage: durable persistence — scan, flush, evict, time range.
+/// Cold storage: durable persistence — scan, evict, time range.
 ///
-/// Provides write_blob() so the flush coordinator can write hot data
-/// to cold blob before advancing the cursor.
-pub trait ColdStorage:
-    ScanCapable + TimeRangeCapable + FlushCapable + EvictCapable + StorageSend
-{
-    /// Write raw bytes to a blob key. Used by the flush coordinator.
+/// Provides write_blob() for raw byte writes to the durable medium.
+pub trait ColdStorage: ScanCapable + TimeRangeCapable + EvictCapable + StorageSend {
+    /// Write raw bytes to a blob key.
     fn write_blob(&self, key: &str, data: &[u8]) -> Result<(), String>;
 }

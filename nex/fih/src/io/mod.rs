@@ -10,11 +10,16 @@
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub use nex_io::FsIo;
-pub use nex_io::{BatchIo, FileIo, IoFuture, SyncFileIo, WriteOp, default_apply_batch};
+pub use nex_io::{BatchIo, BufferIo, FileIo, IoFuture, SyncFileIo, WriteOp, default_apply_batch};
+
+pub mod coord_kv;
+pub use coord_kv::CoordKvIo;
 
 /// Module alias so that `crate::io::file_io::FileIo` resolves.
 pub mod file_io {
-    pub use nex_io::{BatchIo, FileIo, IoFuture, SyncFileIo, WriteOp, default_apply_batch};
+    pub use nex_io::{
+        BatchIo, BufferIo, FileIo, IoFuture, SyncFileIo, WriteOp, default_apply_batch,
+    };
 }
 
 /// Module alias so that `crate::io::fs_io::FsIo` resolves.

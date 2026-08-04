@@ -42,8 +42,8 @@ pub fn execute<G: GraphRead>(graph: &G, plan: &Plan) -> Result<Vec<Record>, Tran
 /// storage backend via `CypherCapable::query_plan()`. Otherwise, it falls
 /// back to the hot petgraph executor.
 ///
-/// This is the preferred entry point for production use, where `DualStorage`
-/// or a `DuckDbStorage` instance is available as the cold backend.
+/// This is the preferred entry point for production use, where a cold
+/// backend that implements `CypherCapable` is available.
 pub fn execute_with_cold<G: GraphRead, C: CypherCapable + ?Sized>(
     graph: &G,
     cold: &C,

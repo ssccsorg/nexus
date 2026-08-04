@@ -25,7 +25,6 @@
 // ```ignore
 // let (mut server, handle) = SessionServer::new(session);
 // std::thread::spawn(move || server.run());
-// handle.submit(|s| s.storage().flush_since(&cursor));
 // ```
 //
 // # WASM usage

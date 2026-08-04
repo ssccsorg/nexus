@@ -581,15 +581,12 @@ fn scenario_state_change_detector_facts() {
 }
 
 // ═════════════════════════════════════════════════════════════════════════
-//  Scenario: Flush then Evict
+//  Scenario: Scheduler tick with detector corpus
 //
-//  Verifies that eviction respects the flush-first contract.
-//  Uses tick_with_flush() which requires FlushCapable backend.
-//
-//  The HybridBlackboard (DualStorage) delegates FlushCapable to
-//  the cold backend (NullStorage by default, which is a no-op).
-//  This test verifies the coordination logic, not the actual
-//  persistence — that belongs in storage-layer tests.
+//  Verifies that a scheduler tick runs detectors over the seeded corpus
+//  and produces Facts, then stabilizes on the second tick. Eviction
+//  (tick_with_flush) runs after the state read, which flushes pending
+//  writes, so the cycle never drops un-flushed data.
 // ═════════════════════════════════════════════════════════════════════════
 #[test]
 fn scenario_flush_then_evict() {

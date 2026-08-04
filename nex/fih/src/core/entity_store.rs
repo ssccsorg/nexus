@@ -1,9 +1,13 @@
 // ── EntityStore: replaceable HashMap backend for FihStorage caches ──────
 
 use std::collections::HashMap;
+use std::marker::PhantomData;
 
 use async_trait::async_trait;
+use chton::kv::MaterialKv;
+use chton::origin::Origin;
 use tagma_core::{Coord, CoordPath, CoordSpaceN};
+use tagma_kv::CoordKV;
 
 use crate::core::index::Cell2;
 
@@ -52,9 +56,11 @@ where
 
 /// Map a string key to a CoordPath<N> deterministically without hashing.
 ///
-/// Supports two formats:
-/// - 6-char Hangul: each character is a direct Coord (Phase 2+, CoordId format)
-/// - Other (64-char hex, etc.): byte decomposition (Phase 1 backward compat)
+/// Two formats:
+/// - N-character Hangul: each character is a direct Coord (Phase 2+, CoordId format)
+/// - Other keys: the tagma-kv ByteWise mapping, one Coord per UTF-8 byte.
+///   Injective for keys of at most N bytes; shorter keys zero-pad and
+///   longer keys truncate at the first N bytes.
 fn str_to_coordpath<const N: usize>(key: &str) -> CoordPath<N> {
     let chars: Vec<char> = key.chars().collect();
     // Fast path: N-character Hangul key → direct Coord mapping
@@ -65,27 +71,17 @@ fn str_to_coordpath<const N: usize>(key: &str) -> CoordPath<N> {
         }
         return CoordPath::new(coords);
     }
-    // Fallback: byte decomposition (backward compat with hex keys)
-    let bytes = key.as_bytes();
+    // ByteWise fallback: each UTF-8 byte is one Coord. The generated
+    // vector is at most N coords for keys of at most N bytes; longer keys
+    // truncate and shorter keys keep the zero padding below.
+    let generated = tagma_kv::string_to_coord_path(key).unwrap_or_default();
     let mut coords = [Coord::new(0).unwrap(); N];
     for (i, coord) in coords.iter_mut().enumerate() {
-        let hi = bytes.get(i * 2).copied().unwrap_or(0) as u16;
-        let lo = bytes.get(i * 2 + 1).copied().unwrap_or(0) as u16;
-        let idx = (hi << 8 | lo) % 11172;
-        *coord = Coord::new(idx).unwrap();
+        if let Some(c) = generated.get(i) {
+            *coord = *c;
+        }
     }
     CoordPath::new(coords)
-}
-
-/// Backward-compatible String-to-String mapping: convert hex key to
-/// CoordPath display string (used for `values()` / `replace_from()`).
-#[allow(dead_code)]
-fn coordpath_to_str<const N: usize>(path: &CoordPath<N>) -> String {
-    let mut s = String::with_capacity(N * 3);
-    for c in path.coords() {
-        s.push(c.to_char());
-    }
-    s
 }
 
 /// EntityStore backed by CoordSpaceN instead of HashMap.
@@ -518,5 +514,228 @@ where
         let mut map = self.inner.borrow_mut();
         map.clear();
         map.extend(entries);
+    }
+}
+
+// ── KvEntityStore: MaterialKv-backed EntityStore ─────────────────────────
+
+/// EntityStore over chton's materialized CoordKV.
+///
+/// The string key maps to a `CoordPath<N>` with the same deterministic
+/// mapping as [`CoordEntityStore`]; the value is postcard-encoded into the
+/// fixed-size record slot. The store is durable when the underlying origin
+/// is flushed: `flush` persists the strategy header and the origin, and
+/// `is_buffered` reports whether non-durable state exists.
+///
+/// The record boundary is the same codec seam as the FileIo surface: the
+/// value bytes are opaque to the kv, so a future cipher layer would sit
+/// here without changing the trait surface.
+pub struct KvEntityStore<const N: usize, V> {
+    inner: Cell2<MaterialKv<N>>,
+    marker: PhantomData<V>,
+}
+
+impl<const N: usize, V> KvEntityStore<N, V> {
+    /// Create a fresh store over `origin`. The origin must be empty;
+    /// `load` opens an existing store.
+    pub fn new(origin: Box<dyn Origin>, record_slot_size: u64) -> Self {
+        Self {
+            inner: Cell2::new(MaterialKv::new(origin, record_slot_size)),
+            marker: PhantomData,
+        }
+    }
+
+    /// Open a store over `origin`: load the header when present, otherwise
+    /// create a fresh store with `default_record_slot_size`.
+    pub fn load(origin: Box<dyn Origin>, default_record_slot_size: u64) -> Result<Self, String> {
+        let kv = MaterialKv::load(origin, default_record_slot_size).map_err(|e| e.to_string())?;
+        Ok(Self {
+            inner: Cell2::new(kv),
+            marker: PhantomData,
+        })
+    }
+
+    /// Whether the store holds buffered state that is not yet durable.
+    pub fn is_buffered(&self) -> bool {
+        self.inner.borrow().is_buffered()
+    }
+
+    /// Persist buffered state to the medium.
+    pub fn flush(&self) -> Result<(), String> {
+        self.inner.borrow_mut().flush().map_err(|e| e.to_string())
+    }
+}
+
+/// Decode a stored value, panicking at the trait boundary. The
+/// `EntityStore` surface is infallible, so IO and codec errors panic with
+/// a descriptive message, mirroring the tagma-kv CoordKV contract.
+fn decode_value<V>(bytes: Vec<u8>) -> V
+where
+    V: serde::de::DeserializeOwned,
+{
+    postcard::from_bytes(&bytes).unwrap_or_else(|e| panic!("kv entity store decode failed: {e}"))
+}
+
+/// Encode a value for storage.
+fn encode_value<V>(value: &V) -> Vec<u8>
+where
+    V: serde::Serialize,
+{
+    postcard::to_allocvec(value).unwrap_or_else(|e| panic!("kv entity store encode failed: {e}"))
+}
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+#[async_trait]
+impl<const N: usize, V> EntityStore<V> for KvEntityStore<N, V>
+where
+    V: Clone + Send + Sync + 'static + serde::Serialize + serde::de::DeserializeOwned,
+{
+    async fn get(&self, key: &str) -> Option<V> {
+        let path = str_to_coordpath::<N>(key);
+        let value = self
+            .inner
+            .borrow()
+            .get_path(&path)
+            .unwrap_or_else(|e| panic!("kv entity store get failed: {e}"))?;
+        Some(decode_value(value))
+    }
+
+    async fn insert(&self, key: String, value: V) -> Option<V> {
+        let path = str_to_coordpath::<N>(&key);
+        let bytes = encode_value(&value);
+        let prev = self
+            .inner
+            .borrow_mut()
+            .put_path(&path, &bytes)
+            .unwrap_or_else(|e| panic!("kv entity store insert failed: {e}"));
+        prev.map(decode_value)
+    }
+
+    async fn remove(&self, key: &str) -> Option<V> {
+        let path = str_to_coordpath::<N>(key);
+        let prev = self
+            .inner
+            .borrow_mut()
+            .remove_path(&path)
+            .unwrap_or_else(|e| panic!("kv entity store remove failed: {e}"));
+        prev.map(decode_value)
+    }
+
+    async fn contains_key(&self, key: &str) -> bool {
+        let path = str_to_coordpath::<N>(key);
+        self.inner
+            .borrow()
+            .get_path(&path)
+            .unwrap_or_else(|e| panic!("kv entity store get failed: {e}"))
+            .is_some()
+    }
+
+    async fn len(&self) -> usize {
+        self.inner.borrow().len()
+    }
+
+    async fn values(&self) -> Vec<V> {
+        let entries = self
+            .inner
+            .borrow()
+            .iter()
+            .unwrap_or_else(|e| panic!("kv entity store iter failed: {e}"));
+        entries
+            .into_iter()
+            .map(|(_, value)| decode_value(value))
+            .collect()
+    }
+
+    async fn clear(&self) {
+        self.inner.borrow_mut().clear();
+    }
+
+    async fn replace_from(&self, entries: Vec<(String, V)>) {
+        let mut kv = self.inner.borrow_mut();
+        kv.clear();
+        for (key, value) in entries {
+            let path = str_to_coordpath::<N>(&key);
+            let bytes = encode_value(&value);
+            kv.put_path(&path, &bytes)
+                .unwrap_or_else(|e| panic!("kv entity store insert failed: {e}"));
+        }
+    }
+}
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+#[async_trait(?Send)]
+impl<const N: usize, V> EntityStore<V> for KvEntityStore<N, V>
+where
+    V: Clone + 'static + serde::Serialize + serde::de::DeserializeOwned,
+{
+    async fn get(&self, key: &str) -> Option<V> {
+        let path = str_to_coordpath::<N>(key);
+        let value = self
+            .inner
+            .borrow()
+            .get_path(&path)
+            .unwrap_or_else(|e| panic!("kv entity store get failed: {e}"))?;
+        Some(decode_value(value))
+    }
+
+    async fn insert(&self, key: String, value: V) -> Option<V> {
+        let path = str_to_coordpath::<N>(&key);
+        let bytes = encode_value(&value);
+        let prev = self
+            .inner
+            .borrow_mut()
+            .put_path(&path, &bytes)
+            .unwrap_or_else(|e| panic!("kv entity store insert failed: {e}"));
+        prev.map(decode_value)
+    }
+
+    async fn remove(&self, key: &str) -> Option<V> {
+        let path = str_to_coordpath::<N>(key);
+        let prev = self
+            .inner
+            .borrow_mut()
+            .remove_path(&path)
+            .unwrap_or_else(|e| panic!("kv entity store remove failed: {e}"));
+        prev.map(decode_value)
+    }
+
+    async fn contains_key(&self, key: &str) -> bool {
+        let path = str_to_coordpath::<N>(key);
+        self.inner
+            .borrow()
+            .get_path(&path)
+            .unwrap_or_else(|e| panic!("kv entity store get failed: {e}"))
+            .is_some()
+    }
+
+    async fn len(&self) -> usize {
+        self.inner.borrow().len()
+    }
+
+    async fn values(&self) -> Vec<V> {
+        let entries = self
+            .inner
+            .borrow()
+            .iter()
+            .unwrap_or_else(|e| panic!("kv entity store iter failed: {e}"));
+        entries
+            .into_iter()
+            .map(|(_, value)| decode_value(value))
+            .collect()
+    }
+
+    async fn clear(&self) {
+        self.inner.borrow_mut().clear();
+    }
+
+    async fn replace_from(&self, entries: Vec<(String, V)>) {
+        let mut kv = self.inner.borrow_mut();
+        kv.clear();
+        for (key, value) in entries {
+            let path = str_to_coordpath::<N>(&key);
+            let bytes = encode_value(&value);
+            kv.put_path(&path, &bytes)
+                .unwrap_or_else(|e| panic!("kv entity store insert failed: {e}"));
+        }
     }
 }

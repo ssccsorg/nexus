@@ -27,14 +27,14 @@ pub use contract::core::{
     EvidenceChain, EvidenceEntry, GovernanceBypassError, GovernanceGate, HintEngine, HintRule,
 };
 pub use contract::fih::FihContract;
-pub use core::entity_store::{CoordEntityStore, EntityStore, MemoryEntityStore};
+pub use core::entity_store::{CoordEntityStore, EntityStore, KvEntityStore, MemoryEntityStore};
 pub use core::export::{export_from_io, import_into_io};
 pub use core::fih_blackboard::FihBlackboard;
 pub use core::index::{Cell2, OrderedIndex};
 pub use core::intent_status::IntentStatus;
 pub use core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
 pub use core::session::FihSession;
-pub use core::store::{ChainEntry, FihStorage};
+pub use core::store::FihStorage;
 pub use detection::{
     ContradictionDetection, DetectionCapable, DetectionCheckpoint, DetectionOutput, GapDetection,
     StateChangeDetection, TaskStates,

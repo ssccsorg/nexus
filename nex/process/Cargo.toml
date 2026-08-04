@@ -8,6 +8,7 @@ license.workspace = true
 nex-core = { path = "../core" }
 nex-fih = { path = "../fih" }
 nex-io = { path = "../io" }
+chton.workspace = true
 serde.workspace = true
 serde_json = "1"
 async-trait = "0.1"
@@ -19,3 +20,6 @@ tempfile = "3"
 nexus-storage-sim = { path = "../../storage/sim" }
 nexus-gateway-serde-proxy = { path = "../../libs/serde-proxy" }
 ureq = { version = "3", features = ["json"] }
+tagma-core.workspace = true
+tagma-kv.workspace = true
+postcard = { version = "1", features = ["alloc"] }

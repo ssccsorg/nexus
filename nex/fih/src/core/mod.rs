@@ -15,11 +15,11 @@ pub mod record;
 pub mod session;
 pub mod store;
 
-pub use entity_store::{CoordEntityStore, EntityStore, MemoryEntityStore};
+pub use entity_store::{CoordEntityStore, EntityStore, KvEntityStore, MemoryEntityStore};
 pub use export::{export_from_io, import_into_io};
 pub use fih_blackboard::FihBlackboard;
 pub use index::{Cell2, OrderedIndex};
 pub use intent_status::IntentStatus;
 pub use record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
 pub use session::FihSession;
-pub use store::{ChainEntry, FihStorage};
+pub use store::FihStorage;

@@ -8,7 +8,7 @@
 
 use crate::error::BlackboardError;
 use crate::fih::{BoardState, CoordId, Fact, Hint, Intent};
-use crate::storage::{FlushCursor, FlushResult, PartitionData, StateFilter};
+use crate::storage::{PartitionData, StateFilter};
 use std::ops::Range;
 
 /// Async counterpart of [`super::read::StorageRead`].
@@ -60,9 +60,4 @@ pub trait AsyncScanCapable: AsyncStorageRead {
 /// Async counterpart of [`super::time_range::TimeRangeCapable`].
 pub trait AsyncTimeRangeCapable: AsyncStorageRead {
     async fn time_range(&self) -> Option<Range<String>>;
-}
-
-/// Async counterpart of [`super::flush::FlushCapable`].
-pub trait AsyncFlushCapable: AsyncStorageRead {
-    async fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String>;
 }

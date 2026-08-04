@@ -70,7 +70,6 @@ jobs:
             nexd
             interface/query
             interface/cypher
-            storage/duckdb
             storage/sim
             libs/serde-proxy
             playbooks/agents

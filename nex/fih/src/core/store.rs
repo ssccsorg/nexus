@@ -40,8 +40,8 @@ use std::ops::Range;
 use sha2::Digest;
 
 use crate::{
-    BlackboardError, BoardState, Content, CoordId, Fact, FihHash, FlushCursor, FlushResult, Hint,
-    Intent, PartitionData, StateFilter,
+    BlackboardError, BoardState, Content, CoordId, Fact, FihHash, Hint, Intent, PartitionData,
+    StateFilter,
 };
 use nex_core::Now;
 
@@ -51,16 +51,6 @@ use crate::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, Int
 use crate::io::file_io::{FileIo, WriteOp, default_apply_batch};
 use crate::semantic::record::{Query, RecordLoad};
 use std::collections::HashMap;
-
-/// Chain entry format: serialized by flush_since for delta chain files.
-/// Named struct avoids postcard tuple field ordering ambiguity with empty vecs.
-#[derive(serde::Serialize, serde::Deserialize)]
-pub struct ChainEntry {
-    pub prev_cursor: u64,
-    pub records_flushed: u64,
-    pub facts: Vec<FactRecord>,
-    pub intents: Vec<IntentRecord>,
-}
 
 /// Unified in-memory record enum for single CoordSpaceN<19> store.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -296,6 +286,10 @@ impl<I: FileIo> FihStorage<I> {
     }
 
     /// Flush pending writes to IO.
+    ///
+    /// On apply failure the batch is re-queued at the front of `pending`
+    /// so a later flush retries it. Write and Delete are idempotent, so
+    /// re-applying an already-applied prefix is safe.
     pub async fn flush_pending(&self) -> Result<(), String> {
         let ops = {
             let mut pending = self.pending.borrow_mut();
@@ -304,7 +298,12 @@ impl<I: FileIo> FihStorage<I> {
             }
             std::mem::take(&mut *pending)
         };
-        default_apply_batch(&self.io, &ops).await
+        if let Err(e) = default_apply_batch(&self.io, &ops).await {
+            let mut pending = self.pending.borrow_mut();
+            pending.splice(0..0, ops);
+            return Err(e);
+        }
+        Ok(())
     }
 
     /// Rebuild semantic stores from fact_store after rebuild_cache.
@@ -1600,14 +1599,27 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
         let before_secs: u64 = before.parse().unwrap_or(0);
         let all = self.hint_store.values().await;
         let old_len = all.len();
-        let kept: Vec<(String, HintRecord)> = all
-            .into_iter()
-            .filter(|r| r.submitted_at >= before_secs)
-            .map(|r| (r.id.clone(), r))
-            .collect();
-        let kept_count = kept.len();
+        let mut kept = Vec::with_capacity(all.len());
+        let mut evict_keys = Vec::new();
+        for record in all {
+            if record.submitted_at >= before_secs {
+                kept.push((record.id.clone(), record));
+            } else {
+                // read_state reads hints from io, so the eviction must
+                // also delete the record files; otherwise the evicted
+                // hint reappears on the next state read.
+                evict_keys.push(WriteOp::Delete { path: record.key() });
+            }
+        }
+        let evicted = (old_len - kept.len()) as u64;
+        if !evict_keys.is_empty() {
+            self.pending.borrow_mut().extend(evict_keys);
+        }
         self.hint_store.replace_from(kept).await;
-        Ok((old_len - kept_count) as u64)
+        self.hint_records
+            .borrow_mut()
+            .retain(|_, r| r.submitted_at >= before_secs);
+        Ok(evicted)
     }
 
     async fn evict_stale_intents(&self, older_than_secs: u64) -> Result<u64, String> {
@@ -1616,14 +1628,28 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
 
         let all = self.intent_store.values().await;
         let old_len = all.len();
-        let kept: Vec<(String, IntentRecord)> = all
-            .into_iter()
-            .filter(|r| !(matches!(r.status, IntentStatus::Submitted) && r.created_at < cutoff))
-            .map(|r| (r.id.clone(), r))
-            .collect();
-        let kept_count = kept.len();
+        let mut kept = Vec::with_capacity(all.len());
+        let mut evict_keys = Vec::new();
+        for record in all {
+            let stale =
+                matches!(record.status, IntentStatus::Submitted) && record.created_at < cutoff;
+            if stale {
+                // read_state reads intents from io, so the eviction must
+                // also delete the record files.
+                evict_keys.push(WriteOp::Delete { path: record.key() });
+            } else {
+                kept.push((record.id.clone(), record));
+            }
+        }
+        let evicted = (old_len - kept.len()) as u64;
+        if !evict_keys.is_empty() {
+            self.pending.borrow_mut().extend(evict_keys);
+        }
         self.intent_store.replace_from(kept).await;
-        Ok((old_len - kept_count) as u64)
+        self.intent_records
+            .borrow_mut()
+            .retain(|_, r| !(matches!(r.status, IntentStatus::Submitted) && r.created_at < cutoff));
+        Ok(evicted)
     }
 }
 
@@ -1725,48 +1751,5 @@ impl<I: FileIo> crate::AsyncTimeRangeCapable for FihStorage<I> {
         let min = facts.iter().map(|r| r.submitted_at).min()?;
         let max = facts.iter().map(|r| r.submitted_at).max()?;
         Some(min.to_string()..max.to_string())
-    }
-}
-
-// ── AsyncFlushCapable (IO: flush_pending via await) ──────────────────────
-
-impl<I: FileIo> crate::AsyncFlushCapable for FihStorage<I> {
-    async fn flush_since(&self, cursor: &FlushCursor) -> Result<FlushResult, String> {
-        let now_ts = self.clock.now_nanos();
-
-        // Count pending record WriteOps (fact + intent keys) that represent
-        // entity records rather than blob data. This approximates the old
-        // by_time delta count removed with FihCoord in Phase 3.
-        let records_flushed = self
-            .pending
-            .borrow()
-            .iter()
-            .filter(|op| match op {
-                WriteOp::Write { path, .. } => {
-                    path.starts_with("facts/") || path.starts_with("intents/")
-                }
-                WriteOp::Delete { .. } => false,
-            })
-            .count() as u64;
-
-        if records_flushed == 0 && self.pending.borrow().is_empty() {
-            return Ok(FlushResult {
-                records_flushed: 0,
-                new_cursor: FlushCursor {
-                    last_flushed_at: now_ts,
-                    partition: cursor.partition.clone(),
-                },
-            });
-        }
-
-        self.flush_pending().await?;
-
-        Ok(FlushResult {
-            records_flushed,
-            new_cursor: FlushCursor {
-                last_flushed_at: now_ts,
-                partition: cursor.partition.clone(),
-            },
-        })
     }
 }

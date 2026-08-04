@@ -7,7 +7,7 @@
 //   4. Monitor heartbeat TTL — release stale claims
 //   5. Delegate eviction to try_evict / try_evict_flush
 //
-// Generic over `B: Blackboard + EvictCapable (+ optionally FlushCapable)`.
+// Generic over `B: Blackboard + EvictCapable`.
 // Detection tasks implement `DetectionCapable` (or marker traits) from nexus-model.
 
 use super::error::ProcessError;
@@ -67,36 +67,22 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
     /// Run one OODA tick. Returns the number of new Facts submitted
     /// by detectors (detectors produce Facts, not Intents).
     ///
-    /// When the backend also implements `FlushCapable`, eviction
-    /// flushes cold storage first before evicting hot memory.
-    /// Use `tick_with_flush()` for the flush+evict cycle.
+    /// Eviction runs separately via `tick_with_flush()`, which runs
+    /// after the state read flushes pending writes.
     pub fn tick(&mut self) -> Result<usize, ProcessError> {
         self._tick_inner(|_bb: &mut B| Ok(()))
     }
 
-    /// Like `tick()` but runs the flush+evict cycle when memory
-    /// exceeds threshold. Requires the backend to implement `FlushCapable`.
-    pub fn tick_with_flush(&mut self) -> Result<usize, ProcessError>
-    where
-        B: nex_fih::FlushCapable,
-    {
+    /// Like `tick()` but runs the eviction cycle when memory
+    /// exceeds threshold. Eviction runs after the state read, which
+    /// flushes pending writes, so the cycle never drops un-flushed data.
+    pub fn tick_with_flush(&mut self) -> Result<usize, ProcessError> {
         let threshold = self.config.eviction_threshold;
         let cutoff_secs = self.config.eviction_cutoff_secs;
         self._tick_inner(move |bb: &mut B| {
-            let size = EvictCapable::approximate_size(&*bb);
-            if size > threshold {
-                // Use empty cursor (full flush) at scheduler level.
-                // The gateway or higher-level orchestrator should
-                // call HybridBlackboard::flush() directly to get
-                // incremental flush with cursor persistence.
-                let cursor = nex_fih::FlushCursor {
-                    last_flushed_at: 0,
-                    partition: bb.project_id().to_string(),
-                };
-                super::eviction::try_evict_flush(bb, &cursor, threshold, cutoff_secs)
-                    .map_err(ProcessError::Eviction)?;
-            }
-            Ok(())
+            super::eviction::try_evict(bb, threshold, cutoff_secs)
+                .map(|_| ())
+                .map_err(ProcessError::Eviction)
         })
     }
 

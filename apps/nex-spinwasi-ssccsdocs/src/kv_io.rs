@@ -17,7 +17,6 @@ impl KvIo {
         let store = Store::open_default().map_err(|e| format!("kv open: {e}"))?;
         Ok(Self { store })
     }
-
 }
 
 impl FileIo for KvIo {
@@ -37,7 +36,9 @@ impl FileIo for KvIo {
         let key = format!("fih:{}", path);
         let data = data.to_vec();
         Box::pin(async move {
-            self.store.set(&key, &data).map_err(|e| format!("kv write {path}: {e}"))?;
+            self.store
+                .set(&key, &data)
+                .map_err(|e| format!("kv write {path}: {e}"))?;
             Ok(())
         })
     }
@@ -58,7 +59,9 @@ impl FileIo for KvIo {
     fn delete<'a>(&'a self, path: &'a str) -> IoFuture<'a, ()> {
         let key = format!("fih:{}", path);
         Box::pin(async move {
-            self.store.delete(&key).map_err(|e| format!("kv delete {path}: {e}"))?;
+            self.store
+                .delete(&key)
+                .map_err(|e| format!("kv delete {path}: {e}"))?;
             Ok(())
         })
     }
@@ -75,11 +78,13 @@ impl nex::io::BatchIo for KvIo {
             for op in &ops_vec {
                 match op {
                     WriteOp::Write { path, data } => {
-                        self.store.set(&format!("fih:{path}"), data)
+                        self.store
+                            .set(&format!("fih:{path}"), data)
                             .map_err(|e| format!("kv batch write {path}: {e}"))?;
                     }
                     WriteOp::Delete { path } => {
-                        self.store.delete(&format!("fih:{path}"))
+                        self.store
+                            .delete(&format!("fih:{path}"))
                             .map_err(|e| format!("kv batch delete {path}: {e}"))?;
                     }
                 }
