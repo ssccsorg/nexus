@@ -97,7 +97,9 @@ run_test()   {
     cargo test -p nexd --test integration -- --test-threads=1 --nocapture 2>&1
     echo "---"
     cargo test -p nexus-storage-sim -- --nocapture 2>&1
-
+    echo "---"
+    # smoke verification runner: exercises every storage capability end to end
+    cargo run -p nexus-storage-sim 2>&1
 }
 run_all() {
     echo "=== fmt --all ===" && run_fmt

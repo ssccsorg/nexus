@@ -1634,14 +1634,27 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
         let before_secs: u64 = before.parse().unwrap_or(0);
         let all = self.hint_store.values().await;
         let old_len = all.len();
-        let kept: Vec<(String, HintRecord)> = all
-            .into_iter()
-            .filter(|r| r.submitted_at >= before_secs)
-            .map(|r| (r.id.clone(), r))
-            .collect();
-        let kept_count = kept.len();
+        let mut kept = Vec::with_capacity(all.len());
+        let mut evict_keys = Vec::new();
+        for record in all {
+            if record.submitted_at >= before_secs {
+                kept.push((record.id.clone(), record));
+            } else {
+                // read_state reads hints from io, so the eviction must
+                // also delete the record files; otherwise the evicted
+                // hint reappears on the next state read.
+                evict_keys.push(WriteOp::Delete { path: record.key() });
+            }
+        }
+        let evicted = (old_len - kept.len()) as u64;
+        if !evict_keys.is_empty() {
+            self.pending.borrow_mut().extend(evict_keys);
+        }
         self.hint_store.replace_from(kept).await;
-        Ok((old_len - kept_count) as u64)
+        self.hint_records
+            .borrow_mut()
+            .retain(|_, r| r.submitted_at >= before_secs);
+        Ok(evicted)
     }
 
     async fn evict_stale_intents(&self, older_than_secs: u64) -> Result<u64, String> {
@@ -1650,14 +1663,28 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
 
         let all = self.intent_store.values().await;
         let old_len = all.len();
-        let kept: Vec<(String, IntentRecord)> = all
-            .into_iter()
-            .filter(|r| !(matches!(r.status, IntentStatus::Submitted) && r.created_at < cutoff))
-            .map(|r| (r.id.clone(), r))
-            .collect();
-        let kept_count = kept.len();
+        let mut kept = Vec::with_capacity(all.len());
+        let mut evict_keys = Vec::new();
+        for record in all {
+            let stale =
+                matches!(record.status, IntentStatus::Submitted) && record.created_at < cutoff;
+            if stale {
+                // read_state reads intents from io, so the eviction must
+                // also delete the record files.
+                evict_keys.push(WriteOp::Delete { path: record.key() });
+            } else {
+                kept.push((record.id.clone(), record));
+            }
+        }
+        let evicted = (old_len - kept.len()) as u64;
+        if !evict_keys.is_empty() {
+            self.pending.borrow_mut().extend(evict_keys);
+        }
         self.intent_store.replace_from(kept).await;
-        Ok((old_len - kept_count) as u64)
+        self.intent_records
+            .borrow_mut()
+            .retain(|_, r| !(matches!(r.status, IntentStatus::Submitted) && r.created_at < cutoff));
+        Ok(evicted)
     }
 }
 
