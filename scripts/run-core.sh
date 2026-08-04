@@ -94,12 +94,16 @@ run_test()   {
     # build nex-server before integration tests; cargo test -p nexd does not
     # pull in the nex-server binary as a dependency
     cargo build -p nex-server 2>&1
-    cargo test -p nexd --test integration -- --test-threads=1 --nocapture 2>&1
+    # all nexd test targets (lib + integration + proc-daemon)
+    cargo test -p nexd -- --test-threads=1 --nocapture 2>&1
     echo "---"
     cargo test -p nexus-storage-sim -- --nocapture 2>&1
     echo "---"
     # smoke verification runner: exercises every storage capability end to end
     cargo run -p nexus-storage-sim 2>&1
+    echo "---"
+    # interface tests (cold routing, cypher scenarios) are part of the core gate
+    cargo test -p interface-cypher -- --nocapture 2>&1
 }
 run_all() {
     echo "=== fmt --all ===" && run_fmt
