@@ -211,7 +211,7 @@ fn test_parallel_many_ants() {
         for (id, content) in &seeds {
             guard
                 .submit_fact(&Fact::with_id(
-                    CoordId::from_string(&id),
+                    CoordId::from_string(id),
                     "corpus".into(),
                     (*content).into(),
                     "system".into(),

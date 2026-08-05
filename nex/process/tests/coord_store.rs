@@ -8,7 +8,7 @@
 
 use futures_executor::block_on;
 use nex_fih::{
-    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncScanCapable,
+    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncScanCapable, AsyncStorageRead,
     AsyncTimeRangeCapable, Content, CoordId, Fact, FihStorage, Hint, Intent, IntentStatus,
 };
 use nexus_storage_sim::SimIo;
@@ -161,8 +161,76 @@ fn time_range_bounds_from_the_coordinate_store() {
     });
 }
 
+/// Clock that advances one hour per `now_nanos` call, so facts share a
+/// day but carry distinct timestamps.
+struct HourClock(std::sync::Mutex<u64>);
+
+impl nex_core::Now for HourClock {
+    fn now_nanos(&self) -> u64 {
+        let mut now = self.0.lock().unwrap();
+        let ts = *now;
+        *now += 3_600_000_000_000;
+        ts
+    }
+
+    fn now_secs(&self) -> u64 {
+        *self.0.lock().unwrap() / 1_000_000_000
+    }
+}
+
 #[test]
-fn scan_partition_uses_axis_predicates() {
+fn time_range_is_exact_within_a_day() {
+    block_on(async {
+        let store = FihStorage::with_clock(
+            SimIo::new(),
+            "coord",
+            Box::new(HourClock(std::sync::Mutex::new(1_000_000_000_000))),
+        );
+        store.submit_fact(&fact("f_a", b"a")).await.unwrap(); // t = 1e12
+        store.submit_fact(&fact("f_b", b"b")).await.unwrap(); // t = 4.6e12
+
+        let range = store.time_range().await.expect("time range");
+        // Both facts share day 0; the exact bounds are the record
+        // timestamps, not whichever fact the tree orders first within
+        // the day.
+        assert_eq!(range.start, "1000000000000");
+        assert_eq!(range.end, "4600000000000");
+    });
+}
+
+#[test]
+fn conclusion_fact_carries_the_conclude_time() {
+    block_on(async {
+        let store = FihStorage::new(SimIo::new(), "coord");
+        store.submit_fact(&fact("f_base", b"base")).await.unwrap();
+        store
+            .submit_intent(&intent("i_ts", "f_base"))
+            .await
+            .unwrap();
+        store.claim_intent("i_ts", "alice").await.unwrap();
+        store.conclude_intent("i_ts", "done").await.unwrap();
+
+        // The conclusion fact is written with the conclude time, so the
+        // range start is a real timestamp, not epoch.
+        let range = store.time_range().await.expect("time range");
+        assert!(
+            range.start.parse::<u64>().unwrap() > 0,
+            "conclusion fact must not sit at day zero"
+        );
+
+        let state = store.read_state().await;
+        assert!(
+            state
+                .facts
+                .iter()
+                .any(|f| f.origin.starts_with("conclusion:i_ts")),
+            "conclusion fact present with its origin"
+        );
+    });
+}
+
+#[test]
+fn scan_partition_matches_partition_strings() {
     block_on(async {
         let store = FihStorage::new(SimIo::new(), "coord");
         store
@@ -185,8 +253,8 @@ fn scan_partition_uses_axis_predicates() {
         // Sanity: the submit paths did place the records.
         assert_eq!(store.all_fact_ids().len(), 2);
 
-        // Facts match the origin axis, intents and hints the creator
-        // axis (the existing per-type partition convention).
+        // Facts match the origin field, intents and hints the creator
+        // field (the existing per-type partition convention).
         let alpha = store.scan_partition("alpha").await.unwrap();
         assert_eq!(alpha.facts.len(), 1);
         assert_eq!(alpha.facts[0].id, CoordId::from_string("f_p1"));

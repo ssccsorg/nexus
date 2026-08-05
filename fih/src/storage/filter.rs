@@ -29,7 +29,10 @@ pub struct StateFilter {
     pub creator: Option<String>,
     pub status: Option<String>,
     /// Axis hints for CoordSpaceN prefix queries.
-    /// When set, enables O(subtree) filtering instead of full scan.
+    ///
+    /// Deprecated: accepted for trait-surface compatibility. The FihStorage
+    /// implementation over the unified 19-axis store does not consume them;
+    /// filtering traverses the store with record-field predicates instead.
     pub axis_hints: Option<AxisHints>,
 }
 

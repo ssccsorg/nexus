@@ -175,8 +175,6 @@ pub struct FihStorage<I: FileIo> {
     pub fact_records: Cell2<HashMap<String, FactRecord>>,
     pub intent_records: Cell2<HashMap<String, IntentRecord>>,
     pub hint_records: Cell2<HashMap<String, HintRecord>>,
-    pub facts_by_creator: Cell2<HashMap<String, Vec<String>>>,
-    pub facts_by_origin: Cell2<HashMap<String, Vec<String>>>,
     // Semantic stores (for similarity search).
     semantic_stores: Cell2<Vec<crate::semantic::DynSemanticStore>>,
     /// Counter for assigning semantic IDs to facts incrementally.
@@ -220,8 +218,6 @@ impl<I: FileIo> FihStorage<I> {
             fact_records: Cell2::new(HashMap::new()),
             intent_records: Cell2::new(HashMap::new()),
             hint_records: Cell2::new(HashMap::new()),
-            facts_by_creator: Cell2::new(HashMap::new()),
-            facts_by_origin: Cell2::new(HashMap::new()),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
             pending: Cell2::new(Vec::new()),
@@ -246,8 +242,6 @@ impl<I: FileIo> FihStorage<I> {
             fact_records: Cell2::new(HashMap::new()),
             intent_records: Cell2::new(HashMap::new()),
             hint_records: Cell2::new(HashMap::new()),
-            facts_by_creator: Cell2::new(HashMap::new()),
-            facts_by_origin: Cell2::new(HashMap::new()),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
             pending: Cell2::new(Vec::new()),
@@ -988,16 +982,6 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
         self.fact_records
             .borrow_mut()
             .insert(record.id.clone(), record);
-        self.facts_by_creator
-            .borrow_mut()
-            .entry(fact.creator.clone())
-            .or_default()
-            .push(fact.id.to_string());
-        self.facts_by_origin
-            .borrow_mut()
-            .entry(fact.origin.clone())
-            .or_default()
-            .push(fact.id.to_string());
         self.pending.borrow_mut().push(op);
 
         // Auto-index into semantic stores (skip conclusion facts to reduce noise)
@@ -1215,9 +1199,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         // succeeds, so a failed flush leaves the store consistent with io.
         self.vacate_record(&old_path);
         self.place_intent(&record);
-        self.intent_store
-            .insert(intent_id.to_string(), record)
-            .await;
+        self.intent_store.insert(normalized, record).await;
         Ok(())
     }
 
@@ -1331,7 +1313,10 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         let old_path = Self::intent_path_with(&record, &old_status);
 
         // Write conclusion fact and updated intent via pending buffer.
-        let fact_rec = FactRecord::from_model(&new_fact, String::new(), 0);
+        // The conclusion fact carries the conclude time (now_ns) so it
+        // lands on the real day in the 19-axis store and time_range
+        // reflects it.
+        let fact_rec = FactRecord::from_model(&new_fact, String::new(), now_ns);
         let fact_bytes = postcard::to_allocvec(&fact_rec)
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.pending.borrow_mut().push(WriteOp::Write {
@@ -1357,7 +1342,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         // 19-axis store moves only after the io commit succeeds, so a
         // failed flush leaves the store consistent with io: vacate the
         // old status path, place the concluded intent and the conclusion
-        // fact (time axis at 0, matching the record's submitted_at).
+        // fact at the conclude time.
         self.vacate_record(&old_path);
         self.place_intent(&record);
         self.place_record(
@@ -1425,16 +1410,14 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
             }
         };
 
-        // Spatial predicates over the 19-axis store. Time is day-granular
-        // in the leading axes [0-1] (days in base-11172); origin and
-        // creator are hashed axes [3]/[4]; identity is axes [6-11]. The
-        // exact since/until boundary is applied on record timestamps.
+        // Predicates apply to record fields, not path axes. The traversal
+        // is a full scan, so the hashed origin/creator axes would add no
+        // pruning while introducing hash-collision false positives and
+        // false negatives for records placed with hand-built paths.
+        // Identity is the one path-derived predicate: a record's id is
+        // defined by the identity axes [6-11].
         let since: Option<u64> = filter.since.as_ref().and_then(|s| s.parse().ok());
         let until: Option<u64> = filter.until.as_ref().and_then(|s| s.parse().ok());
-        let since_day = since.map(|ts| ts / 86_400_000_000_000);
-        let until_day = until.map(|ts| ts / 86_400_000_000_000);
-        let origin_coord = filter.origin.as_ref().map(|o| hash_str(o));
-        let creator_coord = filter.creator.as_ref().map(|c| hash_str(c));
 
         let mut facts = Vec::new();
         let mut intents = Vec::new();
@@ -1442,7 +1425,6 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
 
         let store = self.store.borrow();
         for (path, rec) in store.iter_tree() {
-            let day = path.coords()[0].index() as u64 * 11172 + path.coords()[1].index() as u64;
             let id = path_to_id_str(&path);
             match rec {
                 Record::Fact {
@@ -1452,23 +1434,13 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                     creator,
                     submitted_at,
                 } => {
-                    if let Some(oc) = origin_coord
-                        && path.coords()[3].index() != oc
+                    if let Some(ref want) = filter.origin
+                        && origin != want
                     {
                         continue;
                     }
-                    if let Some(cc) = creator_coord
-                        && path.coords()[4].index() != cc
-                    {
-                        continue;
-                    }
-                    if let Some(sd) = since_day
-                        && day < sd
-                    {
-                        continue;
-                    }
-                    if let Some(ud) = until_day
-                        && day > ud
+                    if let Some(ref want) = filter.creator
+                        && creator != want
                     {
                         continue;
                     }
@@ -1506,22 +1478,12 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                     status,
                     created_at,
                 } => {
-                    if let Some(cc) = creator_coord
-                        && path.coords()[4].index() != cc
+                    if let Some(ref want) = filter.creator
+                        && creator != want
                     {
                         continue;
                     }
                     let created_ns = *created_at * 1_000_000_000;
-                    if let Some(sd) = since_day
-                        && day < sd
-                    {
-                        continue;
-                    }
-                    if let Some(ud) = until_day
-                        && day > ud
-                    {
-                        continue;
-                    }
                     if let Some(ts) = since
                         && created_ns < ts
                     {
@@ -1699,12 +1661,12 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
 impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
     async fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
         let prefix = format!("partition:{}", partition);
-        let prefix_coord = hash_str(&prefix);
 
-        // Partition scan over the 19-axis store: facts match the origin
-        // axis [3], intents and hints the creator axis [4] (the existing
-        // per-type convention). The id is recovered from the identity
-        // axes [6-11].
+        // Partition scan over the 19-axis store. Facts match on the
+        // origin field, intents and hints on the creator field (the
+        // existing per-type convention). The comparison is exact on the
+        // record strings; the id is recovered from the identity axes
+        // [6-11].
         let store = self.store.borrow();
         let mut facts = Vec::new();
         let mut intents = Vec::new();
@@ -1719,7 +1681,7 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
                     creator,
                     ..
                 } => {
-                    if path.coords()[3].index() == prefix_coord {
+                    if origin == &prefix {
                         facts.push(Fact {
                             id: CoordId::from_string(&id),
                             origin: origin.clone(),
@@ -1736,7 +1698,7 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
                     status,
                     created_at,
                 } => {
-                    if path.coords()[4].index() == prefix_coord {
+                    if creator == &prefix {
                         let description = if description_hash.is_empty() {
                             id.clone()
                         } else {
@@ -1780,7 +1742,7 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
                 Record::Hint {
                     content, creator, ..
                 } => {
-                    if path.coords()[4].index() == prefix_coord {
+                    if creator == &prefix {
                         hints.push(Hint {
                             id: CoordId::from_string(&id),
                             content: content.clone(),
@@ -1803,19 +1765,21 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
 
 impl<I: FileIo> crate::AsyncTimeRangeCapable for FihStorage<I> {
     async fn time_range(&self) -> Option<Range<String>> {
-        // The 19-axis store is coordinate-ordered with day-granular time in
-        // the leading axes [0-1] (days in base-11172), so the first and
-        // last Fact entries bound the time range at day granularity. The
-        // exact timestamps come from the records; when several facts share
-        // the boundary day, the returned bound is one of them.
+        // Exact min/max over the Fact records in the 19-axis store. The
+        // tree is coordinate-ordered, but within a boundary day the
+        // order is set by the other axes, not the timestamp, so the
+        // first/last Fact in tree order cannot bound the range exactly.
         let store = self.store.borrow();
-        let mut times = store.iter_tree().filter_map(|(_, rec)| match rec {
-            Record::Fact { submitted_at, .. } => Some(*submitted_at),
-            _ => None,
-        });
-        let min = times.next()?;
-        // A single fact is both the min and the max.
-        let max = times.last().unwrap_or(min);
-        Some(min.to_string()..max.to_string())
+        let mut min = u64::MAX;
+        let mut max = u64::MIN;
+        let mut found = false;
+        for (_, rec) in store.iter_tree() {
+            if let Record::Fact { submitted_at, .. } = rec {
+                found = true;
+                min = min.min(*submitted_at);
+                max = max.max(*submitted_at);
+            }
+        }
+        found.then(|| min.to_string()..max.to_string())
     }
 }
