@@ -598,11 +598,7 @@ fn scenario_supply_chain_incident() {
     // Communications team drafts announcement
     bb.submit_intent(&Intent {
         id: CoordId::from_string("i_comms"),
-        from_facts: vec![
-            CoordId::from_string("f_advisory_GHSA"),
-            impact.id,
-            patch.id,
-        ],
+        from_facts: vec![CoordId::from_string("f_advisory_GHSA"), impact.id, patch.id],
         description: "COMMS: Draft security advisory for customers".into(),
         creator: "comms-lead".into(),
         worker: None,
