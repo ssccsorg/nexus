@@ -117,14 +117,19 @@ pub fn record_to_path(
 ) -> tagma_core::CoordPath<19> {
     use tagma_core::{Coord, CoordPath};
     let mk = |v: u16| Coord::new(v % 11172).unwrap();
-    let time_hi = (ts_ns / 86_400_000_000_000) as u16;
-    let time_lo = (ts_ns % 86_400_000_000_000 / 1_000_000_000) as u16; // seconds, not ns
+    // Time is day-granular in the path: days since epoch split into two
+    // base-11172 axes so the leading-axis lexicographic order equals
+    // chronological order for up to u16 days (179 years). Second-level
+    // precision stays in the records; boundary filtering happens there.
+    let days = ts_ns / 86_400_000_000_000;
+    let days_hi = (days / 11172) as u16;
+    let days_lo = (days % 11172) as u16;
     // Use hash-based coord for origin/creator (matches make_record_path convention)
     let origin_v = hash_str(origin);
     let creator_v = hash_str(creator);
     let mut coords = [Coord::new(0).unwrap(); 19];
-    coords[0] = mk(time_hi);
-    coords[1] = mk(time_lo);
+    coords[0] = mk(days_hi);
+    coords[1] = mk(days_lo);
     coords[2] = mk(entity);
     coords[3] = mk(origin_v);
     coords[4] = mk(creator_v);
@@ -1929,11 +1934,11 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
 
 impl<I: FileIo> crate::AsyncTimeRangeCapable for FihStorage<I> {
     async fn time_range(&self) -> Option<Range<String>> {
-        // The 19-axis store is coordinate-ordered with time in the leading
-        // axes [0-1] (days, seconds), so the first and last Fact entries
-        // bound the time range. The axis values are modulo-reduced, so the
-        // exact timestamps come from the records, not the path. Valid while
-        // the data spans less than the coordinate space's 11172-day window.
+        // The 19-axis store is coordinate-ordered with day-granular time in
+        // the leading axes [0-1] (days in base-11172), so the first and
+        // last Fact entries bound the time range at day granularity. The
+        // exact timestamps come from the records; when several facts share
+        // the boundary day, the returned bound is one of them.
         let store = self.store.borrow();
         let mut times = store.iter_tree().filter_map(|(_, rec)| match rec {
             Record::Fact { submitted_at, .. } => Some(*submitted_at),

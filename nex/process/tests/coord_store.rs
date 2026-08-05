@@ -124,15 +124,15 @@ fn intent_status_moves_are_visible_after_reopen() {
     });
 }
 
-/// Clock that advances one whole second per `now_nanos` call, so facts
-/// get distinct whole-second timestamps.
-struct SecondClock(std::sync::Mutex<u64>);
+/// Clock that advances one whole day plus one second per `now_nanos`
+/// call, so facts land on distinct days (the path time is day-granular).
+struct DayClock(std::sync::Mutex<u64>);
 
-impl nex_core::Now for SecondClock {
+impl nex_core::Now for DayClock {
     fn now_nanos(&self) -> u64 {
         let mut now = self.0.lock().unwrap();
         let ts = *now;
-        *now += 1_000_000_000;
+        *now += 86_401_000_000_000;
         ts
     }
 
@@ -148,18 +148,16 @@ fn time_range_bounds_from_the_coordinate_store() {
         let store = FihStorage::with_clock(
             io,
             "coord",
-            Box::new(SecondClock(std::sync::Mutex::new(
-                1_000_000_000_000_000_000,
-            ))),
+            Box::new(DayClock(std::sync::Mutex::new(1_000_000_000_000_000_000))),
         );
         store.submit_fact(&fact("f_t1", b"a")).await.unwrap(); // t0
-        store.submit_fact(&fact("f_t2", b"b")).await.unwrap(); // t0 + 1s
+        store.submit_fact(&fact("f_t2", b"b")).await.unwrap(); // t0 + 1 day + 1s
 
-        // Whole-second timestamps reconstruct exactly from the (days,
-        // seconds) path axes.
+        // Distinct days order the first and last Fact entries; the exact
+        // timestamps come from the records.
         let range = store.time_range().await.expect("time range");
         assert_eq!(range.start, "1000000000000000000");
-        assert_eq!(range.end, "1000000001000000000");
+        assert_eq!(range.end, "1000086401000000000");
     });
 }
 
