@@ -1152,10 +1152,6 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         })?;
         let old_path = Self::intent_path_with(&record, &old_status);
         record.status = new_status;
-        // Status move in the 19-axis store: vacate the old status path,
-        // place the new one.
-        self.vacate_record(&old_path);
-        self.place_intent(&record);
 
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -1166,6 +1162,10 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.flush_pending()
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        // Status move in the 19-axis store: only after the io commit
+        // succeeds, so a failed flush leaves the store consistent with io.
+        self.vacate_record(&old_path);
+        self.place_intent(&record);
         self.intent_store.insert(normalized.clone(), record).await;
         Ok(())
     }
@@ -1196,8 +1196,6 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         })?;
         let old_path = Self::intent_path_with(&record, &old_status);
         record.status = new_status;
-        self.vacate_record(&old_path);
-        self.place_intent(&record);
 
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -1208,6 +1206,10 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.flush_pending()
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        // Status move in the 19-axis store: only after the io commit
+        // succeeds, so a failed flush leaves the store consistent with io.
+        self.vacate_record(&old_path);
+        self.place_intent(&record);
         self.intent_store
             .insert(intent_id.to_string(), record)
             .await;
@@ -1249,8 +1251,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
 
         // Status move in the 19-axis store: vacate the claimed path, place
         // the submitted path.
-        self.vacate_record(&Self::intent_path_with(&record, &old_status));
-        self.place_intent(&record);
+        let old_path = Self::intent_path_with(&record, &old_status);
 
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -1261,6 +1262,10 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.flush_pending()
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        // Status move in the 19-axis store: only after the io commit
+        // succeeds, so a failed flush leaves the store consistent with io.
+        self.vacate_record(&old_path);
+        self.place_intent(&record);
         self.intent_store
             .insert(CoordId::from_string(intent_id).to_string(), record)
             .await;
@@ -1318,10 +1323,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             .status
             .try_conclude(&conclusion_id, now_ns)
             .map_err(BlackboardError::Internal)?;
-        // Status move in the 19-axis store: vacate the claimed path, place
-        // the concluded path.
-        self.vacate_record(&Self::intent_path_with(&record, &old_status));
-        self.place_intent(&record);
+        let old_path = Self::intent_path_with(&record, &old_status);
 
         // Write conclusion fact and updated intent via pending buffer.
         let fact_rec = FactRecord::from_model(&new_fact, String::new(), 0);
@@ -1331,24 +1333,12 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             path: fact_rec.key(),
             data: fact_bytes,
         });
-        // Conclusion fact in the 19-axis store (time axis at 0, matching
-        // the record's submitted_at).
-        self.place_record(
-            &Self::fact_path(&fact_rec, &new_fact.content_hash),
-            Record::Fact {
-                content: new_fact.content.clone(),
-                content_hash: new_fact.content_hash,
-                origin: new_fact.origin.clone(),
-                creator: new_fact.creator.clone(),
-                submitted_at: fact_rec.submitted_at,
-            },
-        );
         self.fact_store
             .insert(fact_rec.id.clone(), fact_rec.clone())
             .await;
         self.fact_records
             .borrow_mut()
-            .insert(fact_rec.id.clone(), fact_rec);
+            .insert(fact_rec.id.clone(), fact_rec.clone());
 
         let intent_bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -1359,6 +1349,22 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.flush_pending()
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        // 19-axis store moves only after the io commit succeeds, so a
+        // failed flush leaves the store consistent with io: vacate the
+        // old status path, place the concluded intent and the conclusion
+        // fact (time axis at 0, matching the record's submitted_at).
+        self.vacate_record(&old_path);
+        self.place_intent(&record);
+        self.place_record(
+            &Self::fact_path(&fact_rec, &new_fact.content_hash),
+            Record::Fact {
+                content: new_fact.content.clone(),
+                content_hash: new_fact.content_hash,
+                origin: new_fact.origin.clone(),
+                creator: new_fact.creator.clone(),
+                submitted_at: fact_rec.submitted_at,
+            },
+        );
         self.intent_store.insert(normalized.clone(), record).await;
 
         Ok(new_fact)
