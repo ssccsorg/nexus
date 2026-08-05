@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 
 use async_trait::async_trait;
-use chton::kv::MaterialKv;
+use chton::kv::CoordKVStore;
 use chton::origin::Origin;
 use tagma_core::{Coord, CoordPath, CoordSpaceN};
 use tagma_kv::CoordKV;
@@ -517,7 +517,7 @@ where
     }
 }
 
-// ── KvEntityStore: MaterialKv-backed EntityStore ─────────────────────────
+// ── KvEntityStore: CoordKVStore-backed EntityStore ─────────────────────────
 
 /// EntityStore over chton's materialized CoordKV.
 ///
@@ -531,7 +531,7 @@ where
 /// value bytes are opaque to the kv, so a future cipher layer would sit
 /// here without changing the trait surface.
 pub struct KvEntityStore<const N: usize, V> {
-    inner: Cell2<MaterialKv<N>>,
+    inner: Cell2<CoordKVStore<N>>,
     marker: PhantomData<V>,
 }
 
@@ -540,7 +540,7 @@ impl<const N: usize, V> KvEntityStore<N, V> {
     /// `load` opens an existing store.
     pub fn new(origin: Box<dyn Origin>, record_slot_size: u64) -> Self {
         Self {
-            inner: Cell2::new(MaterialKv::new(origin, record_slot_size)),
+            inner: Cell2::new(CoordKVStore::new(origin, record_slot_size)),
             marker: PhantomData,
         }
     }
@@ -548,7 +548,7 @@ impl<const N: usize, V> KvEntityStore<N, V> {
     /// Open a store over `origin`: load the header when present, otherwise
     /// create a fresh store with `default_record_slot_size`.
     pub fn load(origin: Box<dyn Origin>, default_record_slot_size: u64) -> Result<Self, String> {
-        let kv = MaterialKv::load(origin, default_record_slot_size).map_err(|e| e.to_string())?;
+        let kv = CoordKVStore::load(origin, default_record_slot_size).map_err(|e| e.to_string())?;
         Ok(Self {
             inner: Cell2::new(kv),
             marker: PhantomData,

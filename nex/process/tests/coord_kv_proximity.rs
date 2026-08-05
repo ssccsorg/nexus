@@ -6,7 +6,7 @@
 // verified over both file origins (FileOrigin and MappedFileOrigin) and
 // across a flush + reopen, so the coordinate index is durable.
 
-use chton::kv::MaterialKv;
+use chton::kv::CoordKVStore;
 use chton::origin::FileOrigin;
 #[cfg(unix)]
 use chton::origin::MappedFileOrigin;
@@ -66,7 +66,7 @@ fn doc_path(doc: &Doc) -> CoordPath<6> {
 
 /// Index the documents into `kv` at their coordinate paths. The value is
 /// the document id, the opaque record at the codec seam.
-fn index_docs(kv: &mut MaterialKv<6>, docs: &[Doc]) {
+fn index_docs(kv: &mut CoordKVStore<6>, docs: &[Doc]) {
     for doc in docs {
         let previous = kv.put_path(&doc_path(doc), doc.id.as_bytes()).unwrap();
         assert!(previous.is_none(), "duplicate path for {}", doc.id);
@@ -100,7 +100,7 @@ fn temp_path(label: &str) -> std::path::PathBuf {
 fn proximity_search_retrieves_matching_entries() {
     let path = temp_path("query");
     {
-        let mut kv = MaterialKv::<6>::new(Box::new(FileOrigin::open(&path).unwrap()), 256);
+        let mut kv = CoordKVStore::<6>::new(Box::new(FileOrigin::open(&path).unwrap()), 256);
         index_docs(&mut kv, DOCS);
         assert_eq!(kv.len(), DOCS.len());
 
@@ -125,12 +125,12 @@ fn proximity_search_retrieves_matching_entries() {
 fn proximity_search_persists_across_file_reopen() {
     let path = temp_path("reopen");
     {
-        let mut kv = MaterialKv::<6>::new(Box::new(FileOrigin::open(&path).unwrap()), 256);
+        let mut kv = CoordKVStore::<6>::new(Box::new(FileOrigin::open(&path).unwrap()), 256);
         index_docs(&mut kv, DOCS);
         kv.flush().unwrap();
     }
     {
-        let kv = MaterialKv::<6>::load(Box::new(FileOrigin::open(&path).unwrap()), 256).unwrap();
+        let kv = CoordKVStore::<6>::load(Box::new(FileOrigin::open(&path).unwrap()), 256).unwrap();
         assert_eq!(kv.len(), DOCS.len());
         let results = kv.proximity::<6, 1>(&storage_center(), 2);
         assert_eq!(
@@ -146,13 +146,13 @@ fn proximity_search_persists_across_file_reopen() {
 fn proximity_search_over_mapped_file_origin() {
     let path = temp_path("mapped");
     {
-        let mut kv = MaterialKv::<6>::new(Box::new(MappedFileOrigin::open(&path).unwrap()), 256);
+        let mut kv = CoordKVStore::<6>::new(Box::new(MappedFileOrigin::open(&path).unwrap()), 256);
         index_docs(&mut kv, DOCS);
         kv.flush().unwrap();
     }
     {
         let kv =
-            MaterialKv::<6>::load(Box::new(MappedFileOrigin::open(&path).unwrap()), 256).unwrap();
+            CoordKVStore::<6>::load(Box::new(MappedFileOrigin::open(&path).unwrap()), 256).unwrap();
         let results = kv.proximity::<6, 1>(&storage_center(), 2);
         assert_eq!(
             collect_ids(results),

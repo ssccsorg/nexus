@@ -1,11 +1,11 @@
 // Flagship path: FihStorage over the materialized CoordKV (chton
-// MaterialKv) with a file origin. Insert -> flush -> reopen -> read:
+// CoordKVStore) with a file origin. Insert -> flush -> reopen -> read:
 // a fact written in the first session survives a reopened store.
 
-use chton::kv::MaterialKv;
+use chton::io::CoordKVStoreIo;
+use chton::kv::CoordKVStore;
 use chton::origin::FileOrigin;
 use futures_executor::block_on;
-use nex_fih::io::coord_kv::CoordKvIo;
 use nex_fih::io::file_io::BufferIo;
 use nex_fih::{AsyncFactCapable, AsyncStorageRead, Content, CoordId, Fact, FihStorage};
 
@@ -28,11 +28,11 @@ fn fih_over_materialized_coordkv_persists_across_reopen() {
         let path2 = path.clone();
         let fid = CoordId::from_string("f_persist").to_string();
 
-        // First session: write a fact through FihStorage over CoordKvIo.
+        // First session: write a fact through FihStorage over CoordKVStoreIo.
         {
             let kv =
-                MaterialKv::<16>::load(Box::new(FileOrigin::open(&path).unwrap()), 4096).unwrap();
-            let storage = FihStorage::new(CoordKvIo::new(kv), "coordkv");
+                CoordKVStore::<16>::load(Box::new(FileOrigin::open(&path).unwrap()), 4096).unwrap();
+            let storage = FihStorage::new(CoordKVStoreIo::new(kv), "coordkv");
             storage.submit_fact(&fact("f_persist")).await.unwrap();
             storage.flush_pending().await.unwrap();
             // Persist the buffered kv header and the file bytes.
@@ -44,8 +44,8 @@ fn fih_over_materialized_coordkv_persists_across_reopen() {
         // Second session: reopen the file into a fresh kv, rebuild, read.
         {
             let kv =
-                MaterialKv::<16>::load(Box::new(FileOrigin::open(&path2).unwrap()), 4096).unwrap();
-            let storage = FihStorage::new(CoordKvIo::new(kv), "coordkv");
+                CoordKVStore::<16>::load(Box::new(FileOrigin::open(&path2).unwrap()), 4096).unwrap();
+            let storage = FihStorage::new(CoordKVStoreIo::new(kv), "coordkv");
             storage.rebuild_cache().await.unwrap();
             let state = storage.read_state().await;
             assert!(

@@ -1,4 +1,4 @@
-// KvEntityStore: MaterialKv-backed EntityStore durability.
+// KvEntityStore: CoordKVStore-backed EntityStore durability.
 //
 // The store is an EntityStore whose backing is chton's materialized
 // CoordKV. These tests verify the trait surface (roundtrip, replace)
