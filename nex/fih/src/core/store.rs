@@ -91,6 +91,16 @@ fn encode_hash_into_axes(hash: &FihHash, axes: &mut [tagma_core::Coord; 7]) {
     }
 }
 
+/// Deterministic u16 fingerprint for an arbitrary string, used for the
+/// origin/creator axes of the 19-axis store.
+fn hash_str(s: &str) -> u16 {
+    use sha2::Digest;
+    let mut h = sha2::Sha256::new();
+    h.update(s.as_bytes());
+    let hash = h.finalize();
+    u16::from_le_bytes([hash[0], hash[1]]) % 11172
+}
+
 /// Build a CoordPath<19> from entity fields (for unified Record store).
 ///
 /// `content_hash` is encoded into axes [12-18] (94 effective bits of content
@@ -110,13 +120,6 @@ pub fn record_to_path(
     let time_hi = (ts_ns / 86_400_000_000_000) as u16;
     let time_lo = (ts_ns % 86_400_000_000_000 / 1_000_000_000) as u16; // seconds, not ns
     // Use hash-based coord for origin/creator (matches make_record_path convention)
-    fn hash_str(s: &str) -> u16 {
-        use sha2::Digest;
-        let mut h = sha2::Sha256::new();
-        h.update(s.as_bytes());
-        let hash = h.finalize();
-        u16::from_le_bytes([hash[0], hash[1]]) % 11172
-    }
     let origin_v = hash_str(origin);
     let creator_v = hash_str(creator);
     let mut coords = [Coord::new(0).unwrap(); 19];
@@ -1815,85 +1818,103 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
 
 impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
     async fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
-        let facts = self.fact_store.values().await;
-        let intents = self.intent_store.values().await;
-        let hints = self.hint_store.values().await;
-
         let prefix = format!("partition:{}", partition);
+        let prefix_coord = hash_str(&prefix);
+
+        // Partition scan over the 19-axis store: facts match the origin
+        // axis [3], intents and hints the creator axis [4] (the existing
+        // per-type convention). The id is recovered from the identity
+        // axes [6-11].
+        let store = self.store.borrow();
+        let mut facts = Vec::new();
+        let mut intents = Vec::new();
+        let mut hints = Vec::new();
+        for (path, rec) in store.iter_tree() {
+            let id = path_to_id_str(&path);
+            match rec {
+                Record::Fact {
+                    content,
+                    content_hash,
+                    origin,
+                    creator,
+                    ..
+                } => {
+                    if path.coords()[3].index() == prefix_coord {
+                        facts.push(Fact {
+                            id: CoordId::from_string(&id),
+                            origin: origin.clone(),
+                            content_hash: *content_hash,
+                            content: content.clone(),
+                            creator: creator.clone(),
+                        });
+                    }
+                }
+                Record::Intent {
+                    from_facts,
+                    description_hash,
+                    creator,
+                    status,
+                    created_at,
+                } => {
+                    if path.coords()[4].index() == prefix_coord {
+                        let description = if description_hash.is_empty() {
+                            id.clone()
+                        } else {
+                            let c = self.load_content(description_hash, "text/plain");
+                            String::from_utf8_lossy(&c.data).to_string()
+                        };
+                        intents.push(Intent {
+                            id: CoordId::from_string(&id),
+                            from_facts: from_facts
+                                .iter()
+                                .map(|s| CoordId::from_string(s))
+                                .collect(),
+                            description,
+                            creator: creator.clone(),
+                            worker: match status {
+                                IntentStatus::Claimed { worker, .. }
+                                | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
+                                IntentStatus::Submitted => None,
+                            },
+                            to_fact_id: match status {
+                                IntentStatus::Concluded { to_fact, .. } => {
+                                    Some(CoordId::from_string(to_fact))
+                                }
+                                _ => None,
+                            },
+                            last_heartbeat_at: match status {
+                                IntentStatus::Claimed {
+                                    last_heartbeat_at, ..
+                                } => Some(*last_heartbeat_at),
+                                _ => None,
+                            },
+                            created_at: Some(*created_at),
+                            is_concluded: matches!(status, IntentStatus::Concluded { .. }),
+                            concluded_at: match status {
+                                IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
+                                _ => None,
+                            },
+                        });
+                    }
+                }
+                Record::Hint {
+                    content, creator, ..
+                } => {
+                    if path.coords()[4].index() == prefix_coord {
+                        hints.push(Hint {
+                            id: CoordId::from_string(&id),
+                            content: content.clone(),
+                            creator: creator.clone(),
+                        });
+                    }
+                }
+            }
+        }
         Ok(PartitionData {
             partition: partition.into(),
-            facts: facts
-                .into_iter()
-                .filter(|f| f.origin == prefix)
-                .map(|r| {
-                    let content = self.load_content(&r.blob_hash, "application/octet-stream");
-                    Fact {
-                        id: CoordId::from_string(&r.id),
-                        origin: r.origin,
-                        content_hash: {
-                            let mut h = sha2::Sha256::new();
-                            h.update(&content.data);
-                            FihHash(h.finalize().into())
-                        },
-                        content,
-                        creator: r.creator,
-                    }
-                })
-                .collect(),
-            intents: intents
-                .into_iter()
-                .filter(|i| i.creator == prefix)
-                .map(|r| {
-                    let description = if r.description_hash.is_empty() {
-                        r.id.clone()
-                    } else {
-                        let c = self.load_content(&r.description_hash, "text/plain");
-                        String::from_utf8_lossy(&c.data).to_string()
-                    };
-                    Intent {
-                        id: CoordId::from_string(&r.id),
-                        from_facts: r
-                            .from_facts
-                            .iter()
-                            .map(|s| CoordId::from_string(s))
-                            .collect(),
-                        description,
-                        creator: r.creator,
-                        worker: match &r.status {
-                            IntentStatus::Claimed { worker, .. }
-                            | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
-                            IntentStatus::Submitted => None,
-                        },
-                        to_fact_id: match &r.status {
-                            IntentStatus::Concluded { to_fact, .. } => {
-                                Some(CoordId::from_string(to_fact))
-                            }
-                            _ => None,
-                        },
-                        last_heartbeat_at: match &r.status {
-                            IntentStatus::Claimed {
-                                last_heartbeat_at, ..
-                            } => Some(*last_heartbeat_at),
-                            _ => None,
-                        },
-                        created_at: Some(r.created_at),
-                        is_concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
-                        concluded_at: match &r.status {
-                            IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
-                            _ => None,
-                        },
-                    }
-                })
-                .collect(),
-            hints: hints
-                .into_iter()
-                .filter(|h| h.creator == prefix)
-                .map(|r| Hint {
-                    id: CoordId::from_string(&r.id),
-                    content: r.content,
-                    creator: r.creator,
-                })
-                .collect(),
+            facts,
+            intents,
+            hints,
         })
     }
 }
@@ -1902,12 +1923,19 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
 
 impl<I: FileIo> crate::AsyncTimeRangeCapable for FihStorage<I> {
     async fn time_range(&self) -> Option<Range<String>> {
-        let facts = self.fact_store.values().await;
-        if facts.is_empty() {
-            return None;
-        }
-        let min = facts.iter().map(|r| r.submitted_at).min()?;
-        let max = facts.iter().map(|r| r.submitted_at).max()?;
+        // The 19-axis store is coordinate-ordered with time in the leading
+        // axes [0-1] (days, seconds), so the first and last Fact entries
+        // bound the time range. The axis values are modulo-reduced, so the
+        // exact timestamps come from the records, not the path. Valid while
+        // the data spans less than the coordinate space's 11172-day window.
+        let store = self.store.borrow();
+        let mut times = store.iter_tree().filter_map(|(_, rec)| match rec {
+            Record::Fact { submitted_at, .. } => Some(*submitted_at),
+            _ => None,
+        });
+        let min = times.next()?;
+        // A single fact is both the min and the max.
+        let max = times.last().unwrap_or(min);
         Some(min.to_string()..max.to_string())
     }
 }

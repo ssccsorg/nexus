@@ -8,15 +8,19 @@
 
 use futures_executor::block_on;
 use nex_fih::{
-    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, Content, CoordId, Fact, FihStorage,
-    Hint, Intent, IntentStatus,
+    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncScanCapable,
+    AsyncTimeRangeCapable, Content, CoordId, Fact, FihStorage, Hint, Intent, IntentStatus,
 };
 use nexus_storage_sim::SimIo;
 
 fn fact(id: &str, data: &[u8]) -> Fact {
+    fact_with(id, data, "coord")
+}
+
+fn fact_with(id: &str, data: &[u8], origin: &str) -> Fact {
     Fact::with_id(
         CoordId::from_string(id),
-        "coord".into(),
+        origin.into(),
         Content {
             mime_type: "text/plain".into(),
             data: data.to_vec(),
@@ -26,11 +30,15 @@ fn fact(id: &str, data: &[u8]) -> Fact {
 }
 
 fn intent(id: &str, from_fact: &str) -> Intent {
+    intent_with(id, from_fact, "t")
+}
+
+fn intent_with(id: &str, from_fact: &str, creator: &str) -> Intent {
     Intent {
         id: CoordId::from_string(id),
         from_facts: vec![CoordId::from_string(from_fact)],
         description: format!("intent {id}"),
-        creator: "t".into(),
+        creator: creator.into(),
         worker: None,
         to_fact_id: None,
         last_heartbeat_at: None,
@@ -41,10 +49,14 @@ fn intent(id: &str, from_fact: &str) -> Intent {
 }
 
 fn hint(id: &str, content: &str) -> Hint {
+    hint_with(id, content, "t")
+}
+
+fn hint_with(id: &str, content: &str, creator: &str) -> Hint {
     Hint {
         id: CoordId::from_string(id),
         content: content.into(),
-        creator: "t".into(),
+        creator: creator.into(),
     }
 }
 
@@ -109,5 +121,84 @@ fn intent_status_moves_are_visible_after_reopen() {
             // The conclusion fact is placed in the store as well.
             assert_eq!(store.all_fact_ids().len(), 2, "base + conclusion");
         }
+    });
+}
+
+/// Clock that advances one whole second per `now_nanos` call, so facts
+/// get distinct whole-second timestamps.
+struct SecondClock(std::sync::Mutex<u64>);
+
+impl nex_core::Now for SecondClock {
+    fn now_nanos(&self) -> u64 {
+        let mut now = self.0.lock().unwrap();
+        let ts = *now;
+        *now += 1_000_000_000;
+        ts
+    }
+
+    fn now_secs(&self) -> u64 {
+        *self.0.lock().unwrap() / 1_000_000_000
+    }
+}
+
+#[test]
+fn time_range_bounds_from_the_coordinate_store() {
+    block_on(async {
+        let io = SimIo::new();
+        let store = FihStorage::with_clock(
+            io,
+            "coord",
+            Box::new(SecondClock(std::sync::Mutex::new(
+                1_000_000_000_000_000_000,
+            ))),
+        );
+        store.submit_fact(&fact("f_t1", b"a")).await.unwrap(); // t0
+        store.submit_fact(&fact("f_t2", b"b")).await.unwrap(); // t0 + 1s
+
+        // Whole-second timestamps reconstruct exactly from the (days,
+        // seconds) path axes.
+        let range = store.time_range().await.expect("time range");
+        assert_eq!(range.start, "1000000000000000000");
+        assert_eq!(range.end, "1000000001000000000");
+    });
+}
+
+#[test]
+fn scan_partition_uses_axis_predicates() {
+    block_on(async {
+        let store = FihStorage::new(SimIo::new(), "coord");
+        store
+            .submit_fact(&fact_with("f_p1", b"a", "partition:alpha"))
+            .await
+            .unwrap();
+        store
+            .submit_fact(&fact_with("f_p2", b"b", "partition:beta"))
+            .await
+            .unwrap();
+        store
+            .submit_intent(&intent_with("i_a", "f_p1", "partition:alpha"))
+            .await
+            .unwrap();
+        store
+            .submit_hint(&hint_with("h_a", "note", "partition:alpha"))
+            .await
+            .unwrap();
+
+        // Sanity: the submit paths did place the records.
+        assert_eq!(store.all_fact_ids().len(), 2);
+
+        // Facts match the origin axis, intents and hints the creator
+        // axis (the existing per-type partition convention).
+        let alpha = store.scan_partition("alpha").await.unwrap();
+        assert_eq!(alpha.facts.len(), 1);
+        assert_eq!(alpha.facts[0].id, CoordId::from_string("f_p1"));
+        assert_eq!(alpha.intents.len(), 1);
+        assert_eq!(alpha.hints.len(), 1);
+
+        let beta = store.scan_partition("beta").await.unwrap();
+        assert_eq!(beta.facts.len(), 1);
+        assert_eq!(beta.facts[0].id, CoordId::from_string("f_p2"));
+        assert!(beta.intents.is_empty());
+        assert!(beta.hints.is_empty());
     });
 }
