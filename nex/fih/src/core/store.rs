@@ -93,6 +93,10 @@ fn encode_hash_into_axes(hash: &FihHash, axes: &mut [tagma_core::Coord; 7]) {
 
 /// Deterministic u16 fingerprint for an arbitrary string, used for the
 /// origin/creator axes of the 19-axis store.
+///
+/// Advisory only: the fingerprint is a 13.4-bit SHA-256 prefix, so
+/// collisions are possible. Record-field predicates compare exact
+/// strings; the axes provide ordering, not exact query keys.
 fn hash_str(s: &str) -> u16 {
     use sha2::Digest;
     let mut h = sha2::Sha256::new();
@@ -119,8 +123,9 @@ pub fn record_to_path(
     let mk = |v: u16| Coord::new(v % 11172).unwrap();
     // Time is day-granular in the path: days since epoch split into two
     // base-11172 axes so the leading-axis lexicographic order equals
-    // chronological order for up to u16 days (179 years). Second-level
-    // precision stays in the records; boundary filtering happens there.
+    // chronological order for up to u16 x 11172 days (~2 million years).
+    // Second-level precision stays in the records; boundary filtering
+    // happens there.
     let days = ts_ns / 86_400_000_000_000;
     let days_hi = (days / 11172) as u16;
     let days_lo = (days % 11172) as u16;
@@ -1573,6 +1578,11 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                     Record::Hint {
                         content, creator, ..
                     } => {
+                        if let Some(ref want) = filter.creator
+                            && creator != want
+                        {
+                            continue;
+                        }
                         if let Some(ids) = filter.hint_ids.as_ref() {
                             let identity = &path.coords()[6..12];
                             if !ids.iter().any(|x| {

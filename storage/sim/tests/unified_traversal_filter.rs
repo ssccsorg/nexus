@@ -37,6 +37,13 @@ fn test_creator_filter_returns_intents_and_hints() {
         creator: "t".into(),
     }))
     .unwrap();
+    // A hint from another creator must be excluded by the creator filter.
+    block_on(store.submit_hint(&Hint {
+        id: CoordId::from_string("h_other"),
+        content: "other hint".into(),
+        creator: "other".into(),
+    }))
+    .unwrap();
 
     let state = block_on(store.read_state_filtered(&StateFilter {
         creator: Some("t".into()),
@@ -51,7 +58,12 @@ fn test_creator_filter_returns_intents_and_hints() {
     assert_eq!(
         state.hints.len(),
         1,
-        "unified traversal returns hints for creator filters"
+        "creator filter excludes hints from other creators"
+    );
+    assert_eq!(
+        state.hints[0].id.to_string(),
+        CoordId::from_string("h1").to_string(),
+        "only the matching creator's hint is returned"
     );
 }
 
