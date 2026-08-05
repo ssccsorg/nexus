@@ -162,3 +162,24 @@ fn test_hint_ids_filter_over_unified_store() {
         CoordId::from_string("h1").to_string()
     );
 }
+
+// ── Test 6: intent description materialized from io after a flush ─────
+
+#[test]
+fn test_intent_description_materialized_after_flush() {
+    let io = SimIo::new();
+    let store = FihStorage::new(io.clone(), "unified_desc");
+    block_on(store.submit_fact(&fact("f1"))).unwrap();
+    let mut i = intent("i1", vec!["f1"]);
+    i.description = "persisted description".into();
+    block_on(store.submit_intent(&i)).unwrap();
+    block_on(store.flush_pending()).unwrap();
+
+    // After the flush the description blob lives on io, not in pending;
+    // the filtered read must still materialize it via the async boundary.
+    let state = block_on(store.read_state_filtered(&StateFilter {
+        ..Default::default()
+    }));
+    assert_eq!(state.intents.len(), 1);
+    assert_eq!(state.intents[0].description, "persisted description");
+}

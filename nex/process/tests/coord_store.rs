@@ -230,6 +230,36 @@ fn conclusion_fact_carries_the_conclude_time() {
 }
 
 #[test]
+fn conclusion_fact_content_survives_reopen() {
+    block_on(async {
+        let io = SimIo::new();
+        {
+            let store = FihStorage::new(io.clone(), "coord");
+            store.submit_fact(&fact("f_base", b"base")).await.unwrap();
+            store.submit_intent(&intent("i_c", "f_base")).await.unwrap();
+            store.claim_intent("i_c", "alice").await.unwrap();
+            store.conclude_intent("i_c", "resolved").await.unwrap();
+        }
+        {
+            // The conclusion fact is blob-backed, so a reopen materializes
+            // its content and a consistent hash from io.
+            let store = FihStorage::new(io, "coord");
+            store.rebuild_cache().await.unwrap();
+            let canonical = CoordId::from_string("f_concl_i_c").to_string();
+            let (content, hash, origin, _creator) = store
+                .get_fact_by_id(&canonical)
+                .expect("conclusion fact readable after reopen");
+            assert_eq!(String::from_utf8_lossy(&content.data), "resolved");
+            assert_eq!(origin, "conclusion:i_c");
+            assert!(
+                hash.0.iter().any(|b| *b != 0),
+                "content hash must be derived from the persisted blob"
+            );
+        }
+    });
+}
+
+#[test]
 fn scan_partition_matches_partition_strings() {
     block_on(async {
         let store = FihStorage::new(SimIo::new(), "coord");
