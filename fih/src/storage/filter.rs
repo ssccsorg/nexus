@@ -30,9 +30,11 @@ pub struct StateFilter {
     pub status: Option<String>,
     /// Axis hints for CoordSpaceN prefix queries.
     ///
-    /// Deprecated: accepted for trait-surface compatibility. The FihStorage
-    /// implementation over the unified 19-axis store does not consume them;
-    /// filtering traverses the store with record-field predicates instead.
+    /// Reserved: the concept is part of the spatial query surface (leading
+    /// axis prefix pruning) and is preserved as designed. The current
+    /// FihStorage implementation traverses the unified 19-axis store with
+    /// record-field predicates and does not consume them yet; wiring the
+    /// prefix-query path is a pending optimization, not a removal.
     pub axis_hints: Option<AxisHints>,
 }
 
