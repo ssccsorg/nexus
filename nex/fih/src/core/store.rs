@@ -278,6 +278,41 @@ impl<I: FileIo> FihStorage<I> {
             }
         }
 
+        // Populate the unified 19-axis store so id enumeration and spatial
+        // queries work after a reopen. Runs before the caches consume the
+        // vectors.
+        for (_, r) in &facts {
+            let content = load_blob(&self.io, &r.blob_hash).await;
+            let content_hash = {
+                let mut h = sha2::Sha256::new();
+                h.update(&content.data);
+                FihHash(h.finalize().into())
+            };
+            self.place_record(
+                &Self::fact_path(r, &content_hash),
+                Record::Fact {
+                    content,
+                    content_hash,
+                    origin: r.origin.clone(),
+                    creator: r.creator.clone(),
+                    submitted_at: r.submitted_at,
+                },
+            );
+        }
+        for (_, r) in &intents {
+            self.place_intent(r);
+        }
+        for (_, r) in &hints {
+            self.place_record(
+                &Self::hint_path(r),
+                Record::Hint {
+                    content: r.content.clone(),
+                    creator: r.creator.clone(),
+                    submitted_at: r.submitted_at,
+                },
+            );
+        }
+
         self.fact_store.replace_from(facts).await;
         self.intent_store.replace_from(intents).await;
         self.hint_store.replace_from(hints).await;
@@ -432,6 +467,73 @@ impl<I: FileIo> FihStorage<I> {
     /// Direct record removal (for special cases like nex-calc).
     pub fn vacate_record(&self, path: &tagma_core::CoordPath<19>) {
         self.store.borrow_mut().vacate_path(path);
+    }
+
+    /// CoordPath<19> for a fact record: entity=0, status=0, time axis from
+    /// the nanosecond `submitted_at`.
+    fn fact_path(record: &FactRecord, content_hash: &FihHash) -> tagma_core::CoordPath<19> {
+        record_to_path(
+            0u16,
+            &record.origin,
+            &record.creator,
+            0u16,
+            &record.id,
+            record.submitted_at,
+            content_hash,
+        )
+    }
+
+    /// CoordPath<19> for an intent record under the given status: entity=1,
+    /// status axis 0/1/2 (Submitted/Claimed/Concluded). `created_at` is
+    /// stored in seconds; the path time axis is nanoseconds.
+    fn intent_path_with(record: &IntentRecord, status: &IntentStatus) -> tagma_core::CoordPath<19> {
+        let status_coord = match status {
+            IntentStatus::Submitted => 0u16,
+            IntentStatus::Claimed { .. } => 1u16,
+            IntentStatus::Concluded { .. } => 2u16,
+        };
+        record_to_path(
+            1u16,
+            "",
+            &record.creator,
+            status_coord,
+            &record.id,
+            record.created_at * 1_000_000_000,
+            &FihHash([0u8; 32]),
+        )
+    }
+
+    /// CoordPath<19> for an intent record under its current status.
+    fn intent_path(record: &IntentRecord) -> tagma_core::CoordPath<19> {
+        Self::intent_path_with(record, &record.status)
+    }
+
+    /// CoordPath<19> for a hint record: entity=2. `submitted_at` is stored
+    /// in seconds; the path time axis is nanoseconds.
+    fn hint_path(record: &HintRecord) -> tagma_core::CoordPath<19> {
+        record_to_path(
+            2u16,
+            "",
+            &record.creator,
+            0u16,
+            &record.id,
+            record.submitted_at * 1_000_000_000,
+            &FihHash([0u8; 32]),
+        )
+    }
+
+    /// Place an intent in the 19-axis store under its current status.
+    fn place_intent(&self, record: &IntentRecord) {
+        self.place_record(
+            &Self::intent_path(record),
+            Record::Intent {
+                from_facts: record.from_facts.clone(),
+                description_hash: record.description_hash.clone(),
+                creator: record.creator.clone(),
+                status: record.status.clone(),
+                created_at: record.created_at,
+            },
+        );
     }
 
     /// Resolve a semantic index back to its ID string.
@@ -863,6 +965,18 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
         self.fact_store
             .insert(record.id.clone(), record.clone())
             .await;
+        // Unified 19-axis store: time in axes [0-1], origin/creator hashed
+        // in [3-4], identity in [6-11]. Kept in sync for spatial queries.
+        self.place_record(
+            &Self::fact_path(&record, &fact.content_hash),
+            Record::Fact {
+                content: fact.content.clone(),
+                content_hash: fact.content_hash,
+                origin: fact.origin.clone(),
+                creator: fact.creator.clone(),
+                submitted_at: record.submitted_at,
+            },
+        );
         self.fact_records
             .borrow_mut()
             .insert(record.id.clone(), record);
@@ -927,6 +1041,14 @@ impl<I: FileIo> crate::AsyncHintCapable for FihStorage<I> {
         self.hint_store
             .insert(record.id.clone(), record.clone())
             .await;
+        self.place_record(
+            &Self::hint_path(&record),
+            Record::Hint {
+                content: record.content.clone(),
+                creator: record.creator.clone(),
+                submitted_at: record.submitted_at,
+            },
+        );
         self.hint_records
             .borrow_mut()
             .insert(record.id.clone(), record);
@@ -993,6 +1115,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.intent_store
             .insert(record.id.clone(), record.clone())
             .await;
+        self.place_intent(&record);
         self.intent_records
             .borrow_mut()
             .insert(record.id.clone(), record);
@@ -1016,6 +1139,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let now = self.clock.now_secs();
+        let old_status = record.status.clone();
         let new_status = record.status.try_claim(agent, now).map_err(|e| {
             if e.starts_with("already claimed") {
                 BlackboardError::Conflict(e)
@@ -1023,7 +1147,12 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
                 BlackboardError::Internal(e)
             }
         })?;
+        let old_path = Self::intent_path_with(&record, &old_status);
         record.status = new_status;
+        // Status move in the 19-axis store: vacate the old status path,
+        // place the new one.
+        self.vacate_record(&old_path);
+        self.place_intent(&record);
 
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -1054,6 +1183,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let now = self.clock.now_secs();
+        let old_status = record.status.clone();
         let new_status = record.status.try_heartbeat(agent, now).map_err(|e| {
             if e.contains("not") {
                 BlackboardError::Conflict(e)
@@ -1061,7 +1191,10 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
                 BlackboardError::Internal(e)
             }
         })?;
+        let old_path = Self::intent_path_with(&record, &old_status);
         record.status = new_status;
+        self.vacate_record(&old_path);
+        self.place_intent(&record);
 
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -1093,6 +1226,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         let mut record = postcard::from_bytes::<IntentRecord>(&bytes)
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
+        let old_status = record.status.clone();
         match &record.status {
             IntentStatus::Claimed { worker, .. } if worker == agent => {
                 record.status = IntentStatus::Submitted;
@@ -1109,6 +1243,11 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
                 )));
             }
         }
+
+        // Status move in the 19-axis store: vacate the claimed path, place
+        // the submitted path.
+        self.vacate_record(&Self::intent_path_with(&record, &old_status));
+        self.place_intent(&record);
 
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -1171,10 +1310,15 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         };
 
         let now_ns = self.clock.now_nanos();
+        let old_status = record.status.clone();
         record.status = record
             .status
             .try_conclude(&conclusion_id, now_ns)
             .map_err(BlackboardError::Internal)?;
+        // Status move in the 19-axis store: vacate the claimed path, place
+        // the concluded path.
+        self.vacate_record(&Self::intent_path_with(&record, &old_status));
+        self.place_intent(&record);
 
         // Write conclusion fact and updated intent via pending buffer.
         let fact_rec = FactRecord::from_model(&new_fact, String::new(), 0);
@@ -1184,6 +1328,18 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             path: fact_rec.key(),
             data: fact_bytes,
         });
+        // Conclusion fact in the 19-axis store (time axis at 0, matching
+        // the record's submitted_at).
+        self.place_record(
+            &Self::fact_path(&fact_rec, &new_fact.content_hash),
+            Record::Fact {
+                content: new_fact.content.clone(),
+                content_hash: new_fact.content_hash,
+                origin: new_fact.origin.clone(),
+                creator: new_fact.creator.clone(),
+                submitted_at: fact_rec.submitted_at,
+            },
+        );
         self.fact_store
             .insert(fact_rec.id.clone(), fact_rec.clone())
             .await;
@@ -1609,6 +1765,7 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
                 // also delete the record files; otherwise the evicted
                 // hint reappears on the next state read.
                 evict_keys.push(WriteOp::Delete { path: record.key() });
+                self.vacate_record(&Self::hint_path(&record));
             }
         }
         let evicted = (old_len - kept.len()) as u64;
@@ -1637,6 +1794,7 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
                 // read_state reads intents from io, so the eviction must
                 // also delete the record files.
                 evict_keys.push(WriteOp::Delete { path: record.key() });
+                self.vacate_record(&Self::intent_path(&record));
             } else {
                 kept.push((record.id.clone(), record));
             }
