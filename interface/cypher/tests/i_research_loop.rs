@@ -13,7 +13,6 @@ use nex_fih::{
     Blackboard, BlackboardError, CoordId, Fact, FactCapable, Intent, IntentCapable, StorageRead,
 };
 use nexus_storage_sim::SimIo;
-use serde_json;
 
 // ── In-memory document chunking (not in core/model yet) ───────────────────
 
@@ -414,7 +413,7 @@ fn scenario_full_research_loop() {
     // The conclusion fact has origin "conclusion:i_hybrid_synthesis" and
     // references facts from both GNN and Transformer documents.
     // Verify via read_state that the bridging fact exists.
-    let new_fact_origin = format!("conclusion:i_hybrid_synthesis");
+    let new_fact_origin = "conclusion:i_hybrid_synthesis";
 
     let state = bb.read_state();
     let has_bridging = state.facts.iter().any(|f| f.origin == new_fact_origin);

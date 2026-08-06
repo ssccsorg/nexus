@@ -106,7 +106,7 @@ fn scenario_satellite_burst_agent() {
     ];
     for (id, origin, content) in &readings {
         gw.submit_fact(&Fact::with_id(
-            CoordId::from_string(&id),
+            CoordId::from_string(id),
             origin.to_string(),
             Content::from(content.to_string()),
             "sat-1".into(),

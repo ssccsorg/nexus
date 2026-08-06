@@ -197,7 +197,7 @@ fn test_large_message_throughput() {
             "creator": "tester"
         }),
     );
-    assert!(result["id"].as_str().unwrap().len() > 0);
+    assert!(!result["id"].as_str().unwrap().is_empty());
 
     let state = d.ok("read_state", json!({}));
     assert_eq!(state["facts"].as_array().unwrap().len(), 1);

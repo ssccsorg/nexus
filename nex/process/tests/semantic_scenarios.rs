@@ -530,7 +530,7 @@ fn scenario_search_json_documents() {
             let (title, _text) = &items[*id as usize];
             eprintln!("    [{:3}] score={:.4}  {}", id, score, title);
         }
-        eprintln!("");
+        eprintln!();
     });
 }
 

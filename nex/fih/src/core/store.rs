@@ -91,6 +91,20 @@ fn encode_hash_into_axes(hash: &FihHash, axes: &mut [tagma_core::Coord; 7]) {
     }
 }
 
+/// Deterministic u16 fingerprint for an arbitrary string, used for the
+/// origin/creator axes of the 19-axis store.
+///
+/// Advisory only: the fingerprint is a 13.4-bit SHA-256 prefix, so
+/// collisions are possible. Record-field predicates compare exact
+/// strings; the axes provide ordering, not exact query keys.
+fn hash_str(s: &str) -> u16 {
+    use sha2::Digest;
+    let mut h = sha2::Sha256::new();
+    h.update(s.as_bytes());
+    let hash = h.finalize();
+    u16::from_le_bytes([hash[0], hash[1]]) % 11172
+}
+
 /// Build a CoordPath<19> from entity fields (for unified Record store).
 ///
 /// `content_hash` is encoded into axes [12-18] (94 effective bits of content
@@ -107,21 +121,20 @@ pub fn record_to_path(
 ) -> tagma_core::CoordPath<19> {
     use tagma_core::{Coord, CoordPath};
     let mk = |v: u16| Coord::new(v % 11172).unwrap();
-    let time_hi = (ts_ns / 86_400_000_000_000) as u16;
-    let time_lo = (ts_ns % 86_400_000_000_000 / 1_000_000_000) as u16; // seconds, not ns
+    // Time is day-granular in the path: days since epoch split into two
+    // base-11172 axes so the leading-axis lexicographic order equals
+    // chronological order for up to u16 x 11172 days (~2 million years).
+    // Second-level precision stays in the records; boundary filtering
+    // happens there.
+    let days = ts_ns / 86_400_000_000_000;
+    let days_hi = (days / 11172) as u16;
+    let days_lo = (days % 11172) as u16;
     // Use hash-based coord for origin/creator (matches make_record_path convention)
-    fn hash_str(s: &str) -> u16 {
-        use sha2::Digest;
-        let mut h = sha2::Sha256::new();
-        h.update(s.as_bytes());
-        let hash = h.finalize();
-        u16::from_le_bytes([hash[0], hash[1]]) % 11172
-    }
     let origin_v = hash_str(origin);
     let creator_v = hash_str(creator);
     let mut coords = [Coord::new(0).unwrap(); 19];
-    coords[0] = mk(time_hi);
-    coords[1] = mk(time_lo);
+    coords[0] = mk(days_hi);
+    coords[1] = mk(days_lo);
     coords[2] = mk(entity);
     coords[3] = mk(origin_v);
     coords[4] = mk(creator_v);
@@ -167,8 +180,6 @@ pub struct FihStorage<I: FileIo> {
     pub fact_records: Cell2<HashMap<String, FactRecord>>,
     pub intent_records: Cell2<HashMap<String, IntentRecord>>,
     pub hint_records: Cell2<HashMap<String, HintRecord>>,
-    pub facts_by_creator: Cell2<HashMap<String, Vec<String>>>,
-    pub facts_by_origin: Cell2<HashMap<String, Vec<String>>>,
     // Semantic stores (for similarity search).
     semantic_stores: Cell2<Vec<crate::semantic::DynSemanticStore>>,
     /// Counter for assigning semantic IDs to facts incrementally.
@@ -212,8 +223,6 @@ impl<I: FileIo> FihStorage<I> {
             fact_records: Cell2::new(HashMap::new()),
             intent_records: Cell2::new(HashMap::new()),
             hint_records: Cell2::new(HashMap::new()),
-            facts_by_creator: Cell2::new(HashMap::new()),
-            facts_by_origin: Cell2::new(HashMap::new()),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
             pending: Cell2::new(Vec::new()),
@@ -238,8 +247,6 @@ impl<I: FileIo> FihStorage<I> {
             fact_records: Cell2::new(HashMap::new()),
             intent_records: Cell2::new(HashMap::new()),
             hint_records: Cell2::new(HashMap::new()),
-            facts_by_creator: Cell2::new(HashMap::new()),
-            facts_by_origin: Cell2::new(HashMap::new()),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
             pending: Cell2::new(Vec::new()),
@@ -276,6 +283,41 @@ impl<I: FileIo> FihStorage<I> {
             {
                 hints.push((record.id.clone(), record));
             }
+        }
+
+        // Populate the unified 19-axis store so id enumeration and spatial
+        // queries work after a reopen. Runs before the caches consume the
+        // vectors.
+        for (_, r) in &facts {
+            let content = load_blob(&self.io, &r.blob_hash).await;
+            let content_hash = {
+                let mut h = sha2::Sha256::new();
+                h.update(&content.data);
+                FihHash(h.finalize().into())
+            };
+            self.place_record(
+                &Self::fact_path(r, &content_hash),
+                Record::Fact {
+                    content,
+                    content_hash,
+                    origin: r.origin.clone(),
+                    creator: r.creator.clone(),
+                    submitted_at: r.submitted_at,
+                },
+            );
+        }
+        for (_, r) in &intents {
+            self.place_intent(r);
+        }
+        for (_, r) in &hints {
+            self.place_record(
+                &Self::hint_path(r),
+                Record::Hint {
+                    content: r.content.clone(),
+                    creator: r.creator.clone(),
+                    submitted_at: r.submitted_at,
+                },
+            );
         }
 
         self.fact_store.replace_from(facts).await;
@@ -432,6 +474,73 @@ impl<I: FileIo> FihStorage<I> {
     /// Direct record removal (for special cases like nex-calc).
     pub fn vacate_record(&self, path: &tagma_core::CoordPath<19>) {
         self.store.borrow_mut().vacate_path(path);
+    }
+
+    /// CoordPath<19> for a fact record: entity=0, status=0, time axis from
+    /// the nanosecond `submitted_at`.
+    fn fact_path(record: &FactRecord, content_hash: &FihHash) -> tagma_core::CoordPath<19> {
+        record_to_path(
+            0u16,
+            &record.origin,
+            &record.creator,
+            0u16,
+            &record.id,
+            record.submitted_at,
+            content_hash,
+        )
+    }
+
+    /// CoordPath<19> for an intent record under the given status: entity=1,
+    /// status axis 0/1/2 (Submitted/Claimed/Concluded). `created_at` is
+    /// stored in seconds; the path time axis is nanoseconds.
+    fn intent_path_with(record: &IntentRecord, status: &IntentStatus) -> tagma_core::CoordPath<19> {
+        let status_coord = match status {
+            IntentStatus::Submitted => 0u16,
+            IntentStatus::Claimed { .. } => 1u16,
+            IntentStatus::Concluded { .. } => 2u16,
+        };
+        record_to_path(
+            1u16,
+            "",
+            &record.creator,
+            status_coord,
+            &record.id,
+            record.created_at * 1_000_000_000,
+            &FihHash([0u8; 32]),
+        )
+    }
+
+    /// CoordPath<19> for an intent record under its current status.
+    fn intent_path(record: &IntentRecord) -> tagma_core::CoordPath<19> {
+        Self::intent_path_with(record, &record.status)
+    }
+
+    /// CoordPath<19> for a hint record: entity=2. `submitted_at` is stored
+    /// in seconds; the path time axis is nanoseconds.
+    fn hint_path(record: &HintRecord) -> tagma_core::CoordPath<19> {
+        record_to_path(
+            2u16,
+            "",
+            &record.creator,
+            0u16,
+            &record.id,
+            record.submitted_at * 1_000_000_000,
+            &FihHash([0u8; 32]),
+        )
+    }
+
+    /// Place an intent in the 19-axis store under its current status.
+    fn place_intent(&self, record: &IntentRecord) {
+        self.place_record(
+            &Self::intent_path(record),
+            Record::Intent {
+                from_facts: record.from_facts.clone(),
+                description_hash: record.description_hash.clone(),
+                creator: record.creator.clone(),
+                status: record.status.clone(),
+                created_at: record.created_at,
+            },
+        );
     }
 
     /// Resolve a semantic index back to its ID string.
@@ -863,19 +972,21 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
         self.fact_store
             .insert(record.id.clone(), record.clone())
             .await;
+        // Unified 19-axis store: time in axes [0-1], origin/creator hashed
+        // in [3-4], identity in [6-11]. Kept in sync for spatial queries.
+        self.place_record(
+            &Self::fact_path(&record, &fact.content_hash),
+            Record::Fact {
+                content: fact.content.clone(),
+                content_hash: fact.content_hash,
+                origin: fact.origin.clone(),
+                creator: fact.creator.clone(),
+                submitted_at: record.submitted_at,
+            },
+        );
         self.fact_records
             .borrow_mut()
             .insert(record.id.clone(), record);
-        self.facts_by_creator
-            .borrow_mut()
-            .entry(fact.creator.clone())
-            .or_default()
-            .push(fact.id.to_string());
-        self.facts_by_origin
-            .borrow_mut()
-            .entry(fact.origin.clone())
-            .or_default()
-            .push(fact.id.to_string());
         self.pending.borrow_mut().push(op);
 
         // Auto-index into semantic stores (skip conclusion facts to reduce noise)
@@ -927,6 +1038,14 @@ impl<I: FileIo> crate::AsyncHintCapable for FihStorage<I> {
         self.hint_store
             .insert(record.id.clone(), record.clone())
             .await;
+        self.place_record(
+            &Self::hint_path(&record),
+            Record::Hint {
+                content: record.content.clone(),
+                creator: record.creator.clone(),
+                submitted_at: record.submitted_at,
+            },
+        );
         self.hint_records
             .borrow_mut()
             .insert(record.id.clone(), record);
@@ -993,6 +1112,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.intent_store
             .insert(record.id.clone(), record.clone())
             .await;
+        self.place_intent(&record);
         self.intent_records
             .borrow_mut()
             .insert(record.id.clone(), record);
@@ -1016,6 +1136,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let now = self.clock.now_secs();
+        let old_status = record.status.clone();
         let new_status = record.status.try_claim(agent, now).map_err(|e| {
             if e.starts_with("already claimed") {
                 BlackboardError::Conflict(e)
@@ -1023,6 +1144,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
                 BlackboardError::Internal(e)
             }
         })?;
+        let old_path = Self::intent_path_with(&record, &old_status);
         record.status = new_status;
 
         let bytes =
@@ -1034,6 +1156,10 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.flush_pending()
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        // Status move in the 19-axis store: only after the io commit
+        // succeeds, so a failed flush leaves the store consistent with io.
+        self.vacate_record(&old_path);
+        self.place_intent(&record);
         self.intent_store.insert(normalized.clone(), record).await;
         Ok(())
     }
@@ -1054,6 +1180,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let now = self.clock.now_secs();
+        let old_status = record.status.clone();
         let new_status = record.status.try_heartbeat(agent, now).map_err(|e| {
             if e.contains("not") {
                 BlackboardError::Conflict(e)
@@ -1061,6 +1188,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
                 BlackboardError::Internal(e)
             }
         })?;
+        let old_path = Self::intent_path_with(&record, &old_status);
         record.status = new_status;
 
         let bytes =
@@ -1072,9 +1200,11 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.flush_pending()
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.intent_store
-            .insert(intent_id.to_string(), record)
-            .await;
+        // Status move in the 19-axis store: only after the io commit
+        // succeeds, so a failed flush leaves the store consistent with io.
+        self.vacate_record(&old_path);
+        self.place_intent(&record);
+        self.intent_store.insert(normalized, record).await;
         Ok(())
     }
 
@@ -1093,6 +1223,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         let mut record = postcard::from_bytes::<IntentRecord>(&bytes)
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
+        let old_status = record.status.clone();
         match &record.status {
             IntentStatus::Claimed { worker, .. } if worker == agent => {
                 record.status = IntentStatus::Submitted;
@@ -1110,6 +1241,10 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             }
         }
 
+        // Status move in the 19-axis store: vacate the claimed path, place
+        // the submitted path.
+        let old_path = Self::intent_path_with(&record, &old_status);
+
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.pending.borrow_mut().push(WriteOp::Write {
@@ -1119,6 +1254,10 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.flush_pending()
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        // Status move in the 19-axis store: only after the io commit
+        // succeeds, so a failed flush leaves the store consistent with io.
+        self.vacate_record(&old_path);
+        self.place_intent(&record);
         self.intent_store
             .insert(CoordId::from_string(intent_id).to_string(), record)
             .await;
@@ -1171,13 +1310,34 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         };
 
         let now_ns = self.clock.now_nanos();
+        let old_status = record.status.clone();
         record.status = record
             .status
             .try_conclude(&conclusion_id, now_ns)
             .map_err(BlackboardError::Internal)?;
+        let old_path = Self::intent_path_with(&record, &old_status);
 
         // Write conclusion fact and updated intent via pending buffer.
-        let fact_rec = FactRecord::from_model(&new_fact, String::new(), 0);
+        // The conclusion fact carries the conclude time (now_ns) so it
+        // lands on the real day in the 19-axis store and time_range
+        // reflects it. It is blob-backed like a submitted fact so a
+        // reopen materializes its content and hash consistently.
+        let blob_hash = new_fact.content_hash.to_string();
+        let meta = ContentMeta {
+            mime_type: new_fact.content.mime_type.clone(),
+            size: content_data.len() as u64,
+        };
+        let meta_bytes =
+            postcard::to_allocvec(&meta).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.pending.borrow_mut().push(WriteOp::Write {
+            path: format!("blob/{blob_hash}.bin"),
+            data: content_data.clone(),
+        });
+        self.pending.borrow_mut().push(WriteOp::Write {
+            path: format!("blob/{blob_hash}.bin.meta"),
+            data: meta_bytes,
+        });
+        let fact_rec = FactRecord::from_model(&new_fact, blob_hash, now_ns);
         let fact_bytes = postcard::to_allocvec(&fact_rec)
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
         self.pending.borrow_mut().push(WriteOp::Write {
@@ -1189,7 +1349,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             .await;
         self.fact_records
             .borrow_mut()
-            .insert(fact_rec.id.clone(), fact_rec);
+            .insert(fact_rec.id.clone(), fact_rec.clone());
 
         let intent_bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -1200,6 +1360,22 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.flush_pending()
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        // 19-axis store moves only after the io commit succeeds, so a
+        // failed flush leaves the store consistent with io: vacate the
+        // old status path, place the concluded intent and the conclusion
+        // fact at the conclude time.
+        self.vacate_record(&old_path);
+        self.place_intent(&record);
+        self.place_record(
+            &Self::fact_path(&fact_rec, &new_fact.content_hash),
+            Record::Fact {
+                content: new_fact.content.clone(),
+                content_hash: new_fact.content_hash,
+                origin: new_fact.origin.clone(),
+                creator: new_fact.creator.clone(),
+                submitted_at: fact_rec.submitted_at,
+            },
+        );
         self.intent_store.insert(normalized.clone(), record).await;
 
         Ok(new_fact)
@@ -1235,7 +1411,7 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
             })
             .collect();
 
-        // Materialize content from pending blobs (no IO fallback for sync path).
+        // Materialize intent descriptions from pending blobs (no io fallback).
         let load_content_fast = |blob_hash: &str, default_mime: &str| -> Content {
             if let Some((mime, data)) = blob_map.get(blob_hash)
                 && !data.is_empty()
@@ -1255,313 +1431,189 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
             }
         };
 
-        // FAST PATH 1: single or AND filter via HashMap O(1)
-        let fast_ids: Option<Vec<String>> = match (filter.creator.as_ref(), filter.origin.as_ref())
-        {
-            (Some(c), Some(o)) => {
-                // AND: intersect creator + origin
-                let by_c = self.facts_by_creator.borrow();
-                let by_o = self.facts_by_origin.borrow();
-                let c_ids = by_c.get(c);
-                let o_ids = by_o.get(o);
-                match (c_ids, o_ids) {
-                    (Some(cv), Some(ov)) => {
-                        if cv.len() <= ov.len() {
-                            let o_set: std::collections::HashSet<&str> =
-                                ov.iter().map(|s| s.as_str()).collect();
-                            Some(
-                                cv.iter()
-                                    .filter(|id| o_set.contains(id.as_str()))
-                                    .cloned()
-                                    .collect(),
-                            )
-                        } else {
-                            let c_set: std::collections::HashSet<&str> =
-                                cv.iter().map(|s| s.as_str()).collect();
-                            Some(
-                                ov.iter()
-                                    .filter(|id| c_set.contains(id.as_str()))
-                                    .cloned()
-                                    .collect(),
-                            )
-                        }
-                    }
-                    (Some(cv), None) => Some(cv.clone()),
-                    (None, Some(ov)) => Some(ov.clone()),
-                    (None, None) => Some(Vec::new()),
-                }
-            }
-            (Some(c), None) => self.facts_by_creator.borrow().get(c).cloned(),
-            (None, Some(o)) => self.facts_by_origin.borrow().get(o).cloned(),
-            (None, None) => None,
-        };
-        if let Some(ids) = fast_ids {
-            let recs = self.fact_records.borrow();
-            let facts: Vec<Fact> = ids
-                .iter()
-                .filter_map(|id| {
-                    recs.get(id).map(|r| Fact {
-                        id: CoordId::from_string(&r.id),
-                        origin: r.origin.clone(),
-                        content_hash: {
-                            let hex = &r.blob_hash;
-                            let mut b = [0u8; 32];
-                            for (i, c) in hex.as_bytes().chunks(2).enumerate() {
-                                let s = unsafe { std::str::from_utf8_unchecked(c) };
-                                b[i] = u8::from_str_radix(s, 16).unwrap_or(0);
-                            }
-                            FihHash(b)
-                        },
-                        content: load_content_fast(&r.blob_hash, "application/octet-stream"),
-                        creator: r.creator.clone(),
-                    })
-                })
-                .collect();
-            let intents: Vec<Intent> = Vec::new();
-            let hints: Vec<Hint> = Vec::new();
-            let mut state = BoardState {
-                facts,
-                intents,
-                hints,
-            };
-            if let Some(limit) = filter.limit {
-                state.facts = state.facts.into_iter().take(limit).collect();
-            }
-            return state;
-        }
+        // Predicates apply to record fields, not path axes. The traversal
+        // is a full scan, so the hashed origin/creator axes would add no
+        // pruning while introducing hash-collision false positives and
+        // false negatives for records placed with hand-built paths.
+        // Identity is the one path-derived predicate: a record's id is
+        // defined by the identity axes [6-11].
+        let since: Option<u64> = filter.since.as_ref().and_then(|s| s.parse().ok());
+        let until: Option<u64> = filter.until.as_ref().and_then(|s| s.parse().ok());
 
-        // FAST PATH 2: axis_hints enable O(subtree) iter_prefix query.
-        if let Some(ref hints) = filter.axis_hints
-            && hints.time_hi.is_some()
+        let mut facts = Vec::new();
+        let mut intents = Vec::new();
+        let mut hints = Vec::new();
+        // Description hashes to materialize after the tree borrow is
+        // released, so the async io fallback never awaits while holding
+        // the store lock: (intent index, description hash).
+        let mut desc_jobs: Vec<(usize, String)> = Vec::new();
+
         {
-            let matched = self.fact_store.query_prefix(hints).await;
-            let facts: Vec<Fact> = matched
-                .into_iter()
-                .filter(|r| {
-                    if let Some(ref origin) = filter.origin
-                        && r.origin != *origin
-                    {
-                        return false;
-                    }
-                    if let Some(ref creator) = filter.creator
-                        && r.creator != *creator
-                    {
-                        return false;
-                    }
-                    if let Some(ref since) = filter.since
-                        && let Ok(ts) = since.parse::<u64>()
-                        && r.submitted_at < ts
-                    {
-                        return false;
-                    }
-                    if let Some(ref until) = filter.until
-                        && let Ok(ts) = until.parse::<u64>()
-                        && r.submitted_at > ts
-                    {
-                        return false;
-                    }
-                    true
-                })
-                .map(|r| {
-                    let content = load_content_fast(&r.blob_hash, "application/octet-stream");
-                    Fact {
-                        id: CoordId::from_string(&r.id),
-                        origin: r.origin,
-                        content_hash: {
-                            let hex = &r.blob_hash;
-                            let mut bytes = [0u8; 32];
-                            for (i, chunk) in hex.as_bytes().chunks(2).enumerate() {
-                                let s = unsafe { std::str::from_utf8_unchecked(chunk) };
-                                bytes[i] = u8::from_str_radix(s, 16).unwrap_or(0);
-                            }
-                            FihHash(bytes)
-                        },
+            let store = self.store.borrow();
+            for (path, rec) in store.iter_tree() {
+                let id = path_to_id_str(&path);
+                match rec {
+                    Record::Fact {
                         content,
-                        creator: r.creator,
+                        content_hash,
+                        origin,
+                        creator,
+                        submitted_at,
+                    } => {
+                        if let Some(ref want) = filter.origin
+                            && origin != want
+                        {
+                            continue;
+                        }
+                        if let Some(ref want) = filter.creator
+                            && creator != want
+                        {
+                            continue;
+                        }
+                        if let Some(ts) = since
+                            && *submitted_at < ts
+                        {
+                            continue;
+                        }
+                        if let Some(ts) = until
+                            && *submitted_at > ts
+                        {
+                            continue;
+                        }
+                        if let Some(ids) = filter.fact_ids.as_ref() {
+                            let identity = &path.coords()[6..12];
+                            if !ids.iter().any(|x| {
+                                let cid: CoordId = CoordId::from_string(x);
+                                identity == &cid.0.coords()[..]
+                            }) {
+                                continue;
+                            }
+                        }
+                        facts.push(Fact {
+                            id: CoordId::from_string(&id),
+                            origin: origin.clone(),
+                            content_hash: *content_hash,
+                            content: content.clone(),
+                            creator: creator.clone(),
+                        });
                     }
-                })
-                .collect();
-            let intents: Vec<Intent> = Vec::new();
-            let hints: Vec<Hint> = Vec::new();
-            let mut state = BoardState {
-                facts,
-                intents,
-                hints,
-            };
-            if let Some(limit) = filter.limit {
-                state.facts = state.facts.into_iter().take(limit).collect();
+                    Record::Intent {
+                        from_facts,
+                        description_hash,
+                        creator,
+                        status,
+                        created_at,
+                    } => {
+                        if let Some(ref want) = filter.creator
+                            && creator != want
+                        {
+                            continue;
+                        }
+                        let created_ns = *created_at * 1_000_000_000;
+                        if let Some(ts) = since
+                            && created_ns < ts
+                        {
+                            continue;
+                        }
+                        if let Some(ts) = until
+                            && created_ns > ts
+                        {
+                            continue;
+                        }
+                        if let Some(st) = filter.status.as_ref()
+                            && simple_status_key(status) != st.as_str()
+                        {
+                            continue;
+                        }
+                        if let Some(ids) = filter.intent_ids.as_ref() {
+                            let identity = &path.coords()[6..12];
+                            if !ids.iter().any(|x| {
+                                let cid: CoordId = CoordId::from_string(x);
+                                identity == &cid.0.coords()[..]
+                            }) {
+                                continue;
+                            }
+                        }
+                        let description = if description_hash.is_empty() {
+                            id.clone()
+                        } else {
+                            // Materialized after the traversal; the hash is
+                            // enough to place the intent now.
+                            desc_jobs.push((intents.len(), description_hash.clone()));
+                            String::new()
+                        };
+                        intents.push(Intent {
+                            id: CoordId::from_string(&id),
+                            from_facts: from_facts
+                                .iter()
+                                .map(|s| CoordId::from_string(s))
+                                .collect(),
+                            description,
+                            creator: creator.clone(),
+                            worker: match status {
+                                IntentStatus::Claimed { worker, .. }
+                                | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
+                                IntentStatus::Submitted => None,
+                            },
+                            to_fact_id: match status {
+                                IntentStatus::Concluded { to_fact, .. } => {
+                                    Some(CoordId::from_string(to_fact))
+                                }
+                                _ => None,
+                            },
+                            last_heartbeat_at: match status {
+                                IntentStatus::Claimed {
+                                    last_heartbeat_at, ..
+                                } => Some(*last_heartbeat_at),
+                                _ => None,
+                            },
+                            created_at: Some(*created_at),
+                            is_concluded: matches!(status, IntentStatus::Concluded { .. }),
+                            concluded_at: match status {
+                                IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
+                                _ => None,
+                            },
+                        });
+                    }
+                    Record::Hint {
+                        content, creator, ..
+                    } => {
+                        if let Some(ref want) = filter.creator
+                            && creator != want
+                        {
+                            continue;
+                        }
+                        if let Some(ids) = filter.hint_ids.as_ref() {
+                            let identity = &path.coords()[6..12];
+                            if !ids.iter().any(|x| {
+                                let cid: CoordId = CoordId::from_string(x);
+                                identity == &cid.0.coords()[..]
+                            }) {
+                                continue;
+                            }
+                        }
+                        hints.push(Hint {
+                            id: CoordId::from_string(&id),
+                            content: content.clone(),
+                            creator: creator.clone(),
+                        });
+                    }
+                }
             }
-            return state;
         }
 
-        // FALLBACK: values() + string-based filter (no axis hints)
-        let all_facts = self.fact_store.values().await;
-        let all_intents = self.intent_store.values().await;
-        let all_hints = self.hint_store.values().await;
-
-        // Filter facts using record fields directly.
-        let facts: Vec<Fact> = all_facts
-            .into_iter()
-            .filter(|r| {
-                if let Some(ref origin) = filter.origin
-                    && r.origin != *origin
-                {
-                    return false;
-                }
-                if let Some(ref creator) = filter.creator
-                    && r.creator != *creator
-                {
-                    return false;
-                }
-                if let Some(ref since) = filter.since
-                    && let Ok(ts) = since.parse::<u64>()
-                    && r.submitted_at < ts
-                {
-                    return false;
-                }
-                if let Some(ref until) = filter.until
-                    && let Ok(ts) = until.parse::<u64>()
-                    && r.submitted_at > ts
-                {
-                    return false;
-                }
-                if let Some(ref ids) = filter.fact_ids {
-                    let normalized: Vec<String> = ids
-                        .iter()
-                        .map(|id| CoordId::from_string(id).to_string())
-                        .collect();
-                    if !normalized.iter().any(|nid| nid == &r.id) {
-                        return false;
-                    }
-                }
-                true
-            })
-            .map(|r| {
-                let content = load_content_fast(&r.blob_hash, "application/octet-stream");
-                Fact {
-                    id: CoordId::from_string(&r.id),
-                    origin: r.origin,
-                    content_hash: {
-                        // blob_hash IS the hex-encoded content hash — parse directly.
-                        let hex = &r.blob_hash;
-                        let mut bytes = [0u8; 32];
-                        for (i, chunk) in hex.as_bytes().chunks(2).enumerate() {
-                            let s = unsafe { std::str::from_utf8_unchecked(chunk) };
-                            bytes[i] = u8::from_str_radix(s, 16).unwrap_or(0);
-                        }
-                        FihHash(bytes)
-                    },
-                    content,
-                    creator: r.creator,
-                }
-            })
-            .collect();
-
-        // Filter intents using record fields directly.
-        let intents: Vec<Intent> = all_intents
-            .into_iter()
-            .filter(|r| {
-                if let Some(ref creator) = filter.creator
-                    && r.creator != *creator
-                {
-                    return false;
-                }
-                if let Some(ref status) = filter.status
-                    && simple_status_key(&r.status) != status.as_str()
-                {
-                    return false;
-                }
-                if let Some(ref since) = filter.since
-                    && let Ok(ts) = since.parse::<u64>()
-                {
-                    let created_ns = r.created_at * 1_000_000_000;
-                    if created_ns < ts {
-                        return false;
-                    }
-                }
-                if let Some(ref until) = filter.until
-                    && let Ok(ts) = until.parse::<u64>()
-                {
-                    let created_ns = r.created_at * 1_000_000_000;
-                    if created_ns > ts {
-                        return false;
-                    }
-                }
-                if let Some(ref ids) = filter.intent_ids {
-                    let normalized: Vec<String> = ids
-                        .iter()
-                        .map(|id| CoordId::from_string(id).to_string())
-                        .collect();
-                    if !normalized.iter().any(|nid| nid == &r.id) {
-                        return false;
-                    }
-                }
-                true
-            })
-            .map(|r| {
-                let description = if r.description_hash.is_empty() {
-                    r.id.clone()
-                } else {
-                    let c = load_content_fast(&r.description_hash, "text/plain");
-                    String::from_utf8_lossy(&c.data).to_string()
-                };
-                Intent {
-                    id: CoordId::from_string(&r.id),
-                    from_facts: r
-                        .from_facts
-                        .iter()
-                        .map(|s| CoordId::from_string(s))
-                        .collect(),
-                    description,
-                    creator: r.creator,
-                    worker: match &r.status {
-                        IntentStatus::Claimed { worker, .. }
-                        | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
-                        IntentStatus::Submitted => None,
-                    },
-                    to_fact_id: match &r.status {
-                        IntentStatus::Concluded { to_fact, .. } => {
-                            Some(CoordId::from_string(to_fact))
-                        }
-                        _ => None,
-                    },
-                    last_heartbeat_at: match &r.status {
-                        IntentStatus::Claimed {
-                            last_heartbeat_at, ..
-                        } => Some(*last_heartbeat_at),
-                        _ => None,
-                    },
-                    created_at: Some(r.created_at),
-                    is_concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
-                    concluded_at: match &r.status {
-                        IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
-                        _ => None,
-                    },
-                }
-            })
-            .collect();
-
-        // Filter hints using record fields directly.
-        let hints: Vec<Hint> = all_hints
-            .into_iter()
-            .filter(|r| {
-                if let Some(ref ids) = filter.hint_ids {
-                    let normalized: Vec<String> = ids
-                        .iter()
-                        .map(|id| CoordId::from_string(id).to_string())
-                        .collect();
-                    if !normalized.iter().any(|nid| nid == &r.id) {
-                        return false;
-                    }
-                }
-                true
-            })
-            .map(|r| Hint {
-                id: CoordId::from_string(&r.id),
-                content: r.content,
-                creator: r.creator,
-            })
-            .collect();
+        // Materialize intent descriptions now that the tree borrow is
+        // released: pending blobs first, then the async io boundary.
+        for (idx, hash) in desc_jobs {
+            let c = load_content_fast(&hash, "text/plain");
+            let text = if c.data.is_empty() {
+                let io_c = load_blob(&self.io, &hash).await;
+                String::from_utf8_lossy(&io_c.data).to_string()
+            } else {
+                String::from_utf8_lossy(&c.data).to_string()
+            };
+            intents[idx].description = text;
+        }
 
         // Apply offset/limit.
         let mut state = BoardState {
@@ -1569,7 +1621,6 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
             intents,
             hints,
         };
-
         let offset = filter.offset.unwrap_or(0);
         if let Some(limit) = filter.limit {
             state.facts = state.facts.into_iter().skip(offset).take(limit).collect();
@@ -1609,6 +1660,7 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
                 // also delete the record files; otherwise the evicted
                 // hint reappears on the next state read.
                 evict_keys.push(WriteOp::Delete { path: record.key() });
+                self.vacate_record(&Self::hint_path(&record));
             }
         }
         let evicted = (old_len - kept.len()) as u64;
@@ -1637,6 +1689,7 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
                 // read_state reads intents from io, so the eviction must
                 // also delete the record files.
                 evict_keys.push(WriteOp::Delete { path: record.key() });
+                self.vacate_record(&Self::intent_path(&record));
             } else {
                 kept.push((record.id.clone(), record));
             }
@@ -1657,85 +1710,129 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
 
 impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
     async fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
-        let facts = self.fact_store.values().await;
-        let intents = self.intent_store.values().await;
-        let hints = self.hint_store.values().await;
-
         let prefix = format!("partition:{}", partition);
+
+        // Partition scan over the 19-axis store. Facts match on the
+        // origin field, intents and hints on the creator field (the
+        // existing per-type convention). The comparison is exact on the
+        // record strings; the id is recovered from the identity axes
+        // [6-11].
+        let mut facts = Vec::new();
+        let mut intents = Vec::new();
+        let mut hints = Vec::new();
+        // Description hashes to materialize after the tree borrow is
+        // released, so the async io fallback never awaits while holding
+        // the store lock: (intent index, description hash).
+        let mut desc_jobs: Vec<(usize, String)> = Vec::new();
+        {
+            let store = self.store.borrow();
+            for (path, rec) in store.iter_tree() {
+                let id = path_to_id_str(&path);
+                match rec {
+                    Record::Fact {
+                        content,
+                        content_hash,
+                        origin,
+                        creator,
+                        ..
+                    } => {
+                        if origin == &prefix {
+                            facts.push(Fact {
+                                id: CoordId::from_string(&id),
+                                origin: origin.clone(),
+                                content_hash: *content_hash,
+                                content: content.clone(),
+                                creator: creator.clone(),
+                            });
+                        }
+                    }
+                    Record::Intent {
+                        from_facts,
+                        description_hash,
+                        creator,
+                        status,
+                        created_at,
+                    } => {
+                        if creator == &prefix {
+                            let description = if description_hash.is_empty() {
+                                id.clone()
+                            } else {
+                                // Materialized after the traversal; the hash
+                                // is enough to place the intent now.
+                                desc_jobs.push((intents.len(), description_hash.clone()));
+                                String::new()
+                            };
+                            intents.push(Intent {
+                                id: CoordId::from_string(&id),
+                                from_facts: from_facts
+                                    .iter()
+                                    .map(|s| CoordId::from_string(s))
+                                    .collect(),
+                                description,
+                                creator: creator.clone(),
+                                worker: match status {
+                                    IntentStatus::Claimed { worker, .. }
+                                    | IntentStatus::Concluded { worker, .. } => {
+                                        Some(worker.clone())
+                                    }
+                                    IntentStatus::Submitted => None,
+                                },
+                                to_fact_id: match status {
+                                    IntentStatus::Concluded { to_fact, .. } => {
+                                        Some(CoordId::from_string(to_fact))
+                                    }
+                                    _ => None,
+                                },
+                                last_heartbeat_at: match status {
+                                    IntentStatus::Claimed {
+                                        last_heartbeat_at, ..
+                                    } => Some(*last_heartbeat_at),
+                                    _ => None,
+                                },
+                                created_at: Some(*created_at),
+                                is_concluded: matches!(status, IntentStatus::Concluded { .. }),
+                                concluded_at: match status {
+                                    IntentStatus::Concluded { concluded_at, .. } => {
+                                        Some(*concluded_at)
+                                    }
+                                    _ => None,
+                                },
+                            });
+                        }
+                    }
+                    Record::Hint {
+                        content, creator, ..
+                    } => {
+                        if creator == &prefix {
+                            hints.push(Hint {
+                                id: CoordId::from_string(&id),
+                                content: content.clone(),
+                                creator: creator.clone(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // Materialize intent descriptions now that the tree borrow is
+        // released: pending blobs first, then the async io boundary.
+        for (idx, hash) in desc_jobs {
+            let c = self.load_content(&hash, "text/plain");
+            let text = if c.data.is_empty() {
+                let io_c = load_blob(&self.io, &hash).await;
+                String::from_utf8_lossy(&io_c.data).to_string()
+            } else {
+                String::from_utf8_lossy(&c.data).to_string()
+            };
+            intents[idx].description = text;
+        }
+
         Ok(PartitionData {
             partition: partition.into(),
-            facts: facts
-                .into_iter()
-                .filter(|f| f.origin == prefix)
-                .map(|r| {
-                    let content = self.load_content(&r.blob_hash, "application/octet-stream");
-                    Fact {
-                        id: CoordId::from_string(&r.id),
-                        origin: r.origin,
-                        content_hash: {
-                            let mut h = sha2::Sha256::new();
-                            h.update(&content.data);
-                            FihHash(h.finalize().into())
-                        },
-                        content,
-                        creator: r.creator,
-                    }
-                })
-                .collect(),
-            intents: intents
-                .into_iter()
-                .filter(|i| i.creator == prefix)
-                .map(|r| {
-                    let description = if r.description_hash.is_empty() {
-                        r.id.clone()
-                    } else {
-                        let c = self.load_content(&r.description_hash, "text/plain");
-                        String::from_utf8_lossy(&c.data).to_string()
-                    };
-                    Intent {
-                        id: CoordId::from_string(&r.id),
-                        from_facts: r
-                            .from_facts
-                            .iter()
-                            .map(|s| CoordId::from_string(s))
-                            .collect(),
-                        description,
-                        creator: r.creator,
-                        worker: match &r.status {
-                            IntentStatus::Claimed { worker, .. }
-                            | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
-                            IntentStatus::Submitted => None,
-                        },
-                        to_fact_id: match &r.status {
-                            IntentStatus::Concluded { to_fact, .. } => {
-                                Some(CoordId::from_string(to_fact))
-                            }
-                            _ => None,
-                        },
-                        last_heartbeat_at: match &r.status {
-                            IntentStatus::Claimed {
-                                last_heartbeat_at, ..
-                            } => Some(*last_heartbeat_at),
-                            _ => None,
-                        },
-                        created_at: Some(r.created_at),
-                        is_concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
-                        concluded_at: match &r.status {
-                            IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
-                            _ => None,
-                        },
-                    }
-                })
-                .collect(),
-            hints: hints
-                .into_iter()
-                .filter(|h| h.creator == prefix)
-                .map(|r| Hint {
-                    id: CoordId::from_string(&r.id),
-                    content: r.content,
-                    creator: r.creator,
-                })
-                .collect(),
+            facts,
+            intents,
+            hints,
         })
     }
 }
@@ -1744,12 +1841,21 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
 
 impl<I: FileIo> crate::AsyncTimeRangeCapable for FihStorage<I> {
     async fn time_range(&self) -> Option<Range<String>> {
-        let facts = self.fact_store.values().await;
-        if facts.is_empty() {
-            return None;
+        // Exact min/max over the Fact records in the 19-axis store. The
+        // tree is coordinate-ordered, but within a boundary day the
+        // order is set by the other axes, not the timestamp, so the
+        // first/last Fact in tree order cannot bound the range exactly.
+        let store = self.store.borrow();
+        let mut min = u64::MAX;
+        let mut max = u64::MIN;
+        let mut found = false;
+        for (_, rec) in store.iter_tree() {
+            if let Record::Fact { submitted_at, .. } = rec {
+                found = true;
+                min = min.min(*submitted_at);
+                max = max.max(*submitted_at);
+            }
         }
-        let min = facts.iter().map(|r| r.submitted_at).min()?;
-        let max = facts.iter().map(|r| r.submitted_at).max()?;
-        Some(min.to_string()..max.to_string())
+        found.then(|| min.to_string()..max.to_string())
     }
 }

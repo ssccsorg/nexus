@@ -518,7 +518,7 @@ fn scenario_ci_failure_investigation() {
 
     let state = bb.read_state();
     assert_eq!(state.facts.len(), 5, "4 reports + 1 diagnosis");
-    assert!(state.intents.len() >= 1, "diagnosis intent");
+    assert!(!state.intents.is_empty(), "diagnosis intent");
 
     println!("  ✓ CI Failure: 4 agents investigate independently, converge on root cause");
     println!("  ✓ Each agent saw different symptoms → same root cause via Blackboard");
@@ -572,7 +572,7 @@ fn scenario_supply_chain_incident() {
     // SRE team plans mitigation (parallel track, reads sec-lead's conclusion)
     bb.submit_intent(&Intent {
         id: CoordId::from_string("i_mitigate"),
-        from_facts: vec![CoordId::from_string("f_advisory_GHSA"), impact.id.clone()],
+        from_facts: vec![CoordId::from_string("f_advisory_GHSA"), impact.id],
         description: "MITIGATE: Update openssl-sys to 0.9.101 across all services".into(),
         creator: "sre-lead".into(),
         worker: None,
@@ -598,11 +598,7 @@ fn scenario_supply_chain_incident() {
     // Communications team drafts announcement
     bb.submit_intent(&Intent {
         id: CoordId::from_string("i_comms"),
-        from_facts: vec![
-            CoordId::from_string("f_advisory_GHSA"),
-            impact.id.clone(),
-            patch.id,
-        ],
+        from_facts: vec![CoordId::from_string("f_advisory_GHSA"), impact.id, patch.id],
         description: "COMMS: Draft security advisory for customers".into(),
         creator: "comms-lead".into(),
         worker: None,
@@ -778,7 +774,7 @@ that the von Neumann architecture can be redesigned around.",
     // Agent-A validates the Segment definition against known memory patterns
     bb.submit_intent(&Intent {
         id: CoordId::from_string("i_validate_segment"),
-        from_facts: vec![CoordId::from_string("f_memory_pattern"), segment_def.id.clone()],
+        from_facts: vec![CoordId::from_string("f_memory_pattern"), segment_def.id],
         description: "VALIDATE: Does the Segment definition predict the 73/18/9 memory access distribution? If M is a contiguous stride-1 region, it should also explain strided and gather/scatter cases.".into(),
         creator: "agent-a".into(),
         worker: None,

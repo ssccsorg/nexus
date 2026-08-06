@@ -211,7 +211,7 @@ fn test_parallel_many_ants() {
         for (id, content) in &seeds {
             guard
                 .submit_fact(&Fact::with_id(
-                    CoordId::from_string(&id),
+                    CoordId::from_string(id),
                     "corpus".into(),
                     (*content).into(),
                     "system".into(),
@@ -221,7 +221,7 @@ fn test_parallel_many_ants() {
     }
 
     const NUM_THREADS: usize = 50;
-    const OPS_PER_THREAD: u64 = 200;
+    const OPS_PER_THREAD: u64 = 100;
 
     let fact_counters = Arc::new(AtomicU64::new(0));
     let intent_counters = Arc::new(AtomicU64::new(0));

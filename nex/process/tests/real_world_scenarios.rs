@@ -43,7 +43,7 @@ use nexus_storage_sim::SimIo;
 
 fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) -> Fact {
     Fact::with_id(
-        CoordId::from_string(&id),
+        CoordId::from_string(id),
         origin.to_string(),
         Content {
             mime_type: "application/json".into(),
@@ -231,7 +231,7 @@ fn scenario_cross_domain_discovery() {
     for cf in &contradiction_facts {
         let intent = Intent {
             id: CoordId::from_string(&format!("{} resolve intent", &cf.id.to_string())),
-            from_facts: vec![cf.id.clone()],
+            from_facts: vec![cf.id],
             description: format!(
                 "Resolve: {}",
                 content_val_of(cf)
@@ -435,7 +435,7 @@ fn scenario_peer_review_challenge() {
     if let Some(cf) = contradiction_fact {
         let intent = Intent {
             id: CoordId::from_string(&format!("{} peer-review intent", &cf.id.to_string())),
-            from_facts: vec![cf.id.clone()],
+            from_facts: vec![cf.id],
             description: "Peer review: resolve computation-ontology contradiction".into(),
             creator: "reviewer".into(),
             worker: None,
@@ -536,7 +536,7 @@ fn scenario_incremental_knowledge_growth() {
                 .unwrap_or("unknown");
             let intent = Intent {
                 id: CoordId::from_string(&format!("{}::iter-{}::intent", cf.id, iteration)),
-                from_facts: vec![cf.id.clone()],
+                from_facts: vec![cf.id],
                 description: format!("Iteration {}: resolve {}", iteration, topic),
                 creator: "agent-loop".into(),
                 worker: None,
@@ -617,7 +617,7 @@ fn scenario_multi_agent_collaboration() {
     for gf in &gap_facts {
         let intent = Intent {
             id: CoordId::from_string(&format!("{} alpha intent", &gf.id.to_string())),
-            from_facts: vec![gf.id.clone()],
+            from_facts: vec![gf.id],
             description: "Hardware gap analysis".into(),
             creator: "agent-alpha".into(),
             worker: None,
@@ -656,7 +656,7 @@ fn scenario_multi_agent_collaboration() {
     for gf in &compiler_gaps {
         let intent = Intent {
             id: CoordId::from_string(&format!("{} beta intent", &gf.id.to_string())),
-            from_facts: vec![gf.id.clone()],
+            from_facts: vec![gf.id],
             description: "Compiler gap analysis".into(),
             creator: "agent-beta".into(),
             worker: None,
@@ -695,7 +695,7 @@ fn scenario_multi_agent_collaboration() {
     for cf in &contradiction_facts {
         let intent = Intent {
             id: CoordId::from_string(&format!("{} gamma intent", &cf.id.to_string())),
-            from_facts: vec![cf.id.clone()],
+            from_facts: vec![cf.id],
             description: "Philosophical resolution".into(),
             creator: "agent-gamma".into(),
             worker: None,

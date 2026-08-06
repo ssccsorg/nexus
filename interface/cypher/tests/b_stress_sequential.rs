@@ -29,7 +29,7 @@ impl Ant {
     fn act(&mut self, bb: &mut impl Blackboard, rng: &mut TestRng, step: usize) -> String {
         match rng.gen_range(8) {
             // 0-2: submit facts (high probability — knowledge injection)
-            0 | 1 | 2 => {
+            0..=2 => {
                 let id = format!("f_{}_{}", self.name, step);
                 let fact = Fact::with_id(
                     CoordId::from_string(&id),
@@ -230,7 +230,7 @@ fn test_stress_many_ants() {
     // Phase 2: spawn ants and let them randomly interact
     const NUM_ANTS: usize = 30;
     const STEPS: usize = 200;
-    let mut ants: Vec<Ant> = (0..NUM_ANTS).map(|i| Ant::new(i)).collect();
+    let mut ants: Vec<Ant> = (0..NUM_ANTS).map(Ant::new).collect();
 
     for step in 0..STEPS {
         let ant_idx = rng.gen_range(NUM_ANTS);

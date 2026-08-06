@@ -1229,7 +1229,7 @@ mod tests {
     fn test_restart_policy() {
         let policy = RestartPolicy::ExponentialBackoff {
             initial_delay: Duration::from_millis(100),
-            max_delay: Duration::from_secs(60),
+            max_delay: Duration::from_mins(1),
             max_attempts: 5,
         };
 

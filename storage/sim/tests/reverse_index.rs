@@ -33,7 +33,7 @@ fn fact(id: &str) -> Fact {
 fn intent(id: &str, from: Vec<&str>) -> Intent {
     Intent {
         id: CoordId::from_string(id),
-        from_facts: from.into_iter().map(|s| CoordId::from_string(s)).collect(),
+        from_facts: from.into_iter().map(CoordId::from_string).collect(),
         description: format!("intent {}", id),
         creator: "t".into(),
         worker: None,
@@ -59,12 +59,12 @@ fn test_by_from_fact_returns_intents_for_fact() {
     assert_eq!(refs_a.len(), 2);
     let id_i1 = CoordId::from_string("i1").to_string();
     let id_i2 = CoordId::from_string("i2").to_string();
-    assert!(refs_a.iter().any(|s| *s == id_i1));
-    assert!(refs_a.iter().any(|s| *s == id_i2));
+    assert!(refs_a.contains(&id_i1));
+    assert!(refs_a.contains(&id_i2));
 
     let refs_b = store.intents_by_fact("f_b");
     assert_eq!(refs_b.len(), 1);
-    assert!(refs_b.iter().any(|s| *s == id_i2));
+    assert!(refs_b.contains(&id_i2));
 
     assert!(store.intents_by_fact("nonexistent").is_empty());
 }
@@ -103,5 +103,5 @@ fn test_by_from_fact_rebuild_from_io() {
     let refs = store2.intents_by_fact("f_x");
     assert_eq!(refs.len(), 1);
     let id_i_ref = CoordId::from_string("i_ref").to_string();
-    assert!(refs.iter().any(|s| *s == id_i_ref));
+    assert!(refs.contains(&id_i_ref));
 }

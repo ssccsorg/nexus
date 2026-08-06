@@ -27,7 +27,7 @@ use nexus_storage_sim::SimIo;
 
 fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) -> Fact {
     Fact::with_id(
-        CoordId::from_string(&id),
+        CoordId::from_string(id),
         origin.to_string(),
         serde_json::to_string(
             &serde_json::json!({ "claim": claim_text, "topic": topic, "position": position }),
@@ -457,7 +457,7 @@ fn scenario_formal_revision_of_philosophy() {
     if let Some(cf) = field_contradiction {
         let intent = Intent {
             id: CoordId::from_string(&format!("{} resolve intent", &cf.id.to_string())),
-            from_facts: vec![cf.id.clone()],
+            from_facts: vec![cf.id],
             description: "Resolve field-definition across layers".into(),
             creator: "formal-reviewer".into(),
             worker: None,
@@ -750,7 +750,7 @@ fn scenario_epistemology_as_bridge() {
     // The system should now have richer cross-document connections
     let gaps = facts_by_creator(&state2, "gap-detector");
     assert!(
-        gaps.len() > 0,
+        !gaps.is_empty(),
         "Knowledge graph richer with epistemology bridge: {} gap facts",
         gaps.len()
     );

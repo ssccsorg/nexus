@@ -320,7 +320,7 @@ fn test_multi_dimensional_tagma_query() {
     for origin_idx in 0..4 {
         for creator_idx in 0..3 {
             for time_bucket in 0..5 {
-                let serial = (origin_idx * 100 + creator_idx * 10 + time_bucket) as u16;
+                let serial = origin_idx * 100 + creator_idx * 10 + time_bucket;
                 let coord = CoordId::from_axes(
                     time_bucket, // [0] time_hi
                     0,           // [1] time_lo

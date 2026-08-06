@@ -21,7 +21,7 @@ fn bb() -> SharedBlackboard {
 
 fn fact(id: &str) -> Fact {
     Fact::with_id(
-        CoordId::from_string(&id),
+        CoordId::from_string(id),
         "test".into(),
         Content {
             mime_type: "application/json".into(),
@@ -33,8 +33,8 @@ fn fact(id: &str) -> Fact {
 
 fn intent(id: &str, from: Vec<&str>) -> Intent {
     Intent {
-        id: CoordId::from_string(&id),
-        from_facts: from.into_iter().map(|s| CoordId::from_string(&s)).collect(),
+        id: CoordId::from_string(id),
+        from_facts: from.into_iter().map(CoordId::from_string).collect(),
         description: format!("intent {}", id),
         creator: "tester".into(),
         worker: None,
