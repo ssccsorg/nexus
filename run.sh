@@ -106,13 +106,14 @@ verify_nexd() {
     SOCKET_DIR=$(mktemp -d)
     local NEXD_SOCKET="${SOCKET_DIR}/nexd.sock"
     local NEX_SERVER_SOCKET="${SOCKET_DIR}/nex-server.sock"
+    local NEX_DATA_DIR="${SOCKET_DIR}/fih-data"
+    mkdir -p "$NEX_DATA_DIR"
 
     echo "=== nexd ==="
     echo "Building..."
     cargo build -p nexd 2>&1
     cargo build -p nex-server 2>&1
     echo ""
-    echo "Starting nex-server on ${NEX_SERVER_SOCKET}..."
 
     local NEX_BIN
     if [ -x "./target/debug/nex-server" ]; then
@@ -121,29 +122,17 @@ verify_nexd() {
         echo "nex-server binary not found at ./target/debug/nex-server (FAIL)"
         return 1
     fi
-    NEX_SOCKET_PATH="$NEX_SERVER_SOCKET" "$NEX_BIN" 2>/tmp/nex-server-debug.log &
-    local NEX_PID=$!
 
-    # Wait for nex-server socket
-    local waited=0
-    while [ ! -S "$NEX_SERVER_SOCKET" ] && [ "$waited" -lt 15 ]; do
-        sleep 0.2
-        waited=$((waited + 1))
-    done
-    if [ ! -S "$NEX_SERVER_SOCKET" ]; then
-        echo "nex-server: socket not ready (FAIL)"
-        cat /tmp/nex-server-debug.log 2>/dev/null || true
-        return 1
-    fi
-    echo "  nex-server ready"
-
+    # nexd spawns nex-server itself as a managed child process; the
+    # data dir is passed so the child keeps state out of the repo.
     echo "Starting nexd on ${NEXD_SOCKET}..."
     NEXD_SOCKET_PATH="$NEXD_SOCKET" \
       NEXD_NEX_SERVER_PATH="$NEX_BIN" \
       NEX_SOCKET_PATH="$NEX_SERVER_SOCKET" \
+      NEX_DATA_DIR="$NEX_DATA_DIR" \
       ./target/debug/nexd 2>/tmp/nexd-debug.log &
     local NEXD_PID=$!
-    trap 'kill $NEX_PID $NEXD_PID 2>/dev/null; rm -rf "$SOCKET_DIR"' EXIT
+    trap 'kill $NEXD_PID 2>/dev/null; rm -rf "$SOCKET_DIR"' EXIT
 
     # Wait for nexd socket
     waited=0
@@ -414,8 +403,8 @@ verify_nexd() {
 
     # Cleanup
     trap - EXIT
-    kill "$NEX_PID" "$NEXD_PID" 2>/dev/null || true
-    wait "$NEX_PID" "$NEXD_PID" 2>/dev/null || true
+    kill "$NEXD_PID" 2>/dev/null || true
+    wait "$NEXD_PID" 2>/dev/null || true
     rm -f /tmp/nexd-debug.log /tmp/nexd-sig-debug.log /tmp/nex-server-debug.log
     rm -rf "$SOCKET_DIR"
 

@@ -24,8 +24,10 @@ sqlite*.db
 wal
 _secret*
 
-# Sub-workspace lockfiles
-nex-server/Cargo.lock
+# Rust lockfiles: untracked so git dependencies (chton, syntagma)
+# resolve to the latest commit of their declared branch (main).
+# Run `cargo update` in a workspace to refresh its local lockfile.
+Cargo.lock
 
 # Wrangler build output
 .wrangler/
