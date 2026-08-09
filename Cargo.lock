@@ -180,10 +180,13 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 [[package]]
 name = "chton"
 version = "0.1.0"
-source = "git+https://github.com/ssccsorg/chton?branch=main#9f581789be41bee7d881add71f5cc6d0afa3d99c"
+source = "git+https://github.com/ssccsorg/chton?branch=main#e3ec990306c39d79e91bd29dbff6a1ffa14a6c3c"
 dependencies = [
+ "async-trait",
  "futures-executor",
  "memmap2",
+ "postcard",
+ "serde",
  "sha2",
  "tagma-core",
  "tagma-geo",
@@ -573,7 +576,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1032,7 +1035,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1260,7 +1263,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "tagma-core",
- "tagma-kv",
 ]
 
 [[package]]
@@ -1736,7 +1738,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1983,12 +1985,12 @@ dependencies = [
 [[package]]
 name = "tagma-core"
 version = "0.1.0"
-source = "git+https://github.com/ssccsorg/syntagma?branch=main#9bc1472cb8e114b4b7ae841cb7e34cc2bd3b126d"
+source = "git+https://github.com/ssccsorg/syntagma?branch=main#6b5e448faa911356b7520fed9957dce800b56c74"
 
 [[package]]
 name = "tagma-geo"
 version = "0.1.0"
-source = "git+https://github.com/ssccsorg/syntagma?branch=main#9bc1472cb8e114b4b7ae841cb7e34cc2bd3b126d"
+source = "git+https://github.com/ssccsorg/syntagma?branch=main#6b5e448faa911356b7520fed9957dce800b56c74"
 dependencies = [
  "tagma-core",
 ]
@@ -1996,7 +1998,7 @@ dependencies = [
 [[package]]
 name = "tagma-kv"
 version = "0.1.0"
-source = "git+https://github.com/ssccsorg/syntagma?branch=main#9bc1472cb8e114b4b7ae841cb7e34cc2bd3b126d"
+source = "git+https://github.com/ssccsorg/syntagma?branch=main#6b5e448faa911356b7520fed9957dce800b56c74"
 dependencies = [
  "tagma-core",
  "tagma-geo",
@@ -2012,7 +2014,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2519,7 +2521,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

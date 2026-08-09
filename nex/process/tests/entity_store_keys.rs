@@ -1,17 +1,18 @@
-// EntityStore key mapping: injective ByteWise fallback.
+// EntityStore key mapping: deterministic SHA-256 fingerprint fallback.
 //
 // The legacy byte-fold fallback conflated distinct keys (for example
 // "  " and "wh" both mapped to the same path, because the two-byte
-// pairs folded to the same coordinate modulo 11172). The fallback now
-// uses the tagma-kv ByteWise mapping, one Coord per UTF-8 byte, which is
-// injective for keys of at most N bytes. These tests pin that property
-// through the CoordEntityStore surface.
+// pairs folded to the same coordinate modulo 11172). chton (the behavior
+// layer owner) maps any non-Hangul key through a SHA-256 fingerprint
+// split across the N coords: collisions are negligible, key length is
+// unbounded, and there is no truncation or zero-padding. These tests pin
+// that contract through the CoordEntityStore surface.
 
 use futures_executor::block_on;
 use nex_fih::{CoordEntityStore, EntityStore};
 
 #[test]
-fn bytewise_fallback_distinguishes_legacy_colliding_keys() {
+fn fingerprint_fallback_distinguishes_legacy_colliding_keys() {
     block_on(async {
         let store = CoordEntityStore::<6, String>::new();
         // Under the old byte-fold these two keys mapped to one path.
@@ -24,7 +25,7 @@ fn bytewise_fallback_distinguishes_legacy_colliding_keys() {
 }
 
 #[test]
-fn bytewise_fallback_injective_for_short_keys() {
+fn fingerprint_fallback_injective_for_short_keys() {
     block_on(async {
         let store = CoordEntityStore::<6, String>::new();
         for (k, v) in [
@@ -53,7 +54,7 @@ fn hangul_fast_path_distinguishes_coordids() {
 }
 
 #[test]
-fn long_key_truncation_is_deterministic() {
+fn long_keys_map_to_distinct_paths() {
     block_on(async {
         let store = CoordEntityStore::<6, String>::new();
         // Same key always maps to the same path: overwrite, not duplicate.
@@ -62,10 +63,12 @@ fn long_key_truncation_is_deterministic() {
         assert_eq!(store.len().await, 1);
         assert_eq!(store.get("abcdefgh").await.as_deref(), Some("second"));
 
-        // Keys longer than N bytes truncate at the first N bytes, so a
-        // key sharing the prefix maps to the same path by design.
+        // The fingerprint fallback has no truncation: keys longer than N
+        // bytes map to distinct paths, so a prefix-sharing key does not
+        // overwrite the earlier entry.
         store.insert("abcdefxy".into(), "third".into()).await;
-        assert_eq!(store.len().await, 1);
-        assert_eq!(store.get("abcdefgh").await.as_deref(), Some("third"));
+        assert_eq!(store.len().await, 2);
+        assert_eq!(store.get("abcdefgh").await.as_deref(), Some("second"));
+        assert_eq!(store.get("abcdefxy").await.as_deref(), Some("third"));
     });
 }

@@ -45,9 +45,9 @@ use crate::{
 };
 use nex_core::Now;
 
-use crate::core::entity_store::{CoordEntityStore, EntityStore};
 use crate::core::index::Cell2;
 use crate::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
+use crate::core::{CoordEntityStore, EntityStore};
 use crate::io::file_io::{FileIo, WriteOp, default_apply_batch};
 use crate::semantic::record::{Query, RecordLoad};
 use std::collections::HashMap;

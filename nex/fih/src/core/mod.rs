@@ -6,7 +6,6 @@
 // Uses crate::io::FileIo for all IO operations.
 // Can be swapped out for external storage engines.
 
-pub mod entity_store;
 pub mod export;
 pub mod fih_blackboard;
 pub mod index;
@@ -15,7 +14,10 @@ pub mod record;
 pub mod session;
 pub mod store;
 
-pub use entity_store::{CoordEntityStore, EntityStore, KvEntityStore, MemoryEntityStore};
+// Store surface ownership: chton is the behavior layer. The EntityStore
+// family (trait + memory + materialized impls) lives in chton::store and
+// is re-exported here so nexus consumers keep a stable crate path.
+pub use chton::store::{CoordEntityStore, EntityStore, KvEntityStore, MemoryEntityStore};
 pub use export::{export_from_io, import_into_io};
 pub use fih_blackboard::FihBlackboard;
 pub use index::{Cell2, OrderedIndex};

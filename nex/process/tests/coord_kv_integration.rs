@@ -43,8 +43,8 @@ fn fih_over_materialized_coordkv_persists_across_reopen() {
 
         // Second session: reopen the file into a fresh kv, rebuild, read.
         {
-            let kv =
-                CoordKVStore::<16>::load(Box::new(FileOrigin::open(&path2).unwrap()), 4096).unwrap();
+            let kv = CoordKVStore::<16>::load(Box::new(FileOrigin::open(&path2).unwrap()), 4096)
+                .unwrap();
             let storage = FihStorage::new(CoordKVStoreIo::new(kv), "coordkv");
             storage.rebuild_cache().await.unwrap();
             let state = storage.read_state().await;

@@ -1,69 +1,15 @@
-// ── Interior-mutable cells, ordered index, and set intersection utils ───
+// ── Ordered index and set intersection utils ───────────────────────────
 //
-// These are the remaining index utilities after FihCoord removal (Phase 3).
-// Cell2 provides platform-adaptive interior mutability (Mutex on native,
-// RefCell on wasm). OrderedIndex is an append-only key→u32 index used by
-// FihStorage's time-range filtering (removed in Phase 3, kept for backward
-// compat). intersect_2/intersect_3 are standalone set-intersection helpers.
+// These are the remaining index utilities after FihCoord removal (Phase 3)
+// and after the Cell2 interior-mutability primitive moved to chton (the
+// behavior layer). OrderedIndex is an append-only key→u32 index kept for
+// backward compat; intersect_2/intersect_3 are standalone set-intersection
+// helpers.
 
-// On native/WASIX (where std is available): std::sync::Mutex
-// On wasm32-unknown-unknown:                   std::cell::RefCell
-//
-// FihStorage and FihCoord are Send+Sync on native, single-threaded on wasm.
-// The public API is identical regardless of platform.
-
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-pub type RefMut<'a, T> = std::sync::MutexGuard<'a, T>;
-
-#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-pub type RefMut<'a, T> = std::cell::RefMut<'a, T>;
-
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-pub type Ref<'a, T> = std::sync::MutexGuard<'a, T>;
-
-#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-pub type Ref<'a, T> = std::cell::Ref<'a, T>;
-
-/// Platform-adaptive cell: Mutex on native/WASIX, RefCell on wasm32-unknown-unknown.
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-pub struct Cell2<T>(std::sync::Mutex<T>);
-
-#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-pub struct Cell2<T>(std::cell::RefCell<T>);
-
-impl<T> Cell2<T> {
-    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    pub fn new(val: T) -> Self {
-        Cell2(std::sync::Mutex::new(val))
-    }
-
-    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    pub fn borrow(&self) -> std::sync::MutexGuard<'_, T> {
-        self.0.lock().unwrap()
-    }
-
-    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    pub fn borrow_mut(&self) -> std::sync::MutexGuard<'_, T> {
-        self.0.lock().unwrap()
-    }
-}
-
-impl<T> Cell2<T> {
-    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-    pub fn new(val: T) -> Self {
-        Cell2(std::cell::RefCell::new(val))
-    }
-
-    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-    pub fn borrow(&self) -> std::cell::Ref<'_, T> {
-        self.0.borrow()
-    }
-
-    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-    pub fn borrow_mut(&self) -> std::cell::RefMut<'_, T> {
-        self.0.borrow_mut()
-    }
-}
+// Cell2 (platform-adaptive interior mutability) is owned by chton::cell:
+// Mutex on native/WASIX, RefCell on wasm32-unknown-unknown. It is
+// re-exported here so nexus consumers keep the crate::core::index path.
+pub use chton::cell::{Cell2, Ref, RefMut};
 
 // ── OrderedIndex ───────────────────────────────────────────────────
 
