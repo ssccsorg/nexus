@@ -1,18 +1,21 @@
-// EntityStore key mapping: deterministic SHA-256 fingerprint fallback.
+// EntityStore key mapping: injective length-prefix encoding.
 //
 // The legacy byte-fold fallback conflated distinct keys (for example
 // "  " and "wh" both mapped to the same path, because the two-byte
 // pairs folded to the same coordinate modulo 11172). chton (the behavior
-// layer owner) maps any non-Hangul key through a SHA-256 fingerprint
-// split across the N coords: collisions are negligible, key length is
-// unbounded, and there is no truncation or zero-padding. These tests pin
-// that contract through the CoordEntityStore surface.
+// layer owner) maps any non-Hangul key through an injective length-
+// prefix encoding: canonical keys are exactly M-1 Hangul characters
+// (direct path, marker axis 0), any other key of length 1..=capacity
+// encodes onto the payload axes as big-endian base-11172 digits with the
+// byte length on the marker axis. No truncation, no padding, no hashing,
+// and no collisions within the declared capacity. These tests pin that
+// contract through the CoordEntityStore surface.
 
 use futures_executor::block_on;
 use nex_fih::{CoordEntityStore, EntityStore};
 
 #[test]
-fn fingerprint_fallback_distinguishes_legacy_colliding_keys() {
+fn general_encoding_distinguishes_legacy_colliding_keys() {
     block_on(async {
         let store = CoordEntityStore::<6, String>::new();
         // Under the old byte-fold these two keys mapped to one path.
@@ -25,7 +28,7 @@ fn fingerprint_fallback_distinguishes_legacy_colliding_keys() {
 }
 
 #[test]
-fn fingerprint_fallback_injective_for_short_keys() {
+fn general_encoding_injective_for_short_keys() {
     block_on(async {
         let store = CoordEntityStore::<6, String>::new();
         for (k, v) in [
@@ -45,7 +48,8 @@ fn fingerprint_fallback_injective_for_short_keys() {
 #[test]
 fn hangul_fast_path_distinguishes_coordids() {
     block_on(async {
-        let store = CoordEntityStore::<6, String>::new();
+        // Depth 7: 6-Hangul keys are canonical (direct path, marker 0).
+        let store = CoordEntityStore::<7, String>::new();
         store.insert("가나다라마바".into(), "first".into()).await;
         store.insert("가나다라마사".into(), "second".into()).await;
         assert_eq!(store.len().await, 2);
@@ -63,9 +67,9 @@ fn long_keys_map_to_distinct_paths() {
         assert_eq!(store.len().await, 1);
         assert_eq!(store.get("abcdefgh").await.as_deref(), Some("second"));
 
-        // The fingerprint fallback has no truncation: keys longer than N
-        // bytes map to distinct paths, so a prefix-sharing key does not
-        // overwrite the earlier entry.
+        // The injective encoding has no truncation: distinct keys map
+        // to distinct paths, so a prefix-sharing key does not overwrite
+        // the earlier entry.
         store.insert("abcdefxy".into(), "third".into()).await;
         assert_eq!(store.len().await, 2);
         assert_eq!(store.get("abcdefgh").await.as_deref(), Some("second"));

@@ -67,6 +67,38 @@ impl<const N: usize> CoordId<N> {
     }
 }
 
+// ── Semantic id derivation ────────────────────────────────────────────
+
+impl CoordId<6> {
+    /// Content-addressed fact id: the semantic layer maps domain meaning
+    /// onto the six axes before insertion. Entity kind occupies axis 2
+    /// (0 = fact), origin and creator occupy their own axes from string
+    /// fingerprints, and the content hash folds into the remaining axes.
+    /// The result is canonical (6 Hangul characters), deterministic per
+    /// (origin, creator, content), and queryable by axis.
+    ///
+    /// The origin/creator fingerprints are advisory (13.4-bit, like the
+    /// 19-axis store): the axes provide ordering, not exact identity.
+    pub fn content_fact_id(origin: &str, creator: &str, content_hash: &FihHash) -> Self {
+        let digest = Sha256::digest(origin.as_bytes());
+        let origin_axis = u16::from_le_bytes([digest[0], digest[1]]) % 11172;
+        let digest = Sha256::digest(creator.as_bytes());
+        let creator_axis = u16::from_le_bytes([digest[0], digest[1]]) % 11172;
+
+        // Fold the content hash into four axes (time_hi, time_lo, and a
+        // serial combined from the remaining hash bytes).
+        let mut axes = [0u16; 4];
+        for (i, axis) in axes.iter_mut().enumerate() {
+            let lo = content_hash.0.get(i * 2).copied().unwrap_or(0) as u16;
+            let hi = content_hash.0.get(i * 2 + 1).copied().unwrap_or(0) as u16;
+            *axis = u16::from_le_bytes([lo as u8, hi as u8]) % 11172;
+        }
+        let serial = (axes[2] + axes[3]) % 11172;
+        CoordId::from_axes(axes[0], axes[1], 0, origin_axis, creator_axis, serial)
+            .expect("axes are already reduced modulo 11172")
+    }
+}
+
 // ── N=6 specific methods (default depth) ──────────────────────────────
 
 impl CoordId<6> {
@@ -337,10 +369,11 @@ pub struct Fact {
 impl Fact {
     /// Create a content-addressed Fact.
     ///
-    /// `CoordId` is derived internally from SHA-256(content) + origin + creator,
-    /// making the ID deterministic: same content + origin + creator always
-    /// produces the same CoordId. `content_hash` is computed simultaneously
-    /// so only one SHA-256 pass is needed.
+    /// The id comes from the semantic layer (`CoordId::content_fact_id`):
+    /// deterministic per content + origin + creator, canonical 6-Hangul,
+    /// with entity/origin/creator/content meaning on dedicated axes.
+    /// `content_hash` is computed simultaneously so only one SHA-256
+    /// pass is needed.
     pub fn new(origin: String, content: Content, creator: String) -> Self {
         let content_hash = {
             let Content { data, .. } = &content;
@@ -348,8 +381,7 @@ impl Fact {
             h.update(data);
             FihHash(h.finalize().into())
         };
-        let id_seed = format!("{}-{}-{}", origin, creator, content_hash);
-        let id = CoordId::from_string(&id_seed);
+        let id = CoordId::content_fact_id(&origin, &creator, &content_hash);
         Fact {
             id,
             content_hash,
