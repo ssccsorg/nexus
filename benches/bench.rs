@@ -6,7 +6,7 @@
 //
 // Coverage:
 //   raw/      — CoordSpaceN<6> primitives (full scan vs iter_prefix)
-//   cs/       — CoordSpace type comparison (dense CS2 vs tree CSN6)
+//   cs/       — CoordSpace type comparison (dense CS2 vs tree CSN6, hash index)
 //   fih/      — FihStorage application level (filter, AND, axis_hints, write)
 //   kb_query/ — real knowledge-base scenario (10K docs, 10 projects, 20 authors)
 //
@@ -15,6 +15,7 @@
 //   raw/iter_prefix_50k        1.12 ms         (5×100 prefixes, O(subtree))
 //   cs/csn6_get_10k            533 µs          (10K tree lookups, ~53 ns/op)
 //   cs/cs2_get_10k             60.8 µs         (10K dense lookups, ~6 ns/op)
+//   cs/hashmap_get_10k         120.9 µs        (10K hash lookups, ~12.1 ns/op)
 //   fih/filter_creator_50k     745 µs          (HashMap fast-path + materialize 2500)
 //   fih/and_query_50k          296 µs          (HashSet intersection)
 //   fih/filter_creator_time    777 µs          (creator + time range)
@@ -359,6 +360,54 @@ fn bench_cs_get_10k(c: &mut Criterion) {
     });
 }
 
+// Hash-based identity index (the existing approach): 32-byte key per record
+// (FihHash scale), same 10K six-axis dataset as the CoordSpace benches.
+fn bench_cs_hashmap_get_10k(c: &mut Criterion) {
+    use std::collections::HashMap;
+
+    let n = 10_000u32;
+    let axes: Vec<[u16; 6]> = (0..n)
+        .map(|i| {
+            let clock = 1700000000000000u64;
+            [
+                ((clock + i as u64) / 86_400_000_000_000 % 11172) as u16,
+                ((clock + i as u64) % 86_400_000_000_000 % 11172) as u16,
+                0u16,
+                (i % 500) as u16,
+                (i % 200) as u16,
+                (i / 1000) as u16,
+            ]
+        })
+        .collect();
+
+    let keys: Vec<[u8; 32]> = axes
+        .iter()
+        .map(|a| {
+            let mut k = [0u8; 32];
+            for (j, v) in a.iter().enumerate() {
+                k[j * 2] = (v >> 8) as u8;
+                k[j * 2 + 1] = (v & 0xff) as u8;
+            }
+            k
+        })
+        .collect();
+
+    let mut map: HashMap<[u8; 32], u64> = HashMap::new();
+    for (i, k) in keys.iter().enumerate() {
+        map.insert(*k, i as u64);
+    }
+
+    c.bench_function("cs/hashmap_get_10k", |b| {
+        b.iter(|| {
+            let mut acc = 0u64;
+            for k in &keys {
+                acc += map.get(k).copied().unwrap_or(0);
+            }
+            black_box(acc);
+        });
+    });
+}
+
 // ── fih/: FihStorage application level ───────────────────────────────────
 
 fn bench_fih_filter_creator(c: &mut Criterion) {
@@ -577,6 +626,7 @@ criterion_group!(
         bench_raw_full_scan_50k,
         bench_raw_iter_prefix_50k,
         bench_cs_get_10k,
+        bench_cs_hashmap_get_10k,
         bench_fih_filter_creator,
         bench_fih_and_query,
         bench_fih_filter_creator_time,
