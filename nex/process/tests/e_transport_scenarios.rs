@@ -25,7 +25,7 @@ fn scenario_intermittent_sensor_agent() {
     {
         let gw = SerdeProxy::new(&bb);
         gw.submit_fact(&Fact::with_id(
-            CoordId::from_string("f_temp_001"),
+            CoordId::resolve("f_temp_001"),
             "sensor-alpha".into(),
             Content {
                 mime_type: "application/json".into(),
@@ -53,7 +53,7 @@ fn scenario_intermittent_sensor_agent() {
         assert_eq!(state.facts[0].origin, "sensor-alpha");
 
         gw.submit_fact(&Fact::with_id(
-            CoordId::from_string("f_temp_002"),
+            CoordId::resolve("f_temp_002"),
             "sensor-alpha".into(),
             Content {
                 mime_type: "application/json".into(),
@@ -106,7 +106,7 @@ fn scenario_satellite_burst_agent() {
     ];
     for (id, origin, content) in &readings {
         gw.submit_fact(&Fact::with_id(
-            CoordId::from_string(id),
+            CoordId::resolve(id),
             origin.to_string(),
             Content::from(content.to_string()),
             "sat-1".into(),
@@ -118,11 +118,8 @@ fn scenario_satellite_burst_agent() {
     assert_eq!(state.facts.len(), 3, "burst of 3 facts received");
 
     gw.submit_intent(&Intent {
-        id: CoordId::from_string("i_sat_analysis"),
-        from_facts: vec![
-            CoordId::from_string("f_sat_001"),
-            CoordId::from_string("f_sat_002"),
-        ],
+        id: CoordId::resolve("i_sat_analysis"),
+        from_facts: vec![CoordId::resolve("f_sat_001"), CoordId::resolve("f_sat_002")],
         description: "Analyze band-x SNR degradation trend".into(),
         creator: "ground-station".into(),
         worker: None,
@@ -161,7 +158,7 @@ fn scenario_browser_agent() {
     let gw = SerdeProxy::new(FihBlackboard::new(SimIo::new(), "test"));
 
     gw.submit_fact(&Fact::with_id(
-        CoordId::from_string("f_background"),
+        CoordId::resolve("f_background"),
         "system".into(),
         Content {
             mime_type: "text/plain".into(),
@@ -172,8 +169,8 @@ fn scenario_browser_agent() {
     .unwrap();
 
     gw.submit_intent(&Intent {
-        id: CoordId::from_string("i_investigate"),
-        from_facts: vec![CoordId::from_string("f_background")],
+        id: CoordId::resolve("i_investigate"),
+        from_facts: vec![CoordId::resolve("f_background")],
         description: "Find root cause of sustained high server load".into(),
         creator: "human-operator".into(),
         worker: None,
@@ -222,7 +219,7 @@ fn scenario_multi_language_agents() {
     {
         let gw = SerdeProxy::new(&bb);
         gw.submit_fact(&Fact::with_id(
-            CoordId::from_string("f_py_001"),
+            CoordId::resolve("f_py_001"),
             "python-etl".into(),
             Content {
                 mime_type: "text/plain".into(),
@@ -237,7 +234,7 @@ fn scenario_multi_language_agents() {
     {
         let gw = SerdeProxy::new(&bb);
         gw.submit_fact(&Fact::with_id(
-            CoordId::from_string("f_rs_001"),
+            CoordId::resolve("f_rs_001"),
             "rust-analyzer".into(),
             Content {
                 mime_type: "application/json".into(),
@@ -266,11 +263,8 @@ fn scenario_multi_language_agents() {
         );
 
         gw.submit_intent(&Intent {
-            id: CoordId::from_string("i_cross_lang"),
-            from_facts: vec![
-                CoordId::from_string("f_py_001"),
-                CoordId::from_string("f_rs_001"),
-            ],
+            id: CoordId::resolve("i_cross_lang"),
+            from_facts: vec![CoordId::resolve("f_py_001"), CoordId::resolve("f_rs_001")],
             description: "Correlate pipeline throughput with inference latency".into(),
             creator: "ts-agent".into(),
             worker: None,
@@ -319,7 +313,7 @@ fn scenario_conflicting_claims() {
     let gw = SerdeProxy::new(FihBlackboard::new(SimIo::new(), "test"));
 
     gw.submit_fact(&Fact::with_id(
-        CoordId::from_string("f_conflict"),
+        CoordId::resolve("f_conflict"),
         "test".into(),
         Content {
             mime_type: "text/plain".into(),
@@ -330,8 +324,8 @@ fn scenario_conflicting_claims() {
     .unwrap();
 
     gw.submit_intent(&Intent {
-        id: CoordId::from_string("i_conflict"),
-        from_facts: vec![CoordId::from_string("f_conflict")],
+        id: CoordId::resolve("i_conflict"),
+        from_facts: vec![CoordId::resolve("f_conflict")],
         description: "Intent that two agents will race to claim".into(),
         creator: "system".into(),
         worker: None,

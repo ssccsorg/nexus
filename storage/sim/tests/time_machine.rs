@@ -24,7 +24,7 @@ fn store() -> FihStorage<SimIo> {
 
 fn submit_fact(store: &FihStorage<SimIo>, id: &str, data: &str) {
     block_on(store.submit_fact(&Fact::with_id(
-        CoordId::from_string(id),
+        CoordId::resolve(id),
         "tm".into(),
         Content {
             mime_type: "text/plain".into(),
@@ -37,8 +37,8 @@ fn submit_fact(store: &FihStorage<SimIo>, id: &str, data: &str) {
 
 fn submit_intent(store: &FihStorage<SimIo>, id: &str, from: &[&str]) {
     block_on(store.submit_intent(&Intent {
-        id: CoordId::from_string(id),
-        from_facts: from.iter().map(|s| CoordId::from_string(s)).collect(),
+        id: CoordId::resolve(id),
+        from_facts: from.iter().map(|s| CoordId::resolve(s)).collect(),
         description: format!("intent {}", id),
         creator: "tester".into(),
         worker: None,
@@ -145,7 +145,7 @@ fn test_full_statespace_round_trip() {
     submit_fact(&store, "f2", "two");
     submit_intent(&store, "i1", &["f1"]);
     block_on(store.submit_hint(&Hint {
-        id: CoordId::from_string("h1"),
+        id: CoordId::resolve("h1"),
         content: "hint one".into(),
         creator: "tester".into(),
     }))
@@ -185,7 +185,7 @@ fn test_eviction_preserves_fact_removes_old_hint() {
     let store = store();
     submit_fact(&store, "f_keep", "keep me");
     block_on(store.submit_hint(&Hint {
-        id: CoordId::from_string("h_old"),
+        id: CoordId::resolve("h_old"),
         content: "old hint".into(),
         creator: "tester".into(),
     }))

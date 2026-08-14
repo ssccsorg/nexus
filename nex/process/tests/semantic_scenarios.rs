@@ -768,7 +768,7 @@ fn scenario_fihstorage_e2e_auto_index() {
 
         // Submit a fact with meaningful text content (async path)
         let fact = Fact::with_id(
-            CoordId::from_string("f_e2e_001"),
+            CoordId::resolve("f_e2e_001"),
             "e2e-test".into(),
             Content {
                 mime_type: "text/plain".into(),
@@ -802,7 +802,7 @@ fn scenario_fihstorage_e2e_auto_index() {
 
         // Submit a conclusion fact — should NOT be auto-indexed (origin starts with "conclusion:")
         let conclusion = Fact::with_id(
-            CoordId::from_string("f_e2e_concl"),
+            CoordId::resolve("f_e2e_concl"),
             "conclusion:i_e2e".into(),
             Content {
                 mime_type: "text/plain".into(),

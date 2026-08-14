@@ -56,7 +56,7 @@ use nexus_storage_sim::SimIo;
 
 fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) -> Fact {
     Fact::with_id(
-        CoordId::from_string(id),
+        CoordId::resolve(id),
         origin.to_string(),
         Content {
             mime_type: "application/json".into(),
@@ -361,7 +361,7 @@ fn agent_resolve_contradictions(
             continue;
         }
         let intent = Intent {
-            id: CoordId::from_string(&format!("resolve::{}", agent_name)),
+            id: CoordId::resolve(&format!("resolve::{}", agent_name)),
             from_facts: vec![fact.id],
             description: format!("Resolve {}: {}", t, agent_name),
             creator: agent_name.into(),

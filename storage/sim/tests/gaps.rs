@@ -84,7 +84,7 @@ fn test_bulk_fact_submission() {
 fn test_submit_hint_then_read() {
     let s = store();
     let hint = Hint {
-        id: CoordId::from_string("h001"),
+        id: CoordId::resolve("h001"),
         content: "test hint".into(),
         creator: "tester".into(),
     };
@@ -116,7 +116,7 @@ fn test_minimal_fih_lifecycle() {
 
     // A hint with arbitrary string content
     futures_executor::block_on(s.submit_hint(&Hint {
-        id: CoordId::from_string("h_guide"),
+        id: CoordId::resolve("h_guide"),
         content: "random constraint string: xkcd-934".into(),
         creator: "tester".into(),
     }))
@@ -131,8 +131,8 @@ fn test_minimal_fih_lifecycle() {
     // Verify reverse index: which intents reference f_1?
     let refs = s.intents_by_fact("f_1");
     assert_eq!(refs.len(), 2, "f_1 referenced by i_a and i_c");
-    assert!(refs.contains(&CoordId::from_string("i_a").to_string()));
-    assert!(refs.contains(&CoordId::from_string("i_c").to_string()));
+    assert!(refs.contains(&CoordId::resolve("i_a").to_string()));
+    assert!(refs.contains(&CoordId::resolve("i_c").to_string()));
 
     // Verify non-referenced fact has empty reverse index
     assert_eq!(s.intents_by_fact("f_2").len(), 1);

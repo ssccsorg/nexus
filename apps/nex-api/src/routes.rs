@@ -28,6 +28,7 @@ fn err_response(e: BlackboardError) -> (StatusCode, Json<ApiError>) {
         BlackboardError::NotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
         BlackboardError::Conflict(_) => (StatusCode::CONFLICT, "conflict"),
         BlackboardError::Forbidden(_) => (StatusCode::FORBIDDEN, "forbidden"),
+        BlackboardError::BadRequest(_) => (StatusCode::BAD_REQUEST, "bad_request"),
         BlackboardError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal_error"),
     };
     (
@@ -101,12 +102,21 @@ pub struct SubmitHintRequest {
 
 // ── Handlers ─────────────────────────────────────────────────────────────
 
+/// Resolve a caller-supplied id reference (canonical id or label) or
+/// generate a canonical default when none is provided.
+fn canonical_id(req_id: Option<String>) -> Result<CoordId, BlackboardError> {
+    match req_id {
+        Some(id) => Ok(CoordId::resolve(&id)),
+        None => Ok(CoordId::new(uuid::Uuid::new_v4().as_u128() as u64)),
+    }
+}
+
 /// POST /fih/facts
 pub async fn submit_fact(
     State(state): State<AppState>,
     Json(req): Json<SubmitFactRequest>,
 ) -> Result<Json<SubmitFactResponse>, (StatusCode, Json<ApiError>)> {
-    let id = req.id.unwrap_or_else(|| format!("fact_{}", uuid_v4()));
+    let id = canonical_id(req.id).map_err(err_response)?;
     let origin = req.origin;
     let content = match &req.content {
         serde_json::Value::String(s) => Content {
@@ -120,7 +130,7 @@ pub async fn submit_fact(
                 .into_bytes(),
         },
     };
-    let fact = Fact::with_id(CoordId::from_string(&id), origin, content, req.creator);
+    let fact = Fact::with_id(id, origin, content, req.creator);
     let hash = {
         let bb = state.blackboard.lock().unwrap();
         bb.submit_fact(&fact).map_err(err_response)?
@@ -142,15 +152,17 @@ pub async fn submit_intent(
     State(state): State<AppState>,
     Json(req): Json<SubmitIntentRequest>,
 ) -> Result<Json<SubmitIntentResponse>, (StatusCode, Json<ApiError>)> {
-    let id = req.id.unwrap_or_else(|| format!("intent_{}", uuid_v4()));
+    let id = canonical_id(req.id).map_err(err_response)?;
     if req.from_facts.is_empty() {
         return Err(err_response(BlackboardError::Forbidden(
             "intent must be grounded in at least one fact".into(),
         )));
     }
+    let from_facts: Vec<CoordId> =
+        req.from_facts.iter().map(|s| CoordId::resolve(s)).collect();
     let intent = Intent {
-        id: CoordId::from_string(&id),
-        from_facts: req.from_facts.iter().map(|s| CoordId::from_string(s)).collect(),
+        id,
+        from_facts,
         description: req.description,
         creator: req.creator,
         worker: None,
@@ -226,9 +238,9 @@ pub async fn submit_hint(
     State(state): State<AppState>,
     Json(req): Json<SubmitHintRequest>,
 ) -> Result<Json<()>, (StatusCode, Json<ApiError>)> {
-    let id = req.id.unwrap_or_else(|| format!("hint_{}", uuid_v4()));
+    let id = canonical_id(req.id).map_err(err_response)?;
     let hint = Hint {
-        id: CoordId::from_string(&id),
+        id,
         content: req.content,
         creator: req.creator,
     };
@@ -246,8 +258,3 @@ pub async fn submit_hint(
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
-
-/// Generate a v4 UUID string.
-fn uuid_v4() -> String {
-    uuid::Uuid::new_v4().to_string()
-}

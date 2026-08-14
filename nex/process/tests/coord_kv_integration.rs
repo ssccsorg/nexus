@@ -11,7 +11,7 @@ use nex_fih::{AsyncFactCapable, AsyncStorageRead, Content, CoordId, Fact, FihSto
 
 fn fact(id: &str) -> Fact {
     Fact::with_id(
-        CoordId::from_string(id),
+        CoordId::resolve(id),
         "test".into(),
         Content {
             mime_type: "text/plain".into(),
@@ -26,7 +26,7 @@ fn fih_over_materialized_coordkv_persists_across_reopen() {
     block_on(async {
         let path = std::env::temp_dir().join(format!("nex-coordkv-{}.bin", std::process::id()));
         let path2 = path.clone();
-        let fid = CoordId::from_string("f_persist").to_string();
+        let fid = CoordId::resolve("f_persist").to_string();
 
         // First session: write a fact through FihStorage over CoordKVStoreIo.
         // Depth 79 holds the longest FIH path (blob meta paths reach 78

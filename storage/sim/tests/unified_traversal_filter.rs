@@ -32,14 +32,14 @@ fn test_creator_filter_returns_intents_and_hints() {
     block_on(store.submit_fact(&fact("f1"))).unwrap();
     block_on(store.submit_intent(&intent("i1", vec!["f1"]))).unwrap();
     block_on(store.submit_hint(&Hint {
-        id: CoordId::from_string("h1"),
+        id: CoordId::resolve("h1"),
         content: "hint body".into(),
         creator: "t".into(),
     }))
     .unwrap();
     // A hint from another creator must be excluded by the creator filter.
     block_on(store.submit_hint(&Hint {
-        id: CoordId::from_string("h_other"),
+        id: CoordId::resolve("h_other"),
         content: "other hint".into(),
         creator: "other".into(),
     }))
@@ -62,7 +62,7 @@ fn test_creator_filter_returns_intents_and_hints() {
     );
     assert_eq!(
         state.hints[0].id.to_string(),
-        CoordId::from_string("h1").to_string(),
+        CoordId::resolve("h1").to_string(),
         "only the matching creator's hint is returned"
     );
 }
@@ -100,7 +100,7 @@ fn test_offset_and_limit_on_creator_filter() {
 fn test_fact_content_materialized_from_record() {
     let store = FihStorage::new(SimIo::new(), "unified_content");
     let f = Fact::with_id(
-        CoordId::from_string("f_body"),
+        CoordId::resolve("f_body"),
         "t".into(),
         Content {
             mime_type: "text/plain".into(),
@@ -157,7 +157,7 @@ fn test_hint_ids_filter_over_unified_store() {
     let store = FihStorage::new(SimIo::new(), "unified_hint_ids");
     for i in 0..3 {
         block_on(store.submit_hint(&Hint {
-            id: CoordId::from_string(&format!("h{i}")),
+            id: CoordId::resolve(&format!("h{i}")),
             content: format!("hint {i}"),
             creator: "t".into(),
         }))
@@ -171,7 +171,7 @@ fn test_hint_ids_filter_over_unified_store() {
     assert_eq!(state.hints.len(), 1);
     assert_eq!(
         state.hints[0].id.to_string(),
-        CoordId::from_string("h1").to_string()
+        CoordId::resolve("h1").to_string()
     );
 }
 

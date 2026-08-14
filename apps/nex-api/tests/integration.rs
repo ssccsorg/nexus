@@ -5,6 +5,13 @@
 
 use nexus_gateway_api::build_router;
 use nexus_gateway_api::state::AppState;
+use nex_fih::CoordId;
+
+/// Canonical id for a fixture label (labels and canonical forms address
+/// the same record at the API boundary).
+fn cid(label: &str) -> String {
+    CoordId::resolve(label).to_string()
+}
 
 fn test_state() -> AppState {
     AppState::in_memory()
@@ -38,7 +45,7 @@ async fn test_submit_and_read_fact() {
     let resp = client
         .post(format!("{}/facts", api(&url)))
         .json(&serde_json::json!({
-            "id": "f_test_001",
+            "id": cid("f_test_001"),
             "origin": "integration-test",
             "content": "Gateway API test fact",
             "creator": "test-agent"
@@ -86,7 +93,7 @@ async fn test_intent_lifecycle_over_http() {
     client
         .post(format!("{base}/facts"))
         .json(&serde_json::json!({
-            "id": "f_lifecycle",
+            "id": cid("f_lifecycle"),
             "origin": "test",
             "content": "Ground truth",
             "creator": "agent-a"
@@ -98,8 +105,8 @@ async fn test_intent_lifecycle_over_http() {
     let resp = client
         .post(format!("{base}/intents"))
         .json(&serde_json::json!({
-            "id": "i_lifecycle",
-            "from_facts": ["f_lifecycle"],
+            "id": cid("i_lifecycle"),
+            "from_facts": [cid("f_lifecycle")],
             "description": "Test lifecycle",
             "creator": "agent-b"
         }))
@@ -109,7 +116,7 @@ async fn test_intent_lifecycle_over_http() {
     assert_eq!(resp.status(), 200);
 
     let resp = client
-        .post(format!("{base}/intents/i_lifecycle/claim"))
+        .post(format!("{base}/intents/{}/claim", cid("i_lifecycle")))
         .json(&serde_json::json!({ "agent": "worker-1" }))
         .send()
         .await
@@ -117,7 +124,7 @@ async fn test_intent_lifecycle_over_http() {
     assert_eq!(resp.status(), 200);
 
     let resp = client
-        .post(format!("{base}/intents/i_lifecycle/heartbeat"))
+        .post(format!("{base}/intents/{}/heartbeat", cid("i_lifecycle")))
         .json(&serde_json::json!({ "agent": "worker-1" }))
         .send()
         .await
@@ -125,7 +132,7 @@ async fn test_intent_lifecycle_over_http() {
     assert_eq!(resp.status(), 200);
 
     let resp = client
-        .post(format!("{base}/intents/i_lifecycle/claim"))
+        .post(format!("{base}/intents/{}/claim", cid("i_lifecycle")))
         .json(&serde_json::json!({ "agent": "worker-2" }))
         .send()
         .await
@@ -133,7 +140,7 @@ async fn test_intent_lifecycle_over_http() {
     assert_eq!(resp.status(), 409, "double claim should conflict");
 
     let resp = client
-        .post(format!("{base}/intents/i_lifecycle/conclude"))
+        .post(format!("{base}/intents/{}/conclude", cid("i_lifecycle")))
         .json(&serde_json::json!({ "result": "Lifecycle verified over HTTP" }))
         .send()
         .await
@@ -171,7 +178,7 @@ async fn test_submit_hint() {
     let resp = client
         .post(format!("{base}/hints"))
         .json(&serde_json::json!({
-            "id": "h_test_001",
+            "id": cid("h_test_001"),
             "content": "Important observation",
             "creator": "observer"
         }))
@@ -195,7 +202,7 @@ async fn test_submit_intent_without_facts_fails() {
     let resp = client
         .post(format!("{base}/intents"))
         .json(&serde_json::json!({
-            "id": "i_orphan",
+            "id": cid("i_orphan"),
             "from_facts": [],
             "description": "No grounding",
             "creator": "agent-x"
@@ -215,7 +222,7 @@ async fn test_release_intent() {
     client
         .post(format!("{base}/facts"))
         .json(&serde_json::json!({
-            "id": "f_release",
+            "id": cid("f_release"),
             "origin": "test",
             "content": "Release test",
             "creator": "agent-a"
@@ -227,7 +234,7 @@ async fn test_release_intent() {
     client
         .post(format!("{base}/intents"))
         .json(&serde_json::json!({
-            "id": "i_release",
+            "id": cid("i_release"),
             "from_facts": ["f_release"],
             "description": "Release lifecycle",
             "creator": "agent-b"
@@ -237,7 +244,7 @@ async fn test_release_intent() {
         .unwrap();
 
     client
-        .post(format!("{base}/intents/i_release/claim"))
+        .post(format!("{base}/intents/{}/claim", cid("i_release")))
         .json(&serde_json::json!({ "agent": "worker-1" }))
         .send()
         .await
@@ -252,7 +259,7 @@ async fn test_release_intent() {
     assert_eq!(resp.status(), 200);
 
     let resp = client
-        .post(format!("{base}/intents/i_release/claim"))
+        .post(format!("{base}/intents/{}/claim", cid("i_release")))
         .json(&serde_json::json!({ "agent": "worker-2" }))
         .send()
         .await

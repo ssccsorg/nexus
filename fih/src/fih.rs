@@ -36,28 +36,20 @@ impl<const N: usize> CoordId<N> {
         FihHash(h.finalize().into())
     }
 
-    /// Parse from string. If N Hangul chars, maps directly. Otherwise hashes.
-    pub fn from_string(s: &str) -> Self {
+    /// Parse from string. Canonical-only: exactly N Hangul characters.
+    /// Returns `None` for any other input. No hash fallback: id
+    /// derivation belongs to the semantic layer (`CoordId::content_id`),
+    /// and the string-to-path mapping contract is owned by chton.
+    pub fn from_string(s: &str) -> Option<Self> {
         let chars: Vec<char> = s.chars().collect();
         if chars.len() == N && chars.iter().all(|c| Coord::from_char(*c).is_some()) {
             let mut coords = [Coord::new(0).unwrap(); N];
             for (i, &ch) in chars.iter().enumerate() {
                 coords[i] = Coord::from_char(ch).unwrap();
             }
-            CoordId(CoordPath::new(coords))
+            Some(CoordId(CoordPath::new(coords)))
         } else {
-            let mut h = Sha256::new();
-            h.update(s.as_bytes());
-            let hash: [u8; 32] = h.finalize().into();
-            let mut coords = [Coord::new(0).unwrap(); N];
-            for (i, coord) in coords.iter_mut().enumerate() {
-                let idx = u16::from_le_bytes([
-                    hash.get(i * 2).copied().unwrap_or(0),
-                    hash.get(i * 2 + 1).copied().unwrap_or(0),
-                ]) % 11172;
-                *coord = Coord::new(idx).unwrap();
-            }
-            CoordId(CoordPath::new(coords))
+            None
         }
     }
 
@@ -70,16 +62,17 @@ impl<const N: usize> CoordId<N> {
 // ── Semantic id derivation ────────────────────────────────────────────
 
 impl CoordId<6> {
-    /// Content-addressed fact id: the semantic layer maps domain meaning
-    /// onto the six axes before insertion. Entity kind occupies axis 2
-    /// (0 = fact), origin and creator occupy their own axes from string
-    /// fingerprints, and the content hash folds into the remaining axes.
-    /// The result is canonical (6 Hangul characters), deterministic per
-    /// (origin, creator, content), and queryable by axis.
+    /// Content-addressed id for a domain entity: the semantic layer maps
+    /// domain meaning onto the six axes before insertion. The entity
+    /// kind occupies axis 2, origin and creator occupy their own axes
+    /// from string fingerprints, and the content hash folds into the
+    /// remaining axes. The result is canonical (6 Hangul characters),
+    /// deterministic per (entity, origin, creator, content), and
+    /// queryable by axis.
     ///
     /// The origin/creator fingerprints are advisory (13.4-bit, like the
     /// 19-axis store): the axes provide ordering, not exact identity.
-    pub fn content_fact_id(origin: &str, creator: &str, content_hash: &FihHash) -> Self {
+    pub fn content_id(entity: u16, origin: &str, creator: &str, content_hash: &FihHash) -> Self {
         let digest = Sha256::digest(origin.as_bytes());
         let origin_axis = u16::from_le_bytes([digest[0], digest[1]]) % 11172;
         let digest = Sha256::digest(creator.as_bytes());
@@ -94,8 +87,30 @@ impl CoordId<6> {
             *axis = u16::from_le_bytes([lo as u8, hi as u8]) % 11172;
         }
         let serial = (axes[2] + axes[3]) % 11172;
-        CoordId::from_axes(axes[0], axes[1], 0, origin_axis, creator_axis, serial)
+        CoordId::from_axes(axes[0], axes[1], entity, origin_axis, creator_axis, serial)
             .expect("axes are already reduced modulo 11172")
+    }
+
+    /// Content-addressed fact id: [`CoordId::content_id`] with the fact
+    /// entity kind (0).
+    pub fn content_fact_id(origin: &str, creator: &str, content_hash: &FihHash) -> Self {
+        Self::content_id(0, origin, creator, content_hash)
+    }
+
+    /// Deterministic canonical id from an arbitrary label: the label is
+    /// content-addressed through the semantic layer. Used by tests and
+    /// external coordination where ids must be stable across runs and
+    /// canonical at the store boundary.
+    pub fn from_label(label: &str) -> Self {
+        let hash = FihHash(Sha256::digest(label.as_bytes()).into());
+        Self::content_id(0, "label", "fixture", &hash)
+    }
+
+    /// Resolve an id reference: a canonical id passes through, any other
+    /// string is derived through the semantic layer ([`CoordId::from_label`]),
+    /// so a label and its canonical form address the same record.
+    pub fn resolve(s: &str) -> Self {
+        Self::from_string(s).unwrap_or_else(|| Self::from_label(s))
     }
 }
 

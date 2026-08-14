@@ -21,7 +21,7 @@ const START_NS: u64 = 100_000_000_000;
 
 fn fact(id: &str) -> Fact {
     Fact::with_id(
-        CoordId::from_string(id),
+        CoordId::resolve(id),
         "evict".into(),
         Content {
             mime_type: "text/plain".into(),
@@ -33,7 +33,7 @@ fn fact(id: &str) -> Fact {
 
 fn hint(id: &str, content: &str) -> Hint {
     Hint {
-        id: CoordId::from_string(id),
+        id: CoordId::resolve(id),
         content: content.into(),
         creator: "t".into(),
     }
@@ -41,8 +41,8 @@ fn hint(id: &str, content: &str) -> Hint {
 
 fn intent(id: &str) -> Intent {
     Intent {
-        id: CoordId::from_string(id),
-        from_facts: vec![CoordId::from_string("f_base")],
+        id: CoordId::resolve(id),
+        from_facts: vec![CoordId::resolve("f_base")],
         description: format!("intent {id}"),
         creator: "t".into(),
         worker: None,
@@ -76,7 +76,7 @@ fn evict_before_removes_only_old_hints() {
 
         let state = store.read_state().await;
         assert_eq!(state.hints.len(), 1);
-        assert_eq!(state.hints[0].id, CoordId::from_string("h_new"));
+        assert_eq!(state.hints[0].id, CoordId::resolve("h_new"));
 
         store.flush_pending().await.unwrap();
         let keys = io.list("hints/").await.unwrap();

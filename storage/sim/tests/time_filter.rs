@@ -31,7 +31,7 @@ fn test_since_returns_newer_only() {
         ..Default::default()
     }));
     assert_eq!(filtered.facts.len(), 1);
-    assert_eq!(filtered.facts[0].id, CoordId::from_string("f_b"));
+    assert_eq!(filtered.facts[0].id, CoordId::resolve("f_b"));
 }
 
 #[test]
@@ -55,7 +55,7 @@ fn test_until_as_of_time_travel() {
         status: None,
     }));
     assert_eq!(filtered.facts.len(), 1);
-    assert_eq!(filtered.facts[0].id, CoordId::from_string("f_a"));
+    assert_eq!(filtered.facts[0].id, CoordId::resolve("f_a"));
 }
 
 #[test]
@@ -79,7 +79,7 @@ fn test_range_returns_mid_only() {
         status: None,
     }));
     assert_eq!(filtered.facts.len(), 1);
-    assert_eq!(filtered.facts[0].id, CoordId::from_string("f_b"));
+    assert_eq!(filtered.facts[0].id, CoordId::resolve("f_b"));
 }
 
 #[test]
@@ -134,7 +134,7 @@ fn test_fact_ids_filter_independent_of_time() {
         status: None,
     }));
     assert_eq!(filtered.facts.len(), 1);
-    assert_eq!(filtered.facts[0].id, CoordId::from_string("f_a"));
+    assert_eq!(filtered.facts[0].id, CoordId::resolve("f_a"));
 }
 
 // ── OrderedIndex unit tests (uses u32 compact IDs) ──────────────────────

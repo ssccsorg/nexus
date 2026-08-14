@@ -13,7 +13,7 @@ use nexus_storage_sim::SimIo;
 /// Helper: submit a fact with minimal boilerplate.
 fn submit_fact(bb: &impl Blackboard, id: &str, origin: &str, content: &str, creator: &str) {
     let fact = Fact::with_id(
-        CoordId::from_string(id),
+        CoordId::resolve(id),
         origin.into(),
         content.into(),
         creator.into(),
@@ -61,8 +61,8 @@ fn test_full_agent_collaboration_flow() {
 
     // Agent-B submits an Intent grounded in facts
     let intent = Intent {
-        id: CoordId::from_string("i001"),
-        from_facts: vec![CoordId::from_string("f001"), CoordId::from_string("f002")],
+        id: CoordId::resolve("i001"),
+        from_facts: vec![CoordId::resolve("f001"), CoordId::resolve("f002")],
         description: "Test shallow GNN (3 layers) vs deep GNN (10 layers) on molecular benchmark"
             .into(),
         creator: "agent-b".into(),

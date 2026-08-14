@@ -19,7 +19,7 @@ fn fact(id: &str, data: &[u8]) -> Fact {
 
 fn fact_with(id: &str, data: &[u8], origin: &str) -> Fact {
     Fact::with_id(
-        CoordId::from_string(id),
+        CoordId::resolve(id),
         origin.into(),
         Content {
             mime_type: "text/plain".into(),
@@ -35,8 +35,8 @@ fn intent(id: &str, from_fact: &str) -> Intent {
 
 fn intent_with(id: &str, from_fact: &str, creator: &str) -> Intent {
     Intent {
-        id: CoordId::from_string(id),
-        from_facts: vec![CoordId::from_string(from_fact)],
+        id: CoordId::resolve(id),
+        from_facts: vec![CoordId::resolve(from_fact)],
         description: format!("intent {id}"),
         creator: creator.into(),
         worker: None,
@@ -54,7 +54,7 @@ fn hint(id: &str, content: &str) -> Hint {
 
 fn hint_with(id: &str, content: &str, creator: &str) -> Hint {
     Hint {
-        id: CoordId::from_string(id),
+        id: CoordId::resolve(id),
         content: content.into(),
         creator: creator.into(),
     }
@@ -84,7 +84,7 @@ fn submit_paths_populate_id_enumeration_after_reopen() {
             assert_eq!(fids.len(), 1, "fact ids must survive reopen via the store");
             assert!(
                 fids.iter()
-                    .any(|id| *id == CoordId::from_string("f_a").to_string())
+                    .any(|id| *id == CoordId::resolve("f_a").to_string())
             );
             assert_eq!(store.all_intent_ids().len(), 1);
             assert_eq!(store.all_hint_ids().len(), 1);
@@ -110,7 +110,7 @@ fn intent_status_moves_are_visible_after_reopen() {
         {
             let store = FihStorage::new(io, "coord");
             store.rebuild_cache().await.unwrap();
-            let canonical = CoordId::from_string("i_mv").to_string();
+            let canonical = CoordId::resolve("i_mv").to_string();
             let (_, _, _, status, _) = store
                 .get_intent_by_id(&canonical)
                 .expect("intent must be readable from the store after reopen");
@@ -251,7 +251,7 @@ fn conclusion_fact_content_survives_reopen() {
             store.rebuild_cache().await.unwrap();
             // Derive the conclusion id from the intent id so the test
             // survives the id-derivation scheme changing.
-            let canonical = CoordId::from_string(&format!("f_concl_{intent_id}")).to_string();
+            let canonical = CoordId::resolve(&format!("f_concl_{intent_id}")).to_string();
             let (content, hash, origin, _creator) = store
                 .get_fact_by_id(&canonical)
                 .expect("conclusion fact readable after reopen");
@@ -293,13 +293,13 @@ fn scan_partition_matches_partition_strings() {
         // field (the existing per-type partition convention).
         let alpha = store.scan_partition("alpha").await.unwrap();
         assert_eq!(alpha.facts.len(), 1);
-        assert_eq!(alpha.facts[0].id, CoordId::from_string("f_p1"));
+        assert_eq!(alpha.facts[0].id, CoordId::resolve("f_p1"));
         assert_eq!(alpha.intents.len(), 1);
         assert_eq!(alpha.hints.len(), 1);
 
         let beta = store.scan_partition("beta").await.unwrap();
         assert_eq!(beta.facts.len(), 1);
-        assert_eq!(beta.facts[0].id, CoordId::from_string("f_p2"));
+        assert_eq!(beta.facts[0].id, CoordId::resolve("f_p2"));
         assert!(beta.intents.is_empty());
         assert!(beta.hints.is_empty());
     });
