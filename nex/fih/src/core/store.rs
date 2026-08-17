@@ -566,6 +566,43 @@ impl<I: FileIo> FihStorage<I> {
             })
     }
 
+    /// Content hash of the fact currently occupying `id`, if any.
+    /// Mirrors `fact_exists`: the in-memory record map first
+    /// (same-session writes), then the 19-axis store (reopened stores
+    /// and direct writers, whose record map is empty).
+    fn existing_fact_content_hash(&self, id: &str) -> Option<FihHash> {
+        if let Some(r) = self.fact_records.borrow().get(id) {
+            // FactRecord stores the blob hash as a lowercase hex string.
+            let hex = r.blob_hash.as_bytes();
+            if hex.len() == 64 {
+                let mut bytes = [0u8; 32];
+                let mut valid = true;
+                for i in 0..32 {
+                    let hi = (hex[i * 2] as char).to_digit(16);
+                    let lo = (hex[i * 2 + 1] as char).to_digit(16);
+                    match (hi, lo) {
+                        (Some(hi), Some(lo)) => bytes[i] = ((hi << 4) | lo) as u8,
+                        _ => {
+                            valid = false;
+                            break;
+                        }
+                    }
+                }
+                if valid {
+                    return Some(FihHash(bytes));
+                }
+            }
+        }
+        self.store.borrow().iter_tree().find_map(|(path, rec)| {
+            match rec {
+                Record::Fact { content_hash, .. } if path_to_id_str(&path) == id => {
+                    Some(*content_hash)
+                }
+                _ => None,
+            }
+        })
+    }
+
     /// Check if an intent with the given ID exists (fast-path: intent_records HashMap).
     pub fn intent_exists(&self, id: &str) -> bool {
         self.intent_records.borrow().contains_key(id)
@@ -941,6 +978,20 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
 
 impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
     async fn submit_fact(&self, fact: &Fact) -> Result<CoordId, BlackboardError> {
+        let id = fact.id.to_string();
+        // The id is the record-layer key. A second fact at the same id is
+        // legitimate only when it is the identical content (an idempotent
+        // retry); a different content_hash means the id is not a safe
+        // content address and the earlier record must not be overwritten.
+        if let Some(existing_hash) = self.existing_fact_content_hash(&id) {
+            if existing_hash != fact.content_hash {
+                return Err(BlackboardError::Conflict(format!(
+                    "fact id {id} already exists with a different content_hash"
+                )));
+            }
+            return Ok(fact.id);
+        }
+
         // content_hash is SHA-256 already computed by Fact::new — use directly.
         let blob_hash = fact.content_hash.to_string();
 
