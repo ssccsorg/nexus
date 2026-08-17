@@ -11,7 +11,7 @@ use nex_fih::{AsyncFactCapable, AsyncStorageRead, Content, CoordId, Fact, FihSto
 
 fn fact(id: &str) -> Fact {
     Fact::with_id(
-        CoordId::from_string(id),
+        CoordId::resolve(id),
         "test".into(),
         Content {
             mime_type: "text/plain".into(),
@@ -26,12 +26,14 @@ fn fih_over_materialized_coordkv_persists_across_reopen() {
     block_on(async {
         let path = std::env::temp_dir().join(format!("nex-coordkv-{}.bin", std::process::id()));
         let path2 = path.clone();
-        let fid = CoordId::from_string("f_persist").to_string();
+        let fid = CoordId::resolve("f_persist").to_string();
 
         // First session: write a fact through FihStorage over CoordKVStoreIo.
+        // Depth 79 holds the longest FIH path (blob meta paths reach 78
+        // bytes) under the injective length-prefix key contract.
         {
             let kv =
-                CoordKVStore::<16>::load(Box::new(FileOrigin::open(&path).unwrap()), 4096).unwrap();
+                CoordKVStore::<79>::load(Box::new(FileOrigin::open(&path).unwrap()), 4096).unwrap();
             let storage = FihStorage::new(CoordKVStoreIo::new(kv), "coordkv");
             storage.submit_fact(&fact("f_persist")).await.unwrap();
             storage.flush_pending().await.unwrap();
@@ -43,7 +45,7 @@ fn fih_over_materialized_coordkv_persists_across_reopen() {
 
         // Second session: reopen the file into a fresh kv, rebuild, read.
         {
-            let kv = CoordKVStore::<16>::load(Box::new(FileOrigin::open(&path2).unwrap()), 4096)
+            let kv = CoordKVStore::<79>::load(Box::new(FileOrigin::open(&path2).unwrap()), 4096)
                 .unwrap();
             let storage = FihStorage::new(CoordKVStoreIo::new(kv), "coordkv");
             storage.rebuild_cache().await.unwrap();

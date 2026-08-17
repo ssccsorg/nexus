@@ -19,7 +19,7 @@ fn scenario_contradiction_detection() {
 
     // Agent-A: ingests paper claiming GNNs work fine at 50 layers
     bb.submit_fact(&Fact::with_id(
-        CoordId::from_string("f_gnn_deep"),
+        CoordId::resolve("f_gnn_deep"),
         "paper_iclr_2024".into(),
         "Residual GNNs maintain accuracy at 50 layers with skip connections".into(),
         "agent-a".into(),
@@ -28,7 +28,7 @@ fn scenario_contradiction_detection() {
 
     // Agent-B: ingests paper claiming GNNs oversmooth at 6 layers
     bb.submit_fact(&Fact::with_id(
-        CoordId::from_string("f_gnn_shallow"),
+        CoordId::resolve("f_gnn_shallow"),
         "paper_neurips_2023".into(),
         "Message-passing GNNs oversmooth beyond 6 layers without normalization".into(),
         "agent-b".into(),
@@ -37,10 +37,10 @@ fn scenario_contradiction_detection() {
 
     // Agent-C: detects the contradiction, submits hypothesis
     bb.submit_intent(&Intent {
-        id: CoordId::from_string("i_reconcile"),
+        id: CoordId::resolve("i_reconcile"),
         from_facts: vec![
-            CoordId::from_string("f_gnn_deep"),
-            CoordId::from_string("f_gnn_shallow"),
+            CoordId::resolve("f_gnn_deep"),
+            CoordId::resolve("f_gnn_shallow"),
         ],
         description: "Test whether normalization technique determines oversmoothing depth".into(),
         creator: "agent-c".into(),
@@ -82,8 +82,8 @@ fn scenario_peer_review() {
 
     // Phase 1: Agent-A submits hypothesis as Intent
     let hypothesis = Intent {
-        id: CoordId::from_string("i_hypothesis"),
-        from_facts: vec![CoordId::from_string("f_background")],
+        id: CoordId::resolve("i_hypothesis"),
+        from_facts: vec![CoordId::resolve("f_background")],
         description: "Quantum error correction with surface codes achieves fault tolerance at 0.1% error rate".into(),
         creator: "agent-a".into(),
         worker: None,
@@ -95,7 +95,7 @@ fn scenario_peer_review() {
     };
     // Need a grounding fact first
     bb.submit_fact(&Fact::with_id(
-        CoordId::from_string("f_background"),
+        CoordId::resolve("f_background"),
         "background".into(),
         "Surface codes are the leading QEC candidate".into(),
         "system".into(),
@@ -105,13 +105,13 @@ fn scenario_peer_review() {
 
     // Phase 2: Reviewer agents submit Hints (review comments)
     bb.submit_hint(&Hint {
-        id: CoordId::from_string("h_reviewer1"),
+        id: CoordId::resolve("h_reviewer1"),
         content: "The 0.1% threshold seems optimistic — reference recent experiments".into(),
         creator: "agent-b".into(),
     })
     .unwrap();
     bb.submit_hint(&Hint {
-        id: CoordId::from_string("h_reviewer2"),
+        id: CoordId::resolve("h_reviewer2"),
         content: "Need to specify distance-3 vs distance-5 surface code constraints".into(),
         creator: "agent-c".into(),
     })
@@ -173,7 +173,7 @@ fn scenario_knowledge_synthesis() {
     ];
     for (id, creator, content) in &pieces {
         bb.submit_fact(&Fact::with_id(
-            CoordId::from_string(id),
+            CoordId::resolve(id),
             "experiment".into(),
             (*content).into(),
             creator.to_string(),
@@ -187,7 +187,7 @@ fn scenario_knowledge_synthesis() {
 
     // Agent-D recognizes the pattern: cold + high rate = lithium plating
     bb.submit_fact(&Fact::with_id(
-        CoordId::from_string("f_synthesis"),
+        CoordId::resolve("f_synthesis"),
         "synthesis".into(),
         "SYNTHESIS: Low temperature (-10°C) increases electrolyte viscosity, reducing ion mobility. High discharge rate (2C) generates heat (15°C rise). Combined high charge rate (>1C) below 0°C causes anode lithium plating. Solution: preheat battery to 10°C before fast charging in cold environments.".into(),
         "agent-delta".into(),
@@ -208,8 +208,8 @@ fn scenario_knowledge_synthesis() {
 
     // Agent-D's synthesis should be propositional — others can build on it
     bb.submit_intent(&Intent {
-        id: CoordId::from_string("i_validate_synthesis"),
-        from_facts: vec![CoordId::from_string("f_synthesis")],
+        id: CoordId::resolve("i_validate_synthesis"),
+        from_facts: vec![CoordId::resolve("f_synthesis")],
         description:
             "Experimental validation: test preheat to 10°C before 2C charging at -10°C ambient"
                 .into(),
@@ -260,7 +260,7 @@ fn scenario_emergency_response() {
     ];
     for (id, creator, content) in &alerts {
         bb.submit_fact(&Fact::with_id(
-            CoordId::from_string(id),
+            CoordId::resolve(id),
             "sensor".into(),
             (*content).into(),
             creator.to_string(),
@@ -270,11 +270,11 @@ fn scenario_emergency_response() {
 
     // Coordinator submits prioritized response plan as Intent
     bb.submit_intent(&Intent {
-        id: CoordId::from_string("i_respond_fire"),
+        id: CoordId::resolve("i_respond_fire"),
         from_facts: vec![
-            CoordId::from_string("f_alarm_smoke"),
-            CoordId::from_string("f_alarm_temp"),
-            CoordId::from_string("f_alarm_power"),
+            CoordId::resolve("f_alarm_smoke"),
+            CoordId::resolve("f_alarm_temp"),
+            CoordId::resolve("f_alarm_power"),
         ],
         description: "FIRE_RESPONSE: Evacuate sector 7, activate fire suppression, isolate power"
             .into(),
@@ -346,7 +346,7 @@ fn scenario_bug_fix_pipeline() {
 
     // Reporter submits the bug as a Fact
     bb.submit_fact(&Fact::with_id(
-        CoordId::from_string("f_bug_1337"),
+        CoordId::resolve("f_bug_1337"),
         "production".into(),
         "CRITICAL: Payment API returns 500 for amounts > $10,000 since deploy v2.3.1 at 2026-06-15T14:32Z. Affects 12% of enterprise transactions.".into(),
         "reporter".into(),
@@ -354,14 +354,14 @@ fn scenario_bug_fix_pipeline() {
 
     // Triager reads the bug, adds metadata as Hint, files a triage Intent
     bb.submit_hint(&Hint {
-        id: CoordId::from_string("h_severity"),
+        id: CoordId::resolve("h_severity"),
         content: "severity=P0, component=payment-api, regression=true".into(),
         creator: "triager".into(),
     })
     .unwrap();
     bb.submit_intent(&Intent {
-        id: CoordId::from_string("i_triage"),
-        from_facts: vec![CoordId::from_string("f_bug_1337")],
+        id: CoordId::resolve("i_triage"),
+        from_facts: vec![CoordId::resolve("f_bug_1337")],
         description: "TRIAGE: Payment API overflow on large amounts — check decimal handling"
             .into(),
         creator: "triager".into(),
@@ -383,8 +383,8 @@ fn scenario_bug_fix_pipeline() {
 
     // Developer submits a fix Intent
     bb.submit_intent(&Intent {
-        id: CoordId::from_string("i_fix_1337"),
-        from_facts: vec![CoordId::from_string("f_bug_1337"), analysis.id],
+        id: CoordId::resolve("i_fix_1337"),
+        from_facts: vec![CoordId::resolve("f_bug_1337"), analysis.id],
         description: "FIX: Change payment amount from uint32 to uint64 in api/src/payment.rs"
             .into(),
         creator: "dev-alice".into(),
@@ -405,8 +405,8 @@ fn scenario_bug_fix_pipeline() {
 
     // Reviewer submits a review Intent to validate
     bb.submit_intent(&Intent {
-        id: CoordId::from_string("i_review_1337"),
-        from_facts: vec![CoordId::from_string("f_bug_1337")],
+        id: CoordId::resolve("i_review_1337"),
+        from_facts: vec![CoordId::resolve("f_bug_1337")],
         description: "REVIEW: Verify fix covers edge cases — negative amounts, fractional cents, max uint64 boundary".into(),
         creator: "reviewer-bob".into(),
         worker: None,
@@ -433,7 +433,7 @@ fn scenario_bug_fix_pipeline() {
         state
             .intents
             .iter()
-            .any(|i| i.id == CoordId::from_string("i_fix_1337")),
+            .any(|i| i.id == CoordId::resolve("i_fix_1337")),
         "fix intent present"
     );
 
@@ -456,7 +456,7 @@ fn scenario_ci_failure_investigation() {
 
     // CI system reports build failure
     bb.submit_fact(&Fact::with_id(
-        CoordId::from_string("f_build_404"),
+        CoordId::resolve("f_build_404"),
         "ci".into(),
         "BUILD FAILED: main branch, commit a1b2c3d, pipeline #8421. 23 test failures, 5 compile errors, 3 dependency warnings.".into(),
         "ci-bot".into(),
@@ -464,7 +464,7 @@ fn scenario_ci_failure_investigation() {
 
     // Agent-A investigates compile errors
     bb.submit_fact(&Fact::with_id(
-        CoordId::from_string("f_compile"),
+        CoordId::resolve("f_compile"),
         "investigation".into(),
         "Compile errors: all 5 are in protocol/buffer.rs — 'PacketHeader' struct size mismatch after adding new field. Missing #[repr(C)] attribute.".into(),
         "agent-a".into(),
@@ -472,7 +472,7 @@ fn scenario_ci_failure_investigation() {
 
     // Agent-B investigates test failures (independently, same time)
     bb.submit_fact(&Fact::with_id(
-        CoordId::from_string("f_tests"),
+        CoordId::resolve("f_tests"),
         "investigation".into(),
         "Test failures: 23/23 are serialization round-trip tests. All fail with 'buffer size mismatch'. Consistent with struct layout change.".into(),
         "agent-b".into(),
@@ -480,7 +480,7 @@ fn scenario_ci_failure_investigation() {
 
     // Agent-C checks dependencies
     bb.submit_fact(&Fact::with_id(
-        CoordId::from_string("f_deps"),
+        CoordId::resolve("f_deps"),
         "investigation".into(),
         "Dependencies: proto-rs v2.4.0 released yesterday — includes automated PacketHeader generator that changed alignment. No API change, but layout differs.".into(),
         "agent-c".into(),
@@ -493,8 +493,8 @@ fn scenario_ci_failure_investigation() {
     // Agent-D triangulates: compile error (repr(C)) + test failure (size) + dep update (alignment)
     // = root cause: proto-rs v2.4.0 changed struct alignment
     bb.submit_intent(&Intent {
-        id: CoordId::from_string("i_root_cause"),
-        from_facts: vec![CoordId::from_string("f_compile"), CoordId::from_string("f_tests"), CoordId::from_string("f_deps")],
+        id: CoordId::resolve("i_root_cause"),
+        from_facts: vec![CoordId::resolve("f_compile"), CoordId::resolve("f_tests"), CoordId::resolve("f_deps")],
         description: "ROOT CAUSE: proto-rs v2.4.0 automated PacketHeader generator produces different alignment than manual #[repr(C)] struct. 3 independent signals converge.".into(),
         creator: "agent-d".into(),
         worker: None,
@@ -537,7 +537,7 @@ fn scenario_supply_chain_incident() {
 
     // Security advisory published (external trigger)
     bb.submit_fact(&Fact::with_id(
-        CoordId::from_string("f_advisory_GHSA"),
+        CoordId::resolve("f_advisory_GHSA"),
         "github-advisory".into(),
         "CRITICAL: CVE-2026-4413 in openssl-sys v0.9.100 — remote buffer overflow in TLS handshake. CVSS 9.8. Affects all services using TLS.".into(),
         "security-bot".into(),
@@ -545,8 +545,8 @@ fn scenario_supply_chain_incident() {
 
     // Security team assesses blast radius
     bb.submit_intent(&Intent {
-        id: CoordId::from_string("i_assess"),
-        from_facts: vec![CoordId::from_string("f_advisory_GHSA")],
+        id: CoordId::resolve("i_assess"),
+        from_facts: vec![CoordId::resolve("f_advisory_GHSA")],
         description: "ASSESS: Inventory all services using openssl-sys < 0.9.101".into(),
         creator: "sec-lead".into(),
         worker: None,
@@ -571,8 +571,8 @@ fn scenario_supply_chain_incident() {
 
     // SRE team plans mitigation (parallel track, reads sec-lead's conclusion)
     bb.submit_intent(&Intent {
-        id: CoordId::from_string("i_mitigate"),
-        from_facts: vec![CoordId::from_string("f_advisory_GHSA"), impact.id],
+        id: CoordId::resolve("i_mitigate"),
+        from_facts: vec![CoordId::resolve("f_advisory_GHSA"), impact.id],
         description: "MITIGATE: Update openssl-sys to 0.9.101 across all services".into(),
         creator: "sre-lead".into(),
         worker: None,
@@ -597,8 +597,8 @@ fn scenario_supply_chain_incident() {
 
     // Communications team drafts announcement
     bb.submit_intent(&Intent {
-        id: CoordId::from_string("i_comms"),
-        from_facts: vec![CoordId::from_string("f_advisory_GHSA"), impact.id, patch.id],
+        id: CoordId::resolve("i_comms"),
+        from_facts: vec![CoordId::resolve("f_advisory_GHSA"), impact.id, patch.id],
         description: "COMMS: Draft security advisory for customers".into(),
         creator: "comms-lead".into(),
         worker: None,
@@ -617,7 +617,7 @@ fn scenario_supply_chain_incident() {
 
     // Post-mortem lead submits findings
     bb.submit_hint(&Hint {
-        id: CoordId::from_string("h_postmortem"),
+        id: CoordId::resolve("h_postmortem"),
         content: "Post-mortem action: add openssl-sys to automated dependency vulnerability scanner. ETA: 1 week.".into(),
         creator: "pm-lead".into(),
     }).unwrap();
@@ -657,7 +657,7 @@ fn scenario_ssccs_primitive_discovery() {
 
     // Agent-A analyzes memory access patterns in LLVM IR
     bb.submit_fact(&Fact::with_id(
-        CoordId::from_string("f_memory_pattern"),
+        CoordId::resolve("f_memory_pattern"),
         "llvm-ir".into(),
         "OBSERVATION: 73% of loads/stores in hot loops access consecutive addresses (stride=1). 18% show strided access (stride=4/8). 9% are gather/scatter. Spatial locality is the dominant pattern, not random access.".into(),
         "agent-a".into(),
@@ -665,7 +665,7 @@ fn scenario_ssccs_primitive_discovery() {
 
     // Agent-B analyzes data flow graphs in MLIR
     bb.submit_fact(&Fact::with_id(
-        CoordId::from_string("f_dataflow_pattern"),
+        CoordId::resolve("f_dataflow_pattern"),
         "mlir".into(),
         "OBSERVATION: Data flow subgraphs show strong temporal locality — 89% of SSA values are used within 12 instructions of definition. Def-use chains form natural clusters: compute kernels, memory fences, control boundaries.".into(),
         "agent-b".into(),
@@ -673,7 +673,7 @@ fn scenario_ssccs_primitive_discovery() {
 
     // Agent-C analyzes control flow structure (CFG)
     bb.submit_fact(&Fact::with_id(
-        CoordId::from_string("f_cfg_pattern"),
+        CoordId::resolve("f_cfg_pattern"),
         "cfg-analysis".into(),
         "OBSERVATION: CFG natural loops have clear entry/exit points. 94% of basic blocks belong to exactly one loop nest. Loop boundaries are stable across optimization passes — they are structural invariants of the computation, not artifacts.".into(),
         "agent-c".into(),
@@ -687,21 +687,21 @@ fn scenario_ssccs_primitive_discovery() {
 
     // Agent-A notes: memory stride patterns match loop boundaries from Agent-C
     bb.submit_hint(&Hint {
-        id: CoordId::from_string("h_convergence_1"),
+        id: CoordId::resolve("h_convergence_1"),
         content: "CROSS-REF: Memory stride=1 patterns align with innermost loops (Agent-C's observation). The memory access unit IS the loop body — a natural computational boundary.".into(),
         creator: "agent-a".into(),
     }).unwrap();
 
     // Agent-B notes: SSA def-use clusters match memory regions from Agent-A
     bb.submit_hint(&Hint {
-        id: CoordId::from_string("h_convergence_2"),
+        id: CoordId::resolve("h_convergence_2"),
         content: "CROSS-REF: SSA value clusters (12-instruction window) correspond to memory stride-1 regions (Agent-A). The data flow cluster and memory access region share the same boundary — this is NOT coincidence.".into(),
         creator: "agent-b".into(),
     }).unwrap();
 
     // Agent-C notes: all three dimensions converge on the same structural unit
     bb.submit_fact(&Fact::with_id(
-        CoordId::from_string("f_convergence"),
+        CoordId::resolve("f_convergence"),
         "cross-reference".into(),
         "CONVERGENCE: Memory (spatial), data flow (temporal), and control flow (structural) all identify the same atomic unit: a self-contained loop nest with bounded memory access and localized def-use chains. This unit is universal across the three IRs.".into(),
         "agent-c".into(),
@@ -713,12 +713,12 @@ fn scenario_ssccs_primitive_discovery() {
 
     // Agent-D reads all observations and convergence hints, then submits a formalization Intent
     bb.submit_intent(&Intent {
-        id: CoordId::from_string("i_formalize_segment"),
+        id: CoordId::resolve("i_formalize_segment"),
         from_facts: vec![
-            CoordId::from_string("f_memory_pattern"),
-            CoordId::from_string("f_dataflow_pattern"),
-            CoordId::from_string("f_cfg_pattern"),
-            CoordId::from_string("f_convergence"),
+            CoordId::resolve("f_memory_pattern"),
+            CoordId::resolve("f_dataflow_pattern"),
+            CoordId::resolve("f_cfg_pattern"),
+            CoordId::resolve("f_convergence"),
         ],
         description: "FORMALIZE: Define 'Segment' as the universal atomic computation unit with typed boundaries (spatial: memory stride, temporal: def-use window, structural: loop entry/exit).".into(),
         creator: "agent-d".into(),
@@ -773,8 +773,8 @@ that the von Neumann architecture can be redesigned around.",
 
     // Agent-A validates the Segment definition against known memory patterns
     bb.submit_intent(&Intent {
-        id: CoordId::from_string("i_validate_segment"),
-        from_facts: vec![CoordId::from_string("f_memory_pattern"), segment_def.id],
+        id: CoordId::resolve("i_validate_segment"),
+        from_facts: vec![CoordId::resolve("f_memory_pattern"), segment_def.id],
         description: "VALIDATE: Does the Segment definition predict the 73/18/9 memory access distribution? If M is a contiguous stride-1 region, it should also explain strided and gather/scatter cases.".into(),
         creator: "agent-a".into(),
         worker: None,
@@ -792,7 +792,7 @@ that the von Neumann architecture can be redesigned around.",
 
     // Agent-E (new observer) reads the full thread and proposes a Scheme
     bb.submit_intent(&Intent {
-        id: CoordId::from_string("i_scheme_definition"),
+        id: CoordId::resolve("i_scheme_definition"),
         from_facts: vec![segment_def.id],
         description: "SCHEME: Define 'Scheme' as a typed transformation between Segments. Scheme(S1, S2, T) where T is the transformation type (map, reduce, shuffle, broadcast). This enables algebraic reasoning about Segment compositions.".into(),
         creator: "agent-e".into(),

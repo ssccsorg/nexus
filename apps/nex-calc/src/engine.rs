@@ -144,7 +144,7 @@ impl CalcEngine {
         let prefix_lower = prefix.to_lowercase();
         for id_str in self.storage.all_fact_ids() {
             if id_str.to_lowercase().starts_with(&prefix_lower) {
-                return Some(CoordId::from_string(&id_str));
+                return Some(CoordId::resolve(&id_str));
             }
         }
         None
@@ -220,11 +220,11 @@ impl CalcEngine {
             .ok_or_else(|| CalcError::IntentNotFound("missing rhs".into()))?;
 
         let lhs = self
-            .get(&CoordId::from_string(lhs_fid))
+            .get(&CoordId::resolve(lhs_fid))
             .await
             .ok_or_else(|| CalcError::FactNotFound(lhs_fid.clone()))?;
         let rhs = self
-            .get(&CoordId::from_string(rhs_fid))
+            .get(&CoordId::resolve(rhs_fid))
             .await
             .ok_or_else(|| CalcError::FactNotFound(rhs_fid.clone()))?;
 
@@ -387,12 +387,12 @@ impl CalcEngine {
         let ids = self.storage.all_fact_ids();
         let mut out = Vec::with_capacity(ids.len());
         for id_str in ids {
-            if let Some((content, _, _, _)) = self.storage.get_fact_by_id(&id_str) {
-                if content.data.len() == 8 {
-                    let mut arr = [0u8; 8];
-                    arr.copy_from_slice(&content.data);
-                    out.push((CoordId::from_string(&id_str), i64::from_le_bytes(arr)));
-                }
+            if let Some((content, _, _, _)) = self.storage.get_fact_by_id(&id_str)
+                && content.data.len() == 8
+            {
+                let mut arr = [0u8; 8];
+                arr.copy_from_slice(&content.data);
+                out.push((CoordId::resolve(&id_str), i64::from_le_bytes(arr)));
             }
         }
         out
@@ -404,7 +404,7 @@ impl CalcEngine {
         for id_str in ids {
             if let Some((_, _, _, status, _)) = self.storage.get_intent_by_id(&id_str) {
                 out.push((
-                    CoordId::from_string(&id_str),
+                    CoordId::resolve(&id_str),
                     matches!(status, IntentStatus::Concluded { .. }),
                 ));
             }
@@ -417,7 +417,7 @@ impl CalcEngine {
         let mut out = Vec::with_capacity(ids.len());
         for id_str in ids {
             if let Some((content, _, _)) = self.storage.get_hint_by_id(&id_str) {
-                out.push((CoordId::from_string(&id_str), content));
+                out.push((CoordId::resolve(&id_str), content));
             }
         }
         out
@@ -431,10 +431,10 @@ impl CalcEngine {
         let ids = self.storage.all_intent_ids();
         let mut count = 0usize;
         for id_str in ids {
-            if let Some((_, _, _, status, _)) = self.storage.get_intent_by_id(&id_str) {
-                if !matches!(status, IntentStatus::Concluded { .. }) {
-                    count += 1;
-                }
+            if let Some((_, _, _, status, _)) = self.storage.get_intent_by_id(&id_str)
+                && !matches!(status, IntentStatus::Concluded { .. })
+            {
+                count += 1;
             }
         }
         count
@@ -485,10 +485,9 @@ impl Default for CalcEngine {
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-/// Build a CoordPath<19> matching the convention in store.rs:
-///   [0] time_hi, [1] time_lo, [2] entity, [3] origin, [4] creator,
-///   [5] status, [6-18] identity.
-
+// CoordPath<19> convention, matching store.rs:
+//   [0] time_hi, [1] time_lo, [2] entity, [3] origin, [4] creator,
+//   [5] status, [6-18] identity.
 // ── Blob IO ───────────────────────────────────────────────────────
 
 async fn write_blob_meta(io: &SimIo, blob_hash: &str, mime: &str, size: usize) {
@@ -517,16 +516,31 @@ fn nanos() -> u64 {
 
 // ── ID generation ─────────────────────────────────────────────────
 
+// Calc ids come from the semantic layer: the entity kind, origin, and
+// creator occupy dedicated axes, and the content hash folds into the
+// remaining ones. All ids are canonical 6-Hangul CoordIds.
+
 fn make_number_fact_id(value: i64) -> CoordId {
-    CoordId::from_string(&format!("calc/num/{}", content_hash(&value.to_le_bytes())))
+    let hash = FihHash(Sha256::digest(value.to_le_bytes()).into());
+    CoordId::content_id(0, "calc", "number", &hash)
 }
 
 fn make_intent_id(op: OpType, lhs: &CoordId, rhs: &CoordId) -> CoordId {
-    CoordId::from_string(&format!("calc/op/{}/{}/{}", op, lhs, rhs))
+    let mut data = Vec::with_capacity(24);
+    data.extend_from_slice(op.symbol().as_bytes());
+    for c in lhs.0.coords() {
+        data.extend_from_slice(&c.index().to_le_bytes());
+    }
+    for c in rhs.0.coords() {
+        data.extend_from_slice(&c.index().to_le_bytes());
+    }
+    let hash = FihHash(Sha256::digest(&data).into());
+    CoordId::content_id(1, "calc", op.symbol(), &hash)
 }
 
 fn make_hint_id(constraint: &Constraint) -> CoordId {
-    CoordId::from_string(&format!("calc/hint/{}", constraint))
+    let hash = FihHash(Sha256::digest(constraint.to_string().as_bytes()).into());
+    CoordId::content_id(2, "calc", "hint", &hash)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────

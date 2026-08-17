@@ -25,7 +25,7 @@ use nex::storage::core::store::FihStorage;
 use nex::contract::fih::FihContract;
 use nex::storage::core::EntityStore;
 use nex::io::FileIo;
-use nex_fih::{Content, CoordId};
+use nex_fih::{Content, CoordId, FihHash};
 use nexus_storage_sim::SimIo;
 
 use crate::hint::Constraint;
@@ -145,7 +145,7 @@ impl CalcEngine {
         let prefix_lower = prefix.to_lowercase();
         for r in self.storage.fact_store.values().await.iter() {
             if r.id.to_lowercase().starts_with(&prefix_lower) {
-                return Some(CoordId::from_string(&r.id));
+                return Some(CoordId::resolve(&r.id));
             }
         }
         None
@@ -234,11 +234,11 @@ impl CalcEngine {
             .ok_or_else(|| CalcError::IntentNotFound("missing rhs".into()))?;
 
         let lhs = self
-            .get(&CoordId::from_string(&lhs_fid))
+            .get(&CoordId::resolve(lhs_fid))
             .await
             .ok_or_else(|| CalcError::FactNotFound(lhs_fid.clone()))?;
         let rhs = self
-            .get(&CoordId::from_string(&rhs_fid))
+            .get(&CoordId::resolve(rhs_fid))
             .await
             .ok_or_else(|| CalcError::FactNotFound(rhs_fid.clone()))?;
 
@@ -348,7 +348,7 @@ impl CalcEngine {
         let mut out = Vec::new();
         for r in self.storage.fact_store.values().await.iter() {
             if let Some(v) = decode_blob(&self.storage.io, &r.blob_hash).await {
-                out.push((CoordId::from_string(&r.id), v));
+                out.push((CoordId::resolve(&r.id), v));
             }
         }
         out
@@ -362,7 +362,7 @@ impl CalcEngine {
             .iter()
             .map(|r| {
                 (
-                    CoordId::from_string(&r.id),
+                    CoordId::resolve(&r.id),
                     matches!(r.status, IntentStatus::Concluded { .. }),
                 )
             })
@@ -375,7 +375,7 @@ impl CalcEngine {
             .values()
             .await
             .iter()
-            .map(|r| (CoordId::from_string(&r.id), r.content.clone()))
+            .map(|r| (CoordId::resolve(&r.id), r.content.clone()))
             .collect()
     }
 
@@ -472,20 +472,26 @@ fn nanos() -> u64 {
 }
 
 fn make_number_fact_id(value: i64) -> CoordId {
-    CoordId::from_string(&format!("{} {}", &value.to_string(), "nex-calc-number"))
+    let hash = FihHash(Sha256::digest(value.to_le_bytes()).into());
+    CoordId::content_id(0, "calc", "number", &hash)
 }
 
 fn make_intent_id(op: OpType, lhs_id: &CoordId, rhs_id: &CoordId) -> CoordId {
-    CoordId::from_string(&format!(
-        "{}{}{}nex-calc-intent",
-        lhs_id.to_string(),
-        rhs_id.to_string(),
-        op.symbol()
-    ))
+    let mut data = Vec::with_capacity(24);
+    data.extend_from_slice(op.symbol().as_bytes());
+    for c in lhs_id.0.coords() {
+        data.extend_from_slice(&c.index().to_le_bytes());
+    }
+    for c in rhs_id.0.coords() {
+        data.extend_from_slice(&c.index().to_le_bytes());
+    }
+    let hash = FihHash(Sha256::digest(&data).into());
+    CoordId::content_id(1, "calc", op.symbol(), &hash)
 }
 
 fn make_hint_id(constraint: &Constraint) -> CoordId {
-    CoordId::from_string(&format!("{} {}", &constraint.to_string(), "nex-calc-hint"))
+    let hash = FihHash(Sha256::digest(constraint.to_string().as_bytes()).into());
+    CoordId::content_id(2, "calc", "hint", &hash)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────

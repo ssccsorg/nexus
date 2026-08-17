@@ -14,7 +14,7 @@ use nexus_storage_sim::{FihStorage, SimIo, intent_status};
 
 fn fact(id: &str, data: &[u8]) -> Fact {
     Fact::with_id(
-        CoordId::from_string(id),
+        CoordId::from_label(id),
         "verify".into(),
         Content {
             mime_type: "text/plain".into(),
@@ -26,8 +26,8 @@ fn fact(id: &str, data: &[u8]) -> Fact {
 
 fn intent(id: &str, from_fact: &str) -> Intent {
     Intent {
-        id: CoordId::from_string(id),
-        from_facts: vec![CoordId::from_string(from_fact)],
+        id: CoordId::from_label(id),
+        from_facts: vec![CoordId::from_label(from_fact)],
         description: "test".into(),
         creator: "v".into(),
         worker: None,
@@ -110,7 +110,7 @@ fn main() {
             .unwrap();
         let state = AsyncStorageRead::read_state(&store).await;
         assert_eq!(state.facts.len(), 1, "expected 1 fact");
-        assert_eq!(state.facts[0].id, CoordId::from_string("f001"));
+        assert_eq!(state.facts[0].id, CoordId::from_label("f001"));
     });
 
     check_async!("submit_intent requires existing fact", {
@@ -140,7 +140,7 @@ fn main() {
         let concl = AsyncIntentCapable::conclude_intent(&store, "i001", "result data")
             .await
             .unwrap();
-        assert_eq!(concl.id, CoordId::from_string("f_concl_i001"));
+        assert_eq!(concl.id, CoordId::from_label("f_concl_i001"));
         let state = AsyncStorageRead::read_state(&store).await;
         assert_eq!(state.facts.len(), 2, "base + conclusion");
     });
@@ -167,7 +167,7 @@ fn main() {
         AsyncHintCapable::submit_hint(
             &store,
             &Hint {
-                id: CoordId::from_string("h001"),
+                id: CoordId::from_label("h001"),
                 content: "ephemeral note".into(),
                 creator: "v".into(),
             },
@@ -229,7 +229,7 @@ fn main() {
         AsyncHintCapable::submit_hint(
             &store,
             &Hint {
-                id: CoordId::from_string("h001"),
+                id: CoordId::from_label("h001"),
                 content: "old hint".into(),
                 creator: "v".into(),
             },

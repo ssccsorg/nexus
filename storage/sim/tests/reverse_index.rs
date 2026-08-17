@@ -20,7 +20,7 @@ fn storage() -> FihStorage<SimIo> {
 
 fn fact(id: &str) -> Fact {
     Fact::with_id(
-        CoordId::from_string(id),
+        CoordId::resolve(id),
         "t".into(),
         Content {
             mime_type: "text/plain".into(),
@@ -32,8 +32,8 @@ fn fact(id: &str) -> Fact {
 
 fn intent(id: &str, from: Vec<&str>) -> Intent {
     Intent {
-        id: CoordId::from_string(id),
-        from_facts: from.into_iter().map(CoordId::from_string).collect(),
+        id: CoordId::resolve(id),
+        from_facts: from.into_iter().map(CoordId::resolve).collect(),
         description: format!("intent {}", id),
         creator: "t".into(),
         worker: None,
@@ -57,8 +57,8 @@ fn test_by_from_fact_returns_intents_for_fact() {
 
     let refs_a = store.intents_by_fact("f_a");
     assert_eq!(refs_a.len(), 2);
-    let id_i1 = CoordId::from_string("i1").to_string();
-    let id_i2 = CoordId::from_string("i2").to_string();
+    let id_i1 = CoordId::resolve("i1").to_string();
+    let id_i2 = CoordId::resolve("i2").to_string();
     assert!(refs_a.contains(&id_i1));
     assert!(refs_a.contains(&id_i2));
 
@@ -102,6 +102,6 @@ fn test_by_from_fact_rebuild_from_io() {
 
     let refs = store2.intents_by_fact("f_x");
     assert_eq!(refs.len(), 1);
-    let id_i_ref = CoordId::from_string("i_ref").to_string();
+    let id_i_ref = CoordId::resolve("i_ref").to_string();
     assert!(refs.contains(&id_i_ref));
 }

@@ -74,7 +74,7 @@ impl ParallelAnt {
                 // Submit fact (high prob early on)
                 let id = format!("fact_{}", step);
                 bb.submit_fact(&Fact::with_id(
-                    CoordId::from_string(&id),
+                    CoordId::resolve(&id),
                     self.name.clone(),
                     format!("parallel observation at step {step}").into(),
                     self.name.clone(),
@@ -96,7 +96,7 @@ impl ParallelAnt {
                 }
                 let id = format!("pi_{}_{}", self.name, step);
                 match bb.submit_intent(&Intent {
-                    id: CoordId::from_string(&id),
+                    id: CoordId::resolve(&id),
                     from_facts: fact_ids,
                     description: format!("hypothesis at step {step}"),
                     creator: self.name.clone(),
@@ -211,7 +211,7 @@ fn test_parallel_many_ants() {
         for (id, content) in &seeds {
             guard
                 .submit_fact(&Fact::with_id(
-                    CoordId::from_string(id),
+                    CoordId::resolve(id),
                     "corpus".into(),
                     (*content).into(),
                     "system".into(),

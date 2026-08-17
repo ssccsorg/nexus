@@ -4,7 +4,7 @@ use nex_fih::{BoardState, Content, CoordId, DetectionCapable, Fact};
 
 fn make_fact(id: &str, origin: &str) -> Fact {
     Fact::with_id(
-        CoordId::from_string(id),
+        CoordId::resolve(id),
         origin.to_string(),
         Content::from_json(&serde_json::json!({"topic": "test"})),
         "test".into(),

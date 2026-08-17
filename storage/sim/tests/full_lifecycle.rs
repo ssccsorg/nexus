@@ -11,7 +11,7 @@ fn test_sim_fact_submit_and_read() {
     let storage = FihStorage::new(io, "test");
 
     futures_executor::block_on(storage.submit_fact(&Fact::with_id(
-        CoordId::from_string("f001"),
+        CoordId::resolve("f001"),
         "sim".into(),
         Content::from("hello from sim"),
         "tester".into(),
@@ -29,7 +29,7 @@ fn test_sim_full_lifecycle() {
     let storage = FihStorage::new(io, "test");
 
     futures_executor::block_on(storage.submit_fact(&Fact::with_id(
-        CoordId::from_string("f_base"),
+        CoordId::resolve("f_base"),
         "sim".into(),
         Content::from("base"),
         "alice".into(),
@@ -37,8 +37,8 @@ fn test_sim_full_lifecycle() {
     .unwrap();
 
     futures_executor::block_on(storage.submit_intent(&Intent {
-        id: CoordId::from_string("i001"),
-        from_facts: vec![CoordId::from_string("f_base")],
+        id: CoordId::resolve("i001"),
+        from_facts: vec![CoordId::resolve("f_base")],
         description: "test intent".into(),
         creator: "bob".into(),
         worker: None,
@@ -77,7 +77,7 @@ fn test_session_hydrate_flush() {
 
     // Write a fact via storage
     let fact = Fact::with_id(
-        CoordId::from_string("f001"),
+        CoordId::resolve("f001"),
         "test".into(),
         Content {
             mime_type: "text/plain".into(),
@@ -101,6 +101,6 @@ fn test_session_hydrate_flush() {
     assert_eq!(state.facts.len(), 1);
     assert_eq!(
         state.facts[0].id.to_string(),
-        CoordId::from_string("f001").to_string()
+        CoordId::resolve("f001").to_string()
     );
 }

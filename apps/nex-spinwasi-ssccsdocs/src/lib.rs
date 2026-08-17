@@ -170,7 +170,7 @@ async fn ingest_document(
     }
     let doc_id = format!("doc_{}", sanitize_id(origin));
     let fact = Fact::with_id(
-        CoordId::from_string(&doc_id),
+        CoordId::from_label(&doc_id),
         format!("document:{origin}"),
         Content {
             mime_type: "text/markdown".into(),
@@ -458,7 +458,7 @@ async fn handler(req: Request<Vec<u8>>) -> anyhow::Result<impl IntoResponse> {
                 .id
                 .unwrap_or_else(|| format!("fact_{}", timestamp_id()));
             let fact = Fact::with_id(
-                CoordId::from_string(&id),
+                CoordId::from_label(&id),
                 params.origin,
                 Content {
                     mime_type: "text/plain".into(),
@@ -489,7 +489,7 @@ async fn handler(req: Request<Vec<u8>>) -> anyhow::Result<impl IntoResponse> {
                 .unwrap_or("")
                 .split(',')
                 .filter(|s| !s.is_empty())
-                .map(CoordId::from_string)
+                .map(CoordId::resolve)
                 .collect();
             if from_facts.is_empty() {
                 return err_json(
@@ -499,7 +499,7 @@ async fn handler(req: Request<Vec<u8>>) -> anyhow::Result<impl IntoResponse> {
                 );
             }
             let intent = Intent::new(
-                CoordId::from_string(&id),
+                CoordId::from_label(&id),
                 from_facts,
                 None,
                 params.desc,
@@ -569,7 +569,7 @@ async fn handler(req: Request<Vec<u8>>) -> anyhow::Result<impl IntoResponse> {
                 .id
                 .unwrap_or_else(|| format!("hint_{}", timestamp_id()));
             let hint = Hint {
-                id: CoordId::from_string(&id),
+                id: CoordId::from_label(&id),
                 content: params.content,
                 creator: params.creator,
             };

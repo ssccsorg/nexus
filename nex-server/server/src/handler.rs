@@ -17,6 +17,7 @@ fn map_error(e: BlackboardError) -> (i64, String) {
         BlackboardError::NotFound(m) => (-32001, format!("not found: {m}")),
         BlackboardError::Conflict(m) => (-32002, format!("conflict: {m}")),
         BlackboardError::Forbidden(m) => (-32003, format!("forbidden: {m}")),
+        BlackboardError::BadRequest(m) => (-32602, format!("bad request: {m}")),
         BlackboardError::Internal(m) => (-32000, format!("internal: {m}")),
     }
 }
@@ -71,7 +72,7 @@ async fn handle_write_fact(
         },
     };
     let fact = Fact::with_id(
-        CoordId::from_string(&format!("fact_{}", uuid::Uuid::new_v4())),
+        CoordId::from_label(&format!("fact_{}", uuid::Uuid::new_v4())),
         p.origin,
         content,
         p.creator,
@@ -106,7 +107,7 @@ async fn handle_read_fact(
     };
 
     let state = storage.read_state().await;
-    let target = CoordId::from_string(&p.id).to_string();
+    let target = CoordId::resolve(&p.id).to_string();
     for fact in &state.facts {
         if fact.id.to_string() == target {
             return RpcResponse::success(id, serde_json::to_value(fact).unwrap_or_default());
@@ -130,7 +131,7 @@ async fn handle_read_intent(
     };
 
     let state = storage.read_state().await;
-    let target = CoordId::from_string(&p.id).to_string();
+    let target = CoordId::resolve(&p.id).to_string();
     for intent in &state.intents {
         if intent.id.to_string() == target {
             return RpcResponse::success(id, serde_json::to_value(intent).unwrap_or_default());
@@ -154,7 +155,7 @@ async fn handle_read_hint(
     };
 
     let state = storage.read_state().await;
-    let target = CoordId::from_string(&p.id).to_string();
+    let target = CoordId::resolve(&p.id).to_string();
     for hint in &state.hints {
         if hint.id.to_string() == target {
             return RpcResponse::success(id, serde_json::to_value(hint).unwrap_or_default());
@@ -186,12 +187,8 @@ async fn handle_write_intent(
     }
 
     let intent = Intent {
-        id: CoordId::from_string(&format!("intent_{}", uuid::Uuid::new_v4())),
-        from_facts: p
-            .from_facts
-            .iter()
-            .map(|s| CoordId::from_string(s))
-            .collect(),
+        id: CoordId::from_label(&format!("intent_{}", uuid::Uuid::new_v4())),
+        from_facts: p.from_facts.iter().map(|s| CoordId::resolve(s)).collect(),
         description: p.description,
         creator: p.creator,
         worker: None,
@@ -331,7 +328,7 @@ async fn handle_write_hint(
     };
 
     let hint = Hint {
-        id: CoordId::from_string(&p.id),
+        id: CoordId::resolve(&p.id),
         content: p.content,
         creator: p.creator,
     };

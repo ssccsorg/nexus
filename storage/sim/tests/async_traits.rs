@@ -27,11 +27,11 @@ fn test_async_submit_and_read_fact() {
     let fact = common::fact("f1");
 
     let hash = futures_executor::block_on(store.submit_fact(&fact)).unwrap();
-    assert_eq!(hash, CoordId::from_string("f1"));
+    assert_eq!(hash, CoordId::resolve("f1"));
 
     let state = futures_executor::block_on(store.read_state());
     assert_eq!(state.facts.len(), 1);
-    assert_eq!(state.facts[0].id, CoordId::from_string("f1"));
+    assert_eq!(state.facts[0].id, CoordId::resolve("f1"));
 }
 
 #[test]
@@ -52,7 +52,7 @@ fn test_async_submit_multiple_facts() {
 fn test_async_submit_hint() {
     let store = setup();
     let hint = Hint {
-        id: CoordId::from_string("h1"),
+        id: CoordId::resolve("h1"),
         content: "test hint".into(),
         creator: "t".into(),
     };
@@ -120,7 +120,7 @@ fn test_async_submit_intent() {
 
     let intent = common::intent("i1", vec!["f_base"]);
     let hash = futures_executor::block_on(store.submit_intent(&intent)).unwrap();
-    assert_eq!(hash, CoordId::from_string("i1"));
+    assert_eq!(hash, CoordId::resolve("i1"));
 }
 
 // ── AsyncFilterCapable (delegates to sync) ────────────────────────────
@@ -149,7 +149,7 @@ fn test_async_filter() {
 fn test_async_evict() {
     let store = setup();
     let hint = Hint {
-        id: CoordId::from_string("h_old"),
+        id: CoordId::resolve("h_old"),
         content: "old".into(),
         creator: "t".into(),
     };

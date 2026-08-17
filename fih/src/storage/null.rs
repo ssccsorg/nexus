@@ -55,7 +55,7 @@ impl IntentCapable for NullStorage {
     }
     fn conclude_intent(&self, _id: &str, _result: &str) -> Result<Fact, BlackboardError> {
         Ok(Fact::with_id(
-            CoordId::from_string("null"),
+            CoordId::new(0),
             String::new(),
             Content::from("null"),
             String::new(),

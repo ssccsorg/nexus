@@ -36,34 +36,101 @@ impl<const N: usize> CoordId<N> {
         FihHash(h.finalize().into())
     }
 
-    /// Parse from string. If N Hangul chars, maps directly. Otherwise hashes.
-    pub fn from_string(s: &str) -> Self {
+    /// Parse from string. Canonical-only: exactly N Hangul characters.
+    /// Returns `None` for any other input. No hash fallback: id
+    /// derivation belongs to the semantic layer (`CoordId::content_id`),
+    /// and the string-to-path mapping contract is owned by chton.
+    pub fn from_string(s: &str) -> Option<Self> {
         let chars: Vec<char> = s.chars().collect();
         if chars.len() == N && chars.iter().all(|c| Coord::from_char(*c).is_some()) {
             let mut coords = [Coord::new(0).unwrap(); N];
             for (i, &ch) in chars.iter().enumerate() {
                 coords[i] = Coord::from_char(ch).unwrap();
             }
-            CoordId(CoordPath::new(coords))
+            Some(CoordId(CoordPath::new(coords)))
         } else {
-            let mut h = Sha256::new();
-            h.update(s.as_bytes());
-            let hash: [u8; 32] = h.finalize().into();
-            let mut coords = [Coord::new(0).unwrap(); N];
-            for (i, coord) in coords.iter_mut().enumerate() {
-                let idx = u16::from_le_bytes([
-                    hash.get(i * 2).copied().unwrap_or(0),
-                    hash.get(i * 2 + 1).copied().unwrap_or(0),
-                ]) % 11172;
-                *coord = Coord::new(idx).unwrap();
-            }
-            CoordId(CoordPath::new(coords))
+            None
         }
     }
 
     /// Return the coordinate at the given path index.
     pub fn coord_at(&self, idx: usize) -> Coord {
         self.0.coords()[idx]
+    }
+}
+
+// ── Semantic id derivation ────────────────────────────────────────────
+
+impl CoordId<6> {
+    /// Content-addressed id for a domain entity: the semantic layer maps
+    /// domain meaning onto the six axes before insertion. The entity
+    /// kind occupies axis 2, origin and creator occupy their own axes
+    /// from string fingerprints, and the content hash folds into the
+    /// remaining axes. The result is canonical (6 Hangul characters),
+    /// deterministic per (entity, origin, creator, content), and
+    /// queryable by axis.
+    ///
+    /// Entropy bound: the content hash folds into three axes (0, 1, and
+    /// the serial axis 5 derived from hash bytes 4..8), each reduced
+    /// modulo 11172, so the id carries about 40 bits of content-derived
+    /// entropy, not the full 256 bits of the SHA-256 hash. The
+    /// origin/creator fingerprints are advisory (13.4-bit, like the
+    /// 19-axis store): the axes provide ordering, not exact identity.
+    /// This id is an ordering and query key; exact content identity
+    /// stays in `Fact::content_hash`.
+    pub fn content_id(entity: u16, origin: &str, creator: &str, content_hash: &FihHash) -> Self {
+        let digest = Sha256::digest(origin.as_bytes());
+        let origin_axis = u16::from_le_bytes([digest[0], digest[1]]) % 11172;
+        let digest = Sha256::digest(creator.as_bytes());
+        let creator_axis = u16::from_le_bytes([digest[0], digest[1]]) % 11172;
+
+        // Fold the content hash into four axes (time_hi, time_lo, and a
+        // serial combined from the remaining hash bytes).
+        let mut axes = [0u16; 4];
+        for (i, axis) in axes.iter_mut().enumerate() {
+            let lo = content_hash.0.get(i * 2).copied().unwrap_or(0) as u16;
+            let hi = content_hash.0.get(i * 2 + 1).copied().unwrap_or(0) as u16;
+            *axis = u16::from_le_bytes([lo as u8, hi as u8]) % 11172;
+        }
+        let serial = (axes[2] + axes[3]) % 11172;
+        CoordId::from_axes(axes[0], axes[1], entity, origin_axis, creator_axis, serial)
+            .expect("axes are already reduced modulo 11172")
+    }
+
+    /// Content-addressed fact id: [`CoordId::content_id`] with the fact
+    /// entity kind (0).
+    pub fn content_fact_id(origin: &str, creator: &str, content_hash: &FihHash) -> Self {
+        Self::content_id(0, origin, creator, content_hash)
+    }
+
+    /// Deterministic canonical id from an arbitrary label: the label is
+    /// content-addressed through the semantic layer. All labels share
+    /// the fixed origin ("label") and creator ("fixture") axes;
+    /// distinctness comes from the label hash axes only. Used by tests
+    /// and external coordination where ids must be stable across runs
+    /// and canonical at the store boundary.
+    pub fn from_label(label: &str) -> Self {
+        let hash = FihHash(Sha256::digest(label.as_bytes()).into());
+        Self::content_id(0, "label", "fixture", &hash)
+    }
+
+    /// Resolve an id reference to a canonical id. Reference rules: a
+    /// string of exactly 6 Hangul characters is a canonical id and
+    /// passes through unchanged ([`CoordId::from_string`]); any other
+    /// string is a label, derived through the semantic layer
+    /// ([`CoordId::from_label`]). A label and its derived canonical form
+    /// address the same record.
+    ///
+    /// The two namespaces are disjoint by length only: a 6-Hangul
+    /// string is always canonical, never a label, so a label literally
+    /// spelled as 6 Hangul characters cannot be addressed by that
+    /// spelling, because `resolve` reads it as a canonical id.
+    /// Resolution never fails: a malformed canonical reference silently
+    /// becomes a label id for a different record. Strict callers that
+    /// must reject non-canonical references should call
+    /// [`CoordId::from_string`] and treat `None` as an error.
+    pub fn resolve(s: &str) -> Self {
+        Self::from_string(s).unwrap_or_else(|| Self::from_label(s))
     }
 }
 
@@ -337,10 +404,11 @@ pub struct Fact {
 impl Fact {
     /// Create a content-addressed Fact.
     ///
-    /// `CoordId` is derived internally from SHA-256(content) + origin + creator,
-    /// making the ID deterministic: same content + origin + creator always
-    /// produces the same CoordId. `content_hash` is computed simultaneously
-    /// so only one SHA-256 pass is needed.
+    /// The id comes from the semantic layer (`CoordId::content_fact_id`):
+    /// deterministic per content + origin + creator, canonical 6-Hangul,
+    /// with entity/origin/creator/content meaning on dedicated axes.
+    /// `content_hash` is computed simultaneously so only one SHA-256
+    /// pass is needed.
     pub fn new(origin: String, content: Content, creator: String) -> Self {
         let content_hash = {
             let Content { data, .. } = &content;
@@ -348,8 +416,7 @@ impl Fact {
             h.update(data);
             FihHash(h.finalize().into())
         };
-        let id_seed = format!("{}-{}-{}", origin, creator, content_hash);
-        let id = CoordId::from_string(&id_seed);
+        let id = CoordId::content_fact_id(&origin, &creator, &content_hash);
         Fact {
             id,
             content_hash,

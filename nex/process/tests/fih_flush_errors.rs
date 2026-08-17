@@ -94,7 +94,7 @@ impl FileIo for FlakyIo {
 
 fn fact(id: &str) -> Fact {
     Fact::with_id(
-        CoordId::from_string(id),
+        CoordId::resolve(id),
         "test".into(),
         Content {
             mime_type: "text/plain".into(),
@@ -106,8 +106,8 @@ fn fact(id: &str) -> Fact {
 
 fn intent(id: &str) -> Intent {
     Intent {
-        id: CoordId::from_string(id),
-        from_facts: vec![CoordId::from_string("f_base")],
+        id: CoordId::resolve(id),
+        from_facts: vec![CoordId::resolve("f_base")],
         description: format!("intent {id}"),
         creator: "tester".into(),
         worker: None,

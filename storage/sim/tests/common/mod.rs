@@ -59,7 +59,7 @@ impl nex_core::Now for FakeClock {
 #[allow(dead_code)]
 pub fn fact(id: &str) -> Fact {
     Fact::with_id(
-        CoordId::from_string(id),
+        CoordId::resolve(id),
         "t".into(),
         Content {
             mime_type: "text/plain".into(),
@@ -72,8 +72,8 @@ pub fn fact(id: &str) -> Fact {
 #[allow(dead_code)]
 pub fn intent(id: &str, from: Vec<&str>) -> Intent {
     Intent {
-        id: CoordId::from_string(id),
-        from_facts: from.into_iter().map(CoordId::from_string).collect(),
+        id: CoordId::resolve(id),
+        from_facts: from.into_iter().map(CoordId::resolve).collect(),
         description: format!("intent {}", id),
         creator: "t".into(),
         worker: None,

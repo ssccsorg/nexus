@@ -28,7 +28,7 @@ fn scenario_contradiction_detection_via_gateway() {
 
     // Agent-A: ingests paper claiming GNNs work fine at 50 layers
     block_on(storage.submit_fact(&Fact::with_id(
-        CoordId::from_string("f_gnn_deep"),
+        CoordId::resolve("f_gnn_deep"),
         "paper_iclr_2024".into(),
         Content::from("Residual GNNs maintain accuracy at 50 layers with skip connections"),
         "agent-a".into(),
@@ -37,7 +37,7 @@ fn scenario_contradiction_detection_via_gateway() {
 
     // Agent-B: ingests paper claiming GNNs oversmooth at 6 layers
     block_on(storage.submit_fact(&Fact::with_id(
-        CoordId::from_string("f_gnn_shallow"),
+        CoordId::resolve("f_gnn_shallow"),
         "paper_neurips_2023".into(),
         Content::from("Message-passing GNNs oversmooth beyond 6 layers without normalization"),
         "agent-b".into(),
@@ -46,10 +46,10 @@ fn scenario_contradiction_detection_via_gateway() {
 
     // Agent-C: detects the contradiction, submits hypothesis
     block_on(storage.submit_intent(&Intent {
-        id: CoordId::from_string("i_reconcile"),
+        id: CoordId::resolve("i_reconcile"),
         from_facts: vec![
-            CoordId::from_string("f_gnn_deep"),
-            CoordId::from_string("f_gnn_shallow"),
+            CoordId::resolve("f_gnn_deep"),
+            CoordId::resolve("f_gnn_shallow"),
         ],
         description: "Test whether normalization technique determines oversmoothing depth".into(),
         creator: "agent-c".into(),

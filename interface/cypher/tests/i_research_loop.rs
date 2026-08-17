@@ -69,7 +69,7 @@ fn chunk_document(source: &str, title: &str, text: &str) -> Vec<MdDocumentChunk>
 /// Submit each chunk as a Fact with content-addressable ID.
 fn ingest_document(bb: &mut impl Blackboard, chunks: &[MdDocumentChunk]) {
     for chunk in chunks {
-        let id = CoordId::from_string(&format!("{}::{}", chunk.source, chunk.section));
+        let id = CoordId::resolve(&format!("{}::{}", chunk.source, chunk.section));
         let content = serde_json::to_string(&serde_json::json!({
             "section": chunk.section,
             "content": chunk.content,
@@ -279,20 +279,19 @@ fn scenario_full_research_loop() {
     // Hypothesis 1: Hybrid architectures can simultaneously solve GNN
     // oversmoothing and transformer quadratic complexity.
 
-    let gnn_benchmark_id = CoordId::from_string("arxiv_gnn_2024::Benchmark Results");
-    let transformer_benchmark_id =
-        CoordId::from_string("arxiv_transformer_2024::Benchmark Results");
-    let hybrid_benchmark_id = CoordId::from_string("arxiv_hybrid_2024::Benchmark Results");
-    let gnn_limitations_id = CoordId::from_string("arxiv_gnn_2024::Limitations");
-    let transformer_limitations_id = CoordId::from_string("arxiv_transformer_2024::Limitations");
-    let gnn_future_id = CoordId::from_string("arxiv_gnn_2024::Future Directions");
-    let transformer_future_id = CoordId::from_string("arxiv_transformer_2024::Future Directions");
-    let hybrid_future_id = CoordId::from_string("arxiv_hybrid_2024::Future Directions");
+    let gnn_benchmark_id = CoordId::resolve("arxiv_gnn_2024::Benchmark Results");
+    let transformer_benchmark_id = CoordId::resolve("arxiv_transformer_2024::Benchmark Results");
+    let hybrid_benchmark_id = CoordId::resolve("arxiv_hybrid_2024::Benchmark Results");
+    let gnn_limitations_id = CoordId::resolve("arxiv_gnn_2024::Limitations");
+    let transformer_limitations_id = CoordId::resolve("arxiv_transformer_2024::Limitations");
+    let gnn_future_id = CoordId::resolve("arxiv_gnn_2024::Future Directions");
+    let transformer_future_id = CoordId::resolve("arxiv_transformer_2024::Future Directions");
+    let hybrid_future_id = CoordId::resolve("arxiv_hybrid_2024::Future Directions");
 
     // Agent-Analyst creates a hypothesis that hybrid architectures resolve
     // both GNN oversmoothing and transformer complexity issues.
     let intent_hybrid_synthesis = Intent {
-        id: CoordId::from_string("i_hybrid_synthesis"),
+        id: CoordId::resolve("i_hybrid_synthesis"),
         from_facts: vec![
             gnn_benchmark_id,
             transformer_benchmark_id,
@@ -316,7 +315,7 @@ fn scenario_full_research_loop() {
     // Hypothesis 2: The 3 Future Directions sections collectively describe
     // a unified research roadmap, but are siloed by document origin.
     let intent_unified_roadmap = Intent {
-        id: CoordId::from_string("i_unified_roadmap"),
+        id: CoordId::resolve("i_unified_roadmap"),
         from_facts: vec![
             gnn_future_id,
             transformer_future_id,
@@ -432,7 +431,7 @@ fn scenario_full_research_loop() {
     let remaining = state
         .intents
         .iter()
-        .find(|i| i.id == CoordId::from_string("i_unified_roadmap"));
+        .find(|i| i.id == CoordId::resolve("i_unified_roadmap"));
     assert!(remaining.is_some(), "unified roadmap intent still open");
     assert_eq!(
         state.intents.len(),
@@ -467,11 +466,11 @@ fn scenario_full_research_loop() {
 
     // New hypothesis: investigate whether the accuracy ceiling can be broken
     let intent_new_gap = Intent {
-        id: CoordId::from_string("i_accuracy_ceiling"),
+        id: CoordId::resolve("i_accuracy_ceiling"),
         from_facts: vec![
-            CoordId::from_string(&gnn_benchmark_id_str),
-            CoordId::from_string(&hybrid_benchmark_id_str),
-            CoordId::from_string(&conclusion_fact_id_str),
+            CoordId::resolve(&gnn_benchmark_id_str),
+            CoordId::resolve(&hybrid_benchmark_id_str),
+            CoordId::resolve(&conclusion_fact_id_str),
         ],
         description: "HYPOTHESIS: The 93% accuracy on ZINC-250k is not a ceiling — incorporating 3D molecular geometry into hybrid architectures will push accuracy beyond 95%. This requires a new model class: geometric GNN-Transformer hybrids.".into(),
         creator: "agent-analyst".into(),
@@ -504,7 +503,7 @@ fn scenario_full_research_loop() {
     let gap_intent = state
         .intents
         .iter()
-        .find(|i| i.id == CoordId::from_string("i_accuracy_ceiling"))
+        .find(|i| i.id == CoordId::resolve("i_accuracy_ceiling"))
         .expect("new gap intent exists");
     assert!(
         gap_intent.from_facts.contains(&conclusion_fact.id),

@@ -15,7 +15,7 @@ use nexus_storage_sim::{FihStorage, SimIo};
 
 fn fact(id: &str, data: &str) -> Fact {
     Fact::with_id(
-        CoordId::from_string(id),
+        CoordId::resolve(id),
         "s".into(),
         Content {
             mime_type: "text/plain".into(),
@@ -27,8 +27,8 @@ fn fact(id: &str, data: &str) -> Fact {
 
 fn intent(id: &str, from: Vec<&str>) -> Intent {
     Intent {
-        id: CoordId::from_string(id),
-        from_facts: from.into_iter().map(CoordId::from_string).collect(),
+        id: CoordId::resolve(id),
+        from_facts: from.into_iter().map(CoordId::resolve).collect(),
         description: format!("intent {}", id),
         creator: "t".into(),
         worker: None,
@@ -134,7 +134,7 @@ fn test_scenario_hints_preserved_via_rebuild() {
 
     block_on(store.submit_fact(&fact("f_h", "hint test"))).unwrap();
     block_on(store.submit_hint(&Hint {
-        id: CoordId::from_string("h1"),
+        id: CoordId::resolve("h1"),
         content: "ephemeral hint".into(),
         creator: "t".into(),
     }))
@@ -181,7 +181,7 @@ fn test_scenario_hints_only() {
     let store = FihStorage::new(io.clone(), "s");
 
     block_on(store.submit_hint(&Hint {
-        id: CoordId::from_string("h_feature"),
+        id: CoordId::resolve("h_feature"),
         content: "consider adding time travel".into(),
         creator: "reviewer".into(),
     }))

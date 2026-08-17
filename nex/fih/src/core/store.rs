@@ -140,7 +140,7 @@ pub fn record_to_path(
     coords[4] = mk(creator_v);
     coords[5] = mk(status);
     // [6-11]: identity from CoordId<6> coordinates directly (round-trip safe)
-    let cid: CoordId = CoordId::from_string(id_str);
+    let cid: CoordId = CoordId::resolve(id_str);
     let cid_coords: &[tagma_core::Coord; 6] = cid.0.coords();
     coords[6..12].copy_from_slice(&cid_coords[..6]);
     // [12-18]: content hash fingerprint (94 effective bits)
@@ -173,9 +173,9 @@ pub struct FihStorage<I: FileIo> {
     #[expect(dead_code)]
     auto_flush: bool,
     // In-memory stores: rebuilt from IO on hydrate, kept in sync for reads.
-    pub fact_store: CoordEntityStore<6, FactRecord>,
-    pub intent_store: CoordEntityStore<6, IntentRecord>,
-    pub hint_store: CoordEntityStore<6, HintRecord>,
+    pub fact_store: CoordEntityStore<7, FactRecord>,
+    pub intent_store: CoordEntityStore<7, IntentRecord>,
+    pub hint_store: CoordEntityStore<7, HintRecord>,
     store: Cell2<tagma_core::CoordSpaceN<19, Record>>,
     pub fact_records: Cell2<HashMap<String, FactRecord>>,
     pub intent_records: Cell2<HashMap<String, IntentRecord>>,
@@ -216,9 +216,9 @@ impl<I: FileIo> FihStorage<I> {
             project_id: project_id.to_string(),
             clock,
             auto_flush,
-            fact_store: CoordEntityStore::<6, FactRecord>::new(),
-            intent_store: CoordEntityStore::<6, IntentRecord>::new(),
-            hint_store: CoordEntityStore::<6, HintRecord>::new(),
+            fact_store: CoordEntityStore::<7, FactRecord>::new(),
+            intent_store: CoordEntityStore::<7, IntentRecord>::new(),
+            hint_store: CoordEntityStore::<7, HintRecord>::new(),
             store: Cell2::new(tagma_core::CoordSpaceN::new()),
             fact_records: Cell2::new(HashMap::new()),
             intent_records: Cell2::new(HashMap::new()),
@@ -240,9 +240,9 @@ impl<I: FileIo> FihStorage<I> {
             project_id: project_id.to_string(),
             clock,
             auto_flush: false,
-            fact_store: CoordEntityStore::<6, FactRecord>::new(),
-            intent_store: CoordEntityStore::<6, IntentRecord>::new(),
-            hint_store: CoordEntityStore::<6, HintRecord>::new(),
+            fact_store: CoordEntityStore::<7, FactRecord>::new(),
+            intent_store: CoordEntityStore::<7, IntentRecord>::new(),
+            hint_store: CoordEntityStore::<7, HintRecord>::new(),
             store: Cell2::new(tagma_core::CoordSpaceN::new()),
             fact_records: Cell2::new(HashMap::new()),
             intent_records: Cell2::new(HashMap::new()),
@@ -451,11 +451,17 @@ impl<I: FileIo> FihStorage<I> {
         }
     }
 
+    /// Normalize an intent id to its canonical CoordId string form. A
+    /// non-canonical id cannot reference any stored intent.
+    fn normalize_intent_id(&self, intent_id: &str) -> String {
+        CoordId::resolve(intent_id).to_string()
+    }
+
     /// Query intents that reference a given fact.
-    /// The fact_id is normalized via CoordId::from_string to match the
-    /// canonical CoordId format stored in IntentRecord.from_facts.
+    /// The fact_id is resolved via CoordId::resolve to match the canonical
+    /// CoordId format stored in IntentRecord.from_facts.
     pub fn intents_by_fact(&self, fact_id: &str) -> Vec<String> {
-        let normalized = crate::CoordId::from_string(fact_id).to_string();
+        let normalized = crate::CoordId::resolve(fact_id).to_string();
         let intent_records: Vec<IntentRecord> =
             futures_executor::block_on(self.intent_store.values());
         intent_records
@@ -852,7 +858,7 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
                         FihHash(h.finalize().into())
                     };
                     facts.push(Fact {
-                        id: CoordId::from_string(&r.id),
+                        id: CoordId::resolve(&r.id),
                         content_hash,
                         origin: r.origin.clone(),
                         content,
@@ -869,12 +875,8 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
                     && let Ok(r) = postcard::from_bytes::<IntentRecord>(&bytes)
                 {
                     intents.push(Intent {
-                        id: CoordId::from_string(&r.id),
-                        from_facts: r
-                            .from_facts
-                            .iter()
-                            .map(|s| CoordId::from_string(s))
-                            .collect(),
+                        id: CoordId::resolve(&r.id),
+                        from_facts: r.from_facts.iter().map(|s| CoordId::resolve(s)).collect(),
                         description: {
                             if r.description_hash.is_empty() {
                                 r.id.clone()
@@ -891,7 +893,7 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
                         },
                         to_fact_id: match &r.status {
                             IntentStatus::Concluded { to_fact, .. } => {
-                                Some(CoordId::from_string(to_fact))
+                                Some(CoordId::resolve(to_fact))
                             }
                             _ => None,
                         },
@@ -919,7 +921,7 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
                     && let Ok(r) = postcard::from_bytes::<HintRecord>(&bytes)
                 {
                     hints.push(Hint {
-                        id: CoordId::from_string(&r.id),
+                        id: CoordId::resolve(&r.id),
                         content: r.content.clone(),
                         creator: r.creator.clone(),
                     });
@@ -1124,7 +1126,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.flush_pending()
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        let normalized = CoordId::from_string(intent_id).to_string();
+        let normalized = self.normalize_intent_id(intent_id);
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
             .io
@@ -1168,7 +1170,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.flush_pending()
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        let normalized = CoordId::from_string(intent_id).to_string();
+        let normalized = self.normalize_intent_id(intent_id);
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
             .io
@@ -1212,7 +1214,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.flush_pending()
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        let normalized = CoordId::from_string(intent_id).to_string();
+        let normalized = self.normalize_intent_id(intent_id);
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
             .io
@@ -1259,7 +1261,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.vacate_record(&old_path);
         self.place_intent(&record);
         self.intent_store
-            .insert(CoordId::from_string(intent_id).to_string(), record)
+            .insert(self.normalize_intent_id(intent_id), record)
             .await;
         Ok(())
     }
@@ -1272,7 +1274,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.flush_pending()
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        let normalized = CoordId::from_string(intent_id).to_string();
+        let normalized = self.normalize_intent_id(intent_id);
         let key = format!("intents/i_{}.intent", normalized);
         let bytes = self
             .io
@@ -1291,7 +1293,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             }
         };
 
-        let conclusion_id = format!("f_concl_{}", intent_id);
+        let conclusion_id = CoordId::from_label(&format!("f_concl_{}", intent_id)).to_string();
         let content_data = result.as_bytes().to_vec();
         let content_hash = {
             let mut h = sha2::Sha256::new();
@@ -1299,7 +1301,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             FihHash(h.finalize().into())
         };
         let new_fact = Fact {
-            id: CoordId::from_string(&conclusion_id),
+            id: CoordId::resolve(&conclusion_id),
             content_hash,
             origin: format!("conclusion:{}", intent_id),
             content: Content {
@@ -1482,15 +1484,15 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                         }
                         if let Some(ids) = filter.fact_ids.as_ref() {
                             let identity = &path.coords()[6..12];
-                            if !ids.iter().any(|x| {
-                                let cid: CoordId = CoordId::from_string(x);
-                                identity == &cid.0.coords()[..]
-                            }) {
+                            if !ids
+                                .iter()
+                                .any(|x| CoordId::<6>::resolve(x).0.coords() == identity)
+                            {
                                 continue;
                             }
                         }
                         facts.push(Fact {
-                            id: CoordId::from_string(&id),
+                            id: CoordId::resolve(&id),
                             origin: origin.clone(),
                             content_hash: *content_hash,
                             content: content.clone(),
@@ -1527,10 +1529,10 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                         }
                         if let Some(ids) = filter.intent_ids.as_ref() {
                             let identity = &path.coords()[6..12];
-                            if !ids.iter().any(|x| {
-                                let cid: CoordId = CoordId::from_string(x);
-                                identity == &cid.0.coords()[..]
-                            }) {
+                            if !ids
+                                .iter()
+                                .any(|x| CoordId::<6>::resolve(x).0.coords() == identity)
+                            {
                                 continue;
                             }
                         }
@@ -1543,10 +1545,13 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                             String::new()
                         };
                         intents.push(Intent {
-                            id: CoordId::from_string(&id),
+                            id: CoordId::resolve(&id),
                             from_facts: from_facts
                                 .iter()
-                                .map(|s| CoordId::from_string(s))
+                                .map(|s| {
+                                    CoordId::from_string(s)
+                                        .expect("stored from_facts are canonical")
+                                })
                                 .collect(),
                             description,
                             creator: creator.clone(),
@@ -1557,7 +1562,7 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                             },
                             to_fact_id: match status {
                                 IntentStatus::Concluded { to_fact, .. } => {
-                                    Some(CoordId::from_string(to_fact))
+                                    Some(CoordId::resolve(to_fact))
                                 }
                                 _ => None,
                             },
@@ -1585,15 +1590,15 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                         }
                         if let Some(ids) = filter.hint_ids.as_ref() {
                             let identity = &path.coords()[6..12];
-                            if !ids.iter().any(|x| {
-                                let cid: CoordId = CoordId::from_string(x);
-                                identity == &cid.0.coords()[..]
-                            }) {
+                            if !ids
+                                .iter()
+                                .any(|x| CoordId::<6>::resolve(x).0.coords() == identity)
+                            {
                                 continue;
                             }
                         }
                         hints.push(Hint {
-                            id: CoordId::from_string(&id),
+                            id: CoordId::resolve(&id),
                             content: content.clone(),
                             creator: creator.clone(),
                         });
@@ -1738,7 +1743,7 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
                     } => {
                         if origin == &prefix {
                             facts.push(Fact {
-                                id: CoordId::from_string(&id),
+                                id: CoordId::resolve(&id),
                                 origin: origin.clone(),
                                 content_hash: *content_hash,
                                 content: content.clone(),
@@ -1763,10 +1768,13 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
                                 String::new()
                             };
                             intents.push(Intent {
-                                id: CoordId::from_string(&id),
+                                id: CoordId::resolve(&id),
                                 from_facts: from_facts
                                     .iter()
-                                    .map(|s| CoordId::from_string(s))
+                                    .map(|s| {
+                                        CoordId::from_string(s)
+                                            .expect("stored from_facts are canonical")
+                                    })
                                     .collect(),
                                 description,
                                 creator: creator.clone(),
@@ -1779,7 +1787,7 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
                                 },
                                 to_fact_id: match status {
                                     IntentStatus::Concluded { to_fact, .. } => {
-                                        Some(CoordId::from_string(to_fact))
+                                        Some(CoordId::resolve(to_fact))
                                     }
                                     _ => None,
                                 },
@@ -1805,7 +1813,7 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
                     } => {
                         if creator == &prefix {
                             hints.push(Hint {
-                                id: CoordId::from_string(&id),
+                                id: CoordId::resolve(&id),
                                 content: content.clone(),
                                 creator: creator.clone(),
                             });
