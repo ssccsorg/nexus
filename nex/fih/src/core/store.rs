@@ -597,6 +597,23 @@ impl<I: FileIo> FihStorage<I> {
         self.fact_id_index.borrow().get(id).copied()
     }
 
+    /// Parse a 64-char lowercase hex blob hash back into `FihHash`.
+    /// `FactRecord::blob_hash` is written by `FihHash::to_string`, so the
+    /// format is fixed; a malformed length or hex digit is corruption.
+    fn hex_blob_hash(hex: &str) -> Option<FihHash> {
+        let hex = hex.as_bytes();
+        if hex.len() != 64 {
+            return None;
+        }
+        let mut bytes = [0u8; 32];
+        for i in 0..32 {
+            let hi = (hex[i * 2] as char).to_digit(16)?;
+            let lo = (hex[i * 2 + 1] as char).to_digit(16)?;
+            bytes[i] = ((hi << 4) | lo) as u8;
+        }
+        Some(FihHash(bytes))
+    }
+
     /// Check if an intent with the given ID exists (fast-path: intent_records HashMap).
     pub fn intent_exists(&self, id: &str) -> bool {
         self.intent_records.borrow().contains_key(id)
@@ -988,6 +1005,7 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
 
         // content_hash is SHA-256 already computed by Fact::new — use directly.
         let blob_hash = fact.content_hash.to_string();
+        let pending_len = self.pending.borrow().len();
 
         // Enqueue blob data (mime from content).
         let blob_path = format!("blob/{blob_hash}.bin");
@@ -1015,10 +1033,31 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
             data: bytes,
         };
 
-        // Update in-memory cache immediately for subsequent reads
-        self.fact_store
+        // Update in-memory cache immediately for subsequent reads. The
+        // return value is the atomic detector at the first id-keyed
+        // commit: it catches a fact_store record the pre-check could not
+        // see (a direct `fact_store` write without the id index) and a
+        // task that raced past the pre-check if the insert ever yields.
+        let prev = self
+            .fact_store
             .insert(record.id.clone(), record.clone())
             .await;
+        if let Some(prev_record) = prev {
+            // Occupied at the commit point. Restore the earlier record
+            // (keep its submitted_at) and drop the blob ops enqueued by
+            // this submit.
+            let same = Self::hex_blob_hash(&prev_record.blob_hash)
+                .map(|h| h == fact.content_hash)
+                .unwrap_or(false);
+            self.fact_store.insert(record.id.clone(), prev_record).await;
+            self.pending.borrow_mut().truncate(pending_len);
+            if !same {
+                return Err(BlackboardError::Conflict(format!(
+                    "fact id {id} already exists with a different content_hash"
+                )));
+            }
+            return Ok(fact.id);
+        }
         // Unified 19-axis store: time in axes [0-1], origin/creator hashed
         // in [3-4], identity in [6-11]. Kept in sync for spatial queries.
         self.place_record(

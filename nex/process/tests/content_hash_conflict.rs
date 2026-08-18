@@ -10,7 +10,8 @@
 use futures_executor::block_on;
 use nex_fih::core::store::{Record, record_to_path};
 use nex_fih::{
-    AsyncFactCapable, AsyncStorageRead, BlackboardError, Content, CoordId, Fact, FihStorage,
+    AsyncFactCapable, AsyncStorageRead, BlackboardError, Content, CoordId, EntityStore, Fact,
+    FactRecord, FihStorage,
 };
 use nexus_storage_sim::SimIo;
 
@@ -131,6 +132,64 @@ fn idempotent_against_direct_writer_record() {
         // The idempotent path is a no-op: it must not add a record to the
         // same-session record map. (Direct-writer records live in the
         // unified store, not in the read-path entity stores.)
+        assert_eq!(store.fact_records.borrow().len(), 0);
+    });
+}
+
+// A record present only in the id-keyed entity store (fact_store), with
+// no index entry, must still guard the id at the commit point: the
+// `fact_store.insert` return value is the atomic detector.
+#[test]
+fn conflict_detected_for_fact_store_only_record() {
+    block_on(async {
+        let store = FihStorage::new(SimIo::new(), "fstore-only");
+        let f = fact("f_i", b"fstore-original");
+        store
+            .fact_store
+            .insert(
+                f.id.to_string(),
+                FactRecord {
+                    id: f.id.to_string(),
+                    blob_hash: f.content_hash.to_string(),
+                    origin: f.origin.clone(),
+                    creator: f.creator.clone(),
+                    submitted_at: 0,
+                },
+            )
+            .await;
+        let err = store
+            .submit_fact(&fact("f_i", b"fstore-different"))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, BlackboardError::Conflict(_)));
+        // The earlier record must be restored, not lost.
+        let state = store.fact_store.get(&f.id.to_string()).await.unwrap();
+        assert_eq!(state.blob_hash, f.content_hash.to_string());
+    });
+}
+
+// The idempotent counterpart: a fact_store-only record with identical
+// content is a no-op retry that leaves the record map untouched.
+#[test]
+fn idempotent_for_fact_store_only_record() {
+    block_on(async {
+        let store = FihStorage::new(SimIo::new(), "fstore-idem");
+        let f = fact("f_j", b"fstore-same");
+        store
+            .fact_store
+            .insert(
+                f.id.to_string(),
+                FactRecord {
+                    id: f.id.to_string(),
+                    blob_hash: f.content_hash.to_string(),
+                    origin: f.origin.clone(),
+                    creator: f.creator.clone(),
+                    submitted_at: 0,
+                },
+            )
+            .await;
+        let id = store.submit_fact(&f).await.unwrap();
+        assert_eq!(id, f.id);
         assert_eq!(store.fact_records.borrow().len(), 0);
     });
 }
