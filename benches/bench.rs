@@ -39,10 +39,10 @@ use criterion::{BatchSize, Criterion, black_box, criterion_group, criterion_main
 use futures_executor::block_on;
 
 use nex_fih::{
-    AsyncFactCapable, AsyncFilterCapable, AsyncIntentCapable, AsyncStorageRead, AxisHints, CoordId,
-    Fact, FihStorage, Intent, StateFilter,
+    AsyncFactCapable, AsyncFilterCapable, AsyncIntentCapable, AsyncStorageRead, AxisHints,
+    BlackboardError, ContentMeta, CoordId, Fact, FactRecord, FihStorage, Intent, StateFilter,
 };
-use nexus_storage_sim::SimIo;
+use nexus_storage_sim::{FileIo, SimIo};
 
 // ── Fixtures: controlled axis distributions ─────────────────────────────
 
@@ -615,6 +615,101 @@ fn bench_kb_query(c: &mut Criterion) {
     group.finish();
 }
 
+// ── conflict/: content_hash conflict detection cost (#176) ──────────────
+
+/// Reopen a FihStorage holding `n` facts. The records and blobs are
+/// written to IO directly (a pre-existing on-disk state), then
+/// `rebuild_cache` loads them: the in-memory record map is empty and the
+/// id-keyed entity store plus the unified 19-axis store are populated.
+fn build_reopened_conflict_store(n: usize) -> FihStorage<SimIo> {
+    let io = SimIo::new();
+    for i in 0..n {
+        let cid = CoordId::from_axes(0, 0, 0, (i % 50) as u16, (i % 20) as u16, i as u16).unwrap();
+        let fact = Fact::with_id(
+            cid,
+            format!("conclusion:{}", i % 50),
+            format!("content-{}", i).into(),
+            format!("creator-{}", i % 20),
+        );
+        let blob_hash = fact.content_hash.to_string();
+        let record = FactRecord {
+            id: fact.id.to_string(),
+            blob_hash: blob_hash.clone(),
+            origin: fact.origin.clone(),
+            creator: fact.creator.clone(),
+            submitted_at: 0,
+        };
+        block_on(io.write(&record.key(), &postcard::to_allocvec(&record).unwrap())).unwrap();
+        block_on(io.write(&format!("blob/{blob_hash}.bin"), &fact.content.data)).unwrap();
+        block_on(
+            io.write(
+                &format!("blob/{blob_hash}.bin.meta"),
+                &postcard::to_allocvec(&ContentMeta {
+                    mime_type: "text/plain".into(),
+                    size: fact.content.data.len() as u64,
+                })
+                .unwrap(),
+            ),
+        )
+        .unwrap();
+    }
+    let store = FihStorage::with_clock(io, "conflict-bench", Box::new(nex_core::SystemClock));
+    block_on(store.rebuild_cache()).unwrap();
+    store
+}
+
+fn bench_conflict(c: &mut Criterion) {
+    let mut group = c.benchmark_group("conflict");
+
+    // Same id, different content after reopen: the check must find the
+    // occupied id and reject. No mutation, so every iteration measures the
+    // detection path alone. Store size is bounded at 100 records: the
+    // 19-axis CoordSpaceN tree allocates a fixed 11172-slot array (89 KB)
+    // per branch node and the seven content-hash axes create ~7 unique
+    // branch levels per record (~3.3 MB/record at 1k), so larger stores
+    // exhaust memory before the check cost is measurable.
+    group.bench_function("check_conflict_existing_id_after_reopen_100", |b| {
+        let store = build_reopened_conflict_store(100);
+        let cid = CoordId::from_axes(0, 0, 0, 0, 0, 0u16).unwrap();
+        let fact = Fact::with_id(
+            cid,
+            "conclusion:0".into(),
+            "different-content-0".into(),
+            "creator-0".into(),
+        );
+        b.iter(|| {
+            let err = block_on(store.submit_fact(&fact));
+            assert!(
+                matches!(err, Err(BlackboardError::Conflict(_))),
+                "expected Conflict, got {err:?}"
+            );
+            let _ = black_box(err);
+        });
+    });
+
+    // Same id, same content after reopen: an idempotent retry. No mutation.
+    group.bench_function("check_idempotent_existing_id_after_reopen_100", |b| {
+        let store = build_reopened_conflict_store(100);
+        let cid = CoordId::from_axes(0, 0, 0, 0, 0, 0u16).unwrap();
+        let fact = Fact::with_id(
+            cid,
+            "conclusion:0".into(),
+            "content-0".into(),
+            "creator-0".into(),
+        );
+        b.iter(|| {
+            black_box(block_on(store.submit_fact(&fact)).unwrap());
+        });
+    });
+
+    // New-id absence is an O(records) scan in both the pre-fix and post-fix
+    // designs (no index exists for direct-writer records), so it is not
+    // benchmarked here; the two existing-id cases above isolate the F2
+    // improvement (id-keyed entity store hit vs unified-store scan).
+
+    group.finish();
+}
+
 // ── Criterion entry point ───────────────────────────────────────────────
 
 criterion_group!(
@@ -635,5 +730,6 @@ criterion_group!(
         bench_fih_write_10k,
         bench_fih_intents_by_fact,
         bench_kb_query,
+        bench_conflict,
 );
 criterion_main!(benches);

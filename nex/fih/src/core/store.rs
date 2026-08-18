@@ -180,6 +180,12 @@ pub struct FihStorage<I: FileIo> {
     pub fact_records: Cell2<HashMap<String, FactRecord>>,
     pub intent_records: Cell2<HashMap<String, IntentRecord>>,
     pub hint_records: Cell2<HashMap<String, HintRecord>>,
+    /// Id to content hash for every placed fact record. Kept in sync by
+    /// `place_record` (the single chokepoint for the unified 19-axis
+    /// store), so occupancy checks are O(1) for all writers including
+    /// direct ones (nex-calc). Facts are append-only, so the index only
+    /// grows.
+    fact_id_index: Cell2<HashMap<String, FihHash>>,
     // Semantic stores (for similarity search).
     semantic_stores: Cell2<Vec<crate::semantic::DynSemanticStore>>,
     /// Counter for assigning semantic IDs to facts incrementally.
@@ -223,6 +229,7 @@ impl<I: FileIo> FihStorage<I> {
             fact_records: Cell2::new(HashMap::new()),
             intent_records: Cell2::new(HashMap::new()),
             hint_records: Cell2::new(HashMap::new()),
+            fact_id_index: Cell2::new(HashMap::new()),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
             pending: Cell2::new(Vec::new()),
@@ -247,6 +254,7 @@ impl<I: FileIo> FihStorage<I> {
             fact_records: Cell2::new(HashMap::new()),
             intent_records: Cell2::new(HashMap::new()),
             hint_records: Cell2::new(HashMap::new()),
+            fact_id_index: Cell2::new(HashMap::new()),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
             pending: Cell2::new(Vec::new()),
@@ -472,13 +480,24 @@ impl<I: FileIo> FihStorage<I> {
     }
 
     /// Direct record placement (for special cases like nex-calc).
-    /// Skips blob enqueue and fast-path index maintenance.
+    /// Skips blob enqueue and fast-path record-map maintenance, but keeps
+    /// the fact id index in sync so occupancy checks see direct writers.
     pub fn place_record(&self, path: &tagma_core::CoordPath<19>, record: Record) {
+        if let Record::Fact { content_hash, .. } = &record {
+            self.fact_id_index
+                .borrow_mut()
+                .insert(path_to_id_str(path), *content_hash);
+        }
         self.store.borrow_mut().place_path(path, record);
     }
 
     /// Direct record removal (for special cases like nex-calc).
     pub fn vacate_record(&self, path: &tagma_core::CoordPath<19>) {
+        if matches!(self.store.borrow().at_path(path), Some(Record::Fact { .. })) {
+            self.fact_id_index
+                .borrow_mut()
+                .remove(&path_to_id_str(path));
+        }
         self.store.borrow_mut().vacate_path(path);
     }
 
@@ -567,41 +586,15 @@ impl<I: FileIo> FihStorage<I> {
     }
 
     /// Content hash of the fact currently occupying `id`, if any.
-    /// Mirrors `fact_exists`: the in-memory record map first
-    /// (same-session writes), then the 19-axis store (reopened stores
-    /// and direct writers, whose record map is empty).
+    ///
+    /// The id index is kept in sync by `place_record`, the single
+    /// chokepoint for the unified 19-axis store, so this is an O(1)
+    /// lookup for every writer: `submit_fact`, `rebuild_cache` (which
+    /// re-places loaded records), and direct writers (nex-calc). The
+    /// index is populated on reopen, so it also fires after
+    /// `rebuild_cache`.
     fn existing_fact_content_hash(&self, id: &str) -> Option<FihHash> {
-        if let Some(r) = self.fact_records.borrow().get(id) {
-            // FactRecord stores the blob hash as a lowercase hex string.
-            let hex = r.blob_hash.as_bytes();
-            if hex.len() == 64 {
-                let mut bytes = [0u8; 32];
-                let mut valid = true;
-                for i in 0..32 {
-                    let hi = (hex[i * 2] as char).to_digit(16);
-                    let lo = (hex[i * 2 + 1] as char).to_digit(16);
-                    match (hi, lo) {
-                        (Some(hi), Some(lo)) => bytes[i] = ((hi << 4) | lo) as u8,
-                        _ => {
-                            valid = false;
-                            break;
-                        }
-                    }
-                }
-                if valid {
-                    return Some(FihHash(bytes));
-                }
-            }
-        }
-        self.store
-            .borrow()
-            .iter_tree()
-            .find_map(|(path, rec)| match rec {
-                Record::Fact { content_hash, .. } if path_to_id_str(&path) == id => {
-                    Some(*content_hash)
-                }
-                _ => None,
-            })
+        self.fact_id_index.borrow().get(id).copied()
     }
 
     /// Check if an intent with the given ID exists (fast-path: intent_records HashMap).

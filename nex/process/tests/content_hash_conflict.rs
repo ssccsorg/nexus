@@ -8,6 +8,7 @@
 // silently overwriting the earlier record.
 
 use futures_executor::block_on;
+use nex_fih::core::store::{Record, record_to_path};
 use nex_fih::{
     AsyncFactCapable, AsyncStorageRead, BlackboardError, Content, CoordId, Fact, FihStorage,
 };
@@ -65,8 +66,8 @@ fn conflict_is_detected_after_reopen() {
             store.flush_pending().await.unwrap();
         }
         {
-            // After rebuild the record map is empty; the 19-axis store
-            // fallback must still catch the conflict.
+            // After rebuild the record map is empty; the id index built by
+            // the reopened placement must still catch the conflict.
             let store = FihStorage::new(io, "reopen-conflict");
             store.rebuild_cache().await.unwrap();
             let err = store
@@ -75,5 +76,61 @@ fn conflict_is_detected_after_reopen() {
                 .unwrap_err();
             assert!(matches!(err, BlackboardError::Conflict(_)));
         }
+    });
+}
+
+// A direct writer (nex-calc style) places a fact via place_record without
+// submit_fact. The id index must expose it, so a submit_fact with the same
+// id and different content is still rejected.
+#[test]
+fn conflict_detected_against_direct_writer_record() {
+    block_on(async {
+        let store = FihStorage::new(SimIo::new(), "direct-writer");
+        let f = fact("f_g", b"direct-original");
+        let id_str = f.id.to_string();
+        let path = record_to_path(0u16, "", "user", 0u16, &id_str, 0, &f.content_hash);
+        store.place_record(
+            &path,
+            Record::Fact {
+                content: f.content.clone(),
+                content_hash: f.content_hash,
+                origin: f.origin.clone(),
+                creator: f.creator.clone(),
+                submitted_at: 0,
+            },
+        );
+        let err = store
+            .submit_fact(&fact("f_g", b"direct-different"))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, BlackboardError::Conflict(_)));
+    });
+}
+
+// The idempotent counterpart: a direct-writer record with the identical
+// content is accepted as a retry.
+#[test]
+fn idempotent_against_direct_writer_record() {
+    block_on(async {
+        let store = FihStorage::new(SimIo::new(), "direct-idem");
+        let f = fact("f_h", b"direct-same");
+        let id_str = f.id.to_string();
+        let path = record_to_path(0u16, "", "user", 0u16, &id_str, 0, &f.content_hash);
+        store.place_record(
+            &path,
+            Record::Fact {
+                content: f.content.clone(),
+                content_hash: f.content_hash,
+                origin: f.origin.clone(),
+                creator: f.creator.clone(),
+                submitted_at: 0,
+            },
+        );
+        let id = store.submit_fact(&f).await.unwrap();
+        assert_eq!(id, f.id);
+        // The idempotent path is a no-op: it must not add a record to the
+        // same-session record map. (Direct-writer records live in the
+        // unified store, not in the read-path entity stores.)
+        assert_eq!(store.fact_records.borrow().len(), 0);
     });
 }

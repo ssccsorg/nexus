@@ -11,6 +11,7 @@ futures-executor = "0.3"
 nex-core = { path = "../nex/core" }
 nex-fih = { path = "../nex/fih" }
 nexus-storage-sim = { path = "../storage/sim" }
+postcard = "1"
 tagma-core = { git = "https://github.com/ssccsorg/syntagma", branch = "main" }
 
 [dev-dependencies]
