@@ -1,7 +1,7 @@
-// KvEntityStore: CoordKVStore-backed EntityStore durability.
+// MapEntityStore: CoordMapStore-backed EntityStore durability.
 //
 // The store is an EntityStore whose backing is chton's materialized
-// CoordKV. These tests verify the trait surface (roundtrip, replace)
+// CoordMap. These tests verify the trait surface (roundtrip, replace)
 // and the durability contract (buffered state, flush, reopen, read)
 // over both file origins.
 
@@ -9,19 +9,19 @@
 use chton::origin::MappedFileOrigin;
 use chton::origin::{FileOrigin, MemoryOrigin};
 use futures_executor::block_on;
-use nex_fih::{EntityStore, KvEntityStore};
+use nex_fih::{EntityStore, MapEntityStore};
 
 fn temp_path(label: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!(
-        "nex-coordkv-entity-{label}-{}.bin",
+        "nex-coordmap-entity-{label}-{}.bin",
         std::process::id()
     ))
 }
 
 #[test]
-fn kv_entity_store_roundtrip_via_trait() {
+fn map_entity_store_roundtrip_via_trait() {
     block_on(async {
-        let store = KvEntityStore::<6, String>::new(Box::new(MemoryOrigin::new()), 256);
+        let store = MapEntityStore::<6, String>::new(Box::new(MemoryOrigin::new()), 256);
         assert!(!store.is_buffered());
 
         assert_eq!(store.insert("alpha".into(), "one".into()).await, None);
@@ -48,12 +48,12 @@ fn kv_entity_store_roundtrip_via_trait() {
 }
 
 #[test]
-fn kv_entity_store_persists_across_reopen() {
+fn map_entity_store_persists_across_reopen() {
     let path = temp_path("reopen");
     block_on(async {
         {
             let store =
-                KvEntityStore::<6, String>::new(Box::new(FileOrigin::open(&path).unwrap()), 256);
+                MapEntityStore::<6, String>::new(Box::new(FileOrigin::open(&path).unwrap()), 256);
             store.insert("f_a".into(), "persisted-a".into()).await;
             store.insert("f_b".into(), "persisted-b".into()).await;
             assert!(store.is_buffered());
@@ -62,7 +62,7 @@ fn kv_entity_store_persists_across_reopen() {
         }
         {
             let store =
-                KvEntityStore::<6, String>::load(Box::new(FileOrigin::open(&path).unwrap()), 256)
+                MapEntityStore::<6, String>::load(Box::new(FileOrigin::open(&path).unwrap()), 256)
                     .unwrap();
             assert_eq!(store.len().await, 2);
             assert_eq!(store.get("f_a").await.as_deref(), Some("persisted-a"));
@@ -73,9 +73,9 @@ fn kv_entity_store_persists_across_reopen() {
 }
 
 #[test]
-fn kv_entity_store_replace_from() {
+fn map_entity_store_replace_from() {
     block_on(async {
-        let store = KvEntityStore::<6, String>::new(Box::new(MemoryOrigin::new()), 256);
+        let store = MapEntityStore::<6, String>::new(Box::new(MemoryOrigin::new()), 256);
         store.insert("a".into(), "1".into()).await;
         store.insert("b".into(), "2".into()).await;
         store.replace_from(vec![("c".into(), "3".into())]).await;
@@ -88,11 +88,11 @@ fn kv_entity_store_replace_from() {
 
 #[cfg(unix)]
 #[test]
-fn kv_entity_store_over_mapped_file_origin() {
+fn map_entity_store_over_mapped_file_origin() {
     let path = temp_path("mapped");
     block_on(async {
         {
-            let store = KvEntityStore::<6, String>::new(
+            let store = MapEntityStore::<6, String>::new(
                 Box::new(MappedFileOrigin::open(&path).unwrap()),
                 256,
             );
@@ -100,7 +100,7 @@ fn kv_entity_store_over_mapped_file_origin() {
             store.flush().unwrap();
         }
         {
-            let store = KvEntityStore::<6, String>::load(
+            let store = MapEntityStore::<6, String>::load(
                 Box::new(MappedFileOrigin::open(&path).unwrap()),
                 256,
             )

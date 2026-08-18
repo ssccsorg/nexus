@@ -33,7 +33,7 @@ log = "0.4"
 async-trait = "0.1"
 chton = { git = "https://github.com/ssccsorg/chton", branch = "main" }
 tagma-core = { git = "https://github.com/ssccsorg/syntagma", branch = "main" }
-tagma-kv = { git = "https://github.com/ssccsorg/syntagma", branch = "main" }
+tagma-map = { git = "https://github.com/ssccsorg/syntagma", branch = "main" }
 
 [profile.release]
 lto = "thin"

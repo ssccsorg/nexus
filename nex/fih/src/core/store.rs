@@ -593,14 +593,15 @@ impl<I: FileIo> FihStorage<I> {
                 }
             }
         }
-        self.store.borrow().iter_tree().find_map(|(path, rec)| {
-            match rec {
+        self.store
+            .borrow()
+            .iter_tree()
+            .find_map(|(path, rec)| match rec {
                 Record::Fact { content_hash, .. } if path_to_id_str(&path) == id => {
                     Some(*content_hash)
                 }
                 _ => None,
-            }
-        })
+            })
     }
 
     /// Check if an intent with the given ID exists (fast-path: intent_records HashMap).

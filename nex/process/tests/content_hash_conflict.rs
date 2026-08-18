@@ -30,10 +30,7 @@ fn same_id_different_content_is_rejected() {
     block_on(async {
         let store = FihStorage::new(SimIo::new(), "conflict");
         store.submit_fact(&fact("f_a", b"alpha")).await.unwrap();
-        let err = store
-            .submit_fact(&fact("f_a", b"beta"))
-            .await
-            .unwrap_err();
+        let err = store.submit_fact(&fact("f_a", b"beta")).await.unwrap_err();
         assert!(
             matches!(err, BlackboardError::Conflict(_)),
             "expected Conflict, got {err:?}"
@@ -64,10 +61,7 @@ fn conflict_is_detected_after_reopen() {
         let io = SimIo::new();
         {
             let store = FihStorage::new(io.clone(), "reopen-conflict");
-            store
-                .submit_fact(&fact("f_c", b"original"))
-                .await
-                .unwrap();
+            store.submit_fact(&fact("f_c", b"original")).await.unwrap();
             store.flush_pending().await.unwrap();
         }
         {

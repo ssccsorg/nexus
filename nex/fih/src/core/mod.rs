@@ -17,7 +17,7 @@ pub mod store;
 // Store surface ownership: chton is the behavior layer. The EntityStore
 // family (trait + memory + materialized impls) lives in chton::store and
 // is re-exported here so nexus consumers keep a stable crate path.
-pub use chton::store::{CoordEntityStore, EntityStore, KvEntityStore, MemoryEntityStore};
+pub use chton::store::{CoordEntityStore, EntityStore, MapEntityStore, MemoryEntityStore};
 pub use export::{export_from_io, import_into_io};
 pub use fih_blackboard::FihBlackboard;
 pub use index::{Cell2, OrderedIndex};

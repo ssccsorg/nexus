@@ -12,9 +12,9 @@
 pub use nex_io::FsIo;
 pub use nex_io::{BatchIo, BufferIo, FileIo, IoFuture, SyncFileIo, WriteOp, default_apply_batch};
 
-/// The CoordKVStore-backed FileIo backend lives in chton::io; this
-/// module re-exports it so `nex_fih::io::CoordKVStoreIo` resolves.
-pub use chton::io::CoordKVStoreIo;
+/// The CoordMapStore-backed FileIo backend lives in chton::io; this
+/// module re-exports it so `nex_fih::io::CoordMapStoreIo` resolves.
+pub use chton::io::CoordMapStoreIo;
 
 /// Module alias so that `crate::io::file_io::FileIo` resolves.
 pub mod file_io {
