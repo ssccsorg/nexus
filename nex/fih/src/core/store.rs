@@ -482,11 +482,26 @@ impl<I: FileIo> FihStorage<I> {
     /// Direct record placement (for special cases like nex-calc).
     /// Skips blob enqueue and fast-path record-map maintenance, but keeps
     /// the fact id index in sync so occupancy checks see direct writers.
+    ///
+    /// The conflict guard lives in `submit_fact` (the mission scope): a
+    /// direct writer that places the same id with a different
+    /// `content_hash` silently overwrites here, and the next `submit_fact`
+    /// against that id is rejected. Direct writers must therefore be
+    /// id-stable (deterministic content per id), which nex-calc is
+    /// (`make_number_fact_id` and the content hash both derive from the
+    /// value). In debug builds the invariant is asserted.
     pub fn place_record(&self, path: &tagma_core::CoordPath<19>, record: Record) {
         if let Record::Fact { content_hash, .. } = &record {
-            self.fact_id_index
-                .borrow_mut()
-                .insert(path_to_id_str(path), *content_hash);
+            let id = path_to_id_str(path);
+            if let Some(existing) = self.fact_id_index.borrow().get(&id) {
+                debug_assert!(
+                    *existing == *content_hash,
+                    "place_record: fact id {id} is being overwritten with a different \
+                     content_hash; direct writers must be id-stable or route through \
+                     submit_fact"
+                );
+            }
+            self.fact_id_index.borrow_mut().insert(id, *content_hash);
         }
         self.store.borrow_mut().place_path(path, record);
     }
