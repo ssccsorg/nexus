@@ -1,15 +1,14 @@
-// ── Axis-based filtering scenario tests ────────────────────────────────
+// ── Filtering scenario tests ──────────────────────────────────────────
 //
-// Validates that CoordId axis extraction and read_state_filtered work
-// correctly with explicitly constructed axis values:
+// Record ids are opaque since the CoordId<20> migration: the default
+// CoordId depth is 20 and ids are SHA-256 content addresses with no
+// semantic axis layout. read_state_filtered matches on record fields
+// (origin, creator, submitted_at) supplied via Fact::with_id, not on
+// id coordinates.
 //
-//   CoordId axis convention:
-//     [0] time_hi:  coarse time bucket (days since epoch)
-//     [1] time_lo:  fine time within bucket
-//     [2] entity:   0=Fact, 1=Intent, 2=Hint
-//     [3] origin:   origin category
-//     [4] creator:  creator category
-//     [5] serial:   uniqueness discriminator
+// The legacy 6-syllable form CoordId<6> still exposes the axis API
+// (from_axes, axis, entity_type, time_hi). The first two tests exercise
+// that API directly as a standalone unit test of CoordId<6>.
 
 use futures_executor::block_on;
 use nex_fih::{
@@ -22,12 +21,12 @@ use crate::common::{FakeClock, fact};
 
 mod common;
 
-// ── Test 1: CoordId axis round-trip ─────────────────────────────────────
+// ── Test 1: CoordId<6> axis round-trip ────────────────────────────────
 
 #[test]
 fn test_axis_roundtrip_via_from_axes() {
-    // Build a CoordId with explicit axis values.
-    let coord = CoordId::from_axes(42, 100, 0, 7, 3, 999).expect("valid axis values");
+    // Build a CoordId<6> with explicit axis values (legacy 6-axis API).
+    let coord = CoordId::<6>::from_axes(42, 100, 0, 7, 3, 999).expect("valid axis values");
 
     // Verify each axis extracts the original value.
     assert_eq!(coord.axis(0).index(), 42, "time_hi");
@@ -42,27 +41,28 @@ fn test_axis_roundtrip_via_from_axes() {
     assert_eq!(coord.entity_type(), 0);
 }
 
-// ── Test 2: Axis extraction with max boundary values ────────────────────
+// ── Test 2: CoordId<6> axis extraction with max boundary values ────────
 
 #[test]
 fn test_axis_boundary_values() {
     // Max valid coord index is 11171 (11172 unique values).
-    let coord = CoordId::from_axes(11171, 0, 1, 5000, 11171, 1).expect("valid boundary values");
+    let coord =
+        CoordId::<6>::from_axes(11171, 0, 1, 5000, 11171, 1).expect("valid boundary values");
 
     assert_eq!(coord.axis(0).index(), 11171);
     assert_eq!(coord.axis(2).index(), 1, "entity (Intent)");
     assert_eq!(coord.axis(4).index(), 11171);
 }
 
-// ── Test 3: Filtering by creator axis ───────────────────────────────────
+// ── Test 3: Filtering by creator ──────────────────────────────────────
 
 #[test]
 fn test_filter_by_creator() {
     let io = SimIo::new();
     let store = FihStorage::new(io, "axis_test");
 
-    // Facts with distinct creators encoded in the axis.
-    let coord_a = CoordId::from_axes(1, 1, 0, 0, 10, 1).unwrap();
+    // Facts with distinct creator record fields.
+    let coord_a = CoordId::from_label("axis-creator-10");
     let fact_a = Fact::with_id(
         coord_a,
         "origin_0".into(),
@@ -74,7 +74,7 @@ fn test_filter_by_creator() {
     );
     block_on(store.submit_fact(&fact_a)).unwrap();
 
-    let coord_b = CoordId::from_axes(1, 2, 0, 0, 20, 1).unwrap();
+    let coord_b = CoordId::from_label("axis-creator-20");
     let fact_b = Fact::with_id(
         coord_b,
         "origin_0".into(),
@@ -208,24 +208,24 @@ fn test_filter_by_time_range() {
     );
 }
 
-// ── Test 5: Filtering by origin with different time buckets ────────────
+// ── Test 5: Filtering by creator with different time buckets ───────────
 
 #[test]
 fn test_filter_by_origin_and_time() {
     let io = SimIo::new();
     let store = FihStorage::new(io, "axis_origin_time");
 
-    // Facts with different origins and time_hi values.
+    // Facts with different origins and creators as record fields. Each
+    // record gets a unique deterministic label-derived id.
     let facts = [
-        ("fact_1", 1, 1, 100, "origin_a", "alice"),
-        ("fact_2", 1, 2, 101, "origin_b", "bob"),
-        ("fact_3", 2, 1, 200, "origin_a", "alice"),
-        ("fact_4", 2, 2, 201, "origin_c", "carol"),
+        ("fact_1", "origin_a", "alice"),
+        ("fact_2", "origin_b", "bob"),
+        ("fact_3", "origin_a", "alice"),
+        ("fact_4", "origin_c", "carol"),
     ];
 
-    for (id_str, time_hi, time_lo, serial, origin, creator) in &facts {
-        let coord = CoordId::from_axes(*time_hi, *time_lo, 0, *time_hi, *time_lo, *serial)
-            .expect("valid coord");
+    for (id_str, origin, creator) in &facts {
+        let coord = CoordId::from_label(&format!("axis-{}", id_str));
         let fact = Fact::with_id(
             coord,
             origin.to_string(),
@@ -242,7 +242,7 @@ fn test_filter_by_origin_and_time() {
     let full = block_on(store.read_state());
     assert_eq!(full.facts.len(), 4);
 
-    // Filter by origin = "origin_a" (exact string match via fact_by_origin).
+    // Filter by creator = "alice" (exact string match via fact_by_creator).
     let origin_a = block_on(store.read_state_filtered(&StateFilter {
         axis_hints: None,
         creator: Some("alice".into()),
@@ -250,7 +250,7 @@ fn test_filter_by_origin_and_time() {
     }));
     assert_eq!(origin_a.facts.len(), 2, "expected 2 facts created by alice");
 
-    // Filter by origin = "origin_b".
+    // Filter by creator = "bob".
     let origin_b = block_on(store.read_state_filtered(&StateFilter {
         axis_hints: None,
         creator: Some("bob".into()),
@@ -258,14 +258,14 @@ fn test_filter_by_origin_and_time() {
     }));
     assert_eq!(origin_b.facts.len(), 1, "expected 1 fact created by bob");
 
-    // Filter by since + until covering specific time bucket.
+    // Filter by since + until covering a specific time bucket.
     let bucketed = block_on(store.read_state_filtered(&StateFilter {
         axis_hints: None,
         since: Some("100".into()),
         until: Some("150".into()),
         ..Default::default()
     }));
-    // submitted_at is monotonic wall-clock, not time_hi.
+    // submitted_at is monotonic wall-clock, not a coord axis.
     // submitted_at values depend on submit order and clock,
     // so we cannot assert exact counts on since/until with
     // SystemClock. Instead we verify the filter is applied
@@ -289,14 +289,14 @@ fn test_filter_by_origin_and_time() {
     );
 }
 
-// ── Test 6: Coordinator with entity type axis ──────────────────────────
+// ── Test 6: CoordId<6> entity type values ─────────────────────────────
 
 #[test]
 fn test_axis_entity_type_values() {
     // Entity type convention: 0=Fact, 1=Intent, 2=Hint.
-    let fact_coord = CoordId::from_axes(1, 1, 0, 0, 0, 1).unwrap();
-    let intent_coord = CoordId::from_axes(1, 2, 1, 0, 0, 1).unwrap();
-    let hint_coord = CoordId::from_axes(1, 3, 2, 0, 0, 1).unwrap();
+    let fact_coord = CoordId::<6>::from_axes(1, 1, 0, 0, 0, 1).unwrap();
+    let intent_coord = CoordId::<6>::from_axes(1, 2, 1, 0, 0, 1).unwrap();
+    let hint_coord = CoordId::<6>::from_axes(1, 3, 2, 0, 0, 1).unwrap();
 
     assert_eq!(fact_coord.entity_type(), 0, "entity type for Fact");
     assert_eq!(intent_coord.entity_type(), 1, "entity type for Intent");
@@ -305,10 +305,9 @@ fn test_axis_entity_type_values() {
 
 // ── Test 7: Multi-dimensional Tagma-style query ────────────────────────
 //
-// Demonstrates the CoordId axis system's practical advantage:
-// multiple independent dimensions encoded into a single storage address.
-// Filtering by origin + creator + time_bucket is a set intersection,
-// not a sequential scan through all records.
+// Demonstrates multi-dimensional filtering on record fields: filtering
+// by origin + creator is a set intersection over record fields, not a
+// scan of id coordinates.
 
 #[test]
 fn test_multi_dimensional_tagma_query() {
@@ -316,20 +315,15 @@ fn test_multi_dimensional_tagma_query() {
     let store = FihStorage::new(io, "tagma_query");
 
     // Create a 3D grid of facts: 4 origins × 3 creators × 5 time buckets = 60 facts.
-    // Each fact gets a CoordId with meaningful axis values.
+    // Each fact gets a deterministic label-derived id; origin and creator
+    // live on the record fields that read_state_filtered matches on.
     for origin_idx in 0..4 {
         for creator_idx in 0..3 {
             for time_bucket in 0..5 {
-                let serial = origin_idx * 100 + creator_idx * 10 + time_bucket;
-                let coord = CoordId::from_axes(
-                    time_bucket, // [0] time_hi
-                    0,           // [1] time_lo
-                    0,           // [2] entity type = Fact
-                    origin_idx,  // [3] origin
-                    creator_idx, // [4] creator
-                    serial,      // [5] serial (unique)
-                )
-                .unwrap();
+                let coord = CoordId::from_label(&format!(
+                    "axis-{}-{}-{}",
+                    origin_idx, creator_idx, time_bucket
+                ));
                 let fact = Fact::with_id(
                     coord,
                     format!("origin-{}", origin_idx),
@@ -343,7 +337,7 @@ fn test_multi_dimensional_tagma_query() {
 
     assert_eq!(block_on(store.read_state()).facts.len(), 60);
 
-    // Query 1: All facts by creator-1 (single axis via fast-path).
+    // Query 1: All facts by creator-1 (single field via fast-path).
     // Expected: 4 origins × 5 time buckets = 20 facts.
     let q1 = block_on(store.read_state_filtered(&StateFilter {
         axis_hints: None,
@@ -352,7 +346,7 @@ fn test_multi_dimensional_tagma_query() {
     }));
     assert_eq!(q1.facts.len(), 20, "creator-1 should match 4×5=20 facts");
 
-    // Query 2: origin-2 AND creator-1 (dual axis via set intersection).
+    // Query 2: origin-2 AND creator-1 (dual field via set intersection).
     // Expected: 1 origin × 1 creator × 5 time buckets = 5 facts.
     let q2 = block_on(store.read_state_filtered(&StateFilter {
         axis_hints: None,
@@ -362,8 +356,8 @@ fn test_multi_dimensional_tagma_query() {
     }));
     assert_eq!(q2.facts.len(), 5, "origin-2 + creator-1 = 1×1×5 = 5");
 
-    // Query 3: origin-3 AND creator-0 (two-axis, since submittime filtering
-    // depends on submitted_at timestamps, not Coord time_hi axis).
+    // Query 3: origin-3 AND creator-0 (two fields; since filtering by
+    // submitted_at depends on timestamps, not id coordinates).
     // origin-3: 15 facts (3 creators × 5 time)
     // creator-0: 20 facts (4 origins × 5 time)
     // intersection: 1 origin × 1 creator × 5 time = 5 facts.
@@ -373,7 +367,7 @@ fn test_multi_dimensional_tagma_query() {
         creator: Some("creator-0".into()),
         ..Default::default()
     }));
-    assert_eq!(q3.facts.len(), 5, "two-axis filter: 1×1×5 = 5");
+    assert_eq!(q3.facts.len(), 5, "two-field filter: 1×1×5 = 5");
 
     // Query 4: origin-0 with no other filters (fast-path single key).
     // Expected: 3 creators × 5 time = 15 facts.
@@ -384,11 +378,12 @@ fn test_multi_dimensional_tagma_query() {
     }));
     assert_eq!(q4.facts.len(), 15, "origin-0 should have 3×5=15");
 
-    // Verify CoordId axis values are correct for each result.
+    // Verify record fields are correct for each result.
     for fact in q2.facts.iter() {
-        // All should have origin=2, creator=1
-        let cid = &fact.id; // CoordId
-        assert_eq!(cid.axis(3).index(), 2, "origin axis should be 2");
-        assert_eq!(cid.axis(4).index(), 1, "creator axis should be 1");
+        assert_eq!(fact.origin, "origin-2", "origin field should be origin-2");
+        assert_eq!(
+            fact.creator, "creator-1",
+            "creator field should be creator-1"
+        );
     }
 }

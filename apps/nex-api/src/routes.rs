@@ -107,7 +107,7 @@ pub struct SubmitHintRequest {
 fn canonical_id(req_id: Option<String>) -> Result<CoordId, BlackboardError> {
     match req_id {
         Some(id) => Ok(CoordId::resolve(&id)),
-        None => Ok(CoordId::new(uuid::Uuid::new_v4().as_u128() as u64)),
+        None => Ok(CoordId::from_label(&uuid::Uuid::new_v4().to_string())),
     }
 }
 

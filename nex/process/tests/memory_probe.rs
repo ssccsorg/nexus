@@ -11,19 +11,23 @@
 // pseudo-random content-derived ids nexus actually uses), so the record
 // layer gets one entry per record.
 //
-// Measured with this probe (16 facts, full identity variation):
+// Measured with this probe (16 facts, label-derived ids):
 //   - before Step 1 (19 axes):               3.40 MB/fact
 //   - after Step 1  (12 axes):               3.58 MB/fact
 //   - after Step 2  (6-axis filter index):  40 KB/fact average
-//                                            ~500 B/fact marginal (last
-//                                            fact, steady state)
+//                                            ~0.8 KB/fact marginal
+//   - after Step 4  (CoordId<20> ids):      41 KB/fact average,
+//                                            ~1.2 KB/fact marginal
+//                                            (ids are now 20 Hangul,
+//                                            ~40 B each)
 //
 // The Step 2 drop is the L2 restructure: the tree holds id sets at
 // structural paths (memory bounded by axis cardinality, the ~650 KB
 // one-time cost of the probe's structural space), the record bodies live
 // in HashMap record maps, and the id-keyed entity stores are
 // HashMap-backed. The 0.5 MB/fact target from the briefing is exceeded:
-// the remaining per-record cost is a few hundred bytes.
+// the remaining per-record cost is a few hundred bytes to ~1 KB (longer
+// 20-syllable ids since Step 4).
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -59,10 +63,9 @@ unsafe impl GlobalAlloc for CountingAlloc {
 static GLOBAL: CountingAlloc = CountingAlloc;
 
 fn fact_at(i: u32) -> Fact {
-    // Identity coordinates varying across all six axes, like the
-    // pseudo-random content-derived ids in real usage.
-    let cid = CoordId::from_indices([i as u16, i as u16, i as u16, i as u16, i as u16, i as u16])
-        .unwrap();
+    // Distinct ids via label derivation (ids are opaque 20-coordinate
+    // hashes since the CoordId<20> migration).
+    let cid = CoordId::from_label(&format!("probe-{i}"));
     Fact::with_id(
         cid,
         "probe".into(),

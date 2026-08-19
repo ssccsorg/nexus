@@ -6,13 +6,15 @@ use tagma_core::{Coord, CoordPath};
 // ── Tagma primary identity ─────────────────────────────────────────────
 
 /// Tagma coordinate path depth for FIH storage addressing.
-/// Default: 6 → 11,172^6 ≈ 2×10^24 address space.
-/// Use `CoordId<20>` for SHA-256-scale space.
-pub const COORD_ID_DEPTH: usize = 6;
+/// Default: 20 → 11,172^20 ≈ 2^269 address space, the minimum depth that
+/// injectively encodes a full 256-bit SHA-256 (19 × log2(11172) ≈ 255.5
+/// < 256 would not).
+pub const COORD_ID_DEPTH: usize = 20;
 
 /// A Tagma coordinate path used as the primary FIH identifier.
-/// Depth defaults to `COORD_ID_DEPTH` (=6). Use `CoordId<20>` when needed.
-/// Axis methods (axis, from_axes, with_timestamp) are N=6-specific.
+/// Depth defaults to `COORD_ID_DEPTH` (=20). Axis methods
+/// (axis, from_axes, with_timestamp) are N=6-specific; the 6-syllable
+/// form remains available as `CoordId<6>` for explicit small ids.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CoordId<const N: usize = COORD_ID_DEPTH>(pub CoordPath<N>);
 
@@ -59,42 +61,54 @@ impl<const N: usize> CoordId<N> {
     }
 }
 
+/// Encode a 256-bit digest injectively into 20 base-11172 coordinates.
+///
+/// 20 × log2(11172) ≈ 268.9 ≥ 256, so every 32-byte value maps to a
+/// unique coordinate sequence (big-endian base-11172 digits; the most
+/// significant digit lands at coords[0]). Deterministic and
+/// collision-free by construction (Step 4, #176).
+fn encode_hash_into_coords(digest: &[u8; 32]) -> [Coord; 20] {
+    let mut buf = *digest;
+    let mut coords = [Coord::new(0).unwrap(); 20];
+    let mut significant = 32usize;
+    for coord in coords.iter_mut().rev() {
+        let mut rem: u32 = 0;
+        for byte in buf.iter_mut().take(significant) {
+            let cur = (rem << 8) | *byte as u32;
+            *byte = (cur / 11172) as u8;
+            rem = cur % 11172;
+        }
+        *coord = Coord::new(rem as u16).expect("remainder < 11172");
+        while significant > 0 && buf[significant - 1] == 0 {
+            significant -= 1;
+        }
+    }
+    coords
+}
+
 // ── Semantic id derivation ────────────────────────────────────────────
 
-impl CoordId<6> {
-    /// Content-addressed id for a domain entity: the semantic layer maps
-    /// domain meaning onto the six axes before insertion. The entity
-    /// kind occupies axis 2, origin and creator occupy their own axes
-    /// from string fingerprints, and the content hash folds into the
-    /// remaining axes. The result is canonical (6 Hangul characters),
-    /// deterministic per (entity, origin, creator, content), and
-    /// queryable by axis.
+impl CoordId<20> {
+    /// Full-injective content-addressed id (Step 4, #176).
     ///
-    /// Entropy bound: the content hash folds into three axes (0, 1, and
-    /// the serial axis 5 derived from hash bytes 4..8), each reduced
-    /// modulo 11172, so the id carries about 40 bits of content-derived
-    /// entropy, not the full 256 bits of the SHA-256 hash. The
-    /// origin/creator fingerprints are advisory (13.4-bit, like the
-    /// structural index): the axes provide ordering, not exact identity.
-    /// This id is an ordering and query key; exact content identity
-    /// stays in `Fact::content_hash`.
+    /// The id is SHA-256 over (content_hash ‖ entity ‖ origin ‖ creator),
+    /// encoded injectively into 20 base-11172 coordinates (2^268.9 ≥
+    /// 2^256), so distinct (content, context) inputs map to distinct ids
+    /// up to SHA-256 collision resistance (2^128 birthday). The compact
+    /// 6-syllable ~40-bit fold and its ~1.5M-record birthday ceiling are
+    /// gone; the matching-map detection stays as defense-in-depth. The
+    /// result is canonical (20 Hangul characters) and deterministic per
+    /// (entity, origin, creator, content). The coords are opaque: the
+    /// semantic axes no longer live in the id, ordering and filtering
+    /// happen on record fields through the structural index.
     pub fn content_id(entity: u16, origin: &str, creator: &str, content_hash: &FihHash) -> Self {
-        let digest = Sha256::digest(origin.as_bytes());
-        let origin_axis = u16::from_le_bytes([digest[0], digest[1]]) % 11172;
-        let digest = Sha256::digest(creator.as_bytes());
-        let creator_axis = u16::from_le_bytes([digest[0], digest[1]]) % 11172;
-
-        // Fold the content hash into four axes (time_hi, time_lo, and a
-        // serial combined from the remaining hash bytes).
-        let mut axes = [0u16; 4];
-        for (i, axis) in axes.iter_mut().enumerate() {
-            let lo = content_hash.0.get(i * 2).copied().unwrap_or(0) as u16;
-            let hi = content_hash.0.get(i * 2 + 1).copied().unwrap_or(0) as u16;
-            *axis = u16::from_le_bytes([lo as u8, hi as u8]) % 11172;
-        }
-        let serial = (axes[2] + axes[3]) % 11172;
-        CoordId::from_axes(axes[0], axes[1], entity, origin_axis, creator_axis, serial)
-            .expect("axes are already reduced modulo 11172")
+        let mut h = Sha256::new();
+        h.update(content_hash.0);
+        h.update(entity.to_le_bytes());
+        h.update(origin.as_bytes());
+        h.update(creator.as_bytes());
+        let digest: [u8; 32] = h.finalize().into();
+        CoordId(CoordPath::new(encode_hash_into_coords(&digest)))
     }
 
     /// Content-addressed fact id: [`CoordId::content_id`] with the fact
@@ -104,26 +118,25 @@ impl CoordId<6> {
     }
 
     /// Deterministic canonical id from an arbitrary label: the label is
-    /// content-addressed through the semantic layer. All labels share
-    /// the fixed origin ("label") and creator ("fixture") axes;
-    /// distinctness comes from the label hash axes only. Used by tests
-    /// and external coordination where ids must be stable across runs
-    /// and canonical at the store boundary.
+    /// content-addressed through the semantic layer with the fixed
+    /// origin ("label") and creator ("fixture"). Used by tests and
+    /// external coordination where ids must be stable across runs and
+    /// canonical at the store boundary.
     pub fn from_label(label: &str) -> Self {
         let hash = FihHash(Sha256::digest(label.as_bytes()).into());
         Self::content_id(0, "label", "fixture", &hash)
     }
 
     /// Resolve an id reference to a canonical id. Reference rules: a
-    /// string of exactly 6 Hangul characters is a canonical id and
+    /// string of exactly 20 Hangul characters is a canonical id and
     /// passes through unchanged ([`CoordId::from_string`]); any other
     /// string is a label, derived through the semantic layer
     /// ([`CoordId::from_label`]). A label and its derived canonical form
     /// address the same record.
     ///
-    /// The two namespaces are disjoint by length only: a 6-Hangul
+    /// The two namespaces are disjoint by length only: a 20-Hangul
     /// string is always canonical, never a label, so a label literally
-    /// spelled as 6 Hangul characters cannot be addressed by that
+    /// spelled as 20 Hangul characters cannot be addressed by that
     /// spelling, because `resolve` reads it as a canonical id.
     /// Resolution never fails: a malformed canonical reference silently
     /// becomes a label id for a different record. Strict callers that
@@ -134,7 +147,7 @@ impl CoordId<6> {
     }
 }
 
-// ── N=6 specific methods (default depth) ──────────────────────────────
+// ── N=6 specific methods (explicit CoordId<6> ids only) ──────────────
 
 impl CoordId<6> {
     /// Generate from a 64-bit counter (~1.94e24 unique sequential IDs).
@@ -243,6 +256,47 @@ impl<'de> Deserialize<'de> for CoordId<6> {
             coords[i] = Coord::from_code_point(ch as u16).ok_or_else(|| {
                 serde::de::Error::custom(format!(
                     "CoordId<6> deserialize: char '{ch}' is not a valid coordinate"
+                ))
+            })?;
+        }
+        Ok(CoordId(CoordPath::new(coords)))
+    }
+}
+
+// Display/Serialize/Deserialize for the default depth (20). Kept as
+// explicit impls per depth (generic serde impls cause type inference
+// failures with serde derive).
+
+impl std::fmt::Display for CoordId<20> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for coord in self.0.iter() {
+            write!(f, "{}", coord.to_char())?;
+        }
+        Ok(())
+    }
+}
+
+impl Serialize for CoordId<20> {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for CoordId<20> {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s: String = Deserialize::deserialize(d)?;
+        let chars: Vec<char> = s.chars().collect();
+        if chars.len() != 20 {
+            return Err(serde::de::Error::custom(format!(
+                "CoordId<20> deserialize: expected 20 chars, got {}",
+                chars.len()
+            )));
+        }
+        let mut coords = [Coord::new(0).unwrap(); 20];
+        for (i, &ch) in chars.iter().enumerate() {
+            coords[i] = Coord::from_code_point(ch as u16).ok_or_else(|| {
+                serde::de::Error::custom(format!(
+                    "CoordId<20> deserialize: char '{ch}' is not a valid coordinate"
                 ))
             })?;
         }
@@ -390,7 +444,8 @@ impl PartialEq<&str> for Content {
 // ── FIH Primitives ───────────────────────────────────────────────────────
 
 /// Fact: an immutable state snapshot.
-/// `id` is a Tagma CoordPath (6 syllables) — the primary storage address.
+/// `id` is a Tagma CoordPath (20 syllables, full-injective SHA-256
+/// encoding since Step 4, #176) — the primary storage address.
 /// `content_hash` is SHA-256 of content, used for blob dedup and integrity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Fact {
@@ -405,8 +460,8 @@ impl Fact {
     /// Create a content-addressed Fact.
     ///
     /// The id comes from the semantic layer (`CoordId::content_fact_id`):
-    /// deterministic per content + origin + creator, canonical 6-Hangul,
-    /// with entity/origin/creator/content meaning on dedicated axes.
+    /// deterministic per content + origin + creator, canonical 20-Hangul,
+    /// injectively encoding the full SHA-256.
     /// `content_hash` is computed simultaneously so only one SHA-256
     /// pass is needed.
     pub fn new(origin: String, content: Content, creator: String) -> Self {

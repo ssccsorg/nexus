@@ -53,6 +53,11 @@ const N_CREATORS: usize = 20;
 const N_TIMEBUCKETS: usize = 100;
 const N_INTS: usize = 10_000;
 
+/// Deterministic distinct id for benchmark fixtures (label-derived).
+fn bench_id(seed: u64) -> CoordId {
+    CoordId::from_label(&format!("bench-{seed}"))
+}
+
 /// 10K facts with time-aware CoordId axes (real clock timestamps).
 fn populate_10k(store: &FihStorage<SimIo>) -> u64 {
     let clock = std::time::SystemTime::now()
@@ -60,15 +65,7 @@ fn populate_10k(store: &FihStorage<SimIo>) -> u64 {
         .unwrap()
         .as_nanos() as u64;
     for i in 0..10_000u32 {
-        let cid = CoordId::from_axes(
-            ((clock + i as u64) / 86_400_000_000_000 % 11172) as u16,
-            ((clock + i as u64) % 86_400_000_000_000 % 11172) as u16,
-            0,
-            (i % 50) as u16,
-            (i % 20) as u16,
-            (i / 1000) as u16,
-        )
-        .unwrap();
+        let cid = bench_id(i as u64);
         block_on(store.submit_fact(&Fact::with_id(
             cid,
             format!("origin-{}", i % 50),
@@ -86,7 +83,7 @@ fn populate_10k(store: &FihStorage<SimIo>) -> u64 {
 fn populate_50k(store: &FihStorage<SimIo>) {
     for i in 0..50_000u32 {
         block_on(store.submit_fact(&Fact::with_id(
-            CoordId::new(i as u64),
+            bench_id(i as u64),
             format!("origin-{}", i % 500),
             format!("c-{}", i).into(),
             format!("creator-{}", i % 200),
@@ -104,15 +101,7 @@ fn build_fact_store() -> FihStorage<SimIo> {
     let store = FihStorage::with_clock(io, "multi-axis", Box::new(nex_core::SystemClock));
 
     for i in 0..N_FACTS {
-        let cid = CoordId::from_axes(
-            (i % N_TIMEBUCKETS) as u16,
-            0,
-            0, // entity = Fact
-            (i % N_ORIGINS) as u16,
-            (i % N_CREATORS) as u16,
-            i as u16,
-        )
-        .unwrap();
+        let cid = bench_id(i as u64);
         let fact = Fact::with_id(
             cid,
             format!("origin-{}", i % N_ORIGINS),
@@ -129,28 +118,10 @@ fn build_fact_store() -> FihStorage<SimIo> {
 fn build_intent_store() -> FihStorage<SimIo> {
     let store = build_fact_store();
     for i in 0..N_INTS {
-        let cid = CoordId::from_axes(
-            (i % 10) as u16,
-            0,
-            1, // entity = Intent
-            (i % N_ORIGINS) as u16,
-            (i % N_CREATORS) as u16,
-            (N_FACTS + i) as u16,
-        )
-        .unwrap();
+        let cid = bench_id((N_FACTS + i) as u64);
         let intent = Intent::new(
             cid,
-            vec![
-                CoordId::from_axes(
-                    (i % N_TIMEBUCKETS) as u16,
-                    0,
-                    0,
-                    (i % N_ORIGINS) as u16,
-                    (i % N_CREATORS) as u16,
-                    i as u16,
-                )
-                .unwrap(),
-            ],
+            vec![bench_id(i as u64)],
             None,
             format!("intent-{}", i),
             format!("creator-{}", i % N_CREATORS),
@@ -168,15 +139,7 @@ fn build_knowledge_base() -> FihStorage<SimIo> {
     let store = FihStorage::with_clock(io, "kb", Box::new(nex_core::SystemClock));
 
     for i in 0..10_000 {
-        let cid = CoordId::from_axes(
-            (i / 2000) as u16,        // [0] time: every 2000 docs = 1 time bucket
-            (i % 2000) as u16,        // [1] sequence within bucket
-            0,                        // [2] entity: Fact
-            (i % 10) as u16,          // [3] origin: project (0..9)
-            ((i / 1000) % 20) as u16, // [4] creator: author (0..19)
-            i as u16,                 // [5] serial
-        )
-        .unwrap();
+        let cid = bench_id(i as u64);
         let fact = Fact::with_id(
             cid,
             format!("project-{}", i % 10),
@@ -188,16 +151,8 @@ fn build_knowledge_base() -> FihStorage<SimIo> {
 
     for i in 0..1000 {
         let fact_idx = 10_000 - 1000 + i; // last 1000 facts
-        let cid = CoordId::from_axes(
-            (fact_idx / 2000) as u16,
-            (fact_idx % 2000) as u16,
-            0,
-            (fact_idx % 10) as u16,
-            ((fact_idx / 1000) % 20) as u16,
-            fact_idx as u16,
-        )
-        .unwrap();
-        let intent_id = CoordId::from_axes(50, i as u16, 1, 0, 0, (200_000 + i) as u16).unwrap();
+        let cid = bench_id(fact_idx as u64);
+        let intent_id = bench_id((200_000 + i) as u64);
         let intent = Intent::new(
             intent_id,
             vec![cid],
@@ -520,9 +475,7 @@ fn bench_fih_write_10k(c: &mut Criterion) {
             |io| {
                 let store = FihStorage::with_clock(io, "write", Box::new(nex_core::SystemClock));
                 for i in 0..10_000 {
-                    let cid =
-                        CoordId::from_axes(0, 0, 0, (i % 50) as u16, (i % 20) as u16, i as u16)
-                            .unwrap();
+                    let cid = bench_id(i as u64);
                     let fact = Fact::with_id(
                         cid,
                         format!("origin-{}", i % 50),
@@ -586,15 +539,7 @@ fn bench_kb_query(c: &mut Criterion) {
         b.iter(|| {
             for i in 0..100 {
                 let fidx = 10_000 - 1000 + i * 10;
-                let cid = CoordId::from_axes(
-                    (fidx / 2000) as u16,
-                    (fidx % 2000) as u16,
-                    0,
-                    (fidx / 10000) as u16,
-                    ((fidx / 1000) % 20) as u16,
-                    fidx as u16,
-                )
-                .unwrap();
+                let cid = bench_id(fidx as u64);
                 black_box(store.intents_by_fact(&cid.to_string()));
             }
         });
@@ -626,7 +571,7 @@ fn bench_kb_query(c: &mut Criterion) {
 fn build_reopened_conflict_store(n: usize) -> FihStorage<SimIo> {
     let io = SimIo::new();
     for i in 0..n {
-        let cid = CoordId::from_axes(0, 0, 0, (i % 50) as u16, (i % 20) as u16, i as u16).unwrap();
+        let cid = bench_id(i as u64);
         let fact = Fact::with_id(
             cid,
             format!("conclusion:{}", i % 50),
@@ -672,7 +617,7 @@ fn bench_conflict(c: &mut Criterion) {
     // the earlier measurements.
     group.bench_function("check_conflict_existing_id_after_reopen_100", |b| {
         let store = build_reopened_conflict_store(100);
-        let cid = CoordId::from_axes(0, 0, 0, 0, 0, 0u16).unwrap();
+        let cid = bench_id(0);
         let fact = Fact::with_id(
             cid,
             "conclusion:0".into(),
@@ -692,7 +637,7 @@ fn bench_conflict(c: &mut Criterion) {
     // Same id, same content after reopen: an idempotent retry. No mutation.
     group.bench_function("check_idempotent_existing_id_after_reopen_100", |b| {
         let store = build_reopened_conflict_store(100);
-        let cid = CoordId::from_axes(0, 0, 0, 0, 0, 0u16).unwrap();
+        let cid = bench_id(0);
         let fact = Fact::with_id(
             cid,
             "conclusion:0".into(),

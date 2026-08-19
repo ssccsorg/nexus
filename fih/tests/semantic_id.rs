@@ -1,10 +1,12 @@
 // Semantic id layer contract tests.
 //
-// The semantic layer maps domain meaning onto CoordId axes before
-// insertion: content_id (entity/origin/creator/content axes), from_label
+// The semantic layer derives full-injective CoordId<20> addresses:
+// content_id (SHA-256 over content hash + entity + origin + creator,
+// encoded injectively into 20 base-11172 coordinates), from_label
 // (content-addressed labels), resolve (canonical pass-through or label
 // derivation), and the canonical-only from_string parser. These tests
-// pin determinism, distinctness, axis structure, and canonical form.
+// pin determinism, distinctness, and canonical form. Id coordinates are
+// opaque since the migration: the old axis-layout contract is gone.
 
 use fih_model::{Content, CoordId, Fact, FihHash};
 use sha2::{Digest, Sha256};
@@ -38,26 +40,16 @@ fn content_id_distinguishes_origin_and_creator() {
 }
 
 #[test]
-fn content_id_axis_structure() {
-    // Entity kind occupies axis 2; origin and creator fingerprints
-    // occupy axes 3 and 4.
-    let fact = CoordId::content_id(0, "origin", "creator", &hash(b"x"));
-    let intent = CoordId::content_id(1, "origin", "creator", &hash(b"x"));
-    assert_eq!(fact.coord_at(2).index(), 0, "fact entity axis is 0");
-    assert_eq!(intent.coord_at(2).index(), 1, "intent entity axis is 1");
-    assert_eq!(fact.coord_at(3), intent.coord_at(3), "same origin axis");
-    assert_eq!(fact.coord_at(4), intent.coord_at(4), "same creator axis");
-    let other = CoordId::content_id(0, "other", "creator", &hash(b"x"));
-    assert_ne!(fact.coord_at(3), other.coord_at(3), "origin axis differs");
-}
-
-#[test]
 fn content_id_is_canonical() {
     let id = CoordId::content_id(0, "origin", "creator", &hash(b"x"));
     let s = id.to_string();
-    assert_eq!(s.chars().count(), 6, "canonical id is 6 Hangul characters");
     assert_eq!(
-        CoordId::<6>::from_string(&s),
+        s.chars().count(),
+        20,
+        "canonical id is 20 Hangul characters"
+    );
+    assert_eq!(
+        CoordId::<20>::from_string(&s),
         Some(id),
         "canonical string round-trips"
     );
@@ -70,8 +62,8 @@ fn from_label_is_deterministic_and_canonical() {
     assert_eq!(a, b, "same label must produce the same id");
     assert_ne!(a, CoordId::from_label("fixture-b"));
     let s = a.to_string();
-    assert_eq!(s.chars().count(), 6);
-    assert_eq!(CoordId::<6>::from_string(&s), Some(a));
+    assert_eq!(s.chars().count(), 20);
+    assert_eq!(CoordId::<20>::from_string(&s), Some(a));
 }
 
 #[test]
@@ -91,23 +83,26 @@ fn resolve_accepts_canonical_and_label_equivalently() {
     );
     assert_eq!(
         CoordId::resolve(&canonical),
-        CoordId::<6>::from_string(&canonical).unwrap()
+        CoordId::<20>::from_string(&canonical).unwrap()
     );
 }
 
 #[test]
 fn from_string_is_canonical_only() {
-    let canonical = CoordId::new(42);
+    let canonical = CoordId::from_label("fixture");
+    let s = canonical.to_string();
+    assert_eq!(s.chars().count(), 20);
     assert_eq!(
-        CoordId::<6>::from_string(&canonical.to_string()),
-        Some(canonical)
+        CoordId::<20>::from_string(&s),
+        Some(canonical),
+        "canonical 20-char string round-trips"
     );
-    assert_eq!(CoordId::<6>::from_string("not-hangul-id"), None);
-    assert_eq!(CoordId::<6>::from_string(""), None);
+    assert_eq!(CoordId::<20>::from_string("not-hangul-id"), None);
+    assert_eq!(CoordId::<20>::from_string(""), None);
     assert_eq!(
-        CoordId::<6>::from_string("가나다라마"),
+        CoordId::<20>::from_string("가나다라마바"),
         None,
-        "wrong length is not canonical"
+        "a 6-Hangul string is a label at depth 20, not canonical"
     );
 }
 
@@ -121,5 +116,9 @@ fn fact_new_is_content_addressed() {
     );
     let f3 = Fact::new("origin".into(), Content::from("world"), "creator".into());
     assert_ne!(f1.id, f3.id, "different content produces a different id");
-    assert_eq!(f1.id.to_string().chars().count(), 6, "fact id is canonical");
+    assert_eq!(
+        f1.id.to_string().chars().count(),
+        20,
+        "fact id is canonical 20 Hangul"
+    );
 }
