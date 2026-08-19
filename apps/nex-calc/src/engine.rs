@@ -13,7 +13,9 @@
 //   blob/{blob_hash}.bin          ← i64 little-endian bytes
 //   blob/{blob_hash}.bin.meta     ← ContentMeta (mime type, size)
 //
-// The FihHash is content-addressed: SHA256(value_string + tag).
+// The FihHash is content-addressed: SHA256 of the little-endian value
+// bytes, the same derivation make_number_fact_id uses, so the blob key,
+// the record hash, and the id agree.
 
 use std::fmt;
 
@@ -22,7 +24,7 @@ use sha2::{Digest, Sha256};
 use nex::FileIo;
 use nex::storage::core::intent_status::IntentStatus;
 use nex::storage::core::record::ContentMeta;
-use nex::storage::core::store::{FihStorage, Record, record_to_path};
+use nex::storage::core::store::{FihStorage, Record, structural_path};
 use nex_fih::{Content, CoordId, FihHash};
 use nexus_storage_sim::SimIo;
 
@@ -101,15 +103,16 @@ impl CalcEngine {
         }
 
         let data = value.to_le_bytes().to_vec();
-        let blob_hash = content_hash(&data);
+        // Content-addressed by the data bytes, matching
+        // make_number_fact_id, so the blob key, the record hash, and the
+        // id agree (the record layer reads content by blob_hash).
+        let content_hash = FihHash(Sha256::digest(value.to_le_bytes()).into());
+        let blob_hash = content_hash.to_string();
         let blob_path = format!("blob/{}.bin", blob_hash);
 
         // Write content blob and metadata via the IO layer.
         let _ = self.storage.io.write(&blob_path, &data).await;
         write_blob_meta(&self.storage.io, &blob_hash, NUMBER_MIME, data.len()).await;
-
-        // Build content hash from the value string (consistent with make_number_fact_id).
-        let content_hash = FihHash::new(&[&value.to_string()], "nex-calc");
 
         let record = Record::Fact {
             content: Content {
@@ -122,15 +125,15 @@ impl CalcEngine {
             submitted_at: 0,
         };
 
-        let path = record_to_path(0u16, "nex-calc", "user", 0u16, &id_str, 0);
-        self.storage.place_record(&path, record);
+        let path = structural_path(0u16, "nex-calc", "user", 0u16, 0);
+        self.storage.place_record(&path, &id_str, record);
         id
     }
 
     /// Read a number from a Fact.
     pub async fn get(&self, fact_id: &CoordId) -> Option<i64> {
         let (content, _content_hash, _origin, _creator) =
-            self.storage.get_fact_by_id(&fact_id.to_string())?;
+            self.storage.get_fact_by_id(&fact_id.to_string()).await?;
         if content.data.len() != 8 {
             return None;
         }
@@ -183,8 +186,8 @@ impl CalcEngine {
             created_at: now,
         };
 
-        let path = record_to_path(1u16, "", "user", 0u16, &id_str, now);
-        self.storage.place_record(&path, record);
+        let path = structural_path(1u16, "", "user", 0u16, now);
+        self.storage.place_record(&path, &id_str, record);
         Ok(id)
     }
 
@@ -242,15 +245,16 @@ impl CalcEngine {
         let result_id_str = result_id.to_string();
         if !self.storage.fact_exists(&result_id_str) {
             let data = raw_result.to_le_bytes().to_vec();
-            let bh = content_hash(&data);
+            // Same data-bytes derivation as put and make_number_fact_id,
+            // so the blob key and the record hash agree.
+            let content_hash = FihHash(Sha256::digest(raw_result.to_le_bytes()).into());
+            let bh = content_hash.to_string();
             let _ = self
                 .storage
                 .io
                 .write(&format!("blob/{}.bin", bh), &data)
                 .await;
             write_blob_meta(&self.storage.io, &bh, NUMBER_MIME, data.len()).await;
-
-            let content_hash = FihHash::new(&[&raw_result.to_string()], "nex-calc");
             let rec = Record::Fact {
                 content: Content {
                     data,
@@ -268,8 +272,8 @@ impl CalcEngine {
                 } => (origin.clone(), creator.clone()),
                 _ => unreachable!(),
             };
-            let path = record_to_path(0u16, &fact_origin, &fact_creator, 0u16, &result_id_str, 0);
-            self.storage.place_record(&path, rec);
+            let path = structural_path(0u16, &fact_origin, &fact_creator, 0u16, 0);
+            self.storage.place_record(&path, &result_id_str, rec);
         }
 
         // Mark intent concluded: vacate old path, insert at new path with Concluded status.
@@ -286,10 +290,10 @@ impl CalcEngine {
             worker: "nex-calc".into(),
         };
         // Remove old entry.
-        let old_path = record_to_path(1u16, "", "user", old_status_coord, &id_str, created_at);
-        self.storage.vacate_record(&old_path);
+        let old_path = structural_path(1u16, "", "user", old_status_coord, created_at);
+        self.storage.vacate_record(&old_path, &id_str);
         // Insert new entry.
-        let new_path = record_to_path(1u16, "", "user", 2u16, &id_str, created_at);
+        let new_path = structural_path(1u16, "", "user", 2u16, created_at);
         let new_record = Record::Intent {
             from_facts,
             description_hash,
@@ -297,7 +301,7 @@ impl CalcEngine {
             status: new_status,
             created_at,
         };
-        self.storage.place_record(&new_path, new_record);
+        self.storage.place_record(&new_path, &id_str, new_record);
 
         Ok(ResolvedIntent {
             intent_id: *intent_id,
@@ -325,8 +329,8 @@ impl CalcEngine {
                 creator: "user".into(),
                 submitted_at: now,
             };
-            let path = record_to_path(2u16, "", "user", 0u16, &id_str, now * 1_000_000_000);
-            self.storage.place_record(&path, record);
+            let path = structural_path(2u16, "", "user", 0u16, now * 1_000_000_000);
+            self.storage.place_record(&path, &id_str, record);
         }
         id
     }
@@ -335,15 +339,8 @@ impl CalcEngine {
         let ids: Vec<String> = self.storage.all_hint_ids();
         for id_str in ids {
             if let Some((_content, _creator, submitted_at)) = self.storage.get_hint_by_id(&id_str) {
-                let path = record_to_path(
-                    2u16,
-                    "",
-                    "user",
-                    0u16,
-                    &id_str,
-                    submitted_at * 1_000_000_000,
-                );
-                self.storage.vacate_record(&path);
+                let path = structural_path(2u16, "", "user", 0u16, submitted_at * 1_000_000_000);
+                self.storage.vacate_record(&path, &id_str);
             }
         }
     }
@@ -354,7 +351,7 @@ impl CalcEngine {
         let ids = self.storage.all_fact_ids();
         let mut out = Vec::with_capacity(ids.len());
         for id_str in ids {
-            if let Some((content, _, _, _)) = self.storage.get_fact_by_id(&id_str)
+            if let Some((content, _, _, _)) = self.storage.get_fact_by_id(&id_str).await
                 && content.data.len() == 8
             {
                 let mut arr = [0u8; 8];
@@ -452,9 +449,9 @@ impl Default for CalcEngine {
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-// CoordPath<12> convention, matching store.rs:
+// CoordPath<6> convention, matching store.rs:
 //   [0] time_hi, [1] time_lo, [2] entity, [3] origin, [4] creator,
-//   [5] status, [6-11] identity.
+//   [5] status.
 // ── Blob IO ───────────────────────────────────────────────────────
 
 async fn write_blob_meta(io: &SimIo, blob_hash: &str, mime: &str, size: usize) {
@@ -466,12 +463,6 @@ async fn write_blob_meta(io: &SimIo, blob_hash: &str, mime: &str, size: usize) {
     let _ = io
         .write(&format!("blob/{}.bin.meta", blob_hash), &meta_bytes)
         .await;
-}
-
-fn content_hash(data: &[u8]) -> String {
-    let mut h = Sha256::new();
-    h.update(data);
-    format!("{:x}", h.finalize())
 }
 
 fn nanos() -> u64 {

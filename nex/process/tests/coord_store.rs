@@ -1,10 +1,11 @@
-// Unified 12-axis store synchronization (#170).
+// Record-layer synchronization after reopen (#170, L2 restructure #176).
 //
-// The submit paths place records into the 12-axis coordinate store, and
-// rebuild_cache repopulates it from io. Id enumeration and status reads
-// therefore work after a reopen, which they did not before: the store
-// was only populated by direct place_record callers like nex-calc, so
-// all_*_ids returned empty after a reopen.
+// The submit paths place records into the record layer (record maps +
+// structural index), and rebuild_cache repopulates it from io. Id
+// enumeration and status reads therefore work after a reopen, which they
+// did not before: the record maps were only populated by direct
+// place_record callers like nex-calc, so all_*_ids returned empty after
+// a reopen.
 
 use futures_executor::block_on;
 use nex_fih::{
@@ -76,8 +77,8 @@ fn submit_paths_populate_id_enumeration_after_reopen() {
             assert_eq!(store.all_hint_ids().len(), 1);
         }
         {
-            // Reopen: the hash maps are empty, so enumeration falls back
-            // to the 12-axis store, which rebuild_cache must have filled.
+            // Reopen: the record maps are empty, so enumeration reads
+            // from the record maps that rebuild_cache must have filled.
             let store = FihStorage::new(io, "coord");
             store.rebuild_cache().await.unwrap();
             let fids = store.all_fact_ids();
@@ -254,6 +255,7 @@ fn conclusion_fact_content_survives_reopen() {
             let canonical = CoordId::resolve(&format!("f_concl_{intent_id}")).to_string();
             let (content, hash, origin, _creator) = store
                 .get_fact_by_id(&canonical)
+                .await
                 .expect("conclusion fact readable after reopen");
             assert_eq!(String::from_utf8_lossy(&content.data), "resolved");
             assert_eq!(origin, format!("conclusion:{intent_id}"));

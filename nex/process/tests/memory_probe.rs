@@ -8,21 +8,22 @@
 // The test binary installs a counting global allocator so the live heap
 // footprint of FihStorage is observable. Facts are placed through
 // submit_fact with identity coordinates varying across all six axes (the
-// pseudo-random content-derived ids nexus actually uses), so each record
-// forces a fresh branch at every identity level and a per-record leaf.
+// pseudo-random content-derived ids nexus actually uses), so the record
+// layer gets one entry per record.
 //
-// Measured with this probe (16 facts):
-//   - before Step 1 (19 axes, serial-only identity variation): 3.40 MB/fact
-//   - after Step 1  (12 axes, serial-only identity variation): 1.35 MB/fact
-//   - after Step 1  (12 axes, full identity variation):        3.58 MB/fact
+// Measured with this probe (16 facts, full identity variation):
+//   - before Step 1 (19 axes):               3.40 MB/fact
+//   - after Step 1  (12 axes):               3.58 MB/fact
+//   - after Step 2  (6-axis filter index):  40 KB/fact average
+//                                            ~500 B/fact marginal (last
+//                                            fact, steady state)
 //
-// The gap between the serial-only and full-variation figures is the leaf:
-// CoordSpaceN keys the leaf node by the second-to-last coordinate
-// (coord N-2), so records sharing that coordinate share one leaf. With
-// pseudo-random ids every identity coordinate varies, the leaf is
-// per-record again, and the Step 1 saving is bounded by the seven removed
-// 89 KB branch nodes (~0.6 MB/fact). The 0.5 MB/fact target requires the
-// L2 restructure, where the tree stops storing full records.
+// The Step 2 drop is the L2 restructure: the tree holds id sets at
+// structural paths (memory bounded by axis cardinality, the ~650 KB
+// one-time cost of the probe's structural space), the record bodies live
+// in HashMap record maps, and the id-keyed entity stores are
+// HashMap-backed. The 0.5 MB/fact target from the briefing is exceeded:
+// the remaining per-record cost is a few hundred bytes.
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -79,14 +80,20 @@ fn report_per_fact_heap_cost() {
     const N: usize = 16;
     let store = FihStorage::new(SimIo::new(), "memory-probe");
     let baseline = LIVE.load(Ordering::Relaxed);
+    let mut prev = baseline;
+    let mut last_marginal = 0;
     for i in 0..N {
         block_on(store.submit_fact(&fact_at(i as u32))).unwrap();
+        let now = LIVE.load(Ordering::Relaxed);
+        last_marginal = now - prev;
+        prev = now;
     }
     let delta = LIVE.load(Ordering::Relaxed) - baseline;
     println!(
-        "per-fact live heap cost: {} bytes ({} facts, total delta {} bytes)",
+        "per-fact live heap cost: {} bytes average ({} facts, total delta {} bytes); last-fact marginal: {} bytes",
         delta / N,
         N,
-        delta
+        delta,
+        last_marginal
     );
 }

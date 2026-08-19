@@ -75,7 +75,7 @@ impl CoordId<6> {
     /// modulo 11172, so the id carries about 40 bits of content-derived
     /// entropy, not the full 256 bits of the SHA-256 hash. The
     /// origin/creator fingerprints are advisory (13.4-bit, like the
-    /// 12-axis store): the axes provide ordering, not exact identity.
+    /// structural index): the axes provide ordering, not exact identity.
     /// This id is an ordering and query key; exact content identity
     /// stays in `Fact::content_hash`.
     pub fn content_id(entity: u16, origin: &str, creator: &str, content_hash: &FihHash) -> Self {

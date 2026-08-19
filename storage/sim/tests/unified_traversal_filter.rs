@@ -1,15 +1,15 @@
-// ── Unified 12-axis traversal filter tests ─────────────────────────────
+// ── Record-layer traversal filter tests ─────────────────────────────
 //
-// read_state_filtered now iterates the single 12-axis coordinate store
-// instead of the per-type fast-path indexes. These tests lock in the
-// behaviors the unified traversal provides uniformly:
+// read_state_filtered iterates the application-layer record maps (the
+// authoritative record layer since the L2 restructure, #176). These
+// tests lock in the behaviors the unified traversal provides uniformly:
 //
 //   - creator filters return intents and hints alongside facts (the old
 //     fast paths returned empty intent and hint lists)
 //   - offset and limit apply on creator-filtered facts (the old fast
 //     paths ignored offset)
-//   - fact content is materialized from the in-memory record, so reads
-//     see full data without a pending blob
+//   - fact content is materialized from pending blobs, so reads
+//     see full data without a flush
 //   - intent time filters apply over the unified traversal
 //   - hint_ids filtering matches on identity coordinates
 

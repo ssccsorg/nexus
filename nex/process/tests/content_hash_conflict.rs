@@ -8,7 +8,7 @@
 // silently overwriting the earlier record.
 
 use futures_executor::block_on;
-use nex_fih::core::store::{Record, record_to_path};
+use nex_fih::core::store::{Record, structural_path};
 use nex_fih::{
     AsyncFactCapable, AsyncStorageRead, BlackboardError, Content, CoordId, EntityStore, Fact,
     FactRecord, FihStorage,
@@ -89,9 +89,10 @@ fn conflict_detected_against_direct_writer_record() {
         let store = FihStorage::new(SimIo::new(), "direct-writer");
         let f = fact("f_g", b"direct-original");
         let id_str = f.id.to_string();
-        let path = record_to_path(0u16, "", "user", 0u16, &id_str, 0);
+        let path = structural_path(0u16, "", "user", 0u16, 0);
         store.place_record(
             &path,
+            &id_str,
             Record::Fact {
                 content: f.content.clone(),
                 content_hash: f.content_hash,
@@ -116,9 +117,10 @@ fn idempotent_against_direct_writer_record() {
         let store = FihStorage::new(SimIo::new(), "direct-idem");
         let f = fact("f_h", b"direct-same");
         let id_str = f.id.to_string();
-        let path = record_to_path(0u16, "", "user", 0u16, &id_str, 0);
+        let path = structural_path(0u16, "", "user", 0u16, 0);
         store.place_record(
             &path,
+            &id_str,
             Record::Fact {
                 content: f.content.clone(),
                 content_hash: f.content_hash,
@@ -129,10 +131,11 @@ fn idempotent_against_direct_writer_record() {
         );
         let id = store.submit_fact(&f).await.unwrap();
         assert_eq!(id, f.id);
-        // The idempotent path is a no-op: it must not add a record to the
-        // same-session record map. (Direct-writer records live in the
-        // unified store, not in the read-path entity stores.)
-        assert_eq!(store.fact_records.borrow().len(), 0);
+        // The idempotent path is a no-op at the record layer: it must not
+        // add a second record to the same-session record map. The direct
+        // writer's record is present once (place_record maintains the
+        // record maps since the L2 restructure).
+        assert_eq!(store.fact_records.borrow().len(), 1);
     });
 }
 

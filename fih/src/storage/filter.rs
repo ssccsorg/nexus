@@ -32,8 +32,9 @@ pub struct StateFilter {
     ///
     /// Reserved: the concept is part of the spatial query surface (leading
     /// axis prefix pruning) and is preserved as designed. The current
-    /// FihStorage implementation traverses the unified 12-axis store with
-    /// record-field predicates and does not consume them yet; wiring the
+    /// FihStorage implementation scans the record layer with
+    /// record-field predicates; the structural filter index is maintained
+    /// for spatial queries and does not consume them yet; wiring the
     /// prefix-query path is a pending optimization, not a removal.
     pub axis_hints: Option<AxisHints>,
 }
