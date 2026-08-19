@@ -172,6 +172,13 @@ pub struct FihStorage<I: FileIo> {
     /// this index is the sole defender against same-id collisions.
     /// Facts are append-only, so the index only grows.
     fact_id_index: Cell2<HashMap<String, FihHash>>,
+    /// From-fact to intent ids inverse index (Step 3, #176). Kept in sync
+    /// by `place_record` (link) and `vacate_record` (unlink) for every
+    /// intent, so `intents_by_fact` is O(fan-out) instead of an O(N)
+    /// scan. Keys are the canonical CoordId strings stored in
+    /// `IntentRecord::from_facts`; concluded intents stay linked (their
+    /// from_facts never change).
+    fact_to_intents: Cell2<HashMap<String, Vec<String>>>,
     // Semantic stores (for similarity search).
     semantic_stores: Cell2<Vec<crate::semantic::DynSemanticStore>>,
     /// Counter for assigning semantic IDs to facts incrementally.
@@ -216,6 +223,7 @@ impl<I: FileIo> FihStorage<I> {
             intent_records: Cell2::new(HashMap::new()),
             hint_records: Cell2::new(HashMap::new()),
             fact_id_index: Cell2::new(HashMap::new()),
+            fact_to_intents: Cell2::new(HashMap::new()),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
             pending: Cell2::new(Vec::new()),
@@ -241,6 +249,7 @@ impl<I: FileIo> FihStorage<I> {
             intent_records: Cell2::new(HashMap::new()),
             hint_records: Cell2::new(HashMap::new()),
             fact_id_index: Cell2::new(HashMap::new()),
+            fact_to_intents: Cell2::new(HashMap::new()),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
             pending: Cell2::new(Vec::new()),
@@ -462,17 +471,20 @@ impl<I: FileIo> FihStorage<I> {
     }
 
     /// Query intents that reference a given fact.
-    /// The fact_id is resolved via CoordId::resolve to match the canonical
-    /// CoordId format stored in IntentRecord.from_facts.
+    ///
+    /// The from-fact to intent inverse index is kept in sync by
+    /// `place_record` and `vacate_record` (Step 3, #176), so this is an
+    /// O(fan-out) lookup instead of an O(N) scan. The fact_id is resolved
+    /// via CoordId::resolve to match the canonical CoordId format stored
+    /// in IntentRecord.from_facts. Concluded intents remain referenced
+    /// (their from_facts never change).
     pub fn intents_by_fact(&self, fact_id: &str) -> Vec<String> {
         let normalized = crate::CoordId::resolve(fact_id).to_string();
-        let intent_records: Vec<IntentRecord> =
-            futures_executor::block_on(self.intent_store.values());
-        intent_records
-            .iter()
-            .filter(|r| r.from_facts.iter().any(|f| f == &normalized))
-            .map(|r| r.id.clone())
-            .collect()
+        self.fact_to_intents
+            .borrow()
+            .get(&normalized)
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// Direct record placement (for special cases like nex-calc) and the
@@ -544,6 +556,16 @@ impl<I: FileIo> FihStorage<I> {
                         created_at: *created_at,
                     },
                 );
+                // Link the inverse index: this intent references each
+                // from-fact (Step 3, #176). Status moves relink the same
+                // from_facts, so the net entry is unchanged.
+                let mut index = self.fact_to_intents.borrow_mut();
+                for fact in from_facts {
+                    let entry = index.entry(fact.clone()).or_default();
+                    if !entry.iter().any(|x| x == id) {
+                        entry.push(id.to_string());
+                    }
+                }
             }
             Record::Hint {
                 content,
@@ -579,10 +601,11 @@ impl<I: FileIo> FihStorage<I> {
     /// Direct record removal (for special cases like nex-calc).
     ///
     /// Removes `id` from the authoritative record map (the entity axis
-    /// [2] selects fact/intent/hint) and from the id set at the
-    /// structural path. Facts are append-only, so vacate is used only for
-    /// intents (status moves) and hints; the fact branches exist for
-    /// completeness and also clean the matching map.
+    /// [2] selects fact/intent/hint), from the inverse index (intents),
+    /// and from the id set at the structural path. Facts are
+    /// append-only, so vacate is used only for intents (status moves)
+    /// and hints; the fact branches exist for completeness and also
+    /// clean the matching map.
     pub fn vacate_record(&self, path: &tagma_core::CoordPath<6>, id: &str) {
         match path.coords()[2].index() {
             0 => {
@@ -590,6 +613,21 @@ impl<I: FileIo> FihStorage<I> {
                 self.fact_id_index.borrow_mut().remove(id);
             }
             1 => {
+                // Unlink the inverse index before removing the record:
+                // the record map still holds the intent, so its
+                // from_facts are available.
+                let from_facts: Vec<String> = self
+                    .intent_records
+                    .borrow()
+                    .get(id)
+                    .map(|r| r.from_facts.clone())
+                    .unwrap_or_default();
+                let mut index = self.fact_to_intents.borrow_mut();
+                for fact in from_facts {
+                    if let Some(entry) = index.get_mut(&fact) {
+                        entry.retain(|x| x != id);
+                    }
+                }
                 self.intent_records.borrow_mut().remove(id);
             }
             2 => {

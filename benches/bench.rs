@@ -23,11 +23,12 @@
 //   fih/axis_hints_no          127 µs          (full scan fallback)
 //   fih/axis_hints_with        42.1 µs         (iter_prefix fast path)
 //   fih/write_10k_facts        51.9 ms         (batch write + flush)
-//   fih/intents_by_fact_100    743 ms          (100 calls, ~7.4 ms/call)
+//   fih/intents_by_fact_100    743 ms          (100 calls, ~7.4 ms/call, pre-index)
 //   kb_query/project_author    70.2 µs         (origin+creator AND, 500 hits)
 //   kb_query/project_only      260 µs          (single-axis, 1000 hits)
 //   kb_query/project_time_range 70.4 µs        (origin+creator+time)
-//   kb_query/intents_by_fact   6.04 s / 100    (O(fan-out) scan, known cost)
+//   kb_query/intents_by_fact   6.04 s / 100    (pre-index O(N) scan)
+//   fih/intents_by_fact_index  O(fan-out)      (inverse index, Step 3 #176)
 //
 // Paradigm framing: HashMap (full scan) vs Tagma (CoordSpaceN index +
 // fast-path tables). The old 28 ms full-scan ceiling is broken by paying
