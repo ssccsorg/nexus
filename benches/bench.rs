@@ -620,7 +620,7 @@ fn bench_kb_query(c: &mut Criterion) {
 /// Reopen a FihStorage holding `n` facts. The records and blobs are
 /// written to IO directly (a pre-existing on-disk state), then
 /// `rebuild_cache` loads them: the in-memory record map is empty and the
-/// id-keyed entity store plus the unified 19-axis store are populated.
+/// id-keyed entity store plus the unified 12-axis store are populated.
 fn build_reopened_conflict_store(n: usize) -> FihStorage<SimIo> {
     let io = SimIo::new();
     for i in 0..n {
@@ -664,10 +664,10 @@ fn bench_conflict(c: &mut Criterion) {
     // Same id, different content after reopen: the check must find the
     // occupied id and reject. No mutation, so every iteration measures the
     // detection path alone. Store size is bounded at 100 records: the
-    // 19-axis CoordSpaceN tree allocates a fixed 11172-slot array (89 KB)
-    // per branch node and the seven content-hash axes create ~7 unique
-    // branch levels per record (~3.3 MB/record at 1k), so larger stores
-    // exhaust memory before the check cost is measurable.
+    // 12-axis CoordSpaceN tree allocates a fixed 11172-slot array (89 KB)
+    // per branch node and the six identity axes create ~6 unique branch
+    // levels per record (~2 MB/record at 1k, leaf-dominated), so larger
+    // stores exhaust memory before the check cost is measurable.
     group.bench_function("check_conflict_existing_id_after_reopen_100", |b| {
         let store = build_reopened_conflict_store(100);
         let cid = CoordId::from_axes(0, 0, 0, 0, 0, 0u16).unwrap();

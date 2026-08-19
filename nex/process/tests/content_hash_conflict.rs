@@ -89,7 +89,7 @@ fn conflict_detected_against_direct_writer_record() {
         let store = FihStorage::new(SimIo::new(), "direct-writer");
         let f = fact("f_g", b"direct-original");
         let id_str = f.id.to_string();
-        let path = record_to_path(0u16, "", "user", 0u16, &id_str, 0, &f.content_hash);
+        let path = record_to_path(0u16, "", "user", 0u16, &id_str, 0);
         store.place_record(
             &path,
             Record::Fact {
@@ -116,7 +116,7 @@ fn idempotent_against_direct_writer_record() {
         let store = FihStorage::new(SimIo::new(), "direct-idem");
         let f = fact("f_h", b"direct-same");
         let id_str = f.id.to_string();
-        let path = record_to_path(0u16, "", "user", 0u16, &id_str, 0, &f.content_hash);
+        let path = record_to_path(0u16, "", "user", 0u16, &id_str, 0);
         store.place_record(
             &path,
             Record::Fact {

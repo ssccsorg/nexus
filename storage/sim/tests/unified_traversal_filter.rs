@@ -1,6 +1,6 @@
-// ── Unified 19-axis traversal filter tests ─────────────────────────────
+// ── Unified 12-axis traversal filter tests ─────────────────────────────
 //
-// read_state_filtered now iterates the single 19-axis coordinate store
+// read_state_filtered now iterates the single 12-axis coordinate store
 // instead of the per-type fast-path indexes. These tests lock in the
 // behaviors the unified traversal provides uniformly:
 //

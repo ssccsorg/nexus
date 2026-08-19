@@ -1,6 +1,6 @@
-// Unified 19-axis store synchronization (#170).
+// Unified 12-axis store synchronization (#170).
 //
-// The submit paths place records into the 19-axis coordinate store, and
+// The submit paths place records into the 12-axis coordinate store, and
 // rebuild_cache repopulates it from io. Id enumeration and status reads
 // therefore work after a reopen, which they did not before: the store
 // was only populated by direct place_record callers like nex-calc, so
@@ -77,7 +77,7 @@ fn submit_paths_populate_id_enumeration_after_reopen() {
         }
         {
             // Reopen: the hash maps are empty, so enumeration falls back
-            // to the 19-axis store, which rebuild_cache must have filled.
+            // to the 12-axis store, which rebuild_cache must have filled.
             let store = FihStorage::new(io, "coord");
             store.rebuild_cache().await.unwrap();
             let fids = store.all_fact_ids();

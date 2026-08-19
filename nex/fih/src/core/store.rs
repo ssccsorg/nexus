@@ -52,7 +52,7 @@ use crate::io::file_io::{FileIo, WriteOp, default_apply_batch};
 use crate::semantic::record::{Query, RecordLoad};
 use std::collections::HashMap;
 
-/// Unified in-memory record enum for single CoordSpaceN<19> store.
+/// Unified in-memory record enum for single CoordSpaceN<12> store.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub enum Record {
     Fact {
@@ -76,23 +76,8 @@ pub enum Record {
     },
 }
 
-/// Encode up to 112 bits of a FihHash into 7 contiguous Coord axes.
-///
-/// Each axis holds log₂(11172) ≈ 13.45 bits. 7 axes × 13.45 ≈ 94 effective bits.
-/// Uses bytes [0..14) of the hash (112 bits), paired into 7 u16 values,
-/// each reduced modulo 11172. Zero hash (all bytes 0) keeps axes at zero.
-fn encode_hash_into_axes(hash: &FihHash, axes: &mut [tagma_core::Coord; 7]) {
-    use tagma_core::Coord;
-    for (i, axis) in axes.iter_mut().enumerate() {
-        let lo = hash.0.get(i * 2).copied().unwrap_or(0) as u16;
-        let hi = hash.0.get(i * 2 + 1).copied().unwrap_or(0) as u16;
-        let idx = (u16::from_le_bytes([lo as u8, hi as u8])) % 11172;
-        *axis = Coord::new(idx).unwrap_or_else(|| Coord::new(0).unwrap());
-    }
-}
-
 /// Deterministic u16 fingerprint for an arbitrary string, used for the
-/// origin/creator axes of the 19-axis store.
+/// origin/creator axes of the 12-axis store.
 ///
 /// Advisory only: the fingerprint is a 13.4-bit SHA-256 prefix, so
 /// collisions are possible. Record-field predicates compare exact
@@ -105,11 +90,26 @@ fn hash_str(s: &str) -> u16 {
     u16::from_le_bytes([hash[0], hash[1]]) % 11172
 }
 
-/// Build a CoordPath<19> from entity fields (for unified Record store).
+/// Build a CoordPath<12> from entity fields (for the unified Record store).
 ///
-/// `content_hash` is encoded into axes [12-18] (94 effective bits of content
-/// addressing). Pass `&FihHash([0u8; 32])` for Intent/Hint records that have
-/// no content hash.
+/// Axis layout:
+///   [0-1]  time (days since epoch, split into two base-11172 axes so the
+///          leading-axis lexicographic order equals chronological order
+///          for up to u16 x 11172 days; second-level precision stays in
+///          the records)
+///   [2]    entity
+///   [3-4]  origin/creator fingerprints (advisory ordering only)
+///   [5]    status
+///   [6-11] identity (CoordId<6> coordinates, round-trip safe)
+///
+/// The path carries no content-hash coordinates. The seven content-hash
+/// axes were removed (Step 1, #176): the pseudo-random hash created ~7
+/// unique 89 KB branch nodes per record while contributing nothing to
+/// spatial filters, and the id-to-hash matching map (`fact_id_index`) is
+/// the sole defender against same-id collisions. Two records with the
+/// same identity coordinates therefore share one tree path; `submit_fact`
+/// rejects a different content_hash at an occupied id before the tree is
+/// reached.
 pub fn record_to_path(
     entity: u16,
     origin: &str,
@@ -117,22 +117,16 @@ pub fn record_to_path(
     status: u16,
     id_str: &str,
     ts_ns: u64,
-    content_hash: &FihHash,
-) -> tagma_core::CoordPath<19> {
+) -> tagma_core::CoordPath<12> {
     use tagma_core::{Coord, CoordPath};
     let mk = |v: u16| Coord::new(v % 11172).unwrap();
-    // Time is day-granular in the path: days since epoch split into two
-    // base-11172 axes so the leading-axis lexicographic order equals
-    // chronological order for up to u16 x 11172 days (~2 million years).
-    // Second-level precision stays in the records; boundary filtering
-    // happens there.
     let days = ts_ns / 86_400_000_000_000;
     let days_hi = (days / 11172) as u16;
     let days_lo = (days % 11172) as u16;
     // Use hash-based coord for origin/creator (matches make_record_path convention)
     let origin_v = hash_str(origin);
     let creator_v = hash_str(creator);
-    let mut coords = [Coord::new(0).unwrap(); 19];
+    let mut coords = [Coord::new(0).unwrap(); 12];
     coords[0] = mk(days_hi);
     coords[1] = mk(days_lo);
     coords[2] = mk(entity);
@@ -143,15 +137,11 @@ pub fn record_to_path(
     let cid: CoordId = CoordId::resolve(id_str);
     let cid_coords: &[tagma_core::Coord; 6] = cid.0.coords();
     coords[6..12].copy_from_slice(&cid_coords[..6]);
-    // [12-18]: content hash fingerprint (94 effective bits)
-    let mut hash_axes = [Coord::new(0).unwrap(); 7];
-    encode_hash_into_axes(content_hash, &mut hash_axes);
-    coords[12..19].copy_from_slice(&hash_axes);
     CoordPath::new(coords)
 }
 
-/// Extract id string from CoordPath<19> identity coords [6..11] (CoordId<6> coordinates).
-fn path_to_id_str(path: &tagma_core::CoordPath<19>) -> String {
+/// Extract id string from CoordPath<12> identity coords [6..11] (CoordId<6> coordinates).
+fn path_to_id_str(path: &tagma_core::CoordPath<12>) -> String {
     use tagma_core::{Coord, CoordPath};
     let mut coords = [Coord::new(0).unwrap(); 6];
     coords.copy_from_slice(&path.coords()[6..12]);
@@ -176,15 +166,17 @@ pub struct FihStorage<I: FileIo> {
     pub fact_store: CoordEntityStore<7, FactRecord>,
     pub intent_store: CoordEntityStore<7, IntentRecord>,
     pub hint_store: CoordEntityStore<7, HintRecord>,
-    store: Cell2<tagma_core::CoordSpaceN<19, Record>>,
+    store: Cell2<tagma_core::CoordSpaceN<12, Record>>,
     pub fact_records: Cell2<HashMap<String, FactRecord>>,
     pub intent_records: Cell2<HashMap<String, IntentRecord>>,
     pub hint_records: Cell2<HashMap<String, HintRecord>>,
     /// Id to content hash for every placed fact record. Kept in sync by
-    /// `place_record` (the single chokepoint for the unified 19-axis
+    /// `place_record` (the single chokepoint for the unified 12-axis
     /// store), so occupancy checks are O(1) for all writers including
-    /// direct ones (nex-calc). Facts are append-only, so the index only
-    /// grows.
+    /// direct ones (nex-calc). The path no longer carries content-hash
+    /// coordinates (Step 1, #176), so this index is the sole defender
+    /// against same-id collisions. Facts are append-only, so the index
+    /// only grows.
     fact_id_index: Cell2<HashMap<String, FihHash>>,
     // Semantic stores (for similarity search).
     semantic_stores: Cell2<Vec<crate::semantic::DynSemanticStore>>,
@@ -293,7 +285,7 @@ impl<I: FileIo> FihStorage<I> {
             }
         }
 
-        // Populate the unified 19-axis store so id enumeration and spatial
+        // Populate the unified 12-axis store so id enumeration and spatial
         // queries work after a reopen. Runs before the caches consume the
         // vectors.
         for (_, r) in &facts {
@@ -304,7 +296,7 @@ impl<I: FileIo> FihStorage<I> {
                 FihHash(h.finalize().into())
             };
             self.place_record(
-                &Self::fact_path(r, &content_hash),
+                &Self::fact_path(r),
                 Record::Fact {
                     content,
                     content_hash,
@@ -490,7 +482,7 @@ impl<I: FileIo> FihStorage<I> {
     /// id-stable (deterministic content per id), which nex-calc is
     /// (`make_number_fact_id` and the content hash both derive from the
     /// value). In debug builds the invariant is asserted.
-    pub fn place_record(&self, path: &tagma_core::CoordPath<19>, record: Record) {
+    pub fn place_record(&self, path: &tagma_core::CoordPath<12>, record: Record) {
         if let Record::Fact { content_hash, .. } = &record {
             let id = path_to_id_str(path);
             if let Some(existing) = self.fact_id_index.borrow().get(&id) {
@@ -507,7 +499,7 @@ impl<I: FileIo> FihStorage<I> {
     }
 
     /// Direct record removal (for special cases like nex-calc).
-    pub fn vacate_record(&self, path: &tagma_core::CoordPath<19>) {
+    pub fn vacate_record(&self, path: &tagma_core::CoordPath<12>) {
         if matches!(self.store.borrow().at_path(path), Some(Record::Fact { .. })) {
             self.fact_id_index
                 .borrow_mut()
@@ -516,9 +508,9 @@ impl<I: FileIo> FihStorage<I> {
         self.store.borrow_mut().vacate_path(path);
     }
 
-    /// CoordPath<19> for a fact record: entity=0, status=0, time axis from
+    /// CoordPath<12> for a fact record: entity=0, status=0, time axis from
     /// the nanosecond `submitted_at`.
-    fn fact_path(record: &FactRecord, content_hash: &FihHash) -> tagma_core::CoordPath<19> {
+    fn fact_path(record: &FactRecord) -> tagma_core::CoordPath<12> {
         record_to_path(
             0u16,
             &record.origin,
@@ -526,14 +518,13 @@ impl<I: FileIo> FihStorage<I> {
             0u16,
             &record.id,
             record.submitted_at,
-            content_hash,
         )
     }
 
-    /// CoordPath<19> for an intent record under the given status: entity=1,
+    /// CoordPath<12> for an intent record under the given status: entity=1,
     /// status axis 0/1/2 (Submitted/Claimed/Concluded). `created_at` is
     /// stored in seconds; the path time axis is nanoseconds.
-    fn intent_path_with(record: &IntentRecord, status: &IntentStatus) -> tagma_core::CoordPath<19> {
+    fn intent_path_with(record: &IntentRecord, status: &IntentStatus) -> tagma_core::CoordPath<12> {
         let status_coord = match status {
             IntentStatus::Submitted => 0u16,
             IntentStatus::Claimed { .. } => 1u16,
@@ -546,18 +537,17 @@ impl<I: FileIo> FihStorage<I> {
             status_coord,
             &record.id,
             record.created_at * 1_000_000_000,
-            &FihHash([0u8; 32]),
         )
     }
 
-    /// CoordPath<19> for an intent record under its current status.
-    fn intent_path(record: &IntentRecord) -> tagma_core::CoordPath<19> {
+    /// CoordPath<12> for an intent record under its current status.
+    fn intent_path(record: &IntentRecord) -> tagma_core::CoordPath<12> {
         Self::intent_path_with(record, &record.status)
     }
 
-    /// CoordPath<19> for a hint record: entity=2. `submitted_at` is stored
+    /// CoordPath<12> for a hint record: entity=2. `submitted_at` is stored
     /// in seconds; the path time axis is nanoseconds.
-    fn hint_path(record: &HintRecord) -> tagma_core::CoordPath<19> {
+    fn hint_path(record: &HintRecord) -> tagma_core::CoordPath<12> {
         record_to_path(
             2u16,
             "",
@@ -565,11 +555,10 @@ impl<I: FileIo> FihStorage<I> {
             0u16,
             &record.id,
             record.submitted_at * 1_000_000_000,
-            &FihHash([0u8; 32]),
         )
     }
 
-    /// Place an intent in the 19-axis store under its current status.
+    /// Place an intent in the 12-axis store under its current status.
     fn place_intent(&self, record: &IntentRecord) {
         self.place_record(
             &Self::intent_path(record),
@@ -603,7 +592,7 @@ impl<I: FileIo> FihStorage<I> {
     /// Content hash of the fact currently occupying `id`, if any.
     ///
     /// The id index is kept in sync by `place_record`, the single
-    /// chokepoint for the unified 19-axis store, so this is an O(1)
+    /// chokepoint for the unified 12-axis store, so this is an O(1)
     /// lookup for every writer: `submit_fact`, `rebuild_cache` (which
     /// re-places loaded records), and direct writers (nex-calc). The
     /// index is populated on reopen, so it also fires after
@@ -1073,10 +1062,10 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
             }
             return Ok(fact.id);
         }
-        // Unified 19-axis store: time in axes [0-1], origin/creator hashed
+        // Unified 12-axis store: time in axes [0-1], origin/creator hashed
         // in [3-4], identity in [6-11]. Kept in sync for spatial queries.
         self.place_record(
-            &Self::fact_path(&record, &fact.content_hash),
+            &Self::fact_path(&record),
             Record::Fact {
                 content: fact.content.clone(),
                 content_hash: fact.content_hash,
@@ -1257,7 +1246,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.flush_pending()
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        // Status move in the 19-axis store: only after the io commit
+        // Status move in the 12-axis store: only after the io commit
         // succeeds, so a failed flush leaves the store consistent with io.
         self.vacate_record(&old_path);
         self.place_intent(&record);
@@ -1301,7 +1290,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.flush_pending()
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        // Status move in the 19-axis store: only after the io commit
+        // Status move in the 12-axis store: only after the io commit
         // succeeds, so a failed flush leaves the store consistent with io.
         self.vacate_record(&old_path);
         self.place_intent(&record);
@@ -1342,7 +1331,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             }
         }
 
-        // Status move in the 19-axis store: vacate the claimed path, place
+        // Status move in the 12-axis store: vacate the claimed path, place
         // the submitted path.
         let old_path = Self::intent_path_with(&record, &old_status);
 
@@ -1355,7 +1344,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.flush_pending()
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        // Status move in the 19-axis store: only after the io commit
+        // Status move in the 12-axis store: only after the io commit
         // succeeds, so a failed flush leaves the store consistent with io.
         self.vacate_record(&old_path);
         self.place_intent(&record);
@@ -1420,7 +1409,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
 
         // Write conclusion fact and updated intent via pending buffer.
         // The conclusion fact carries the conclude time (now_ns) so it
-        // lands on the real day in the 19-axis store and time_range
+        // lands on the real day in the 12-axis store and time_range
         // reflects it. It is blob-backed like a submitted fact so a
         // reopen materializes its content and hash consistently.
         let blob_hash = new_fact.content_hash.to_string();
@@ -1461,14 +1450,14 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.flush_pending()
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        // 19-axis store moves only after the io commit succeeds, so a
+        // 12-axis store moves only after the io commit succeeds, so a
         // failed flush leaves the store consistent with io: vacate the
         // old status path, place the concluded intent and the conclusion
         // fact at the conclude time.
         self.vacate_record(&old_path);
         self.place_intent(&record);
         self.place_record(
-            &Self::fact_path(&fact_rec, &new_fact.content_hash),
+            &Self::fact_path(&fact_rec),
             Record::Fact {
                 content: new_fact.content.clone(),
                 content_hash: new_fact.content_hash,
@@ -1816,7 +1805,7 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
     async fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
         let prefix = format!("partition:{}", partition);
 
-        // Partition scan over the 19-axis store. Facts match on the
+        // Partition scan over the 12-axis store. Facts match on the
         // origin field, intents and hints on the creator field (the
         // existing per-type convention). The comparison is exact on the
         // record strings; the id is recovered from the identity axes
@@ -1948,7 +1937,7 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
 
 impl<I: FileIo> crate::AsyncTimeRangeCapable for FihStorage<I> {
     async fn time_range(&self) -> Option<Range<String>> {
-        // Exact min/max over the Fact records in the 19-axis store. The
+        // Exact min/max over the Fact records in the 12-axis store. The
         // tree is coordinate-ordered, but within a boundary day the
         // order is set by the other axes, not the timestamp, so the
         // first/last Fact in tree order cannot bound the range exactly.
