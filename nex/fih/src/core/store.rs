@@ -50,7 +50,7 @@ use crate::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, Int
 use crate::core::{EntityStore, MemoryEntityStore};
 use crate::io::file_io::{FileIo, WriteOp, default_apply_batch};
 use crate::semantic::record::{Query, RecordLoad};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Record-layer payload for the unified store (L2 restructure, #176).
 ///
@@ -1708,12 +1708,30 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
         }
 
         // Materialize fact content and intent descriptions now that the
-        // record-map borrows are released: pending blobs first, then the
-        // async io boundary.
+        // record-map borrows are released. Distinct blob hashes are
+        // loaded once each from IO (content dedup makes many records
+        // share a blob), then every job resolves from the shared map.
+        let mut io_blobs: HashMap<String, Content> = HashMap::new();
+        let mut seen: HashSet<String> = HashSet::new();
+        for (_, hash) in fact_blob_jobs.iter() {
+            let c = load_content_fast(hash, "application/octet-stream");
+            if c.data.is_empty() && seen.insert(hash.clone()) {
+                io_blobs.insert(hash.clone(), load_blob(&self.io, hash).await);
+            }
+        }
+        for (_, hash) in desc_jobs.iter() {
+            let c = load_content_fast(hash, "text/plain");
+            if c.data.is_empty() && seen.insert(hash.clone()) {
+                io_blobs.insert(hash.clone(), load_blob(&self.io, hash).await);
+            }
+        }
         for (idx, hash) in fact_blob_jobs {
             let c = load_content_fast(&hash, "application/octet-stream");
             facts[idx].content = if c.data.is_empty() {
-                load_blob(&self.io, &hash).await
+                io_blobs.get(&hash).cloned().unwrap_or_else(|| Content {
+                    mime_type: "application/octet-stream".into(),
+                    data: Vec::new(),
+                })
             } else {
                 c
             };
@@ -1721,8 +1739,13 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
         for (idx, hash) in desc_jobs {
             let c = load_content_fast(&hash, "text/plain");
             let text = if c.data.is_empty() {
-                let io_c = load_blob(&self.io, &hash).await;
-                String::from_utf8_lossy(&io_c.data).to_string()
+                String::from_utf8_lossy(
+                    io_blobs
+                        .get(&hash)
+                        .map(|c| c.data.as_slice())
+                        .unwrap_or(b""),
+                )
+                .to_string()
             } else {
                 String::from_utf8_lossy(&c.data).to_string()
             };
@@ -1920,12 +1943,30 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
         }
 
         // Materialize fact content and intent descriptions now that the
-        // record-map borrows are released: pending blobs first, then the
-        // async io boundary.
+        // record-map borrows are released. Distinct blob hashes are
+        // loaded once each from IO (content dedup makes many records
+        // share a blob), then every job resolves from the shared map.
+        let mut io_blobs: HashMap<String, Content> = HashMap::new();
+        let mut seen: HashSet<String> = HashSet::new();
+        for (_, hash) in fact_blob_jobs.iter() {
+            let c = self.load_content(hash, "application/octet-stream");
+            if c.data.is_empty() && seen.insert(hash.clone()) {
+                io_blobs.insert(hash.clone(), load_blob(&self.io, hash).await);
+            }
+        }
+        for (_, hash) in desc_jobs.iter() {
+            let c = self.load_content(hash, "text/plain");
+            if c.data.is_empty() && seen.insert(hash.clone()) {
+                io_blobs.insert(hash.clone(), load_blob(&self.io, hash).await);
+            }
+        }
         for (idx, hash) in fact_blob_jobs {
             let c = self.load_content(&hash, "application/octet-stream");
             facts[idx].content = if c.data.is_empty() {
-                load_blob(&self.io, &hash).await
+                io_blobs.get(&hash).cloned().unwrap_or_else(|| Content {
+                    mime_type: "application/octet-stream".into(),
+                    data: Vec::new(),
+                })
             } else {
                 c
             };
@@ -1933,8 +1974,13 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
         for (idx, hash) in desc_jobs {
             let c = self.load_content(&hash, "text/plain");
             let text = if c.data.is_empty() {
-                let io_c = load_blob(&self.io, &hash).await;
-                String::from_utf8_lossy(&io_c.data).to_string()
+                String::from_utf8_lossy(
+                    io_blobs
+                        .get(&hash)
+                        .map(|c| c.data.as_slice())
+                        .unwrap_or(b""),
+                )
+                .to_string()
             } else {
                 String::from_utf8_lossy(&c.data).to_string()
             };
