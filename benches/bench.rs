@@ -11,6 +11,15 @@
 //   kb_query/ — real knowledge-base scenario (10K docs, 10 projects, 20 authors)
 //
 // Measured on Apple M1 (ARMv8.4-A Firestorm 3.2GHz), release profile (median of 10 samples, 2026-07-31):
+//
+// Note: the fih/ and kb_query/ figures below predate the L2 restructure
+// (structural filter index) and the CoordId<20> migration (issue #176).
+// The internal store layout changed: the unified tree is now a 6-axis
+// filter index, the record layer is HashMap-backed, ids are 20-syllable,
+// and intents_by_fact is an O(fan-out) inverse index. Treat the numbers
+// as historical; the criterion harness does not run in the local dev
+// environment, so fresh measurements are taken with isolated probes
+// (see nex/process/tests/memory_probe.rs).
 //   raw/full_scan_50k          540 ms          (50K entries, full tree walk)
 //   raw/iter_prefix_50k        1.12 ms         (5×100 prefixes, O(subtree))
 //   cs/csn6_get_10k            533 µs          (10K tree lookups, ~53 ns/op)
