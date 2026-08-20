@@ -272,7 +272,7 @@ is future work.
 | `core/storage/composite/src/session_server.rs` | **New**: SessionServer + SessionHandle for serialized queue | +125 |
 | `core/storage/composite/src/lib.rs` | Export new modules + SessionHandle | +5 |
 | `core/storage/composite/tests/iobuf_session_tests.rs` | **New**: 20 test scenarios (50 total) | +269 |
-| `docs/report/devlogs/20260529.md` | This file | +116 |
+| `docs/2026-05-29-66-iobuffer-layer-store-session.md` | This file | +116 |
 | **Total** | **8 files** | **+961** |
 
 ### Files Remaining for `rs-worker`

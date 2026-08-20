@@ -110,7 +110,7 @@ not a conflict-checked per-record submit.
 id derivation itself changed, so an in-place tool would need to remap
 facts, intents, and hints including `from_facts` references. The
 recommended path for pre-1.0 data is re-ingestion through the semantic
-layer, documented in `docs/devlogs/migrations/coord-id-20.md`.
+layer, documented in `docs/2026-08-20-coord-id-20-migration.md`.
 
 ## Ledger-shaped convergence
 
@@ -150,7 +150,7 @@ observation is scoped to this repository and its current stage.
   composite removal, nex-core and nex-fih split
 - Devlog 2026-08-20, issue #176: content hash conflict detection and
   the L2 restructure
-- `docs/devlogs/migrations/coord-id-20.md`: the breaking id migration
+- `docs/2026-08-20-coord-id-20-migration.md`: the breaking id migration
 - `docs/projects/nexus/development/blockchain.qmd` in the ssccs docs
   repository: the ledger direction draft
 - Issue #172: move nexus storage behavior onto chton surfaces

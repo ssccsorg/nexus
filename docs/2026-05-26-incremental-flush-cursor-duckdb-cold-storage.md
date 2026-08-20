@@ -167,4 +167,4 @@ run on CF Workers (KV + R2 + parquet-wasm) or dedicated servers (DuckDB).
 | `core/storage/duckdb/src/lib.rs` | +107 lines |
 | `core/storage/duckdb/tests/duckdb_flush.rs` | +519 lines (new) |
 | `core/storage/petgraph/src/snapshot.rs` | +6 lines |
-| `docs/report/devlogs/20260526.md` | this file |
+| `docs/2026-05-26-incremental-flush-cursor-duckdb-cold-storage.md` | this file |

@@ -54,7 +54,7 @@ the minimum depth that holds all 256 bits (19 coords carry only 2^255.5).
 Distinct contents collide only up to SHA-256 collision resistance; the
 conflict guard stays as defense-in-depth. Ids are canonical 20-Hangul
 strings; the old 6-syllable spelling is a breaking change documented in
-`docs/devlogs/migrations/coord-id-20.md`.
+`docs/2026-08-20-coord-id-20-migration.md`.
 
 ## Measured outcomes
 
@@ -97,5 +97,5 @@ standard index-to-heap pattern.
 ## References
 
 - Issue #176: content hash conflict detection
-- `docs/devlogs/migrations/coord-id-20.md`: the breaking id migration
+- `docs/2026-08-20-coord-id-20-migration.md`: the breaking id migration
 - `nex/process/tests/memory_probe.rs`: memory measurement harness
