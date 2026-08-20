@@ -96,7 +96,7 @@ impl CoordId<20> {
     /// 2^256), so distinct (content, context) inputs map to distinct ids
     /// up to SHA-256 collision resistance (2^128 birthday). The compact
     /// 6-syllable ~40-bit fold and its ~1.5M-record birthday ceiling are
-    /// gone; the matching-map detection stays as defense-in-depth. The
+    /// gone; the record-map conflict detection stays as defense-in-depth. The
     /// result is canonical (20 Hangul characters) and deterministic per
     /// (entity, origin, creator, content). The coords are opaque: the
     /// semantic axes no longer live in the id, ordering and filtering

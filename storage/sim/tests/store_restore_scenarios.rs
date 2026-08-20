@@ -331,7 +331,7 @@ fn test_scenario_malformed_blob_hash_recomputes_content_hash() {
     let store = FihStorage::new(io, "badhash");
     block_on(store.rebuild_cache()).unwrap();
 
-    // The matching map holds the hash recomputed from the blob: the same
+    // The record map holds the hash recomputed from the blob: the same
     // content is an idempotent retry, a different content is rejected.
     let same = block_on(store.submit_fact(&fact)).unwrap();
     assert_eq!(same, fact.id, "same content is idempotent after rebuild");

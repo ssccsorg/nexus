@@ -57,7 +57,7 @@ use std::collections::{HashMap, HashSet};
 /// The coordinate tree no longer stores record bodies: it holds id sets
 /// at structural paths. `Record` remains the write payload for
 /// `place_record`, which fans the fields out to the application layer
-/// (record maps), and the tree id set.
+/// (record maps), the inverse index (intents), and the tree id set.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub enum Record {
     Fact {

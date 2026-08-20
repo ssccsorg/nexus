@@ -1,11 +1,12 @@
 // Record-layer content hash conflict detection (#176).
 //
-// The record layer keys facts by id. The id carries about 40 bits of
-// content-derived entropy (documented on CoordId::content_id), so two
-// distinct contents can collide on one id. A second fact at the same id
-// is accepted only when it is the identical content (an idempotent
-// retry); a different content_hash is rejected with Conflict instead of
-// silently overwriting the earlier record.
+// The record layer keys facts by id. Since the CoordId<20> migration the
+// id injectively encodes the full content hash, so distinct contents
+// collide on one id only up to SHA-256 collision resistance (2^128
+// birthday). The conflict guard is kept as defense-in-depth: a second
+// fact at the same id is accepted only when it is the identical content
+// (an idempotent retry); a different content_hash is rejected with
+// Conflict instead of silently overwriting the earlier record.
 
 use futures_executor::block_on;
 use nex_fih::core::store::{Record, structural_path};
