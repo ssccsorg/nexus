@@ -5,8 +5,8 @@
 // The path carries no id and no content hash: the tree value is the set
 // of record ids at the structural path, so memory is bounded by axis
 // cardinality, not record count. Record bodies live in the application
-// layer, and the id-to-hash matching map (fact_id_index) is the sole
-// defender against same-id collisions.
+// layer, and the record map's persisted blob hash is the sole defender
+// against same-id collisions.
 
 use nex_fih::core::store::structural_path;
 
@@ -47,7 +47,8 @@ fn status_moves_only_axis_five() {
 fn ids_do_not_enter_the_path() {
     // Two records that differ only in id map to the same structural path:
     // the tree cannot distinguish them, so the id set at the path holds
-    // both and the matching map is the sole same-id collision defender.
+    // both and the record map's persisted blob hash is the sole same-id
+    // collision defender.
     let p1 = structural_path(0u16, "o", "c", 0u16, 1_000);
     let p2 = structural_path(0u16, "o", "c", 0u16, 1_000);
     assert_eq!(p1, p2);

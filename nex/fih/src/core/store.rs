@@ -57,7 +57,7 @@ use std::collections::HashMap;
 /// The coordinate tree no longer stores record bodies: it holds id sets
 /// at structural paths. `Record` remains the write payload for
 /// `place_record`, which fans the fields out to the application layer
-/// (record maps), the id-to-hash matching map, and the tree id set.
+/// (record maps), and the tree id set.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub enum Record {
     Fact {
@@ -110,8 +110,8 @@ fn hash_str(s: &str) -> u16 {
 /// the tree value is the set of record ids at the structural path, so
 /// the tree is a filter index whose memory is bounded by axis
 /// cardinality, not record count. Record bodies live in the application
-/// layer (record maps), and the id-to-hash matching map
-/// (`fact_id_index`) is the sole defender against same-id collisions.
+/// layer (record maps), and the record map's persisted blob hash is the
+/// sole defender against same-id collisions.
 pub fn structural_path(
     entity: u16,
     origin: &str,
@@ -165,13 +165,6 @@ pub struct FihStorage<I: FileIo> {
     pub fact_records: Cell2<HashMap<String, FactRecord>>,
     pub intent_records: Cell2<HashMap<String, IntentRecord>>,
     pub hint_records: Cell2<HashMap<String, HintRecord>>,
-    /// Id to content hash for every placed fact record. Kept in sync by
-    /// `place_record` (the single chokepoint for the record layer), so
-    /// occupancy checks are O(1) for all writers including direct ones
-    /// (nex-calc). The structural index carries no content identity, so
-    /// this index is the sole defender against same-id collisions.
-    /// Facts are append-only, so the index only grows.
-    fact_id_index: Cell2<HashMap<String, FihHash>>,
     /// From-fact to intent ids inverse index (Step 3, #176). Kept in sync
     /// by `place_record` (link) and `vacate_record` (unlink) for every
     /// intent, so `intents_by_fact` is O(fan-out) instead of an O(N)
@@ -222,7 +215,6 @@ impl<I: FileIo> FihStorage<I> {
             fact_records: Cell2::new(HashMap::new()),
             intent_records: Cell2::new(HashMap::new()),
             hint_records: Cell2::new(HashMap::new()),
-            fact_id_index: Cell2::new(HashMap::new()),
             fact_to_intents: Cell2::new(HashMap::new()),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
@@ -248,7 +240,6 @@ impl<I: FileIo> FihStorage<I> {
             fact_records: Cell2::new(HashMap::new()),
             intent_records: Cell2::new(HashMap::new()),
             hint_records: Cell2::new(HashMap::new()),
-            fact_id_index: Cell2::new(HashMap::new()),
             fact_to_intents: Cell2::new(HashMap::new()),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
@@ -490,13 +481,12 @@ impl<I: FileIo> FihStorage<I> {
     /// Direct record placement (for special cases like nex-calc) and the
     /// single chokepoint for the record layer.
     ///
-    /// Maintains four structures in one call:
+    /// Maintains three structures in one call:
     ///   - the application-layer record map (`fact_records`,
     ///     `intent_records`, `hint_records`), so reads (id enumeration,
     ///     lookups, filtered traversal) see every writer including direct
-    ///     ones;
-    ///   - the id-to-hash matching map (`fact_id_index`, facts only), the
-    ///     sole defender against same-id collisions;
+    ///     ones. For facts the persisted blob hash is the sole defender
+    ///     against same-id collisions;
     ///   - the from-fact to intent inverse index (`fact_to_intents`,
     ///     intents only), the O(1) reverse lookup;
     ///   - the structural filter index (id set at the structural path).
@@ -518,17 +508,16 @@ impl<I: FileIo> FihStorage<I> {
                 submitted_at,
                 ..
             } => {
-                if let Some(existing) = self.fact_id_index.borrow().get(id) {
+                if let Some(existing) = self.fact_records.borrow().get(id)
+                    && let Some(existing_hash) = Self::hex_blob_hash(&existing.blob_hash)
+                {
                     debug_assert!(
-                        *existing == *content_hash,
+                        existing_hash == *content_hash,
                         "place_record: fact id {id} is being overwritten with a different \
                          content_hash; direct writers must be id-stable or route through \
                          submit_fact"
                     );
                 }
-                self.fact_id_index
-                    .borrow_mut()
-                    .insert(id.to_string(), *content_hash);
                 self.fact_records.borrow_mut().insert(
                     id.to_string(),
                     FactRecord {
@@ -607,12 +596,11 @@ impl<I: FileIo> FihStorage<I> {
     /// and from the id set at the structural path. Facts are
     /// append-only, so vacate is used only for intents (status moves)
     /// and hints; the fact branches exist for completeness and also
-    /// clean the matching map.
+    /// remove the record-map entry.
     pub fn vacate_record(&self, path: &tagma_core::CoordPath<6>, id: &str) {
         match path.coords()[2].index() {
             0 => {
                 self.fact_records.borrow_mut().remove(id);
-                self.fact_id_index.borrow_mut().remove(id);
             }
             1 => {
                 // Unlink the inverse index before removing the record:
@@ -722,14 +710,16 @@ impl<I: FileIo> FihStorage<I> {
 
     /// Content hash of the fact currently occupying `id`, if any.
     ///
-    /// The id index is kept in sync by `place_record`, the single
-    /// chokepoint for the record layer, so this is an O(1)
-    /// lookup for every writer: `submit_fact`, `rebuild_cache` (which
-    /// re-places loaded records), and direct writers (nex-calc). The
-    /// index is populated on reopen, so it also fires after
-    /// `rebuild_cache`.
+    /// The id-keyed record map is the single chokepoint for the record
+    /// layer, so this is an O(1) lookup for every writer: `submit_fact`,
+    /// `rebuild_cache` (which re-places loaded records), and direct
+    /// writers (nex-calc). The hash is parsed from the persisted blob
+    /// hash, so the check also fires after `rebuild_cache`.
     fn existing_fact_content_hash(&self, id: &str) -> Option<FihHash> {
-        self.fact_id_index.borrow().get(id).copied()
+        self.fact_records
+            .borrow()
+            .get(id)
+            .and_then(|r| Self::hex_blob_hash(&r.blob_hash))
     }
 
     /// Parse a 64-char lowercase hex blob hash back into `FihHash`.
@@ -1095,7 +1085,7 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
             return Ok(fact.id);
         }
         // Record layer: structural index (time/entity/origin/creator/status)
-        // plus the record map, matching map, and id set, all maintained by
+        // plus the record map and id set, all maintained by
         // `place_record`. The entity store insert above is the atomic
         // occupancy detector; this block runs only on the fresh-insert path.
         self.place_record(
