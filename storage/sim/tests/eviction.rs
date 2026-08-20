@@ -72,7 +72,7 @@ fn evict_before_removes_only_old_hints() {
             .await
             .unwrap();
         assert_eq!(removed, 1);
-        assert_eq!(store.hint_store.len().await, 1);
+        assert_eq!(store.hint_records.borrow().len(), 1);
 
         let state = store.read_state().await;
         assert_eq!(state.hints.len(), 1);
@@ -95,7 +95,7 @@ fn evict_before_deletes_io_records() {
 
         let removed = store.evict_before(&u64::MAX.to_string()).await.unwrap();
         assert_eq!(removed, 2);
-        assert_eq!(store.hint_store.len().await, 0);
+        assert_eq!(store.hint_records.borrow().len(), 0);
 
         let state = store.read_state().await;
         assert_eq!(state.hints.len(), 0);
@@ -124,7 +124,7 @@ fn evict_stale_intents_removes_old_submitted() {
         // older_than = 1s: cutoff = 102 - 1 = 101 > 100, so i_old is stale.
         let removed = store.evict_stale_intents(1).await.unwrap();
         assert_eq!(removed, 1);
-        assert_eq!(store.intent_store.len().await, 0);
+        assert_eq!(store.intent_records.borrow().len(), 0);
 
         let state = store.read_state().await;
         assert_eq!(state.intents.len(), 0);

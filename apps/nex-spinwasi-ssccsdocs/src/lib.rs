@@ -17,7 +17,6 @@ use http::{Method, Request, Response};
 use spin_sdk::http::IntoResponse;
 use spin_sdk::http_component;
 
-use nex::EntityStore;
 use nex::io::FileIo;
 use nex::storage::core::FihStorage;
 use nex::storage::semantic::Query as SemanticQuery;
@@ -52,7 +51,7 @@ async fn ensure_initialized() {
     }
     let s = get_storage();
     match restore_from_snapshot(s).await {
-        Ok(true) => tracing::info!("restored snapshot ({} facts)", s.fact_store.len().await),
+        Ok(true) => tracing::info!("restored snapshot ({} facts)", s.fact_records.borrow().len()),
         Ok(false) => {
             tracing::info!("no snapshot found, syncing docs");
             fetch_ssccs_docs(s).await;
@@ -110,8 +109,8 @@ struct Snapshot {
 
 /// Write a full checkpoint snapshot. Call periodically (not on every ingest).
 async fn write_checkpoint(s: &FihStorage<impl FileIo>) -> Result<(), String> {
-    let facts: Vec<FactRecord> = s.fact_store.values().await;
-    let intents: Vec<IntentRecord> = s.intent_store.values().await;
+    let facts: Vec<FactRecord> = s.fact_records.borrow().values().cloned().collect();
+    let intents: Vec<IntentRecord> = s.intent_records.borrow().values().cloned().collect();
     let snapshot = Snapshot {
         version: SNAPSHOT_VERSION,
         facts,
@@ -135,24 +134,26 @@ async fn restore_from_snapshot(s: &AppStorage) -> Result<bool, String> {
             snapshot.version
         ));
     }
-    s.fact_store
-        .replace_from(
-            snapshot
-                .facts
-                .into_iter()
-                .map(|r| (r.id.clone(), r))
-                .collect(),
-        )
-        .await;
-    s.intent_store
-        .replace_from(
-            snapshot
-                .intents
-                .into_iter()
-                .map(|r| (r.id.clone(), r))
-                .collect(),
-        )
-        .await;
+    {
+        let mut m = s.fact_records.borrow_mut();
+        for (k, v) in snapshot
+            .facts
+            .into_iter()
+            .map(|r| (r.id.clone(), r))
+        {
+            m.insert(k, v);
+        }
+    }
+    {
+        let mut m = s.intent_records.borrow_mut();
+        for (k, v) in snapshot
+            .intents
+            .into_iter()
+            .map(|r| (r.id.clone(), r))
+        {
+            m.insert(k, v);
+        }
+    }
     let _ = s.rebuild_cache().await;
     Ok(true)
 }
@@ -402,7 +403,7 @@ async fn handler(req: Request<Vec<u8>>) -> anyhow::Result<impl IntoResponse> {
         (Method::GET, "/debug/stores") => {
             let s = get_storage();
             ok_json(
-                serde_json::json!({"stores": s.semantic_stores().len(), "fact_store": s.fact_store.len().await, "service": "nexus-spin-ssccsdocs"}),
+                serde_json::json!({"stores": s.semantic_stores().len(), "fact_store": s.fact_records.borrow().len(), "service": "nexus-spin-ssccsdocs"}),
             )
         }
         (Method::POST, "/ingest") => {

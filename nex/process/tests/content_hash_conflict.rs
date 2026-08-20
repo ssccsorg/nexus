@@ -11,8 +11,8 @@
 use futures_executor::block_on;
 use nex_fih::core::store::{Record, structural_path};
 use nex_fih::{
-    AsyncFactCapable, AsyncStorageRead, BlackboardError, Content, CoordId, EntityStore, Fact,
-    FactRecord, FihStorage,
+    AsyncFactCapable, AsyncStorageRead, BlackboardError, Content, CoordId, Fact, FactRecord,
+    FihStorage,
 };
 use nexus_storage_sim::SimIo;
 
@@ -140,60 +140,66 @@ fn idempotent_against_direct_writer_record() {
     });
 }
 
-// A record present only in the id-keyed entity store (fact_store), with
-// no index entry, must still guard the id at the commit point: the
-// `fact_store.insert` return value is the atomic detector.
+// A record present directly in the record map (bypassing submit_fact)
+// must still guard the id: the pre-check reads the same map, so a
+// submit_fact with a different content_hash is rejected and the earlier
+// record survives. The commit-point insert-return detector stays as
+// defense-in-depth (single-threaded, so the pre-check and the insert
+// cannot diverge in practice).
 #[test]
 fn conflict_detected_for_fact_store_only_record() {
     block_on(async {
         let store = FihStorage::new(SimIo::new(), "fstore-only");
         let f = fact("f_i", b"fstore-original");
-        store
-            .fact_store
-            .insert(
-                f.id.to_string(),
-                FactRecord {
-                    id: f.id.to_string(),
-                    blob_hash: f.content_hash.to_string(),
-                    origin: f.origin.clone(),
-                    creator: f.creator.clone(),
-                    submitted_at: 0,
-                },
-            )
-            .await;
+        store.fact_records.borrow_mut().insert(
+            f.id.to_string(),
+            FactRecord {
+                id: f.id.to_string(),
+                blob_hash: f.content_hash.to_string(),
+                origin: f.origin.clone(),
+                creator: f.creator.clone(),
+                submitted_at: 0,
+            },
+        );
         let err = store
             .submit_fact(&fact("f_i", b"fstore-different"))
             .await
             .unwrap_err();
         assert!(matches!(err, BlackboardError::Conflict(_)));
-        // The earlier record must be restored, not lost.
-        let state = store.fact_store.get(&f.id.to_string()).await.unwrap();
+        // The earlier record must be preserved, not overwritten.
+        let state = store
+            .fact_records
+            .borrow()
+            .get(&f.id.to_string())
+            .cloned()
+            .unwrap();
         assert_eq!(state.blob_hash, f.content_hash.to_string());
     });
 }
 
-// The idempotent counterpart: a fact_store-only record with identical
-// content is a no-op retry that leaves the record map untouched.
+// The idempotent counterpart: a record-map-only record with identical
+// content is a no-op retry that does not add a second record.
 #[test]
 fn idempotent_for_fact_store_only_record() {
     block_on(async {
         let store = FihStorage::new(SimIo::new(), "fstore-idem");
         let f = fact("f_j", b"fstore-same");
-        store
-            .fact_store
-            .insert(
-                f.id.to_string(),
-                FactRecord {
-                    id: f.id.to_string(),
-                    blob_hash: f.content_hash.to_string(),
-                    origin: f.origin.clone(),
-                    creator: f.creator.clone(),
-                    submitted_at: 0,
-                },
-            )
-            .await;
+        store.fact_records.borrow_mut().insert(
+            f.id.to_string(),
+            FactRecord {
+                id: f.id.to_string(),
+                blob_hash: f.content_hash.to_string(),
+                origin: f.origin.clone(),
+                creator: f.creator.clone(),
+                submitted_at: 0,
+            },
+        );
         let id = store.submit_fact(&f).await.unwrap();
         assert_eq!(id, f.id);
-        assert_eq!(store.fact_records.borrow().len(), 0);
+        assert_eq!(
+            store.fact_records.borrow().len(),
+            1,
+            "the record-map-only record stays; the retry adds nothing"
+        );
     });
 }

@@ -47,7 +47,6 @@ use nex_core::Now;
 
 use crate::core::index::Cell2;
 use crate::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
-use crate::core::{EntityStore, MemoryEntityStore};
 use crate::io::file_io::{FileIo, WriteOp, default_apply_batch};
 use crate::semantic::record::{Query, RecordLoad};
 use std::collections::{HashMap, HashSet};
@@ -151,12 +150,11 @@ pub struct FihStorage<I: FileIo> {
     #[expect(dead_code)]
     auto_flush: bool,
     // In-memory stores: rebuilt from IO on hydrate, kept in sync for reads.
-    // The entity stores are the application layer (HashMap-backed since
-    // the L2 restructure, #176: id-keyed trees replicate the memory
-    // amplification the structural index was cut down to avoid).
-    pub fact_store: MemoryEntityStore<FactRecord>,
-    pub intent_store: MemoryEntityStore<IntentRecord>,
-    pub hint_store: MemoryEntityStore<HintRecord>,
+    // The record maps are the application layer: one id-keyed HashMap per
+    // record type, authoritative for reads and writes since the L2
+    // restructure (#176). The id-keyed entity store duplication was
+    // removed; the maps serve both the internal read paths and the
+    // public surface.
     /// Structural filter index: CoordPath<6> (time, entity, origin,
     /// creator, status) to the set of record ids at that path. Memory is
     /// bounded by axis cardinality, not record count (L2 restructure,
@@ -208,9 +206,6 @@ impl<I: FileIo> FihStorage<I> {
             project_id: project_id.to_string(),
             clock,
             auto_flush,
-            fact_store: MemoryEntityStore::new(),
-            intent_store: MemoryEntityStore::new(),
-            hint_store: MemoryEntityStore::new(),
             store: Cell2::new(tagma_core::CoordSpaceN::new()),
             fact_records: Cell2::new(HashMap::new()),
             intent_records: Cell2::new(HashMap::new()),
@@ -233,9 +228,6 @@ impl<I: FileIo> FihStorage<I> {
             project_id: project_id.to_string(),
             clock,
             auto_flush: false,
-            fact_store: MemoryEntityStore::new(),
-            intent_store: MemoryEntityStore::new(),
-            hint_store: MemoryEntityStore::new(),
             store: Cell2::new(tagma_core::CoordSpaceN::new()),
             fact_records: Cell2::new(HashMap::new()),
             intent_records: Cell2::new(HashMap::new()),
@@ -324,9 +316,8 @@ impl<I: FileIo> FihStorage<I> {
             );
         }
 
-        self.fact_store.replace_from(facts).await;
-        self.intent_store.replace_from(intents).await;
-        self.hint_store.replace_from(hints).await;
+        // The record maps are populated by the place_* calls above; the
+        // pre-merge entity stores are gone (L2 restructure, #176).
 
         Ok(())
     }
@@ -360,7 +351,7 @@ impl<I: FileIo> FihStorage<I> {
             return Ok(());
         }
 
-        let facts = self.fact_store.values().await;
+        let facts: Vec<FactRecord> = self.fact_records.borrow().values().cloned().collect();
         struct TextRecord {
             text: String,
         }
@@ -696,7 +687,7 @@ impl<I: FileIo> FihStorage<I> {
 
     /// Resolve a semantic index back to its ID string.
     pub fn resolve_semantic_idx(&self, idx: u32) -> String {
-        let records = futures_executor::block_on(self.fact_store.values());
+        let records: Vec<FactRecord> = self.fact_records.borrow().values().cloned().collect();
         records
             .get(idx as usize)
             .map(|r| r.id.clone())
@@ -1061,13 +1052,13 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
 
         // Update in-memory cache immediately for subsequent reads. The
         // return value is the atomic detector at the first id-keyed
-        // commit: it catches a fact_store record the pre-check could not
-        // see (a direct `fact_store` write without the id index) and a
-        // task that raced past the pre-check if the insert ever yields.
+        // commit: it catches a record the pre-check could not see (a
+        // direct record-map write that bypassed the check) and a task
+        // that raced past the pre-check if the insert ever yields.
         let prev = self
-            .fact_store
-            .insert(record.id.clone(), record.clone())
-            .await;
+            .fact_records
+            .borrow_mut()
+            .insert(record.id.clone(), record.clone());
         if let Some(prev_record) = prev {
             // Occupied at the commit point. Restore the earlier record
             // (keep its submitted_at) and drop the blob ops enqueued by
@@ -1075,7 +1066,9 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
             let same = Self::hex_blob_hash(&prev_record.blob_hash)
                 .map(|h| h == fact.content_hash)
                 .unwrap_or(false);
-            self.fact_store.insert(record.id.clone(), prev_record).await;
+            self.fact_records
+                .borrow_mut()
+                .insert(record.id.clone(), prev_record);
             self.pending.borrow_mut().truncate(pending_len);
             if !same {
                 return Err(BlackboardError::Conflict(format!(
@@ -1147,9 +1140,6 @@ impl<I: FileIo> crate::AsyncHintCapable for FihStorage<I> {
             path: record.key(),
             data: bytes,
         };
-        self.hint_store
-            .insert(record.id.clone(), record.clone())
-            .await;
         self.place_record(
             &Self::hint_path(&record),
             &record.id,
@@ -1175,7 +1165,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         }
         for fid in &intent.from_facts {
             let fid_str = fid.to_string();
-            if !self.fact_store.contains_key(&fid_str).await {
+            if !self.fact_records.borrow().contains_key(&fid_str) {
                 return Err(BlackboardError::NotFound(format!(
                     "Fact {fid_str} not found"
                 )));
@@ -1219,9 +1209,6 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             data: bytes,
         };
 
-        self.intent_store
-            .insert(record.id.clone(), record.clone())
-            .await;
         self.place_intent(&record);
         self.pending.borrow_mut().push(op);
         Ok(intent.id)
@@ -1267,7 +1254,6 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         // succeeds, so a failed flush leaves the store consistent with io.
         self.vacate_record(&old_path, &normalized);
         self.place_intent(&record);
-        self.intent_store.insert(normalized.clone(), record).await;
         Ok(())
     }
 
@@ -1311,7 +1297,6 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         // succeeds, so a failed flush leaves the store consistent with io.
         self.vacate_record(&old_path, &normalized);
         self.place_intent(&record);
-        self.intent_store.insert(normalized, record).await;
         Ok(())
     }
 
@@ -1365,9 +1350,6 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         // succeeds, so a failed flush leaves the store consistent with io.
         self.vacate_record(&old_path, &normalized);
         self.place_intent(&record);
-        self.intent_store
-            .insert(self.normalize_intent_id(intent_id), record)
-            .await;
         Ok(())
     }
 
@@ -1451,9 +1433,9 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             path: fact_rec.key(),
             data: fact_bytes,
         });
-        self.fact_store
-            .insert(fact_rec.id.clone(), fact_rec.clone())
-            .await;
+        self.fact_records
+            .borrow_mut()
+            .insert(fact_rec.id.clone(), fact_rec.clone());
 
         let intent_bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -1481,7 +1463,6 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
                 submitted_at: fact_rec.submitted_at,
             },
         );
-        self.intent_store.insert(normalized.clone(), record).await;
 
         Ok(new_fact)
     }
@@ -1777,21 +1758,21 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
 
 impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
     async fn approximate_size(&self) -> usize {
-        let facts = self.fact_store.len().await;
-        let intents = self.intent_store.len().await;
-        let hints = self.hint_store.len().await;
+        let facts = self.fact_records.borrow().len();
+        let intents = self.intent_records.borrow().len();
+        let hints = self.hint_records.borrow().len();
         (facts + intents + hints) * 256
     }
 
     async fn evict_before(&self, before: &str) -> Result<u64, String> {
         let before_secs: u64 = before.parse().unwrap_or(0);
-        let all = self.hint_store.values().await;
+        let all: Vec<HintRecord> = self.hint_records.borrow().values().cloned().collect();
         let old_len = all.len();
-        let mut kept = Vec::with_capacity(all.len());
+        let mut kept = 0usize;
         let mut evict_keys = Vec::new();
         for record in all {
             if record.submitted_at >= before_secs {
-                kept.push((record.id.clone(), record));
+                kept += 1;
             } else {
                 // read_state reads hints from io, so the eviction must
                 // also delete the record files; otherwise the evicted
@@ -1800,11 +1781,10 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
                 self.vacate_record(&Self::hint_path(&record), &record.id);
             }
         }
-        let evicted = (old_len - kept.len()) as u64;
+        let evicted = (old_len - kept) as u64;
         if !evict_keys.is_empty() {
             self.pending.borrow_mut().extend(evict_keys);
         }
-        self.hint_store.replace_from(kept).await;
         self.hint_records
             .borrow_mut()
             .retain(|_, r| r.submitted_at >= before_secs);
@@ -1815,9 +1795,9 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
         let now = self.clock.now_secs();
         let cutoff = now.saturating_sub(older_than_secs);
 
-        let all = self.intent_store.values().await;
+        let all: Vec<IntentRecord> = self.intent_records.borrow().values().cloned().collect();
         let old_len = all.len();
-        let mut kept = Vec::with_capacity(all.len());
+        let mut kept = 0usize;
         let mut evict_keys = Vec::new();
         for record in all {
             let stale =
@@ -1828,14 +1808,13 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
                 evict_keys.push(WriteOp::Delete { path: record.key() });
                 self.vacate_record(&Self::intent_path(&record), &record.id);
             } else {
-                kept.push((record.id.clone(), record));
+                kept += 1;
             }
         }
-        let evicted = (old_len - kept.len()) as u64;
+        let evicted = (old_len - kept) as u64;
         if !evict_keys.is_empty() {
             self.pending.borrow_mut().extend(evict_keys);
         }
-        self.intent_store.replace_from(kept).await;
         self.intent_records
             .borrow_mut()
             .retain(|_, r| !(matches!(r.status, IntentStatus::Submitted) && r.created_at < cutoff));

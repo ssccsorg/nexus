@@ -148,6 +148,12 @@ impl CoordId<20> {
 }
 
 // ── N=6 specific methods (explicit CoordId<6> ids only) ──────────────
+//
+// Legacy 6-syllable surface from before the CoordId<20> migration
+// (#176). The record layer uses the default depth (20); the N=6 API is
+// retained for explicit small ids in tests, benchmarks, and external
+// coordination. It is not used by the record layer and carries no
+// content-injective guarantee.
 
 impl CoordId<6> {
     /// Generate from a 64-bit counter (~1.94e24 unique sequential IDs).

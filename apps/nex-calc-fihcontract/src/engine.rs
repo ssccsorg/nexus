@@ -23,7 +23,6 @@ use nex::storage::core::intent_status::IntentStatus;
 use nex::storage::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
 use nex::storage::core::store::FihStorage;
 use nex::contract::fih::FihContract;
-use nex::storage::core::EntityStore;
 use nex::io::FileIo;
 use nex_fih::{Content, CoordId, FihHash};
 use nexus_storage_sim::SimIo;
@@ -103,7 +102,7 @@ impl CalcEngine {
     pub async fn put(&self, value: i64) -> CoordId {
         let id = make_number_fact_id(value);
         let id_str = id.to_string();
-        if self.storage.fact_store.contains_key(&id_str).await {
+        if self.storage.fact_records.borrow().contains_key(&id_str) {
             return id;
         }
 
@@ -130,20 +129,25 @@ impl CalcEngine {
             blob_hash,
             0,
         );
-        self.storage.fact_store.insert(id_str, record).await;
+        self.storage.fact_records.borrow_mut().insert(id_str, record);
         id
     }
 
     /// Read a number from a Fact.
     pub async fn get(&self, fact_id: &CoordId) -> Option<i64> {
-        let record = self.storage.fact_store.get(&fact_id.to_string()).await?;
+        let record = self
+            .storage
+            .fact_records
+            .borrow()
+            .get(&fact_id.to_string())
+            .cloned()?;
         decode_blob(&self.storage.io, &record.blob_hash).await
     }
 
     /// Look up a Fact by short hex prefix.
     pub async fn find_fact(&self, prefix: &str) -> Option<CoordId> {
         let prefix_lower = prefix.to_lowercase();
-        for r in self.storage.fact_store.values().await.iter() {
+        for r in self.storage.fact_records.borrow().values().cloned().collect::<Vec<_>>() {
             if r.id.to_lowercase().starts_with(&prefix_lower) {
                 return Some(CoordId::resolve(&r.id));
             }
@@ -162,24 +166,24 @@ impl CalcEngine {
     ) -> Result<CoordId, CalcError> {
         if !self
             .storage
-            .fact_store
+            .fact_records
+            .borrow()
             .contains_key(&lhs_id.to_string())
-            .await
         {
             return Err(CalcError::FactNotFound(lhs_id.to_string()));
         }
         if !self
             .storage
-            .fact_store
+            .fact_records
+            .borrow()
             .contains_key(&rhs_id.to_string())
-            .await
         {
             return Err(CalcError::FactNotFound(rhs_id.to_string()));
         }
 
         let id = make_intent_id(op, lhs_id, rhs_id);
         let id_str = id.to_string();
-        if self.storage.intent_store.contains_key(&id_str).await {
+        if self.storage.intent_records.borrow().contains_key(&id_str) {
             return Ok(id);
         }
 
@@ -194,7 +198,7 @@ impl CalcEngine {
             status: IntentStatus::Submitted,
             created_at: now,
         };
-        self.storage.intent_store.insert(id_str, record).await;
+        self.storage.intent_records.borrow_mut().insert(id_str, record);
         Ok(id)
     }
 
@@ -208,9 +212,10 @@ impl CalcEngine {
         let id_str = intent_id.to_string();
         let record = self
             .storage
-            .intent_store
+            .intent_records
+            .borrow()
             .get(&id_str)
-            .await
+            .cloned()
             .ok_or_else(|| CalcError::IntentNotFound(id_str.clone()))?;
 
         if matches!(record.status, IntentStatus::Concluded { .. }) {
@@ -262,9 +267,9 @@ impl CalcEngine {
         let result_id = make_number_fact_id(raw_result);
         if !self
             .storage
-            .fact_store
+            .fact_records
+            .borrow()
             .contains_key(&result_id.to_string())
-            .await
         {
             let data = raw_result.to_le_bytes().to_vec();
             let bh = content_hash(&data);
@@ -285,9 +290,9 @@ impl CalcEngine {
                 0,
             );
             self.storage
-                .fact_store
-                .insert(result_id.to_string(), rec)
-                .await;
+                .fact_records
+                .borrow_mut()
+                .insert(result_id.to_string(), rec);
         }
 
         // Mark intent concluded.
@@ -300,7 +305,10 @@ impl CalcEngine {
             },
             ..record
         };
-        self.storage.intent_store.insert(id_str, updated).await;
+        self.storage
+            .intent_records
+            .borrow_mut()
+            .insert(id_str, updated);
 
         // Record evidence via FihContract
         let ts = nanos();
@@ -322,7 +330,7 @@ impl CalcEngine {
     pub async fn constrain(&self, constraint: Constraint) -> CoordId {
         let id = make_hint_id(&constraint);
         let id_str = id.to_string();
-        if !self.storage.hint_store.contains_key(&id_str).await {
+        if !self.storage.hint_records.borrow().contains_key(&id_str) {
             let record = HintRecord {
                 id: id_str.clone(),
                 content: constraint.to_string(),
@@ -333,20 +341,20 @@ impl CalcEngine {
                     .as_secs(),
                 ttl_secs: None,
             };
-            self.storage.hint_store.insert(id_str, record).await;
+            self.storage.hint_records.borrow_mut().insert(id_str, record);
         }
         id
     }
 
     pub async fn clear_hints(&self) {
-        self.storage.hint_store.clear().await;
+        self.storage.hint_records.borrow_mut().clear();
     }
 
     // ── Queries ───────────────────────────────────────────────────
 
     pub async fn list_facts(&self) -> Vec<(CoordId, i64)> {
         let mut out = Vec::new();
-        for r in self.storage.fact_store.values().await.iter() {
+        for r in self.storage.fact_records.borrow().values().cloned().collect::<Vec<_>>() {
             if let Some(v) = decode_blob(&self.storage.io, &r.blob_hash).await {
                 out.push((CoordId::resolve(&r.id), v));
             }
@@ -356,9 +364,11 @@ impl CalcEngine {
 
     pub async fn list_intents(&self) -> Vec<(CoordId, bool)> {
         self.storage
-            .intent_store
+            .intent_records
+            .borrow()
             .values()
-            .await
+            .cloned()
+            .collect::<Vec<_>>()
             .iter()
             .map(|r| {
                 (
@@ -371,22 +381,26 @@ impl CalcEngine {
 
     pub async fn list_hints(&self) -> Vec<(CoordId, String)> {
         self.storage
-            .hint_store
+            .hint_records
+            .borrow()
             .values()
-            .await
+            .cloned()
+            .collect::<Vec<_>>()
             .iter()
             .map(|r| (CoordId::resolve(&r.id), r.content.clone()))
             .collect()
     }
 
     pub async fn fact_count(&self) -> usize {
-        self.storage.fact_store.len().await
+        self.storage.fact_records.borrow().len()
     }
     pub async fn pending_count(&self) -> usize {
         self.storage
-            .intent_store
+            .intent_records
+            .borrow()
             .values()
-            .await
+            .cloned()
+            .collect::<Vec<_>>()
             .iter()
             .filter(|r| !matches!(r.status, IntentStatus::Concluded { .. }))
             .count()
@@ -395,7 +409,7 @@ impl CalcEngine {
     // ── Internal ──────────────────────────────────────────────────
 
     async fn apply_operand_transforms(&self, mut lhs: i64, mut rhs: i64) -> (i64, i64) {
-        for r in self.storage.hint_store.values().await.iter() {
+        for r in self.storage.hint_records.borrow().values().cloned().collect::<Vec<_>>() {
             let c = match Constraint::parse_str(&r.content) {
                 Some(c) => c,
                 None => continue,
@@ -408,7 +422,7 @@ impl CalcEngine {
     }
 
     async fn check_constraints(&self, result: i64) -> Result<(), CalcError> {
-        for r in self.storage.hint_store.values().await.iter() {
+        for r in self.storage.hint_records.borrow().values().cloned().collect::<Vec<_>>() {
             let c = match Constraint::parse_str(&r.content) {
                 Some(c) => c,
                 None => continue,

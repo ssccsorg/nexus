@@ -196,7 +196,7 @@ fn test_eviction_preserves_fact_removes_old_hint() {
     // Eviction deletes the record files from io, so the state read and
     // the in-memory store agree: the hint is gone from both.
     assert_eq!(
-        block_on(store.hint_store.len()),
+        store.hint_records.borrow().len(),
         0,
         "old hint must be evicted from memory"
     );
