@@ -10,8 +10,11 @@
 
 mod common;
 
+use crate::common::FakeClock;
 use futures_executor::block_on;
-use nex_fih::{AsyncFactCapable, AsyncIntentCapable, Content, CoordId, Fact, Intent};
+use nex_fih::{
+    AsyncEvictCapable, AsyncFactCapable, AsyncIntentCapable, Content, CoordId, Fact, Intent,
+};
 use nexus_storage_sim::{FihStorage, SimIo};
 
 fn storage() -> FihStorage<SimIo> {
@@ -67,6 +70,35 @@ fn test_by_from_fact_returns_intents_for_fact() {
     assert!(refs_b.contains(&id_i2));
 
     assert!(store.intents_by_fact("nonexistent").is_empty());
+}
+
+#[test]
+fn test_by_from_fact_cleared_on_evict_stale() {
+    // evict_stale_intents removes Submitted intents older than the
+    // cutoff; vacate_record must unlink the reverse index so the evicted
+    // intent no longer appears for its from-fact.
+    let clock = FakeClock::new(1_000_000_000_000); // t = 1000s
+    let store = FihStorage::with_clock(SimIo::new(), "evict-rev", Box::new(clock.clone()));
+
+    block_on(store.submit_fact(&fact("f_ev"))).unwrap();
+    block_on(store.submit_intent(&intent("i_ev", vec!["f_ev"]))).unwrap();
+    assert_eq!(store.intents_by_fact("f_ev").len(), 1);
+
+    // Advance the clock so the intent's created_at is older than the
+    // cutoff computed by evict_stale_intents(60).
+    clock.advance_secs(100);
+    let evicted = block_on(store.evict_stale_intents(60)).unwrap();
+    assert_eq!(evicted, 1, "the stale Submitted intent is evicted");
+
+    assert!(
+        store.intents_by_fact("f_ev").is_empty(),
+        "evicted intent must not appear in the reverse index"
+    );
+    assert_eq!(
+        store.all_intent_ids().len(),
+        0,
+        "the evicted intent record is removed"
+    );
 }
 
 #[test]

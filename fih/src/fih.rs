@@ -67,7 +67,7 @@ impl<const N: usize> CoordId<N> {
 /// unique coordinate sequence (big-endian base-11172 digits; the most
 /// significant digit lands at coords[0]). Deterministic and
 /// collision-free by construction (Step 4, #176).
-fn encode_hash_into_coords(digest: &[u8; 32]) -> [Coord; 20] {
+pub fn encode_hash_into_coords(digest: &[u8; 32]) -> [Coord; 20] {
     let mut buf = *digest;
     let mut coords = [Coord::new(0).unwrap(); 20];
     let mut significant = 32usize;

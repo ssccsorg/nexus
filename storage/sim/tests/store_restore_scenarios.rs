@@ -11,7 +11,7 @@ use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, Content, CoordId,
     Fact, Hint, Intent,
 };
-use nexus_storage_sim::{FihStorage, SimIo};
+use nexus_storage_sim::{FihStorage, FileIo, SimIo};
 
 fn fact(id: &str, data: &str) -> Fact {
     Fact::with_id(
@@ -286,4 +286,67 @@ fn test_scenario_storage_migration() {
     assert_eq!(state.facts.len(), 1);
     assert_eq!(state.intents.len(), 1);
     assert_eq!(state.intents[0].from_facts.len(), 1);
+}
+
+// ── Scenario M: Malformed blob hash falls back to blob recompute ─────
+
+#[test]
+fn test_scenario_malformed_blob_hash_recomputes_content_hash() {
+    use nex_fih::{BlackboardError, ContentMeta, FactRecord};
+
+    let io = SimIo::new();
+    let bad_key = "legacy-non-hex-blob-key";
+    let fact = Fact::with_id(
+        CoordId::resolve("f_badhash"),
+        "s".into(),
+        Content {
+            mime_type: "text/plain".into(),
+            data: b"payload".to_vec(),
+        },
+        "t".into(),
+    );
+    // A pre-existing record whose persisted blob hash is not 64-hex,
+    // with the blob stored under that same (non-hex) key.
+    let record = FactRecord {
+        id: fact.id.to_string(),
+        blob_hash: bad_key.into(),
+        origin: fact.origin.clone(),
+        creator: fact.creator.clone(),
+        submitted_at: 0,
+    };
+    block_on(io.write(&record.key(), &postcard::to_allocvec(&record).unwrap())).unwrap();
+    block_on(io.write(&format!("blob/{bad_key}.bin"), b"payload")).unwrap();
+    block_on(
+        io.write(
+            &format!("blob/{bad_key}.bin.meta"),
+            &postcard::to_allocvec(&ContentMeta {
+                mime_type: "text/plain".into(),
+                size: 7,
+            })
+            .unwrap(),
+        ),
+    )
+    .unwrap();
+
+    let store = FihStorage::new(io, "badhash");
+    block_on(store.rebuild_cache()).unwrap();
+
+    // The matching map holds the hash recomputed from the blob: the same
+    // content is an idempotent retry, a different content is rejected.
+    let same = block_on(store.submit_fact(&fact)).unwrap();
+    assert_eq!(same, fact.id, "same content is idempotent after rebuild");
+    let other = Fact::with_id(
+        CoordId::resolve("f_badhash"),
+        "s".into(),
+        Content {
+            mime_type: "text/plain".into(),
+            data: b"other".to_vec(),
+        },
+        "t".into(),
+    );
+    let err = block_on(store.submit_fact(&other)).unwrap_err();
+    assert!(
+        matches!(err, BlackboardError::Conflict(_)),
+        "different content conflicts after rebuild"
+    );
 }

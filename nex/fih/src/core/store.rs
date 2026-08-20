@@ -490,13 +490,15 @@ impl<I: FileIo> FihStorage<I> {
     /// Direct record placement (for special cases like nex-calc) and the
     /// single chokepoint for the record layer.
     ///
-    /// Maintains three structures in one call:
+    /// Maintains four structures in one call:
     ///   - the application-layer record map (`fact_records`,
     ///     `intent_records`, `hint_records`), so reads (id enumeration,
     ///     lookups, filtered traversal) see every writer including direct
     ///     ones;
     ///   - the id-to-hash matching map (`fact_id_index`, facts only), the
     ///     sole defender against same-id collisions;
+    ///   - the from-fact to intent inverse index (`fact_to_intents`,
+    ///     intents only), the O(1) reverse lookup;
     ///   - the structural filter index (id set at the structural path).
     ///
     /// Blob enqueue is skipped (the caller owns blob IO). The conflict
