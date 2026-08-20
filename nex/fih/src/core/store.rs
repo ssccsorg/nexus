@@ -343,7 +343,7 @@ impl<I: FileIo> FihStorage<I> {
         Ok(())
     }
 
-    /// Rebuild semantic stores from fact_store after rebuild_cache.
+    /// Rebuild semantic stores from the record maps after rebuild_cache.
     pub async fn rebuild_semantic(&self) -> Result<(), String> {
         // Snapshot: take stores atomically, work on them, then put back.
         let mut stores = std::mem::take(&mut *self.semantic_stores.borrow_mut());

@@ -180,7 +180,7 @@ fn test_async_time_range() {
     futures_executor::block_on(store.submit_fact(&common::fact("f_tr"))).unwrap();
 
     let range = futures_executor::block_on(store.time_range());
-    // time_range now scans fact_store for min/max submitted_at.
+    // time_range now scans fact_records for min/max submitted_at.
     // With FakeClock starting at 1_000_000_000, the single fact has
     // submitted_at = 1_000_000_000, so range = Some("1000000000".."1000000000").
     assert!(range.is_some(), "expected Some range after fact submission");

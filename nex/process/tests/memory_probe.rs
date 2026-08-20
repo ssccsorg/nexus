@@ -20,6 +20,9 @@
 //                                            ~1.2 KB/fact marginal
 //                                            (ids are now 20 Hangul,
 //                                            ~40 B each)
+//   - after the entity store merge (#176):  40 KB/fact average,
+//                                            ~0.9 KB/fact marginal
+//                                            (duplicate record maps gone)
 //
 // The Step 2 drop is the L2 restructure: the tree holds id sets at
 // structural paths (memory bounded by axis cardinality, the ~650 KB
