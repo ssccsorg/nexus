@@ -9,35 +9,39 @@
 //   cs/       — CoordSpace type comparison (dense CS2 vs tree CSN6, hash index)
 //   fih/      — FihStorage application level (filter, AND, axis_hints, write)
 //   kb_query/ — real knowledge-base scenario (10K docs, 10 projects, 20 authors)
+//   conflict/ — #176 conflict guard on the occupied-id path
 //
-// Measured on Apple M1 (ARMv8.4-A Firestorm 3.2GHz), release profile (median of 10 samples, 2026-07-31):
+// Measured on Apple M1 (ARMv8.4-A Firestorm 3.2GHz), release profile
+// (median of 10 samples, 2026-08-20). All 19 benches execute in the
+// criterion harness. The historical 2026-07-31 figures predate the L2
+// restructure and the CoordId<20> migration (issue #176), so only
+// within-run comparisons are meaningful. Fresh baseline:
+//   raw/full_scan_50k          2.63 s          (50K entries, full tree walk)
+//   raw/iter_prefix_50k        1.05 ms         (5×100 prefixes, O(subtree))
+//   cs/csn6_get_10k            564 µs          (10K tree lookups, ~56 ns/op)
+//   cs/cs2_get_10k             23.7 µs         (10K dense lookups, ~2.4 ns/op)
+//   cs/hashmap_get_10k         123 µs          (10K hash lookups, ~12 ns/op)
+//   fih/filter_creator_50k     4.93 ms         (structural index + materialize)
+//   fih/and_query_50k          1.01 ms         (id-set intersection + materialize)
+//   fih/filter_creator_time    475 µs          (creator + time range)
+//   fih/filter_three_axis      233 µs          (origin + creator + time)
+//   fih/axis_hints_no          681 µs          (no hint, index fallback)
+//   fih/axis_hints_with        114 µs          (origin+creator AND; hints not consumed)
+//   fih/write_10k_facts        69.3 ms         (batch write + flush)
+//   fih/intents_by_fact_100    31.3 µs         (100 calls, inverse index)
+//   kb_query/project_author    157 µs          (origin+creator AND)
+//   kb_query/project_only      2.27 ms         (single-axis, 1000 hits)
+//   kb_query/project_time_range 71.9 µs        (origin+creator+time)
+//   kb_query/intents_by_fact   189 µs / 100    (inverse index)
+//   conflict/check_conflict    386 ns          (occupied id, guard hit)
+//   conflict/check_idempotent  309 ns          (occupied id, idempotent retry)
 //
-// Note: the fih/ and kb_query/ figures below predate the L2 restructure
-// (structural filter index) and the CoordId<20> migration (issue #176).
-// The internal store layout changed: the unified tree is now a 6-axis
-// filter index, the record layer is HashMap-backed, ids are 20-syllable,
-// and intents_by_fact is an O(fan-out) inverse index. Treat the numbers
-// as historical; the criterion harness does not run in the local dev
-// environment, so fresh measurements are taken with isolated probes
-// (see nex/process/tests/memory_probe.rs).
-//   raw/full_scan_50k          540 ms          (50K entries, full tree walk)
-//   raw/iter_prefix_50k        1.12 ms         (5×100 prefixes, O(subtree))
-//   cs/csn6_get_10k            533 µs          (10K tree lookups, ~53 ns/op)
-//   cs/cs2_get_10k             60.8 µs         (10K dense lookups, ~6 ns/op)
-//   cs/hashmap_get_10k         120.9 µs        (10K hash lookups, ~12.1 ns/op)
-//   fih/filter_creator_50k     745 µs          (HashMap fast-path + materialize 2500)
-//   fih/and_query_50k          296 µs          (HashSet intersection)
-//   fih/filter_creator_time    777 µs          (creator + time range)
-//   fih/filter_three_axis      83.8 µs         (origin + creator + time)
-//   fih/axis_hints_no          127 µs          (full scan fallback)
-//   fih/axis_hints_with        42.1 µs         (iter_prefix fast path)
-//   fih/write_10k_facts        51.9 ms         (batch write + flush)
-//   fih/intents_by_fact_100    743 ms          (100 calls, ~7.4 ms/call, pre-index)
-//   kb_query/project_author    70.2 µs         (origin+creator AND, 500 hits)
-//   kb_query/project_only      260 µs          (single-axis, 1000 hits)
-//   kb_query/project_time_range 70.4 µs        (origin+creator+time)
-//   kb_query/intents_by_fact   6.04 s / 100    (pre-index O(N) scan)
-//   fih/intents_by_fact_index  O(fan-out)      (inverse index, Step 3 #176)
+// The #176 goals dominate the deltas: intents_by_fact went from an O(N)
+// scan (743 ms / 100 pre-index) to an O(fan-out) map lookup, and the
+// conflict guard is a 386 ns occupied-id check. The read-filter paths
+// materialize records from the HashMap record layer through the
+// structural index; the historical figures were on the unified tree and
+// are not directly comparable.
 //
 // Paradigm framing: HashMap (full scan) vs Tagma (CoordSpaceN index +
 // fast-path tables). The old 28 ms full-scan ceiling is broken by paying
@@ -59,7 +63,6 @@ use nexus_storage_sim::{FileIo, SimIo};
 const N_FACTS: usize = 50_000;
 const N_ORIGINS: usize = 50;
 const N_CREATORS: usize = 20;
-const N_TIMEBUCKETS: usize = 100;
 const N_INTS: usize = 10_000;
 
 /// Deterministic distinct id for benchmark fixtures (label-derived).
@@ -67,7 +70,7 @@ fn bench_id(seed: u64) -> CoordId {
     CoordId::from_label(&format!("bench-{seed}"))
 }
 
-/// 10K facts with time-aware CoordId axes (real clock timestamps).
+/// 10K facts with label-derived ids (real clock timestamps for axis hints).
 fn populate_10k(store: &FihStorage<SimIo>) -> u64 {
     let clock = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -87,24 +90,7 @@ fn populate_10k(store: &FihStorage<SimIo>) -> u64 {
     clock
 }
 
-/// 50K facts with sequential CoordId.
-#[allow(dead_code)]
-fn populate_50k(store: &FihStorage<SimIo>) {
-    for i in 0..50_000u32 {
-        block_on(store.submit_fact(&Fact::with_id(
-            bench_id(i as u64),
-            format!("origin-{}", i % 500),
-            format!("c-{}", i).into(),
-            format!("creator-{}", i % 200),
-        )))
-        .unwrap();
-    }
-    block_on(store.flush_pending()).unwrap();
-}
-
-/// 50K facts with explicit multi-axis CoordId:
-///   [0] time_hi = i % N_TIMEBUCKETS, [2] entity = Fact,
-///   [3] origin = i % N_ORIGINS, [4] creator = i % N_CREATORS, [5] serial = i
+/// 50K facts with label-derived ids and controlled origin/creator fields.
 fn build_fact_store() -> FihStorage<SimIo> {
     let io = SimIo::new();
     let store = FihStorage::with_clock(io, "multi-axis", Box::new(nex_core::SystemClock));
@@ -463,6 +449,11 @@ fn bench_fih_axis_hints(c: &mut Criterion) {
         ..Default::default()
     };
 
+    // The filter implementation does not consume `axis_hints` yet
+    // (`StateFilter.axis_hints` is a pending wiring optimization per
+    // fih/src/storage/filter.rs), so this pair measures filter narrowing:
+    // creator-only vs origin+creator AND. The delta is not a hint-path
+    // speedup until the prefix-query wiring lands.
     c.bench_function("fih/axis_hints_no", |b| {
         b.iter(|| {
             let s = block_on(store.read_state_filtered(black_box(&no_hints)));
@@ -574,9 +565,9 @@ fn bench_kb_query(c: &mut Criterion) {
 
 /// Reopen a FihStorage holding `n` facts. The records and blobs are
 /// written to IO directly (a pre-existing on-disk state), then
-/// `rebuild_cache` loads them: the in-memory record map is empty and the
-/// id-keyed entity store plus the record layer (record maps + structural
-/// filter index) are populated.
+/// `rebuild_cache` loads them: the in-memory record map is empty and
+/// the record maps plus the structural filter index are populated
+/// (the id-keyed entity store was merged into the record maps).
 fn build_reopened_conflict_store(n: usize) -> FihStorage<SimIo> {
     let io = SimIo::new();
     for i in 0..n {
@@ -658,10 +649,11 @@ fn bench_conflict(c: &mut Criterion) {
         });
     });
 
-    // New-id absence is an O(records) scan in both the pre-fix and post-fix
-    // designs (no index exists for direct-writer records), so it is not
-    // benchmarked here; the two existing-id cases above isolate the F2
-    // improvement (id-keyed entity store hit vs unified-store scan).
+    // New-id absence is an O(1) record-map miss since the L2 restructure
+    // (`existing_fact_content_hash` reads the id-keyed `fact_records`
+    // map, which direct writers also populate via `place_record`), so it
+    // is not benchmarked here; the two existing-id cases above isolate
+    // the guard cost on the occupied-id path.
 
     group.finish();
 }
