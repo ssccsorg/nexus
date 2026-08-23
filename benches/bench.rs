@@ -47,6 +47,18 @@
 // fast-path tables). The old 28 ms full-scan ceiling is broken by paying
 // construction cost only for matches; AND queries shrink the candidate set
 // via HashSet intersection at each added dimension.
+//
+// Scale bound (Phase 3 of #151): the L2 restructure (#176) makes the
+// structural filter index memory bounded by axis cardinality, not record
+// count. Each CoordSpaceN node is a dense 11,172-slot array, so the number
+// of distinct axis combos bounds the tree; record bodies live in HashMap
+// record maps. A literal 10M-entry nexus benchmark is therefore not
+// meaningful: the same axis-combo space holds 50k or 10M records at the
+// same index cost, and the record-layer HashMap is standard hash scaling.
+// The tagma primitives themselves are verified at 10M+ scale in the
+// syntagma benchmark suite (Sparse get, 10M entries, CS2) referenced by
+// issue #151; ev integration (CoordSpaceN as a verification backend) is
+// tracked in the ev repository.
 // ═══════════════════════════════════════════════════════════════════════════
 
 use criterion::{BatchSize, Criterion, black_box, criterion_group, criterion_main};
