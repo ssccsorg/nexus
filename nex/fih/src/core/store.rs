@@ -981,9 +981,14 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
         let mut fact_blob_jobs: Vec<(usize, String)> = Vec::new();
         let mut desc_jobs: Vec<(usize, String)> = Vec::new();
 
+        // The record maps are iterated in id order, replicating the sorted
+        // io-key enumeration of the pre-#173 implementation. This keeps the
+        // observable state ordering contract of read_state unchanged.
         {
-            let fact_recs = self.fact_records.borrow();
-            for (id, r) in fact_recs.iter() {
+            let recs = self.fact_records.borrow();
+            let mut fact_recs: Vec<(&String, &FactRecord)> = recs.iter().collect();
+            fact_recs.sort_by(|a, b| a.0.cmp(b.0));
+            for (id, r) in fact_recs {
                 let content_hash = Self::hex_blob_hash(&r.blob_hash).unwrap_or(FihHash([0u8; 32]));
                 fact_blob_jobs.push((facts.len(), r.blob_hash.clone()));
                 facts.push(Fact {
@@ -999,8 +1004,10 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
             }
         }
         {
-            let intent_recs = self.intent_records.borrow();
-            for (id, r) in intent_recs.iter() {
+            let recs = self.intent_records.borrow();
+            let mut intent_recs: Vec<(&String, &IntentRecord)> = recs.iter().collect();
+            intent_recs.sort_by(|a, b| a.0.cmp(b.0));
+            for (id, r) in intent_recs {
                 let description = if r.description_hash.is_empty() {
                     id.clone()
                 } else {
@@ -1009,11 +1016,7 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
                 };
                 intents.push(Intent {
                     id: CoordId::resolve(id),
-                    from_facts: r
-                        .from_facts
-                        .iter()
-                        .map(|s| CoordId::resolve(s))
-                        .collect(),
+                    from_facts: r.from_facts.iter().map(|s| CoordId::resolve(s)).collect(),
                     description,
                     creator: r.creator.clone(),
                     worker: match &r.status {
@@ -1041,8 +1044,10 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
             }
         }
         {
-            let hint_recs = self.hint_records.borrow();
-            for (id, r) in hint_recs.iter() {
+            let recs = self.hint_records.borrow();
+            let mut hint_recs: Vec<(&String, &HintRecord)> = recs.iter().collect();
+            hint_recs.sort_by(|a, b| a.0.cmp(b.0));
+            for (id, r) in hint_recs {
                 hints.push(Hint {
                     id: CoordId::resolve(id),
                     content: r.content.clone(),
