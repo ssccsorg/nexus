@@ -1612,8 +1612,10 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
         let mut desc_jobs: Vec<(usize, String)> = Vec::new();
 
         {
-            let fact_recs = self.fact_records.borrow();
-            for (id, r) in fact_recs.iter() {
+            let recs = self.fact_records.borrow();
+            let mut fact_recs: Vec<(&String, &FactRecord)> = recs.iter().collect();
+            fact_recs.sort_by(|a, b| a.0.cmp(b.0));
+            for (id, r) in fact_recs {
                 if let Some(ref want) = filter.origin
                     && &r.origin != want
                 {
@@ -1658,8 +1660,10 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
             }
         }
         {
-            let intent_recs = self.intent_records.borrow();
-            for (id, r) in intent_recs.iter() {
+            let recs = self.intent_records.borrow();
+            let mut intent_recs: Vec<(&String, &IntentRecord)> = recs.iter().collect();
+            intent_recs.sort_by(|a, b| a.0.cmp(b.0));
+            for (id, r) in intent_recs {
                 if let Some(ref want) = filter.creator
                     && &r.creator != want
                 {
@@ -1730,8 +1734,10 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
             }
         }
         {
-            let hint_recs = self.hint_records.borrow();
-            for (id, r) in hint_recs.iter() {
+            let recs = self.hint_records.borrow();
+            let mut hint_recs: Vec<(&String, &HintRecord)> = recs.iter().collect();
+            hint_recs.sort_by(|a, b| a.0.cmp(b.0));
+            for (id, r) in hint_recs {
                 if let Some(ref want) = filter.creator
                     && &r.creator != want
                 {
@@ -1912,8 +1918,10 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
         let mut desc_jobs: Vec<(usize, String)> = Vec::new();
 
         {
-            let fact_recs = self.fact_records.borrow();
-            for (id, r) in fact_recs.iter() {
+            let recs = self.fact_records.borrow();
+            let mut fact_recs: Vec<(&String, &FactRecord)> = recs.iter().collect();
+            fact_recs.sort_by(|a, b| a.0.cmp(b.0));
+            for (id, r) in fact_recs {
                 if r.origin != prefix {
                     continue;
                 }
@@ -1932,8 +1940,10 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
             }
         }
         {
-            let intent_recs = self.intent_records.borrow();
-            for (id, r) in intent_recs.iter() {
+            let recs = self.intent_records.borrow();
+            let mut intent_recs: Vec<(&String, &IntentRecord)> = recs.iter().collect();
+            intent_recs.sort_by(|a, b| a.0.cmp(b.0));
+            for (id, r) in intent_recs {
                 if r.creator != prefix {
                     continue;
                 }
@@ -1977,8 +1987,10 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
             }
         }
         {
-            let hint_recs = self.hint_records.borrow();
-            for (id, r) in hint_recs.iter() {
+            let recs = self.hint_records.borrow();
+            let mut hint_recs: Vec<(&String, &HintRecord)> = recs.iter().collect();
+            hint_recs.sort_by(|a, b| a.0.cmp(b.0));
+            for (id, r) in hint_recs {
                 if r.creator != prefix {
                     continue;
                 }
