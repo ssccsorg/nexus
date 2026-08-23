@@ -49,6 +49,14 @@ impl Default for ProcessManager {
     }
 }
 
+/// Respawn circuit-breaker decision: advance the rapid-exit counter (or
+/// reset it when the child survived the window) and report whether
+/// respawning should continue. Returns (new_failures, should_respawn).
+pub fn respawn_decision(failures: u32, rapid: bool) -> (u32, bool) {
+    let failures = if rapid { failures + 1 } else { 0 };
+    (failures, failures < MAX_RAPID_EXITS)
+}
+
 impl ProcessManager {
     pub fn new() -> Self {
         Self {
@@ -118,19 +126,16 @@ impl ProcessManager {
                         .respawn_exits
                         .entry(entry.handle.command.clone())
                         .or_insert(0);
-                    if rapid {
-                        *failures += 1;
+                    let (new_failures, should_respawn) = respawn_decision(*failures, rapid);
+                    *failures = new_failures;
+                    if should_respawn {
+                        respawns.push((entry.handle.command.clone(), entry.args.clone()));
                     } else {
-                        *failures = 0;
-                    }
-                    if *failures >= MAX_RAPID_EXITS {
                         error!(
                             command = %entry.handle.command,
-                            failures,
+                            failures = new_failures,
                             "stopping respawn after repeated rapid crashes"
                         );
-                    } else {
-                        respawns.push((entry.handle.command.clone(), entry.args.clone()));
                     }
                 }
                 dead.push(pid);
