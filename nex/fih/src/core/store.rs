@@ -291,7 +291,7 @@ impl<I: FileIo> FihStorage<I> {
     /// intent descriptions. Callers that only need ids, origins,
     /// creators, and status (for example the nexd scheduler's heartbeat
     /// poll) avoid the blob loads and cache churn of a full read.
-    pub async fn read_state_structure(&self) -> BoardState {
+    pub async fn read_state_struct(&self) -> BoardState {
         let (state, _, _) = self.collect_state();
         state
     }

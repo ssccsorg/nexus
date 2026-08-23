@@ -94,7 +94,7 @@ fn test_read_state_and_filtered_agree_in_order() {
 }
 
 #[test]
-fn test_read_state_structure_without_content() {
+fn test_read_state_struct_without_content() {
     block_on(async {
         let store = FihStorage::new(SimIo::new(), "light");
         store
@@ -122,7 +122,7 @@ fn test_read_state_structure_without_content() {
             .await
             .unwrap();
 
-        let structure = store.read_state_structure().await;
+        let structure = store.read_state_struct().await;
         assert_eq!(structure.facts.len(), 1);
         assert_eq!(structure.facts[0].id, CoordId::resolve("f1"));
         assert!(
