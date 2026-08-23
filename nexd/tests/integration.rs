@@ -644,7 +644,7 @@ fn test_short_lived_agent_eventually_reaped() {
         .len();
     assert!(initial >= 1, "should have at least nex-server");
 
-    // Process manager reaps every 5s. Wait for agent count to drop back to initial.
+    // Process manager reaps every 1s. Wait for agent count to drop back to initial.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(12);
     loop {
         let list = d.ok("list_agents", json!({}));

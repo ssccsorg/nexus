@@ -213,7 +213,7 @@ async fn process_manager_task(
                 }
                 break;
             }
-            () = tokio::time::sleep(Duration::from_secs(5)) => {
+            () = tokio::time::sleep(Duration::from_secs(1)) => {
                 let mut pm = process_manager.lock().unwrap(); pm.try_reap();
             }
         }
