@@ -53,7 +53,7 @@ The blackboard surface. `id` values are strings (canonical CoordId).
 |--------|--------|--------|
 | `write_fact` | `{origin, content, creator}` | `{"id": "<coord-id>"}` |
 | `read_state` | `{}` | `{facts: [...], intents: [...], hints: [...]}` |
-| `read_state_light` | `{}` | state structure with empty content and descriptions |
+| `read_state_structure` | `{}` | state structure with empty content and descriptions |
 | `read_fact` | `{id}` | fact object |
 | `read_intent` | `{id}` | intent object |
 | `read_hint` | `{id}` | hint object |

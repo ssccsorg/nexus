@@ -148,7 +148,7 @@ async fn scheduler_task(mut shutdown: ShutdownHandle, config: nexd::config::Nexd
                 let Ok(mut client) = NexClient::connect(&socket).await else { continue; };
                 // Structured read only: the heartbeat check needs ids,
                 // workers, and timestamps, not content materialization.
-                let Ok(state) = client.read_state_light().await else { continue; };
+                let Ok(state) = client.read_state_structure().await else { continue; };
 
                 let now_secs = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();

@@ -94,7 +94,7 @@ fn test_read_state_and_filtered_agree_in_order() {
 }
 
 #[test]
-fn test_read_state_light_structure_without_content() {
+fn test_read_state_structure_without_content() {
     block_on(async {
         let store = FihStorage::new(SimIo::new(), "light");
         store
@@ -122,17 +122,17 @@ fn test_read_state_light_structure_without_content() {
             .await
             .unwrap();
 
-        let light = store.read_state_light().await;
-        assert_eq!(light.facts.len(), 1);
-        assert_eq!(light.facts[0].id, CoordId::resolve("f1"));
+        let structure = store.read_state_structure().await;
+        assert_eq!(structure.facts.len(), 1);
+        assert_eq!(structure.facts[0].id, CoordId::resolve("f1"));
         assert!(
-            light.facts[0].content.data.is_empty(),
-            "light read must not materialize fact content"
+            structure.facts[0].content.data.is_empty(),
+            "structure read must not materialize fact content"
         );
-        assert_eq!(light.intents.len(), 1);
+        assert_eq!(structure.intents.len(), 1);
         assert!(
-            light.intents[0].description.is_empty(),
-            "light read must not materialize intent descriptions"
+            structure.intents[0].description.is_empty(),
+            "structure read must not materialize intent descriptions"
         );
     });
 }
