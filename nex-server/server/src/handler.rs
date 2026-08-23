@@ -28,6 +28,7 @@ pub async fn dispatch(req: RpcRequest, storage: &Arc<FihStorage<FsIo>>) -> RpcRe
     match req.method.as_str() {
         "write_fact" => handle_write_fact(id, &req.params, storage).await,
         "read_state" => handle_read_state(id, storage).await,
+        "read_state_light" => handle_read_state_light(id, storage).await,
         "read_fact" => handle_read_fact(id, &req.params, storage).await,
         "read_intent" => handle_read_intent(id, &req.params, storage).await,
         "read_hint" => handle_read_hint(id, &req.params, storage).await,
@@ -89,6 +90,11 @@ async fn handle_write_fact(
 
 async fn handle_read_state(id: Value, storage: &Arc<FihStorage<FsIo>>) -> RpcResponse {
     let state = storage.read_state().await;
+    RpcResponse::success(id, serde_json::to_value(state).unwrap_or_default())
+}
+
+async fn handle_read_state_light(id: Value, storage: &Arc<FihStorage<FsIo>>) -> RpcResponse {
+    let state = storage.read_state_light().await;
     RpcResponse::success(id, serde_json::to_value(state).unwrap_or_default())
 }
 

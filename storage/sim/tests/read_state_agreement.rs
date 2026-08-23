@@ -92,3 +92,47 @@ fn test_read_state_and_filtered_agree_in_order() {
         }
     });
 }
+
+#[test]
+fn test_read_state_light_structure_without_content() {
+    block_on(async {
+        let store = FihStorage::new(SimIo::new(), "light");
+        store
+            .submit_fact(&Fact::with_id(
+                CoordId::resolve("f1"),
+                "t".into(),
+                Content::from("payload"),
+                "t".into(),
+            ))
+            .await
+            .unwrap();
+        store
+            .submit_intent(&Intent {
+                id: CoordId::resolve("i1"),
+                from_facts: vec![CoordId::resolve("f1")],
+                description: "desc".into(),
+                creator: "t".into(),
+                worker: None,
+                to_fact_id: None,
+                last_heartbeat_at: None,
+                created_at: None,
+                is_concluded: false,
+                concluded_at: None,
+            })
+            .await
+            .unwrap();
+
+        let light = store.read_state_light().await;
+        assert_eq!(light.facts.len(), 1);
+        assert_eq!(light.facts[0].id, CoordId::resolve("f1"));
+        assert!(
+            light.facts[0].content.data.is_empty(),
+            "light read must not materialize fact content"
+        );
+        assert_eq!(light.intents.len(), 1);
+        assert!(
+            light.intents[0].description.is_empty(),
+            "light read must not materialize intent descriptions"
+        );
+    });
+}

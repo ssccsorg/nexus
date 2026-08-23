@@ -143,6 +143,10 @@ pub fn structural_path(
 /// unbounded with the store.
 const BLOB_CACHE_CAP: usize = 10_000;
 
+/// Blob materialization jobs: (index into the state vector, blob hash)
+/// for fact content and intent descriptions.
+type BlobJobs = Vec<(usize, String)>;
+
 /// Unified FIH storage backended by an abstract IO layer.
 ///
 /// All FIH trait methods are sync. They enqueue WriteOps into a buffer
@@ -280,6 +284,113 @@ impl<I: FileIo> FihStorage<I> {
     /// Clone a blob from the content cache, if present.
     fn cached_content(&self, hash: &str) -> Option<Content> {
         self.blob_cache.borrow().get(hash).cloned()
+    }
+
+    /// Structured state read without content materialization: returns
+    /// the same records as `read_state` with empty fact content and
+    /// intent descriptions. Callers that only need ids, origins,
+    /// creators, and status (for example the nexd scheduler's heartbeat
+    /// poll) avoid the blob loads and cache churn of a full read.
+    pub async fn read_state_light(&self) -> BoardState {
+        let (state, _, _) = self.collect_state();
+        state
+    }
+
+    /// Build the structured BoardState from the application-layer record
+    /// maps (id-sorted) together with the blob jobs needed to
+    /// materialize fact content and intent descriptions. Sync: no io, no
+    /// awaits, so callers can release the maps before materializing.
+    fn collect_state(&self) -> (BoardState, BlobJobs, BlobJobs) {
+        let mut facts = Vec::new();
+        let mut intents = Vec::new();
+        let mut hints = Vec::new();
+        let mut fact_blob_jobs: Vec<(usize, String)> = Vec::new();
+        let mut desc_jobs: Vec<(usize, String)> = Vec::new();
+
+        // The record maps are iterated in id order, replicating the
+        // sorted io-key enumeration of the pre-#173 implementation. This
+        // keeps the observable state ordering contract unchanged.
+        {
+            let recs = self.fact_records.borrow();
+            let mut fact_recs: Vec<(&String, &FactRecord)> = recs.iter().collect();
+            fact_recs.sort_by(|a, b| a.0.cmp(b.0));
+            for (id, r) in fact_recs {
+                let content_hash = Self::hex_blob_hash(&r.blob_hash).unwrap_or(FihHash([0u8; 32]));
+                fact_blob_jobs.push((facts.len(), r.blob_hash.clone()));
+                facts.push(Fact {
+                    id: CoordId::resolve(id),
+                    origin: r.origin.clone(),
+                    content_hash,
+                    content: Content {
+                        mime_type: "application/octet-stream".into(),
+                        data: Vec::new(),
+                    },
+                    creator: r.creator.clone(),
+                });
+            }
+        }
+        {
+            let recs = self.intent_records.borrow();
+            let mut intent_recs: Vec<(&String, &IntentRecord)> = recs.iter().collect();
+            intent_recs.sort_by(|a, b| a.0.cmp(b.0));
+            for (id, r) in intent_recs {
+                let description = if r.description_hash.is_empty() {
+                    id.clone()
+                } else {
+                    desc_jobs.push((intents.len(), r.description_hash.clone()));
+                    String::new()
+                };
+                intents.push(Intent {
+                    id: CoordId::resolve(id),
+                    from_facts: r.from_facts.iter().map(|s| CoordId::resolve(s)).collect(),
+                    description,
+                    creator: r.creator.clone(),
+                    worker: match &r.status {
+                        IntentStatus::Claimed { worker, .. }
+                        | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
+                        IntentStatus::Submitted => None,
+                    },
+                    to_fact_id: match &r.status {
+                        IntentStatus::Concluded { to_fact, .. } => Some(CoordId::resolve(to_fact)),
+                        _ => None,
+                    },
+                    last_heartbeat_at: match &r.status {
+                        IntentStatus::Claimed {
+                            last_heartbeat_at, ..
+                        } => Some(*last_heartbeat_at),
+                        _ => None,
+                    },
+                    created_at: Some(r.created_at),
+                    is_concluded: matches!(r.status, IntentStatus::Concluded { .. }),
+                    concluded_at: match &r.status {
+                        IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
+                        _ => None,
+                    },
+                });
+            }
+        }
+        {
+            let recs = self.hint_records.borrow();
+            let mut hint_recs: Vec<(&String, &HintRecord)> = recs.iter().collect();
+            hint_recs.sort_by(|a, b| a.0.cmp(b.0));
+            for (id, r) in hint_recs {
+                hints.push(Hint {
+                    id: CoordId::resolve(id),
+                    content: r.content.clone(),
+                    creator: r.creator.clone(),
+                });
+            }
+        }
+
+        (
+            BoardState {
+                facts,
+                intents,
+                hints,
+            },
+            fact_blob_jobs,
+            desc_jobs,
+        )
     }
 
     /// Rebuild in-memory cache from IO storage.
@@ -961,90 +1072,7 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
             log::warn!("read_state: flush pending failed: {e}");
         }
 
-        // Reconstruct BoardState from the application-layer record maps.
-        // Fact content and intent descriptions are collected as jobs and
-        // materialized after the record-map borrows are released, so the
-        // async io fallback never awaits while holding a borrow.
-        let mut facts = Vec::new();
-        let mut intents = Vec::new();
-        let mut hints = Vec::new();
-        let mut fact_blob_jobs: Vec<(usize, String)> = Vec::new();
-        let mut desc_jobs: Vec<(usize, String)> = Vec::new();
-
-        // The record maps are iterated in id order, replicating the sorted
-        // io-key enumeration of the pre-#173 implementation. This keeps the
-        // observable state ordering contract of read_state unchanged.
-        {
-            let recs = self.fact_records.borrow();
-            let mut fact_recs: Vec<(&String, &FactRecord)> = recs.iter().collect();
-            fact_recs.sort_by(|a, b| a.0.cmp(b.0));
-            for (id, r) in fact_recs {
-                let content_hash = Self::hex_blob_hash(&r.blob_hash).unwrap_or(FihHash([0u8; 32]));
-                fact_blob_jobs.push((facts.len(), r.blob_hash.clone()));
-                facts.push(Fact {
-                    id: CoordId::resolve(id),
-                    origin: r.origin.clone(),
-                    content_hash,
-                    content: Content {
-                        mime_type: "application/octet-stream".into(),
-                        data: Vec::new(),
-                    },
-                    creator: r.creator.clone(),
-                });
-            }
-        }
-        {
-            let recs = self.intent_records.borrow();
-            let mut intent_recs: Vec<(&String, &IntentRecord)> = recs.iter().collect();
-            intent_recs.sort_by(|a, b| a.0.cmp(b.0));
-            for (id, r) in intent_recs {
-                let description = if r.description_hash.is_empty() {
-                    id.clone()
-                } else {
-                    desc_jobs.push((intents.len(), r.description_hash.clone()));
-                    String::new()
-                };
-                intents.push(Intent {
-                    id: CoordId::resolve(id),
-                    from_facts: r.from_facts.iter().map(|s| CoordId::resolve(s)).collect(),
-                    description,
-                    creator: r.creator.clone(),
-                    worker: match &r.status {
-                        IntentStatus::Claimed { worker, .. }
-                        | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
-                        IntentStatus::Submitted => None,
-                    },
-                    to_fact_id: match &r.status {
-                        IntentStatus::Concluded { to_fact, .. } => Some(CoordId::resolve(to_fact)),
-                        _ => None,
-                    },
-                    last_heartbeat_at: match &r.status {
-                        IntentStatus::Claimed {
-                            last_heartbeat_at, ..
-                        } => Some(*last_heartbeat_at),
-                        _ => None,
-                    },
-                    created_at: Some(r.created_at),
-                    is_concluded: matches!(r.status, IntentStatus::Concluded { .. }),
-                    concluded_at: match &r.status {
-                        IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
-                        _ => None,
-                    },
-                });
-            }
-        }
-        {
-            let recs = self.hint_records.borrow();
-            let mut hint_recs: Vec<(&String, &HintRecord)> = recs.iter().collect();
-            hint_recs.sort_by(|a, b| a.0.cmp(b.0));
-            for (id, r) in hint_recs {
-                hints.push(Hint {
-                    id: CoordId::resolve(id),
-                    content: r.content.clone(),
-                    creator: r.creator.clone(),
-                });
-            }
-        }
+        let (mut state, fact_blob_jobs, desc_jobs) = self.collect_state();
 
         // Materialize fact content and intent descriptions now that the
         // record-map borrows are released. Distinct blob hashes missing
@@ -1065,7 +1093,7 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
             loaded.insert(hash.clone(), load_blob(&self.io, &hash).await);
         }
         for (idx, hash) in fact_blob_jobs {
-            facts[idx].content = loaded
+            state.facts[idx].content = loaded
                 .get(&hash)
                 .cloned()
                 .or_else(|| self.cached_content(&hash))
@@ -1083,17 +1111,13 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
                     mime_type: "text/plain".into(),
                     data: Vec::new(),
                 });
-            intents[idx].description = String::from_utf8_lossy(&content.data).to_string();
+            state.intents[idx].description = String::from_utf8_lossy(&content.data).to_string();
         }
         for (hash, content) in loaded {
             self.cache_blob(hash, content);
         }
 
-        BoardState {
-            facts,
-            intents,
-            hints,
-        }
+        state
     }
 }
 
