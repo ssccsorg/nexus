@@ -22,12 +22,13 @@ kill (issue #146).
 
 ## Message shape
 
-Requests and responses follow JSON-RPC 2.0:
+Messages follow JSON-RPC 2.0 semantics (id, result, error, standard
+codes) but elide the `jsonrpc` version field for line economy:
 
 ```json
-{"jsonrpc": "2.0", "id": 1, "method": "read_state", "params": {}}
-{"jsonrpc": "2.0", "id": 1, "result": {...}}
-{"jsonrpc": "2.0", "id": 1, "error": {"code": -32001, "message": "not found: ..."}}
+{"id": 1, "method": "read_state", "params": {}}
+{"id": 1, "result": {...}}
+{"id": 1, "error": {"code": -32001, "message": "not found: ..."}}
 ```
 
 Notification-only requests (no `id`) are not used by nexd or
@@ -74,7 +75,7 @@ locally.
 | Method | Params | Result |
 |--------|--------|--------|
 | FIH methods | as nex-server above | forwarded |
-| `spawn_agent` | `{command, args}` | `{"pid": n, "command": "..."}` |
+| `spawn_agent` | `{command, args?}` | `{"pid": n, "command": "..."}` |
 | `list_agents` | `{}` | `{"agents": [{"pid": n, "command": "..."}]}` |
 | `kill_agent` | `{pid}` | `"ok"` |
 
