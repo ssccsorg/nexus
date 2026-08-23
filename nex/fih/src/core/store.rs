@@ -29,7 +29,8 @@
 // Design invariants:
 //   - enqueue_content() enqueues WriteOps via pending, never calls
 //     io.write() directly
-//   - read_state() loads blob Content from IO via blob_hash
+//   - read_state() serves from the in-memory record maps and
+//     materializes blob Content from pending writes first, then IO
 //   - conclude_intent() passes real to_fact/concluded_at to try_conclude()
 //   - all timestamps flow through Now trait, never SystemTime::now() directly
 //   - no sync trait on FihStorage (async-only)
@@ -902,96 +903,197 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
     }
 
     async fn read_state(&self) -> BoardState {
-        // Flush any pending writes so IO reflects the latest state. The
-        // signature has no error channel, so a failed flush is logged
-        // instead of silently returning stale state.
-        if let Err(e) = self.flush_pending().await {
-            log::warn!("read_state: flush pending failed: {e}");
+        // Serve the latest in-memory state from the application-layer
+        // record maps, the authoritative record layer since the L2
+        // restructure (#176). This removes the previous O(N) io scan
+        // (flush + list + read + decode + SHA-256 per record) from every
+        // state read (#173). The visible state is identical to the old
+        // behavior: records and blobs still in the write buffer are
+        // included via the pending fast path below; durability remains
+        // the explicit flush/session contract (FihSession, auto-flush
+        // stores), and read_state now agrees with read_state_filtered,
+        // which never flushed either.
+
+        // Build a blob lookup map once from pending writes so content is
+        // materialized without an io round trip when the blob is not yet
+        // flushed. Data and meta writes merge per blob hash: the data
+        // entry carries the payload, the meta entry the mime type.
+        let mut blob_map: HashMap<String, (String, Vec<u8>)> = HashMap::new();
+        for op in self.pending.borrow().iter() {
+            match op {
+                WriteOp::Write { path, data }
+                    if path.ends_with(".bin") && !path.ends_with(".bin.meta") =>
+                {
+                    if let Some(blob_hash) = path
+                        .strip_prefix("blob/")
+                        .and_then(|p| p.strip_suffix(".bin"))
+                    {
+                        blob_map
+                            .entry(blob_hash.to_string())
+                            .or_insert_with(|| (String::new(), Vec::new()))
+                            .1 = data.clone();
+                    }
+                }
+                WriteOp::Write { path, data } if path.ends_with(".bin.meta") => {
+                    if let Some(blob_hash) = path
+                        .strip_prefix("blob/")
+                        .and_then(|p| p.strip_suffix(".bin.meta"))
+                        && let Ok(meta) = postcard::from_bytes::<ContentMeta>(data)
+                    {
+                        blob_map
+                            .entry(blob_hash.to_string())
+                            .or_insert_with(|| (String::new(), Vec::new()))
+                            .0 = meta.mime_type;
+                    }
+                }
+                _ => {}
+            }
         }
 
-        // Direct async IO: list + read from backing store, no block_on.
+        // Materialize content from pending blobs (no io fallback for
+        // blobs still in the write buffer).
+        let load_content_fast = |blob_hash: &str, default_mime: &str| -> Content {
+            if let Some((mime, data)) = blob_map.get(blob_hash)
+                && !data.is_empty()
+            {
+                return Content {
+                    mime_type: if mime.is_empty() {
+                        default_mime.to_string()
+                    } else {
+                        mime.clone()
+                    },
+                    data: data.clone(),
+                };
+            }
+            Content {
+                mime_type: default_mime.to_string(),
+                data: Vec::new(),
+            }
+        };
+
+        // Reconstruct BoardState from the application-layer record maps.
+        // Fact content and intent descriptions are collected as jobs and
+        // materialized after the record-map borrows are released, so the
+        // async io fallback never awaits while holding a borrow.
         let mut facts = Vec::new();
-        if let Ok(keys) = self.io.list("facts/").await {
-            for key in &keys {
-                if let Ok(Some(bytes)) = self.io.read(key).await
-                    && let Ok(r) = postcard::from_bytes::<FactRecord>(&bytes)
-                {
-                    let content = load_blob(&self.io, &r.blob_hash).await;
-                    let content_hash = {
-                        let mut h = sha2::Sha256::new();
-                        h.update(&content.data);
-                        FihHash(h.finalize().into())
-                    };
-                    facts.push(Fact {
-                        id: CoordId::resolve(&r.id),
-                        content_hash,
-                        origin: r.origin.clone(),
-                        content,
-                        creator: r.creator.clone(),
-                    });
-                }
-            }
-        }
-
         let mut intents = Vec::new();
-        if let Ok(keys) = self.io.list("intents/").await {
-            for key in &keys {
-                if let Ok(Some(bytes)) = self.io.read(key).await
-                    && let Ok(r) = postcard::from_bytes::<IntentRecord>(&bytes)
-                {
-                    intents.push(Intent {
-                        id: CoordId::resolve(&r.id),
-                        from_facts: r.from_facts.iter().map(|s| CoordId::resolve(s)).collect(),
-                        description: {
-                            if r.description_hash.is_empty() {
-                                r.id.clone()
-                            } else {
-                                let c = load_blob(&self.io, &r.description_hash).await;
-                                String::from_utf8_lossy(&c.data).to_string()
-                            }
-                        },
-                        creator: r.creator.clone(),
-                        worker: match &r.status {
-                            IntentStatus::Claimed { worker, .. }
-                            | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
-                            IntentStatus::Submitted => None,
-                        },
-                        to_fact_id: match &r.status {
-                            IntentStatus::Concluded { to_fact, .. } => {
-                                Some(CoordId::resolve(to_fact))
-                            }
-                            _ => None,
-                        },
-                        last_heartbeat_at: match &r.status {
-                            IntentStatus::Claimed {
-                                last_heartbeat_at, ..
-                            } => Some(*last_heartbeat_at),
-                            _ => None,
-                        },
-                        created_at: Some(r.created_at),
-                        is_concluded: matches!(&r.status, IntentStatus::Concluded { .. }),
-                        concluded_at: match &r.status {
-                            IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
-                            _ => None,
-                        },
-                    });
-                }
+        let mut hints = Vec::new();
+        let mut fact_blob_jobs: Vec<(usize, String)> = Vec::new();
+        let mut desc_jobs: Vec<(usize, String)> = Vec::new();
+
+        {
+            let fact_recs = self.fact_records.borrow();
+            for (id, r) in fact_recs.iter() {
+                let content_hash = Self::hex_blob_hash(&r.blob_hash).unwrap_or(FihHash([0u8; 32]));
+                fact_blob_jobs.push((facts.len(), r.blob_hash.clone()));
+                facts.push(Fact {
+                    id: CoordId::resolve(id),
+                    origin: r.origin.clone(),
+                    content_hash,
+                    content: Content {
+                        mime_type: "application/octet-stream".into(),
+                        data: Vec::new(),
+                    },
+                    creator: r.creator.clone(),
+                });
+            }
+        }
+        {
+            let intent_recs = self.intent_records.borrow();
+            for (id, r) in intent_recs.iter() {
+                let description = if r.description_hash.is_empty() {
+                    id.clone()
+                } else {
+                    desc_jobs.push((intents.len(), r.description_hash.clone()));
+                    String::new()
+                };
+                intents.push(Intent {
+                    id: CoordId::resolve(id),
+                    from_facts: r
+                        .from_facts
+                        .iter()
+                        .map(|s| CoordId::resolve(s))
+                        .collect(),
+                    description,
+                    creator: r.creator.clone(),
+                    worker: match &r.status {
+                        IntentStatus::Claimed { worker, .. }
+                        | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
+                        IntentStatus::Submitted => None,
+                    },
+                    to_fact_id: match &r.status {
+                        IntentStatus::Concluded { to_fact, .. } => Some(CoordId::resolve(to_fact)),
+                        _ => None,
+                    },
+                    last_heartbeat_at: match &r.status {
+                        IntentStatus::Claimed {
+                            last_heartbeat_at, ..
+                        } => Some(*last_heartbeat_at),
+                        _ => None,
+                    },
+                    created_at: Some(r.created_at),
+                    is_concluded: matches!(r.status, IntentStatus::Concluded { .. }),
+                    concluded_at: match &r.status {
+                        IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
+                        _ => None,
+                    },
+                });
+            }
+        }
+        {
+            let hint_recs = self.hint_records.borrow();
+            for (id, r) in hint_recs.iter() {
+                hints.push(Hint {
+                    id: CoordId::resolve(id),
+                    content: r.content.clone(),
+                    creator: r.creator.clone(),
+                });
             }
         }
 
-        let mut hints = Vec::new();
-        if let Ok(keys) = self.io.list("hints/").await {
-            for key in &keys {
-                if let Ok(Some(bytes)) = self.io.read(key).await
-                    && let Ok(r) = postcard::from_bytes::<HintRecord>(&bytes)
-                {
-                    hints.push(Hint {
-                        id: CoordId::resolve(&r.id),
-                        content: r.content.clone(),
-                        creator: r.creator.clone(),
-                    });
-                }
+        // Materialize fact content and intent descriptions now that the
+        // record-map borrows are released. Distinct blob hashes are
+        // loaded once each from IO (content dedup makes many records
+        // share a blob), then every job resolves from the shared map.
+        let mut io_blobs: HashMap<String, Content> = HashMap::new();
+        let mut seen: HashSet<String> = HashSet::new();
+        for (_, hash) in fact_blob_jobs.iter() {
+            let c = load_content_fast(hash, "application/octet-stream");
+            if c.data.is_empty() && seen.insert(hash.clone()) {
+                io_blobs.insert(hash.clone(), load_blob(&self.io, hash).await);
             }
+        }
+        for (_, hash) in desc_jobs.iter() {
+            let c = load_content_fast(hash, "text/plain");
+            if c.data.is_empty() && seen.insert(hash.clone()) {
+                io_blobs.insert(hash.clone(), load_blob(&self.io, hash).await);
+            }
+        }
+        for (idx, hash) in fact_blob_jobs {
+            let c = load_content_fast(&hash, "application/octet-stream");
+            facts[idx].content = if c.data.is_empty() {
+                io_blobs.get(&hash).cloned().unwrap_or_else(|| Content {
+                    mime_type: "application/octet-stream".into(),
+                    data: Vec::new(),
+                })
+            } else {
+                c
+            };
+        }
+        for (idx, hash) in desc_jobs {
+            let c = load_content_fast(&hash, "text/plain");
+            let text = if c.data.is_empty() {
+                String::from_utf8_lossy(
+                    io_blobs
+                        .get(&hash)
+                        .map(|c| c.data.as_slice())
+                        .unwrap_or(b""),
+                )
+                .to_string()
+            } else {
+                String::from_utf8_lossy(&c.data).to_string()
+            };
+            intents[idx].description = text;
         }
 
         BoardState {
@@ -1774,9 +1876,10 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
             if record.submitted_at >= before_secs {
                 kept += 1;
             } else {
-                // read_state reads hints from io, so the eviction must
-                // also delete the record files; otherwise the evicted
-                // hint reappears on the next state read.
+                // read_state serves from the in-memory record maps, so
+                // the eviction must also drop the map entries (retain
+                // below) and delete the record files; otherwise the
+                // evicted hint reappears after a rebuild_cache reopen.
                 evict_keys.push(WriteOp::Delete { path: record.key() });
                 self.vacate_record(&Self::hint_path(&record), &record.id);
             }
@@ -1803,8 +1906,10 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
             let stale =
                 matches!(record.status, IntentStatus::Submitted) && record.created_at < cutoff;
             if stale {
-                // read_state reads intents from io, so the eviction must
-                // also delete the record files.
+                // read_state serves from the in-memory record maps, so
+                // the eviction must also drop the map entries (retain
+                // below) and delete the record files; otherwise the
+                // evicted intent reappears after a rebuild_cache reopen.
                 evict_keys.push(WriteOp::Delete { path: record.key() });
                 self.vacate_record(&Self::intent_path(&record), &record.id);
             } else {
