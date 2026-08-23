@@ -50,7 +50,7 @@ use crate::core::index::Cell2;
 use crate::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
 use crate::io::file_io::{FileIo, WriteOp, default_apply_batch};
 use crate::semantic::record::{Query, RecordLoad};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Record-layer payload for the unified store (L2 restructure, #176).
 ///
@@ -137,6 +137,12 @@ pub fn structural_path(
     CoordPath::new(coords)
 }
 
+/// Upper bound on the content-addressed blob cache entry count. Oldest
+/// entries are evicted first; evicted blobs reload from io on demand.
+/// The bound keeps the in-memory content working set from growing
+/// unbounded with the store.
+const BLOB_CACHE_CAP: usize = 10_000;
+
 /// Unified FIH storage backended by an abstract IO layer.
 ///
 /// All FIH trait methods are sync. They enqueue WriteOps into a buffer
@@ -175,8 +181,11 @@ pub struct FihStorage<I: FileIo> {
     /// (hash to content), so a cache keyed by blob hash never needs
     /// invalidation. Populated on first materialization and served on
     /// subsequent reads, removing the per-read io round trip for already
-    /// seen content. Memory grows with the distinct blob working set.
+    /// seen content. Bounded by [`BLOB_CACHE_CAP`]: the oldest entries are
+    /// evicted first and reloaded from io on a later miss.
     blob_cache: Cell2<HashMap<String, Content>>,
+    /// FIFO insertion order for the bounded blob cache eviction.
+    blob_cache_order: Cell2<VecDeque<String>>,
     // Semantic stores (for similarity search).
     semantic_stores: Cell2<Vec<crate::semantic::DynSemanticStore>>,
     /// Counter for assigning semantic IDs to facts incrementally.
@@ -219,6 +228,7 @@ impl<I: FileIo> FihStorage<I> {
             hint_records: Cell2::new(HashMap::new()),
             fact_to_intents: Cell2::new(HashMap::new()),
             blob_cache: Cell2::new(HashMap::new()),
+            blob_cache_order: Cell2::new(VecDeque::new()),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
             pending: Cell2::new(Vec::new()),
@@ -242,10 +252,34 @@ impl<I: FileIo> FihStorage<I> {
             hint_records: Cell2::new(HashMap::new()),
             fact_to_intents: Cell2::new(HashMap::new()),
             blob_cache: Cell2::new(HashMap::new()),
+            blob_cache_order: Cell2::new(VecDeque::new()),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
             pending: Cell2::new(Vec::new()),
         }
+    }
+
+    /// Insert a blob into the bounded content cache, evicting the oldest
+    /// entry when the cap is exceeded. Safe to call for any hash: blobs
+    /// are immutable, so an evicted entry simply reloads from io later.
+    fn cache_blob(&self, hash: String, content: Content) {
+        let mut cache = self.blob_cache.borrow_mut();
+        let mut order = self.blob_cache_order.borrow_mut();
+        if cache.contains_key(&hash) {
+            return;
+        }
+        cache.insert(hash.clone(), content);
+        order.push_back(hash);
+        while order.len() > BLOB_CACHE_CAP {
+            if let Some(evicted) = order.pop_front() {
+                cache.remove(&evicted);
+            }
+        }
+    }
+
+    /// Clone a blob from the content cache, if present.
+    fn cached_content(&self, hash: &str) -> Option<Content> {
+        self.blob_cache.borrow().get(hash).cloned()
     }
 
     /// Rebuild in-memory cache from IO storage.
@@ -1014,9 +1048,9 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
 
         // Materialize fact content and intent descriptions now that the
         // record-map borrows are released. Distinct blob hashes missing
-        // from the cache are loaded once each from IO and inserted;
-        // every job then resolves from the cache, so repeated reads of
-        // the same content never touch io.
+        // from the cache are loaded once each from IO into a local map;
+        // the current read resolves from it (so eviction never starves
+        // this read), then the bounded cache is populated for later reads.
         let mut missing: Vec<String> = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
         for (_, hash) in fact_blob_jobs.iter().chain(desc_jobs.iter()) {
@@ -1024,40 +1058,35 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
                 missing.push(hash.clone());
             }
         }
-        if !missing.is_empty() {
-            // Load into a local buffer first so no Cell2 borrow is held
-            // across an await (keeps the future Send for tokio::spawn).
-            let mut loaded: Vec<(String, Content)> = Vec::with_capacity(missing.len());
-            for hash in missing {
-                loaded.push((hash.clone(), load_blob(&self.io, &hash).await));
-            }
-            let mut cache = self.blob_cache.borrow_mut();
-            for (hash, content) in loaded {
-                cache.insert(hash, content);
-            }
+        // Load into a local map first so no Cell2 borrow is held across
+        // an await (keeps the future Send for tokio::spawn).
+        let mut loaded: HashMap<String, Content> = HashMap::new();
+        for hash in missing {
+            loaded.insert(hash.clone(), load_blob(&self.io, &hash).await);
         }
         for (idx, hash) in fact_blob_jobs {
-            facts[idx].content =
-                self.blob_cache
-                    .borrow()
-                    .get(&hash)
-                    .cloned()
-                    .unwrap_or_else(|| Content {
-                        mime_type: "application/octet-stream".into(),
-                        data: Vec::new(),
-                    });
-        }
-        for (idx, hash) in desc_jobs {
-            let content = self
-                .blob_cache
-                .borrow()
+            facts[idx].content = loaded
                 .get(&hash)
                 .cloned()
+                .or_else(|| self.cached_content(&hash))
+                .unwrap_or_else(|| Content {
+                    mime_type: "application/octet-stream".into(),
+                    data: Vec::new(),
+                });
+        }
+        for (idx, hash) in desc_jobs {
+            let content = loaded
+                .get(&hash)
+                .cloned()
+                .or_else(|| self.cached_content(&hash))
                 .unwrap_or_else(|| Content {
                     mime_type: "text/plain".into(),
                     data: Vec::new(),
                 });
             intents[idx].description = String::from_utf8_lossy(&content.data).to_string();
+        }
+        for (hash, content) in loaded {
+            self.cache_blob(hash, content);
         }
 
         BoardState {
