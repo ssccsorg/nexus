@@ -47,7 +47,9 @@ async fn main() -> nexd::daemon::Result<()> {
     let nex_server_socket = cfg.nex_server_socket.clone();
     {
         let mut pm = process_manager.lock().unwrap();
-        if let Err(e) = pm.spawn(&cfg.nex_server_path, &[]) {
+        // nex-server is supervised: crash is detected by try_reap and it
+        // is respawned with its original command (#146).
+        if let Err(e) = pm.spawn_managed(&cfg.nex_server_path, &[], true) {
             tracing::error!(path = %cfg.nex_server_path, error = %e, "failed to spawn nex-server");
         }
     }
@@ -184,8 +186,9 @@ async fn process_manager_task(
         tokio::select! {
             () = shutdown.cancelled() => {
                 tracing::info!("process manager stopping");
-                { let mut pm = process_manager.lock().unwrap(); pm.shutdown_sync(); }
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                // SIGTERM to children (nex-server shuts down gracefully),
+                // bounded wait, then force-kill the remainder (#146).
+                { let mut pm = process_manager.lock().unwrap(); pm.shutdown_graceful(Duration::from_secs(5)); }
                 { let mut pm = process_manager.lock().unwrap(); pm.try_reap(); }
                 break;
             }
