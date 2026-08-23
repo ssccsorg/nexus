@@ -24,6 +24,8 @@ pub struct AgentHandle {
 const RAPID_EXIT_WINDOW: Duration = Duration::from_secs(10);
 /// Consecutive rapid exits that stop respawning a command.
 const MAX_RAPID_EXITS: u32 = 5;
+/// Cooldown before a tripped command may attempt one respawn again.
+const RESPAWN_COOLDOWN: Duration = Duration::from_secs(60);
 
 /// Internal state for a tracked child process.
 struct ChildEntry {
@@ -39,8 +41,12 @@ pub struct ProcessManager {
     children: HashMap<u32, ChildEntry>,
     shutting_down: bool,
     /// Consecutive rapid-exit count per command (respawn circuit
-    /// breaker). Reset when a child survives the rapid-exit window.
+    /// breaker). Reset when a child survives the rapid-exit window or
+    /// when the tripped cooldown elapses.
     respawn_exits: HashMap<String, u32>,
+    /// When a command was tripped, so the circuit can re-arm after a
+    /// cooldown without an operator restart.
+    respawn_tripped_at: HashMap<String, Instant>,
 }
 
 impl Default for ProcessManager {
@@ -51,8 +57,17 @@ impl Default for ProcessManager {
 
 /// Respawn circuit-breaker decision: advance the rapid-exit counter (or
 /// reset it when the child survived the window) and report whether
-/// respawning should continue. Returns (new_failures, should_respawn).
-pub fn respawn_decision(failures: u32, rapid: bool) -> (u32, bool) {
+/// respawning should continue. A tripped command (failures at the
+/// threshold) re-arms once `cooldown_elapsed` is true, so a transient
+/// cause can recover without an operator restart. Returns
+/// (new_failures, should_respawn).
+pub fn respawn_decision(failures: u32, rapid: bool, cooldown_elapsed: bool) -> (u32, bool) {
+    if failures >= MAX_RAPID_EXITS {
+        if cooldown_elapsed {
+            return (0, true);
+        }
+        return (failures, false);
+    }
     let failures = if rapid { failures + 1 } else { 0 };
     (failures, failures < MAX_RAPID_EXITS)
 }
@@ -63,6 +78,7 @@ impl ProcessManager {
             children: HashMap::new(),
             shutting_down: false,
             respawn_exits: HashMap::new(),
+            respawn_tripped_at: HashMap::new(),
         }
     }
 
@@ -126,11 +142,21 @@ impl ProcessManager {
                         .respawn_exits
                         .entry(entry.handle.command.clone())
                         .or_insert(0);
-                    let (new_failures, should_respawn) = respawn_decision(*failures, rapid);
+                    let cooldown_elapsed = self
+                        .respawn_tripped_at
+                        .get(&entry.handle.command)
+                        .map(|t| t.elapsed() >= RESPAWN_COOLDOWN)
+                        .unwrap_or(true);
+                    let (new_failures, should_respawn) =
+                        respawn_decision(*failures, rapid, cooldown_elapsed);
                     *failures = new_failures;
                     if should_respawn {
+                        self.respawn_tripped_at.remove(&entry.handle.command);
                         respawns.push((entry.handle.command.clone(), entry.args.clone()));
                     } else {
+                        self.respawn_tripped_at
+                            .entry(entry.handle.command.clone())
+                            .or_insert(Instant::now());
                         error!(
                             command = %entry.handle.command,
                             failures = new_failures,

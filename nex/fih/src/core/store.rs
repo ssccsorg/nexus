@@ -137,15 +137,31 @@ pub fn structural_path(
     CoordPath::new(coords)
 }
 
-/// Upper bound on the content-addressed blob cache entry count. Oldest
-/// entries are evicted first; evicted blobs reload from io on demand.
-/// The bound keeps the in-memory content working set from growing
-/// unbounded with the store.
+/// Default upper bound on the content-addressed blob cache entry count.
+/// Oldest entries are evicted first; evicted blobs reload from io on
+/// demand. The bound keeps the in-memory content working set from
+/// growing unbounded with the store; tune with
+/// [`FihStorage::set_blob_cache_cap`] for workloads whose distinct blob
+/// working set exceeds the default.
 const BLOB_CACHE_CAP: usize = 10_000;
 
 /// Blob materialization jobs: (index into the state vector, blob hash)
 /// for fact content and intent descriptions.
 type BlobJobs = Vec<(usize, String)>;
+
+/// Collect the records that satisfy `keep`, sorted by key. Filtering runs
+/// before the sort so a selective query pays O(N) scan plus O(k log k)
+/// sort instead of a full-map sort, while the id-sorted result order
+/// matches `read_state`.
+fn sorted_matches<K, R, F>(map: &HashMap<K, R>, keep: F) -> Vec<(&K, &R)>
+where
+    K: Ord,
+    F: Fn(&K, &R) -> bool,
+{
+    let mut matches: Vec<(&K, &R)> = map.iter().filter(|(k, r)| keep(k, r)).collect();
+    matches.sort_by(|a, b| a.0.cmp(b.0));
+    matches
+}
 
 /// Unified FIH storage backended by an abstract IO layer.
 ///
@@ -185,11 +201,13 @@ pub struct FihStorage<I: FileIo> {
     /// (hash to content), so a cache keyed by blob hash never needs
     /// invalidation. Populated on first materialization and served on
     /// subsequent reads, removing the per-read io round trip for already
-    /// seen content. Bounded by [`BLOB_CACHE_CAP`]: the oldest entries are
+    /// seen content. Bounded by [`blob_cache_cap`]: the oldest entries are
     /// evicted first and reloaded from io on a later miss.
     blob_cache: Cell2<HashMap<String, Content>>,
     /// FIFO insertion order for the bounded blob cache eviction.
     blob_cache_order: Cell2<VecDeque<String>>,
+    /// Cache entry cap, defaulting to [`BLOB_CACHE_CAP`].
+    blob_cache_cap: Cell2<usize>,
     // Semantic stores (for similarity search).
     semantic_stores: Cell2<Vec<crate::semantic::DynSemanticStore>>,
     /// Counter for assigning semantic IDs to facts incrementally.
@@ -233,6 +251,7 @@ impl<I: FileIo> FihStorage<I> {
             fact_to_intents: Cell2::new(HashMap::new()),
             blob_cache: Cell2::new(HashMap::new()),
             blob_cache_order: Cell2::new(VecDeque::new()),
+            blob_cache_cap: Cell2::new(BLOB_CACHE_CAP),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
             pending: Cell2::new(Vec::new()),
@@ -257,16 +276,25 @@ impl<I: FileIo> FihStorage<I> {
             fact_to_intents: Cell2::new(HashMap::new()),
             blob_cache: Cell2::new(HashMap::new()),
             blob_cache_order: Cell2::new(VecDeque::new()),
+            blob_cache_cap: Cell2::new(BLOB_CACHE_CAP),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
             pending: Cell2::new(Vec::new()),
         }
     }
 
+    /// Set the blob cache entry cap. A larger cap keeps more content in
+    /// memory at the cost of the working set; a smaller cap bounds memory
+    /// but makes large distinct-blob workloads reload from io more often.
+    pub fn set_blob_cache_cap(&self, cap: usize) {
+        *self.blob_cache_cap.borrow_mut() = cap;
+    }
+
     /// Insert a blob into the bounded content cache, evicting the oldest
     /// entry when the cap is exceeded. Safe to call for any hash: blobs
     /// are immutable, so an evicted entry simply reloads from io later.
     fn cache_blob(&self, hash: String, content: Content) {
+        let cap = *self.blob_cache_cap.borrow();
         let mut cache = self.blob_cache.borrow_mut();
         let mut order = self.blob_cache_order.borrow_mut();
         if cache.contains_key(&hash) {
@@ -274,7 +302,7 @@ impl<I: FileIo> FihStorage<I> {
         }
         cache.insert(hash.clone(), content);
         order.push_back(hash);
-        while order.len() > BLOB_CACHE_CAP {
+        while order.len() > cap {
             if let Some(evicted) = order.pop_front() {
                 cache.remove(&evicted);
             }
@@ -315,7 +343,7 @@ impl<I: FileIo> FihStorage<I> {
             let mut fact_recs: Vec<(&String, &FactRecord)> = recs.iter().collect();
             fact_recs.sort_by(|a, b| a.0.cmp(b.0));
             for (id, r) in fact_recs {
-                let content_hash = Self::hex_blob_hash(&r.blob_hash).unwrap_or(FihHash([0u8; 32]));
+                let content_hash = Self::blob_hash_or_zero(&r.blob_hash);
                 fact_blob_jobs.push((facts.len(), r.blob_hash.clone()));
                 facts.push(Fact {
                     id: CoordId::resolve(id),
@@ -884,6 +912,20 @@ impl<I: FileIo> FihStorage<I> {
         Some(FihHash(bytes))
     }
 
+    /// Parse a persisted blob hash, logging a warning when it is
+    /// malformed. Legacy or corrupt records then surface a zero hash
+    /// instead of failing silently; the pre-#173 path recomputed SHA-256
+    /// from content, which the enumeration path no longer keeps available.
+    fn blob_hash_or_zero(blob_hash: &str) -> FihHash {
+        match Self::hex_blob_hash(blob_hash) {
+            Some(h) => h,
+            None => {
+                log::warn!("record with unparseable blob hash: {blob_hash}");
+                FihHash([0u8; 32])
+            }
+        }
+    }
+
     /// Check if an intent with the given ID exists (fast-path: intent_records HashMap).
     pub fn intent_exists(&self, id: &str) -> bool {
         self.intent_records.borrow().contains_key(id)
@@ -920,7 +962,7 @@ impl<I: FileIo> FihStorage<I> {
             let recs = self.fact_records.borrow();
             recs.get(id)?.clone()
         };
-        let content_hash = Self::hex_blob_hash(&r.blob_hash).unwrap_or(FihHash([0u8; 32]));
+        let content_hash = Self::blob_hash_or_zero(&r.blob_hash);
         let content = self
             .load_content_any(&r.blob_hash, "application/octet-stream")
             .await;
@@ -1064,10 +1106,14 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
         // content-addressed blob cache, so repeated reads serve already
         // seen blobs from memory instead of an io round trip.
         //
-        // Pending writes are flushed first: the incremental write batch
-        // stays small, so cache misses below are limited to genuinely
-        // new blobs. A failed flush is logged: the signature has no
-        // error channel.
+        // Pending writes are flushed first. This is a deliberate tradeoff:
+        // the incremental write batch stays small, so cache misses below
+        // are limited to genuinely new blobs, at the cost of a read API
+        // that writes to io (write amplification for high-frequency
+        // readers on a non-auto-flush store). The alternative, deferring
+        // the flush to the session boundary, lets pending grow unbounded
+        // and reintroduces the per-read pending cost the cache removes.
+        // A failed flush is logged: the signature has no error channel.
         if let Err(e) = self.flush_pending().await {
             log::warn!("read_state: flush pending failed: {e}");
         }
@@ -1666,28 +1712,26 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
 
         {
             let recs = self.fact_records.borrow();
-            let mut fact_recs: Vec<(&String, &FactRecord)> = recs.iter().collect();
-            fact_recs.sort_by(|a, b| a.0.cmp(b.0));
-            for (id, r) in fact_recs {
+            for (id, r) in sorted_matches(&recs, |id, r| {
                 if let Some(ref want) = filter.origin
                     && &r.origin != want
                 {
-                    continue;
+                    return false;
                 }
                 if let Some(ref want) = filter.creator
                     && &r.creator != want
                 {
-                    continue;
+                    return false;
                 }
                 if let Some(ts) = since
                     && r.submitted_at < ts
                 {
-                    continue;
+                    return false;
                 }
                 if let Some(ts) = until
                     && r.submitted_at > ts
                 {
-                    continue;
+                    return false;
                 }
                 if let Some(ids) = filter.fact_ids.as_ref() {
                     let canonical = CoordId::resolve(id).to_string();
@@ -1695,10 +1739,12 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                         .iter()
                         .any(|x| CoordId::resolve(x).to_string() == canonical)
                     {
-                        continue;
+                        return false;
                     }
                 }
-                let content_hash = Self::hex_blob_hash(&r.blob_hash).unwrap_or(FihHash([0u8; 32]));
+                true
+            }) {
+                let content_hash = Self::blob_hash_or_zero(&r.blob_hash);
                 fact_blob_jobs.push((facts.len(), r.blob_hash.clone()));
                 facts.push(Fact {
                     id: CoordId::resolve(id),
@@ -1714,29 +1760,27 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
         }
         {
             let recs = self.intent_records.borrow();
-            let mut intent_recs: Vec<(&String, &IntentRecord)> = recs.iter().collect();
-            intent_recs.sort_by(|a, b| a.0.cmp(b.0));
-            for (id, r) in intent_recs {
+            for (id, r) in sorted_matches(&recs, |id, r| {
                 if let Some(ref want) = filter.creator
                     && &r.creator != want
                 {
-                    continue;
+                    return false;
                 }
                 let created_ns = r.created_at * 1_000_000_000;
                 if let Some(ts) = since
                     && created_ns < ts
                 {
-                    continue;
+                    return false;
                 }
                 if let Some(ts) = until
                     && created_ns > ts
                 {
-                    continue;
+                    return false;
                 }
                 if let Some(st) = filter.status.as_ref()
                     && simple_status_key(&r.status) != st.as_str()
                 {
-                    continue;
+                    return false;
                 }
                 if let Some(ids) = filter.intent_ids.as_ref() {
                     let canonical = CoordId::resolve(id).to_string();
@@ -1744,9 +1788,11 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                         .iter()
                         .any(|x| CoordId::resolve(x).to_string() == canonical)
                     {
-                        continue;
+                        return false;
                     }
                 }
+                true
+            }) {
                 let description = if r.description_hash.is_empty() {
                     id.clone()
                 } else {
@@ -1788,13 +1834,11 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
         }
         {
             let recs = self.hint_records.borrow();
-            let mut hint_recs: Vec<(&String, &HintRecord)> = recs.iter().collect();
-            hint_recs.sort_by(|a, b| a.0.cmp(b.0));
-            for (id, r) in hint_recs {
+            for (id, r) in sorted_matches(&recs, |id, r| {
                 if let Some(ref want) = filter.creator
                     && &r.creator != want
                 {
-                    continue;
+                    return false;
                 }
                 if let Some(ids) = filter.hint_ids.as_ref() {
                     let canonical = CoordId::resolve(id).to_string();
@@ -1802,9 +1846,11 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                         .iter()
                         .any(|x| CoordId::resolve(x).to_string() == canonical)
                     {
-                        continue;
+                        return false;
                     }
                 }
+                true
+            }) {
                 hints.push(Hint {
                     id: CoordId::resolve(id),
                     content: r.content.clone(),
@@ -1972,13 +2018,8 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
 
         {
             let recs = self.fact_records.borrow();
-            let mut fact_recs: Vec<(&String, &FactRecord)> = recs.iter().collect();
-            fact_recs.sort_by(|a, b| a.0.cmp(b.0));
-            for (id, r) in fact_recs {
-                if r.origin != prefix {
-                    continue;
-                }
-                let content_hash = Self::hex_blob_hash(&r.blob_hash).unwrap_or(FihHash([0u8; 32]));
+            for (id, r) in sorted_matches(&recs, |_, r| r.origin == prefix) {
+                let content_hash = Self::blob_hash_or_zero(&r.blob_hash);
                 fact_blob_jobs.push((facts.len(), r.blob_hash.clone()));
                 facts.push(Fact {
                     id: CoordId::resolve(id),
@@ -1994,12 +2035,7 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
         }
         {
             let recs = self.intent_records.borrow();
-            let mut intent_recs: Vec<(&String, &IntentRecord)> = recs.iter().collect();
-            intent_recs.sort_by(|a, b| a.0.cmp(b.0));
-            for (id, r) in intent_recs {
-                if r.creator != prefix {
-                    continue;
-                }
+            for (id, r) in sorted_matches(&recs, |_, r| r.creator == prefix) {
                 let description = if r.description_hash.is_empty() {
                     id.clone()
                 } else {
@@ -2041,12 +2077,7 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
         }
         {
             let recs = self.hint_records.borrow();
-            let mut hint_recs: Vec<(&String, &HintRecord)> = recs.iter().collect();
-            hint_recs.sort_by(|a, b| a.0.cmp(b.0));
-            for (id, r) in hint_recs {
-                if r.creator != prefix {
-                    continue;
-                }
+            for (id, r) in sorted_matches(&recs, |_, r| r.creator == prefix) {
                 hints.push(Hint {
                     id: CoordId::resolve(id),
                     content: r.content.clone(),

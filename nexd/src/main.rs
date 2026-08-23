@@ -140,15 +140,33 @@ async fn scheduler_task(mut shutdown: ShutdownHandle, config: nexd::config::Nexd
     let tick_interval = Duration::from_millis(config.tick_interval_ms);
     let heartbeat_ttl = Duration::from_secs(config.heartbeat_ttl_secs);
     let socket = config.nex_server_socket.clone();
+    // Log the first failure and the recovery, not every 100 ms tick.
+    let mut failing = false;
 
     loop {
         tokio::select! {
             () = shutdown.cancelled() => { tracing::info!("scheduler stopping"); break; }
             () = tokio::time::sleep(tick_interval) => {
-                let Ok(mut client) = NexClient::connect(&socket).await else { continue; };
+                let Ok(mut client) = NexClient::connect(&socket).await else {
+                    if !failing { tracing::warn!("scheduler: nex-server connect failed"); failing = true; }
+                    continue;
+                };
                 // Structured read only: the heartbeat check needs ids,
                 // workers, and timestamps, not content materialization.
-                let Ok(state) = client.read_state_struct().await else { continue; };
+                let state = match client.read_state_struct().await {
+                    Ok(state) => state,
+                    Err(e) => {
+                        if !failing {
+                            tracing::warn!(error = %e, "scheduler: read_state_struct failed; stale heartbeats will not be released");
+                            failing = true;
+                        }
+                        continue;
+                    }
+                };
+                if failing {
+                    tracing::info!("scheduler: nex-server communication recovered");
+                    failing = false;
+                }
 
                 let now_secs = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
