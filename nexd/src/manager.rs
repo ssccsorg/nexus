@@ -5,8 +5,9 @@
 // terminated.
 
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 use tokio::process::{Child, Command};
-use tracing::info;
+use tracing::{error, info};
 
 use nix::sys::signal::{Signal, kill};
 use nix::unistd::Pid;
@@ -18,18 +19,28 @@ pub struct AgentHandle {
     pub command: String,
 }
 
+/// Children that exit within this window of their spawn count as
+/// crash-looping and advance the respawn circuit breaker.
+const RAPID_EXIT_WINDOW: Duration = Duration::from_secs(10);
+/// Consecutive rapid exits that stop respawning a command.
+const MAX_RAPID_EXITS: u32 = 5;
+
 /// Internal state for a tracked child process.
 struct ChildEntry {
     handle: AgentHandle,
     child: Option<Child>,
     args: Vec<String>,
     respawn: bool,
+    spawned_at: Instant,
 }
 
 /// Manages lifecycle of child agent processes.
 pub struct ProcessManager {
     children: HashMap<u32, ChildEntry>,
     shutting_down: bool,
+    /// Consecutive rapid-exit count per command (respawn circuit
+    /// breaker). Reset when a child survives the rapid-exit window.
+    respawn_exits: HashMap<String, u32>,
 }
 
 impl Default for ProcessManager {
@@ -43,6 +54,7 @@ impl ProcessManager {
         Self {
             children: HashMap::new(),
             shutting_down: false,
+            respawn_exits: HashMap::new(),
         }
     }
 
@@ -81,6 +93,7 @@ impl ProcessManager {
                 child: Some(child),
                 args: args.to_vec(),
                 respawn,
+                spawned_at: Instant::now(),
             },
         );
 
@@ -100,7 +113,25 @@ impl ProcessManager {
             {
                 info!(pid, exit = %status, command = %entry.handle.command, "child process exited");
                 if entry.respawn && !self.shutting_down {
-                    respawns.push((entry.handle.command.clone(), entry.args.clone()));
+                    let rapid = entry.spawned_at.elapsed() < RAPID_EXIT_WINDOW;
+                    let failures = self
+                        .respawn_exits
+                        .entry(entry.handle.command.clone())
+                        .or_insert(0);
+                    if rapid {
+                        *failures += 1;
+                    } else {
+                        *failures = 0;
+                    }
+                    if *failures >= MAX_RAPID_EXITS {
+                        error!(
+                            command = %entry.handle.command,
+                            failures,
+                            "stopping respawn after repeated rapid crashes"
+                        );
+                    } else {
+                        respawns.push((entry.handle.command.clone(), entry.args.clone()));
+                    }
                 }
                 dead.push(pid);
             }
