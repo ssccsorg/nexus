@@ -187,9 +187,30 @@ async fn process_manager_task(
             () = shutdown.cancelled() => {
                 tracing::info!("process manager stopping");
                 // SIGTERM to children (nex-server shuts down gracefully),
-                // bounded wait, then force-kill the remainder (#146).
-                { let mut pm = process_manager.lock().unwrap(); pm.shutdown_graceful(Duration::from_secs(5)); }
-                { let mut pm = process_manager.lock().unwrap(); pm.try_reap(); }
+                // then poll for exit with short locks so IPC handlers are
+                // not starved for the whole shutdown window; force-kill
+                // the remainder after the deadline (#146).
+                {
+                    let mut pm = process_manager.lock().unwrap();
+                    pm.request_shutdown_children();
+                }
+                let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+                loop {
+                    let all_exited = {
+                        let mut pm = process_manager.lock().unwrap();
+                        let exited = pm.all_children_exited();
+                        pm.try_reap();
+                        exited
+                    };
+                    if all_exited || tokio::time::Instant::now() >= deadline {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+                {
+                    let mut pm = process_manager.lock().unwrap();
+                    pm.force_kill_children();
+                }
                 break;
             }
             () = tokio::time::sleep(Duration::from_secs(5)) => {

@@ -5,7 +5,6 @@
 // terminated.
 
 use std::collections::HashMap;
-use std::time::Duration;
 use tokio::process::{Child, Command};
 use tracing::info;
 
@@ -117,34 +116,31 @@ impl ProcessManager {
         }
     }
 
-    /// Gracefully stop all children: send SIGTERM, wait up to `timeout`
-    /// for exit, then force-kill the remainder. Marks the manager as
-    /// shutting down so [`try_reap`] does not respawn.
-    pub fn shutdown_graceful(&mut self, timeout: Duration) {
+    /// Send SIGTERM to all children and mark the manager as shutting
+    /// down so [`try_reap`] does not respawn. Non-blocking.
+    pub fn request_shutdown_children(&mut self) {
         self.shutting_down = true;
 
         let pids: Vec<i32> = self.children.keys().map(|pid| *pid as i32).collect();
         for pid in &pids {
             let _ = kill(Pid::from_raw(*pid), Signal::SIGTERM);
         }
-        info!(children = pids.len(), timeout = ?timeout, "sending SIGTERM to children");
+        info!(children = pids.len(), "sending SIGTERM to children");
+    }
 
-        let deadline = std::time::Instant::now() + timeout;
-        loop {
-            let mut all_exited = true;
-            for entry in self.children.values_mut() {
-                if let Some(ref mut child) = entry.child
-                    && child.try_wait().ok().flatten().is_none()
-                {
-                    all_exited = false;
-                }
-            }
-            if all_exited || std::time::Instant::now() >= deadline {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(50));
-        }
+    /// Whether every tracked child has exited.
+    pub fn all_children_exited(&mut self) -> bool {
+        self.children.values_mut().all(|entry| {
+            entry
+                .child
+                .as_mut()
+                .map(|c| c.try_wait().ok().flatten().is_some())
+                .unwrap_or(true)
+        })
+    }
 
+    /// Force-kill all remaining children and clear the tracking map.
+    pub fn force_kill_children(&mut self) {
         for (_pid, entry) in self.children.drain() {
             if let Some(mut child) = entry.child {
                 let _ = child.start_kill();
