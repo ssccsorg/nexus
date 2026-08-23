@@ -171,6 +171,12 @@ pub struct FihStorage<I: FileIo> {
     /// `IntentRecord::from_facts`; concluded intents stay linked (their
     /// from_facts never change).
     fact_to_intents: Cell2<HashMap<String, Vec<String>>>,
+    /// Content-addressed blob cache (#173 follow-up). Blobs are immutable
+    /// (hash to content), so a cache keyed by blob hash never needs
+    /// invalidation. Populated on first materialization and served on
+    /// subsequent reads, removing the per-read io round trip for already
+    /// seen content. Memory grows with the distinct blob working set.
+    blob_cache: Cell2<HashMap<String, Content>>,
     // Semantic stores (for similarity search).
     semantic_stores: Cell2<Vec<crate::semantic::DynSemanticStore>>,
     /// Counter for assigning semantic IDs to facts incrementally.
@@ -212,6 +218,7 @@ impl<I: FileIo> FihStorage<I> {
             intent_records: Cell2::new(HashMap::new()),
             hint_records: Cell2::new(HashMap::new()),
             fact_to_intents: Cell2::new(HashMap::new()),
+            blob_cache: Cell2::new(HashMap::new()),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
             pending: Cell2::new(Vec::new()),
@@ -234,6 +241,7 @@ impl<I: FileIo> FihStorage<I> {
             intent_records: Cell2::new(HashMap::new()),
             hint_records: Cell2::new(HashMap::new()),
             fact_to_intents: Cell2::new(HashMap::new()),
+            blob_cache: Cell2::new(HashMap::new()),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_id_counter: Cell2::new(0u32),
             pending: Cell2::new(Vec::new()),
@@ -906,70 +914,18 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
         // Serve the latest in-memory state from the application-layer
         // record maps, the authoritative record layer since the L2
         // restructure (#176). This removes the previous O(N) io scan
-        // (flush + list + read + decode + SHA-256 per record) from every
-        // state read (#173). The visible state is identical to the old
-        // behavior: records and blobs still in the write buffer are
-        // included via the pending fast path below; durability remains
-        // the explicit flush/session contract (FihSession, auto-flush
-        // stores), and read_state now agrees with read_state_filtered,
-        // which never flushed either.
-
-        // Build a blob lookup map once from pending writes so content is
-        // materialized without an io round trip when the blob is not yet
-        // flushed. Data and meta writes merge per blob hash: the data
-        // entry carries the payload, the meta entry the mime type.
-        let mut blob_map: HashMap<String, (String, Vec<u8>)> = HashMap::new();
-        for op in self.pending.borrow().iter() {
-            match op {
-                WriteOp::Write { path, data }
-                    if path.ends_with(".bin") && !path.ends_with(".bin.meta") =>
-                {
-                    if let Some(blob_hash) = path
-                        .strip_prefix("blob/")
-                        .and_then(|p| p.strip_suffix(".bin"))
-                    {
-                        blob_map
-                            .entry(blob_hash.to_string())
-                            .or_insert_with(|| (String::new(), Vec::new()))
-                            .1 = data.clone();
-                    }
-                }
-                WriteOp::Write { path, data } if path.ends_with(".bin.meta") => {
-                    if let Some(blob_hash) = path
-                        .strip_prefix("blob/")
-                        .and_then(|p| p.strip_suffix(".bin.meta"))
-                        && let Ok(meta) = postcard::from_bytes::<ContentMeta>(data)
-                    {
-                        blob_map
-                            .entry(blob_hash.to_string())
-                            .or_insert_with(|| (String::new(), Vec::new()))
-                            .0 = meta.mime_type;
-                    }
-                }
-                _ => {}
-            }
+        // (list + read + decode + SHA-256 per record) from every state
+        // read (#173). Content is materialized through the
+        // content-addressed blob cache, so repeated reads serve already
+        // seen blobs from memory instead of an io round trip.
+        //
+        // Pending writes are flushed first: the incremental write batch
+        // stays small, so cache misses below are limited to genuinely
+        // new blobs. A failed flush is logged: the signature has no
+        // error channel.
+        if let Err(e) = self.flush_pending().await {
+            log::warn!("read_state: flush pending failed: {e}");
         }
-
-        // Materialize content from pending blobs (no io fallback for
-        // blobs still in the write buffer).
-        let load_content_fast = |blob_hash: &str, default_mime: &str| -> Content {
-            if let Some((mime, data)) = blob_map.get(blob_hash)
-                && !data.is_empty()
-            {
-                return Content {
-                    mime_type: if mime.is_empty() {
-                        default_mime.to_string()
-                    } else {
-                        mime.clone()
-                    },
-                    data: data.clone(),
-                };
-            }
-            Content {
-                mime_type: default_mime.to_string(),
-                data: Vec::new(),
-            }
-        };
 
         // Reconstruct BoardState from the application-layer record maps.
         // Fact content and intent descriptions are collected as jobs and
@@ -1057,48 +1013,51 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
         }
 
         // Materialize fact content and intent descriptions now that the
-        // record-map borrows are released. Distinct blob hashes are
-        // loaded once each from IO (content dedup makes many records
-        // share a blob), then every job resolves from the shared map.
-        let mut io_blobs: HashMap<String, Content> = HashMap::new();
+        // record-map borrows are released. Distinct blob hashes missing
+        // from the cache are loaded once each from IO and inserted;
+        // every job then resolves from the cache, so repeated reads of
+        // the same content never touch io.
+        let mut missing: Vec<String> = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
-        for (_, hash) in fact_blob_jobs.iter() {
-            let c = load_content_fast(hash, "application/octet-stream");
-            if c.data.is_empty() && seen.insert(hash.clone()) {
-                io_blobs.insert(hash.clone(), load_blob(&self.io, hash).await);
+        for (_, hash) in fact_blob_jobs.iter().chain(desc_jobs.iter()) {
+            if !self.blob_cache.borrow().contains_key(hash) && seen.insert(hash.clone()) {
+                missing.push(hash.clone());
             }
         }
-        for (_, hash) in desc_jobs.iter() {
-            let c = load_content_fast(hash, "text/plain");
-            if c.data.is_empty() && seen.insert(hash.clone()) {
-                io_blobs.insert(hash.clone(), load_blob(&self.io, hash).await);
+        if !missing.is_empty() {
+            // Load into a local buffer first so no Cell2 borrow is held
+            // across an await (keeps the future Send for tokio::spawn).
+            let mut loaded: Vec<(String, Content)> = Vec::with_capacity(missing.len());
+            for hash in missing {
+                loaded.push((hash.clone(), load_blob(&self.io, &hash).await));
+            }
+            let mut cache = self.blob_cache.borrow_mut();
+            for (hash, content) in loaded {
+                cache.insert(hash, content);
             }
         }
         for (idx, hash) in fact_blob_jobs {
-            let c = load_content_fast(&hash, "application/octet-stream");
-            facts[idx].content = if c.data.is_empty() {
-                io_blobs.get(&hash).cloned().unwrap_or_else(|| Content {
-                    mime_type: "application/octet-stream".into(),
-                    data: Vec::new(),
-                })
-            } else {
-                c
-            };
+            facts[idx].content =
+                self.blob_cache
+                    .borrow()
+                    .get(&hash)
+                    .cloned()
+                    .unwrap_or_else(|| Content {
+                        mime_type: "application/octet-stream".into(),
+                        data: Vec::new(),
+                    });
         }
         for (idx, hash) in desc_jobs {
-            let c = load_content_fast(&hash, "text/plain");
-            let text = if c.data.is_empty() {
-                String::from_utf8_lossy(
-                    io_blobs
-                        .get(&hash)
-                        .map(|c| c.data.as_slice())
-                        .unwrap_or(b""),
-                )
-                .to_string()
-            } else {
-                String::from_utf8_lossy(&c.data).to_string()
-            };
-            intents[idx].description = text;
+            let content = self
+                .blob_cache
+                .borrow()
+                .get(&hash)
+                .cloned()
+                .unwrap_or_else(|| Content {
+                    mime_type: "text/plain".into(),
+                    data: Vec::new(),
+                });
+            intents[idx].description = String::from_utf8_lossy(&content.data).to_string();
         }
 
         BoardState {
