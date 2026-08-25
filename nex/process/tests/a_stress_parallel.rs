@@ -221,7 +221,7 @@ fn test_parallel_many_ants() {
     }
 
     const NUM_THREADS: usize = 50;
-    const OPS_PER_THREAD: u64 = 100;
+    const OPS_PER_THREAD: u64 = 200;
 
     let fact_counters = Arc::new(AtomicU64::new(0));
     let intent_counters = Arc::new(AtomicU64::new(0));

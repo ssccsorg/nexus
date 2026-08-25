@@ -47,7 +47,9 @@ async fn main() -> nexd::daemon::Result<()> {
     let nex_server_socket = cfg.nex_server_socket.clone();
     {
         let mut pm = process_manager.lock().unwrap();
-        if let Err(e) = pm.spawn(&cfg.nex_server_path, &[]) {
+        // nex-server is supervised: crash is detected by try_reap and it
+        // is respawned with its original command (#146).
+        if let Err(e) = pm.spawn_managed(&cfg.nex_server_path, &[], true) {
             tracing::error!(path = %cfg.nex_server_path, error = %e, "failed to spawn nex-server");
         }
     }
@@ -138,13 +140,33 @@ async fn scheduler_task(mut shutdown: ShutdownHandle, config: nexd::config::Nexd
     let tick_interval = Duration::from_millis(config.tick_interval_ms);
     let heartbeat_ttl = Duration::from_secs(config.heartbeat_ttl_secs);
     let socket = config.nex_server_socket.clone();
+    // Log the first failure and the recovery, not every 100 ms tick.
+    let mut failing = false;
 
     loop {
         tokio::select! {
             () = shutdown.cancelled() => { tracing::info!("scheduler stopping"); break; }
             () = tokio::time::sleep(tick_interval) => {
-                let Ok(mut client) = NexClient::connect(&socket).await else { continue; };
-                let Ok(state) = client.read_state().await else { continue; };
+                let Ok(mut client) = NexClient::connect(&socket).await else {
+                    if !failing { tracing::warn!("scheduler: nex-server connect failed"); failing = true; }
+                    continue;
+                };
+                // Structured read only: the heartbeat check needs ids,
+                // workers, and timestamps, not content materialization.
+                let state = match client.read_state_struct().await {
+                    Ok(state) => state,
+                    Err(e) => {
+                        if !failing {
+                            tracing::warn!(error = %e, "scheduler: read_state_struct failed; stale heartbeats will not be released");
+                            failing = true;
+                        }
+                        continue;
+                    }
+                };
+                if failing {
+                    tracing::info!("scheduler: nex-server communication recovered");
+                    failing = false;
+                }
 
                 let now_secs = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
@@ -184,12 +206,34 @@ async fn process_manager_task(
         tokio::select! {
             () = shutdown.cancelled() => {
                 tracing::info!("process manager stopping");
-                { let mut pm = process_manager.lock().unwrap(); pm.shutdown_sync(); }
-                tokio::time::sleep(Duration::from_millis(100)).await;
-                { let mut pm = process_manager.lock().unwrap(); pm.try_reap(); }
+                // SIGTERM to children (nex-server shuts down gracefully),
+                // then poll for exit with short locks so IPC handlers are
+                // not starved for the whole shutdown window; force-kill
+                // the remainder after the deadline (#146).
+                {
+                    let mut pm = process_manager.lock().unwrap();
+                    pm.request_shutdown_children();
+                }
+                let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+                loop {
+                    let all_exited = {
+                        let mut pm = process_manager.lock().unwrap();
+                        let exited = pm.all_children_exited();
+                        pm.try_reap();
+                        exited
+                    };
+                    if all_exited || tokio::time::Instant::now() >= deadline {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+                {
+                    let mut pm = process_manager.lock().unwrap();
+                    pm.force_kill_children();
+                }
                 break;
             }
-            () = tokio::time::sleep(Duration::from_secs(5)) => {
+            () = tokio::time::sleep(Duration::from_secs(1)) => {
                 let mut pm = process_manager.lock().unwrap(); pm.try_reap();
             }
         }

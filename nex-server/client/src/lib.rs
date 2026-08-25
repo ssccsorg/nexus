@@ -170,6 +170,12 @@ impl NexClient {
         self.call("read_state", serde_json::json!({})).await
     }
 
+    /// Convenience: read the board structure without content
+    /// materialization (empty fact content and intent descriptions).
+    pub async fn read_state_struct(&mut self) -> Result<Value, String> {
+        self.call("read_state_struct", serde_json::json!({})).await
+    }
+
     /// Convenience: submit an Intent.
     pub async fn write_intent(
         &mut self,

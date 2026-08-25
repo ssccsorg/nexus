@@ -4,7 +4,7 @@
 // No daemon, no agent management — pure blackboard.
 //
 // Usage:
-//   nex-server [/path/to/socket] [/path/to/data]
+//   NEX_SOCKET_PATH=/path/to/socket NEX_DATA_DIR=/path/to/data nex-server
 
 use std::path::PathBuf;
 use std::sync::Arc;

@@ -411,6 +411,49 @@ fn test_spawn_and_kill_agent() {
 }
 
 #[test]
+fn test_nex_server_restarts_after_crash() {
+    let d = DaemonHandle::start();
+    let nex_socket = d.temp_dir.path().join("nex-server.sock");
+
+    // At startup only the supervised nex-server is tracked.
+    let list = d.ok("list_agents", json!({}));
+    let agents = list["agents"].as_array().unwrap();
+    assert_eq!(agents.len(), 1, "only nex-server is tracked at startup");
+    let nex_pid = agents[0]["pid"].as_u64().unwrap();
+
+    // Crash it hard (SIGKILL): graceful shutdown is exercised on daemon
+    // stop; this verifies the respawn supervision (#146).
+    unsafe {
+        libc::kill(nex_pid as i32, libc::SIGKILL);
+    }
+    // Let signal delivery and the zombie transition settle before probing
+    // the socket, so the first probe cannot race the still-live process.
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    // Wait for the respawned nex-server to accept connections. The stale
+    // socket file refuses (ECONNREFUSED) until the new instance binds, so
+    // connect-ability is the liveness signal.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        if std::os::unix::net::UnixStream::connect(&nex_socket).is_ok() {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "respawned nex-server socket did not come back"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    }
+
+    // The supervised child is tracked again with a new pid.
+    let list = d.ok("list_agents", json!({}));
+    let agents = list["agents"].as_array().unwrap();
+    assert_eq!(agents.len(), 1, "respawn keeps exactly one nex-server");
+    let new_pid = agents[0]["pid"].as_u64().unwrap();
+    assert_ne!(new_pid, nex_pid, "respawn must yield a new pid");
+}
+
+#[test]
 fn test_multi_agent_management() {
     let d = DaemonHandle::start();
     let a = d.ok("spawn_agent", json!({"command":"sleep","args":["10"]}));
@@ -601,7 +644,7 @@ fn test_short_lived_agent_eventually_reaped() {
         .len();
     assert!(initial >= 1, "should have at least nex-server");
 
-    // Process manager reaps every 5s. Wait for agent count to drop back to initial.
+    // Process manager reaps every 1s. Wait for agent count to drop back to initial.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(12);
     loop {
         let list = d.ok("list_agents", json!({}));
