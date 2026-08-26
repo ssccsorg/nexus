@@ -184,31 +184,31 @@ fn seed_initial_corpus(bb: &mut impl Blackboard) {
             "architecture-layers",
             "five-layer",
         ),
-        // nexus/impl_init.llms.md — implementation details
+        // nexus/development/index.llms.md — implementation details
         claim(
             "i01",
-            "nexus/impl_init.llms.md",
+            "nexus/development/index.llms.md",
             "Core assembled from production-grade crates",
             "architecture-approach",
             "crate-assembly",
         ),
         claim(
             "i02",
-            "nexus/impl_init.llms.md",
+            "nexus/development/index.llms.md",
             "Single codebase compiles to WASM and native",
             "deployment-model",
             "unified-binary",
         ),
         claim(
             "i03",
-            "nexus/impl_init.llms.md",
+            "nexus/development/index.llms.md",
             "Cypher has richest LLM training data",
             "query-language",
             "cypher-first",
         ),
         claim(
             "i04",
-            "nexus/impl_init.llms.md",
+            "nexus/development/index.llms.md",
             "LLMs are accelerators, not requirements",
             "llm-role",
             "optional-accelerator",

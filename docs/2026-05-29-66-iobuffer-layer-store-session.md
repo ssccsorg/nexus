@@ -204,20 +204,20 @@ durable once flushed.
 
 ### Issue E: `ColdStorage` Documentation Inconsistency (Docs)
 
-**Severity**: Medium. **Scope**: Architecture document (`impl_init.qmd`).
+**Severity**: Medium. **Scope**: Architecture document (`development/index.qmd`).
 
-The `impl_init.qmd` file had `ColdStorage = FihPersistence + FilterCapable`,
+The `development/index.qmd` file had `ColdStorage = FihPersistence + FilterCapable`,
 omitting ScanCapable, TimeRangeCapable, FlushCapable, EvictCapable, and
 CypherCapable. This would cause any reader to misunderstand the storage
 architecture.
 
-**Status**: Resolved. Corrected in `impl_init.qmd` commit 601efec.
+**Status**: Resolved. Corrected in `development/index.qmd` commit 601efec.
 
 ---
 
 ### Issue F: `bindings/cf/` Directory Does Not Exist (Docs)
 
-**Severity**: Low. **Scope**: Architecture document (`impl_init.qmd`).
+**Severity**: Low. **Scope**: Architecture document (`development/index.qmd`).
 
 The Platform Bindings table referenced `bindings/cf/` as the CF Worker crate,
 but no such directory exists. The actual CF Worker binding is planned as
