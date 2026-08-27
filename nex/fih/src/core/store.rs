@@ -87,7 +87,7 @@ pub enum Record {
 /// Advisory only: the fingerprint is a 13.4-bit SHA-256 prefix, so
 /// collisions are possible. Record-field predicates compare exact
 /// strings; the axes provide ordering, not exact query keys.
-fn hash_str(s: &str) -> u16 {
+pub(crate) fn hash_str(s: &str) -> u16 {
     use sha2::Digest;
     let mut h = sha2::Sha256::new();
     h.update(s.as_bytes());
@@ -186,7 +186,7 @@ pub struct FihStorage<I: FileIo> {
     /// creator, status) to the set of record ids at that path. Memory is
     /// bounded by axis cardinality, not record count (L2 restructure,
     /// #176). The `iter_tree` ascending order contract is preserved.
-    store: Cell2<tagma_core::CoordSpaceN<6, Vec<String>>>,
+    pub(crate) store: Cell2<tagma_core::CoordSpaceN<6, Vec<String>>>,
     pub fact_records: Cell2<HashMap<String, FactRecord>>,
     pub intent_records: Cell2<HashMap<String, IntentRecord>>,
     pub hint_records: Cell2<HashMap<String, HintRecord>>,

@@ -13,6 +13,7 @@ pub mod intent_status;
 pub mod record;
 pub mod session;
 pub mod store;
+pub mod structural;
 
 // Store surface ownership: chton is the behavior layer. The EntityStore
 // family (trait + memory + materialized impls) lives in chton::store and
