@@ -726,6 +726,10 @@ fn bench_multidim_scale(c: &mut Criterion, n_facts: usize, label: &str) {
         b.iter(|| {
             let ids = store.structural_fact_ids(black_box(&creator_only));
             assert_eq!(ids.len(), creator_only_hits);
+            let recs = store.fact_records.borrow();
+            for id in &ids {
+                black_box(recs.get(id));
+            }
             black_box(ids);
         });
     });

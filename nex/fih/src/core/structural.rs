@@ -13,8 +13,9 @@
 // are mandatory: a fingerprint collision can place a record under a
 // candidate path whose record fields do not match the filter, and the
 // re-filter drops it. Time axes enter the prefix only when both `since`
-// and `until` are present; otherwise the exact predicates handle the
-// bounds and the prefix stops at entity plus any fixed origin/creator.
+// and `until` are present; without a bounded window the path falls back
+// to a full-tree walk (see below). `limit` and `offset` are not applied
+// by this method; callers page over the returned ids if needed.
 //
 // The contiguous-prefix property of `iter_prefix` bounds pruning power
 // by axis order: creator can only enter the prefix when origin is fixed,
@@ -44,7 +45,8 @@ impl<I: FileIo> FihStorage<I> {
     /// entity, origin, creator], unions the id sets, then re-applies the
     /// exact record-field predicates (origin, creator, since, until,
     /// fact_ids) on the authoritative record maps. Returns sorted
-    /// canonical ids.
+    /// canonical ids. `limit` and `offset` are not applied; the caller
+    /// pages over the returned ids if needed.
     pub fn structural_fact_ids(&self, filter: &StateFilter) -> Vec<String> {
         let since: Option<u64> = filter.since.as_ref().and_then(|s| s.parse().ok());
         let until: Option<u64> = filter.until.as_ref().and_then(|s| s.parse().ok());
