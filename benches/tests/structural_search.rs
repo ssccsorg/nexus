@@ -8,8 +8,10 @@
 // the tree stays small: 5 days x 4 origins x 5 creators = 100 leaves
 // (the CoordSpaceN dense-node cost is 11,172 slots per node, so the
 // tree is bounded by axis combos, not record count). Origin and creator
-// axes are hash fingerprints, so the candidate re-filters exactly; a
-// fingerprint collision would surface here as an id-set mismatch.
+// axes are hash fingerprints, so the candidate re-filters exactly. The
+// re-filter is what absorbs any fingerprint collision, so a collision
+// never surfaces as a mismatch; these tests verify the two paths stay
+// identical, they cannot detect a collision.
 
 use std::sync::{Arc, Mutex};
 
@@ -167,15 +169,12 @@ fn partial_axis_filters_agree() {
     );
 }
 
-#[test]
-fn lifecycle_docs_and_conclusions_agree() {
-    // Real-manifest docs + intent lifecycle (claim/conclude produce
-    // conclusion facts with unique "conclusion:<intent>" origins). Both
-    // paths must agree, including the high-cardinality conclusion origin
-    // axis and the intent status transitions.
+/// Real-manifest docs plus the FIH lifecycle per document (fact, intent,
+/// claim, conclude, conclusion fact) across `reps` day replications.
+fn build_lifecycle_store(store_id: &str, reps: usize) -> FihStorage<SimIo> {
     let clock = StepClock::new(T0_NS);
-    let store = FihStorage::with_clock(SimIo::new(), "lifecycle", Box::new(clock.clone()));
-    for rep in 0..2usize {
+    let store = FihStorage::with_clock(SimIo::new(), store_id, Box::new(clock.clone()));
+    for rep in 0..reps {
         clock.set(T0_NS + (rep as u64) * DAY_NS);
         for (i, (section, area, title)) in llms_manifest::LLMS_DOCS.iter().enumerate() {
             let doc_cid = CoordId::from_label(&format!("doc-{rep}-{i}"));
@@ -201,6 +200,16 @@ fn lifecycle_docs_and_conclusions_agree() {
         }
     }
     block_on(store.flush_pending()).unwrap();
+    store
+}
+
+#[test]
+fn lifecycle_docs_and_conclusions_agree() {
+    // Real-manifest docs + intent lifecycle (claim/conclude produce
+    // conclusion facts with unique "conclusion:<intent>" origins). Both
+    // paths must agree, including the high-cardinality conclusion origin
+    // axis and the intent status transitions.
+    let store = build_lifecycle_store("lifecycle", 2);
 
     // Section + area + window: doc facts only (conclusion origins differ).
     assert_same_result(
@@ -260,4 +269,125 @@ fn time_only_empty_and_unbounded_agree() {
     );
     // No filter at all: full state.
     assert_same_result(&store, &StateFilter::default());
+}
+
+#[test]
+fn fact_ids_filter_agrees() {
+    let store = build_store(10_000);
+    // Take two known creator-2 fact ids, then filter by them explicitly.
+    let probe = store.structural_fact_ids(&StateFilter {
+        creator: Some("creator-2".into()),
+        ..Default::default()
+    });
+    assert!(
+        probe.len() >= 2,
+        "fixture must produce at least two matches"
+    );
+    let wanted = vec![probe[0].clone(), probe[1].clone()];
+    assert_same_result(
+        &store,
+        &StateFilter {
+            creator: Some("creator-2".into()),
+            fact_ids: Some(wanted),
+            ..Default::default()
+        },
+    );
+}
+
+#[test]
+fn single_sided_and_inverted_bounds_agree() {
+    let store = build_store(10_000);
+    // Since only: no bounded window, so the prefix falls back to a
+    // full-tree walk and the exact predicate carries the lower bound.
+    assert_same_result(
+        &store,
+        &StateFilter {
+            creator: Some("creator-3".into()),
+            since: Some(since(2)),
+            ..Default::default()
+        },
+    );
+    // Until only.
+    assert_same_result(
+        &store,
+        &StateFilter {
+            origin: Some("origin-1".into()),
+            until: Some(until(3)),
+            ..Default::default()
+        },
+    );
+    // Inverted range: no fact can satisfy both bounds.
+    assert_same_result(
+        &store,
+        &StateFilter {
+            origin: Some("origin-2".into()),
+            creator: Some("creator-2".into()),
+            since: Some(since(5)),
+            until: Some(until(2)),
+            ..Default::default()
+        },
+    );
+    // Unparseable timestamps parse to None on both paths, so the filter
+    // carries no time bound.
+    assert_same_result(
+        &store,
+        &StateFilter {
+            creator: Some("creator-1".into()),
+            since: Some("not-a-number".into()),
+            ..Default::default()
+        },
+    );
+}
+
+#[test]
+fn mid_day_bounds_agree() {
+    // Fixture facts land exactly on day boundaries (T0 + d * DAY_NS). A
+    // window starting an hour into day 2 and ending an hour before day 4
+    // includes only the day-3 facts; the day-floor mapping must agree.
+    let store = build_store(10_000);
+    let since_mid = (T0_NS + 2 * DAY_NS + 3_600_000_000_000).to_string();
+    let until_mid = (T0_NS + 4 * DAY_NS - 3_600_000_000_000).to_string();
+    assert_same_result(
+        &store,
+        &StateFilter {
+            origin: Some("origin-1".into()),
+            creator: Some("creator-1".into()),
+            since: Some(since_mid),
+            until: Some(until_mid),
+            ..Default::default()
+        },
+    );
+}
+
+#[test]
+fn empty_store_agrees() {
+    let store = FihStorage::new(SimIo::new(), "empty");
+    assert_same_result(
+        &store,
+        &StateFilter {
+            origin: Some("origin-1".into()),
+            creator: Some("creator-1".into()),
+            since: Some(since(0)),
+            until: Some(until(2)),
+            ..Default::default()
+        },
+    );
+    assert_same_result(&store, &StateFilter::default());
+}
+
+#[test]
+fn lifecycle_full_tree_fallback_agrees() {
+    // The lifecycle store holds intents (claimed and concluded) and
+    // conclusion facts. A creator filter without time bounds takes the
+    // full-tree walk, which also collects intent and hint ids; the
+    // record-map guard must drop them so both paths return the identical
+    // fact id set.
+    let store = build_lifecycle_store("lifecycle-fallback", 2);
+    assert_same_result(
+        &store,
+        &StateFilter {
+            creator: Some("notes".into()),
+            ..Default::default()
+        },
+    );
 }

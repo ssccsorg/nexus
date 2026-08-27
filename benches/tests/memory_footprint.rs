@@ -8,9 +8,12 @@
 //  1. Multidim fixture with a FIXED axis-combo space (10 days x 10
 //     origins x 10 creators = 1000 leaves) while the record count grows
 //     from 10k to 1m. The tree footprint must stay constant; the record
-//     layer grows linearly. The reported constant (intercept) is the
-//     spatial index plus fixed overheads, and the marginal is the
-//     per-record cost (record maps plus pending/io record storage).
+//     layer grows linearly. The reported intercept is a linear fit: the
+//     100k and 1m intercepts are equal by construction (the per-record
+//     delta derives from those two points), so the direct node-cost
+//     evidence is the per-distinct-origin measurement below, and the
+//     marginal absorbs record maps, record storage, leaf id-set growth,
+//     and the semantic index.
 //
 //  2. Conclusion-origin cardinality: c facts with unique
 //     "conclusion:{i}" origins on one day. A high-cardinality axis

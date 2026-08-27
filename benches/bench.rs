@@ -16,7 +16,7 @@
 //               (add → query → conclude, at accumulation phases)
 //
 // Measured on Apple M1 (ARMv8.4-A Firestorm 3.2GHz), release profile
-// (median of 10 samples, 2026-08-20). All 19 benches execute in the
+// (median of 10 samples, 2026-08-20). All 43 benches execute in the
 // criterion harness. The historical 2026-07-31 figures predate the L2
 // restructure and the CoordId<20> migration (issue #176), so only
 // within-run comparisons are meaningful. Fresh baseline:
@@ -40,23 +40,25 @@
 //   conflict/check_conflict    386 ns          (occupied id, guard hit)
 //   conflict/check_idempotent  309 ns          (occupied id, idempotent retry)
 //
-// #179 multidim/ and kb_lifecycle/ (2026-08-26): the real-scenario
+// #179 multidim/ and kb_lifecycle/ (2026-08-27): the real-scenario
 // multi-dimensional search. The structural path (structural_fact_ids,
 // iter_prefix over the leading axes) vs the record-map scan
 // (read_state_filtered) on origin + creator + time-range filters:
 //
-//   fih/multidim_100k/scan_three_axis_wide    1.44 ms     struct 257 µs   (6x)
-//   fih/multidim_100k/scan_three_axis_narrow    940 µs     struct 37.4 µs (25x)
-//   fih/multidim_1m/scan_three_axis_wide       25.3 ms     struct 5.00 ms (5x)
-//   fih/multidim_1m/scan_three_axis_narrow     18.6 ms     struct 398 µs  (47x)
+//   fih/multidim_100k/scan_three_axis_wide    1.52 ms     struct 173 µs   (9x)
+//   fih/multidim_100k/scan_three_axis_narrow    952 µs     struct 25.0 µs (38x)
+//   fih/multidim_1m/scan_three_axis_wide       25.7 ms     struct 3.24 ms (8x)
+//   fih/multidim_1m/scan_three_axis_narrow     18.3 ms     struct 226 µs  (81x)
+//   fih/multidim_{100k,1m}/scan_origin_only_wide 7.7/106 ms vs struct
+//     3.6/48.6 ms (~2.2x): origin fixed, creator optional.
 //   fih/multidim_{100k,1m}/struct_creator_only  slower than scan: without
 //     origin fixed, the contiguous-prefix property cannot prune creator
 //     (axis order), so the structural path does a full-tree walk; the
-//     scan is cheaper (1m: 720 ms vs 110 ms).
+//     scan is cheaper (1m: 381 ms vs 108 ms).
 //   fih/kb_lifecycle (real llms.txt docs + FIH lifecycle: add → intent →
 //     claim → conclude → conclusion fact): 3-axis docs query, struct wins
-//     2.4x (phase 1) to 2.9x (phase 3); creator-only, struct 3.4-5.1 ms
-//     vs scan 8.5-14 µs (no pruning).
+//     4.5x (phase 1) to 5.3x (phase 3); creator-only, struct 2.6-3.8 ms
+//     vs scan 8-15 µs (no pruning).
 //
 // Wiring decision: structural pruning pays for time-bounded
 // origin(+creator) filters and the gap widens with scale; it must keep
@@ -567,6 +569,12 @@ fn bench_fih_intents_by_fact(c: &mut Criterion) {
 // bench measures: an ever-accumulating FIH knowledge network queried
 // spatio-temporally (origin + creator + time range) must not degrade
 // with record count on local hardware.
+//
+// Measurement asymmetry: the scan side (read_state_filtered) materializes
+// content and constructs BoardState, while the structural side measures
+// id selection plus record-map lookups. The ratios therefore bound the
+// pruning win; a wired read path pays materialization for the matched
+// ids and lands between the two measured numbers.
 
 const MD_ORIGINS: usize = 10;
 const MD_CREATORS: usize = 10;
@@ -656,6 +664,15 @@ fn md_creator_only(start_day: usize, end_day: usize) -> StateFilter {
     }
 }
 
+fn md_origin_only(start_day: usize, end_day: usize) -> StateFilter {
+    StateFilter {
+        origin: Some("origin-3".into()),
+        since: Some(md_since(start_day)),
+        until: Some(md_until(end_day)),
+        ..Default::default()
+    }
+}
+
 fn bench_multidim(c: &mut Criterion) {
     bench_multidim_scale(c, 100_000, "100k");
     bench_multidim_scale(c, 1_000_000, "1m");
@@ -672,6 +689,8 @@ fn bench_multidim_scale(c: &mut Criterion, n_facts: usize, label: &str) {
     let narrow_hits = per_combo_day;
     let creator_only = md_creator_only(0, MD_DAYS - 1);
     let creator_only_hits = per_combo_day * MD_DAYS * MD_ORIGINS;
+    let origin_only = md_origin_only(0, MD_DAYS - 1);
+    let origin_only_hits = per_combo_day * MD_DAYS * MD_CREATORS;
 
     let mut group = c.benchmark_group(format!("fih/multidim_{label}"));
 
@@ -726,6 +745,26 @@ fn bench_multidim_scale(c: &mut Criterion, n_facts: usize, label: &str) {
         b.iter(|| {
             let ids = store.structural_fact_ids(black_box(&creator_only));
             assert_eq!(ids.len(), creator_only_hits);
+            let recs = store.fact_records.borrow();
+            for id in &ids {
+                black_box(recs.get(id));
+            }
+            black_box(ids);
+        });
+    });
+    // Origin-only + time: the prefix prunes at entity + origin, so this
+    // is the origin-fixed, creator-optional case the decision text covers.
+    group.bench_function("scan_origin_only_wide", |b| {
+        b.iter(|| {
+            let state = block_on(store.read_state_filtered(black_box(&origin_only)));
+            assert_eq!(state.facts.len(), origin_only_hits);
+            black_box(state);
+        });
+    });
+    group.bench_function("struct_origin_only_wide", |b| {
+        b.iter(|| {
+            let ids = store.structural_fact_ids(black_box(&origin_only));
+            assert_eq!(ids.len(), origin_only_hits);
             let recs = store.fact_records.borrow();
             for id in &ids {
                 black_box(recs.get(id));

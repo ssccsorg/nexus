@@ -25,8 +25,6 @@
 // so the path falls back to a full-tree walk and the exact predicates
 // carry all selectivity.
 
-use std::collections::HashSet;
-
 use tagma_core::Coord;
 
 use crate::core::store::{FihStorage, hash_str};
@@ -53,12 +51,20 @@ impl<I: FileIo> FihStorage<I> {
         let origin_v = filter.origin.as_deref().map(hash_str);
         let creator_v = filter.creator.as_deref().map(hash_str);
 
-        let mut candidates: HashSet<String> = HashSet::new();
+        // Ids are duplicate-free by construction through the submit paths
+        // (each id lives at exactly one structural path, and place_record
+        // dedups within a path); sort plus dedup below is the safety net for
+        // the documented direct-writer edge. A Vec avoids the hashing and
+        // allocation cost of a set, which dominates the no-pruning fallback.
+        let mut candidates: Vec<String> = Vec::new();
         match (since, until) {
             (Some(s), Some(u)) => {
                 // Bounded day walk: each day contributes the subtree at
                 // that (time, entity, origin, creator) prefix. The exact
-                // ns predicates below trim within the day.
+                // ns predicates below trim within the day. The walk width
+                // is the window in days, so an open-ended `until` (for
+                // example u64::MAX) runs about 213k navigations; callers
+                // with unbounded ranges should use the record-map scan.
                 let store = self.store.borrow();
                 let mut day = s / DAY_NS;
                 let last = u / DAY_NS;
@@ -123,7 +129,10 @@ impl<I: FileIo> FihStorage<I> {
                 true
             })
             .collect();
+        // Dedup guards the documented direct-writer edge where the same id
+        // could be placed at two paths; the submit paths never produce one.
         out.sort();
+        out.dedup();
         out
     }
 }
@@ -134,7 +143,7 @@ fn collect_day_ids(
     day: u64,
     origin_v: Option<u16>,
     creator_v: Option<u16>,
-    out: &mut HashSet<String>,
+    out: &mut Vec<String>,
 ) {
     let Some(iter) = store.iter_prefix(&fact_prefix(day, origin_v, creator_v)) else {
         return;
