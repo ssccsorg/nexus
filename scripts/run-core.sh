@@ -61,6 +61,22 @@ run_wasm_check() {
         ' _ {} \;
 }
 
+# ── WASIp2 smoke check (issue #181): the MCU-relevant WASI target ──────
+#
+# The storage core must compile for wasm32-wasip2 so the future launcher
+# (Wasmi/WAMR + WASI-to-FAT32 bridge) can run FihStorage on-device. This
+# is a smoke target, not a full gate: it checks the storage-path crates
+# only (fih-model, nex-core, nex-fih), which are the ones the launcher
+# links. serde_json and futures-executor remain available on wasip2 (std
+# is supported), so this currently passes; the check fixes the property.
+
+run_wasip2_check() {
+    for pkg in fih-model nex-core nex-fih nex-io; do
+        echo "=== WASIp2: $pkg ==="
+        cargo check -p "$pkg" --target wasm32-wasip2 2>&1
+    done
+}
+
 # ── Pre-flight auto-fixes: catch trivial issues before strict checks ────
 
 run_fmt() {
@@ -109,12 +125,13 @@ run_all() {
     echo "=== fmt (after fixes) ===" && run_fmt
     echo "=== check ===" && run_check
     echo "=== wasm check ===" && run_wasm_check
+    echo "=== wasip2 smoke ===" && run_wasip2_check
     echo "=== clippy ===" && run_clippy
     echo "=== test ===" && run_test
 }
 
 case $MODE in
-    check)  echo "=== fmt --all ===" && run_fmt && run_check && run_wasm_check ;;
+    check)  echo "=== fmt --all ===" && run_fmt && run_check && run_wasm_check && run_wasip2_check ;;
     clippy) run_auto_fix && run_clippy ;;
     test)   echo "=== fmt --all ===" && run_fmt && run_wasm_check && run_test ;;
     all)

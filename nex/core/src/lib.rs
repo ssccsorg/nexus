@@ -9,7 +9,7 @@
 pub mod clock;
 pub mod storage;
 
-pub use clock::{Now, SystemClock};
+pub use clock::{Now, OffsetClock, SystemClock};
 pub use storage::blob_store::BlobStore;
 pub use storage::meta_store::MetaStore;
 pub use storage::object_store::ObjectStore;
