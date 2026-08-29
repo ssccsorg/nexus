@@ -12,7 +12,6 @@ chton.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.10"
-petgraph = { version = "0.6", features = ["serde-1"] }
 tagma-core = { git = "https://github.com/ssccsorg/syntagma", branch = "main" }
 postcard = { version = "1", features = ["alloc"] }
 futures-executor = "0.3"

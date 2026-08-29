@@ -81,8 +81,7 @@ run_clippy() {
         nex-io \
         nexus-storage-sim \
         interface-query \
-        interface-cypher \
-        nexus-gateway-serde-proxy \
+        nexus-gateway-serde-proxy 
         nexd
     do
         cargo clippy -p "$pkg" -- -D warnings -A clippy::await-holding-refcell-ref
@@ -102,8 +101,6 @@ run_test()   {
     # smoke verification runner: exercises every storage capability end to end
     cargo run -p nexus-storage-sim 2>&1
     echo "---"
-    # interface tests (cold routing, cypher scenarios) are part of the core gate
-    cargo test -p interface-cypher -- --nocapture 2>&1
 }
 run_all() {
     echo "=== fmt --all ===" && run_fmt

@@ -1,9 +1,8 @@
-// Rust privileged agent: direct Blackboard trait + GraphRead consumer.
+// Rust privileged agent: direct Blackboard trait consumer.
 //
-// Demonstrates how an internal (privileged) agent imports the nexus-graph
-// crate directly to access the Blackboard trait and execute Cypher queries
-// through GraphRead. This is the pattern for agents that run in-process
-// (dispatcher, gap-detector, verifier).
+// Demonstrates how an internal (privileged) agent imports the nex crate
+// directly to access the Blackboard trait. This is the pattern for agents
+// that run in-process (dispatcher, gap-detector, verifier).
 //
 // External agents use the HTTP gateway instead (see tests/consumers/).
 //
@@ -103,8 +102,7 @@ fn main() {
     println!("   Facts:   {}", state.facts.len());
     println!("   Intents: {}", state.intents.len());
     println!("   Hints:   {}", state.hints.len());
-    println!("\n   (External HTTP agent would see the same BoardState via GET /state)");
-    println!("   (Privileged agent has GraphRead + Cypher executor, external agents do not)");
+    println!("   (External HTTP agent would see the same BoardState via GET /state)");
 
-    println!("\nRust privileged agent: direct trait + Cypher access complete");
+    println!("\nRust privileged agent: direct trait access complete");
 }
