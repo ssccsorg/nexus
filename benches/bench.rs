@@ -10,9 +10,13 @@
 //   fih/      — FihStorage application level (filter, AND, axis_hints, write)
 //   kb_query/ — real knowledge-base scenario (10K docs, 10 projects, 20 authors)
 //   conflict/ — #176 conflict guard on the occupied-id path
+//   multidim/ — #179 real-scenario multi-dimensional search (record-map scan
+//               vs structural iter_prefix pruning, 100k and 1M)
+//   kb_lifecycle/ — #179 real llms.txt docs + FIH lifecycle simulation
+//               (add → query → conclude, at accumulation phases)
 //
 // Measured on Apple M1 (ARMv8.4-A Firestorm 3.2GHz), release profile
-// (median of 10 samples, 2026-08-20). All 19 benches execute in the
+// (median of 10 samples, 2026-08-20). All 43 benches execute in the
 // criterion harness. The historical 2026-07-31 figures predate the L2
 // restructure and the CoordId<20> migration (issue #176), so only
 // within-run comparisons are meaningful. Fresh baseline:
@@ -35,6 +39,31 @@
 //   kb_query/intents_by_fact   189 µs / 100    (inverse index)
 //   conflict/check_conflict    386 ns          (occupied id, guard hit)
 //   conflict/check_idempotent  309 ns          (occupied id, idempotent retry)
+//
+// #179 multidim/ and kb_lifecycle/ (2026-08-27): the real-scenario
+// multi-dimensional search. The structural path (structural_fact_ids,
+// iter_prefix over the leading axes) vs the record-map scan
+// (read_state_filtered) on origin + creator + time-range filters:
+//
+//   fih/multidim_100k/scan_three_axis_wide    1.52 ms     struct 173 µs   (9x)
+//   fih/multidim_100k/scan_three_axis_narrow    952 µs     struct 25.0 µs (38x)
+//   fih/multidim_1m/scan_three_axis_wide       25.7 ms     struct 3.24 ms (8x)
+//   fih/multidim_1m/scan_three_axis_narrow     18.3 ms     struct 226 µs  (81x)
+//   fih/multidim_{100k,1m}/scan_origin_only_wide 7.7/106 ms vs struct
+//     3.6/48.6 ms (~2.2x): origin fixed, creator optional.
+//   fih/multidim_{100k,1m}/struct_creator_only  slower than scan: without
+//     origin fixed, the contiguous-prefix property cannot prune creator
+//     (axis order), so the structural path does a full-tree walk; the
+//     scan is cheaper (1m: 381 ms vs 108 ms).
+//   fih/kb_lifecycle (real llms.txt docs + FIH lifecycle: add → intent →
+//     claim → conclude → conclusion fact): 3-axis docs query, struct wins
+//     4.5x (phase 1) to 5.3x (phase 3); creator-only, struct 2.6-3.8 ms
+//     vs scan 8-15 µs (no pruning).
+//
+// Wiring decision: structural pruning pays for time-bounded
+// origin(+creator) filters and the gap widens with scale; it must keep
+// the record-map scan as the fallback for filters that cannot form a
+// leading-axis prefix (no time bounds, or creator without origin).
 //
 // The #176 goals dominate the deltas: intents_by_fact went from an O(N)
 // scan (743 ms / 100 pre-index) to an O(fan-out) map lookup, and the
@@ -63,6 +92,11 @@
 
 use criterion::{BatchSize, Criterion, black_box, criterion_group, criterion_main};
 use futures_executor::block_on;
+
+// Real SSCCS documentation manifest (generated from docs/_llms/llms.txt):
+// (section, area, title) used by the kb_lifecycle scenario.
+#[path = "llms_manifest.rs"]
+mod llms_manifest;
 
 use nex_fih::{
     AsyncFactCapable, AsyncFilterCapable, AsyncIntentCapable, AsyncStorageRead, AxisHints,
@@ -483,7 +517,7 @@ fn bench_fih_axis_hints(c: &mut Criterion) {
 fn bench_fih_write_10k(c: &mut Criterion) {
     c.bench_function("fih/write_10k_facts", |b| {
         b.iter_batched(
-            || SimIo::new(),
+            SimIo::new,
             |io| {
                 let store = FihStorage::with_clock(io, "write", Box::new(nex_core::SystemClock));
                 for i in 0..10_000 {
@@ -518,6 +552,342 @@ fn bench_fih_intents_by_fact(c: &mut Criterion) {
             }
         });
     });
+}
+
+// ── multidim/: real-scenario multi-dimensional search (#179) ────────────
+//
+// Baseline: read_state_filtered scans the application-layer record maps
+// with field predicates. Candidate: structural_fact_ids prunes the
+// candidate id set with iter_prefix over [time_hi, time_lo, entity,
+// origin, creator] and re-applies the exact predicates. Both paths must
+// return the identical id set (asserted by benches/tests/structural_search.rs).
+//
+// The fixture places facts on controlled day buckets (10 days x 10
+// origins x 10 creators), so the structural index is identical at every
+// scale: tree cost stays constant while the record-map scan grows
+// linearly. That constant-index property is the production claim this
+// bench measures: an ever-accumulating FIH knowledge network queried
+// spatio-temporally (origin + creator + time range) must not degrade
+// with record count on local hardware.
+//
+// Measurement asymmetry: the scan side (read_state_filtered) materializes
+// content and constructs BoardState, while the structural side measures
+// id selection plus record-map lookups. The ratios therefore bound the
+// pruning win; a wired read path pays materialization for the matched
+// ids and lands between the two measured numbers.
+
+const MD_ORIGINS: usize = 10;
+const MD_CREATORS: usize = 10;
+const MD_DAYS: usize = 10;
+const MD_T0_NS: u64 = 1_000_000_000_000_000_000;
+const DAY_NS: u64 = 86_400_000_000_000;
+
+/// Clock with a shared handle: the fixture sets the timestamp at each
+/// day boundary, so every fact in a day group shares one day bucket.
+#[derive(Clone)]
+struct StepDayClock(std::sync::Arc<std::sync::Mutex<u64>>);
+
+impl StepDayClock {
+    fn new(start: u64) -> Self {
+        Self(std::sync::Arc::new(std::sync::Mutex::new(start)))
+    }
+    fn set(&self, ts: u64) {
+        *self.0.lock().unwrap() = ts;
+    }
+}
+
+impl nex_core::Now for StepDayClock {
+    fn now_nanos(&self) -> u64 {
+        *self.0.lock().unwrap()
+    }
+    fn now_secs(&self) -> u64 {
+        *self.0.lock().unwrap() / 1_000_000_000
+    }
+}
+
+/// Fact store with a controlled time distribution: `n_facts` over
+/// MD_DAYS day buckets, origin = i % 10, creator = (i / 10) % 10, so
+/// each (origin, creator) combo appears n_facts / (MD_DAYS * 100) times
+/// per day. Content is deduped to 100 blobs so materialization cost is
+/// bounded and scale-independent.
+fn build_multidim_store(n_facts: usize, label: &str) -> FihStorage<SimIo> {
+    let clock = StepDayClock::new(MD_T0_NS);
+    let store = FihStorage::with_clock(SimIo::new(), label, Box::new(clock.clone()));
+    let per_day = n_facts / MD_DAYS;
+    let mut i = 0usize;
+    for day in 0..MD_DAYS {
+        clock.set(MD_T0_NS + (day as u64) * DAY_NS);
+        for _ in 0..per_day {
+            let cid = bench_id(i as u64);
+            let fact = Fact::with_id(
+                cid,
+                format!("origin-{}", i % MD_ORIGINS),
+                format!(
+                    "Document {}: research content about paradigm shift",
+                    i % 100
+                )
+                .into(),
+                format!("creator-{}", (i / MD_ORIGINS) % MD_CREATORS),
+            );
+            block_on(store.submit_fact(&fact)).unwrap();
+            i += 1;
+        }
+    }
+    block_on(store.flush_pending()).unwrap();
+    store
+}
+
+fn md_since(day: usize) -> String {
+    (MD_T0_NS + (day as u64) * DAY_NS).to_string()
+}
+
+fn md_until(day: usize) -> String {
+    (MD_T0_NS + (day as u64 + 1) * DAY_NS - 1).to_string()
+}
+
+fn md_three_axis(start_day: usize, end_day: usize) -> StateFilter {
+    StateFilter {
+        origin: Some("origin-3".into()),
+        creator: Some("creator-3".into()),
+        since: Some(md_since(start_day)),
+        until: Some(md_until(end_day)),
+        ..Default::default()
+    }
+}
+
+fn md_creator_only(start_day: usize, end_day: usize) -> StateFilter {
+    StateFilter {
+        creator: Some("creator-3".into()),
+        since: Some(md_since(start_day)),
+        until: Some(md_until(end_day)),
+        ..Default::default()
+    }
+}
+
+fn md_origin_only(start_day: usize, end_day: usize) -> StateFilter {
+    StateFilter {
+        origin: Some("origin-3".into()),
+        since: Some(md_since(start_day)),
+        until: Some(md_until(end_day)),
+        ..Default::default()
+    }
+}
+
+fn bench_multidim(c: &mut Criterion) {
+    bench_multidim_scale(c, 100_000, "100k");
+    bench_multidim_scale(c, 1_000_000, "1m");
+}
+
+fn bench_multidim_scale(c: &mut Criterion, n_facts: usize, label: &str) {
+    // One store per scale group: the structural index is identical at
+    // both scales (same axis combos), only the record maps grow.
+    let store = build_multidim_store(n_facts, label);
+    let per_combo_day = n_facts / (MD_DAYS * MD_ORIGINS * MD_CREATORS);
+    let wide = md_three_axis(0, MD_DAYS - 1);
+    let wide_hits = per_combo_day * MD_DAYS;
+    let narrow = md_three_axis(4, 4);
+    let narrow_hits = per_combo_day;
+    let creator_only = md_creator_only(0, MD_DAYS - 1);
+    let creator_only_hits = per_combo_day * MD_DAYS * MD_ORIGINS;
+    let origin_only = md_origin_only(0, MD_DAYS - 1);
+    let origin_only_hits = per_combo_day * MD_DAYS * MD_CREATORS;
+
+    let mut group = c.benchmark_group(format!("fih/multidim_{label}"));
+
+    group.bench_function("scan_three_axis_wide", |b| {
+        b.iter(|| {
+            let state = block_on(store.read_state_filtered(black_box(&wide)));
+            assert_eq!(state.facts.len(), wide_hits);
+            black_box(state);
+        });
+    });
+    group.bench_function("struct_three_axis_wide", |b| {
+        b.iter(|| {
+            let ids = store.structural_fact_ids(black_box(&wide));
+            assert_eq!(ids.len(), wide_hits);
+            // Record-map lookups the wired path pays on materialization.
+            let recs = store.fact_records.borrow();
+            for id in &ids {
+                black_box(recs.get(id));
+            }
+            black_box(ids);
+        });
+    });
+    group.bench_function("scan_three_axis_narrow", |b| {
+        b.iter(|| {
+            let state = block_on(store.read_state_filtered(black_box(&narrow)));
+            assert_eq!(state.facts.len(), narrow_hits);
+            black_box(state);
+        });
+    });
+    group.bench_function("struct_three_axis_narrow", |b| {
+        b.iter(|| {
+            let ids = store.structural_fact_ids(black_box(&narrow));
+            assert_eq!(ids.len(), narrow_hits);
+            let recs = store.fact_records.borrow();
+            for id in &ids {
+                black_box(recs.get(id));
+            }
+            black_box(ids);
+        });
+    });
+    // Creator-only: origin is not fixed, so the contiguous-prefix
+    // property of iter_prefix cannot prune creator; the exact predicate
+    // carries the selectivity. Measures the axis-order limitation.
+    group.bench_function("scan_creator_only_wide", |b| {
+        b.iter(|| {
+            let state = block_on(store.read_state_filtered(black_box(&creator_only)));
+            assert_eq!(state.facts.len(), creator_only_hits);
+            black_box(state);
+        });
+    });
+    group.bench_function("struct_creator_only_wide", |b| {
+        b.iter(|| {
+            let ids = store.structural_fact_ids(black_box(&creator_only));
+            assert_eq!(ids.len(), creator_only_hits);
+            let recs = store.fact_records.borrow();
+            for id in &ids {
+                black_box(recs.get(id));
+            }
+            black_box(ids);
+        });
+    });
+    // Origin-only + time: the prefix prunes at entity + origin, so this
+    // is the origin-fixed, creator-optional case the decision text covers.
+    group.bench_function("scan_origin_only_wide", |b| {
+        b.iter(|| {
+            let state = block_on(store.read_state_filtered(black_box(&origin_only)));
+            assert_eq!(state.facts.len(), origin_only_hits);
+            black_box(state);
+        });
+    });
+    group.bench_function("struct_origin_only_wide", |b| {
+        b.iter(|| {
+            let ids = store.structural_fact_ids(black_box(&origin_only));
+            assert_eq!(ids.len(), origin_only_hits);
+            let recs = store.fact_records.borrow();
+            for id in &ids {
+                black_box(recs.get(id));
+            }
+            black_box(ids);
+        });
+    });
+
+    group.finish();
+}
+
+// ── kb_lifecycle/: real-document FIH lifecycle simulation (#179) ────────
+//
+// Ingests the real docs.ssccs.org/llms.txt manifest (embedded in
+// llms_manifest.rs), then simulates the FIH lifecycle per document:
+// fact (document) → intent (analyze) → claim → conclude → conclusion
+// fact (new knowledge, origin "conclusion:<intent>", creator = worker).
+// Replications advance the clock by one day, so the accumulated
+// knowledge network grows in time. Queries at accumulation phases
+// compare the record-map scan against the structural iter_prefix path
+// on the real section/area/time axes.
+
+const LC_REPS: usize = 3;
+
+fn build_lifecycle_store() -> FihStorage<SimIo> {
+    let clock = StepDayClock::new(MD_T0_NS);
+    let store = FihStorage::with_clock(SimIo::new(), "kb-lifecycle", Box::new(clock.clone()));
+    for rep in 0..LC_REPS {
+        clock.set(MD_T0_NS + (rep as u64) * DAY_NS);
+        for (i, (section, area, title)) in llms_manifest::LLMS_DOCS.iter().enumerate() {
+            let doc_cid = CoordId::from_label(&format!("doc-{rep}-{i}"));
+            let doc = Fact::with_id(
+                doc_cid,
+                (*section).into(),
+                format!("{title}\n\nMarkdown body of the {title} document.").into(),
+                (*area).into(),
+            );
+            block_on(store.submit_fact(&doc)).unwrap();
+            let intent_id = format!("analyze-{rep}-{i}");
+            let intent = Intent::new(
+                CoordId::from_label(&intent_id),
+                vec![doc_cid],
+                None,
+                format!("analyze {title}"),
+                (*area).into(),
+            );
+            block_on(store.submit_intent(&intent)).unwrap();
+            block_on(store.claim_intent(&intent_id, area)).unwrap();
+            let conclusion = format!("conclusion for {title}");
+            block_on(store.conclude_intent(&intent_id, &conclusion)).unwrap();
+        }
+    }
+    block_on(store.flush_pending()).unwrap();
+    store
+}
+
+/// Number of manifest docs matching the section/area pair (None matches
+/// any value on that axis).
+fn lc_count(section: Option<&str>, area: Option<&str>) -> usize {
+    llms_manifest::LLMS_DOCS
+        .iter()
+        .filter(|(s, a, _)| section.is_none_or(|x| *s == x) && area.is_none_or(|x| *a == x))
+        .count()
+}
+
+fn bench_kb_lifecycle(c: &mut Criterion) {
+    let store = build_lifecycle_store();
+    let mut group = c.benchmark_group("fih/kb_lifecycle");
+
+    // Query shapes on the real manifest axes. Phase p covers days 0..p.
+    for phase in [1usize, LC_REPS] {
+        let since = md_since(0);
+        let until = md_until(phase - 1);
+        // Section + area + time: the projects/nexus docs by the nexus
+        // maintainer (doc facts only; conclusion origins differ).
+        let f1 = StateFilter {
+            origin: Some("projects".into()),
+            creator: Some("nexus".into()),
+            since: Some(since.clone()),
+            until: Some(until.clone()),
+            ..Default::default()
+        };
+        let hits1 = lc_count(Some("projects"), Some("nexus")) * phase;
+        // Creator-only + time: the notes-area maintainer, including the
+        // conclusion facts they produced (one per doc, worker = area).
+        let f2 = StateFilter {
+            creator: Some("notes".into()),
+            since: Some(since),
+            until: Some(until),
+            ..Default::default()
+        };
+        let hits2 = lc_count(None, Some("notes")) * phase * 2;
+
+        group.bench_function(format!("scan_nexus_docs_phase{phase}"), |b| {
+            b.iter(|| {
+                let s = block_on(store.read_state_filtered(black_box(&f1)));
+                assert_eq!(s.facts.len(), hits1);
+                black_box(s);
+            });
+        });
+        group.bench_function(format!("struct_nexus_docs_phase{phase}"), |b| {
+            b.iter(|| {
+                let ids = store.structural_fact_ids(black_box(&f1));
+                assert_eq!(ids.len(), hits1);
+                black_box(ids);
+            });
+        });
+        group.bench_function(format!("scan_notes_creator_phase{phase}"), |b| {
+            b.iter(|| {
+                let s = block_on(store.read_state_filtered(black_box(&f2)));
+                assert_eq!(s.facts.len(), hits2);
+                black_box(s);
+            });
+        });
+        group.bench_function(format!("struct_notes_creator_phase{phase}"), |b| {
+            b.iter(|| {
+                let ids = store.structural_fact_ids(black_box(&f2));
+                assert_eq!(ids.len(), hits2);
+                black_box(ids);
+            });
+        });
+    }
+    group.finish();
 }
 
 // ── kb_query/: real knowledge-base scenario ──────────────────────────────
@@ -691,5 +1061,7 @@ criterion_group!(
         bench_fih_intents_by_fact,
         bench_kb_query,
         bench_conflict,
+        bench_multidim,
+        bench_kb_lifecycle,
 );
 criterion_main!(benches);
