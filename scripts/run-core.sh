@@ -81,7 +81,7 @@ run_clippy() {
         nex-io \
         nexus-storage-sim \
         interface-query \
-        nexus-gateway-serde-proxy 
+        nexus-gateway-serde-proxy \
         nexd
     do
         cargo clippy -p "$pkg" -- -D warnings -A clippy::await-holding-refcell-ref
