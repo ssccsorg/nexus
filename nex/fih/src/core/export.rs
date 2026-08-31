@@ -16,6 +16,7 @@
 //   - CfFihIo: (future) export/import over R2
 
 use crate::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
+#[cfg(feature = "std")]
 use crate::io::file_io::{FileIo, SyncFileIo};
 use alloc::format;
 use alloc::string::String;
@@ -56,6 +57,11 @@ struct BlobEntry {
 ///
 /// Scans the IO for fact, intent, hint records and blob entries,
 /// then serializes them into a single .fihbundle byte vector.
+///
+/// Std-only: `SyncFileIo` wraps the async `FileIo` contract with
+/// `futures_executor::block_on`, which needs std. On no_std targets
+/// the caller drives the async surface directly.
+#[cfg(feature = "std")]
 pub fn export_from_io<A: FileIo>(io: &SyncFileIo<A>) -> Result<Vec<u8>, String> {
     let sync = io;
 
@@ -152,6 +158,9 @@ pub fn export_from_io<A: FileIo>(io: &SyncFileIo<A>) -> Result<Vec<u8>, String> 
 ///
 /// Writes all records and blobs from the bundle into the IO,
 /// overwriting any existing data at the same paths.
+///
+/// Std-only: same `SyncFileIo` (block_on) dependency as `export_from_io`.
+#[cfg(feature = "std")]
 pub fn import_into_io<A: FileIo>(io: &SyncFileIo<A>, bundle: &[u8]) -> Result<(), String> {
     let sync = io;
 

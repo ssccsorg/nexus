@@ -242,6 +242,10 @@ pub struct FihStorage<I: FileIo> {
 }
 
 impl<I: FileIo> FihStorage<I> {
+    /// Create storage with a system wall clock. Std-only: `SystemClock`
+    /// wraps `std::time`. On no_std targets use `with_clock` with an
+    /// injected `Now` (e.g. `EpochClock` on an MCU).
+    #[cfg(feature = "std")]
     pub fn new(io: I, project_id: &str) -> Self {
         Self::with_clock(io, project_id, Box::new(nex_core::SystemClock))
     }
@@ -253,6 +257,8 @@ impl<I: FileIo> FihStorage<I> {
     /// Create storage with auto-flush enabled. Every write operation
     /// immediately flushes pending ops to IO for durability.
     /// Useful for R2-backed or direct-write deployments.
+    /// Std-only: uses `SystemClock`.
+    #[cfg(feature = "std")]
     pub fn with_auto_flush(io: I, project_id: &str) -> Self {
         Self::with_all(io, project_id, Box::new(nex_core::SystemClock), true)
     }
