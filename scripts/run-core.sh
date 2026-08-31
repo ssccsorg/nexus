@@ -99,6 +99,10 @@ run_nostd_check() {
     echo "=== true no_std target: wasm32-unknown-unknown ==="
     cargo check -p nex-core --no-default-features --target wasm32-unknown-unknown 2>&1
     cargo check -p nex-fih --no-default-features --target wasm32-unknown-unknown 2>&1
+    echo "=== MCU target: riscv32imac-unknown-none-elf ==="
+    cargo check -p nex-core --no-default-features --target riscv32imac-unknown-none-elf 2>&1
+    cargo check -p nex-fih --no-default-features --target riscv32imac-unknown-none-elf 2>&1
+    cargo check -p nex-io --no-default-features --target riscv32imac-unknown-none-elf 2>&1
 }
 
 # ── Pre-flight auto-fixes: catch trivial issues before strict checks ────
