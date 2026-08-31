@@ -21,6 +21,20 @@ use alloc::boxed::Box;
 
 extern crate alloc;
 
+// The no_std build disables critical-section's std implementation, so the
+// native test binary needs an explicit implementation to link. This is a
+// no-op (single-threaded test) placeholder; a real MCU provides the same
+// symbols from the firmware/HAL.
+use critical_section::RawRestoreState;
+
+struct TestCriticalSection;
+critical_section::set_impl!(TestCriticalSection);
+
+unsafe impl critical_section::Impl for TestCriticalSection {
+    unsafe fn acquire() -> RawRestoreState {}
+    unsafe fn release(_restore_state: RawRestoreState) {}
+}
+
 use nex_core::{EpochClock, Monotonic, Now};
 use nex_fih::FihContract;
 use nex_fih::contract::core::{EvidenceChain, GovernanceGate, HintEngine, HintRule};
