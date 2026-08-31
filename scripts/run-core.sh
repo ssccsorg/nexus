@@ -89,20 +89,27 @@ run_wasip2_check() {
 # exercised by the regular std test suite.
 
 run_nostd_check() {
-    for pkg in fih-model nex-core nex-fih nex-io; do
+    # fih-model lives in the root workspace; the nex-* crates live in the
+    # `nex` sub-workspace. The no_std checks must run from the workspace
+    # that owns each crate: the root workspace's serde (default std)
+    # would otherwise unify into the nex crates' feature set and break
+    # the std-less MCU target.
+    echo "=== no_std check: fih-model (no-default-features) ==="
+    cargo check -p fih-model --no-default-features 2>&1
+    for pkg in nex-core nex-fih nex-io; do
         echo "=== no_std check: $pkg (no-default-features) ==="
-        cargo check -p "$pkg" --no-default-features 2>&1
+        (cd nex && cargo check -p "$pkg" --no-default-features) 2>&1
     done
     echo "=== no_std anchor tests ==="
-    cargo test -p nex-core --no-default-features --test no_std_anchors 2>&1
-    cargo test -p nex-fih --no-default-features --test no_std_anchors 2>&1
+    (cd nex && cargo test -p nex-core --no-default-features --test no_std_anchors) 2>&1
+    (cd nex && cargo test -p nex-fih --no-default-features --test no_std_anchors) 2>&1
     echo "=== true no_std target: wasm32-unknown-unknown ==="
-    cargo check -p nex-core --no-default-features --target wasm32-unknown-unknown 2>&1
-    cargo check -p nex-fih --no-default-features --target wasm32-unknown-unknown 2>&1
+    (cd nex && cargo check -p nex-core --no-default-features --target wasm32-unknown-unknown) 2>&1
+    (cd nex && cargo check -p nex-fih --no-default-features --target wasm32-unknown-unknown) 2>&1
     echo "=== MCU target: riscv32imac-unknown-none-elf ==="
-    cargo check -p nex-core --no-default-features --target riscv32imac-unknown-none-elf 2>&1
-    cargo check -p nex-fih --no-default-features --target riscv32imac-unknown-none-elf 2>&1
-    cargo check -p nex-io --no-default-features --target riscv32imac-unknown-none-elf 2>&1
+    (cd nex && cargo check -p nex-core --no-default-features --target riscv32imac-unknown-none-elf) 2>&1
+    (cd nex && cargo check -p nex-fih --no-default-features --target riscv32imac-unknown-none-elf) 2>&1
+    (cd nex && cargo check -p nex-io --no-default-features --target riscv32imac-unknown-none-elf) 2>&1
 }
 
 # ── Pre-flight auto-fixes: catch trivial issues before strict checks ────
