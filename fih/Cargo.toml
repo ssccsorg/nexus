@@ -13,4 +13,3 @@ log = "0.4"
 
 [dev-dependencies]
 serde_json = "1"
-futures-executor = "0.3"
