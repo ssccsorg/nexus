@@ -77,6 +77,30 @@ run_wasip2_check() {
     done
 }
 
+# ── no_std anchors (issue #181): the OS-less storage path must stay std-free ──
+#
+# The storage core is layered: fih-model (pure types), nex-core (clock
+# contracts), nex-fih (semantics). Each layer must compile and pass its
+# anchor tests with `--no-default-features`; the integration test files
+# (tests/no_std_anchors.rs) reference no std APIs, so a std type leaking
+# past its feature gate breaks the build. The real no_std target check is
+# wasm32-unknown-unknown (wasip2 supports std, so it is only a smoke
+# target). The host-only std surface (FsIo, FileOrigin, SystemClock) is
+# exercised by the regular std test suite.
+
+run_nostd_check() {
+    for pkg in fih-model nex-core nex-fih nex-io; do
+        echo "=== no_std check: $pkg (no-default-features) ==="
+        cargo check -p "$pkg" --no-default-features 2>&1
+    done
+    echo "=== no_std anchor tests ==="
+    cargo test -p nex-core --no-default-features --test no_std_anchors 2>&1
+    cargo test -p nex-fih --no-default-features --test no_std_anchors 2>&1
+    echo "=== true no_std target: wasm32-unknown-unknown ==="
+    cargo check -p nex-core --no-default-features --target wasm32-unknown-unknown 2>&1
+    cargo check -p nex-fih --no-default-features --target wasm32-unknown-unknown 2>&1
+}
+
 # ── Pre-flight auto-fixes: catch trivial issues before strict checks ────
 
 run_fmt() {
@@ -126,12 +150,13 @@ run_all() {
     echo "=== check ===" && run_check
     echo "=== wasm check ===" && run_wasm_check
     echo "=== wasip2 smoke ===" && run_wasip2_check
+    echo "=== no_std anchors ===" && run_nostd_check
     echo "=== clippy ===" && run_clippy
     echo "=== test ===" && run_test
 }
 
 case $MODE in
-    check)  echo "=== fmt --all ===" && run_fmt && run_check && run_wasm_check && run_wasip2_check ;;
+    check)  echo "=== fmt --all ===" && run_fmt && run_check && run_wasm_check && run_wasip2_check && run_nostd_check ;;
     clippy) run_auto_fix && run_clippy ;;
     test)   echo "=== fmt --all ===" && run_fmt && run_wasm_check && run_test ;;
     all)
