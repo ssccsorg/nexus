@@ -22,9 +22,9 @@ use alloc::boxed::Box;
 extern crate alloc;
 
 use nex_core::{EpochClock, Monotonic, Now};
+use nex_fih::FihContract;
 use nex_fih::contract::core::{EvidenceChain, GovernanceGate, HintEngine, HintRule};
 use nex_fih::core::index::Cell2;
-use nex_fih::FihContract;
 
 // ── Monotonic: fake MCU tick, std-free ─────────────────────────────────
 
@@ -46,7 +46,8 @@ fn contract_constructs_with_injected_clock() {
     // The no_std path must construct with an injected clock: no
     // `SystemTime`, no std. An MCU launcher pins an epoch at boot and
     // advances from its timer tick.
-    let clock: Box<dyn Now + Send + Sync> = Box::new(EpochClock::new(1_700_000_000, FakeTick::default()));
+    let clock: Box<dyn Now + Send + Sync> =
+        Box::new(EpochClock::new(1_700_000_000, FakeTick::default()));
     let contract = FihContract::with_clock(clock);
     assert_eq!(contract.gate.schema_count(), 0);
     assert!(contract.evidence.verify(0));

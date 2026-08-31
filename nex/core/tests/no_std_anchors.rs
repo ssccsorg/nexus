@@ -63,7 +63,10 @@ fn epoch_clock_advances_with_monotonic_tick() {
     tick.tick(2_500_000_000);
     let clock = EpochClock::new(1_700_000_000, tick);
     assert_eq!(clock.now_secs(), 1_700_000_002);
-    assert_eq!(clock.now_nanos(), 1_700_000_002 * 1_000_000_000 + 500_000_000);
+    assert_eq!(
+        clock.now_nanos(),
+        1_700_000_002 * 1_000_000_000 + 500_000_000
+    );
 }
 
 #[test]
