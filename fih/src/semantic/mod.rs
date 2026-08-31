@@ -21,7 +21,10 @@ pub mod record;
 
 pub use record::{Query, RecordLoad};
 
-use std::fmt::Debug;
+use alloc::boxed::Box;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::fmt::Debug;
 
 // ── Platform-adaptive async trait bounds ───────────────────────────
 //

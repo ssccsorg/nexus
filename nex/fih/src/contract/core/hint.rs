@@ -10,7 +10,11 @@
 //   - FromSchema/ToSchema: schema constraints (stubbed in v1)
 //   - Custom: arbitrary string constraint (stubbed in v1)
 
-use std::sync::Mutex;
+use crate::core::index::Cell2;
+use alloc::format;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec::Vec;
 
 /// Constraint rule evaluated during Intent resolution.
 #[derive(Debug, Clone, PartialEq)]
@@ -115,8 +119,8 @@ impl HintRule {
     }
 }
 
-impl std::fmt::Display for HintRule {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for HintRule {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.describe())
     }
 }
@@ -142,14 +146,14 @@ pub struct HintEntry {
 /// In v1, hints are simple rules evaluated in order. Future versions may
 /// add time-based decay (pheromone weakening) for true stigmergy.
 pub struct HintEngine {
-    hints: Mutex<Vec<HintEntry>>,
+    hints: Cell2<Vec<HintEntry>>,
 }
 
 impl HintEngine {
     /// Create a new empty hint engine.
     pub fn new() -> Self {
         Self {
-            hints: Mutex::new(Vec::new()),
+            hints: Cell2::new(Vec::new()),
         }
     }
 
@@ -160,25 +164,22 @@ impl HintEngine {
             description: rule.describe(),
             rule,
         };
-        self.hints.lock().expect("HintEngine lock").push(entry);
+        self.hints.borrow_mut().push(entry);
     }
 
     /// Remove a hint by ID.
     pub fn remove(&self, id: &str) {
-        self.hints
-            .lock()
-            .expect("HintEngine lock")
-            .retain(|h| h.id != id);
+        self.hints.borrow_mut().retain(|h| h.id != id);
     }
 
     /// Remove all hints.
     pub fn clear(&self) {
-        self.hints.lock().expect("HintEngine lock").clear();
+        self.hints.borrow_mut().clear();
     }
 
     /// Return the number of registered hints.
     pub fn len(&self) -> usize {
-        self.hints.lock().expect("HintEngine lock").len()
+        self.hints.borrow().len()
     }
 
     /// Returns true if no hints are registered.
@@ -191,7 +192,7 @@ impl HintEngine {
     /// Returns `Ok(())` if all constraints pass.
     /// Returns `Err` with the first failing rule description.
     pub fn check_numeric(&self, value: i64) -> Result<(), String> {
-        let hints = self.hints.lock().expect("HintEngine lock");
+        let hints = self.hints.borrow();
         for hint in hints.iter() {
             if !hint.rule.check_numeric(value) {
                 return Err(format!(
@@ -206,8 +207,7 @@ impl HintEngine {
     /// Return all active hints as (id, description) pairs.
     pub fn all(&self) -> Vec<(String, String)> {
         self.hints
-            .lock()
-            .expect("HintEngine lock")
+            .borrow()
             .iter()
             .map(|h| (h.id.clone(), h.description.clone()))
             .collect()
@@ -215,12 +215,7 @@ impl HintEngine {
 
     /// Return a single hint by ID, if present.
     pub fn get(&self, id: &str) -> Option<HintEntry> {
-        self.hints
-            .lock()
-            .expect("HintEngine lock")
-            .iter()
-            .find(|h| h.id == id)
-            .cloned()
+        self.hints.borrow().iter().find(|h| h.id == id).cloned()
     }
 }
 

@@ -9,7 +9,8 @@
 use crate::error::BlackboardError;
 use crate::fih::{BoardState, CoordId, Fact, Hint, Intent};
 use crate::storage::{PartitionData, StateFilter};
-use std::ops::Range;
+use alloc::string::String;
+use core::ops::Range;
 
 /// Async counterpart of [`super::read::StorageRead`].
 pub trait AsyncStorageRead {

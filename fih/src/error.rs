@@ -1,5 +1,7 @@
 // ── Error type ───────────────────────────────────────────────────────────
 
+use alloc::string::String;
+
 #[derive(Debug, Clone)]
 pub enum BlackboardError {
     NotFound(String),
@@ -9,8 +11,8 @@ pub enum BlackboardError {
     Internal(String),
 }
 
-impl std::fmt::Display for BlackboardError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for BlackboardError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::NotFound(m) => write!(f, "not found: {m}"),
             Self::Conflict(m) => write!(f, "conflict: {m}"),
@@ -21,4 +23,4 @@ impl std::fmt::Display for BlackboardError {
     }
 }
 
-impl std::error::Error for BlackboardError {}
+impl core::error::Error for BlackboardError {}

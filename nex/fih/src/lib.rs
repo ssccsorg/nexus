@@ -1,3 +1,11 @@
+#![no_std]
+extern crate alloc;
+
+// When the `std` feature is enabled, expose the standard library for the
+// host-side pieces that legitimately need it (SystemTime, block_on paths).
+#[cfg(feature = "std")]
+extern crate std;
+
 // ── nex-fih: FIH primitives ─────────────────────────────────────────────
 //
 // FIH (Fact-Intent-Hint) primitive types, storage traits, and

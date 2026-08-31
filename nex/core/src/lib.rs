@@ -1,3 +1,11 @@
+#![no_std]
+extern crate alloc;
+
+// When the `std` feature is enabled, expose the standard library to the
+// clock implementations (SystemClock, InstantClock) that wrap `std::time`.
+#[cfg(feature = "std")]
+extern crate std;
+
 // nex-core — Foundation storage interfaces with zero knowledge of FIH types.
 //
 // This crate contains ONLY traits that have no dependency on Fact, Intent, Hint,
@@ -9,7 +17,9 @@
 pub mod clock;
 pub mod storage;
 
-pub use clock::{Now, OffsetClock, SystemClock};
+pub use clock::{EpochClock, Monotonic, Now};
+#[cfg(feature = "std")]
+pub use clock::{HostClock, InstantClock, SystemClock};
 pub use storage::blob_store::BlobStore;
 pub use storage::meta_store::MetaStore;
 pub use storage::object_store::ObjectStore;

@@ -1,6 +1,7 @@
 use super::evict::EvictCapable;
 use super::scan::ScanCapable;
 use super::time_range::TimeRangeCapable;
+use alloc::string::String;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod send_marker {

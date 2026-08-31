@@ -1,5 +1,8 @@
 // ── Shared contract utilities ──────────────────────────────────────────
 
+use alloc::format;
+use alloc::string::String;
+
 /// Format a byte slice as a lowercase hex string.
 /// Shared by GovernanceGate and EvidenceChain to avoid duplication.
 pub(crate) fn hex_encode(bytes: &[u8]) -> String {

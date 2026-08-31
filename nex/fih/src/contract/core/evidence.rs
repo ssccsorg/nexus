@@ -12,7 +12,10 @@
 //
 // In-memory only in v1. Persistence to be added in a future iteration.
 
-use std::sync::Mutex;
+use crate::core::index::Cell2;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec::Vec;
 
 /// Hex-encoded SHA-256 hash of the chain genesis.
 const GENESIS_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
@@ -38,17 +41,18 @@ pub struct EvidenceEntry {
 
 /// Append-only chain of evidence entries linked by SHA-256 hashes.
 ///
-/// Thread-safe via Mutex. All mutation is serialized so the in-memory
+/// Thread-safe via Cell2 (critical-section Mutex on native, RefCell on
+/// wasm32-unknown-unknown). All mutation is serialized so the in-memory
 /// chain order is always consistent with the hash links.
 pub struct EvidenceChain {
-    entries: Mutex<Vec<EvidenceEntry>>,
+    entries: Cell2<Vec<EvidenceEntry>>,
 }
 
 impl EvidenceChain {
     /// Create a new empty evidence chain.
     pub fn new() -> Self {
         Self {
-            entries: Mutex::new(Vec::new()),
+            entries: Cell2::new(Vec::new()),
         }
     }
 
@@ -59,7 +63,7 @@ impl EvidenceChain {
     pub fn append(&self, action_hash: &str, action_type: &str, timestamp_ns: u64) -> String {
         use sha2::{Digest, Sha256};
 
-        let mut entries = self.entries.lock().expect("EvidenceChain lock");
+        let mut entries = self.entries.borrow_mut();
         let seq = entries.len() as u64;
         let prev_hash = entries
             .last()
@@ -88,7 +92,7 @@ impl EvidenceChain {
 
     /// Return the number of entries in the chain.
     pub fn len(&self) -> usize {
-        self.entries.lock().expect("EvidenceChain lock").len()
+        self.entries.borrow().len()
     }
 
     /// Returns true if the chain is empty.
@@ -98,18 +102,14 @@ impl EvidenceChain {
 
     /// Return the chain hash of the most recent entry, or `None` if empty.
     pub fn tip(&self) -> Option<String> {
-        self.entries
-            .lock()
-            .expect("EvidenceChain lock")
-            .last()
-            .map(|e| e.chain_hash.clone())
+        self.entries.borrow().last().map(|e| e.chain_hash.clone())
     }
 
     /// Return the sha256 hash of the entire chain (hash of all chain hashes).
     /// This provides a single fingerprint for the full chain state.
     pub fn fingerprint(&self) -> Option<String> {
         use sha2::{Digest, Sha256};
-        let entries = self.entries.lock().expect("EvidenceChain lock");
+        let entries = self.entries.borrow();
         if entries.is_empty() {
             return None;
         }
@@ -125,7 +125,7 @@ impl EvidenceChain {
     /// Recomputes each entry's chain_hash and checks it matches the stored
     /// value. Returns `true` if the chain is intact from `from_seq` onward.
     pub fn verify(&self, from_seq: u64) -> bool {
-        let entries = self.entries.lock().expect("EvidenceChain lock");
+        let entries = self.entries.borrow();
         if entries.is_empty() {
             return true;
         }
@@ -159,12 +159,12 @@ impl EvidenceChain {
 
     /// Return all entries (for inspection/export).
     pub fn entries(&self) -> Vec<EvidenceEntry> {
-        self.entries.lock().expect("EvidenceChain lock").clone()
+        self.entries.borrow().clone()
     }
 
     /// Return a single entry by sequence number, if within range.
     pub fn get(&self, seq: u64) -> Option<EvidenceEntry> {
-        let entries = self.entries.lock().expect("EvidenceChain lock");
+        let entries = self.entries.borrow();
         let idx = seq as usize;
         if idx < entries.len() {
             Some(entries[idx].clone())

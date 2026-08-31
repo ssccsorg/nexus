@@ -1,4 +1,5 @@
 use crate::storage::read::StorageRead;
+use alloc::string::String;
 
 /// Backend supports memory management / eviction (hot layer).
 pub trait EvictCapable: StorageRead {

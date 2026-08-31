@@ -9,8 +9,12 @@
 // and its types use only std + async-trait. Subprocess implementation is
 // cfg-gated to native platforms only.
 
+use alloc::boxed::Box;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec::Vec;
 use async_trait::async_trait;
-use std::time::Duration;
+use core::time::Duration;
 
 // ── NexConfig ──────────────────────────────────────────────────────────
 
@@ -90,8 +94,8 @@ pub enum HealthStatus {
     Unhealthy { reason: String },
 }
 
-impl std::fmt::Display for HealthStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for HealthStatus {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Healthy => write!(f, "healthy"),
             Self::Degraded { reason } => write!(f, "degraded: {reason}"),
@@ -114,7 +118,7 @@ impl std::fmt::Display for HealthStatus {
 #[async_trait]
 pub trait NexLifecycle: Send + Sync + Sized {
     /// Error type returned by lifecycle operations.
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: core::error::Error + Send + Sync + 'static;
 
     /// Start a new nex instance with the given configuration.
     async fn start(config: NexConfig) -> Result<Self, Self::Error>;

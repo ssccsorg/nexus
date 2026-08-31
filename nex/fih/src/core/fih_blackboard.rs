@@ -26,6 +26,11 @@ use crate::{
     Intent, IntentCapable, StorageRead,
 };
 
+// The sync wrapper methods and trait impls are gated off on wasm32, so
+// the `String` in their signatures is unused there.
+#[cfg(not(target_arch = "wasm32"))]
+use alloc::string::String;
+
 /// Blackboard implementation backed by FihStorage.
 ///
 /// Generic over any FileIo implementation. The IO backend is

@@ -13,6 +13,7 @@
 
 use crate::core::store::FihStorage;
 use crate::io::file_io::FileIo;
+use alloc::string::String;
 use futures_executor::block_on;
 
 /// Session wrapper around FihStorage that manages the

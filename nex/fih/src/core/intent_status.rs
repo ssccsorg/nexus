@@ -3,6 +3,10 @@
 // IntentStatus enum with compile-time enforcement of valid transitions.
 // Invalid transitions return Err without modifying state.
 
+use alloc::format;
+use alloc::string::String;
+use alloc::string::ToString;
+
 pub use super::record::IntentStatus;
 
 impl IntentStatus {

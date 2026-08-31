@@ -1,5 +1,6 @@
 use crate::storage::read::StorageRead;
-use std::ops::Range;
+use alloc::string::String;
+use core::ops::Range;
 
 /// Backend reports its time coverage (for hot/cold routing).
 pub trait TimeRangeCapable: StorageRead {

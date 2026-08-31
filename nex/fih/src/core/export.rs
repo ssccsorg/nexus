@@ -17,6 +17,19 @@
 
 use crate::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
 use crate::io::file_io::{FileIo, SyncFileIo};
+use alloc::format;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec::Vec;
+
+// `std::collections::HashSet` exists only under the std feature; alloc has
+// no HashSet. The no_std path substitutes a BTreeSet, which satisfies the
+// same contract (iteration order is unspecified for HashSet, so callers
+// cannot rely on it).
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeSet as HashSet;
+#[cfg(feature = "std")]
+use std::collections::HashSet;
 
 /// Magic bytes for .fihbundle format identification.
 const BUNDLE_MAGIC: &[u8; 8] = b"FIHBUNDL";
@@ -81,7 +94,7 @@ pub fn export_from_io<A: FileIo>(io: &SyncFileIo<A>) -> Result<Vec<u8>, String> 
     // Use a HashSet to find metadata regardless of list ordering,
     // avoiding fragility across different IO backends.
     let blob_keys = sync.list("blob/")?;
-    let meta_keys: std::collections::HashSet<String> = blob_keys
+    let meta_keys: HashSet<String> = blob_keys
         .iter()
         .filter(|k| k.ends_with(".bin.meta"))
         .cloned()

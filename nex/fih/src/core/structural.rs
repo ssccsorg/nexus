@@ -25,6 +25,10 @@
 // so the path falls back to a full-tree walk and the exact predicates
 // carry all selectivity.
 
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec::Vec;
+
 use tagma_core::Coord;
 
 use crate::core::store::{FihStorage, hash_str};

@@ -11,6 +11,10 @@
 // blob/{blob_hash}.bin          → raw content bytes
 // blob/{blob_hash}.bin.meta     → ContentMeta (mime_type)
 
+use alloc::format;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 
 /// Content-addressable blob hash (SHA-256 of content bytes).

@@ -4,6 +4,8 @@
 // for origin and creator metadata. Consumers that need FIH-specific
 // fields can bound on `FihRecordLoad` instead of bare `RecordLoad`.
 
+use alloc::string::String;
+
 use crate::semantic::record::RecordLoad;
 
 /// FIH-specific extension: adds origin and creator metadata.
