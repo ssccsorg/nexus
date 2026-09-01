@@ -38,27 +38,37 @@ run_check()  { cargo check -p nex && cargo check -p nexd && cargo check -p nexus
 
 run_wasm_check() {
     # Find all Cargo.toml under core directories, excluding non-WASM targets.
-    # Exclusions: storage/ve-composite (tokio),
-    # storage/sim (tokio), apps/* (HTTP server), playbooks/* (scripts),
-    # target/ (build artifacts).
+    # Exclusions: storage/ve-composite (tokio), storage/sim (tokio),
+    # apps/* (HTTP server), verify/* (host and MCU verification tooling),
+    # playbooks/* (scripts), target/ (build artifacts).
     # apps/ is excluded: each app has its own build target (native, container, etc.)
     # and is not expected to compile for wasm32.
-    find . -name Cargo.toml \
+    # Failures must abort the gate: the find -exec form swallows the exit
+    # code of the inner command, so iterate in bash instead.
+    local failed=0
+    while IFS= read -r manifest; do
+        local dir
+        dir="$(dirname "$manifest")"
+        echo "=== WASM: $dir ==="
+        if ! cargo check --manifest-path "$manifest" --target wasm32-unknown-unknown 2>&1; then
+            echo "WASM check failed: $manifest"
+            failed=1
+        fi
+    done < <(find . -name Cargo.toml \
         -not -path './target/*' \
         -not -path './ext/*' \
         -not -path './apps/*' \
+        -not -path './verify/*' \
         -not -path './storage/ve-composite/*' \
         -not -path './storage/sim/*' \
         -not -path './nexd/*' \
         -not -path './nex-server/*' \
-        -not -path './apps/*' \
         -not -path './playbooks/*' \
-        -not -path './Cargo.toml' \
-        -exec sh -c '
-            dir="$(dirname "$1")"
-            echo "=== WASM: $dir ==="
-            cargo check --manifest-path "$1" --target wasm32-unknown-unknown 2>&1
-        ' _ {} \;
+        -not -path './Cargo.toml')
+    if [ "$failed" -ne 0 ]; then
+        echo "run_wasm_check: one or more crates failed the wasm32 build"
+        return 1
+    fi
 }
 
 # ── WASIp2 smoke check (issue #181): the MCU-relevant WASI target ──────
