@@ -66,14 +66,21 @@ run_wasm_check() {
 # The storage core must compile for wasm32-wasip2 so the future launcher
 # (Wasmi/WAMR + WASI-to-FAT32 bridge) can run FihStorage on-device. This
 # is a smoke target, not a full gate: it checks the storage-path crates
-# only (fih-model, nex-core, nex-fih), which are the ones the launcher
-# links. serde_json and futures-executor remain available on wasip2 (std
-# is supported), so this currently passes; the check fixes the property.
+# only (fih-model, nex-core, nex-fih, nex-io), which are the ones the
+# launcher links. serde_json and futures-executor remain available on
+# wasip2 (std is supported), so this currently passes; the check fixes the
+# property. fih-model lives in the root workspace; the nex-* crates live
+# in the `nex` sub-workspace and must be checked from there so the root
+# workspace's std-feature serde does not unify into their feature sets and
+# so the same chton revision (pinned in the sub-workspace lockfile) is
+# validated.
 
 run_wasip2_check() {
-    for pkg in fih-model nex-core nex-fih nex-io; do
+    echo "=== WASIp2: fih-model ==="
+    cargo check -p fih-model --target wasm32-wasip2 2>&1
+    for pkg in nex-core nex-fih nex-io; do
         echo "=== WASIp2: $pkg ==="
-        cargo check -p "$pkg" --target wasm32-wasip2 2>&1
+        (cd nex && cargo check -p "$pkg" --target wasm32-wasip2) 2>&1
     done
 }
 

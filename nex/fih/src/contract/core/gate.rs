@@ -9,9 +9,10 @@
 // be admitted. This is a structural check — in v1 the gate verifies the
 // schema exists and tracks its identity hash.
 //
-// On native: Mutex for interior mutability (Send+Sync).
-// On wasm32-unknown-unknown: Mutex is single-threaded but still compiles
-// with no panic risk since there is no actual contention.
+// The gate keeps its schema registry behind Cell2, the store's
+// platform-adaptive cell: critical-section interior mutability on native
+// and MCU targets, a plain RefCell on wasm32-unknown-unknown. Shared
+// borrows nest; a second exclusive borrow in the same thread panics.
 
 use crate::core::index::Cell2;
 use alloc::format;

@@ -15,11 +15,15 @@
 // operations. Sync callers use futures_executor::block_on externally
 // (see FihBlackboard for a convenience wrapper on native platforms).
 //
-// Interior mutability uses RefCell, not Mutex, because there is no
-// concurrent access within an instance. This is the simplest correct
-// implementation for a single-owner model. If thread-safe access is
-// needed, the caller wraps the instance in Arc<Mutex<FihStorage>> —
-// that is an external composition, not an internal requirement.
+// Interior mutability uses Cell2 (critical-section Mutex wrapping a
+// RefCell on native and MCU targets, a plain RefCell on
+// wasm32-unknown-unknown) because there is no concurrent access within
+// an instance. Cell2 adds a same-thread reentrancy check, so a nested
+// exclusive borrow panics; callers must borrow cells one at a time. This
+// is the simplest correct implementation for a single-owner model. If
+// thread-safe access is needed, the caller wraps the instance in
+// Arc<Mutex<FihStorage>> — that is an external composition, not an
+// internal requirement.
 //
 // No static or static mut state exists in FihStorage except fixed
 // constants. Every resource is owned by the instance. Spawning a new
@@ -329,13 +333,18 @@ impl<I: FileIo> FihStorage<I> {
     /// no_std cell (critical-section Mutex) a nested acquire would panic,
     /// and the sequential order keeps the same observable behavior.
     fn cache_blob(&self, hash: String, content: Content) {
-        // Duplicate check first: an already-cached blob is a no-op.
-        if self.blob_cache.borrow().contains_key(&hash) {
+        let cap = *self.blob_cache_cap.borrow();
+        // Check and insert under one exclusive borrow. A racing caller can
+        // pass the shared check above only if it interleaves between the
+        // borrows, so re-checking under the write borrow keeps the FIFO
+        // order free of duplicate entries. The cells are still borrowed
+        // one at a time: no two cells are held simultaneously.
+        let mut cache = self.blob_cache.borrow_mut();
+        if cache.contains_key(&hash) {
             return;
         }
-        let cap = *self.blob_cache_cap.borrow();
-        // Insert, then evict from the tail of the FIFO order.
-        self.blob_cache.borrow_mut().insert(hash.clone(), content);
+        cache.insert(hash.clone(), content);
+        drop(cache);
         self.blob_cache_order.borrow_mut().push_back(hash.clone());
         // Evict until the order fits the cap. Each iteration re-borrows
         // sequentially (the order guard drops before the cache guard), so

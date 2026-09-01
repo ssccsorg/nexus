@@ -31,7 +31,7 @@ pub struct EvidenceEntry {
     pub action_hash: String,
     /// Action type label (e.g., "fact", "intent", "conclude").
     pub action_type: String,
-    /// Nanosecond timestamp (from SystemTime::now()).
+    /// Nanosecond timestamp (from the injected Now clock).
     pub timestamp_ns: u64,
     /// SHA-256(prev_hash || action_hash || action_type || timestamp_ns).
     pub chain_hash: String,

@@ -80,7 +80,7 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 [[package]]
 name = "chton"
 version = "0.1.0"
-source = "git+file:///Users/blackgene/Documents/ct?branch=181-no-std#6106c7c895f614ac258fd28c4de73078a68579b9"
+source = "git+https://github.com/ssccsorg/chton?branch=181-no-std#548ac88d461e7f604bc820483d75a499f65d1d9e"
 dependencies = [
  "async-trait",
  "critical-section",
@@ -89,9 +89,9 @@ dependencies = [
  "postcard",
  "serde",
  "sha2",
- "tagma-core",
- "tagma-geo",
- "tagma-map",
+ "tagma-core 0.1.0 (git+file:///Users/blackgene/Documents/syntagma?branch=181-tagma-geo-nostd)",
+ "tagma-geo 0.1.0 (git+file:///Users/blackgene/Documents/syntagma?branch=181-tagma-geo-nostd)",
+ "tagma-map 0.1.0 (git+file:///Users/blackgene/Documents/syntagma?branch=181-tagma-geo-nostd)",
  "walkdir",
 ]
 
@@ -245,7 +245,7 @@ dependencies = [
  "log",
  "serde",
  "sha2",
- "tagma-core",
+ "tagma-core 0.1.0 (git+https://github.com/ssccsorg/syntagma?branch=181-tagma-geo-nostd)",
 ]
 
 [[package]]
@@ -586,8 +586,8 @@ dependencies = [
  "postcard",
  "serde",
  "serde_json",
- "tagma-core",
- "tagma-map",
+ "tagma-core 0.1.0 (git+https://github.com/ssccsorg/syntagma?branch=181-tagma-geo-nostd)",
+ "tagma-map 0.1.0 (git+https://github.com/ssccsorg/syntagma?branch=181-tagma-geo-nostd)",
  "tempfile",
  "ureq",
 ]
@@ -615,7 +615,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "tagma-core",
+ "tagma-core 0.1.0 (git+https://github.com/ssccsorg/syntagma?branch=181-tagma-geo-nostd)",
 ]
 
 [[package]]
@@ -953,11 +953,24 @@ version = "0.1.0"
 source = "git+file:///Users/blackgene/Documents/syntagma?branch=181-tagma-geo-nostd#5bd1338f07b954f15fdf5bb0cba19cf0edc3b4e2"
 
 [[package]]
+name = "tagma-core"
+version = "0.1.0"
+source = "git+https://github.com/ssccsorg/syntagma?branch=181-tagma-geo-nostd#5bd1338f07b954f15fdf5bb0cba19cf0edc3b4e2"
+
+[[package]]
 name = "tagma-geo"
 version = "0.1.0"
 source = "git+file:///Users/blackgene/Documents/syntagma?branch=181-tagma-geo-nostd#5bd1338f07b954f15fdf5bb0cba19cf0edc3b4e2"
 dependencies = [
- "tagma-core",
+ "tagma-core 0.1.0 (git+file:///Users/blackgene/Documents/syntagma?branch=181-tagma-geo-nostd)",
+]
+
+[[package]]
+name = "tagma-geo"
+version = "0.1.0"
+source = "git+https://github.com/ssccsorg/syntagma?branch=181-tagma-geo-nostd#5bd1338f07b954f15fdf5bb0cba19cf0edc3b4e2"
+dependencies = [
+ "tagma-core 0.1.0 (git+https://github.com/ssccsorg/syntagma?branch=181-tagma-geo-nostd)",
 ]
 
 [[package]]
@@ -965,8 +978,17 @@ name = "tagma-map"
 version = "0.1.0"
 source = "git+file:///Users/blackgene/Documents/syntagma?branch=181-tagma-geo-nostd#5bd1338f07b954f15fdf5bb0cba19cf0edc3b4e2"
 dependencies = [
- "tagma-core",
- "tagma-geo",
+ "tagma-core 0.1.0 (git+file:///Users/blackgene/Documents/syntagma?branch=181-tagma-geo-nostd)",
+ "tagma-geo 0.1.0 (git+file:///Users/blackgene/Documents/syntagma?branch=181-tagma-geo-nostd)",
+]
+
+[[package]]
+name = "tagma-map"
+version = "0.1.0"
+source = "git+https://github.com/ssccsorg/syntagma?branch=181-tagma-geo-nostd#5bd1338f07b954f15fdf5bb0cba19cf0edc3b4e2"
+dependencies = [
+ "tagma-core 0.1.0 (git+https://github.com/ssccsorg/syntagma?branch=181-tagma-geo-nostd)",
+ "tagma-geo 0.1.0 (git+https://github.com/ssccsorg/syntagma?branch=181-tagma-geo-nostd)",
 ]
 
 [[package]]
