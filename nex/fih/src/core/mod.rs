@@ -6,6 +6,7 @@
 // Uses crate::io::FileIo for all IO operations.
 // Can be swapped out for external storage engines.
 
+#[cfg(feature = "std")]
 pub mod export;
 pub mod fih_blackboard;
 pub mod index;

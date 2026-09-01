@@ -20,10 +20,13 @@
 // Usage (native only):
 //   let bb = FihBlackboard::new(io, "project");
 
+#[cfg(feature = "std")]
 use crate::core::store::FihStorage;
+#[cfg(feature = "std")]
 use crate::io::FileIo;
 // Async* traits are needed for method resolution on FihStorage in non-WASM impl blocks.
 // The wasm32 check flags them as unused (impl blocks are cfg-gated).
+#[cfg(feature = "std")]
 #[cfg_attr(target_arch = "wasm32", allow(unused_imports))]
 use crate::{
     AsyncEvictCapable, AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead,

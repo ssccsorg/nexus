@@ -16,7 +16,9 @@
 // drives FihStorage's async methods directly from the launcher's own
 // executor (e.g. embassy).
 
+#[cfg(feature = "std")]
 use crate::core::store::FihStorage;
+#[cfg(feature = "std")]
 use crate::io::file_io::FileIo;
 
 #[cfg(feature = "std")]

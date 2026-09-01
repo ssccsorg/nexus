@@ -31,7 +31,9 @@ struct TestCriticalSection;
 critical_section::set_impl!(TestCriticalSection);
 
 unsafe impl critical_section::Impl for TestCriticalSection {
-    unsafe fn acquire() -> RawRestoreState {}
+    unsafe fn acquire() -> RawRestoreState {
+        false
+    }
     unsafe fn release(_restore_state: RawRestoreState) {}
 }
 
