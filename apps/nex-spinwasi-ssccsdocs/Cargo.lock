@@ -140,7 +140,7 @@ dependencies = [
 [[package]]
 name = "chton"
 version = "0.1.0"
-source = "git+file:///Users/blackgene/Documents/ct?branch=181-no-std#2f7ff2ee965a9d5a908bff3a1bd6ddce7f266a59"
+source = "git+https://github.com/ssccsorg/chton?branch=181-no-std#76867cb94a339e9da8fcfc4d989591a96f5b2989"
 dependencies = [
  "async-trait",
  "critical-section",
@@ -1110,12 +1110,12 @@ dependencies = [
 [[package]]
 name = "tagma-core"
 version = "0.1.0"
-source = "git+file:///Users/blackgene/Documents/syntagma?branch=181-tagma-geo-nostd#5bd1338f07b954f15fdf5bb0cba19cf0edc3b4e2"
+source = "git+https://github.com/ssccsorg/syntagma?branch=181-tagma-geo-nostd#5bd1338f07b954f15fdf5bb0cba19cf0edc3b4e2"
 
 [[package]]
 name = "tagma-geo"
 version = "0.1.0"
-source = "git+file:///Users/blackgene/Documents/syntagma?branch=181-tagma-geo-nostd#5bd1338f07b954f15fdf5bb0cba19cf0edc3b4e2"
+source = "git+https://github.com/ssccsorg/syntagma?branch=181-tagma-geo-nostd#5bd1338f07b954f15fdf5bb0cba19cf0edc3b4e2"
 dependencies = [
  "tagma-core",
 ]
@@ -1123,7 +1123,7 @@ dependencies = [
 [[package]]
 name = "tagma-map"
 version = "0.1.0"
-source = "git+file:///Users/blackgene/Documents/syntagma?branch=181-tagma-geo-nostd#5bd1338f07b954f15fdf5bb0cba19cf0edc3b4e2"
+source = "git+https://github.com/ssccsorg/syntagma?branch=181-tagma-geo-nostd#5bd1338f07b954f15fdf5bb0cba19cf0edc3b4e2"
 dependencies = [
  "tagma-core",
  "tagma-geo",
