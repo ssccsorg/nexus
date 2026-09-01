@@ -1,0 +1,15 @@
+[package]
+name = "nexus-mcu-verify"
+version = "0.0.1"
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Support software that verifies the actual target stack: runs the OS-less storage core on an MCU-class target (riscv32imac under QEMU) and checks runtime behavior and the 512 KB memory budget."
+build = "build.rs"
+
+[dependencies]
+nex-core = { path = "../../nex/core", default-features = false }
+nex-fih = { path = "../../nex/fih", default-features = false }
+nexus-verify-support = { path = "../support" }
+chton = { workspace = true, default-features = false }
+critical-section = { version = "1", features = ["restore-state-bool"] }

@@ -13,6 +13,9 @@ members = [
     "storage/sim",
     "apps/nex-calc",
     "benches",
+    "verify/support",
+    "verify/osless",
+    "verify/mcu",
     ]
 exclude = [
     "apps/nex-wasmer-ssccsdocs",
