@@ -80,7 +80,7 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 [[package]]
 name = "chton"
 version = "0.1.0"
-source = "git+https://github.com/ssccsorg/chton?branch=181-no-std#548ac88d461e7f604bc820483d75a499f65d1d9e"
+source = "git+file:///Users/blackgene/Documents/ct?branch=181-no-std#76867cb94a339e9da8fcfc4d989591a96f5b2989"
 dependencies = [
  "async-trait",
  "critical-section",
@@ -89,9 +89,9 @@ dependencies = [
  "postcard",
  "serde",
  "sha2",
- "tagma-core 0.1.0 (git+file:///Users/blackgene/Documents/syntagma?branch=181-tagma-geo-nostd)",
- "tagma-geo 0.1.0 (git+file:///Users/blackgene/Documents/syntagma?branch=181-tagma-geo-nostd)",
- "tagma-map 0.1.0 (git+file:///Users/blackgene/Documents/syntagma?branch=181-tagma-geo-nostd)",
+ "tagma-core",
+ "tagma-geo",
+ "tagma-map",
  "walkdir",
 ]
 
@@ -228,7 +228,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys",
 ]
 
 [[package]]
@@ -245,7 +245,7 @@ dependencies = [
  "log",
  "serde",
  "sha2",
- "tagma-core 0.1.0 (git+https://github.com/ssccsorg/syntagma?branch=181-tagma-geo-nostd)",
+ "tagma-core",
 ]
 
 [[package]]
@@ -586,8 +586,8 @@ dependencies = [
  "postcard",
  "serde",
  "serde_json",
- "tagma-core 0.1.0 (git+https://github.com/ssccsorg/syntagma?branch=181-tagma-geo-nostd)",
- "tagma-map 0.1.0 (git+https://github.com/ssccsorg/syntagma?branch=181-tagma-geo-nostd)",
+ "tagma-core",
+ "tagma-map",
  "tempfile",
  "ureq",
 ]
@@ -615,7 +615,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "tagma-core 0.1.0 (git+https://github.com/ssccsorg/syntagma?branch=181-tagma-geo-nostd)",
+ "tagma-core",
 ]
 
 [[package]]
@@ -734,7 +734,7 @@ dependencies = [
  "getrandom 0.2.17",
  "libc",
  "untrusted",
- "windows-sys 0.52.0",
+ "windows-sys",
 ]
 
 [[package]]
@@ -756,7 +756,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys",
 ]
 
 [[package]]
@@ -950,36 +950,14 @@ dependencies = [
 [[package]]
 name = "tagma-core"
 version = "0.1.0"
-source = "git+file:///Users/blackgene/Documents/syntagma?branch=181-tagma-geo-nostd#5bd1338f07b954f15fdf5bb0cba19cf0edc3b4e2"
-
-[[package]]
-name = "tagma-core"
-version = "0.1.0"
 source = "git+https://github.com/ssccsorg/syntagma?branch=181-tagma-geo-nostd#5bd1338f07b954f15fdf5bb0cba19cf0edc3b4e2"
-
-[[package]]
-name = "tagma-geo"
-version = "0.1.0"
-source = "git+file:///Users/blackgene/Documents/syntagma?branch=181-tagma-geo-nostd#5bd1338f07b954f15fdf5bb0cba19cf0edc3b4e2"
-dependencies = [
- "tagma-core 0.1.0 (git+file:///Users/blackgene/Documents/syntagma?branch=181-tagma-geo-nostd)",
-]
 
 [[package]]
 name = "tagma-geo"
 version = "0.1.0"
 source = "git+https://github.com/ssccsorg/syntagma?branch=181-tagma-geo-nostd#5bd1338f07b954f15fdf5bb0cba19cf0edc3b4e2"
 dependencies = [
- "tagma-core 0.1.0 (git+https://github.com/ssccsorg/syntagma?branch=181-tagma-geo-nostd)",
-]
-
-[[package]]
-name = "tagma-map"
-version = "0.1.0"
-source = "git+file:///Users/blackgene/Documents/syntagma?branch=181-tagma-geo-nostd#5bd1338f07b954f15fdf5bb0cba19cf0edc3b4e2"
-dependencies = [
- "tagma-core 0.1.0 (git+file:///Users/blackgene/Documents/syntagma?branch=181-tagma-geo-nostd)",
- "tagma-geo 0.1.0 (git+file:///Users/blackgene/Documents/syntagma?branch=181-tagma-geo-nostd)",
+ "tagma-core",
 ]
 
 [[package]]
@@ -987,8 +965,8 @@ name = "tagma-map"
 version = "0.1.0"
 source = "git+https://github.com/ssccsorg/syntagma?branch=181-tagma-geo-nostd#5bd1338f07b954f15fdf5bb0cba19cf0edc3b4e2"
 dependencies = [
- "tagma-core 0.1.0 (git+https://github.com/ssccsorg/syntagma?branch=181-tagma-geo-nostd)",
- "tagma-geo 0.1.0 (git+https://github.com/ssccsorg/syntagma?branch=181-tagma-geo-nostd)",
+ "tagma-core",
+ "tagma-geo",
 ]
 
 [[package]]
@@ -1001,7 +979,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys",
 ]
 
 [[package]]
@@ -1175,14 +1153,8 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys",
 ]
-
-[[package]]
-name = "windows-link"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
 
 [[package]]
 name = "windows-sys"
@@ -1191,15 +1163,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "282be5f36a8ce781fad8c8ae18fa3f9beff57ec1b52cb3de0789201425d9a33d"
 dependencies = [
  "windows-targets",
-]
-
-[[package]]
-name = "windows-sys"
-version = "0.61.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
-dependencies = [
- "windows-link",
 ]
 
 [[package]]
