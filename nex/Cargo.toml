@@ -12,8 +12,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 log = "0.4"
 async-trait = "0.1"
-chton = { git = "file:///Users/blackgene/Documents/ct", branch = "181-no-std", default-features = false }
-# TEMP (verification): local syntagma checkout with tagma no_std.
-# Revert to the GitHub URL before merge.
-tagma-core = { git = "file:///Users/blackgene/Documents/syntagma", branch = "181-tagma-geo-nostd" }
-tagma-map = { git = "file:///Users/blackgene/Documents/syntagma", branch = "181-tagma-geo-nostd" }
+chton = { git = "https://github.com/ssccsorg/chton", branch = "181-no-std", default-features = false }
+tagma-core = { git = "https://github.com/ssccsorg/syntagma", branch = "181-tagma-geo-nostd" }
+tagma-map = { git = "https://github.com/ssccsorg/syntagma", branch = "181-tagma-geo-nostd" }
