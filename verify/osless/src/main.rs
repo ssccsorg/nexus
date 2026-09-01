@@ -17,25 +17,15 @@ use std::sync::Arc;
 use std::thread;
 
 use chton::cell::Cell2;
-use critical_section::RawRestoreState;
 use nex_core::{EpochClock, Monotonic, Now};
 use nex_fih::{AsyncFactCapable, AsyncStorageRead, BoardState, Content, Fact, FihStorage};
 use nexus_verify_support::{FlatIo, block_on};
 
-// ── Caller-provided critical section: no-op for the single-threaded
-//    checks; the cross-thread check relies on the host critical-section
-//    implementation being process-wide. This mirrors an MCU firmware that
-//    supplies the symbols from a HAL. ───────────────────────────────────
-
-struct NoopCs;
-critical_section::set_impl!(NoopCs);
-
-unsafe impl critical_section::Impl for NoopCs {
-    unsafe fn acquire() -> RawRestoreState {
-        false
-    }
-    unsafe fn release(_restore_state: RawRestoreState) {}
-}
+// The critical-section implementation is provided by critical-section's
+// std feature (a real process-wide mutex), standing in for the MCU HAL
+// that supplies the symbols on the target. A no-op implementation would
+// leave the cross-thread Cell2 check racy; the std implementation is
+// what makes the serialization assertion sound on the host.
 
 fn main() {
     // 1. Cell2: value round trip and independent cells.

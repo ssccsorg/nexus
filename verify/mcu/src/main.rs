@@ -236,6 +236,20 @@ mod firmware {
             Ok(id) => id,
             Err(_) => test_exit(false),
         };
+        // A second fact exercises the multi-record path (distinct blob,
+        // distinct record keys, shared structural index).
+        let fact2 = Fact::new(
+            "mcu".into(),
+            Content {
+                mime_type: "text/plain".into(),
+                data: b"second mcu fact".to_vec(),
+            },
+            "harness".into(),
+        );
+        let id2 = match block_on(storage.submit_fact(&fact2)) {
+            Ok(id2) => id2,
+            Err(_) => test_exit(false),
+        };
         if let Err(_) = block_on(storage.flush_pending()) {
             test_exit(false);
         }
@@ -246,7 +260,13 @@ mod firmware {
             .iter()
             .any(|f| f.id == id && f.content.data == b"hello mcu");
         require(found);
-        uart_puts("step3 storage round trip: ok\n");
+        let found2 = state
+            .facts
+            .iter()
+            .any(|f| f.id == id2 && f.content.data == b"second mcu fact");
+        require(found2);
+        require(state.facts.len() == 2);
+        uart_puts("step3 storage round trip (2 facts): ok\n");
         uart_puts("peak heap: ");
         uart_puts(&alloc::fmt::format(format_args!(
             "{} bytes\n",

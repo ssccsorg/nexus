@@ -115,3 +115,68 @@ pub fn block_on<F: Future>(fut: F) -> F::Output {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use critical_section::RawRestoreState;
+
+    // FlatIo uses Cell2, which needs a critical-section implementation to
+    // link in the test binary (the library build has none; an MCU
+    // firmware provides one from the HAL). A no-op is correct for the
+    // single-threaded test harness.
+    struct TestCs;
+    critical_section::set_impl!(TestCs);
+
+    unsafe impl critical_section::Impl for TestCs {
+        unsafe fn acquire() -> RawRestoreState {
+            false
+        }
+        unsafe fn release(_restore_state: RawRestoreState) {}
+    }
+
+    #[test]
+    fn write_read_round_trip() {
+        let io = FlatIo::new();
+        block_on(io.write("facts/a", b"hello")).unwrap();
+        let got = block_on(io.read("facts/a")).unwrap();
+        assert_eq!(got.as_deref(), Some(&b"hello"[..]));
+        // A path that was never written reads as None.
+        assert_eq!(block_on(io.read("facts/missing")).unwrap(), None);
+    }
+
+    #[test]
+    fn write_overwrites_existing_path() {
+        let io = FlatIo::new();
+        block_on(io.write("facts/a", b"one")).unwrap();
+        block_on(io.write("facts/a", b"two")).unwrap();
+        let got = block_on(io.read("facts/a")).unwrap();
+        assert_eq!(got.as_deref(), Some(&b"two"[..]));
+    }
+
+    #[test]
+    fn delete_removes_path_and_is_idempotent() {
+        let io = FlatIo::new();
+        block_on(io.write("facts/a", b"x")).unwrap();
+        block_on(io.delete("facts/a")).unwrap();
+        assert_eq!(block_on(io.read("facts/a")).unwrap(), None);
+        // Deleting a missing path is a no-op.
+        block_on(io.delete("facts/missing")).unwrap();
+        block_on(io.delete("facts/a")).unwrap();
+    }
+
+    #[test]
+    fn list_filters_by_prefix() {
+        let io = FlatIo::new();
+        block_on(io.write("facts/a", b"1")).unwrap();
+        block_on(io.write("facts/b", b"2")).unwrap();
+        block_on(io.write("hints/c", b"3")).unwrap();
+        let facts = block_on(io.list("facts/")).unwrap();
+        assert_eq!(facts.len(), 2);
+        assert!(facts.contains(&String::from("facts/a")));
+        assert!(facts.contains(&String::from("facts/b")));
+        // The empty prefix lists everything.
+        let all = block_on(io.list("")).unwrap();
+        assert_eq!(all.len(), 3);
+    }
+}

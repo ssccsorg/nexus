@@ -55,7 +55,10 @@ impl<M: Monotonic> Now for EpochClock<M> {
     }
 
     fn now_secs(&self) -> u64 {
-        self.epoch_secs + self.mono.elapsed_nanos() / 1_000_000_000
+        // Saturating, consistent with now_nanos: a wall clock on an MCU
+        // must be total even at the u64 boundary, not wrap.
+        self.epoch_secs
+            .saturating_add(self.mono.elapsed_nanos() / 1_000_000_000)
     }
 }
 

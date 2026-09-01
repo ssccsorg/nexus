@@ -8,3 +8,6 @@ description = "Shared support software for the nexus verification topics: a no_s
 
 [dependencies]
 chton = { workspace = true, default-features = false }
+
+[dev-dependencies]
+critical-section = { version = "1", features = ["restore-state-bool"] }

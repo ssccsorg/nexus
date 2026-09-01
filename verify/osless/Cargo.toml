@@ -11,4 +11,4 @@ nex-core = { path = "../../nex/core", default-features = false }
 nex-fih = { path = "../../nex/fih", default-features = false }
 nexus-verify-support = { path = "../support" }
 chton = { workspace = true, default-features = false }
-critical-section = { version = "1", features = ["restore-state-bool"] }
+critical-section = { version = "1", features = ["restore-state-bool", "std"] }
