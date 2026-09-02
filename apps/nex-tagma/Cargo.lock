@@ -84,7 +84,7 @@ dependencies = [
 [[package]]
 name = "tagma-core"
 version = "0.1.0"
-source = "git+https://github.com/ssccsorg/syntagma?branch=main#6b5e448faa911356b7520fed9957dce800b56c74"
+source = "git+https://github.com/ssccsorg/syntagma?branch=main#edcf275cfb4528b6377eea9b75800ce0ab3964f5"
 
 [[package]]
 name = "typenum"
