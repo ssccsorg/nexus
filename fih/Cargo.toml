@@ -8,6 +8,7 @@ license = "Apache-2.0"
 tagma-core = { workspace = true }
 sha2 = { version = "0.10", default-features = false }
 serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
+serde_json = { version = "1", default-features = false, features = ["alloc"] }
 async-trait = "0.1"
 log = "0.4"
 

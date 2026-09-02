@@ -1,5 +1,6 @@
 pub mod aggregate;
 pub mod async_impl;
+pub mod cold;
 pub mod evict;
 pub mod fact;
 pub mod filter;
@@ -16,6 +17,7 @@ pub use async_impl::{
     AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncHintCapable, AsyncIntentCapable,
     AsyncScanCapable, AsyncStorageRead, AsyncTimeRangeCapable,
 };
+pub use cold::{AggregateDef, ColdFilter, ColdOrder, ColdQuery, QueryCapable};
 pub use evict::EvictCapable;
 pub use fact::FactCapable;
 pub use filter::{AxisHints, FilterCapable, StateFilter};
