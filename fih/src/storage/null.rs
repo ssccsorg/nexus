@@ -1,4 +1,7 @@
-use std::ops::Range;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec::Vec;
+use core::ops::Range;
 
 use crate::error::BlackboardError;
 use crate::fih::{BoardState, Content, CoordId, Fact, Hint, Intent};

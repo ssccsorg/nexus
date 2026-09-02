@@ -5,6 +5,9 @@
 // They are intentionally FIH-agnostic so that any record storage
 // system can implement them.
 
+use alloc::string::String;
+use alloc::vec::Vec;
+
 /// Pure semantic record loader — no FIH concepts.
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub trait RecordLoad: Send + Sync {

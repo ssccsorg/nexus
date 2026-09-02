@@ -5,13 +5,11 @@ edition = "2024"
 license = "Apache-2.0"
 
 [dependencies]
-tagma-core = { git = "https://github.com/ssccsorg/syntagma", branch = "main" }
-sha2 = "0.10"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+tagma-core = { workspace = true }
+sha2 = { version = "0.10", default-features = false }
+serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
 async-trait = "0.1"
 log = "0.4"
-petgraph = { version = "0.6", features = ["serde-1"] }
 
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-futures-executor = "0.3"
+[dev-dependencies]
+serde_json = "1"

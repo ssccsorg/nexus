@@ -1,3 +1,6 @@
+use alloc::string::String;
+use alloc::vec::Vec;
+
 use crate::fih::{Fact, Hint, Intent};
 use crate::storage::read::StorageRead;
 

@@ -1,3 +1,5 @@
+use alloc::string::String;
+
 /// Atomic CAS store for cross-worker coordination.
 ///
 /// Implementations: AsyncStoreObject (in-memory HashMap),

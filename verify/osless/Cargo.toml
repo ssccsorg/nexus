@@ -1,0 +1,14 @@
+[package]
+name = "nexus-osless-verify"
+version = "0.0.1"
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Support software that verifies the OS-less storage path on the host: builds the storage core with the std feature off and checks the no_std surface behavior (Cell2, injected clock, store round trip) against a caller-provided critical-section implementation."
+
+[dependencies]
+nex-core = { path = "../../nex/core", default-features = false }
+nex-fih = { path = "../../nex/fih", default-features = false }
+nexus-verify-support = { path = "../support" }
+chton = { workspace = true, default-features = false }
+critical-section = { version = "1", features = ["restore-state-bool", "std"] }

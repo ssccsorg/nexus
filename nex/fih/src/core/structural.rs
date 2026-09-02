@@ -25,6 +25,10 @@
 // so the path falls back to a full-tree walk and the exact predicates
 // carry all selectivity.
 
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec::Vec;
+
 use tagma_core::Coord;
 
 use crate::core::store::{FihStorage, hash_str};
@@ -91,6 +95,19 @@ impl<I: FileIo> FihStorage<I> {
 
         // Exact re-filter on the authoritative record layer.
         let recs = self.fact_records.borrow();
+        // Normalize the explicit fact-id filter once: the structural index
+        // stores canonical ids, and resolve() derives a canonical id from a
+        // label, so pre-normalizing keeps the per-candidate comparison a
+        // plain set membership test instead of repeated string derivation.
+        let wanted_ids: Option<Vec<String>> = filter.fact_ids.as_ref().map(|ids| {
+            let mut v: Vec<String> = ids
+                .iter()
+                .map(|x| CoordId::resolve(x).to_string())
+                .collect();
+            v.sort();
+            v.dedup();
+            v
+        });
         let mut out: Vec<String> = candidates
             .into_iter()
             .filter(|id| {
@@ -117,12 +134,9 @@ impl<I: FileIo> FihStorage<I> {
                 {
                     return false;
                 }
-                if let Some(ids) = filter.fact_ids.as_ref() {
+                if let Some(wanted) = wanted_ids.as_ref() {
                     let canonical = CoordId::resolve(id).to_string();
-                    if !ids
-                        .iter()
-                        .any(|x| CoordId::resolve(x).to_string() == canonical)
-                    {
+                    if !wanted.iter().any(|x| x == &canonical) {
                         return false;
                     }
                 }

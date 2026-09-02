@@ -5,4 +5,6 @@
 // materialization layer. This crate remains as a re-export shim so
 // existing consumers (nex, apps) compile unchanged.
 
+#![no_std]
+
 pub use chton::io::*;

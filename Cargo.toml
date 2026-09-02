@@ -10,10 +10,12 @@ members = [
     "libs/async-store",
     "playbooks/agents",
     "interface/query",
-    "interface/cypher",
     "storage/sim",
     "apps/nex-calc",
     "benches",
+    "verify/support",
+    "verify/osless",
+    "verify/mcu",
     ]
 exclude = [
     "apps/nex-wasmer-ssccsdocs",
@@ -31,9 +33,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 log = "0.4"
 async-trait = "0.1"
-chton = { git = "https://github.com/ssccsorg/chton", branch = "main" }
-tagma-core = { git = "https://github.com/ssccsorg/syntagma", branch = "main" }
-tagma-map = { git = "https://github.com/ssccsorg/syntagma", branch = "main" }
+chton = { git = "https://github.com/ssccsorg/chton", branch = "181-no-std", default-features = false }
+tagma-core = { git = "https://github.com/ssccsorg/syntagma", branch = "181-tagma-geo-nostd" }
+tagma-map = { git = "https://github.com/ssccsorg/syntagma", branch = "181-tagma-geo-nostd" }
 
 [profile.release]
 lto = "thin"

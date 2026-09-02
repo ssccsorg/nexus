@@ -1,4 +1,5 @@
 use crate::storage::read::StorageRead;
+use alloc::string::String;
 
 /// Backend supports memory management / eviction (hot layer).
 pub trait EvictCapable: StorageRead {
@@ -10,7 +11,7 @@ pub trait EvictCapable: StorageRead {
     /// observers and were never acted upon by any agent.
     ///
     /// Default: no-op. Cold storage typically doesn't need this;
-    /// implementations that do (PetgraphStorage) override.
+    /// implementations that do (the legacy cold-storage backend) override.
     fn evict_stale_intents(&self, older_than_secs: u64) -> Result<u64, String> {
         let _ = older_than_secs;
         Ok(0)

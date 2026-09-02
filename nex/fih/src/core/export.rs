@@ -16,7 +16,21 @@
 //   - CfFihIo: (future) export/import over R2
 
 use crate::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
+#[cfg(feature = "std")]
 use crate::io::file_io::{FileIo, SyncFileIo};
+use alloc::format;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec::Vec;
+
+// `std::collections::HashSet` exists only under the std feature; alloc has
+// no HashSet. The no_std path substitutes a BTreeSet, which satisfies the
+// same contract (iteration order is unspecified for HashSet, so callers
+// cannot rely on it).
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeSet as HashSet;
+#[cfg(feature = "std")]
+use std::collections::HashSet;
 
 /// Magic bytes for .fihbundle format identification.
 const BUNDLE_MAGIC: &[u8; 8] = b"FIHBUNDL";
@@ -43,6 +57,11 @@ struct BlobEntry {
 ///
 /// Scans the IO for fact, intent, hint records and blob entries,
 /// then serializes them into a single .fihbundle byte vector.
+///
+/// Std-only: `SyncFileIo` wraps the async `FileIo` contract with
+/// `futures_executor::block_on`, which needs std. On no_std targets
+/// the caller drives the async surface directly.
+#[cfg(feature = "std")]
 pub fn export_from_io<A: FileIo>(io: &SyncFileIo<A>) -> Result<Vec<u8>, String> {
     let sync = io;
 
@@ -81,7 +100,7 @@ pub fn export_from_io<A: FileIo>(io: &SyncFileIo<A>) -> Result<Vec<u8>, String> 
     // Use a HashSet to find metadata regardless of list ordering,
     // avoiding fragility across different IO backends.
     let blob_keys = sync.list("blob/")?;
-    let meta_keys: std::collections::HashSet<String> = blob_keys
+    let meta_keys: HashSet<String> = blob_keys
         .iter()
         .filter(|k| k.ends_with(".bin.meta"))
         .cloned()
@@ -139,6 +158,9 @@ pub fn export_from_io<A: FileIo>(io: &SyncFileIo<A>) -> Result<Vec<u8>, String> 
 ///
 /// Writes all records and blobs from the bundle into the IO,
 /// overwriting any existing data at the same paths.
+///
+/// Std-only: same `SyncFileIo` (block_on) dependency as `export_from_io`.
+#[cfg(feature = "std")]
 pub fn import_into_io<A: FileIo>(io: &SyncFileIo<A>, bundle: &[u8]) -> Result<(), String> {
     let sync = io;
 

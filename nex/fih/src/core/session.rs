@@ -10,18 +10,32 @@
 // It uses block_on internally to wrap FihStorage's async methods into
 // a synchronous interface for convenience. This is acceptable because
 // storage/sim targets native platforms where block_on does not hang.
+//
+// The synchronous wrapper requires the `std` feature: `block_on` needs
+// an executor, which needs std. On no_std targets (MCU) the caller
+// drives FihStorage's async methods directly from the launcher's own
+// executor (e.g. embassy).
 
+#[cfg(feature = "std")]
 use crate::core::store::FihStorage;
+#[cfg(feature = "std")]
 use crate::io::file_io::FileIo;
+
+#[cfg(feature = "std")]
+use alloc::string::String;
+
+#[cfg(feature = "std")]
 use futures_executor::block_on;
 
 /// Session wrapper around FihStorage that manages the
 /// hydrate → (read/write) → flush lifecycle.
+#[cfg(feature = "std")]
 pub struct FihSession<I: FileIo> {
     pub storage: FihStorage<I>,
     flushed: bool,
 }
 
+#[cfg(feature = "std")]
 impl<I: FileIo> FihSession<I> {
     /// Create a new session. Storage is empty until hydrate() or
     /// operations are called.

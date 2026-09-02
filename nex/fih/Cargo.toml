@@ -4,17 +4,21 @@ version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = ["std"]
+std = ["dep:futures-executor", "nex-core/std", "nex-io/std", "chton/std"]
+
 [dependencies]
 fih-model = { path = "../../fih" }
-nex-core = { path = "../core" }
-nex-io = { path = "../io" }
-chton.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-sha2 = "0.10"
-petgraph = { version = "0.6", features = ["serde-1"] }
-tagma-core = { git = "https://github.com/ssccsorg/syntagma", branch = "main" }
+nex-core = { path = "../core", default-features = false }
+nex-io = { path = "../io", default-features = false }
+chton = { workspace = true, default-features = false }
+serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
+serde_json = { version = "1", default-features = false, features = ["alloc"] }
+sha2 = { version = "0.10", default-features = false }
+tagma-core = { workspace = true }
 postcard = { version = "1", features = ["alloc"] }
-futures-executor = "0.3"
+futures-executor = { version = "0.3", optional = true }
 async-trait.workspace = true
 log.workspace = true
+critical-section = { version = "1", features = ["restore-state-bool"] }

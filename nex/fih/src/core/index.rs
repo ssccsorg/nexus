@@ -6,6 +6,17 @@
 // backward compat; intersect_2/intersect_3 are standalone set-intersection
 // helpers.
 
+use alloc::vec::Vec;
+
+// `std::collections::HashSet` exists only under the std feature; alloc has
+// no HashSet. The no_std path substitutes a BTreeSet, which satisfies the
+// same contract (iteration order is unspecified for HashSet, so callers
+// cannot rely on it).
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeSet as HashSet;
+#[cfg(feature = "std")]
+use std::collections::HashSet;
+
 // Cell2 (platform-adaptive interior mutability) is owned by chton::cell:
 // Mutex on native/WASIX, RefCell on wasm32-unknown-unknown. It is
 // re-exported here so nexus consumers keep the crate::core::index path.
@@ -90,8 +101,7 @@ pub fn intersect_2(a: &[u32], b: &[u32]) -> Vec<u32> {
         return Vec::new();
     }
     let (small, large) = if a.len() <= b.len() { (a, b) } else { (b, a) };
-    let set: std::collections::HashSet<u32> =
-        std::collections::HashSet::from_iter(large.iter().copied());
+    let set: HashSet<u32> = HashSet::from_iter(large.iter().copied());
     small
         .iter()
         .filter(|id| set.contains(id))
@@ -111,10 +121,8 @@ pub fn intersect_3(a: &[u32], b: &[u32], c: &[u32]) -> Vec<u32> {
     } else {
         (c, a, b)
     };
-    let s1: std::collections::HashSet<u32> =
-        std::collections::HashSet::from_iter(set1.iter().copied());
-    let s2: std::collections::HashSet<u32> =
-        std::collections::HashSet::from_iter(set2.iter().copied());
+    let s1: HashSet<u32> = HashSet::from_iter(set1.iter().copied());
+    let s2: HashSet<u32> = HashSet::from_iter(set2.iter().copied());
     candidates
         .iter()
         .filter(|id| s1.contains(id) && s2.contains(id))

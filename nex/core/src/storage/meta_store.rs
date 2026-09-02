@@ -1,3 +1,6 @@
+use alloc::string::String;
+use alloc::vec::Vec;
+
 /// Minimal key-value store for cursor position, snapshot pointers, and
 /// other metadata. NOT for graph data.
 ///

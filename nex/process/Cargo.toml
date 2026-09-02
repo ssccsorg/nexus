@@ -8,7 +8,7 @@ license.workspace = true
 nex-core = { path = "../core" }
 nex-fih = { path = "../fih" }
 nex-io = { path = "../io" }
-chton.workspace = true
+chton = { workspace = true, features = ["std"] }
 serde.workspace = true
 serde_json = "1"
 async-trait = "0.1"

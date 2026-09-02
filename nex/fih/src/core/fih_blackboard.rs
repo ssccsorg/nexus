@@ -12,13 +12,21 @@
 // blocking on I/O is acceptable, when in fact it would stall the
 // sole thread and starve all pending operations.
 //
+// The sync wrapper requires the `std` feature: `block_on` needs an
+// executor, which needs std. On no_std targets (MCU) the caller
+// drives FihStorage's async methods directly from the launcher's own
+// executor (e.g. embassy).
+//
 // Usage (native only):
 //   let bb = FihBlackboard::new(io, "project");
 
+#[cfg(feature = "std")]
 use crate::core::store::FihStorage;
+#[cfg(feature = "std")]
 use crate::io::FileIo;
 // Async* traits are needed for method resolution on FihStorage in non-WASM impl blocks.
 // The wasm32 check flags them as unused (impl blocks are cfg-gated).
+#[cfg(feature = "std")]
 #[cfg_attr(target_arch = "wasm32", allow(unused_imports))]
 use crate::{
     AsyncEvictCapable, AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead,
@@ -26,15 +34,27 @@ use crate::{
     Intent, IntentCapable, StorageRead,
 };
 
+// The sync wrapper methods and trait impls are gated behind the `std`
+// feature (they use `block_on`); the `String` in their signatures is
+// unused on no_std builds.
+#[cfg(feature = "std")]
+use alloc::string::String;
+
 /// Blackboard implementation backed by FihStorage.
 ///
 /// Generic over any FileIo implementation. The IO backend is
 /// injected at construction time (e.g., `CfFihIo` for R2, `FsIo` for
 /// filesystem, `SimIo` for in-memory).
+///
+/// The synchronous wrapper (all methods) requires the `std` feature:
+/// it uses `futures_executor::block_on` internally. The async surface
+/// of FihStorage itself is std-free and available on no_std targets.
+#[cfg(feature = "std")]
 pub struct FihBlackboard<I: FileIo> {
     pub storage: FihStorage<I>,
 }
 
+#[cfg(feature = "std")]
 impl<I: FileIo> FihBlackboard<I> {
     /// Create a new FihBlackboard with the given IO backend.
     /// Use FihStorage::with_auto_flush for immediate durability.
@@ -45,15 +65,14 @@ impl<I: FileIo> FihBlackboard<I> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<I: FileIo> FihBlackboard<I> {
     /// Rebuild in-memory cache from IO storage. Call on cold start.
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn rebuild_cache(&self) -> Result<(), String> {
         futures_executor::block_on(self.storage.rebuild_cache())
     }
 
     /// Flush pending writes to IO storage.
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn flush_pending(&self) -> Result<(), String> {
         futures_executor::block_on(self.storage.flush_pending())
     }
@@ -61,7 +80,7 @@ impl<I: FileIo> FihBlackboard<I> {
 
 // ── Sync trait implementations (native only, block_on) ────────────────
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "std")]
 impl<I: FileIo> StorageRead for FihBlackboard<I> {
     fn project_id(&self) -> &str {
         self.storage.project_id()
@@ -72,14 +91,14 @@ impl<I: FileIo> StorageRead for FihBlackboard<I> {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "std")]
 impl<I: FileIo> FactCapable for FihBlackboard<I> {
     fn submit_fact(&self, fact: &Fact) -> Result<CoordId, BlackboardError> {
         futures_executor::block_on(self.storage.submit_fact(fact))
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "std")]
 impl<I: FileIo> IntentCapable for FihBlackboard<I> {
     fn submit_intent(&self, intent: &Intent) -> Result<CoordId, BlackboardError> {
         futures_executor::block_on(self.storage.submit_intent(intent))
@@ -102,14 +121,14 @@ impl<I: FileIo> IntentCapable for FihBlackboard<I> {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "std")]
 impl<I: FileIo> HintCapable for FihBlackboard<I> {
     fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         futures_executor::block_on(self.storage.submit_hint(hint))
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "std")]
 impl<I: FileIo> EvictCapable for FihBlackboard<I> {
     fn approximate_size(&self) -> usize {
         futures_executor::block_on(self.storage.approximate_size())

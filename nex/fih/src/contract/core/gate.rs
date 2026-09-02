@@ -9,12 +9,25 @@
 // be admitted. This is a structural check — in v1 the gate verifies the
 // schema exists and tracks its identity hash.
 //
-// On native: Mutex for interior mutability (Send+Sync).
-// On wasm32-unknown-unknown: Mutex is single-threaded but still compiles
-// with no panic risk since there is no actual contention.
+// The gate keeps its schema registry behind Cell2, the store's
+// platform-adaptive cell: critical-section interior mutability on native
+// and MCU targets, a plain RefCell on wasm32-unknown-unknown. Shared
+// borrows nest; a second exclusive borrow in the same thread panics.
 
+use crate::core::index::Cell2;
+use alloc::format;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec::Vec;
+
+// `std::collections::HashMap` exists only under the std feature; alloc has
+// no HashMap. The no_std path substitutes a BTreeMap, which satisfies the
+// same contract (iteration order is unspecified for HashMap, so callers
+// cannot rely on it).
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeMap as HashMap;
+#[cfg(feature = "std")]
 use std::collections::HashMap;
-use std::sync::Mutex;
 
 /// Error returned when the governance gate blocks a write.
 #[derive(Debug, Clone)]
@@ -22,8 +35,8 @@ pub struct GovernanceBypassError {
     pub reason: String,
 }
 
-impl std::fmt::Display for GovernanceBypassError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for GovernanceBypassError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "GovernanceGate blocked: {}", self.reason)
     }
 }
@@ -37,14 +50,14 @@ impl std::fmt::Display for GovernanceBypassError {
 /// and (in future versions) that the data structurally conforms.
 pub struct GovernanceGate {
     /// In-memory schema registry: schema_id → SHA-256 hex hash.
-    schemas: Mutex<HashMap<String, String>>,
+    schemas: Cell2<HashMap<String, String>>,
 }
 
 impl GovernanceGate {
     /// Create a new gate with an empty schema registry.
     pub fn new() -> Self {
         Self {
-            schemas: Mutex::new(HashMap::new()),
+            schemas: Cell2::new(HashMap::new()),
         }
     }
 
@@ -58,26 +71,19 @@ impl GovernanceGate {
         h.update(schema);
         let hash = hex_encode(&h.finalize());
         self.schemas
-            .lock()
-            .expect("GovernanceGate lock")
+            .borrow_mut()
             .insert(schema_id.to_string(), hash.clone());
         hash
     }
 
     /// Remove a schema from the registry.
     pub fn unregister_schema(&self, schema_id: &str) {
-        self.schemas
-            .lock()
-            .expect("GovernanceGate lock")
-            .remove(schema_id);
+        self.schemas.borrow_mut().remove(schema_id);
     }
 
     /// Check whether a schema_id is registered.
     pub fn has_schema(&self, schema_id: &str) -> bool {
-        self.schemas
-            .lock()
-            .expect("GovernanceGate lock")
-            .contains_key(schema_id)
+        self.schemas.borrow().contains_key(schema_id)
     }
 
     /// Admit-or-reject a write.
@@ -89,7 +95,7 @@ impl GovernanceGate {
     /// In v1 this is a lightweight existence check. Future versions will
     /// perform structural validation against the registered schema.
     pub fn admit(&self, schema_id: &str, _data: &[u8]) -> Result<(), GovernanceBypassError> {
-        let schemas = self.schemas.lock().expect("GovernanceGate lock");
+        let schemas = self.schemas.borrow();
         match schemas.get(schema_id) {
             Some(_hash) => Ok(()),
             None => Err(GovernanceBypassError {
@@ -104,7 +110,7 @@ impl GovernanceGate {
     /// Returns `Ok(())` if the hash matches or the schema is unregistered.
     pub fn verify(&self, schema_id: &str, schema: &[u8]) -> Result<(), GovernanceBypassError> {
         use sha2::{Digest, Sha256};
-        let schemas = self.schemas.lock().expect("GovernanceGate lock");
+        let schemas = self.schemas.borrow();
         match schemas.get(schema_id) {
             Some(expected) => {
                 let mut h = Sha256::new();
@@ -129,22 +135,17 @@ impl GovernanceGate {
 
     /// Return the number of registered schemas.
     pub fn schema_count(&self) -> usize {
-        self.schemas.lock().expect("GovernanceGate lock").len()
+        self.schemas.borrow().len()
     }
 
     /// Return a copy of all registered schema IDs.
     pub fn registered_schemas(&self) -> Vec<String> {
-        self.schemas
-            .lock()
-            .expect("GovernanceGate lock")
-            .keys()
-            .cloned()
-            .collect()
+        self.schemas.borrow().keys().cloned().collect()
     }
 
     /// Clear all registered schemas.
     pub fn clear(&self) {
-        self.schemas.lock().expect("GovernanceGate lock").clear();
+        self.schemas.borrow_mut().clear();
     }
 }
 

@@ -1,3 +1,6 @@
+use alloc::string::String;
+use alloc::vec::Vec;
+
 /// Blob store for binary data (snapshots, flush archives, Parquet chunks).
 ///
 /// Implementations: AsyncStoreBlob (in-memory HashMap),

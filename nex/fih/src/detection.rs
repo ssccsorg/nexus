@@ -20,7 +20,17 @@
 //   - Future: EmbeddingSimilarityDetection, TemporalAnomalyDetection, etc.
 
 use crate::fih::{BoardState, Content, Fact};
+use alloc::string::String;
+use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
+
+// `std::collections::HashMap` exists only under the std feature; alloc has
+// no HashMap. The no_std path substitutes a BTreeMap, which satisfies the
+// same contract (iteration order is unspecified for HashMap, so callers
+// cannot rely on it).
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeMap as HashMap;
+#[cfg(feature = "std")]
 use std::collections::HashMap;
 
 /// Output from a detector's orient phase — detector emits Facts only.

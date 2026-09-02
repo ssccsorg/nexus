@@ -1,3 +1,6 @@
+#![no_std]
+extern crate alloc;
+
 // ── fih-model: FIH primitive types and storage traits ──────────────────
 //
 // This crate defines the pure type layer and storage capability traits

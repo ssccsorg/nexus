@@ -15,11 +15,15 @@
 // operations. Sync callers use futures_executor::block_on externally
 // (see FihBlackboard for a convenience wrapper on native platforms).
 //
-// Interior mutability uses RefCell, not Mutex, because there is no
-// concurrent access within an instance. This is the simplest correct
-// implementation for a single-owner model. If thread-safe access is
-// needed, the caller wraps the instance in Arc<Mutex<FihStorage>> —
-// that is an external composition, not an internal requirement.
+// Interior mutability uses Cell2 (critical-section Mutex wrapping a
+// RefCell on native and MCU targets, a plain RefCell on
+// wasm32-unknown-unknown) because there is no concurrent access within
+// an instance. Cell2 adds a same-thread reentrancy check, so a nested
+// exclusive borrow panics; callers must borrow cells one at a time. This
+// is the simplest correct implementation for a single-owner model. If
+// thread-safe access is needed, the caller wraps the instance in
+// Arc<Mutex<FihStorage>> — that is an external composition, not an
+// internal requirement.
 //
 // No static or static mut state exists in FihStorage except fixed
 // constants. Every resource is owned by the instance. Spawning a new
@@ -36,7 +40,15 @@
 //   - no sync trait on FihStorage (async-only)
 //   - no static mutable state
 
-use std::ops::Range;
+use alloc::boxed::Box;
+use alloc::collections::VecDeque;
+use alloc::format;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec;
+use alloc::vec::Vec;
+
+use core::ops::Range;
 
 use sha2::Digest;
 
@@ -50,7 +62,24 @@ use crate::core::index::Cell2;
 use crate::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
 use crate::io::file_io::{FileIo, WriteOp, default_apply_batch};
 use crate::semantic::record::{Query, RecordLoad};
-use std::collections::{HashMap, HashSet, VecDeque};
+
+// `std::collections::HashMap` exists only under the std feature; alloc has
+// no HashMap. The no_std path substitutes a BTreeMap, which satisfies the
+// same contract (iteration order is unspecified for HashMap, so callers
+// cannot rely on it).
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeMap as HashMap;
+#[cfg(feature = "std")]
+use std::collections::HashMap;
+
+// `std::collections::HashSet` exists only under the std feature; alloc has
+// no HashSet. The no_std path substitutes a BTreeSet, which satisfies the
+// same contract (iteration order is unspecified for HashSet, so callers
+// cannot rely on it).
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeSet as HashSet;
+#[cfg(feature = "std")]
+use std::collections::HashSet;
 
 /// Record-layer payload for the unified store (L2 restructure, #176).
 ///
@@ -217,6 +246,10 @@ pub struct FihStorage<I: FileIo> {
 }
 
 impl<I: FileIo> FihStorage<I> {
+    /// Create storage with a system wall clock. Std-only: `SystemClock`
+    /// wraps `std::time`. On no_std targets use `with_clock` with an
+    /// injected `Now` (e.g. `EpochClock` on an MCU).
+    #[cfg(feature = "std")]
     pub fn new(io: I, project_id: &str) -> Self {
         Self::with_clock(io, project_id, Box::new(nex_core::SystemClock))
     }
@@ -228,6 +261,8 @@ impl<I: FileIo> FihStorage<I> {
     /// Create storage with auto-flush enabled. Every write operation
     /// immediately flushes pending ops to IO for durability.
     /// Useful for R2-backed or direct-write deployments.
+    /// Std-only: uses `SystemClock`.
+    #[cfg(feature = "std")]
     pub fn with_auto_flush(io: I, project_id: &str) -> Self {
         Self::with_all(io, project_id, Box::new(nex_core::SystemClock), true)
     }
@@ -293,18 +328,43 @@ impl<I: FileIo> FihStorage<I> {
     /// Insert a blob into the bounded content cache, evicting the oldest
     /// entry when the cap is exceeded. Safe to call for any hash: blobs
     /// are immutable, so an evicted entry simply reloads from io later.
+    ///
+    /// The three cells are borrowed sequentially, never nested: under the
+    /// no_std cell (critical-section Mutex) a nested acquire would panic,
+    /// and the sequential order keeps the same observable behavior.
     fn cache_blob(&self, hash: String, content: Content) {
         let cap = *self.blob_cache_cap.borrow();
+        // Check and insert under one exclusive borrow. A racing caller can
+        // pass the shared check above only if it interleaves between the
+        // borrows, so re-checking under the write borrow keeps the FIFO
+        // order free of duplicate entries. The cells are still borrowed
+        // one at a time: no two cells are held simultaneously.
         let mut cache = self.blob_cache.borrow_mut();
-        let mut order = self.blob_cache_order.borrow_mut();
         if cache.contains_key(&hash) {
             return;
         }
         cache.insert(hash.clone(), content);
-        order.push_back(hash);
-        while order.len() > cap {
-            if let Some(evicted) = order.pop_front() {
-                cache.remove(&evicted);
+        drop(cache);
+        self.blob_cache_order.borrow_mut().push_back(hash.clone());
+        // Evict until the order fits the cap. Each iteration re-borrows
+        // sequentially (the order guard drops before the cache guard), so
+        // no two cells are held at the same time.
+        loop {
+            let over = {
+                let order = self.blob_cache_order.borrow();
+                order.len() > cap
+            };
+            if !over {
+                break;
+            }
+            let evicted = {
+                let mut order = self.blob_cache_order.borrow_mut();
+                order.pop_front()
+            };
+            if let Some(evicted) = evicted {
+                self.blob_cache.borrow_mut().remove(&evicted);
+            } else {
+                break;
             }
         }
     }
@@ -515,7 +575,7 @@ impl<I: FileIo> FihStorage<I> {
             if pending.is_empty() {
                 return Ok(());
             }
-            std::mem::take(&mut *pending)
+            core::mem::take(&mut *pending)
         };
         if let Err(e) = default_apply_batch(&self.io, &ops).await {
             let mut pending = self.pending.borrow_mut();
@@ -528,7 +588,7 @@ impl<I: FileIo> FihStorage<I> {
     /// Rebuild semantic stores from the record maps after rebuild_cache.
     pub async fn rebuild_semantic(&self) -> Result<(), String> {
         // Snapshot: take stores atomically, work on them, then put back.
-        let mut stores = std::mem::take(&mut *self.semantic_stores.borrow_mut());
+        let mut stores = core::mem::take(&mut *self.semantic_stores.borrow_mut());
         if stores.is_empty() {
             return Ok(());
         }
@@ -574,7 +634,7 @@ impl<I: FileIo> FihStorage<I> {
     /// Access the semantic stores list (for downcasting to concrete types).
     pub fn semantic_stores(
         &self,
-    ) -> impl std::ops::Deref<Target = Vec<crate::semantic::DynSemanticStore>> {
+    ) -> impl core::ops::Deref<Target = Vec<crate::semantic::DynSemanticStore>> {
         self.semantic_stores.borrow()
     }
 
@@ -587,7 +647,7 @@ impl<I: FileIo> FihStorage<I> {
         query: &dyn Query,
         top_k: usize,
     ) -> Result<Vec<(u32, f32)>, String> {
-        let mut stores = std::mem::take(&mut *self.semantic_stores.borrow_mut());
+        let mut stores = core::mem::take(&mut *self.semantic_stores.borrow_mut());
         if stores.is_empty() {
             self.semantic_stores.borrow_mut().extend(stores);
             return Err("no semantic stores configured".into());
@@ -599,7 +659,7 @@ impl<I: FileIo> FihStorage<I> {
             }
         }
         self.semantic_stores.borrow_mut().extend(stores);
-        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(core::cmp::Ordering::Equal));
         results.truncate(top_k);
         Ok(results)
     }
@@ -609,7 +669,7 @@ impl<I: FileIo> FihStorage<I> {
     /// Uses take/extend pattern (not borrow_mut across await) to avoid
     /// holding a non-Send MutexGuard across an async boundary.
     pub async fn semantic_insert(&self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
-        let mut stores = std::mem::take(&mut *self.semantic_stores.borrow_mut());
+        let mut stores = core::mem::take(&mut *self.semantic_stores.borrow_mut());
         if stores.is_empty() {
             self.semantic_stores.borrow_mut().extend(stores);
             return Err("no semantic stores configured".into());

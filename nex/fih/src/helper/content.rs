@@ -25,7 +25,7 @@ impl ContentJsonExt for Content {
         match self.mime_type.as_str() {
             "application/json" => serde_json::from_slice(&self.data).ok(),
             "text/plain" => {
-                let s = std::str::from_utf8(&self.data).ok()?;
+                let s = core::str::from_utf8(&self.data).ok()?;
                 serde_json::from_str(s).ok()
             }
             _ => None,

@@ -3,7 +3,7 @@
 # neXus
 ## Overview
 
-neXus is a minimal, decentralized runtime orchestration platform and its spec for autonomous entities. Its core runtime called `nex` is a lightweight binary hub that scales by attaching storage, from embedded filesystems to enterprise databases, like a tiny universal USB hub which has memory and processing unit on the same device package.
+neXus is a homeomorphic, spatial knowledge and execution network that binds any storage and any agent into one shared blackboard — where entities remember by observing, and act by interpreting contracts, not by command. Its core runtime called `nex` is a lightweight binary hub that scales by attaching storage, from embedded filesystems to enterprise databases, like a tiny universal USB hub which has memory and processing unit on the same device package.
 
 The same binary runs on Wasm, edge nodes, portable devices, blockchain runtimes, or bare-metal containers. Any backend that can store an append‑only record (Fact), a stateful record (Intent), and a read‑only record (Hint) becomes a fully functional neXus Blackboard without a graph database or specialised indexing layer. This data model natively supports serverless deployment and eliminates recurring LLM inference costs by confining AI use strictly to knowledge-branch generation. Graph traversal, gap detection, and reporting operate on accumulated facts at zero marginal cost.
 

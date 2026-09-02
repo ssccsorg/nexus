@@ -38,27 +38,118 @@ run_check()  { cargo check -p nex && cargo check -p nexd && cargo check -p nexus
 
 run_wasm_check() {
     # Find all Cargo.toml under core directories, excluding non-WASM targets.
-    # Exclusions: storage/ve-composite (tokio),
-    # storage/sim (tokio), apps/* (HTTP server), playbooks/* (scripts),
-    # target/ (build artifacts).
+    # Exclusions: storage/ve-composite (tokio), storage/sim (tokio),
+    # apps/* (HTTP server), verify/* (host and MCU verification tooling),
+    # playbooks/* (scripts), target/ (build artifacts).
     # apps/ is excluded: each app has its own build target (native, container, etc.)
     # and is not expected to compile for wasm32.
-    find . -name Cargo.toml \
+    # Failures must abort the gate: the find -exec form swallows the exit
+    # code of the inner command, so iterate in bash instead.
+    local failed=0
+    while IFS= read -r manifest; do
+        local dir
+        dir="$(dirname "$manifest")"
+        echo "=== WASM: $dir ==="
+        if ! cargo check --manifest-path "$manifest" --target wasm32-unknown-unknown 2>&1; then
+            echo "WASM check failed: $manifest"
+            failed=1
+        fi
+    done < <(find . -name Cargo.toml \
         -not -path './target/*' \
         -not -path './ext/*' \
         -not -path './apps/*' \
+        -not -path './verify/*' \
         -not -path './storage/ve-composite/*' \
         -not -path './storage/sim/*' \
         -not -path './nexd/*' \
         -not -path './nex-server/*' \
-        -not -path './apps/*' \
         -not -path './playbooks/*' \
-        -not -path './Cargo.toml' \
-        -exec sh -c '
-            dir="$(dirname "$1")"
-            echo "=== WASM: $dir ==="
-            cargo check --manifest-path "$1" --target wasm32-unknown-unknown 2>&1
-        ' _ {} \;
+        -not -path './Cargo.toml')
+    if [ "$failed" -ne 0 ]; then
+        echo "run_wasm_check: one or more crates failed the wasm32 build"
+        return 1
+    fi
+}
+
+# ── WASIp2 smoke check (issue #181): the MCU-relevant WASI target ──────
+#
+# The storage core must compile for wasm32-wasip2 so the future launcher
+# (Wasmi/WAMR + WASI-to-FAT32 bridge) can run FihStorage on-device. This
+# is a smoke target, not a full gate: it checks the storage-path crates
+# only (fih-model, nex-core, nex-fih, nex-io), which are the ones the
+# launcher links. serde_json and futures-executor remain available on
+# wasip2 (std is supported), so this currently passes; the check fixes the
+# property. fih-model lives in the root workspace; the nex-* crates live
+# in the `nex` sub-workspace and must be checked from there so the root
+# workspace's std-feature serde does not unify into their feature sets and
+# so the same chton revision (pinned in the sub-workspace lockfile) is
+# validated.
+
+run_wasip2_check() {
+    echo "=== WASIp2: fih-model ==="
+    cargo check -p fih-model --target wasm32-wasip2 2>&1
+    for pkg in nex-core nex-fih nex-io; do
+        echo "=== WASIp2: $pkg ==="
+        (cd nex && cargo check -p "$pkg" --target wasm32-wasip2) 2>&1
+    done
+}
+
+# ── no_std anchors (issue #181): the OS-less storage path must stay std-free ──
+#
+# The storage core is layered: fih-model (pure types), nex-core (clock
+# contracts), nex-fih (semantics). Each layer must compile and pass its
+# anchor tests with `--no-default-features`; the integration test files
+# (tests/no_std_anchors.rs) reference no std APIs, so a std type leaking
+# past its feature gate breaks the build. The real no_std target check is
+# wasm32-unknown-unknown (wasip2 supports std, so it is only a smoke
+# target). The host-only std surface (FsIo, FileOrigin, SystemClock) is
+# exercised by the regular std test suite.
+
+run_nostd_check() {
+    # fih-model lives in the root workspace; the nex-* crates live in the
+    # `nex` sub-workspace. The no_std checks must run from the workspace
+    # that owns each crate: the root workspace's serde (default std)
+    # would otherwise unify into the nex crates' feature set and break
+    # the std-less MCU target.
+    echo "=== no_std check: fih-model (no-default-features) ==="
+    cargo check -p fih-model --no-default-features 2>&1
+    for pkg in nex-core nex-fih nex-io; do
+        echo "=== no_std check: $pkg (no-default-features) ==="
+        (cd nex && cargo check -p "$pkg" --no-default-features) 2>&1
+    done
+    echo "=== no_std anchor tests ==="
+    (cd nex && cargo test -p nex-core --no-default-features --test no_std_anchors) 2>&1
+    (cd nex && cargo test -p nex-fih --no-default-features --test no_std_anchors) 2>&1
+    echo "=== true no_std target: wasm32-unknown-unknown ==="
+    (cd nex && cargo check -p nex-core --no-default-features --target wasm32-unknown-unknown) 2>&1
+    (cd nex && cargo check -p nex-fih --no-default-features --target wasm32-unknown-unknown) 2>&1
+    echo "=== MCU target: riscv32imac-unknown-none-elf ==="
+    (cd nex && cargo check -p nex-core --no-default-features --target riscv32imac-unknown-none-elf) 2>&1
+    (cd nex && cargo check -p nex-fih --no-default-features --target riscv32imac-unknown-none-elf) 2>&1
+    (cd nex && cargo check -p nex-io --no-default-features --target riscv32imac-unknown-none-elf) 2>&1
+}
+
+# ── Target verification packages (issue #181) ───────────────────────────
+#
+# verify/osless runs the OS-less storage surface on the host (no_std
+# build, caller-provided critical section). verify/mcu builds the storage
+# core as riscv32imac firmware under a 512 KB RAM budget and, when QEMU is
+# available, boots it on the virt machine and checks the runtime behavior
+# (critical section, clock, FihStorage round trip).
+
+run_verify_check() {
+    echo "=== verify: nexus-osless-verify (host) ==="
+    cargo run -p nexus-osless-verify 2>&1
+    echo "=== verify: nexus-mcu-verify (riscv32imac release build) ==="
+    cargo build -p nexus-mcu-verify --target riscv32imac-unknown-none-elf --release 2>&1
+    if command -v qemu-system-riscv32 >/dev/null 2>&1; then
+        echo "=== verify: nexus-mcu-verify (QEMU virt runtime) ==="
+        qemu-system-riscv32 -machine virt -bios none \
+            -kernel target/riscv32imac-unknown-none-elf/release/nexus-mcu-verify \
+            -nographic -no-reboot 2>&1
+    else
+        echo "qemu-system-riscv32 not found; build gate only (runtime run skipped)"
+    fi
 }
 
 # ── Pre-flight auto-fixes: catch trivial issues before strict checks ────
@@ -81,7 +172,6 @@ run_clippy() {
         nex-io \
         nexus-storage-sim \
         interface-query \
-        interface-cypher \
         nexus-gateway-serde-proxy \
         nexd
     do
@@ -102,8 +192,6 @@ run_test()   {
     # smoke verification runner: exercises every storage capability end to end
     cargo run -p nexus-storage-sim 2>&1
     echo "---"
-    # interface tests (cold routing, cypher scenarios) are part of the core gate
-    cargo test -p interface-cypher -- --nocapture 2>&1
 }
 run_all() {
     echo "=== fmt --all ===" && run_fmt
@@ -112,12 +200,15 @@ run_all() {
     echo "=== fmt (after fixes) ===" && run_fmt
     echo "=== check ===" && run_check
     echo "=== wasm check ===" && run_wasm_check
+    echo "=== wasip2 smoke ===" && run_wasip2_check
+    echo "=== no_std anchors ===" && run_nostd_check
+    echo "=== target verification ===" && run_verify_check
     echo "=== clippy ===" && run_clippy
     echo "=== test ===" && run_test
 }
 
 case $MODE in
-    check)  echo "=== fmt --all ===" && run_fmt && run_check && run_wasm_check ;;
+    check)  echo "=== fmt --all ===" && run_fmt && run_check && run_wasm_check && run_wasip2_check && run_nostd_check && run_verify_check ;;
     clippy) run_auto_fix && run_clippy ;;
     test)   echo "=== fmt --all ===" && run_fmt && run_wasm_check && run_test ;;
     all)

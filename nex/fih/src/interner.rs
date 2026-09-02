@@ -1,6 +1,16 @@
-use std::cell::RefCell;
+use alloc::rc::Rc;
+use alloc::string::ToString;
+use alloc::vec::Vec;
+use core::cell::RefCell;
+
+// `std::collections::HashMap` exists only under the std feature; alloc has
+// no HashMap. The no_std path substitutes a BTreeMap, which satisfies the
+// same contract (iteration order is unspecified for HashMap, so callers
+// cannot rely on it).
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeMap as HashMap;
+#[cfg(feature = "std")]
 use std::collections::HashMap;
-use std::rc::Rc;
 
 /// Simple string interner — converts strings to `Rc<str>` for O(1) comparison
 /// and reduced heap allocation on repeated strings (origin URLs, agent names).

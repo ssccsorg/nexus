@@ -1,6 +1,10 @@
+use alloc::format;
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec::Vec;
+use core::hash::{Hash, Hasher};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha256};
-use std::hash::{Hash, Hasher};
 use tagma_core::{Coord, CoordPath};
 
 // ── Tagma primary identity ─────────────────────────────────────────────
@@ -232,8 +236,8 @@ impl CoordId<6> {
 // cause type inference failures with serde derive. Users of CoordId<20>
 // must implement these manually for their depth.
 
-impl std::fmt::Display for CoordId<6> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for CoordId<6> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         for coord in self.0.iter() {
             write!(f, "{}", coord.to_char())?;
         }
@@ -273,8 +277,8 @@ impl<'de> Deserialize<'de> for CoordId<6> {
 // explicit impls per depth (generic serde impls cause type inference
 // failures with serde derive).
 
-impl std::fmt::Display for CoordId<20> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for CoordId<20> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         for coord in self.0.iter() {
             write!(f, "{}", coord.to_char())?;
         }
@@ -339,8 +343,8 @@ impl<'de> Deserialize<'de> for FihHash {
     }
 }
 
-impl std::fmt::Display for FihHash {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for FihHash {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         for byte in &self.0 {
             write!(f, "{:02x}", byte)?;
         }
@@ -402,17 +406,17 @@ pub struct Content {
 impl Content {
     pub fn as_str(&self) -> Option<&str> {
         match self.mime_type.as_str() {
-            "text/plain" | "application/json" => std::str::from_utf8(&self.data).ok(),
+            "text/plain" | "application/json" => core::str::from_utf8(&self.data).ok(),
             _ => None,
         }
     }
 }
 
-impl std::fmt::Display for Content {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Content {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self.mime_type.as_str() {
             "text/plain" | "application/json" => {
-                if let Ok(s) = std::str::from_utf8(&self.data) {
+                if let Ok(s) = core::str::from_utf8(&self.data) {
                     write!(f, "{s}")
                 } else {
                     write!(f, "<invalid utf-8 for {}>", self.mime_type)
