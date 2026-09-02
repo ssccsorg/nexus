@@ -171,7 +171,6 @@ run_clippy() {
         nex-fih \
         nex-io \
         nexus-storage-sim \
-        interface-query \
         nexus-gateway-serde-proxy \
         nexd
     do

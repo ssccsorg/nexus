@@ -9,7 +9,6 @@ members = [
     "libs/session-server",
     "libs/async-store",
     "playbooks/agents",
-    "interface/query",
     "storage/sim",
     "apps/nex-calc",
     "benches",
