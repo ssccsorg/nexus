@@ -2,7 +2,7 @@
 
 neXus is the FIH (Fact / Intent / Hint) blackboard storage and coordination runtime of the SSCCS stack. It is a Rust workspace (edition 2024) that provides the storage core, the process layer, and the daemon surface for building blackboard-backed agents and products. The same storage core compiles for hosts, WASM targets, and no_std MCU-class targets.
 
-Project status: pre-1.0 (version 0.1.0). The crates are not published to crates.io; consume them by git revision, as the Rem project does. License: Apache-2.0.
+Project status: pre-1.0 (version 0.1.0). The crates are not published to crates.io; consume them by git revision. License: Apache-2.0.
 
 The project documentation site carries the design material and the development guide: <https://docs.ssccs.org/projects/nexus/development>
 
@@ -26,7 +26,6 @@ The FIH stack is split across repositories by layer. Each layer depends strictly
 | [chton](https://github.com/ssccsorg/chton) | IO and storage materialization: `chton::io` (FileIo, IoFuture, FsIo, CoordMapStoreIo) and `chton::store`. no_std layering included. |
 | nexus (this repository) | Semantics, contracts, and runtime: `fih-model`, `nex-core`, `nex-fih`, `nex-io`, the `nex` process crate, `nexd`, `nex-server`, `nex-client`. |
 | [nex-ext](https://github.com/ssccsorg/nex-ext) | Adapters that attach host database engines to the network (for example the DuckDB and Cypher-backed cold query path). Consumes the cold query contract that lives in `fih-model`. |
-| [rem](https://github.com/ssccsorg/rem) | First product consumer: a USB stick for portable memory. It implements a FAT32-backed FileIo in its own workspace against the published contract. |
 
 The ecosystem rule is that contracts live in the stable core, not in implementations. A consumer implements a published trait (for example `FileIo`) in its own workspace and plugs it in; the core never depends on a specific backend.
 
@@ -104,7 +103,7 @@ The MCU runtime verification runs in the Docker image `ghcr.io/ssccsorg/nexus-ve
 
 ### Add the dependency
 
-Pin the repository by revision. The Rem workspace is the reference for a complete consumer setup:
+Pin the repository by revision. A complete consumer dependency setup looks like this:
 
 ```toml
 [dependencies]
@@ -139,7 +138,7 @@ store.flush_pending().await?;
 
 ### The FileIo contract
 
-`FihStorage<I>` is generic over `I: FileIo` (resolved through `nex::io`, a shim over `chton::io`). A custom backend implements `FileIo` in the consumer workspace. The canonical semantics that `rebuild_cache` and the write path rely on are fixed: listing a missing prefix is an empty enumeration, listed keys include their prefix so they round-trip through `read`, and deleting a missing key is a no-op. The Rem repository pins these semantics with integration tests in `rem-storage-fat` and is the reference implementation of a FAT32-style backend.
+`FihStorage<I>` is generic over `I: FileIo` (resolved through `nex::io`, a shim over `chton::io`). A custom backend implements `FileIo` in the consumer workspace. The canonical semantics that `rebuild_cache` and the write path rely on are fixed: listing a missing prefix is an empty enumeration, listed keys include their prefix so they round-trip through `read`, and deleting a missing key is a no-op.
 
 ### no_std targets
 
