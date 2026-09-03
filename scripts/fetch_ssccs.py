@@ -139,20 +139,12 @@ class Route:
     source_dir: str = ""
 
 
-ROUTES: dict[str, Route] = {
-    "nexus-readme": Route(
-        name="nexus-readme",
-        input_rel="docs/_llms/projects/nexus/index.llms.md",
-        transforms=[
-            StripFrontmatter(),
-            StripIntroContent(),
-            PrependHeader("<!-- synced from SSCCS docs -- do not edit directly -->"),
-            ImagePathRewrite(),
-        ],
-        sink="README.md",
-        source_dir="https://docs.ssccs.org/projects/nexus/",
-    ),
-}
+# README.md is maintained in this repository as a developer and
+# integration guide. The project documentation on docs.ssccs.org is
+# linked from the README instead of mirrored into it, so the automatic
+# nexus-readme route is removed. Register external routes here when a
+# synced artifact is needed again.
+ROUTES: dict[str, Route] = {}
 
 
 def register_route(name: str, route: Route) -> None:
@@ -209,7 +201,7 @@ def run_route(route: Route, sync_root: str) -> int:
 def main():
     parser = argparse.ArgumentParser(
         description="SSCCS artifact sync router")
-    parser.add_argument("--route", default="nexus-readme",
+    parser.add_argument("--route", default=None,
                         help="Run a single named route")
     parser.add_argument("--sync-root", default="/tmp/ssccs",
                         help="Local sync root (default: /tmp/ssccs)")
@@ -222,6 +214,11 @@ def main():
     if args.list_routes:
         list_routes()
         return
+
+    if not args.all and not args.route:
+        print("[error] specify a route with --route or run with --all",
+              file=sys.stderr)
+        sys.exit(1)
 
     if args.all:
         routes = list(ROUTES.values())
