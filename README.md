@@ -1,111 +1,197 @@
-<!-- synced from SSCCS docs -- do not edit directly -->
-
 # neXus
+
+neXus is the FIH (Fact / Intent / Hint) blackboard storage and coordination runtime of the SSCCS stack. It is a Rust workspace (edition 2024) that provides the storage core, the process layer, and the daemon surface for building blackboard-backed agents and products. The same storage core compiles for hosts, WASM targets, and no_std MCU-class targets.
+
+Project status: pre-1.0 (version 0.1.0). The crates are not published to crates.io; consume them by git revision, as the Rem project does. License: Apache-2.0.
+
+The project documentation site carries the design material and the development guide: <https://docs.ssccs.org/projects/nexus/development>
+
 ## Overview
 
-neXus is a homeomorphic, spatial knowledge and execution network that binds any storage and any agent into one shared blackboard — where entities remember by observing, and act by interpreting contracts, not by command. Its core runtime called `nex` is a lightweight binary hub that scales by attaching storage, from embedded filesystems to enterprise databases, like a tiny universal USB hub which has memory and processing unit on the same device package.
+All interaction with a neXus blackboard goes through three record types:
 
-The same binary runs on Wasm, edge nodes, portable devices, blockchain runtimes, or bare-metal containers. Any backend that can store an append‑only record (Fact), a stateful record (Intent), and a read‑only record (Hint) becomes a fully functional neXus Blackboard without a graph database or specialised indexing layer. This data model natively supports serverless deployment and eliminates recurring LLM inference costs by confining AI use strictly to knowledge-branch generation. Graph traversal, gap detection, and reporting operate on accumulated facts at zero marginal cost.
+- Fact: an immutable, validated observation.
+- Intent: a stateful exploration with the lifecycle `submit` to `claim` to `heartbeat` to `conclude`.
+- Hint: a read-only governance signal.
 
-Where conventional knowledge graphs store static entity‑relationship triplets, neXus records the research process itself. A Fact is not merely a statement — it carries the Intent that proposed the exploration, the Hint constraints that bounded it, and the evidence that validated it. The graph is a queryable, replayable computational trace. Every conclusion can be audited back to the hypothesis that generated it and the experiment that confirmed it. This is a direct instantiation of SSCCS’s ontological primitives: Segment, Scheme, Field, and Observation manifest as Fact, Intent, and Hint within the knowledge domain.
+Records are content-addressed. Fact ids are `CoordId` values derived from content, origin, and creator in one SHA-256 pass. Raw content lives in a blob store keyed by its content hash; record files are compact postcard binaries. The blackboard is a plain storage surface: any backend that can store facts, intents, hints, and blobs can host it. There is no privileged orchestrator; peers coordinate through the shared board.
 
-## Design Philosophy
+## Layered stack and related repositories
 
-neXus began as a research platform for a new computational model SSCCS, serving simultaneously as its proof of concept. The platform and the theory describe each other by design. The infrastructure that validates the model is itself built on the model—a self‑referential loop that already makes neXus a general‑purpose, open‑source problem‑solving infrastructure for any data-driven domain.
+The FIH stack is split across repositories by layer. Each layer depends strictly on the layers below it; no layer reaches upward.
 
-neXus itself is not a runtime platform in the conventional sense: not an open-core business that hosts a marketplace, not a centralized runtime that extracts rent from extension modules, and not a foundation-controlled standard that polices who may participate. Its fundamental design eliminates central control entirely. A developer who produces value runs nex directly, on their own infrastructure, under their own terms. nex is neither a `core install extension -g` extension platform nor a hosted service; it is the tool with which any developer can build such a platform for themselves, while simultaneously participating in a shared value data store. The goal is not to become a platform, but to equip direct value producers—engineers, researchers, domain experts—to solve concrete problems using the accumulated tools and knowledge within the nex ecosystem - without middle man. Each producer, in solving their own problem, structurally and unavoidably contributes verified knowledge back into the shared store to access it because of their own benefits, so that accumulated knowledge is then inherited and evolved by other producers, who build upon it and return further improvements. The ecosystem grows by the recursive, stigmergic compounding of independently verified progress.
+| Repository | Role |
+|---|---|
+| [syntagma](https://github.com/ssccsorg/syntagma) | Structural coordinate specification: `tagma-core` (Coord, CoordPath, CoordSpaceN) and `tagma-map`. no_std with alloc. |
+| [chton](https://github.com/ssccsorg/chton) | IO and storage materialization: `chton::io` (FileIo, IoFuture, FsIo, CoordMapStoreIo) and `chton::store`. no_std layering included. |
+| nexus (this repository) | Semantics, contracts, and runtime: `fih-model`, `nex-core`, `nex-fih`, `nex-io`, the `nex` process crate, `nexd`, `nex-server`, `nex-client`. |
+| [nex-ext](https://github.com/ssccsorg/nex-ext) | Adapters that attach host database engines to the network (for example the DuckDB and Cypher-backed cold query path). Consumes the cold query contract that lives in `fih-model`. |
+| [rem](https://github.com/ssccsorg/rem) | First product consumer: a USB stick for portable memory. It implements a FAT32-backed FileIo in its own workspace against the published contract. |
 
-## Universal primitives and near-unlimited storage scalability
+The ecosystem rule is that contracts live in the stable core, not in implementations. A consumer implements a published trait (for example `FileIo`) in its own workspace and plugs it in; the core never depends on a specific backend.
 
-Every platform dependency is a vulnerability. API changes, price increases, and service shutdowns are vectors of disarmament against your autonomy. A single state machine makes any storage backend interchangeable, turning platform lock-in into a tactical choice rather than an architectural constraint. Fact is immutable, Intent is a state machine, Hint is volatile – data remains readable by the same code a decade later, regardless of which platform hosted it. Platform independence is a survival strategy, and neXus is its runtime. Every interaction in neXus is expressed through three primitives, forming a recursive, self-similar cycle across all scales (agent, experiment, project, ecosystem):
+## Repository layout
 
-- Fact: An immutable, validated observation (the output of a concluded Intent).
-- Intent: A proposed exploration with a strict lifecycle: `submit` → `claim` → `heartbeat` → `conclude`.
-- Hint: An injected, read-only constraint guiding admissible agent actions.
+The repository contains the root workspace and the nested `nex/` workspace, which root members depend on by path.
 
-![](https://docs.ssccs.org/projects/nexus/index_files/figure-html/fig-fih-primitives-output-1.svg)
+Root workspace members:
 
-Figure 1: Fact → Intent → Fact: recursive chain at every scale.
+| Path | Package | Role |
+|---|---|---|
+| `fih/` | `fih-model` | Pure FIH model: `Fact`, `Intent`, `Hint`, `CoordId`, `FihHash`, `BoardState`, capability trait definitions (`AsyncFactCapable`, `AsyncFilterCapable`, `AsyncStorageRead` and friends), semantic traits, the `Now` clock trait, and the folded cold query contract (`ColdQuery`, `QueryCapable`). no_std with alloc. |
+| `nexd/` | `nexd` | Native daemon. Spawns and supervises `nex-server`, serves agent management, and proxies FIH methods over JSON-RPC on a Unix socket. |
+| `nex-server/server/` | `nex-server` | JSON-RPC 2.0 storage server over a Unix socket. The handler holds an `Arc<FihStorage<FsIo>>`. |
+| `nex-server/client/` | `nex-client` | Typed JSON-RPC client for the server and daemon sockets. |
+| `storage/sim/` | `nexus-storage-sim` | Scenario-driven verification runner with in-memory IO backends. |
+| `libs/` | `nexus-gateway-serde-proxy`, `nexus-session-server`, `nexus-async-store` | Shared host libraries. |
+| `playbooks/agents/` | `nexus-privileged-agent` | Consumer playbook used by `./playbooks/run.sh`. |
+| `apps/nex-calc/` | `nex-calc` | Coordinate accumulation CLI, the current design basis for deterministic path accumulation. |
+| `verify/support/` | `nexus-verify-support` | Support library for the target verification packages. |
+| `verify/osless/` | `nexus-osless-verify` | Host-runnable verification of the OS-less storage path, including the cross-thread critical section stress. |
+| `verify/mcu/` | `nexus-mcu-verify` | no_std riscv32imac firmware that boots under QEMU and runs the storage round trip inside the MCU memory budget. |
+| `benches/` | workspace bench target | Multi-axis index benchmarks (`cargo bench -p nex`). |
 
-Every Fact carries a provenance hash linking it to its originating Intent, forming a deterministic, replayable audit trail. A core rule governs scale: *Observe as Fact, act as Intent.* Automated observers record findings as Facts, preventing the Blackboard from cluttering with unclaimed Intents.
+The `nex/` workspace:
 
-## Architecture Overview
+| Path | Package | Role |
+|---|---|---|
+| `nex/core/` | `nex-core` | Clock implementations (`SystemClock` under std, epoch-based clocks for MCU targets) and storage primitives (blob, meta, object store traits). |
+| `nex/io/` | `nex-io` | no_std re-export shim over `chton::io`. |
+| `nex/fih/` | `nex-fih` | The storage implementation layer: `FihStorage<I: FileIo>`, record maps, the structural filter index, semantic store registration, and re-exports of `fih-model`. no_std with a `std` default feature. |
+| `nex/process/` | `nex` | The process layer: OODA scheduler, detection tasks, eviction, plus the backward-compatible alias surface (`nex::storage::core::FihStorage`, `nex::storage::semantic`, `nex::io`, top-level `FileIo`, `FsIo`). |
 
-All participants (verification engines, editors, synthesis tools) are equal peers interacting solely via the FIH Blackboard interface. There is no privileged orchestrator layer; peers are defined by their role (what they read/write), not hierarchy.
+Standalone applications with their own workspaces and verifiers live under `apps/` (`nex-api`, `nex-calc-fihcontract`, `nex-spinwasi-ssccsdocs`, `nex-tagma`, `nex-wasmer-ssccsdocs`). Edge sync modules live under `gateway/`. The `docs/` directory holds the devlogs that record architectural decisions.
 
-![](https://docs.ssccs.org/projects/nexus/index_files/figure-html/fig-recursive-blackboard-output-1.svg)
+## Getting Started
 
-Figure 2: Recursive Blackboard: every node can contain sub-Blackboards. FIH at every scale.
+Requirements: a stable Rust toolchain. Several checks additionally need the `wasm32-unknown-unknown`, `wasm32-wasip2`, and `riscv32imac-unknown-none-elf` targets, which the CI workflow installs.
 
-### The 5-Layer Architecture
+Build the root workspace:
 
-| Layer | Logical Component | Core Responsibility |
-|----|----|----|
-| 1 | Knowledge Graph Engine | Hybrid retrieval (vector + graph + temporal) for documents, entities, simulations, and sensor traces. |
-| 2 | Artifact Ingestion Pipeline | Decoupled, engine-agnostic sync (Object Store → Sync Worker → Queue) ensuring incremental, consistent updates. |
-| 3 | Agentic Research Loop | Stigmergy-based coordination. Planner, Verifier, and Generator interact solely via the FIH Blackboard. |
-| 4 | Learning Loop | On-policy RL (Flow-GRPO) optimizing the Planner using knowledge-graph support, novelty, and reproducibility rewards. |
-| 5 | Contract Governance | On-chain, self-executing protocol defining evidence thresholds, research economy rules, and staking mechanisms. |
+```bash
+cargo build --workspace
+```
 
-### FIH as a Data Structure Dimension
+Build and test the storage workspace:
 
-FIH primitives form a 3-vector basis for the system state, enabling three scaling modes:
+```bash
+cd nex && cargo test --workspace
+```
 
-1.  Multi-Blackboard Composition: Recursive scoping. An Observation at dimension *N* becomes a Hint at dimension *N-1*.
-2.  Temporal Accumulation: A 4D spatiotemporal graph. Facts are permanent, Intents are transient (leaving a Fact residue), and Hints are garbage-collectible, all timestamped.
-3.  Independent Streaming: Each primitive operates as an independent pub/sub stream, allowing distributed nexus instances to synchronize via FIH deltas without a shared database.
+Run the standard checks (fmt, clippy, tests, and the wasm gate):
 
-## Layer Details
+```bash
+./run.sh --core
+```
 
-- Layer 1 (KG Engine): Decomposes artifacts into typed relationships and community clusters, supporting naive, local, global, and hybrid retrieval strategies.
-- Layer 2 (Ingestion): Abstracts storage backends (SQLite, blockchain, cloud DBs) behind a minimal interface. Custom storage can be injected without modifying core logic.
-- Layer 3 (Agentic Loop): Agents coordinate via Stigmergy (leaving/reading traces). Detectors (gap/contradiction finders) apply count-based heuristics, recording findings as idempotent Facts. All actions append to an Evolving Memory for conflict-free concurrency and RL replay.
-- Layer 4 (Learning Loop): Rollouts are batched for group-normalized advantages. The Planner is updated via clipped objectives with KL penalty, converting multi-turn credit assignment into single-turn updates.
-- Layer 5 (Governance): Recognizes five economic contributions (Gap Discovery, Hypothesis Submission, Experimental Validation, Concept Drift Detection, Knowledge Ingestion). Validated hypotheses return stake + reward; falsified ones are slashed.
+The top-level runner mirrors the CI pipeline:
 
-## Extension: Boundaryless Research Infrastructure
+```bash
+./run.sh                 # core + gateway + apps + playbooks
+./run.sh --core          # core checks only
+./run.sh --gateway       # gateway layer checks
+./run.sh --apps          # standalone app verification
+./run.sh --server        # nex-server verification over a Unix socket
+./run.sh --bench         # tagma multi-axis index benchmarks
+./run.sh --playbooks     # consumer playbooks
+```
 
-Fundamental computing research requires validation beyond text and code. neXus extends into a cross-reality research manifold, unifying theoretical insights, simulation outputs, and physical measurements.
+`scripts/run-core.sh` accepts `--check`, `--clippy`, and `--test` for focused local runs.
 
-### Mathematical Foundation: ULHM
+The MCU runtime verification runs in the Docker image `ghcr.io/ssccsorg/nexus-verify` (built from `verify/Dockerfile` with QEMU and the RISC-V binutils) and boots `target/riscv32imac-unknown-none-elf/release/nexus-mcu-verify` on `qemu-system-riscv32 -machine virt`.
 
-The Universal Latent Homeomorphic Manifold (ULHM) framework uses *homeomorphism* (continuous bijection preserving topological structure) to unify disparate modalities. The Verifier applies three canonical loss terms to validate cross-domain mappings:
+## Integration Guide
 
-- Continuity loss: Small changes in one modality map to small changes in the other.
-- Trust loss: Preserves neighborhood relationships.
-- Wasserstein loss: Aligns global distributions of latent representations.
+### Add the dependency
 
-### Extended Architecture Scope
+Pin the repository by revision. The Rem workspace is the reference for a complete consumer setup:
 
-| Layer | Current Scope | Extended Scope |
-|----|----|----|
-| KG Engine | Documents, code, references | Simulation outputs, robot trajectories, sensor streams, digital twin states |
-| Ingestion Pipeline | Text files (`.md`, `.rs`, etc.) | Binary simulation results, point clouds, telemetry, hardware-in-the-loop data |
-| Agentic Loop | Document-code gap hypotheses | Hypotheses spanning simulation predictions and physical measurements |
-| Learning Loop | Research session outcomes | Experimental validation rates, simulation fidelity, physical reproducibility |
-| Contract Governance | Structural/citation rules | Physical constraints, precision bounds, safety invariants |
+```toml
+[dependencies]
+nex = { git = "https://github.com/ssccsorg/nexus", package = "nex", rev = "<commit>" }
+nex-fih = { git = "https://github.com/ssccsorg/nexus", package = "nex-fih", rev = "<commit>" }
+tokio = { version = "1", features = ["full"] }
+```
 
-### Key Enablers
+The `nex` package re-exports the historical deep paths, so `nex::storage::core::FihStorage`, `nex::io::FileIo`, and `nex::io::FsIo` resolve without further wiring. `nex-fih` exposes the model types and the capability traits (`Fact`, `Content`, `CoordId`, `AsyncFactCapable`, `AsyncFilterCapable`, `AsyncStorageRead`).
 
-1.  Episodic Knowledge Graph (eKG): Evolving Memory transitions from append-only JSONL to an eKG, preserving temporal ordering, agent provenance, and cross-modal coherence for physical reproducibility.
-2.  Homeomorphic Bridge: Enables semantic-guided recovery (completing partial physical observations via formal descriptions) and zero-shot compositional reasoning across simulation and hardware.
-3.  Required Additions: Multi-Modal Ingestion Handlers, a Homeomorphic Verification Layer, and eKG Integration.
+### Host usage
 
-## Component Interaction Matrix
+Open a store over a directory, hydrate it, and submit a fact:
 
-| Component | KG Engine | Object Store | Sync Worker | Planner | Verifier | Generator | Sim / Hardware |
-|----|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| KG Engine | ● |  | ← synced by | ← queried by | ← grounds |  | ← ingests traces |
-| Object Store |  | ● | ← read during diff |  |  |  | ← uploaded by |
-| Sync Worker | → del/upd | → list/read | ● |  |  |  |  |
-| Planner | → queries |  |  | ● | → delegates |  | → invokes |
-| Verifier | → hybrid + homeomorphic |  |  | ← receives | ● | → signals | ← validates |
-| Generator |  |  |  |  | ← triggered | ● |  |
+```rust
+use nex::io::FsIo;
+use nex::storage::core::FihStorage;
+use nex_fih::{AsyncFactCapable, Content, Fact};
 
-## Strategic Alignment
+let io = FsIo::new("/tmp/nexus-store")?;
+let store = FihStorage::new(io, "my-app");
+store.rebuild_cache().await?;
 
-- Engine-Agnostic: Synchronization endpoints isolate the system from specific backends, enabling seamless adoption of future KG, simulation, or robotic algorithms.
-- Zero Lock-in: All components (object store, queue, KG database, simulation engine) are replaceable with open equivalents.
-- Research-First: Optimized strictly for the academic exploration cycle (hypothesize → validate → publish) across digital and physical domains.
-- Boundaryless by Design: Physical-digital extension is a natural consequence of existing engine-agnostic patterns, requiring no fundamental architectural rewrite.
-- Invisible Infrastructure: nex does not seek attention. Its success is measured by the success of every instance built upon it — a verification engine becoming an industry standard, a development environment powering the next generation of tools, a hardware design flow quietly automating synthesis. Each is a standalone project with its own identity, and simultaneously an implicit nex extension instance. The core runtime remains deliberately unremarkable, like stage equipment that enables the performance without ever stepping into the light.
+let fact = Fact::new(
+    "user-note".to_string(),
+    Content::from("remember this"),
+    "my-app".into(),
+);
+store.submit_fact(&fact).await?;
+store.flush_pending().await?;
+```
+
+### The FileIo contract
+
+`FihStorage<I>` is generic over `I: FileIo` (resolved through `nex::io`, a shim over `chton::io`). A custom backend implements `FileIo` in the consumer workspace. The canonical semantics that `rebuild_cache` and the write path rely on are fixed: listing a missing prefix is an empty enumeration, listed keys include their prefix so they round-trip through `read`, and deleting a missing key is a no-op. The Rem repository pins these semantics with integration tests in `rem-storage-fat` and is the reference implementation of a FAT32-style backend.
+
+### no_std targets
+
+The storage core builds without an OS. Consume `nex-fih` and `chton` with `default-features = false`, provide `alloc` and a `critical-section` implementation with the `restore-state-bool` feature, and construct storage with an injected clock through the `Now` trait (`FihStorage::with_clock`). On a host the std `SystemClock` is the default; on an MCU use an epoch-based clock. `nexus-mcu-verify` under `verify/mcu` is the complete reference: it builds as a riscv32imac no_std firmware and runs the FIH round trip under QEMU inside the 512 KB budget.
+
+### Daemon deployment
+
+For a supervised deployment, run `nexd`, which spawns `nex-server` as a child process and serves `/tmp/nexd.sock` by default. The typed client replaces hand-rolled JSON-RPC:
+
+```rust
+use nex_client::connect; // connect(path) then call the typed methods
+```
+
+The FIH methods served by `nexd` and `nex-server` are `write_fact`, `read_state`, `read_fact`, `read_intent`, `read_hint`, `write_intent`, `write_hint`, `claim_intent`, `heartbeat_intent`, `release_intent`, `conclude_intent`. `nexd` additionally serves `spawn_agent`, `list_agents`, and `kill_agent`. The wire protocol shape is documented in `docs/wire-protocol.md`.
+
+## Verification
+
+GitHub Actions runs on push to `main` and on pull requests:
+
+- Core: fmt, clippy, tests, the wasm32 gate, and the MCU runtime verification under QEMU in Docker.
+- Server: `nex-server` and `nex-client` verification over a Unix socket.
+- Gateway: the HTTP API and edge sync modules.
+- Apps: standalone app verifiers (spin-wasi reference, `nex-calc`, `nexd` lifecycle, tagma consumer).
+- Playbooks: consumer playbook scenarios.
+
+The same flows run locally through `./run.sh` sub-commands, so a change is validated locally before it reaches CI.
+
+## Contributing
+
+The repository follows an issue-first flow:
+
+1. Open a GitHub issue that describes the change and add the relevant labels.
+2. Create a branch named `{issue-number}-{subject-alphabets-with-one-or-two-dashes}`.
+3. Open a pull request titled `PR: {category}: {message}`, with `#{issue}` after the category on PR branches and omitted on `main`.
+
+Commit messages use the same shape: `{category}: {message}` with `#{issue}` on PR branches. Categories include `feat`, `fix`, `refactor`, `docs`, `chore`, `ci`, `test`, and `build`.
+
+Code guidance:
+
+- Keep changes scoped to the goal and do not generate speculative code.
+- Put unit and integration tests under `tests/` directories rather than inline in host code files.
+- Run `cargo fmt`, `cargo clippy`, and the relevant `./run.sh` target before opening a pull request.
+- The infrastructure contract rule applies to every change: the core defines capability traits and stable contracts, and implementations (including consumer-side backends) implement those contracts without modifying the core surface. A change that alters a core contract requires the capability gap to be demonstrated first.
+
+## Documentation
+
+- Development guide: <https://docs.ssccs.org/projects/nexus/development>
+- Project documentation: <https://docs.ssccs.org/projects/nexus/>
+- Design and decision records: the `docs/` directory in this repository, including the layered restructure (`2026-08-20-176-content-hash-conflict-l2-restructure.md`), the cold query and DuckDB direction (`2026-08-29-181-cypher-removal-and-nex-duckdb-direction.md`), the multi-dimensional structural search benchmark (`2026-08-27-179-multidim-structural-search-bench.md`), and the wire protocol (`wire-protocol.md`).
+
+---
+
+## License
+
+Apache-2.0. See the `LICENSE` file in this repository.
