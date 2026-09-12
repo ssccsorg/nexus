@@ -183,13 +183,18 @@ type BlobJobs = Vec<(usize, String)>;
 /// before the sort so a selective query pays O(N) scan plus O(k log k)
 /// sort instead of a full-map sort, while the id-sorted result order
 /// matches `read_state`.
+///
+/// The sort is unstable because the key is the map key, so it is unique and
+/// the comparator is already a total order: there are no ties for stability
+/// to break. Unstable avoids carrying the stable sort's merge path into a
+/// no_std build.
 fn sorted_matches<K, R, F>(map: &HashMap<K, R>, keep: F) -> Vec<(&K, &R)>
 where
     K: Ord,
     F: Fn(&K, &R) -> bool,
 {
     let mut matches: Vec<(&K, &R)> = map.iter().filter(|(k, r)| keep(k, r)).collect();
-    matches.sort_by(|a, b| a.0.cmp(b.0));
+    matches.sort_unstable_by(|a, b| a.0.cmp(b.0));
     matches
 }
 
@@ -403,11 +408,13 @@ impl<I: FileIo> FihStorage<I> {
 
         // The record maps are iterated in id order, replicating the
         // sorted io-key enumeration of the pre-#173 implementation. This
-        // keeps the observable state ordering contract unchanged.
+        // keeps the observable state ordering contract unchanged. The sort
+        // is unstable because the key is the map key, so it is unique and
+        // there are no ties for stability to break.
         {
             let recs = self.fact_records.borrow();
             let mut fact_recs: Vec<(&String, &FactRecord)> = recs.iter().collect();
-            fact_recs.sort_by(|a, b| a.0.cmp(b.0));
+            fact_recs.sort_unstable_by(|a, b| a.0.cmp(b.0));
             for (id, r) in fact_recs {
                 let content_hash = Self::blob_hash_or_zero(&r.blob_hash);
                 fact_blob_jobs.push((facts.len(), r.blob_hash.clone()));
@@ -426,7 +433,7 @@ impl<I: FileIo> FihStorage<I> {
         {
             let recs = self.intent_records.borrow();
             let mut intent_recs: Vec<(&String, &IntentRecord)> = recs.iter().collect();
-            intent_recs.sort_by(|a, b| a.0.cmp(b.0));
+            intent_recs.sort_unstable_by(|a, b| a.0.cmp(b.0));
             for (id, r) in intent_recs {
                 let description = if r.description_hash.is_empty() {
                     id.clone()
@@ -466,7 +473,7 @@ impl<I: FileIo> FihStorage<I> {
         {
             let recs = self.hint_records.borrow();
             let mut hint_recs: Vec<(&String, &HintRecord)> = recs.iter().collect();
-            hint_recs.sort_by(|a, b| a.0.cmp(b.0));
+            hint_recs.sort_unstable_by(|a, b| a.0.cmp(b.0));
             for (id, r) in hint_recs {
                 hints.push(Hint {
                     id: CoordId::resolve(id),
