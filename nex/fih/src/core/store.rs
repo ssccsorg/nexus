@@ -45,6 +45,7 @@ use alloc::collections::VecDeque;
 use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString;
+#[cfg(feature = "structural-index")]
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -214,7 +215,10 @@ pub struct FihStorage<I: FileIo> {
     /// Structural filter index: CoordPath<6> (time, entity, origin,
     /// creator, status) to the set of record ids at that path. Memory is
     /// bounded by axis cardinality, not record count (L2 restructure,
-    /// #176). The `iter_tree` ascending order contract is preserved.
+    /// #176), which is why it is behind the `structural-index` feature:
+    /// a consumer that never queries it should not pay for it. The
+    /// `iter_tree` ascending order contract is preserved.
+    #[cfg(feature = "structural-index")]
     pub(crate) store: Cell2<tagma_core::CoordSpaceN<6, Vec<String>>>,
     pub fact_records: Cell2<HashMap<String, FactRecord>>,
     pub intent_records: Cell2<HashMap<String, IntentRecord>>,
@@ -279,6 +283,7 @@ impl<I: FileIo> FihStorage<I> {
             project_id: project_id.to_string(),
             clock,
             auto_flush,
+            #[cfg(feature = "structural-index")]
             store: Cell2::new(tagma_core::CoordSpaceN::new()),
             fact_records: Cell2::new(HashMap::new()),
             intent_records: Cell2::new(HashMap::new()),
@@ -304,6 +309,7 @@ impl<I: FileIo> FihStorage<I> {
             project_id: project_id.to_string(),
             clock,
             auto_flush: false,
+            #[cfg(feature = "structural-index")]
             store: Cell2::new(tagma_core::CoordSpaceN::new()),
             fact_records: Cell2::new(HashMap::new()),
             intent_records: Cell2::new(HashMap::new()),
@@ -732,6 +738,7 @@ impl<I: FileIo> FihStorage<I> {
     /// (deterministic content per id), which nex-calc is
     /// (`make_number_fact_id` and the content hash both derive from the
     /// value). In debug builds the invariant is asserted.
+    #[cfg_attr(not(feature = "structural-index"), allow(unused_variables))]
     pub fn place_record(&self, path: &tagma_core::CoordPath<6>, id: &str, record: Record) {
         match &record {
             Record::Fact {
@@ -809,15 +816,18 @@ impl<I: FileIo> FihStorage<I> {
             }
         }
         // Add the id to the structural path's id set.
-        let mut store = self.store.borrow_mut();
-        match store.at_path_mut(path) {
-            Some(ids) => {
-                if !ids.iter().any(|x| x == id) {
-                    ids.push(id.to_string());
+        #[cfg(feature = "structural-index")]
+        {
+            let mut store = self.store.borrow_mut();
+            match store.at_path_mut(path) {
+                Some(ids) => {
+                    if !ids.iter().any(|x| x == id) {
+                        ids.push(id.to_string());
+                    }
                 }
-            }
-            None => {
-                store.place_path(path, vec![id.to_string()]);
+                None => {
+                    store.place_path(path, vec![id.to_string()]);
+                }
             }
         }
     }
@@ -859,9 +869,12 @@ impl<I: FileIo> FihStorage<I> {
             _ => {}
         }
         // Remove the id from the structural path's id set.
-        let mut store = self.store.borrow_mut();
-        if let Some(ids) = store.at_path_mut(path) {
-            ids.retain(|x| x != id);
+        #[cfg(feature = "structural-index")]
+        {
+            let mut store = self.store.borrow_mut();
+            if let Some(ids) = store.at_path_mut(path) {
+                ids.retain(|x| x != id);
+            }
         }
     }
 

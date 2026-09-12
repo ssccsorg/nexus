@@ -25,6 +25,8 @@
 // so the path falls back to a full-tree walk and the exact predicates
 // carry all selectivity.
 
+#![cfg(feature = "structural-index")]
+
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec::Vec;
