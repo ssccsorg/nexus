@@ -16,6 +16,7 @@ extern crate alloc;
 
 use alloc::boxed::Box;
 use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::future::Future;
 use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
@@ -26,14 +27,18 @@ use chton::io::{FileIo, IoFuture};
 /// Minimal flat key-space IO. O(n) lookups are fine for a verification
 /// workload; the point is a lean, no_std FileIo that mirrors the surface
 /// the launcher bridge presents on the MCU.
+///
+/// Cloning shares the entries, so a verification scenario can close a store
+/// and open a second one over the same medium.
+#[derive(Clone)]
 pub struct FlatIo {
-    entries: Cell2<Vec<(Vec<u8>, Vec<u8>)>>,
+    entries: Arc<Cell2<Vec<(Vec<u8>, Vec<u8>)>>>,
 }
 
 impl Default for FlatIo {
     fn default() -> Self {
         Self {
-            entries: Cell2::new(Vec::new()),
+            entries: Arc::new(Cell2::new(Vec::new())),
         }
     }
 }
