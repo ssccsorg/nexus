@@ -15,7 +15,9 @@
 pub use nex_io::FsIo;
 #[cfg(feature = "std")]
 pub use nex_io::SyncFileIo;
-pub use nex_io::{BatchIo, BufferIo, FileIo, IoFuture, WriteOp, default_apply_batch};
+pub use nex_io::{
+    BatchIo, BufferIo, Durable, FileIo, IoFuture, ReadyIo, WriteOp, default_apply_batch,
+};
 
 /// The CoordMapStore-backed FileIo backend lives in chton::io; this
 /// module re-exports it so `nex_fih::io::CoordMapStoreIo` resolves.
@@ -25,7 +27,9 @@ pub use chton::io::CoordMapStoreIo;
 pub mod file_io {
     #[cfg(feature = "std")]
     pub use nex_io::SyncFileIo;
-    pub use nex_io::{BatchIo, BufferIo, FileIo, IoFuture, WriteOp, default_apply_batch};
+    pub use nex_io::{
+        BatchIo, BufferIo, Durable, FileIo, IoFuture, ReadyIo, WriteOp, default_apply_batch,
+    };
 }
 
 /// Module alias so that `crate::io::fs_io::FsIo` resolves.
