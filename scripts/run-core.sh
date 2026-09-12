@@ -2,7 +2,7 @@
 #
 # nexus-core — Local CI runner
 #
-# Mirrors .github/workflows/core.yml locally.
+# Mirrors .github/workflows/test.yml locally.
 # Pre-flight auto-fixes catch formatting, trivial clippy, and compiler
 # suggestions before strict checks — eliminating most CI noise.
 #
