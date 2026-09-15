@@ -1072,6 +1072,124 @@ impl<I: FileIo> FihStorage<I> {
         Some((r.content.clone(), r.creator.clone(), r.submitted_at))
     }
 
+    /// Visit every fact the volume holds, one at a time, with its content.
+    ///
+    /// The record maps answer a read by materializing the whole state, so a reader that
+    /// wants to look at each record holds all of them: 394 to 406 bytes per record on
+    /// riscv32, which for a few hundred records is most of what a 64 KiB part has. This
+    /// walks the medium instead. It reads one record, hands it and its content over, and
+    /// lets both go before reading the next, so the memory a walk needs is one record
+    /// rather than the volume. The key list the medium returns is the one thing that
+    /// grows with the volume, and that is the channel contract's cost rather than this
+    /// walk's.
+    ///
+    /// The order is the medium's key order. A fact's key is its identifier with a fixed
+    /// prefix and suffix around it, so that order is the identifier order, which is the
+    /// order a state read produces. A walk and a state read therefore see the same
+    /// records in the same order.
+    ///
+    /// Writes this session has not flushed are flushed first, so a reader that has just
+    /// written sees its own writes, as every other read path promises. A flush the medium
+    /// refuses is not fatal: the writes it refused are still pending, and they are visited
+    /// from memory. A worn part loses records, and it does not make the volume unreadable.
+    ///
+    /// `visit` returns whether to keep going. A walk that is looking for one record stops
+    /// at it rather than reading the rest of the volume, which is the other half of what
+    /// makes a walk affordable on a device: the memory is one record, and the work is the
+    /// records the question reaches.
+    pub async fn for_each_fact<F>(&self, mut visit: F) -> Result<(), String>
+    where
+        F: FnMut(&FactRecord, Content) -> bool,
+    {
+        if let Err(error) = self.flush_pending().await {
+            log::warn!("for_each_fact: flush pending failed: {error}");
+        }
+
+        // The session's copy of a key is newer than the medium's, and a key it deleted is
+        // not there at all. Both lists are bounded by the unflushed batch, which is what
+        // makes them safe to hold while the walk reads the medium.
+        let mut keys = self.io.list("facts/").await?;
+        let (pending, deleted) = self.pending_facts();
+        keys.sort();
+        for (key, _) in &pending {
+            if let Err(at) = keys.binary_search(key) {
+                keys.insert(at, key.clone());
+            }
+        }
+        keys.dedup();
+
+        // Both lists are in key order, so one cursor follows the other.
+        let mut next = 0;
+        for key in keys {
+            let held = match pending.get(next) {
+                Some((path, record)) if path == &key => {
+                    next += 1;
+                    Some(record.clone())
+                }
+                _ => None,
+            };
+            if deleted.iter().any(|gone| gone == &key) {
+                continue;
+            }
+            let record = match held {
+                Some(record) => record,
+                None => {
+                    // The medium listed the key and then did not have it, which a
+                    // concurrent delete explains. A walk reports what it finds, and a
+                    // record it cannot decode is not one it can hand over: a state read
+                    // skips those the same way, by never having loaded them.
+                    let Some(bytes) = self.io.read(&key).await? else {
+                        continue;
+                    };
+                    let Ok(record) = postcard::from_bytes::<FactRecord>(&bytes) else {
+                        continue;
+                    };
+                    record
+                }
+            };
+            let content = self
+                .load_content_any(&record.blob_hash, "application/octet-stream")
+                .await;
+            if !visit(&record, content) {
+                return Ok(());
+            }
+        }
+        Ok(())
+    }
+
+    /// The facts this session has written and not yet flushed, and the keys it has
+    /// deleted, both in key order.
+    ///
+    /// A key takes the fate of the last operation on it, so a write after a delete brings
+    /// the key back and a delete after a write takes it away.
+    fn pending_facts(&self) -> (Vec<(String, FactRecord)>, Vec<String>) {
+        let mut facts: Vec<(String, FactRecord)> = Vec::new();
+        let mut deleted: Vec<String> = Vec::new();
+        for op in self.pending.borrow().iter() {
+            match op {
+                WriteOp::Write { path, data } if path.starts_with("facts/") => {
+                    let Ok(record) = postcard::from_bytes::<FactRecord>(data) else {
+                        continue;
+                    };
+                    match facts.iter_mut().find(|(held, _)| held == path) {
+                        Some(slot) => slot.1 = record,
+                        None => facts.push((path.clone(), record)),
+                    }
+                    deleted.retain(|held| held != path);
+                }
+                WriteOp::Delete { path } if path.starts_with("facts/") => {
+                    facts.retain(|(held, _)| held != path);
+                    if !deleted.iter().any(|held| held == path) {
+                        deleted.push(path.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+        facts.sort_by(|a, b| a.0.cmp(&b.0));
+        (facts, deleted)
+    }
+
     /// Load blob content from pending writes. No IO fallback — the sync
     /// path only has access to in-memory caches; after `flush_pending` +
     /// `rebuild_cache` the content lives in IO and `load_content_any`
