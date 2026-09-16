@@ -1565,15 +1565,24 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
             data: bytes,
         };
 
-        // Update in-memory cache immediately for subsequent reads. The
-        // return value is the atomic detector at the first id-keyed
-        // commit: it catches a record the pre-check could not see (a
-        // direct record-map write that bypassed the check) and a task
-        // that raced past the pre-check if the insert ever yields.
-        let prev = self
-            .fact_records
-            .borrow_mut()
-            .insert(record.id.clone(), record.clone());
+        // Update in-memory cache immediately for subsequent reads, and read back what
+        // the insertion displaced: that is the detector at the id-keyed commit, and what
+        // it catches is a record the pre-check could not see because it was placed
+        // directly, which is what a direct writer does. An instance is a single-owner
+        // execution unit (see the header), so there is no second task to race it.
+        //
+        // A store that keeps no record maps has nowhere to insert and nothing to catch,
+        // and here the insertion is the one thing the mode must not do: the write reaches
+        // the medium and is not remembered, which is what makes the memory it costs
+        // independent of the volume. The pre-check is unaffected, because it reads the
+        // pending buffer and then the medium at the key an identifier implies.
+        let prev = if *self.maps.borrow() {
+            self.fact_records
+                .borrow_mut()
+                .insert(record.id.clone(), record.clone())
+        } else {
+            None
+        };
         if let Some(prev_record) = prev {
             // Occupied at the commit point. Restore the earlier record
             // (keep its submitted_at) and drop the blob ops enqueued by

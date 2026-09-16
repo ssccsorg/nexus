@@ -16,8 +16,8 @@ use std::sync::{Arc, Mutex};
 use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
 use nex_fih::{
-    AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead, BlackboardError, Content, CoordId,
-    Fact, FihStorage, Intent,
+    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, BlackboardError,
+    Content, CoordId, Fact, FihStorage, Hint, Intent,
 };
 
 /// An in-memory medium, shared by every storage that holds a clone of it.
@@ -178,4 +178,44 @@ fn a_store_without_maps_has_nothing_to_index() {
         outcome.is_err(),
         "a store without maps built an index of nothing: {outcome:?}"
     );
+}
+
+/// The mode's own invariant, held where the mode is defined rather than where its footprint
+/// is measured: a store without maps holds nothing about the volume it writes, which is what
+/// keeps the memory a product needs independent of how many records it keeps. The footprint
+/// consequence is measured on the device tier in ktema; this is the half that fails first,
+/// because a path that starts remembering shows up as a map with entries in it.
+#[test]
+fn a_store_without_maps_keeps_nothing_about_the_volume() {
+    let medium = MemoryIo::default();
+    let storage = without_maps(&medium);
+    let fact = submit(&storage, "a fact the store must not keep");
+    submit(&storage, "a second one");
+    block_on(storage.flush_pending()).expect("the writes reach the medium");
+
+    // An intent and a hint, because the three record kinds reach their maps through
+    // different paths and the mode has to hold for all of them.
+    block_on(storage.submit_intent(&Intent::new(
+        CoordId::resolve("i_over_that_fact"),
+        vec![fact],
+        None,
+        "an intent over the fact".to_string(),
+        "writer".to_string(),
+    )))
+    .expect("the intent is accepted");
+    block_on(storage.submit_hint(&Hint {
+        id: CoordId::resolve("h_of_the_volume"),
+        content: "a hint the store must not keep".to_string(),
+        creator: "writer".to_string(),
+    }))
+    .expect("the hint is accepted");
+    block_on(storage.flush_pending()).expect("the rest reaches the medium");
+
+    for (kind, kept) in [
+        ("fact", storage.fact_records.borrow().len()),
+        ("intent", storage.intent_records.borrow().len()),
+        ("hint", storage.hint_records.borrow().len()),
+    ] {
+        assert_eq!(kept, 0, "a store without maps kept {kept} {kind} records");
+    }
 }
