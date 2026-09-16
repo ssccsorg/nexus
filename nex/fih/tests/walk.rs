@@ -17,16 +17,22 @@ use nex_fih::{AsyncFactCapable, AsyncStorageRead, Content, Fact, FihStorage};
 /// An in-memory medium, shared by every storage that holds a clone of it.
 ///
 /// A clone is the same medium rather than a copy, which is what lets a test write a
-/// volume in one session and read it in the next.
+/// volume in one session and read it in the next. It also keeps the keys every read asked
+/// for, which is how a test says that a walk did not read something.
 #[derive(Clone, Default)]
 struct MemoryIo {
     map: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+    reads: Arc<Mutex<Vec<String>>>,
 }
 
 impl FileIo for MemoryIo {
     fn read<'a>(&'a self, path: &'a str) -> IoFuture<'a, Option<Vec<u8>>> {
         let map = Arc::clone(&self.map);
-        Box::pin(async move { Ok(map.lock().unwrap().get(path).cloned()) })
+        let reads = Arc::clone(&self.reads);
+        Box::pin(async move {
+            reads.lock().unwrap().push(path.to_string());
+            Ok(map.lock().unwrap().get(path).cloned())
+        })
     }
 
     fn write<'a>(&'a self, path: &'a str, data: &'a [u8]) -> IoFuture<'a, ()> {
@@ -172,4 +178,44 @@ fn a_walk_stops_when_the_visitor_says_so() {
     // One, not three: a question about one record reads one record, which is what makes
     // the work of a walk the records the question reaches.
     assert_eq!(visited, 1, "the walk stopped at the first record");
+}
+
+#[test]
+fn a_framing_walk_visits_the_same_records_without_reading_their_content() {
+    let medium = MemoryIo::default();
+    let writer = FihStorage::new(medium.clone(), "walk");
+    for payload in ["one", "two", "three"] {
+        submit(&writer, payload, "origin/framing");
+    }
+    block_on(writer.flush_pending()).expect("the writes reach the medium");
+
+    let reader = FihStorage::new(medium.clone(), "walk");
+    let (with_content, _) = walk(&reader);
+
+    let before = medium.reads.lock().unwrap().len();
+    let mut with_framing: Vec<String> = Vec::new();
+    block_on(reader.for_each_fact_record(|record| {
+        with_framing.push(record.id.clone());
+        true
+    }))
+    .expect("the walk reaches the medium");
+
+    // One visit order, and the same records either way.
+    assert_eq!(
+        with_framing, with_content,
+        "the two walks visit the same records in the same order"
+    );
+
+    // And the difference the framing walk exists for: it never asks the medium for a
+    // payload, so the reads it made are the record keys and nothing else. The content
+    // walk above read a payload and its metadata for each record, which is the work this
+    // one does not do.
+    let asked: Vec<String> = medium.reads.lock().unwrap()[before..].to_vec();
+    let payloads = asked.iter().filter(|key| key.contains("blob/")).count();
+    assert_eq!(payloads, 0, "a framing walk read a payload: {asked:?}");
+    assert_eq!(
+        asked.len(),
+        with_content.len(),
+        "a framing walk reads one key per record: {asked:?}"
+    );
 }
