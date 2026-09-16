@@ -211,6 +211,12 @@ pub struct FihStorage<I: FileIo> {
     /// immediately, ensuring durability at the cost of batching.
     #[expect(dead_code)]
     auto_flush: bool,
+    /// Whether this store keeps the record maps. A store without them holds nothing about
+    /// the volume, which is what the reference path asks for: its writes reach the medium
+    /// and are not remembered, and its checks read the medium at the key an identifier
+    /// implies. The maps below are empty and untouched in that mode, so a reader that
+    /// wants them asks for a store that has them.
+    maps: Cell2<bool>,
     // In-memory stores: rebuilt from IO on hydrate, kept in sync for reads.
     // The record maps are the application layer: one id-keyed HashMap per
     // record type, authoritative for reads and writes since the L2
@@ -267,6 +273,26 @@ impl<I: FileIo> FihStorage<I> {
         Self::with_clock_and_memory(io, project_id, clock)
     }
 
+    /// Create storage that keeps no record maps.
+    ///
+    /// A store made this way holds nothing about the volume. A write reaches the medium
+    /// and is not remembered, a read walks the medium, and a check that would consult a
+    /// map reads the medium at the key an identifier implies. This is what a device with
+    /// no memory to spare asks for, and what makes opening a volume cost the same at one
+    /// record and at a thousand.
+    ///
+    /// The map is still what `rebuild_cache` builds, so a store that calls it stops being
+    /// this one.
+    pub fn without_maps(io: I, project_id: &str, clock: Box<dyn Now + Send + Sync>) -> Self {
+        Self::with_options(io, project_id, clock, false, false)
+    }
+
+    /// The same, with a system wall clock. Std-only.
+    #[cfg(feature = "std")]
+    pub fn new_without_maps(io: I, project_id: &str) -> Self {
+        Self::without_maps(io, project_id, Box::new(nex_core::SystemClock))
+    }
+
     /// Create storage with auto-flush enabled. Every write operation
     /// immediately flushes pending ops to IO for durability.
     /// Useful for R2-backed or direct-write deployments.
@@ -283,24 +309,7 @@ impl<I: FileIo> FihStorage<I> {
         clock: Box<dyn Now + Send + Sync>,
         auto_flush: bool,
     ) -> Self {
-        Self {
-            io,
-            project_id: project_id.to_string(),
-            clock,
-            auto_flush,
-            #[cfg(feature = "structural-index")]
-            store: Cell2::new(tagma_core::CoordSpaceN::new()),
-            fact_records: Cell2::new(HashMap::new()),
-            intent_records: Cell2::new(HashMap::new()),
-            hint_records: Cell2::new(HashMap::new()),
-            fact_to_intents: Cell2::new(HashMap::new()),
-            blob_cache: Cell2::new(HashMap::new()),
-            blob_cache_order: Cell2::new(VecDeque::new()),
-            blob_cache_cap: Cell2::new(BLOB_CACHE_CAP),
-            semantic_stores: Cell2::new(Vec::new()),
-            semantic_id_counter: Cell2::new(0u32),
-            pending: Cell2::new(Vec::new()),
-        }
+        Self::with_options(io, project_id, clock, auto_flush, true)
     }
 
     /// Create storage with in-memory state only (no auto-flush).
@@ -309,11 +318,24 @@ impl<I: FileIo> FihStorage<I> {
         project_id: &str,
         clock: Box<dyn Now + Send + Sync>,
     ) -> Self {
+        Self::with_options(io, project_id, clock, false, true)
+    }
+
+    /// Every constructor, in one place: the record maps are the one option a caller
+    /// chooses for a reason the store cannot guess, so they are built here or not at all.
+    fn with_options(
+        io: I,
+        project_id: &str,
+        clock: Box<dyn Now + Send + Sync>,
+        auto_flush: bool,
+        maps: bool,
+    ) -> Self {
         Self {
             io,
             project_id: project_id.to_string(),
             clock,
-            auto_flush: false,
+            auto_flush,
+            maps: Cell2::new(maps),
             #[cfg(feature = "structural-index")]
             store: Cell2::new(tagma_core::CoordSpaceN::new()),
             fact_records: Cell2::new(HashMap::new()),
@@ -496,6 +518,9 @@ impl<I: FileIo> FihStorage<I> {
 
     /// Rebuild in-memory cache from IO storage.
     pub async fn rebuild_cache(&self) -> Result<(), String> {
+        // The maps are what this builds, so a store that asked not to keep them stops
+        // being that kind of store here.
+        *self.maps.borrow_mut() = true;
         let fact_keys = self.io.list("facts/").await?;
         let mut facts: Vec<(String, FactRecord)> = Vec::new();
         for key in fact_keys {
@@ -600,6 +625,16 @@ impl<I: FileIo> FihStorage<I> {
 
     /// Rebuild semantic stores from the record maps after rebuild_cache.
     pub async fn rebuild_semantic(&self) -> Result<(), String> {
+        // The index is built from the record maps, so a store without them has nothing to
+        // index. Saying so beats building an index of nothing, which a reader would take
+        // for a volume with no records.
+        if !*self.maps.borrow() {
+            return Err(
+                "the meaning index is built from the record maps, so it needs a store that \
+                 keeps them"
+                    .to_string(),
+            );
+        }
         // Snapshot: take stores atomically, work on them, then put back.
         let mut stores = core::mem::take(&mut *self.semantic_stores.borrow_mut());
         if stores.is_empty() {
@@ -747,6 +782,11 @@ impl<I: FileIo> FihStorage<I> {
     /// value). In debug builds the invariant is asserted.
     #[cfg_attr(not(feature = "structural-index"), allow(unused_variables))]
     pub fn place_record(&self, path: &tagma_core::CoordPath<6>, id: &str, record: Record) {
+        // Nothing to place in a store that keeps no maps. The write itself is the
+        // caller's, and it reaches the medium whether or not this ran.
+        if !*self.maps.borrow() {
+            return;
+        }
         match &record {
             Record::Fact {
                 content_hash,
@@ -848,6 +888,10 @@ impl<I: FileIo> FihStorage<I> {
     /// and hints; the fact branches exist for completeness and also
     /// remove the record-map entry.
     pub fn vacate_record(&self, path: &tagma_core::CoordPath<6>, id: &str) {
+        // The mirror of `place_record`: a store that keeps no maps has none to vacate.
+        if !*self.maps.borrow() {
+            return;
+        }
         match path.coords()[2].index() {
             0 => {
                 self.fact_records.borrow_mut().remove(id);
@@ -975,6 +1019,51 @@ impl<I: FileIo> FihStorage<I> {
             .and_then(|r| Self::hex_blob_hash(&r.blob_hash))
     }
 
+    /// Content hash of the fact the medium holds at `id`, if any.
+    ///
+    /// The map answers this for a volume the session has written. This is what answers it
+    /// for a volume it has not, and for a store that keeps no map at all. The address is
+    /// computed from the record, so the key follows from the identifier and the check is
+    /// one read rather than the volume held in memory.
+    async fn medium_fact_content_hash(&self, id: &str) -> Result<Option<FihHash>, String> {
+        let key = FactRecord::fact_key(id);
+        let Some(bytes) = self.io.read(&key).await? else {
+            return Ok(None);
+        };
+        // A record the medium holds and this reader cannot decode is not one it can
+        // compare, and writing over it would be the overwrite the guard exists to stop.
+        match postcard::from_bytes::<FactRecord>(&bytes) {
+            Ok(record) => Ok(Self::hex_blob_hash(&record.blob_hash)),
+            Err(error) => Err(format!("decode {key}: {error}")),
+        }
+    }
+
+    /// Whether the medium holds a record at the key `id` implies.
+    ///
+    /// A read and no decode, because the question is whether the address is taken and not
+    /// what is at it.
+    async fn medium_fact_exists(&self, id: &str) -> Result<bool, String> {
+        Ok(self.io.read(&FactRecord::fact_key(id)).await?.is_some())
+    }
+
+    /// Content hash of the record this session has written at `id` and not yet flushed.
+    ///
+    /// A store that keeps no map has only the pending buffer between a write and the
+    /// medium, so a second write of the same record before a flush would otherwise look
+    /// new. The newest write for the key wins, which is what the buffer would apply.
+    fn pending_fact_content_hash(&self, id: &str) -> Option<FihHash> {
+        let key = FactRecord::fact_key(id);
+        for op in self.pending.borrow().iter().rev() {
+            if let WriteOp::Write { path, data } = op
+                && path == &key
+                && let Ok(record) = postcard::from_bytes::<FactRecord>(data)
+            {
+                return Self::hex_blob_hash(&record.blob_hash);
+            }
+        }
+        None
+    }
+
     /// Parse a 64-char lowercase hex blob hash back into `FihHash`.
     /// `FactRecord::blob_hash` is written by `FihHash::to_string`, so the
     /// format is fixed; a malformed length or hex digit is corruption.
@@ -1072,6 +1161,129 @@ impl<I: FileIo> FihStorage<I> {
         Some((r.content.clone(), r.creator.clone(), r.submitted_at))
     }
 
+    /// Visit every fact the volume holds, one at a time, with its content.
+    ///
+    /// The record maps answer a read by materializing the whole state, so a reader that
+    /// wants to look at each record holds all of them: 394 to 406 bytes per record on
+    /// riscv32, which for a few hundred records is most of what a 64 KiB part has. This
+    /// walks the medium instead. It reads one record, hands it and its content over, and
+    /// lets both go before reading the next, so the memory a walk needs is one record
+    /// rather than the volume. The key list the medium returns is the one thing that
+    /// grows with the volume, and that is the channel contract's cost rather than this
+    /// walk's.
+    ///
+    /// The order is [`Walk::order`]'s, which is the identifier order a state read
+    /// reports, so a walk and a state read see the same records in the same order.
+    ///
+    /// `visit` returns whether to keep going. A walk that is looking for one record stops
+    /// at it rather than reading the rest of the volume, which is the other half of what
+    /// makes a walk affordable on a device: the memory is one record, and the work is the
+    /// records the question reaches.
+    pub async fn for_each_fact<F>(&self, mut visit: F) -> Result<(), String>
+    where
+        F: FnMut(&FactRecord, Content) -> bool,
+    {
+        let walk = self.walk_order().await?;
+        for index in 0..walk.keys.len() {
+            let Some(record) = walk.record_at(self, index).await? else {
+                continue;
+            };
+            let content = self
+                .load_content_any(&record.blob_hash, "application/octet-stream")
+                .await;
+            if !visit(&record, content) {
+                return Ok(());
+            }
+        }
+        Ok(())
+    }
+
+    /// Visit every fact the volume holds, one at a time, without its content.
+    ///
+    /// The same walk as [`FihStorage::for_each_fact`] with one difference: a reader that
+    /// only needs what a record says about itself, which is its identifier, its origin,
+    /// its creator, and when it was written, reads the framing and not the content. The
+    /// content of every record a walk passes is a medium read it does not make, and on a
+    /// device the medium is the budget the walk spends.
+    pub async fn for_each_fact_record<F>(&self, mut visit: F) -> Result<(), String>
+    where
+        F: FnMut(&FactRecord) -> bool,
+    {
+        let walk = self.walk_order().await?;
+        for index in 0..walk.keys.len() {
+            let Some(record) = walk.record_at(self, index).await? else {
+                continue;
+            };
+            if !visit(&record) {
+                return Ok(());
+            }
+        }
+        Ok(())
+    }
+
+    /// What a walk visits, in the order it visits it.
+    ///
+    /// Writes this session has not flushed are flushed first, so a reader that has just
+    /// written sees its own writes, as every other read path promises. A flush the medium
+    /// refuses is not fatal: the writes it refused are still pending, and they are visited
+    /// from memory. A worn part loses records, and it does not make the volume unreadable.
+    async fn walk_order(&self) -> Result<Walk, String> {
+        if let Err(error) = self.flush_pending().await {
+            log::warn!("walk: flush pending failed: {error}");
+        }
+
+        // The session's copy of a key is newer than the medium's, and a key it deleted is
+        // not there at all. Both lists are bounded by the unflushed batch, which is what
+        // makes them safe to hold while the walk reads the medium.
+        let mut keys = self.io.list("facts/").await?;
+        let (pending, deleted) = self.pending_facts();
+        keys.sort();
+        for (key, _) in &pending {
+            if let Err(at) = keys.binary_search(key) {
+                keys.insert(at, key.clone());
+            }
+        }
+        keys.dedup();
+        Ok(Walk {
+            keys,
+            pending,
+            deleted,
+        })
+    }
+
+    /// The facts this session has written and not yet flushed, and the keys it has
+    /// deleted, both in key order.
+    ///
+    /// A key takes the fate of the last operation on it, so a write after a delete brings
+    /// the key back and a delete after a write takes it away.
+    fn pending_facts(&self) -> (Vec<(String, FactRecord)>, Vec<String>) {
+        let mut facts: Vec<(String, FactRecord)> = Vec::new();
+        let mut deleted: Vec<String> = Vec::new();
+        for op in self.pending.borrow().iter() {
+            match op {
+                WriteOp::Write { path, data } if path.starts_with("facts/") => {
+                    let Ok(record) = postcard::from_bytes::<FactRecord>(data) else {
+                        continue;
+                    };
+                    match facts.iter_mut().find(|(held, _)| held == path) {
+                        Some(slot) => slot.1 = record,
+                        None => facts.push((path.clone(), record)),
+                    }
+                    deleted.retain(|held| held != path);
+                }
+                WriteOp::Delete { path } if path.starts_with("facts/") => {
+                    facts.retain(|(held, _)| held != path);
+                    if !deleted.iter().any(|held| held == path) {
+                        deleted.push(path.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+        facts.sort_by(|a, b| a.0.cmp(&b.0));
+        (facts, deleted)
+    }
+
     /// Load blob content from pending writes. No IO fallback — the sync
     /// path only has access to in-memory caches; after `flush_pending` +
     /// `rebuild_cache` the content lives in IO and `load_content_any`
@@ -1121,6 +1333,48 @@ impl<I: FileIo> FihStorage<I> {
             return pending_content;
         }
         load_blob(&self.io, blob_hash).await
+    }
+}
+
+/// What a walk visits, in the order it visits it, with the session's unflushed records
+/// set against the medium's.
+///
+/// The keys are the medium's plus the session's, in one key order, so a position in the
+/// walk can be read without the merge that built it: a key the session holds is answered
+/// from memory and the rest are read from the medium.
+struct Walk {
+    keys: Vec<String>,
+    pending: Vec<(String, FactRecord)>,
+    deleted: Vec<String>,
+}
+
+impl Walk {
+    /// The record at a position, from the session when it is holding one and from the
+    /// medium otherwise.
+    ///
+    /// `None` when the position holds nothing to report: a key the session deleted, a key
+    /// the medium listed and then did not have, which a concurrent delete explains, or
+    /// bytes that do not decode as a record. A state read skips those the same way, by
+    /// never having loaded them.
+    async fn record_at<IO: FileIo>(
+        &self,
+        storage: &FihStorage<IO>,
+        index: usize,
+    ) -> Result<Option<FactRecord>, String> {
+        let key = &self.keys[index];
+        if self.deleted.iter().any(|gone| gone == key) {
+            return Ok(None);
+        }
+        let held = self
+            .pending
+            .binary_search_by(|(known, _)| known.as_str().cmp(key.as_str()));
+        if let Ok(at) = held {
+            return Ok(Some(self.pending[at].1.clone()));
+        }
+        let Some(bytes) = storage.io.read(key).await? else {
+            return Ok(None);
+        };
+        Ok(postcard::from_bytes::<FactRecord>(&bytes).ok())
     }
 }
 
@@ -1256,7 +1510,23 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
         // legitimate only when it is the identical content (an idempotent
         // retry); a different content_hash means the id is not a safe
         // content address and the earlier record must not be overwritten.
-        if let Some(existing_hash) = self.existing_fact_content_hash(&id) {
+        //
+        // The map answers this when the session has the record in hand. When it does
+        // not, the medium answers it, because the guard has to hold for a volume this
+        // session did not write: that is what the computed address is for.
+        let existing = match self.existing_fact_content_hash(&id) {
+            Some(hash) => Some(hash),
+            // A record this session has written and not flushed is on neither the medium
+            // nor a map a store without one keeps.
+            None => match self.pending_fact_content_hash(&id) {
+                Some(hash) => Some(hash),
+                None => self
+                    .medium_fact_content_hash(&id)
+                    .await
+                    .map_err(|e| BlackboardError::Internal(format!("read fact {id}: {e}")))?,
+            },
+        };
+        if let Some(existing_hash) = existing {
             if existing_hash != fact.content_hash {
                 return Err(BlackboardError::Conflict(format!(
                     "fact id {id} already exists with a different content_hash"
@@ -1295,15 +1565,24 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
             data: bytes,
         };
 
-        // Update in-memory cache immediately for subsequent reads. The
-        // return value is the atomic detector at the first id-keyed
-        // commit: it catches a record the pre-check could not see (a
-        // direct record-map write that bypassed the check) and a task
-        // that raced past the pre-check if the insert ever yields.
-        let prev = self
-            .fact_records
-            .borrow_mut()
-            .insert(record.id.clone(), record.clone());
+        // Update in-memory cache immediately for subsequent reads, and read back what
+        // the insertion displaced: that is the detector at the id-keyed commit, and what
+        // it catches is a record the pre-check could not see because it was placed
+        // directly, which is what a direct writer does. An instance is a single-owner
+        // execution unit (see the header), so there is no second task to race it.
+        //
+        // A store that keeps no record maps has nowhere to insert and nothing to catch,
+        // and here the insertion is the one thing the mode must not do: the write reaches
+        // the medium and is not remembered, which is what makes the memory it costs
+        // independent of the volume. The pre-check is unaffected, because it reads the
+        // pending buffer and then the medium at the key an identifier implies.
+        let prev = if *self.maps.borrow() {
+            self.fact_records
+                .borrow_mut()
+                .insert(record.id.clone(), record.clone())
+        } else {
+            None
+        };
         if let Some(prev_record) = prev {
             // Occupied at the commit point. Restore the earlier record
             // (keep its submitted_at) and drop the blob ops enqueued by
@@ -1410,7 +1689,15 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         }
         for fid in &intent.from_facts {
             let fid_str = fid.to_string();
-            if !self.fact_records.borrow().contains_key(&fid_str) {
+            // The map answers when the session has the record. When it does not, or when
+            // there is no map, the medium answers: the address is computed, so the key
+            // follows from the identifier.
+            let known = self.fact_records.borrow().contains_key(&fid_str)
+                || self
+                    .medium_fact_exists(&fid_str)
+                    .await
+                    .map_err(|e| BlackboardError::Internal(format!("read fact {fid_str}: {e}")))?;
+            if !known {
                 return Err(BlackboardError::NotFound(format!(
                     "Fact {fid_str} not found"
                 )));
