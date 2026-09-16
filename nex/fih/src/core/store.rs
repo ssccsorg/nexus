@@ -975,6 +975,26 @@ impl<I: FileIo> FihStorage<I> {
             .and_then(|r| Self::hex_blob_hash(&r.blob_hash))
     }
 
+    /// Content hash of the fact the medium holds at `id`, if any.
+    ///
+    /// The map answers this for a volume the session has written. This is what answers it
+    /// for a volume it has not, which is the case a device is in every time it opens a
+    /// volume it wrote before rebooting. The address is computed from the record, so the
+    /// key follows from the identifier and the check is one read rather than the volume
+    /// held in memory.
+    async fn medium_fact_content_hash(&self, id: &str) -> Result<Option<FihHash>, String> {
+        let key = FactRecord::fact_key(id);
+        let Some(bytes) = self.io.read(&key).await? else {
+            return Ok(None);
+        };
+        // A record the medium holds and this reader cannot decode is not one it can
+        // compare, and writing over it would be the overwrite the guard exists to stop.
+        match postcard::from_bytes::<FactRecord>(&bytes) {
+            Ok(record) => Ok(Self::hex_blob_hash(&record.blob_hash)),
+            Err(error) => Err(format!("decode {key}: {error}")),
+        }
+    }
+
     /// Parse a 64-char lowercase hex blob hash back into `FihHash`.
     /// `FactRecord::blob_hash` is written by `FihHash::to_string`, so the
     /// format is fixed; a malformed length or hex digit is corruption.
@@ -1421,7 +1441,18 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
         // legitimate only when it is the identical content (an idempotent
         // retry); a different content_hash means the id is not a safe
         // content address and the earlier record must not be overwritten.
-        if let Some(existing_hash) = self.existing_fact_content_hash(&id) {
+        //
+        // The map answers this when the session has the record in hand. When it does
+        // not, the medium answers it, because the guard has to hold for a volume this
+        // session did not write: that is what the computed address is for.
+        let existing = match self.existing_fact_content_hash(&id) {
+            Some(hash) => Some(hash),
+            None => self
+                .medium_fact_content_hash(&id)
+                .await
+                .map_err(|e| BlackboardError::Internal(format!("read fact {id}: {e}")))?,
+        };
+        if let Some(existing_hash) = existing {
             if existing_hash != fact.content_hash {
                 return Err(BlackboardError::Conflict(format!(
                     "fact id {id} already exists with a different content_hash"
