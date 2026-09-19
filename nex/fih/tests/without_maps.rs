@@ -211,6 +211,14 @@ fn a_store_without_maps_keeps_nothing_about_the_volume() {
     .expect("the hint is accepted");
     block_on(storage.flush_pending()).expect("the rest reaches the medium");
 
+    // An intent that has run to its end. Concluding writes a conclusion fact and places it
+    // through a path of its own, which has to keep nothing either: the record reaches the
+    // medium through the pending buffer, and the map is not what makes it readable.
+    block_on(storage.claim_intent("i_over_that_fact", "writer")).expect("the intent is claimed");
+    block_on(storage.conclude_intent("i_over_that_fact", "the result"))
+        .expect("the intent is concluded");
+    block_on(storage.flush_pending()).expect("the conclusion reaches the medium");
+
     for (kind, kept) in [
         ("fact", storage.fact_records.borrow().len()),
         ("intent", storage.intent_records.borrow().len()),

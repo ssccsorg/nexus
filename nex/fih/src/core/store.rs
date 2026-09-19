@@ -281,6 +281,12 @@ impl<I: FileIo> FihStorage<I> {
     /// no memory to spare asks for, and what makes opening a volume cost the same at one
     /// record and at a thousand.
     ///
+    /// The readers that are the record maps have nothing to read here: `read_state` and
+    /// `read_state_filtered` assert in debug builds, and `fact_exists`, `all_fact_ids`,
+    /// `intents_by_fact` and the intent and hint lookups answer empty. The walks are the
+    /// reads this mode has, and `get_fact_by_id` answers from the medium at the key the
+    /// identifier implies.
+    ///
     /// The map is still what `rebuild_cache` builds, so a store that calls it stops being
     /// this one.
     pub fn without_maps(io: I, project_id: &str, clock: Box<dyn Now + Send + Sync>) -> Self {
@@ -422,6 +428,14 @@ impl<I: FileIo> FihStorage<I> {
     /// materialize fact content and intent descriptions. Sync: no io, no
     /// awaits, so callers can release the maps before materializing.
     fn collect_state(&self) -> (BoardState, BlobJobs, BlobJobs) {
+        // The record maps are what a state read is. A store that keeps none has no state
+        // to report, and an empty one reads as a volume with no records rather than as a
+        // store that cannot answer.
+        debug_assert!(
+            *self.maps.borrow(),
+            "a state read needs a store that keeps the record maps; this one was opened \
+             without them"
+        );
         let mut facts = Vec::new();
         let mut intents = Vec::new();
         let mut hints = Vec::new();
@@ -1019,23 +1033,33 @@ impl<I: FileIo> FihStorage<I> {
             .and_then(|r| Self::hex_blob_hash(&r.blob_hash))
     }
 
-    /// Content hash of the fact the medium holds at `id`, if any.
+    /// The fact the medium holds at `id`, if any.
     ///
-    /// The map answers this for a volume the session has written. This is what answers it
-    /// for a volume it has not, and for a store that keeps no map at all. The address is
-    /// computed from the record, so the key follows from the identifier and the check is
-    /// one read rather than the volume held in memory.
-    async fn medium_fact_content_hash(&self, id: &str) -> Result<Option<FihHash>, String> {
+    /// The map answers a read for a volume the session has written. This answers it for a
+    /// volume it has not, and for a store that keeps no map at all. The address is
+    /// computed from the record, so the key follows from the identifier alone: one
+    /// identifier is one read rather than the volume held in memory.
+    ///
+    /// A record the medium holds and this reader cannot decode is an error and not an
+    /// absent record: reporting it absent would invite the overwrite the guard exists to
+    /// stop.
+    async fn medium_fact_record(&self, id: &str) -> Result<Option<FactRecord>, String> {
         let key = FactRecord::fact_key(id);
         let Some(bytes) = self.io.read(&key).await? else {
             return Ok(None);
         };
-        // A record the medium holds and this reader cannot decode is not one it can
-        // compare, and writing over it would be the overwrite the guard exists to stop.
         match postcard::from_bytes::<FactRecord>(&bytes) {
-            Ok(record) => Ok(Self::hex_blob_hash(&record.blob_hash)),
+            Ok(record) => Ok(Some(record)),
             Err(error) => Err(format!("decode {key}: {error}")),
         }
+    }
+
+    /// Content hash of the fact the medium holds at `id`, if any.
+    async fn medium_fact_content_hash(&self, id: &str) -> Result<Option<FihHash>, String> {
+        Ok(self
+            .medium_fact_record(id)
+            .await?
+            .and_then(|record| Self::hex_blob_hash(&record.blob_hash)))
     }
 
     /// Whether the medium holds a record at the key `id` implies.
@@ -1051,6 +1075,12 @@ impl<I: FileIo> FihStorage<I> {
     /// A store that keeps no map has only the pending buffer between a write and the
     /// medium, so a second write of the same record before a flush would otherwise look
     /// new. The newest write for the key wins, which is what the buffer would apply.
+    ///
+    /// A pending delete is deliberately not consulted, so that a delete and a write of
+    /// other content at the same identifier in one session still refuses. The identifier
+    /// is a content address, and the guard is about an identifier carrying content that
+    /// is not its own rather than about what a read should see. A walk answers that other
+    /// question, and there a key takes the fate of the last operation on it.
     fn pending_fact_content_hash(&self, id: &str) -> Option<FihHash> {
         let key = FactRecord::fact_key(id);
         for op in self.pending.borrow().iter().rev() {
@@ -1121,16 +1151,36 @@ impl<I: FileIo> FihStorage<I> {
         self.hint_records.borrow().keys().cloned().collect()
     }
 
-    /// Get a fact by its ID (record-map lookup).
+    /// Get a fact by its ID.
+    ///
+    /// The record map answers this for a volume the session has written. A store that
+    /// keeps no map has none to answer from, and the medium answers instead at the key
+    /// the identifier implies: the address is computed, so one identifier is one read
+    /// rather than a walk of the volume.
     ///
     /// Content is materialized from pending writes first, then from IO by
     /// the persisted blob hash, so records placed by direct writers
     /// (nex-calc writes blobs to IO directly) are readable.
     pub async fn get_fact_by_id(&self, id: &str) -> Option<(Content, FihHash, String, String)> {
-        let r = {
+        let held = {
             let recs = self.fact_records.borrow();
-            recs.get(id)?.clone()
+            recs.get(id).cloned()
         };
+        let r = match held {
+            Some(record) => Some(record),
+            // A record the medium holds and this reader cannot decode is reported as
+            // absent, which is what the map reports for a record it never saw. The
+            // conflict guard is where a decode failure is fatal, because there the
+            // question is whether it is safe to write over.
+            None if !*self.maps.borrow() => match self.medium_fact_record(id).await {
+                Ok(record) => record,
+                Err(error) => {
+                    log::warn!("get_fact_by_id: {error}");
+                    None
+                }
+            },
+            None => None,
+        }?;
         let content_hash = Self::blob_hash_or_zero(&r.blob_hash);
         let content = self
             .load_content_any(&r.blob_hash, "application/octet-stream")
@@ -1965,9 +2015,6 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             path: fact_rec.key(),
             data: fact_bytes,
         });
-        self.fact_records
-            .borrow_mut()
-            .insert(fact_rec.id.clone(), fact_rec.clone());
 
         let intent_bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -1978,10 +2025,13 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         self.flush_pending()
             .await
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+
         // Record-layer moves happen only after the io commit succeeds, so
         // a failed flush leaves the store consistent with io: vacate the
         // old status path, place the concluded intent and the conclusion
-        // fact at the conclude time.
+        // fact at the conclude time. A store that keeps no maps places
+        // nothing, and the conclusion fact reaches the medium above either
+        // way.
         self.vacate_record(&old_path, &normalized);
         self.place_intent(&record);
         self.place_record(
@@ -2004,6 +2054,11 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
 
 impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
     async fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
+        debug_assert!(
+            *self.maps.borrow(),
+            "a filtered state read needs a store that keeps the record maps; this one was \
+             opened without them"
+        );
         // Build blob lookup map once from pending writes (avoid O(N×P)
         // scan). Data and meta writes merge per blob hash: the data
         // entry carries the payload, the meta entry the mime type.

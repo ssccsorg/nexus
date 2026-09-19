@@ -23,6 +23,8 @@ use nex_fih::{AsyncFactCapable, AsyncStorageRead, Content, Fact, FihStorage};
 struct MemoryIo {
     map: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     reads: Arc<Mutex<Vec<String>>>,
+    /// Set to refuse every write, which is a part at the end of its life.
+    refuse: Arc<Mutex<bool>>,
 }
 
 impl FileIo for MemoryIo {
@@ -37,7 +39,11 @@ impl FileIo for MemoryIo {
 
     fn write<'a>(&'a self, path: &'a str, data: &'a [u8]) -> IoFuture<'a, ()> {
         let map = Arc::clone(&self.map);
+        let refuse = Arc::clone(&self.refuse);
         Box::pin(async move {
+            if *refuse.lock().unwrap() {
+                return Err(format!("the medium refused the write: {path}"));
+            }
             map.lock().unwrap().insert(path.to_string(), data.to_vec());
             Ok(())
         })
@@ -217,5 +223,27 @@ fn a_framing_walk_visits_the_same_records_without_reading_their_content() {
         asked.len(),
         with_content.len(),
         "a framing walk reads one key per record: {asked:?}"
+    );
+}
+
+/// A part at the end of its life refuses the write, and the walk still answers.
+///
+/// A refused flush must not make the volume unreadable: the writes the medium refused stay
+/// pending and are visited from memory. Without that, a worn part turns a record the
+/// session is still holding into one that is gone.
+#[test]
+fn a_walk_visits_writes_the_medium_refused() {
+    let medium = MemoryIo::default();
+    *medium.refuse.lock().unwrap() = true;
+    let storage = FihStorage::new(medium.clone(), "walk");
+    submit(&storage, "a write the part refuses", "origin/worn");
+
+    let (ids, sizes) = walk(&storage);
+
+    assert_eq!(ids.len(), 1, "the walk lost a refused write: {ids:?}");
+    assert_eq!(sizes, vec!["a write the part refuses".len()]);
+    assert!(
+        medium.map.lock().unwrap().is_empty(),
+        "the medium kept a write it had refused"
     );
 }
