@@ -276,16 +276,18 @@ impl<I: FileIo> FihStorage<I> {
     /// Create storage that keeps no record maps.
     ///
     /// A store made this way holds nothing about the volume. A write reaches the medium
-    /// and is not remembered, a read walks the medium, and a check that would consult a
-    /// map reads the medium at the key an identifier implies. This is what a device with
-    /// no memory to spare asks for, and what makes opening a volume cost the same at one
-    /// record and at a thousand.
+    /// and is not remembered, a walk reads the medium one record at a time, and the checks
+    /// that guard a write read the medium at the key an identifier implies instead of
+    /// reading a map. This is what a device with no memory to spare asks for, and what
+    /// makes opening a volume cost the same at one record and at a thousand.
     ///
-    /// The readers that are the record maps have nothing to read here: `read_state` and
-    /// `read_state_filtered` assert in debug builds, and `fact_exists`, `all_fact_ids`,
-    /// `intents_by_fact` and the intent and hint lookups answer empty. The walks are the
-    /// reads this mode has, and `get_fact_by_id` answers from the medium at the key the
-    /// identifier implies.
+    /// The readers that are the record maps cannot answer here, and they refuse in debug
+    /// builds rather than reporting an empty map as an empty volume: `read_state`,
+    /// `read_state_filtered`, `fact_exists`, `intent_exists`, `hint_exists`, `all_fact_ids`,
+    /// `all_intent_ids`, `all_hint_ids`, `intents_by_fact`, `resolve_semantic_idx`, and the
+    /// intent and hint lookups. A caller that needs one of them asks for a store built with
+    /// the maps. The reads this mode has are the walks, and `get_fact_by_id`, which answers
+    /// from the medium at the key the identifier implies.
     ///
     /// The map is still what `rebuild_cache` builds, so a store that calls it stops being
     /// this one.
@@ -355,6 +357,25 @@ impl<I: FileIo> FihStorage<I> {
             semantic_id_counter: Cell2::new(0u32),
             pending: Cell2::new(Vec::new()),
         }
+    }
+
+    /// Refuse a read that is the record maps when this store keeps none.
+    ///
+    /// A store without maps holds nothing about the volume, so a reader that would consult a
+    /// map has no answer to give. An empty map is not that answer: it reads as a volume with
+    /// no records rather than as a store that cannot report them, and that is a difference a
+    /// caller acts on, by writing a record it believes is absent or by reporting a volume it
+    /// believes is empty. The walks, and the key-addressed lookups that read the medium, are
+    /// the reads this mode has.
+    ///
+    /// The refusal is an assertion rather than a returned error because every reader here is
+    /// a signature without an error channel, and it is a debug assertion because a release
+    /// build has no channel to report it through.
+    fn needs_maps(&self, what: &str) {
+        debug_assert!(
+            *self.maps.borrow(),
+            "{what} needs a store that keeps the record maps; this one was opened without them"
+        );
     }
 
     /// Set the blob cache entry cap. A larger cap keeps more content in
@@ -428,14 +449,7 @@ impl<I: FileIo> FihStorage<I> {
     /// materialize fact content and intent descriptions. Sync: no io, no
     /// awaits, so callers can release the maps before materializing.
     fn collect_state(&self) -> (BoardState, BlobJobs, BlobJobs) {
-        // The record maps are what a state read is. A store that keeps none has no state
-        // to report, and an empty one reads as a volume with no records rather than as a
-        // store that cannot answer.
-        debug_assert!(
-            *self.maps.borrow(),
-            "a state read needs a store that keeps the record maps; this one was opened \
-             without them"
-        );
+        self.needs_maps("a state read");
         let mut facts = Vec::new();
         let mut intents = Vec::new();
         let mut hints = Vec::new();
@@ -765,6 +779,7 @@ impl<I: FileIo> FihStorage<I> {
     /// in IntentRecord.from_facts. Concluded intents remain referenced
     /// (their from_facts never change).
     pub fn intents_by_fact(&self, fact_id: &str) -> Vec<String> {
+        self.needs_maps("an intent lookup by fact");
         let normalized = crate::CoordId::resolve(fact_id).to_string();
         self.fact_to_intents
             .borrow()
@@ -1007,6 +1022,7 @@ impl<I: FileIo> FihStorage<I> {
 
     /// Resolve a semantic index back to its ID string.
     pub fn resolve_semantic_idx(&self, idx: u32) -> String {
+        self.needs_maps("a semantic index lookup");
         let records: Vec<FactRecord> = self.fact_records.borrow().values().cloned().collect();
         records
             .get(idx as usize)
@@ -1016,6 +1032,7 @@ impl<I: FileIo> FihStorage<I> {
 
     /// Check if a fact with the given ID exists (fast-path: fact_records HashMap).
     pub fn fact_exists(&self, id: &str) -> bool {
+        self.needs_maps("a fact existence check");
         self.fact_records.borrow().contains_key(id)
     }
 
@@ -1127,27 +1144,32 @@ impl<I: FileIo> FihStorage<I> {
 
     /// Check if an intent with the given ID exists (fast-path: intent_records HashMap).
     pub fn intent_exists(&self, id: &str) -> bool {
+        self.needs_maps("an intent existence check");
         self.intent_records.borrow().contains_key(id)
     }
 
     /// Check if a hint with the given ID exists (fast-path: hint_records HashMap).
     pub fn hint_exists(&self, id: &str) -> bool {
+        self.needs_maps("a hint existence check");
         self.hint_records.borrow().contains_key(id)
     }
 
     /// Returns all fact IDs (record-map keys; the record maps are the
     /// authoritative record layer since the L2 restructure, #176).
     pub fn all_fact_ids(&self) -> Vec<String> {
+        self.needs_maps("a fact identifier listing");
         self.fact_records.borrow().keys().cloned().collect()
     }
 
     /// Returns all intent IDs (record-map keys).
     pub fn all_intent_ids(&self) -> Vec<String> {
+        self.needs_maps("an intent identifier listing");
         self.intent_records.borrow().keys().cloned().collect()
     }
 
     /// Returns all hint IDs (record-map keys).
     pub fn all_hint_ids(&self) -> Vec<String> {
+        self.needs_maps("a hint identifier listing");
         self.hint_records.borrow().keys().cloned().collect()
     }
 
@@ -1193,6 +1215,7 @@ impl<I: FileIo> FihStorage<I> {
         &self,
         id: &str,
     ) -> Option<(Vec<String>, String, String, IntentStatus, u64)> {
+        self.needs_maps("an intent lookup");
         let recs = self.intent_records.borrow();
         let r = recs.get(id)?;
         Some((
@@ -1206,6 +1229,7 @@ impl<I: FileIo> FihStorage<I> {
 
     /// Get a hint by its ID (record-map lookup).
     pub fn get_hint_by_id(&self, id: &str) -> Option<(String, String, u64)> {
+        self.needs_maps("a hint lookup");
         let recs = self.hint_records.borrow();
         let r = recs.get(id)?;
         Some((r.content.clone(), r.creator.clone(), r.submitted_at))
@@ -2054,11 +2078,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
 
 impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
     async fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
-        debug_assert!(
-            *self.maps.borrow(),
-            "a filtered state read needs a store that keeps the record maps; this one was \
-             opened without them"
-        );
+        self.needs_maps("a filtered state read");
         // Build blob lookup map once from pending writes (avoid O(N×P)
         // scan). Data and meta writes merge per blob hash: the data
         // entry carries the payload, the meta entry the mime type.

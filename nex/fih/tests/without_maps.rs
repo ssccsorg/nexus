@@ -8,7 +8,8 @@
 //
 // What these tests hold is that the mode is complete: a store without maps writes a volume
 // a later session reads, refuses an intent whose fact is absent and accepts one whose fact
-// is present, and says so when something asks for an index it cannot build.
+// is present, says so when something asks for an index it cannot build, and refuses the
+// reads that are the record maps rather than reporting an empty map as an empty volume.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -226,4 +227,38 @@ fn a_store_without_maps_keeps_nothing_about_the_volume() {
     ] {
         assert_eq!(kept, 0, "a store without maps kept {kept} {kind} records");
     }
+}
+
+/// The reads that are the record maps refuse, rather than reporting an empty volume.
+///
+/// A store without maps holds nothing about the volume, so a reader that would consult a map
+/// has no answer to give, and the empty map it would find is not that answer: it reads as a
+/// volume with no records, which is a claim a caller acts on. The refusal is a debug
+/// assertion, which is why these tests are behind `debug_assertions`: a release build has no
+/// channel to report it through, and what it keeps there is the rule that a caller needing a
+/// map asks for a store that keeps one.
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "needs a store that keeps the record maps")]
+fn a_store_without_maps_refuses_a_state_read() {
+    let medium = MemoryIo::default();
+    let storage = without_maps(&medium);
+    submit(&storage, "one");
+
+    // The volume holds a record and this store cannot report it: an empty board is a
+    // different claim from a volume with no records.
+    block_on(storage.read_state());
+}
+
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "needs a store that keeps the record maps")]
+fn a_store_without_maps_refuses_a_record_layer_check() {
+    let medium = MemoryIo::default();
+    let storage = without_maps(&medium);
+    let fact = submit(&storage, "one");
+
+    // The medium holds the record, so a `false` here would be a fact about the caller's
+    // memory rather than about the volume.
+    storage.fact_exists(&fact.to_string());
 }
