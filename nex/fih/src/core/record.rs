@@ -77,8 +77,16 @@ pub struct HintRecord {
 }
 
 impl FactRecord {
+    /// The key a fact with this identifier lives at.
+    ///
+    /// The record's address is computed from what it holds, so the key follows from the
+    /// identifier alone: a reader that has one and not the other still finds the record.
+    pub fn fact_key(id: &str) -> String {
+        format!("facts/f_{id}.fact")
+    }
+
     pub fn key(&self) -> String {
-        format!("facts/f_{}.fact", self.id)
+        Self::fact_key(&self.id)
     }
 
     pub fn blob_key(&self) -> String {
