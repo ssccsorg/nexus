@@ -249,6 +249,38 @@ impl WantedIds {
             .binary_search_by(|held| held.as_str().cmp(id))
             .is_ok()
     }
+
+    /// Whether the names are the side to walk, given how many records the map holds.
+    ///
+    /// Both directions reach the same records: walking the names probes the map once per name,
+    /// and walking the map looks each key up among the names. The smaller side is the one to
+    /// walk, so neither the walks nor the probes exceed it. An absent list leaves the map as the
+    /// only side there is.
+    pub(crate) fn drives(&self, records: usize) -> bool {
+        self.restricted && self.canonical.len() <= records
+    }
+
+    /// The records the names reach, in name order, from the map they live in.
+    ///
+    /// One lookup per name, so the work is the names and not the volume.
+    pub(crate) fn lookup<'a, R, F>(
+        &'a self,
+        map: &'a HashMap<String, R>,
+        keep: F,
+    ) -> Vec<(&'a String, &'a R)>
+    where
+        F: Fn(&String, &R) -> bool,
+    {
+        let mut matched = Vec::new();
+        for id in &self.canonical {
+            if let Some(record) = map.get(id)
+                && keep(id, record)
+            {
+                matched.push((id, record));
+            }
+        }
+        matched
+    }
 }
 
 /// Unified FIH storage backended by an abstract IO layer.
@@ -841,6 +873,20 @@ impl<I: FileIo> FihStorage<I> {
             .unwrap_or_default()
     }
 
+    /// Assert that an id is the canonical form the record maps are keyed by.
+    ///
+    /// A record is keyed by its id string, and a reader that names records by id compares
+    /// against that key: a key that is not canonical is invisible to such a reader, which is a
+    /// wrong answer rather than a crash. Every writer reaches the maps through `place_record` or
+    /// `vacate_record`, so the check sits at that boundary, where the violation is attributed to
+    /// the caller that produced the id.
+    fn assert_canonical(id: &str) {
+        debug_assert!(
+            CoordId::<20>::from_string(id).is_some(),
+            "the record maps are keyed by a canonical id; {id:?} is not one"
+        );
+    }
+
     /// Direct record placement (for special cases like nex-calc) and the
     /// single chokepoint for the record layer.
     ///
@@ -869,6 +915,7 @@ impl<I: FileIo> FihStorage<I> {
         if !*self.maps.borrow() {
             return;
         }
+        Self::assert_canonical(id);
         match &record {
             Record::Fact {
                 content_hash,
@@ -974,6 +1021,7 @@ impl<I: FileIo> FihStorage<I> {
         if !*self.maps.borrow() {
             return;
         }
+        Self::assert_canonical(id);
         match path.coords()[2].index() {
             0 => {
                 self.fact_records.borrow_mut().remove(id);
@@ -2206,9 +2254,9 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
         let mut desc_jobs: Vec<(usize, String)> = Vec::new();
 
         {
-            let wanted = WantedIds::new(filter.fact_ids.as_ref());
             let recs = self.fact_records.borrow();
-            for (id, r) in sorted_matches(&recs, |id, r| {
+            let wanted = WantedIds::new(filter.fact_ids.as_ref());
+            let keep = |id: &String, r: &FactRecord| {
                 if let Some(ref want) = filter.origin
                     && &r.origin != want
                 {
@@ -2229,11 +2277,14 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                 {
                     return false;
                 }
-                if !wanted.allows(id) {
-                    return false;
-                }
-                true
-            }) {
+                wanted.allows(id)
+            };
+            let matched = if wanted.drives(recs.len()) {
+                wanted.lookup(&recs, keep)
+            } else {
+                sorted_matches(&recs, keep)
+            };
+            for (id, r) in matched {
                 let content_hash = Self::blob_hash_or_zero(&r.blob_hash);
                 fact_blob_jobs.push((facts.len(), r.blob_hash.clone()));
                 facts.push(Fact {
@@ -2249,9 +2300,9 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
             }
         }
         {
-            let wanted = WantedIds::new(filter.intent_ids.as_ref());
             let recs = self.intent_records.borrow();
-            for (id, r) in sorted_matches(&recs, |id, r| {
+            let wanted = WantedIds::new(filter.intent_ids.as_ref());
+            let keep = |id: &String, r: &IntentRecord| {
                 if let Some(ref want) = filter.creator
                     && &r.creator != want
                 {
@@ -2273,11 +2324,14 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                 {
                     return false;
                 }
-                if !wanted.allows(id) {
-                    return false;
-                }
-                true
-            }) {
+                wanted.allows(id)
+            };
+            let matched = if wanted.drives(recs.len()) {
+                wanted.lookup(&recs, keep)
+            } else {
+                sorted_matches(&recs, keep)
+            };
+            for (id, r) in matched {
                 let description = if r.description_hash.is_empty() {
                     id.clone()
                 } else {
@@ -2318,19 +2372,22 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
             }
         }
         {
-            let wanted = WantedIds::new(filter.hint_ids.as_ref());
             let recs = self.hint_records.borrow();
-            for (id, r) in sorted_matches(&recs, |id, r| {
+            let wanted = WantedIds::new(filter.hint_ids.as_ref());
+            let keep = |id: &String, r: &HintRecord| {
                 if let Some(ref want) = filter.creator
                     && &r.creator != want
                 {
                     return false;
                 }
-                if !wanted.allows(id) {
-                    return false;
-                }
-                true
-            }) {
+                wanted.allows(id)
+            };
+            let matched = if wanted.drives(recs.len()) {
+                wanted.lookup(&recs, keep)
+            } else {
+                sorted_matches(&recs, keep)
+            };
+            for (id, r) in matched {
                 hints.push(Hint {
                     id: CoordId::resolve(id),
                     content: r.content.clone(),

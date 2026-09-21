@@ -3,13 +3,15 @@
 // `fact_ids`, `intent_ids`, and `hint_ids` name records the caller wants, written either as a
 // canonical id or as a label, and `CoordId::resolve` makes the two interchangeable. What these
 // tests hold is that the wanted side is the only side that needs that derivation, that a
-// repeated entry carries no meaning, and that a list which is absent and one which is empty are
-// different answers.
+// repeated entry carries no meaning, that a list which is absent and one which is empty are
+// different answers, and that the record maps are keyed by canonical ids, which is what lets the
+// comparison skip the derivation on the candidate side.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use futures_executor::block_on;
+use nex_fih::core::store::{Record, structural_path};
 use nex_fih::io::file_io::{FileIo, IoFuture};
 use nex_fih::{
     AsyncFactCapable, AsyncFilterCapable, AsyncHintCapable, AsyncIntentCapable, BoardState,
@@ -239,6 +241,82 @@ fn an_absent_list_restricts_nothing_and_an_empty_one_names_nothing() {
     assert!(empty.facts.is_empty(), "an empty list selected a fact");
     assert!(empty.intents.is_empty(), "an empty list selected an intent");
     assert!(empty.hints.is_empty(), "an empty list selected a hint");
+}
+
+fn ids_that_no_record_carries(count: usize) -> Vec<String> {
+    (0..count)
+        .map(|i| canonical(&format!("nobody-wrote-{i}")))
+        .collect()
+}
+
+/// Either side can drive. When the names are the longer list they are not the side to walk, and
+/// the map is instead, so both directions have to reach the same records and this pins the one
+/// the size decides against.
+#[test]
+fn a_wanted_list_longer_than_the_volume_selects_the_same_records() {
+    let medium = MemoryIo::default();
+    let storage = volume(&medium);
+
+    let mut fact_ids = vec![canonical("fact-one")];
+    fact_ids.extend(ids_that_no_record_carries(9));
+    let mut intent_ids = vec!["intent-two".to_string()];
+    intent_ids.extend(ids_that_no_record_carries(4));
+    let mut hint_ids = vec![canonical("hint-one")];
+    hint_ids.extend(ids_that_no_record_carries(4));
+
+    // Ten names over three facts, five over two intents, five over two hints.
+    let state = block_on(storage.read_state_filtered(&StateFilter {
+        fact_ids: Some(fact_ids),
+        intent_ids: Some(intent_ids),
+        hint_ids: Some(hint_ids),
+        ..Default::default()
+    }));
+
+    assert_eq!(fact_ids_of(&state), vec![canonical("fact-one")]);
+    assert_eq!(intent_ids_of(&state), vec![canonical("intent-two")]);
+    assert_eq!(hint_ids_of(&state), vec![canonical("hint-one")]);
+}
+
+/// The record maps are keyed by a canonical id. A key that is not one is invisible to a reader
+/// that names records by id, which is a wrong answer rather than a crash, so the boundary where
+/// the key is written refuses it.
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "keyed by a canonical id")]
+fn a_record_key_that_is_not_canonical_is_refused() {
+    let medium = MemoryIo::default();
+    let storage = FihStorage::new(medium, "wanted");
+    let path = structural_path(0u16, "origin/wanted", "writer", 0u16, 0);
+    let fact = Fact::new(
+        "origin/wanted".into(),
+        Content::from("a record under a name that is not an id"),
+        "writer".into(),
+    );
+
+    storage.place_record(
+        &path,
+        "not-an-id",
+        Record::Fact {
+            content: fact.content,
+            content_hash: fact.content_hash,
+            origin: fact.origin,
+            creator: fact.creator,
+            submitted_at: 0,
+        },
+    );
+}
+
+/// The same boundary on the way out: a name that is not a key removes nothing, so it is refused
+/// for the same reason.
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "keyed by a canonical id")]
+fn a_record_key_that_is_not_canonical_cannot_be_vacated() {
+    let medium = MemoryIo::default();
+    let storage = FihStorage::new(medium, "wanted");
+    let path = structural_path(0u16, "origin/wanted", "writer", 0u16, 0);
+
+    storage.vacate_record(&path, "not-an-id");
 }
 
 /// The two filter paths answer one question one way, which is what lets a consumer move between
