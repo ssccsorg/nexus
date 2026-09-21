@@ -11,7 +11,7 @@
 use fih_model::fih::encode_hash_into_coords;
 use fih_model::{Content, CoordId, Fact, FihHash};
 use sha2::{Digest, Sha256};
-use tagma_core::{Coord, CoordPath};
+use tagma_core::CoordPath;
 
 fn hash(data: &[u8]) -> FihHash {
     FihHash(Sha256::digest(data).into())
