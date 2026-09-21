@@ -21,6 +21,11 @@ fn id_of(tag: &str) -> CoordId {
 
 /// A volume whose ids are derived from a label, so the wanted list can name records without
 /// reading the volume first.
+///
+/// The volume is flushed before it is measured: `read_state_filtered` builds its blob lookup
+/// from the session's unflushed buffer, which at this volume is a cost of the session rather
+/// than of the filter, and a query over ten thousand records is a query over a volume already on
+/// the medium.
 fn store_of(facts: usize) -> FihStorage<SimIo> {
     let store = FihStorage::new(SimIo::new(), "wanted-ids");
     for i in 0..facts {
@@ -32,6 +37,7 @@ fn store_of(facts: usize) -> FihStorage<SimIo> {
         );
         block_on(store.submit_fact(&fact)).expect("the fact is accepted");
     }
+    block_on(store.flush_pending()).expect("the writes reach the medium");
     store
 }
 
