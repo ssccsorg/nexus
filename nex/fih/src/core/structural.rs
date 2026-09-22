@@ -28,14 +28,13 @@
 #![cfg(feature = "structural-index")]
 
 use alloc::string::String;
-use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use tagma_core::Coord;
 
-use crate::core::store::{FihStorage, hash_str};
+use crate::StateFilter;
+use crate::core::store::{FihStorage, WantedIds, hash_str};
 use crate::io::file_io::FileIo;
-use crate::{CoordId, StateFilter};
 
 /// Nanoseconds in one day (the structural time axis is day-granular).
 const DAY_NS: u64 = 86_400_000_000_000;
@@ -97,19 +96,7 @@ impl<I: FileIo> FihStorage<I> {
 
         // Exact re-filter on the authoritative record layer.
         let recs = self.fact_records.borrow();
-        // Normalize the explicit fact-id filter once: the structural index
-        // stores canonical ids, and resolve() derives a canonical id from a
-        // label, so pre-normalizing keeps the per-candidate comparison a
-        // plain set membership test instead of repeated string derivation.
-        let wanted_ids: Option<Vec<String>> = filter.fact_ids.as_ref().map(|ids| {
-            let mut v: Vec<String> = ids
-                .iter()
-                .map(|x| CoordId::resolve(x).to_string())
-                .collect();
-            v.sort();
-            v.dedup();
-            v
-        });
+        let wanted = WantedIds::new(filter.fact_ids.as_ref());
         let mut out: Vec<String> = candidates
             .into_iter()
             .filter(|id| {
@@ -136,11 +123,8 @@ impl<I: FileIo> FihStorage<I> {
                 {
                     return false;
                 }
-                if let Some(wanted) = wanted_ids.as_ref() {
-                    let canonical = CoordId::resolve(id).to_string();
-                    if !wanted.iter().any(|x| x == &canonical) {
-                        return false;
-                    }
+                if !wanted.allows(id) {
+                    return false;
                 }
                 true
             })

@@ -21,3 +21,9 @@ criterion = { version = "0.5" }
 name = "bench"
 path = "bench.rs"
 harness = false
+
+# The by-id filter, on its own so the scenario does not pay for the suite's fixtures.
+[[bench]]
+name = "wanted_ids"
+path = "wanted_ids.rs"
+harness = false

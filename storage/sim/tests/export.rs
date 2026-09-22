@@ -4,18 +4,28 @@
 // encoding, decoding, corrupt/malformed input detection, version
 // handling, and end-to-end round trips with various storage backends.
 
+use nex_fih::CoordId;
 use nexus_storage_sim::SimIo;
 use nexus_storage_sim::{ContentMeta, FactRecord, HintRecord, IntentRecord, SyncFileIo};
 use nexus_storage_sim::{IntentStatus, export_from_io, import_into_io};
 
 // ── Helper: seed a SimIo with sample records ─────────────────────────────
 
+/// The id the record layer keys a record by, derived from a label so the source stays readable.
+///
+/// A record's id is a canonical `CoordId` since the migration in #176, and a fixture that seeds
+/// a volume has to write one: the record maps are keyed by it, and `place_record` refuses a key
+/// that is not one.
+fn id_of(tag: &str) -> String {
+    CoordId::from_label(tag).to_string()
+}
+
 fn seeded_io() -> SimIo {
     let io = SimIo::new();
     let sync = SyncFileIo::new(io.clone());
 
     let fact = FactRecord {
-        id: "f001".into(),
+        id: id_of("f001"),
         blob_hash: "deadbeef".into(),
         origin: "test".into(),
         creator: "alice".into(),
@@ -25,8 +35,8 @@ fn seeded_io() -> SimIo {
         .unwrap();
 
     let intent = IntentRecord {
-        id: "i001".into(),
-        from_facts: vec!["f001".into()],
+        id: id_of("i001"),
+        from_facts: vec![id_of("f001")],
         description_hash: String::new(),
         creator: "bob".into(),
         status: IntentStatus::Submitted,
@@ -36,7 +46,7 @@ fn seeded_io() -> SimIo {
         .unwrap();
 
     let hint = HintRecord {
-        id: "h001".into(),
+        id: id_of("h001"),
         content: "test hint".into(),
         creator: "tester".into(),
         submitted_at: 1002,
@@ -72,9 +82,28 @@ fn test_export_round_trip() {
     let dst_sync = SyncFileIo::new(dst);
     import_into_io(&dst_sync, &bundle).unwrap();
 
-    assert!(dst_sync.read("facts/f_f001.fact").unwrap().is_some());
-    assert!(dst_sync.read("intents/i_i001.intent").unwrap().is_some());
-    assert!(dst_sync.read("hints/h_h001.hint").unwrap().is_some());
+    let fact_id = id_of("f001");
+    let intent_id = id_of("i001");
+    let hint_id = id_of("h001");
+
+    assert!(
+        dst_sync
+            .read(&FactRecord::fact_key(&fact_id))
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        dst_sync
+            .read(&format!("intents/i_{intent_id}.intent"))
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        dst_sync
+            .read(&format!("hints/h_{hint_id}.hint"))
+            .unwrap()
+            .is_some()
+    );
     assert!(dst_sync.read("blob/deadbeef.bin").unwrap().is_some());
     assert!(dst_sync.read("blob/deadbeef.bin.meta").unwrap().is_some());
 }
@@ -115,7 +144,7 @@ fn test_export_import_fs_to_sim() {
     let sync = SyncFileIo::new(fs_io);
 
     let fact = FactRecord {
-        id: "f_fs".into(),
+        id: id_of("f_fs"),
         blob_hash: "cafe01".into(),
         origin: "fs_test".into(),
         creator: "fs_user".into(),
@@ -131,8 +160,8 @@ fn test_export_import_fs_to_sim() {
     import_into_io(&sim_sync, &bundle).unwrap();
 
     let loaded: FactRecord =
-        postcard::from_bytes(&sim_sync.read("facts/f_f_fs.fact").unwrap().unwrap()).unwrap();
-    assert_eq!(loaded.id, "f_fs");
+        postcard::from_bytes(&sim_sync.read(&fact.key()).unwrap().unwrap()).unwrap();
+    assert_eq!(loaded.id, fact.id);
     assert_eq!(loaded.blob_hash, "cafe01");
 
     let _ = std::fs::remove_dir_all(dir);
@@ -150,7 +179,7 @@ fn test_export_full_fih_lifecycle() {
     let sync = SyncFileIo::new(io.clone());
 
     let fa = FactRecord {
-        id: "f_a".into(),
+        id: id_of("f_a"),
         blob_hash: String::new(),
         origin: "lifecycle".into(),
         creator: "tester".into(),
@@ -160,7 +189,7 @@ fn test_export_full_fih_lifecycle() {
         .unwrap();
 
     let fb = FactRecord {
-        id: "f_b".into(),
+        id: id_of("f_b"),
         blob_hash: String::new(),
         origin: "lifecycle".into(),
         creator: "tester".into(),
@@ -170,7 +199,7 @@ fn test_export_full_fih_lifecycle() {
         .unwrap();
 
     let fc = FactRecord {
-        id: "f_c".into(),
+        id: id_of("f_c"),
         blob_hash: String::new(),
         origin: "lifecycle".into(),
         creator: "tester".into(),
@@ -180,8 +209,8 @@ fn test_export_full_fih_lifecycle() {
         .unwrap();
 
     let intent1 = IntentRecord {
-        id: "i_a".into(),
-        from_facts: vec!["f_a".into(), "f_b".into()],
+        id: id_of("i_a"),
+        from_facts: vec![id_of("f_a"), id_of("f_b")],
         description_hash: String::new(),
         creator: "tester".into(),
         status: IntentStatus::Submitted,
@@ -191,8 +220,8 @@ fn test_export_full_fih_lifecycle() {
         .unwrap();
 
     let intent2 = IntentRecord {
-        id: "i_b".into(),
-        from_facts: vec!["f_b".into(), "f_c".into()],
+        id: id_of("i_b"),
+        from_facts: vec![id_of("f_b"), id_of("f_c")],
         description_hash: String::new(),
         creator: "tester".into(),
         status: IntentStatus::Submitted,
@@ -202,7 +231,7 @@ fn test_export_full_fih_lifecycle() {
         .unwrap();
 
     let hint1 = HintRecord {
-        id: "h_a".into(),
+        id: id_of("h_a"),
         content: "lifecycle hint".into(),
         creator: "tester".into(),
         submitted_at: 300,
