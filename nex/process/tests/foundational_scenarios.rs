@@ -456,7 +456,7 @@ fn scenario_formal_revision_of_philosophy() {
     });
     if let Some(cf) = field_contradiction {
         let intent = Intent {
-            id: CoordId::resolve(&format!("{} resolve intent", &cf.id.to_string())),
+            id: CoordId::resolve(&format!("{} resolve intent", cf.id)),
             from_facts: vec![cf.id],
             description: "Resolve field-definition across layers".into(),
             creator: "formal-reviewer".into(),

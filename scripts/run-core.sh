@@ -164,20 +164,28 @@ run_auto_fix()     { run_fmt && run_clippy_fix && run_compiler_fix && run_fmt; }
 
 run_clippy() {
     # Core crates only. Apps (nex-cf, wasmer, api, zed) are separate projects.
+    # --all-targets because much of the storage crates' evidence lives in tests/,
+    # which a plain `cargo clippy -p` does not lint.
     for pkg in \
         nex \
         nex-core \
         nex-fih \
         nex-io \
+        fih-model \
         nexus-storage-sim \
         nexus-gateway-serde-proxy \
         nexd
     do
-        cargo clippy -p "$pkg" -- -D warnings -A clippy::await-holding-refcell-ref
+        cargo clippy -p "$pkg" --all-targets -- -D warnings -A clippy::await-holding-refcell-ref
     done
 }
 run_test()   {
     cargo test -p nex -- --nocapture 2>&1
+    echo "---"
+    # The storage crates' own test targets. `-p nex` does not run another
+    # package's targets, so the record layer's tests and the model's run here or
+    # nowhere.
+    cargo test -p nex-core -p nex-fih -p fih-model -- --nocapture 2>&1
     echo "---"
     # build nex-server before integration tests; cargo test -p nexd does not
     # pull in the nex-server binary as a dependency
