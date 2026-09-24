@@ -76,3 +76,4 @@ logs
 
 # Vendored external dependencies (cloned by run.sh)
 libs/tagma/
+.cargo/
