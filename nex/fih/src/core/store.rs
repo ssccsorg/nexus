@@ -1338,39 +1338,27 @@ impl<I: FileIo> FihStorage<I> {
 
     /// Visit every fact the volume holds, one at a time, with its content.
     ///
-    /// The record maps answer a read by materializing the whole state, so a reader that
-    /// wants to look at each record holds all of them: 394 to 406 bytes per record on
-    /// riscv32, which for a few hundred records is most of what a 64 KiB part has. This
-    /// walks the medium instead. It reads one record, hands it and its content over, and
-    /// lets both go before reading the next, so the memory a walk needs is one record
-    /// rather than the volume. The key list the medium returns is the one thing that
-    /// grows with the volume, and that is the channel contract's cost rather than this
-    /// walk's.
+    /// The record maps answer a read by materializing the whole state, so a reader that wants to
+    /// look at each record holds all of them: 394 to 406 bytes per record on riscv32, which for a
+    /// few hundred records is most of what a 64 KiB part has. This walks the medium instead. It
+    /// reads one record, hands it and its content over, and lets both go before reading the next,
+    /// and it reads the keys a page at a time, so between two channel reads it holds a page and a
+    /// record rather than the volume.
     ///
-    /// The order is [`Walk::order`]'s, which is the identifier order a state read
-    /// reports, so a walk and a state read see the same records in the same order.
+    /// The order is the channel's, and none is promised: a walk visits in whatever order the
+    /// medium yields, which is entry order for a directory and write order for a log. A walk and
+    /// a state read reach the same records, in their own orders, and a reader that needs an order
+    /// of its own sorts what it keeps.
     ///
-    /// `visit` returns whether to keep going. A walk that is looking for one record stops
-    /// at it rather than reading the rest of the volume, which is the other half of what
-    /// makes a walk affordable on a device: the memory is one record, and the work is the
-    /// records the question reaches.
-    pub async fn for_each_fact<F>(&self, mut visit: F) -> Result<(), String>
+    /// `visit` returns whether to keep going. A walk that is looking for one record stops at it
+    /// rather than reading the rest of the volume, which is the other half of what makes a walk
+    /// affordable on a device: the memory is a page and a record, and the work is the records the
+    /// question reaches.
+    pub async fn for_each_fact<F>(&self, visit: F) -> Result<(), String>
     where
         F: FnMut(&FactRecord, Content) -> bool,
     {
-        let walk = self.walk_order().await?;
-        for index in 0..walk.keys.len() {
-            let Some(record) = walk.record_at(self, index).await? else {
-                continue;
-            };
-            let content = self
-                .load_content_any(&record.blob_hash, "application/octet-stream")
-                .await;
-            if !visit(&record, content) {
-                return Ok(());
-            }
-        }
-        Ok(())
+        self.walk(true, visit).await
     }
 
     /// Visit every fact the volume holds, one at a time, without its content.
@@ -1384,46 +1372,104 @@ impl<I: FileIo> FihStorage<I> {
     where
         F: FnMut(&FactRecord) -> bool,
     {
-        let walk = self.walk_order().await?;
-        for index in 0..walk.keys.len() {
-            let Some(record) = walk.record_at(self, index).await? else {
-                continue;
-            };
-            if !visit(&record) {
-                return Ok(());
-            }
-        }
-        Ok(())
+        self.walk(false, |record, _| visit(record)).await
     }
 
-    /// What a walk visits, in the order it visits it.
+    /// One page of keys the walk reads at a time.
     ///
-    /// Writes this session has not flushed are flushed first, so a reader that has just
-    /// written sees its own writes, as every other read path promises. A flush the medium
-    /// refuses is not fatal: the writes it refused are still pending, and they are visited
-    /// from memory. A worn part loses records, and it does not make the volume unreadable.
-    async fn walk_order(&self) -> Result<Walk, String> {
+    /// A page bounds what a walk holds between two channel reads. Sixteen keys is the order of the
+    /// record maps for a handful of records, and large enough that the channel call a page costs is
+    /// worth making. A channel that cannot page hands over the whole volume in one page, and what a
+    /// walk holds is then the volume's size rather than this page.
+    const WALK_PAGE: usize = 16;
+
+    /// The walk both readers above are, with and without the content of each record.
+    ///
+    /// Writes the session has not flushed are flushed first, so a reader that has just written
+    /// sees its own writes, as every other read path promises. A flush the medium refuses is not
+    /// fatal: the writes it refused stay pending, and they are visited from memory. A worn part
+    /// loses records, and it does not make the volume unreadable.
+    async fn walk<F>(&self, with_content: bool, mut visit: F) -> Result<(), String>
+    where
+        F: FnMut(&FactRecord, Content) -> bool,
+    {
         if let Err(error) = self.flush_pending().await {
             log::warn!("walk: flush pending failed: {error}");
         }
 
-        // The session's copy of a key is newer than the medium's, and a key it deleted is
-        // not there at all. Both lists are bounded by the unflushed batch, which is what
-        // makes them safe to hold while the walk reads the medium.
-        let mut keys = self.io.list("facts/").await?;
+        // What the session holds rather than the channel: the writes a refused flush left behind,
+        // and the keys it deleted. Both are bounded by the batch the medium refused rather than by
+        // the volume, which is what lets the loop below hold them while it reads the channel a
+        // page at a time.
         let (pending, deleted) = self.pending_facts();
-        keys.sort();
-        for (key, _) in &pending {
-            if let Err(at) = keys.binary_search(key) {
-                keys.insert(at, key.clone());
+
+        let mut cursor: Option<Vec<u8>> = None;
+        loop {
+            let (keys, next) = self
+                .io
+                .list_page("facts/", cursor.as_deref(), Self::WALK_PAGE)
+                .await?;
+            for key in &keys {
+                // A key the session deleted has no record to report, whatever the channel still
+                // lists, and the session's copy of a key is newer than the channel's.
+                if deleted.iter().any(|gone| gone == key) {
+                    continue;
+                }
+                let record =
+                    match pending.binary_search_by(|(held, _)| held.as_str().cmp(key.as_str())) {
+                        Ok(at) => pending[at].1.clone(),
+                        Err(_) => match self.io.read(key).await? {
+                            Some(bytes) => match postcard::from_bytes::<FactRecord>(&bytes) {
+                                Ok(record) => record,
+                                // Bytes that do not decode are not a record, which is what a state
+                                // read makes of them too, by never having loaded them.
+                                Err(_) => continue,
+                            },
+                            // A channel that lists a key and then does not have it: a concurrent
+                            // delete, with no record to report.
+                            None => continue,
+                        },
+                    };
+                let content = if with_content {
+                    self.load_content_any(&record.blob_hash, "application/octet-stream")
+                        .await
+                } else {
+                    Content {
+                        mime_type: "application/octet-stream".into(),
+                        data: Vec::new(),
+                    }
+                };
+                if !visit(&record, content) {
+                    return Ok(());
+                }
+            }
+            match next {
+                Some(token) => cursor = Some(token),
+                None => break,
             }
         }
-        keys.dedup();
-        Ok(Walk {
-            keys,
-            pending,
-            deleted,
-        })
+
+        // The session's own writes that the channel does not hold. A write the medium refused is
+        // not on the medium, so the pages above did not reach it; a write the flush applied is, so
+        // the pages did, and reporting it here would report it twice.
+        for (_, record) in &pending {
+            if self.medium_fact_exists(&record.id).await? {
+                continue;
+            }
+            let content = if with_content {
+                self.load_content_any(&record.blob_hash, "application/octet-stream")
+                    .await
+            } else {
+                Content {
+                    mime_type: "application/octet-stream".into(),
+                    data: Vec::new(),
+                }
+            };
+            if !visit(record, content) {
+                return Ok(());
+            }
+        }
+        Ok(())
     }
 
     /// The facts this session has written and not yet flushed, and the keys it has
@@ -1508,48 +1554,6 @@ impl<I: FileIo> FihStorage<I> {
             return pending_content;
         }
         load_blob(&self.io, blob_hash).await
-    }
-}
-
-/// What a walk visits, in the order it visits it, with the session's unflushed records
-/// set against the medium's.
-///
-/// The keys are the medium's plus the session's, in one key order, so a position in the
-/// walk can be read without the merge that built it: a key the session holds is answered
-/// from memory and the rest are read from the medium.
-struct Walk {
-    keys: Vec<String>,
-    pending: Vec<(String, FactRecord)>,
-    deleted: Vec<String>,
-}
-
-impl Walk {
-    /// The record at a position, from the session when it is holding one and from the
-    /// medium otherwise.
-    ///
-    /// `None` when the position holds nothing to report: a key the session deleted, a key
-    /// the medium listed and then did not have, which a concurrent delete explains, or
-    /// bytes that do not decode as a record. A state read skips those the same way, by
-    /// never having loaded them.
-    async fn record_at<IO: FileIo>(
-        &self,
-        storage: &FihStorage<IO>,
-        index: usize,
-    ) -> Result<Option<FactRecord>, String> {
-        let key = &self.keys[index];
-        if self.deleted.iter().any(|gone| gone == key) {
-            return Ok(None);
-        }
-        let held = self
-            .pending
-            .binary_search_by(|(known, _)| known.as_str().cmp(key.as_str()));
-        if let Ok(at) = held {
-            return Ok(Some(self.pending[at].1.clone()));
-        }
-        let Some(bytes) = storage.io.read(key).await? else {
-            return Ok(None);
-        };
-        Ok(postcard::from_bytes::<FactRecord>(&bytes).ok())
     }
 }
 
