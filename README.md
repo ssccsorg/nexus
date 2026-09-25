@@ -1,6 +1,8 @@
 # neXus
 
-neXus is the FIH (Fact / Intent / Hint) blackboard storage and coordination runtime of the SSCCS stack. It is a Rust workspace (edition 2024) that provides the storage core, the process layer, and the daemon surface for building blackboard-backed agents and products. The same storage core compiles for hosts, WASM targets, and no_std MCU-class targets.
+Peer-to-peer state fabric for agents and storage, from microcontrollers to data centers. One coordinate space, one protocol, multiple directions, no orchestration.
+
+It implements the FIH (Fact / Intent / Hint) model of the SSCCS stack: a Rust workspace (edition 2024) that provides the storage core, the process layer, and the daemon surface for building blackboard-backed agents and products. The same storage core compiles for hosts, WASM targets, and no_std MCU-class targets.
 
 Project status: pre-1.0 (version 0.1.0). The crates are not published to crates.io; consume them by git revision. License: Apache-2.0.
 
