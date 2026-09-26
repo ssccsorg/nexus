@@ -17,6 +17,7 @@ on:
       - "verify/**"
       - "apps/nex-spinwasi-ssccsdocs/**"
       - "apps/nex-calc/**"
+      - "apps/nex-derive/**"
       - "apps/nex-calc-fihcontract/**"
       - "apps/nex-tagma/**"
       - "playbooks/**"
@@ -40,6 +41,7 @@ on:
       - "verify/**"
       - "apps/nex-spinwasi-ssccsdocs/**"
       - "apps/nex-calc/**"
+      - "apps/nex-derive/**"
       - "apps/nex-calc-fihcontract/**"
       - "apps/nex-tagma/**"
       - "playbooks/**"
@@ -159,6 +161,7 @@ jobs:
             nexd
             apps/nex-spinwasi-ssccsdocs
             apps/nex-calc
+            apps/nex-derive
           cache-targets: true
           cache-on-failure: true
       - name: Install socat (required for Unix socket RPC)

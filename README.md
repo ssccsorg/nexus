@@ -47,6 +47,7 @@ Root workspace members:
 | `libs/` | `nexus-gateway-serde-proxy`, `nexus-session-server`, `nexus-async-store` | Shared host libraries. |
 | `playbooks/agents/` | `nexus-privileged-agent` | Consumer playbook used by `./playbooks/run.sh`. |
 | `apps/nex-calc/` | `nex-calc` | Coordinate accumulation CLI, the current design basis for deterministic path accumulation. |
+| `apps/nex-derive/` | `nex-derive` | Directed FIH goal space: a goal is the product of work, intent, and contract, and resolving a goal derives a fact. |
 | `verify/support/` | `nexus-verify-support` | Support library for the target verification packages. |
 | `verify/osless/` | `nexus-osless-verify` | Host-runnable verification of the OS-less storage path, including the cross-thread critical section stress. |
 | `verify/mcu/` | `nexus-mcu-verify` | no_std riscv32imac firmware that boots under QEMU and runs the storage round trip inside the MCU memory budget. |
@@ -61,7 +62,7 @@ The `nex/` workspace:
 | `nex/fih/` | `nex-fih` | The storage implementation layer: `FihStorage<I: FileIo>`, record maps, the structural filter index, semantic store registration, and re-exports of `fih-model`. no_std with a `std` default feature. |
 | `nex/process/` | `nex` | The process layer: OODA scheduler, detection tasks, eviction, plus the backward-compatible alias surface (`nex::storage::core::FihStorage`, `nex::storage::semantic`, `nex::io`, top-level `FileIo`, `FsIo`). |
 
-Standalone applications with their own workspaces and verifiers live under `apps/` (`nex-api`, `nex-calc-fihcontract`, `nex-spinwasi-ssccsdocs`, `nex-tagma`, `nex-wasmer-ssccsdocs`). The `docs/` directory holds the devlogs that record architectural decisions. The external engine runner harness and the edge sync workers that previously lived under `ext/` and `gateway/` now live in nex-ext.
+Standalone applications with their own workspaces and verifiers live under `apps/` (`nex-api`, `nex-calc-fihcontract`, `nex-derive`, `nex-spinwasi-ssccsdocs`, `nex-tagma`, `nex-wasmer-ssccsdocs`). The `docs/` directory holds the devlogs that record architectural decisions. The external engine runner harness and the edge sync workers that previously lived under `ext/` and `gateway/` now live in nex-ext.
 
 ## Getting Started
 
@@ -163,7 +164,7 @@ GitHub Actions runs on push to `main` and on pull requests:
 - Core: fmt, clippy, tests, the wasm32 gate, and the MCU runtime verification under QEMU in Docker.
 - Server: `nex-server` and `nex-client` verification over a Unix socket.
 - Gateway: the HTTP API (`apps/nex-api`) and the serialization proxy (`libs/serde-proxy`).
-- Apps: standalone app verifiers (spin-wasi reference, `nex-calc`, `nexd` lifecycle, tagma consumer).
+- Apps: standalone app verifiers (spin-wasi reference, `nex-calc`, `nex-derive`, `nexd` lifecycle, tagma consumer).
 - Playbooks: consumer playbook scenarios.
 
 The same flows run locally through `./run.sh` sub-commands, so a change is validated locally before it reaches CI.
