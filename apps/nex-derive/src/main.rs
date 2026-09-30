@@ -372,13 +372,13 @@ fn print_witnesses(board: &Board, indices: &[usize]) {
 /// build while still spanning the point where the resolution overtakes the
 /// scan.
 fn query_budget(n: usize) -> usize {
-    (20_000_000 / (n.max(1) * AXES)).clamp(20, 500)
+    (20_000_000 / n.max(1).saturating_mul(AXES)).clamp(20, 500)
 }
 
 fn print_bench_header() {
     println!(
         "{:>8} {:>8} {:>10} {:>12} {:>12} {:>9}  agree",
-        "n", "goals", "matched", "intersect/q", "scan/q", "speedup"
+        "goals", "queries", "matched", "intersect/q", "scan/q", "speedup"
     );
 }
 

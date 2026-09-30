@@ -62,7 +62,7 @@ The `nex/` workspace:
 | `nex/fih/` | `nex-fih` | The storage implementation layer: `FihStorage<I: FileIo>`, record maps, the structural filter index, semantic store registration, and re-exports of `fih-model`. no_std with a `std` default feature. |
 | `nex/process/` | `nex` | The process layer: OODA scheduler, detection tasks, eviction, plus the backward-compatible alias surface (`nex::storage::core::FihStorage`, `nex::storage::semantic`, `nex::io`, top-level `FileIo`, `FsIo`). |
 
-Standalone applications with their own workspaces and verifiers live under `apps/` (`nex-api`, `nex-calc-fihcontract`, `nex-derive`, `nex-spinwasi-ssccsdocs`, `nex-tagma`, `nex-wasmer-ssccsdocs`). The `docs/` directory holds the devlogs that record architectural decisions. The external engine runner harness and the edge sync workers that previously lived under `ext/` and `gateway/` now live in nex-ext.
+Standalone applications with their own workspaces and verifiers live under `apps/` (`nex-api`, `nex-calc-fihcontract`, `nex-spinwasi-ssccsdocs`, `nex-tagma`, `nex-wasmer-ssccsdocs`). The `docs/` directory holds the devlogs that record architectural decisions. The external engine runner harness and the edge sync workers that previously lived under `ext/` and `gateway/` now live in nex-ext.
 
 ## Getting Started
 

@@ -142,6 +142,26 @@ fn disjoint_values_resolve_to_empty() {
 }
 
 #[test]
+fn multi_value_conditions_union_their_postings() {
+    let mut board = Board::new();
+    board.derive(0, 0, 0, "first".into());
+    board.derive(1, 1, 1, "second".into());
+    board.derive(2, 0, 0, "third".into());
+
+    // A condition that allows a set of values takes the union of the postings
+    // it names, the branch a single-value condition skips.
+    let work = Condition {
+        axis: Axis::Work,
+        allow: (1u64 << 0) | (1u64 << 2),
+    };
+    let query = Query::new(vec![work]);
+
+    assert_eq!(board.intersection(&query).count(), 2);
+    assert_eq!(board.resolve(&query), vec![0, 2]);
+    assert_eq!(board.resolve(&query), board.scan(&query));
+}
+
+#[test]
 fn bench_paths_agree() {
     let line = Board::bench(2_000, 50, 42);
     assert!(line.agree, "bench resolution and scan disagreed");

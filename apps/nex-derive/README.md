@@ -81,7 +81,7 @@ candidate elimination:
   intersect intent    1
   intersect hint      1
 > bench
-       n    goals    matched  intersect/q       scan/q   speedup  agree
+   goals  queries    matched  intersect/q       scan/q   speedup  agree
     1000      500      16913     13.585µs      1.772µs      0.1x  yes
    10000      500     205861     13.739µs     15.328µs      1.1x  yes
    50000      133     271942     16.491µs     83.223µs      5.0x  yes
