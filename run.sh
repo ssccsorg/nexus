@@ -428,6 +428,13 @@ verify_nex_calc() {
     echo "nex-calc: passed"
 }
 
+verify_nex_derive() {
+    echo "=== nex-derive ==="
+    cargo build -p nex-derive 2>&1 || { echo "nex-derive: build FAILED"; return 1; }
+    cargo test -p nex-derive 2>&1 || { echo "nex-derive: tests FAILED"; return 1; }
+    echo "nex-derive: passed"
+}
+
 # ── nex-server standalone verification ────────────────────────────────────
 
 verify_nex_server() {
@@ -543,6 +550,7 @@ run_apps() {
     sleep 1
     verify_nex_spinwasi_ssccsdocs || any_failed=1
     verify_nex_calc || any_failed=1
+        verify_nex_derive || any_failed=1
         verify_nex_tagma || any_failed=1
         # Future apps go here, e.g.:
     # verify_nex_cf_mock || any_failed=1

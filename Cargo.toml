@@ -11,6 +11,7 @@ members = [
     "playbooks/agents",
     "storage/sim",
     "apps/nex-calc",
+    "apps/nex-derive",
     "benches",
     "verify/support",
     "verify/osless",
