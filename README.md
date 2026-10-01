@@ -190,7 +190,7 @@ Code guidance:
 
 - Development guide: <https://docs.ssccs.org/projects/nexus/development>
 - Project documentation: <https://docs.ssccs.org/projects/nexus/>
-- Design and decision records: the `docs/` directory in this repository, including the layered restructure (`2026-08-20-176-content-hash-conflict-l2-restructure.md`), the cold query and DuckDB direction (`2026-08-29-181-cypher-removal-and-nex-duckdb-direction.md`), the multi-dimensional structural search benchmark (`2026-08-27-179-multidim-structural-search-bench.md`), and the wire protocol (`wire-protocol.md`).
+- Design and decision records: the `docs/` directory in this repository, including the cold query and DuckDB direction (`2026-08-29-181-cypher-removal-and-nex-duckdb-direction.md`) and the wire protocol (`wire-protocol.md`). Records of the storage implementation's design, its measurements, and the alternatives it rejected are kept with the product rather than published here.
 
 ---
 
