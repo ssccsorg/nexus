@@ -1285,30 +1285,46 @@ impl<I: FileIo> FihStorage<I> {
     /// the persisted blob hash, so records placed by direct writers
     /// (nex-calc writes blobs to IO directly) are readable.
     pub async fn get_fact_by_id(&self, id: &str) -> Option<(Content, FihHash, String, String)> {
-        let held = {
-            let recs = self.fact_records.borrow();
-            recs.get(id).cloned()
-        };
-        let r = match held {
-            Some(record) => Some(record),
-            // A record the medium holds and this reader cannot decode is reported as
-            // absent, which is what the map reports for a record it never saw. The
-            // conflict guard is where a decode failure is fatal, because there the
-            // question is whether it is safe to write over.
-            None if !*self.maps.borrow() => match self.medium_fact_record(id).await {
-                Ok(record) => record,
-                Err(error) => {
-                    log::warn!("get_fact_by_id: {error}");
-                    None
-                }
-            },
-            None => None,
-        }?;
+        let r = self.get_fact_framing(id).await?;
         let content_hash = Self::blob_hash_or_zero(&r.blob_hash);
         let content = self
             .load_content_any(&r.blob_hash, "application/octet-stream")
             .await;
         Some((content, content_hash, r.origin.clone(), r.creator.clone()))
+    }
+
+    /// What a named fact says about itself: its identifier, its blob hash, its origin, its
+    /// creator, and when it was written.
+    ///
+    /// The lookup is the one [`FihStorage::get_fact_by_id`] makes, kept in one place so the
+    /// two reads cannot come to two records. The map answers for a volume the session holds,
+    /// and a store that keeps no map reads the medium at the key the identifier implies: the
+    /// address is computed, so one identifier is one read rather than a walk of the volume.
+    /// An identifier the volume does not hold is `None`.
+    ///
+    /// The content is what [`FihStorage::get_fact_by_id`] reads after the record. A caller
+    /// that wants the framing alone stops at the record, and on a device that is the medium
+    /// read it does not spend.
+    ///
+    /// A record the medium holds and this reader cannot decode is reported as absent, which is
+    /// what the map reports for a record it never saw. The conflict guard is where a decode
+    /// failure is fatal, because there the question is whether it is safe to write over.
+    pub async fn get_fact_framing(&self, id: &str) -> Option<FactRecord> {
+        let held = {
+            let recs = self.fact_records.borrow();
+            recs.get(id).cloned()
+        };
+        match held {
+            Some(record) => Some(record),
+            None if !*self.maps.borrow() => match self.medium_fact_record(id).await {
+                Ok(record) => record,
+                Err(error) => {
+                    log::warn!("get_fact_framing: {error}");
+                    None
+                }
+            },
+            None => None,
+        }
     }
 
     /// Get an intent by its ID (record-map lookup).
