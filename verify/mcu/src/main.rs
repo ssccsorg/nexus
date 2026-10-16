@@ -8,6 +8,11 @@
 //   - Cell2 borrow semantics under that critical section
 //   - EpochClock time flow from a monotonic tick
 //   - a full FihStorage submit -> flush -> read round trip on the MCU
+//   - the read path a device uses: a store that keeps no record maps,
+//     answering a query by walking the medium one record at a time, with the
+//     framing walk reading no payload, agreeing with a state read of the same
+//     volume, and a write the medium refused still answered for
+//     (issues #203, #209, #213)
 //   - the 512 KB SRAM budget (linker-enforced)
 //
 // On host targets the crate compiles as a stub so workspace builds stay
@@ -22,11 +27,13 @@ extern crate alloc;
 #[cfg(target_arch = "riscv32")]
 mod firmware {
     use alloc::boxed::Box;
+    use alloc::string::ToString;
     use alloc::sync::Arc;
     use core::alloc::{GlobalAlloc, Layout};
     use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
     use chton::cell::Cell2;
+    use chton::io::FileIo;
     use critical_section::RawRestoreState;
     use nex_core::{EpochClock, Monotonic, Now};
     use nex_fih::{AsyncFactCapable, AsyncStorageRead, BoardState, Content, Fact, FihStorage};
@@ -108,8 +115,12 @@ mod firmware {
     }
 
     // ── Bump allocator over a static heap in .bss ──────────────────────
+    //
+    // The arena is the heap the gate allows, and the peak it reports is read against it,
+    // so it is sized to what the storage path needs rather than to the whole part. The
+    // rest of the 512 KB SRAM budget is the firmware itself and the stack.
 
-    const HEAP_SIZE: usize = 384 * 1024;
+    const HEAP_SIZE: usize = 160 * 1024;
     static mut HEAP: [u8; HEAP_SIZE] = [0u8; HEAP_SIZE];
 
     struct BumpAllocator {
@@ -250,7 +261,7 @@ mod firmware {
             Ok(id2) => id2,
             Err(_) => test_exit(false),
         };
-        if let Err(_) = block_on(storage.flush_pending()) {
+        if block_on(storage.flush_pending()).is_err() {
             test_exit(false);
         }
 
@@ -267,6 +278,163 @@ mod firmware {
         require(found2);
         require(state.facts.len() == 2);
         uart_puts("step3 storage round trip (2 facts): ok\n");
+
+        // 4. The read path a device uses: a store that keeps no record maps answers by
+        //    walking the medium, and the walk costs a page and a record rather than the
+        //    volume. This is the pair a memory-bounded consumer runs with nex-fih's default
+        //    features off, so the target gate has to run it.
+        let device = FlatIo::new();
+        {
+            let writer = FihStorage::without_maps(
+                device.clone(),
+                "mcu",
+                Box::new(EpochClock::new(epoch_secs, tick.clone())),
+            );
+            for payload in ["one", "two", "three"] {
+                let fact = Fact::new(
+                    "mcu/device".into(),
+                    Content {
+                        mime_type: "text/plain".into(),
+                        data: payload.as_bytes().to_vec(),
+                    },
+                    "harness".into(),
+                );
+                if block_on(writer.submit_fact(&fact)).is_err() {
+                    test_exit(false);
+                }
+            }
+            if block_on(writer.flush_pending()).is_err() {
+                test_exit(false);
+            }
+        }
+
+        let reader = FihStorage::without_maps(
+            device.clone(),
+            "mcu",
+            Box::new(EpochClock::new(epoch_secs, tick.clone())),
+        );
+
+        // The records come back with their content, which is what a walk has to hand over for
+        // a query to be answered rather than merely counted.
+        let mut walked = 0usize;
+        let mut payload_bytes = 0usize;
+        if block_on(reader.for_each_fact(|_record, content| {
+            walked += 1;
+            payload_bytes += content.data.len();
+            true
+        }))
+        .is_err()
+        {
+            test_exit(false);
+        }
+        require(walked == 3);
+        require(payload_bytes == 11); // "one" + "two" + "three"
+
+        // The framing walk is the same visit without the payload reads: one key per record,
+        // which is the read a count or an identifier listing spends.
+        let before = device.traffic();
+        let mut framing = 0usize;
+        if block_on(reader.for_each_fact_record(|_record| {
+            framing += 1;
+            true
+        }))
+        .is_err()
+        {
+            test_exit(false);
+        }
+        let made = device.traffic().since(before);
+        require(framing == walked);
+        require(made.reads == framing as u32);
+
+        // A question about one record reads one record.
+        let before = device.traffic();
+        let mut stopped = 0usize;
+        if block_on(reader.for_each_fact_record(|_record| {
+            stopped += 1;
+            false
+        }))
+        .is_err()
+        {
+            test_exit(false);
+        }
+        let made = device.traffic().since(before);
+        require(stopped == 1);
+        require(made.reads == 1);
+
+        // A host reads the same volume through the maps, and the two have to agree about which
+        // records the volume holds. The walk promises no order, so the agreement is about the
+        // set rather than about the order.
+        let keeper = FihStorage::with_clock(
+            device.clone(),
+            "mcu",
+            Box::new(EpochClock::new(epoch_secs, tick.clone())),
+        );
+        if block_on(keeper.rebuild_cache()).is_err() {
+            test_exit(false);
+        }
+        let state: BoardState = block_on(keeper.read_state());
+        require(state.facts.len() == walked);
+        let mut matched = 0usize;
+        if block_on(reader.for_each_fact_record(|record| {
+            if state
+                .facts
+                .iter()
+                .any(|fact| fact.id.to_string() == record.id)
+            {
+                matched += 1;
+            }
+            true
+        }))
+        .is_err()
+        {
+            test_exit(false);
+        }
+        require(matched == walked);
+        uart_puts("step4 device read path (no maps, walk, framing): ok\n");
+
+        // 5. A part at the end of its life refuses the write, and the write is not lost with
+        //    the medium: the refused writes stay pending and the walk visits them from memory.
+        //    Without that, a worn part turns a record the session still holds into one that is
+        //    gone.
+        let worn = FlatIo::new();
+        worn.refuse_writes(true);
+        let storage = FihStorage::without_maps(
+            worn.clone(),
+            "mcu",
+            Box::new(EpochClock::new(epoch_secs, tick.clone())),
+        );
+        let fact = Fact::new(
+            "mcu/worn".into(),
+            Content {
+                mime_type: "text/plain".into(),
+                data: b"a write the part refuses".to_vec(),
+            },
+            "harness".into(),
+        );
+        if block_on(storage.submit_fact(&fact)).is_err() {
+            test_exit(false);
+        }
+        require(block_on(storage.flush_pending()).is_err());
+
+        let mut survived = 0usize;
+        if block_on(storage.for_each_fact(|_record, content| {
+            if content.data == b"a write the part refuses" {
+                survived += 1;
+            }
+            true
+        }))
+        .is_err()
+        {
+            test_exit(false);
+        }
+        require(survived == 1);
+        let landed = match block_on(worn.list("")) {
+            Ok(keys) => keys.len(),
+            Err(_) => test_exit(false),
+        };
+        require(landed == 0);
+        uart_puts("step5 refused write survives: ok\n");
+
         uart_puts("peak heap: ");
         uart_puts(&alloc::fmt::format(format_args!(
             "{} bytes\n",

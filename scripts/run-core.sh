@@ -134,13 +134,17 @@ run_nostd_check() {
 # build, caller-provided critical section). verify/mcu builds the storage
 # core as riscv32imac firmware under a 512 KB RAM budget and, when QEMU is
 # available, boots it on the virt machine and checks the runtime behavior
-# (critical section, clock, FihStorage round trip).
+# (critical section, clock, FihStorage round trip, the no-maps walk).
 
 run_verify_check() {
     echo "=== verify: nexus-osless-verify (host) ==="
     cargo run -p nexus-osless-verify 2>&1
     echo "=== verify: nexus-mcu-verify (riscv32imac release build) ==="
     cargo build -p nexus-mcu-verify --target riscv32imac-unknown-none-elf --release 2>&1
+    echo "=== verify: nexus-mcu-verify (clippy on the firmware body) ==="
+    # The firmware body is riscv32-only, so the host clippy pass sees the stub and
+    # nothing else. This is where the code that runs on the target is linted.
+    cargo clippy -p nexus-mcu-verify --target riscv32imac-unknown-none-elf -- -D warnings 2>&1
     if command -v qemu-system-riscv32 >/dev/null 2>&1; then
         echo "=== verify: nexus-mcu-verify (QEMU virt runtime) ==="
         qemu-system-riscv32 -machine virt -bios none \
@@ -174,6 +178,9 @@ run_clippy() {
         fih-model \
         nexus-storage-sim \
         nexus-gateway-serde-proxy \
+        nexus-verify-support \
+        nexus-osless-verify \
+        nexus-mcu-verify \
         nexd
     do
         cargo clippy -p "$pkg" --all-targets -- -D warnings -A clippy::await-holding-refcell-ref
