@@ -1158,18 +1158,15 @@ impl<I: FileIo> FihStorage<I> {
         self.fact_records.borrow().contains_key(id)
     }
 
-    /// Content hash of the fact currently occupying `id`, if any.
+    /// The fact record occupying `id` in the map the session keeps, if any.
     ///
-    /// The id-keyed record map is the single chokepoint for the record
-    /// layer, so this is an O(1) lookup for every writer: `submit_fact`,
-    /// `rebuild_cache` (which re-places loaded records), and direct
-    /// writers (nex-calc). The hash is parsed from the persisted blob
-    /// hash, so the check also fires after `rebuild_cache`.
-    fn existing_fact_content_hash(&self, id: &str) -> Option<FihHash> {
-        self.fact_records
-            .borrow()
-            .get(id)
-            .and_then(|r| Self::hex_blob_hash(&r.blob_hash))
+    /// The id-keyed record map is the single chokepoint for the record layer, so this is
+    /// an O(1) lookup for every writer: `submit_fact`, `rebuild_cache` (which re-places
+    /// loaded records), and direct writers (nex-calc). The whole record is returned
+    /// because the identity of an address is its content and the fields the id was
+    /// derived from, not the content hash alone.
+    fn existing_fact_record(&self, id: &str) -> Option<FactRecord> {
+        self.fact_records.borrow().get(id).cloned()
     }
 
     /// The fact the medium holds at `id`, if any.
@@ -1191,14 +1188,6 @@ impl<I: FileIo> FihStorage<I> {
             Ok(record) => Ok(Some(record)),
             Err(error) => Err(format!("decode {key}: {error}")),
         }
-    }
-
-    /// Content hash of the fact the medium holds at `id`, if any.
-    async fn medium_fact_content_hash(&self, id: &str) -> Result<Option<FihHash>, String> {
-        Ok(self
-            .medium_fact_record(id)
-            .await?
-            .and_then(|record| Self::hex_blob_hash(&record.blob_hash)))
     }
 
     /// Whether the medium holds a record at the key `id` implies.
@@ -1248,14 +1237,14 @@ impl<I: FileIo> FihStorage<I> {
     /// is a content address, and the guard is about an identifier carrying content that
     /// is not its own rather than about what a read should see. A walk answers that other
     /// question, and there a key takes the fate of the last operation on it.
-    fn pending_fact_content_hash(&self, id: &str) -> Option<FihHash> {
+    fn pending_fact_record(&self, id: &str) -> Option<FactRecord> {
         let key = FactRecord::fact_key(id);
         for op in self.pending.borrow().iter().rev() {
             if let WriteOp::Write { path, data } = op
                 && path == &key
                 && let Ok(record) = postcard::from_bytes::<FactRecord>(data)
             {
-                return Self::hex_blob_hash(&record.blob_hash);
+                return Some(record);
             }
         }
         None
@@ -1820,22 +1809,28 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
         // The map answers this when the session has the record in hand. When it does
         // not, the medium answers it, because the guard has to hold for a volume this
         // session did not write: that is what the computed address is for.
-        let existing = match self.existing_fact_content_hash(&id) {
-            Some(hash) => Some(hash),
+        let existing = match self.existing_fact_record(&id) {
+            Some(record) => Some(record),
             // A record this session has written and not flushed is on neither the medium
             // nor a map a store without one keeps.
-            None => match self.pending_fact_content_hash(&id) {
-                Some(hash) => Some(hash),
+            None => match self.pending_fact_record(&id) {
+                Some(record) => Some(record),
                 None => self
-                    .medium_fact_content_hash(&id)
+                    .medium_fact_record(&id)
                     .await
                     .map_err(|e| BlackboardError::Internal(format!("read fact {id}: {e}")))?,
             },
         };
-        if let Some(existing_hash) = existing {
-            if existing_hash != fact.content_hash {
+        if let Some(record) = existing {
+            // The address is a function of content, origin, and creator, but the digest
+            // is taken over concatenated fields, so two different triples can reach one
+            // address. The first record wins and the second is a conflict rather than a
+            // silent retry, so the store never holds one record for two identities.
+            let same_content = Self::hex_blob_hash(&record.blob_hash) == Some(fact.content_hash);
+            let same_identity = record.origin == fact.origin && record.creator == fact.creator;
+            if !same_content || !same_identity {
                 return Err(BlackboardError::Conflict(format!(
-                    "fact id {id} already exists with a different content_hash"
+                    "fact id {id} already exists with a different content_hash or identity"
                 )));
             }
             return Ok(fact.id);

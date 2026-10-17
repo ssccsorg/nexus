@@ -171,3 +171,30 @@ fn a_volume_another_session_wrote_reports_the_conflict_from_the_medium() {
     let state = block_on(reader.read_state());
     assert_eq!(state.facts[0].content.data, b"the first content");
 }
+
+#[test]
+fn a_different_identity_at_a_colliding_address_is_a_conflict() {
+    let medium = MemoryIo::default();
+    let storage = FihStorage::new(medium, "submit");
+
+    // The digest is taken over concatenated fields, so these two identities reach one
+    // address. The store must keep the first and refuse the second rather than accept
+    // the second as an idempotent retry of the first.
+    let first = Fact::new("ab".into(), Content::from("the same payload"), "c".into());
+    let shifted = Fact::with_id(
+        first.id,
+        "a".into(),
+        Content::from("the same payload"),
+        "bc".into(),
+    );
+    assert_eq!(first.id, shifted.id, "the addresses collide");
+
+    submit(&storage, &first).expect("the first fact is accepted");
+    let error = submit(&storage, &shifted).expect_err("the second identity is refused");
+    assert!(matches!(error, BlackboardError::Conflict(_)), "{error:?}");
+
+    let state = block_on(storage.read_state());
+    assert_eq!(state.facts.len(), 1);
+    assert_eq!(state.facts[0].origin, "ab");
+    assert_eq!(state.facts[0].creator, "c");
+}
