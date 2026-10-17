@@ -2197,7 +2197,11 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             }
         };
 
-        let conclusion_id = CoordId::from_label(&format!("f_concl_{}", intent_id)).to_string();
+        // The conclusion record belongs to the intent, so its address and origin come
+        // from the record's canonical id rather than from the spelling the caller used.
+        // Two spellings of one intent must not produce two conclusion facts.
+        let intent_label = format!("f_concl_{}", record.id);
+        let conclusion_id = CoordId::from_label(&intent_label).to_string();
         let content_data = result.as_bytes().to_vec();
         let content_hash = {
             let mut h = sha2::Sha256::new();
@@ -2207,7 +2211,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         let new_fact = Fact {
             id: CoordId::resolve(&conclusion_id),
             content_hash,
-            origin: format!("conclusion:{}", intent_id),
+            origin: format!("conclusion:{}", record.id),
             content: Content {
                 mime_type: "text/plain".into(),
                 data: result.as_bytes().to_vec(),

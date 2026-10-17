@@ -288,10 +288,10 @@ fn ids(names: &[&str]) -> Vec<String> {
 
 /// The fact a concluded intent produces, which is a record like any other.
 ///
-/// The conclusion id is derived from the reference the caller passed to
-/// `conclude_intent`, so the test uses the same label it concluded with.
+/// The conclusion is addressed by the intent's canonical id, so the helper resolves the
+/// label the test concluded with before deriving the id.
 fn conclusion_fact() -> String {
-    CoordId::resolve("f_concl_i_third").to_string()
+    CoordId::resolve(&format!("f_concl_{}", CoordId::resolve("i_third"))).to_string()
 }
 
 fn read(storage: &FihStorage<MemoryIo>, filter: StateFilter) -> BoardState {
@@ -720,7 +720,10 @@ fn a_partition_scan_returns_the_records_that_name_it() {
     assert_eq!(concluded.worker.as_deref(), Some("worker/gamma"));
     assert_eq!(
         concluded.to_fact_id,
-        Some(CoordId::resolve("f_concl_i_gamma"))
+        Some(CoordId::resolve(&format!(
+            "f_concl_{}",
+            CoordId::resolve("i_gamma")
+        )))
     );
     assert!(concluded.is_concluded);
     assert_eq!(concluded.concluded_at, Some((S0 + 4) * 1_000_000_000));
