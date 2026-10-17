@@ -141,6 +141,11 @@ fn evicting_stale_intents_keeps_the_claimed_one_and_the_medium_agrees() {
     assert_eq!(state.intents.len(), 1);
     assert_eq!(state.intents[0].id, claimed.id);
     assert_eq!(state.intents[0].worker.as_deref(), Some("worker"));
+    assert_eq!(
+        storage.intents_by_fact(&base.id.to_string()),
+        vec![claimed.id.to_string()],
+        "the evicted intent is unlinked and the claimed one remains"
+    );
 
     block_on(storage.flush_pending()).expect("the delete reaches the medium");
     assert!(
