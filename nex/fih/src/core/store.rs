@@ -294,7 +294,6 @@ pub struct FihStorage<I: FileIo> {
     clock: Box<dyn Now + Send + Sync>,
     /// When true, every write operation also flushes pending ops to IO
     /// immediately, ensuring durability at the cost of batching.
-    #[expect(dead_code)]
     auto_flush: bool,
     /// Whether this store keeps the record maps. A store without them holds nothing about
     /// the volume, which is what the reference path asks for: its writes reach the medium
@@ -712,6 +711,14 @@ impl<I: FileIo> FihStorage<I> {
         // The record maps are populated by the place_* calls above; the
         // pre-merge entity stores are gone (L2 restructure, #176).
 
+        Ok(())
+    }
+
+    /// Flush pending writes when the store was opened for durability on every write.
+    async fn flush_if_auto(&self) -> Result<(), String> {
+        if self.auto_flush {
+            self.flush_pending().await?;
+        }
         Ok(())
     }
 
@@ -1928,6 +1935,10 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
                 .ok();
         }
 
+        self.flush_if_auto()
+            .await
+            .map_err(BlackboardError::Internal)?;
+
         Ok(fact.id)
     }
 }
@@ -1959,6 +1970,11 @@ impl<I: FileIo> crate::AsyncHintCapable for FihStorage<I> {
             },
         );
         self.pending.borrow_mut().push(op);
+
+        self.flush_if_auto()
+            .await
+            .map_err(BlackboardError::Internal)?;
+
         Ok(())
     }
 }
@@ -2028,6 +2044,11 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
 
         self.place_intent(&record);
         self.pending.borrow_mut().push(op);
+
+        self.flush_if_auto()
+            .await
+            .map_err(BlackboardError::Internal)?;
+
         Ok(intent.id)
     }
 
@@ -2611,6 +2632,7 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
         self.hint_records
             .borrow_mut()
             .retain(|_, r| r.submitted_at >= before_secs);
+        self.flush_if_auto().await?;
         Ok(evicted)
     }
 
@@ -2643,6 +2665,7 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
         self.intent_records
             .borrow_mut()
             .retain(|_, r| !(matches!(r.status, IntentStatus::Submitted) && r.created_at < cutoff));
+        self.flush_if_auto().await?;
         Ok(evicted)
     }
 }
