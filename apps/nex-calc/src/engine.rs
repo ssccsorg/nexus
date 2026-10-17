@@ -320,16 +320,13 @@ impl CalcEngine {
         let id = make_hint_id(&constraint);
         let id_str = id.to_string();
         if !self.storage.hint_exists(&id_str) {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
+            let now = nanos();
             let record = Record::Hint {
                 content: constraint.to_string(),
                 creator: "user".into(),
                 submitted_at: now,
             };
-            let path = structural_path(2u16, "", "user", 0u16, now * 1_000_000_000);
+            let path = structural_path(2u16, "", "user", 0u16, now);
             self.storage.place_record(&path, &id_str, record);
         }
         id
@@ -339,7 +336,7 @@ impl CalcEngine {
         let ids: Vec<String> = self.storage.all_hint_ids();
         for id_str in ids {
             if let Some((_content, _creator, submitted_at)) = self.storage.get_hint_by_id(&id_str) {
-                let path = structural_path(2u16, "", "user", 0u16, submitted_at * 1_000_000_000);
+                let path = structural_path(2u16, "", "user", 0u16, submitted_at);
                 self.storage.vacate_record(&path, &id_str);
             }
         }

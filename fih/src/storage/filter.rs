@@ -24,7 +24,10 @@ pub struct StateFilter {
     pub fact_ids: Option<Vec<String>>,
     pub intent_ids: Option<Vec<String>>,
     pub hint_ids: Option<Vec<String>>,
+    /// Lower bound on the structural time axis, in nanoseconds since the UNIX epoch.
+    /// The public intent model reports seconds; this bound filters records.
     pub since: Option<String>,
+    /// Upper bound on the structural time axis, in nanoseconds since the UNIX epoch.
     pub until: Option<String>,
     pub limit: Option<usize>,
     pub offset: Option<usize>,

@@ -45,6 +45,7 @@ pub enum IntentStatus {
     /// A worker has claimed this intent and is actively working on it.
     Claimed {
         worker: String,
+        /// The last heartbeat, in nanoseconds since the UNIX epoch.
         last_heartbeat_at: u64,
     },
     /// A worker has concluded this intent, producing a result Fact.
@@ -64,6 +65,7 @@ pub struct IntentRecord {
     pub description_hash: BlobHash, // → blob/{hash}.bin
     pub creator: String,
     pub status: IntentStatus,
+    /// When the intent was created, in nanoseconds since the UNIX epoch.
     pub created_at: u64,
 }
 
@@ -73,6 +75,7 @@ pub struct HintRecord {
     pub id: String,
     pub content: String,
     pub creator: String,
+    /// When the hint was submitted, in nanoseconds since the UNIX epoch.
     pub submitted_at: u64,
     pub ttl_secs: Option<u64>, // None = permanent
 }

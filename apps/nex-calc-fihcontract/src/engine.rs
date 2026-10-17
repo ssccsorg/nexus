@@ -335,10 +335,7 @@ impl CalcEngine {
                 id: id_str.clone(),
                 content: constraint.to_string(),
                 creator: "user".into(),
-                submitted_at: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs(),
+                submitted_at: nanos(),
                 ttl_secs: None,
             };
             self.storage.hint_records.borrow_mut().insert(id_str, record);

@@ -18,8 +18,8 @@ use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
 use nex_fih::{
     AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncHintCapable, AsyncIntentCapable,
-    AsyncScanCapable, BoardState, Content, CoordId, Fact, FihStorage, Hint, Intent, Now,
-    PartitionData, StateFilter,
+    AsyncScanCapable, BoardState, Content, CoordId, Fact, FihStorage, Hint, Intent, IntentStatus,
+    Now, PartitionData, StateFilter,
 };
 
 /// An in-memory medium shared by every storage that holds a clone of it.
@@ -572,6 +572,42 @@ fn paging_applies_to_every_kind_at_once() {
     assert!(state.facts.is_empty());
     assert!(state.intents.is_empty());
     assert!(state.hints.is_empty());
+}
+
+#[test]
+fn the_model_reports_seconds_while_the_record_reports_nanoseconds() {
+    // The model and the JSON wire form report seconds. The by-name record APIs keep the
+    // storage unit, which is nanoseconds, so the boundary is explicit on both sides.
+    let (_, storage) = lifecycle_volume();
+    let canonical = CoordId::resolve("i_third").to_string();
+
+    let state = read(&storage, StateFilter::default());
+    let concluded = find_intent(&state, "i_third");
+    assert_eq!(concluded.created_at, Some(S0 + 4));
+    assert_eq!(concluded.concluded_at, Some(S0 + 40));
+    let wire = serde_json::to_value(concluded).expect("the intent serializes");
+    assert_eq!(wire["created_at"].as_u64(), Some(S0 + 4));
+    assert_eq!(wire["concluded_at"].as_u64(), Some(S0 + 40));
+
+    let (record, _) = block_on(storage.get_intent("i_third")).expect("the record");
+    assert_eq!(record.created_at, (S0 + 4) * 1_000_000_000);
+    match record.status {
+        IntentStatus::Concluded { concluded_at, .. } => {
+            assert_eq!(concluded_at, (S0 + 40) * 1_000_000_000)
+        }
+        other => panic!("the intent is not concluded: {other:?}"),
+    }
+
+    let (_, _, _, status, created_at) = storage
+        .get_intent_by_id(&canonical)
+        .expect("the record map holds the status");
+    assert_eq!(created_at, (S0 + 4) * 1_000_000_000);
+    match status {
+        IntentStatus::Concluded { concluded_at, .. } => {
+            assert_eq!(concluded_at, (S0 + 40) * 1_000_000_000)
+        }
+        other => panic!("the intent is not concluded: {other:?}"),
+    }
 }
 
 #[test]

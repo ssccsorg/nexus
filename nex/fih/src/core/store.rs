@@ -95,6 +95,7 @@ pub enum Record {
         content_hash: FihHash,
         origin: String,
         creator: String,
+        /// Submission time in nanoseconds since the UNIX epoch.
         submitted_at: u64,
     },
     Intent {
@@ -102,11 +103,13 @@ pub enum Record {
         description_hash: String,
         creator: String,
         status: IntentStatus,
+        /// Creation time in nanoseconds since the UNIX epoch.
         created_at: u64,
     },
     Hint {
         content: String,
         creator: String,
+        /// Submission time in nanoseconds since the UNIX epoch.
         submitted_at: u64,
     },
 }
@@ -594,14 +597,14 @@ impl<I: FileIo> FihStorage<I> {
                     last_heartbeat_at: match &r.status {
                         IntentStatus::Claimed {
                             last_heartbeat_at, ..
-                        } => Some(*last_heartbeat_at),
+                        } => Some(nanos_to_secs(*last_heartbeat_at)),
                         _ => None,
                     },
-                    created_at: Some(r.created_at),
+                    created_at: Some(nanos_to_secs(r.created_at)),
                     is_concluded: matches!(r.status, IntentStatus::Concluded { .. }),
                     concluded_at: match &r.status {
                         IntentStatus::Concluded { concluded_at, .. } => {
-                            Some(conclusion_secs(*concluded_at))
+                            Some(nanos_to_secs(*concluded_at))
                         }
                         _ => None,
                     },
@@ -641,8 +644,9 @@ impl<I: FileIo> FihStorage<I> {
         let mut facts: Vec<(String, FactRecord)> = Vec::new();
         for key in fact_keys {
             if let Some(bytes) = self.io.read(&key).await?
-                && let Ok(record) = postcard::from_bytes::<FactRecord>(&bytes)
+                && let Ok(mut record) = postcard::from_bytes::<FactRecord>(&bytes)
             {
+                record.submitted_at = to_nanos(record.submitted_at);
                 facts.push((record.id.clone(), record));
             }
         }
@@ -651,8 +655,9 @@ impl<I: FileIo> FihStorage<I> {
         let mut intents: Vec<(String, IntentRecord)> = Vec::new();
         for key in intent_keys {
             if let Some(bytes) = self.io.read(&key).await?
-                && let Ok(record) = postcard::from_bytes::<IntentRecord>(&bytes)
+                && let Ok(mut record) = postcard::from_bytes::<IntentRecord>(&bytes)
             {
+                record.created_at = to_nanos(record.created_at);
                 intents.push((record.id.clone(), record));
             }
         }
@@ -661,8 +666,9 @@ impl<I: FileIo> FihStorage<I> {
         let mut hints: Vec<(String, HintRecord)> = Vec::new();
         for key in hint_keys {
             if let Some(bytes) = self.io.read(&key).await?
-                && let Ok(record) = postcard::from_bytes::<HintRecord>(&bytes)
+                && let Ok(mut record) = postcard::from_bytes::<HintRecord>(&bytes)
             {
+                record.submitted_at = to_nanos(record.submitted_at);
                 hints.push((record.id.clone(), record));
             }
         }
@@ -1093,21 +1099,15 @@ impl<I: FileIo> FihStorage<I> {
     }
 
     /// CoordPath<6> for an intent record under the given status: entity=1,
-    /// status axis 0/1/2 (Submitted/Claimed/Concluded). `created_at` is
-    /// stored in seconds; the path time axis is nanoseconds.
+    /// status axis 0/1/2 (Submitted/Claimed/Concluded). `created_at` is a
+    /// nanosecond timestamp and is used as the path time axis directly.
     fn intent_path_with(record: &IntentRecord, status: &IntentStatus) -> tagma_core::CoordPath<6> {
         let status_coord = match status {
             IntentStatus::Submitted => 0u16,
             IntentStatus::Claimed { .. } => 1u16,
             IntentStatus::Concluded { .. } => 2u16,
         };
-        structural_path(
-            1u16,
-            "",
-            &record.creator,
-            status_coord,
-            record.created_at * 1_000_000_000,
-        )
+        structural_path(1u16, "", &record.creator, status_coord, record.created_at)
     }
 
     /// CoordPath<6> for an intent record under its current status.
@@ -1115,16 +1115,10 @@ impl<I: FileIo> FihStorage<I> {
         Self::intent_path_with(record, &record.status)
     }
 
-    /// CoordPath<6> for a hint record: entity=2. `submitted_at` is stored
-    /// in seconds; the path time axis is nanoseconds.
+    /// CoordPath<6> for a hint record: entity=2. `submitted_at` is a
+    /// nanosecond timestamp and is used as the path time axis directly.
     fn hint_path(record: &HintRecord) -> tagma_core::CoordPath<6> {
-        structural_path(
-            2u16,
-            "",
-            &record.creator,
-            0u16,
-            record.submitted_at * 1_000_000_000,
-        )
+        structural_path(2u16, "", &record.creator, 0u16, record.submitted_at)
     }
 
     /// Place an intent in the record layer under its current status.
@@ -1187,7 +1181,10 @@ impl<I: FileIo> FihStorage<I> {
             return Ok(None);
         };
         match postcard::from_bytes::<FactRecord>(&bytes) {
-            Ok(record) => Ok(Some(record)),
+            Ok(mut record) => {
+                record.submitted_at = to_nanos(record.submitted_at);
+                Ok(Some(record))
+            }
             Err(error) => Err(format!("decode {key}: {error}")),
         }
     }
@@ -1211,7 +1208,10 @@ impl<I: FileIo> FihStorage<I> {
             return Ok(None);
         };
         match postcard::from_bytes::<IntentRecord>(&bytes) {
-            Ok(record) => Ok(Some(record)),
+            Ok(mut record) => {
+                record.created_at = to_nanos(record.created_at);
+                Ok(Some(record))
+            }
             Err(error) => Err(format!("decode {key}: {error}")),
         }
     }
@@ -1223,7 +1223,10 @@ impl<I: FileIo> FihStorage<I> {
             return Ok(None);
         };
         match postcard::from_bytes::<HintRecord>(&bytes) {
-            Ok(record) => Ok(Some(record)),
+            Ok(mut record) => {
+                record.submitted_at = to_nanos(record.submitted_at);
+                Ok(Some(record))
+            }
             Err(error) => Err(format!("decode {key}: {error}")),
         }
     }
@@ -1376,7 +1379,8 @@ impl<I: FileIo> FihStorage<I> {
     ///
     /// An intent the volume does not hold is `None`. A record the medium holds and this reader
     /// cannot decode is reported as absent, which is what the map reports for a record it never
-    /// saw.
+    /// saw. The returned record keeps the storage unit: `created_at` and the conclusion time are
+    /// nanoseconds. Read through `read_state` for the model's seconds.
     pub async fn get_intent(&self, id: &str) -> Option<(IntentRecord, Option<String>)> {
         let id = self.normalize_intent_id(id);
         let held = {
@@ -1429,7 +1433,8 @@ impl<I: FileIo> FihStorage<I> {
         }
     }
 
-    /// Get an intent by its ID (record-map lookup).
+    /// Get an intent by its ID (record-map lookup). The returned `created_at` and the
+    /// status's conclusion time are nanoseconds, the storage unit.
     pub fn get_intent_by_id(
         &self,
         id: &str,
@@ -1684,10 +1689,21 @@ fn simple_status_key(status: &IntentStatus) -> &'static str {
     }
 }
 
-/// The public intent model reports seconds; the record stores the conclusion in
-/// nanoseconds, the unit `Now::now_nanos` supplies.
-fn conclusion_secs(nanos: u64) -> u64 {
+/// The public model reports seconds; every stored record timestamp is nanoseconds.
+fn nanos_to_secs(nanos: u64) -> u64 {
     nanos / 1_000_000_000
+}
+
+/// A record written before the nanosecond convention holds seconds. Seconds stay below
+/// 1e12 until the year 33658 and nanoseconds passed it in 1970, so the threshold
+/// separates the two for any record this project can hold. Apply this only where bytes
+/// enter from the medium, never to a value a live clock produced.
+fn to_nanos(value: u64) -> u64 {
+    if value < 1_000_000_000_000 {
+        value.saturating_mul(1_000_000_000)
+    } else {
+        value
+    }
 }
 
 fn content_hash(data: &[u8]) -> String {
@@ -1968,7 +1984,7 @@ impl<I: FileIo> crate::AsyncHintCapable for FihStorage<I> {
             id: hint.id.to_string(),
             content: hint.content.clone(),
             creator: hint.creator.clone(),
-            submitted_at: self.clock.now_secs(),
+            submitted_at: self.clock.now_nanos(),
             ttl_secs: None,
         };
         let bytes =
@@ -2050,7 +2066,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             description_hash,
             creator: intent.creator.clone(),
             status: super::record::IntentStatus::Submitted,
-            created_at: self.clock.now_secs(),
+            created_at: self.clock.now_nanos(),
         };
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -2084,7 +2100,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         let mut record = postcard::from_bytes::<IntentRecord>(&bytes)
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
-        let now = self.clock.now_secs();
+        let now = self.clock.now_nanos();
         let old_status = record.status.clone();
         let new_status = record.status.try_claim(agent, now).map_err(|e| {
             if e.starts_with("already claimed") {
@@ -2127,7 +2143,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         let mut record = postcard::from_bytes::<IntentRecord>(&bytes)
             .map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
-        let now = self.clock.now_secs();
+        let now = self.clock.now_nanos();
         let old_status = record.status.clone();
         let new_status = record.status.try_heartbeat(agent, now).map_err(|e| {
             if e.contains("not") {
@@ -2460,7 +2476,7 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                 {
                     return false;
                 }
-                let created_ns = r.created_at * 1_000_000_000;
+                let created_ns = r.created_at;
                 if let Some(ts) = since
                     && created_ns < ts
                 {
@@ -2511,14 +2527,14 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                     last_heartbeat_at: match &r.status {
                         IntentStatus::Claimed {
                             last_heartbeat_at, ..
-                        } => Some(*last_heartbeat_at),
+                        } => Some(nanos_to_secs(*last_heartbeat_at)),
                         _ => None,
                     },
-                    created_at: Some(r.created_at),
+                    created_at: Some(nanos_to_secs(r.created_at)),
                     is_concluded: matches!(r.status, IntentStatus::Concluded { .. }),
                     concluded_at: match &r.status {
                         IntentStatus::Concluded { concluded_at, .. } => {
-                            Some(conclusion_secs(*concluded_at))
+                            Some(nanos_to_secs(*concluded_at))
                         }
                         _ => None,
                     },
@@ -2627,13 +2643,15 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
     }
 
     async fn evict_before(&self, before: &str) -> Result<u64, String> {
+        // The public bound is seconds; the records are nanoseconds.
         let before_secs: u64 = before.parse().unwrap_or(0);
+        let before_ns = before_secs.saturating_mul(1_000_000_000);
         let all: Vec<HintRecord> = self.hint_records.borrow().values().cloned().collect();
         let old_len = all.len();
         let mut kept = 0usize;
         let mut evict_keys = Vec::new();
         for record in all {
-            if record.submitted_at >= before_secs {
+            if record.submitted_at >= before_ns {
                 kept += 1;
             } else {
                 // read_state serves from the in-memory record maps, so
@@ -2650,14 +2668,14 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
         }
         self.hint_records
             .borrow_mut()
-            .retain(|_, r| r.submitted_at >= before_secs);
+            .retain(|_, r| r.submitted_at >= before_ns);
         self.flush_if_auto().await?;
         Ok(evicted)
     }
 
     async fn evict_stale_intents(&self, older_than_secs: u64) -> Result<u64, String> {
-        let now = self.clock.now_secs();
-        let cutoff = now.saturating_sub(older_than_secs);
+        let now = self.clock.now_nanos();
+        let cutoff = now.saturating_sub(older_than_secs.saturating_mul(1_000_000_000));
 
         let all: Vec<IntentRecord> = self.intent_records.borrow().values().cloned().collect();
         let old_len = all.len();
@@ -2756,14 +2774,14 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
                     last_heartbeat_at: match &r.status {
                         IntentStatus::Claimed {
                             last_heartbeat_at, ..
-                        } => Some(*last_heartbeat_at),
+                        } => Some(nanos_to_secs(*last_heartbeat_at)),
                         _ => None,
                     },
-                    created_at: Some(r.created_at),
+                    created_at: Some(nanos_to_secs(r.created_at)),
                     is_concluded: matches!(r.status, IntentStatus::Concluded { .. }),
                     concluded_at: match &r.status {
                         IntentStatus::Concluded { concluded_at, .. } => {
-                            Some(conclusion_secs(*concluded_at))
+                            Some(nanos_to_secs(*concluded_at))
                         }
                         _ => None,
                     },
