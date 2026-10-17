@@ -67,6 +67,10 @@ fn a_submitted_fact_reaches_a_semantic_store_as_text_without_features() {
     );
     block_on(storage.submit_fact(&fact)).expect("the fact is accepted");
 
+    assert!(
+        !storage.semantic_stores()[0].is_empty(),
+        "the default is_empty reads the store's own length"
+    );
     let calls = recorder.0.lock().unwrap();
     assert_eq!(calls.len(), 1);
     assert_eq!(
@@ -226,6 +230,11 @@ fn a_store_that_refuses_an_insert_reports_the_error_and_stays_registered() {
     let error =
         block_on(storage.semantic_insert(0, &TextLoad)).expect_err("the store refuses the record");
     assert_eq!(error, "no features available");
+    assert_eq!(
+        TextLoad.text(0).as_deref(),
+        Some("text"),
+        "text defaults to the content as UTF-8"
+    );
     assert_eq!(
         storage.semantic_stores().len(),
         1,
