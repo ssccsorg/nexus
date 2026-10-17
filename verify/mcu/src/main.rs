@@ -27,7 +27,7 @@ extern crate alloc;
 #[cfg(target_arch = "riscv32")]
 mod firmware {
     use alloc::boxed::Box;
-    use alloc::string::ToString;
+    use alloc::string::{String, ToString};
     use alloc::sync::Arc;
     use core::alloc::{GlobalAlloc, Layout};
     use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
@@ -36,7 +36,10 @@ mod firmware {
     use chton::io::FileIo;
     use critical_section::RawRestoreState;
     use nex_core::{EpochClock, Monotonic, Now};
-    use nex_fih::{AsyncFactCapable, AsyncStorageRead, BoardState, Content, Fact, FihStorage};
+    use nex_fih::{
+        AsyncFactCapable, AsyncHintCapable, AsyncStorageRead, BoardState, Content, CoordId, Fact,
+        FihStorage, Hint,
+    };
     use nexus_verify_support::{FlatIo, block_on};
 
     // ── Exit: SiFive test device on the virt machine ───────────────────
@@ -284,6 +287,8 @@ mod firmware {
         //    volume. This is the pair a memory-bounded consumer runs with nex-fih's default
         //    features off, so the target gate has to run it.
         let device = FlatIo::new();
+        let hint_id = CoordId::resolve("h_named");
+        let mut first_id: Option<String> = None;
         {
             let writer = FihStorage::without_maps(
                 device.clone(),
@@ -299,9 +304,22 @@ mod firmware {
                     },
                     "harness".into(),
                 );
-                if block_on(writer.submit_fact(&fact)).is_err() {
-                    test_exit(false);
+                let id = match block_on(writer.submit_fact(&fact)) {
+                    Ok(id) => id,
+                    Err(_) => test_exit(false),
+                };
+                if first_id.is_none() {
+                    first_id = Some(id.to_string());
                 }
+            }
+            if block_on(writer.submit_hint(&Hint {
+                id: hint_id,
+                content: "a hint".into(),
+                creator: "harness".into(),
+            }))
+            .is_err()
+            {
+                test_exit(false);
             }
             if block_on(writer.flush_pending()).is_err() {
                 test_exit(false);
@@ -365,6 +383,31 @@ mod firmware {
         }
         let made = device.traffic().since(before);
         require(stopped == 1);
+        require(made.reads == 1);
+
+        // The by-name reads answer from the medium at the key the identifier implies: a
+        // fact's framing is one read, and a hint carries its content in the record
+        // (issues #203, #205).
+        let fact_id = match first_id {
+            Some(id) => id,
+            None => test_exit(false),
+        };
+        let before = device.traffic();
+        let framing = match block_on(reader.get_fact_framing(&fact_id)) {
+            Some(record) => record,
+            None => test_exit(false),
+        };
+        let made = device.traffic().since(before);
+        require(framing.id == fact_id);
+        require(made.reads == 1);
+
+        let before = device.traffic();
+        let hint = match block_on(reader.get_hint(&hint_id.to_string())) {
+            Some(hint) => hint,
+            None => test_exit(false),
+        };
+        let made = device.traffic().since(before);
+        require(hint.content == "a hint");
         require(made.reads == 1);
 
         // A host reads the same volume through the maps, and the two have to agree about which

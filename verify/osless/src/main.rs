@@ -185,6 +185,10 @@ fn main() {
     // consumer runs (issue #213).
     device_read_path(epoch_secs);
 
+    // 8. The same store reads one named record at the key the identifier implies, which is
+    // the other half of the read path a device has (issues #203, #205, #213).
+    named_read_path(epoch_secs);
+
     println!("nexus-osless-verify: all OS-less surface checks passed");
 }
 
@@ -385,4 +389,99 @@ fn device_read_path(epoch_secs: u64) {
         landed.is_empty(),
         "the medium kept a write it had refused: {landed:?}"
     );
+}
+
+/// Reads by name on a store that keeps no maps.
+///
+/// A device that holds an identifier reaches one record at the key the identifier implies
+/// rather than enumerating the volume. What this holds is the shape of each read: a fact's
+/// framing is one medium read, its content is the framing and then its payload, an intent is
+/// its record and the description the record points at, and a hint carries its content in the
+/// record. An identifier the volume does not hold is absent rather than a read that invents a
+/// record.
+fn named_read_path(epoch_secs: u64) {
+    let medium = FlatIo::new();
+    let fact_id = CoordId::resolve("f_named");
+    let intent_id = CoordId::resolve("i_named");
+    let hint_id = CoordId::resolve("h_named");
+
+    {
+        let writer =
+            FihStorage::without_maps(medium.clone(), "osless/named", epoch_clock(epoch_secs));
+        let fact = Fact::with_id(
+            fact_id,
+            "osless/named".into(),
+            Content {
+                mime_type: "text/plain".into(),
+                data: b"a named fact".to_vec(),
+            },
+            "harness".into(),
+        );
+        block_on(writer.submit_fact(&fact)).expect("submit_fact");
+        // A store that keeps no maps answers the intent's check from the medium, so the
+        // fact the intent refers to has to be there before the intent is submitted.
+        block_on(writer.flush_pending()).expect("flush_pending");
+        let intent = Intent::new(
+            intent_id,
+            vec![fact_id],
+            None,
+            "the description the record points at".to_string(),
+            "harness".to_string(),
+        );
+        block_on(writer.submit_intent(&intent)).expect("submit_intent");
+        block_on(writer.submit_hint(&Hint {
+            id: hint_id,
+            content: "the hint's content".to_string(),
+            creator: "harness".to_string(),
+        }))
+        .expect("submit_hint");
+        block_on(writer.flush_pending()).expect("flush_pending");
+    }
+
+    // A later session that keeps nothing, which is what reads a volume it did not write.
+    let reader = FihStorage::without_maps(medium.clone(), "osless/named", epoch_clock(epoch_secs));
+
+    // A fact's framing is one medium read, and the payload is not among it.
+    let before = medium.traffic();
+    let framing = block_on(reader.get_fact_framing(&fact_id.to_string())).expect("the framing");
+    let made = medium.traffic().since(before);
+    assert_eq!(framing.id, fact_id.to_string());
+    assert_eq!(made.reads, 1, "a framing read is one key: {made:?}");
+
+    // The content reaches the same record and then its payload.
+    let before = medium.traffic();
+    let (content, _hash, origin, _creator) =
+        block_on(reader.get_fact_by_id(&fact_id.to_string())).expect("the fact");
+    let made = medium.traffic().since(before);
+    assert_eq!(content.data, b"a named fact");
+    assert_eq!(origin, "osless/named");
+    assert_eq!(
+        made.reads, 3,
+        "the content is its framing, the payload's metadata, and the payload: {made:?}"
+    );
+
+    // An intent is its record and the description the record points at.
+    let before = medium.traffic();
+    let (record, description) =
+        block_on(reader.get_intent(&intent_id.to_string())).expect("the intent");
+    let made = medium.traffic().since(before);
+    assert_eq!(record.id, intent_id.to_string());
+    assert_eq!(
+        description.as_deref(),
+        Some("the description the record points at")
+    );
+    assert_eq!(
+        made.reads, 3,
+        "the intent, the description's metadata, and the description: {made:?}"
+    );
+
+    // A hint carries its content in the record, so it is one read.
+    let before = medium.traffic();
+    let hint = block_on(reader.get_hint(&hint_id.to_string())).expect("the hint");
+    let made = medium.traffic().since(before);
+    assert_eq!(hint.content, "the hint's content");
+    assert_eq!(made.reads, 1, "a hint is one record: {made:?}");
+
+    // An identifier the volume does not hold is absent, not a record invented from a miss.
+    assert!(block_on(reader.get_fact_framing("f_absent")).is_none());
 }
