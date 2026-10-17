@@ -50,6 +50,7 @@ pub enum IntentStatus {
     /// A worker has concluded this intent, producing a result Fact.
     Concluded {
         to_fact: String, // FihHash of the conclusion Fact
+        /// When the conclusion happened, in nanoseconds since the UNIX epoch.
         concluded_at: u64,
         worker: String, // permanent record of who concluded
     },

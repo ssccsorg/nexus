@@ -600,7 +600,9 @@ impl<I: FileIo> FihStorage<I> {
                     created_at: Some(r.created_at),
                     is_concluded: matches!(r.status, IntentStatus::Concluded { .. }),
                     concluded_at: match &r.status {
-                        IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
+                        IntentStatus::Concluded { concluded_at, .. } => {
+                            Some(conclusion_secs(*concluded_at))
+                        }
                         _ => None,
                     },
                 });
@@ -1682,6 +1684,12 @@ fn simple_status_key(status: &IntentStatus) -> &'static str {
     }
 }
 
+/// The public intent model reports seconds; the record stores the conclusion in
+/// nanoseconds, the unit `Now::now_nanos` supplies.
+fn conclusion_secs(nanos: u64) -> u64 {
+    nanos / 1_000_000_000
+}
+
 fn content_hash(data: &[u8]) -> String {
     // SHA-256 content hash. WASM-compatible (sha2 crate works on wasm32).
     use sha2::{Digest, Sha256};
@@ -2509,7 +2517,9 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                     created_at: Some(r.created_at),
                     is_concluded: matches!(r.status, IntentStatus::Concluded { .. }),
                     concluded_at: match &r.status {
-                        IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
+                        IntentStatus::Concluded { concluded_at, .. } => {
+                            Some(conclusion_secs(*concluded_at))
+                        }
                         _ => None,
                     },
                 });
@@ -2752,7 +2762,9 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
                     created_at: Some(r.created_at),
                     is_concluded: matches!(r.status, IntentStatus::Concluded { .. }),
                     concluded_at: match &r.status {
-                        IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
+                        IntentStatus::Concluded { concluded_at, .. } => {
+                            Some(conclusion_secs(*concluded_at))
+                        }
                         _ => None,
                     },
                 });

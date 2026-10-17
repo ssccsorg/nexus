@@ -604,8 +604,9 @@ fn a_reopened_volume_materializes_content_from_the_medium() {
         Some(CoordId::resolve(&conclusion_fact()))
     );
     assert!(concluded.is_concluded);
-    // The conclusion time is the nanosecond clock the engine stamped the fact with.
-    assert_eq!(concluded.concluded_at, Some((S0 + 40) * 1_000_000_000));
+    // The public model reports seconds, the same unit as `created_at`.
+    assert_eq!(concluded.created_at, Some(S0 + 4));
+    assert_eq!(concluded.concluded_at, Some(S0 + 40));
 
     let claimed = find_intent(&state, "i_fourth");
     assert_eq!(claimed.worker.as_deref(), Some("worker/two"));
@@ -726,7 +727,8 @@ fn a_partition_scan_returns_the_records_that_name_it() {
         )))
     );
     assert!(concluded.is_concluded);
-    assert_eq!(concluded.concluded_at, Some((S0 + 4) * 1_000_000_000));
+    assert_eq!(concluded.created_at, Some(S0 + 2));
+    assert_eq!(concluded.concluded_at, Some(S0 + 4));
 
     let beta = block_on(storage.scan_partition("beta")).expect("the scan succeeds");
     assert_eq!(fact_ids(&beta), ids(&["f_beta"]));

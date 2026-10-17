@@ -519,9 +519,12 @@ pub struct Intent {
     pub description: String,
     pub creator: String,
     pub worker: Option<String>,
+    /// The last heartbeat, in seconds since the UNIX epoch.
     pub last_heartbeat_at: Option<u64>,
+    /// When the intent was created, in seconds since the UNIX epoch.
     pub created_at: Option<u64>,
     pub is_concluded: bool,
+    /// When the intent concluded, in seconds since the UNIX epoch.
     pub concluded_at: Option<u64>,
 }
 
