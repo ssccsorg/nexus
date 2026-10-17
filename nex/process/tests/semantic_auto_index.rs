@@ -326,3 +326,36 @@ fn a_rebuild_skips_a_fact_with_no_readable_text() {
         "a rebuild indexes only facts with text"
     );
 }
+
+#[test]
+fn a_live_index_resolves_to_the_record_it_indexed() {
+    let recorder = Recorder::default();
+    let storage = storage_with(&recorder);
+    let mut held: Vec<(String, String)> = Vec::new();
+    for id in ["f_one", "f_two", "f_three"] {
+        let fact = Fact::with_id(
+            CoordId::resolve(id),
+            "origin/one".into(),
+            Content::from(id),
+            "agent".into(),
+        );
+        block_on(storage.submit_fact(&fact)).expect("the fact is accepted");
+        held.push((fact.id.to_string(), id.to_string()));
+    }
+
+    let calls = recorder.0.lock().unwrap();
+    assert_eq!(calls.len(), 3);
+    for call in calls.iter() {
+        let resolved = storage.resolve_semantic_idx(call.id);
+        let expected = held
+            .iter()
+            .find(|(id, _)| *id == resolved)
+            .map(|(_, text)| text.as_bytes());
+        assert_eq!(
+            call.text.as_deref(),
+            expected,
+            "live index {} resolved to {resolved}",
+            call.id
+        );
+    }
+}

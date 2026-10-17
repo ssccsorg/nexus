@@ -246,28 +246,18 @@ fn the_inverse_index_answers_by_fact_and_keeps_concluded_intents() {
 }
 
 #[test]
-fn a_semantic_index_resolves_within_range_and_empty_outside() {
+fn a_semantic_index_is_empty_without_a_registered_store() {
+    // An index is assigned when a fact is handed to a semantic store. With none
+    // registered there is no index, so a lookup has nothing to resolve.
     let storage = FihStorage::new(MemoryIo::default(), "by-name");
-    let mut submitted = Vec::new();
-    for id in ["f_one", "f_two"] {
-        let fact = Fact::with_id(
-            CoordId::resolve(id),
-            "origin/one".into(),
-            Content::from(id),
-            "agent".into(),
-        );
-        block_on(storage.submit_fact(&fact)).expect("the fact is accepted");
-        submitted.push(fact.id.to_string());
-    }
-    submitted.sort_unstable();
-
-    let mut resolved: Vec<String> = (0..2)
-        .map(|idx| storage.resolve_semantic_idx(idx))
-        .collect();
-    resolved.sort_unstable();
-    assert_eq!(
-        resolved, submitted,
-        "every index resolves to a submitted fact"
+    let fact = Fact::with_id(
+        CoordId::resolve("f_one"),
+        "origin/one".into(),
+        Content::from("one"),
+        "agent".into(),
     );
+    block_on(storage.submit_fact(&fact)).expect("the fact is accepted");
+
+    assert_eq!(storage.resolve_semantic_idx(0), "");
     assert_eq!(storage.resolve_semantic_idx(99), "");
 }

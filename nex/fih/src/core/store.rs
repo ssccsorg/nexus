@@ -338,8 +338,10 @@ pub struct FihStorage<I: FileIo> {
     blob_cache_cap: Cell2<usize>,
     // Semantic stores (for similarity search).
     semantic_stores: Cell2<Vec<crate::semantic::DynSemanticStore>>,
-    /// Counter for assigning semantic IDs to facts incrementally.
-    semantic_id_counter: Cell2<u32>,
+    /// The fact id each semantic index was assigned to, in index order. The store
+    /// reports matches by index, so this is the only thing that can resolve one back
+    /// to a record without depending on map iteration order.
+    semantic_ids: Cell2<Vec<String>>,
     // Pending writes (for FihSession coordination).
     pub(crate) pending: Cell2<Vec<WriteOp>>,
 }
@@ -438,7 +440,7 @@ impl<I: FileIo> FihStorage<I> {
             blob_cache_order: Cell2::new(VecDeque::new()),
             blob_cache_cap: Cell2::new(BLOB_CACHE_CAP),
             semantic_stores: Cell2::new(Vec::new()),
-            semantic_id_counter: Cell2::new(0u32),
+            semantic_ids: Cell2::new(Vec::new()),
             pending: Cell2::new(Vec::new()),
         }
     }
@@ -762,6 +764,10 @@ impl<I: FileIo> FihStorage<I> {
         }
 
         let facts: Vec<FactRecord> = self.fact_records.borrow().values().cloned().collect();
+        // The index is assigned in the order this rebuild walks the records, so the
+        // list is replaced rather than extended: an id from before the rebuild names a
+        // position the new index may not use.
+        self.semantic_ids.borrow_mut().clear();
         struct TextRecord {
             text: String,
         }
@@ -774,7 +780,7 @@ impl<I: FileIo> FihStorage<I> {
             }
         }
 
-        for (i, r) in facts.iter().enumerate() {
+        for r in facts.iter() {
             let content = load_blob(&self.io, &r.blob_hash).await;
             if content.data.is_empty() {
                 continue;
@@ -783,9 +789,15 @@ impl<I: FileIo> FihStorage<I> {
             if text.trim().is_empty() {
                 continue;
             }
+            let idx = {
+                let mut ids = self.semantic_ids.borrow_mut();
+                let idx = ids.len() as u32;
+                ids.push(r.id.clone());
+                idx
+            };
             let load = TextRecord { text };
             for store in stores.iter_mut() {
-                let _ = store.insert(i as u32, &load).await;
+                let _ = store.insert(idx, &load).await;
             }
         }
 
@@ -1129,12 +1141,14 @@ impl<I: FileIo> FihStorage<I> {
     }
 
     /// Resolve a semantic index back to its ID string.
+    ///
+    /// A store reports matches by the index it was given, so the mapping is the list
+    /// built when the record was indexed rather than a position in the record maps.
     pub fn resolve_semantic_idx(&self, idx: u32) -> String {
-        self.needs_maps("a semantic index lookup");
-        let records: Vec<FactRecord> = self.fact_records.borrow().values().cloned().collect();
-        records
+        self.semantic_ids
+            .borrow()
             .get(idx as usize)
-            .map(|r| r.id.clone())
+            .cloned()
             .unwrap_or_default()
     }
 
@@ -1911,11 +1925,11 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
         self.pending.borrow_mut().push(op);
 
         // Auto-index into semantic stores (skip conclusion facts to reduce noise)
-        if !fact.origin.starts_with("conclusion:") {
+        if !fact.origin.starts_with("conclusion:") && !self.semantic_stores.borrow().is_empty() {
             let semantic_idx = {
-                let mut ctr = self.semantic_id_counter.borrow_mut();
-                let idx = *ctr;
-                *ctr += 1;
+                let mut ids = self.semantic_ids.borrow_mut();
+                let idx = ids.len() as u32;
+                ids.push(record.id.clone());
                 idx
             };
             let text = String::from_utf8_lossy(&fact.content.data).to_string();
