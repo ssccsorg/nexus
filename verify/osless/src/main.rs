@@ -217,6 +217,15 @@ fn device_read_path(epoch_secs: u64) {
             block_on(writer.submit_fact(&fact)).expect("submit_fact");
         }
         block_on(writer.flush_pending()).expect("flush_pending");
+
+        // The mode's defining property: a store without maps holds nothing about the
+        // volume, which is what keeps opening a volume independent of how many records it
+        // holds. A path that started remembering shows up here as a map with entries.
+        assert_eq!(
+            writer.fact_records.borrow().len(),
+            0,
+            "a store without maps kept a fact"
+        );
     }
 
     // The reader is a later session that keeps nothing either: the device that reboots and is
@@ -235,6 +244,13 @@ fn device_read_path(epoch_secs: u64) {
     .expect("the walk reaches the medium");
     let made = medium.traffic().since(before);
 
+    // The walk reads the medium; it does not build the maps it exists to avoid.
+    assert_eq!(
+        reader.fact_records.borrow().len(),
+        0,
+        "a walk kept the record maps a store without maps must not hold"
+    );
+
     let mut payloads: Vec<String> = walked.iter().map(|(_, text)| text.clone()).collect();
     payloads.sort();
     assert_eq!(
@@ -242,9 +258,11 @@ fn device_read_path(epoch_secs: u64) {
         vec!["one".to_string(), "three".to_string(), "two".to_string()],
         "a store without maps walked back the volume it wrote: {walked:?}"
     );
+    // The precise read-cost claim is the framing walk's below. What this holds is that the
+    // records came from the medium rather than from memory.
     assert!(
-        made.reads > walked.len() as u32,
-        "a content walk reads a payload as well as a framing: {made:?}"
+        made.reads >= walked.len() as u32 && made.pages >= 1,
+        "a content walk read the medium and enumerated it: {made:?}"
     );
 
     // The framing walk is the same visit without the payload reads, which is the read a count

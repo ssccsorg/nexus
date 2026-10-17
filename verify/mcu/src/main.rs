@@ -306,6 +306,10 @@ mod firmware {
             if block_on(writer.flush_pending()).is_err() {
                 test_exit(false);
             }
+            // The mode's defining property: a store without maps holds nothing about the
+            // volume, which is what keeps opening a volume independent of how many records
+            // it holds.
+            require(writer.fact_records.borrow().is_empty());
         }
 
         let reader = FihStorage::without_maps(
@@ -329,6 +333,8 @@ mod firmware {
         }
         require(walked == 3);
         require(payload_bytes == 11); // "one" + "two" + "three"
+        // The walk reads the medium; it does not build the maps it exists to avoid.
+        require(reader.fact_records.borrow().is_empty());
 
         // The framing walk is the same visit without the payload reads: one key per record,
         // which is the read a count or an identifier listing spends.

@@ -194,6 +194,10 @@ run_test()   {
     # nowhere.
     cargo test -p nex-core -p nex-fih -p fih-model -- --nocapture 2>&1
     echo "---"
+    # The verification harness's own FileIo contract. The gates assert against it, so a break
+    # has to fail here rather than as a confusing scenario failure later.
+    cargo test -p nexus-verify-support 2>&1
+    echo "---"
     # build nex-server before integration tests; cargo test -p nexd does not
     # pull in the nex-server binary as a dependency
     cargo build -p nex-server 2>&1
