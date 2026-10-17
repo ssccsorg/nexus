@@ -1188,6 +1188,34 @@ impl<I: FileIo> FihStorage<I> {
         Ok(self.io.read(&FactRecord::fact_key(id)).await?.is_some())
     }
 
+    /// The intent the medium holds at `id`, if any.
+    ///
+    /// The address is the identifier the caller supplied, so the key follows from it: one
+    /// identifier is one read. A record the medium holds and this reader cannot decode is an
+    /// error rather than an absent record, which is the rule the fact's medium read carries.
+    async fn medium_intent_record(&self, id: &str) -> Result<Option<IntentRecord>, String> {
+        let key = IntentRecord::intent_key(&self.normalize_intent_id(id));
+        let Some(bytes) = self.io.read(&key).await? else {
+            return Ok(None);
+        };
+        match postcard::from_bytes::<IntentRecord>(&bytes) {
+            Ok(record) => Ok(Some(record)),
+            Err(error) => Err(format!("decode {key}: {error}")),
+        }
+    }
+
+    /// The hint the medium holds at `id`, if any.
+    async fn medium_hint_record(&self, id: &str) -> Result<Option<HintRecord>, String> {
+        let key = HintRecord::hint_key(&CoordId::resolve(id).to_string());
+        let Some(bytes) = self.io.read(&key).await? else {
+            return Ok(None);
+        };
+        match postcard::from_bytes::<HintRecord>(&bytes) {
+            Ok(record) => Ok(Some(record)),
+            Err(error) => Err(format!("decode {key}: {error}")),
+        }
+    }
+
     /// Content hash of the record this session has written at `id` and not yet flushed.
     ///
     /// A store that keeps no map has only the pending buffer between a write and the
@@ -1285,30 +1313,108 @@ impl<I: FileIo> FihStorage<I> {
     /// the persisted blob hash, so records placed by direct writers
     /// (nex-calc writes blobs to IO directly) are readable.
     pub async fn get_fact_by_id(&self, id: &str) -> Option<(Content, FihHash, String, String)> {
-        let held = {
-            let recs = self.fact_records.borrow();
-            recs.get(id).cloned()
-        };
-        let r = match held {
-            Some(record) => Some(record),
-            // A record the medium holds and this reader cannot decode is reported as
-            // absent, which is what the map reports for a record it never saw. The
-            // conflict guard is where a decode failure is fatal, because there the
-            // question is whether it is safe to write over.
-            None if !*self.maps.borrow() => match self.medium_fact_record(id).await {
-                Ok(record) => record,
-                Err(error) => {
-                    log::warn!("get_fact_by_id: {error}");
-                    None
-                }
-            },
-            None => None,
-        }?;
+        let r = self.get_fact_framing(id).await?;
         let content_hash = Self::blob_hash_or_zero(&r.blob_hash);
         let content = self
             .load_content_any(&r.blob_hash, "application/octet-stream")
             .await;
         Some((content, content_hash, r.origin.clone(), r.creator.clone()))
+    }
+
+    /// What a named fact says about itself: its identifier, its blob hash, its origin, its
+    /// creator, and when it was written.
+    ///
+    /// The lookup is the one [`FihStorage::get_fact_by_id`] makes, kept in one place so the
+    /// two reads cannot come to two records. The map answers for a volume the session holds,
+    /// and a store that keeps no map reads the medium at the key the identifier implies: the
+    /// address is computed, so one identifier is one read rather than a walk of the volume.
+    /// An identifier the volume does not hold is `None`.
+    ///
+    /// The content is what [`FihStorage::get_fact_by_id`] reads after the record. A caller
+    /// that wants the framing alone stops at the record, and on a device that is the medium
+    /// read it does not spend.
+    ///
+    /// A record the medium holds and this reader cannot decode is reported as absent, which is
+    /// what the map reports for a record it never saw. The conflict guard is where a decode
+    /// failure is fatal, because there the question is whether it is safe to write over.
+    pub async fn get_fact_framing(&self, id: &str) -> Option<FactRecord> {
+        let held = {
+            let recs = self.fact_records.borrow();
+            recs.get(id).cloned()
+        };
+        match held {
+            Some(record) => Some(record),
+            None if !*self.maps.borrow() => match self.medium_fact_record(id).await {
+                Ok(record) => record,
+                Err(error) => {
+                    log::warn!("get_fact_framing: {error}");
+                    None
+                }
+            },
+            None => None,
+        }
+    }
+
+    /// One named intent: its record and the description the record points at.
+    ///
+    /// The description is a blob the record holds a hash for, so it is a second read, and an
+    /// intent with no description has no hash and no read is made. The map answers for a volume
+    /// the session holds, and a store that keeps no map reads the medium at the key the
+    /// identifier implies, which is one read for the record and one for its description.
+    ///
+    /// An intent the volume does not hold is `None`. A record the medium holds and this reader
+    /// cannot decode is reported as absent, which is what the map reports for a record it never
+    /// saw.
+    pub async fn get_intent(&self, id: &str) -> Option<(IntentRecord, Option<String>)> {
+        let id = self.normalize_intent_id(id);
+        let held = {
+            let recs = self.intent_records.borrow();
+            recs.get(&id).cloned()
+        };
+        let record = match held {
+            Some(record) => record,
+            None if !*self.maps.borrow() => match self.medium_intent_record(&id).await {
+                Ok(record) => record?,
+                Err(error) => {
+                    log::warn!("get_intent: {error}");
+                    return None;
+                }
+            },
+            None => return None,
+        };
+        let description = if record.description_hash.is_empty() {
+            None
+        } else {
+            let content = self
+                .load_content_any(&record.description_hash, "text/plain")
+                .await;
+            Some(String::from_utf8_lossy(&content.data).into_owned())
+        };
+        Some((record, description))
+    }
+
+    /// One named hint, as its record states it.
+    ///
+    /// The content is in the record, so this is one read. The map answers for a volume the
+    /// session holds, and a store that keeps no map reads the medium at the key the identifier
+    /// implies. A hint the volume does not hold is `None`.
+    pub async fn get_hint(&self, id: &str) -> Option<HintRecord> {
+        let id = CoordId::resolve(id).to_string();
+        let held = {
+            let recs = self.hint_records.borrow();
+            recs.get(&id).cloned()
+        };
+        match held {
+            Some(record) => Some(record),
+            None if !*self.maps.borrow() => match self.medium_hint_record(&id).await {
+                Ok(record) => record,
+                Err(error) => {
+                    log::warn!("get_hint: {error}");
+                    None
+                }
+            },
+            None => None,
+        }
     }
 
     /// Get an intent by its ID (record-map lookup).

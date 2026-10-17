@@ -99,14 +99,26 @@ impl FactRecord {
 }
 
 impl IntentRecord {
+    /// The key an intent with this identifier lives at.
+    ///
+    /// The address is the identifier the caller supplied, so the key follows from it alone.
+    pub fn intent_key(id: &str) -> String {
+        format!("intents/i_{id}.intent")
+    }
+
     pub fn key(&self) -> String {
-        format!("intents/i_{}.intent", self.id)
+        Self::intent_key(&self.id)
     }
 }
 
 impl HintRecord {
+    /// The key a hint with this identifier lives at.
+    pub fn hint_key(id: &str) -> String {
+        format!("hints/h_{id}.hint")
+    }
+
     pub fn key(&self) -> String {
-        format!("hints/h_{}.hint", self.id)
+        Self::hint_key(&self.id)
     }
 
     pub fn is_expired(&self, now_secs: u64) -> bool {

@@ -8,8 +8,9 @@
 //
 // What these tests hold is that the mode is complete: a store without maps writes a volume
 // a later session reads, refuses an intent whose fact is absent and accepts one whose fact
-// is present, says so when something asks for an index it cannot build, and refuses the
-// reads that are the record maps rather than reporting an empty map as an empty volume.
+// is present, says so when something asks for an index it cannot build, reads a named intent or
+// hint from the medium with the description an intent points at, and refuses the reads that are
+// the record maps rather than reporting an empty map as an empty volume.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -18,7 +19,7 @@ use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
 use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, BlackboardError,
-    Content, CoordId, Fact, FihStorage, Hint, Intent,
+    Content, CoordId, Fact, FihStorage, Hint, Intent, IntentStatus,
 };
 
 /// An in-memory medium, shared by every storage that holds a clone of it.
@@ -149,6 +150,74 @@ fn a_store_without_maps_accepts_an_intent_whose_fact_is_on_the_medium() {
         "writer".to_string(),
     );
     block_on(reader.submit_intent(&intent)).expect("the intent is accepted");
+}
+
+/// A named intent is read from the medium, and its description with it.
+///
+/// The description is a blob the record points at, so a caller that wants what the intent says
+/// pays a second read; the record alone is the first. The map answers the same record, which is
+/// what makes the two modes one read rather than two.
+#[test]
+fn a_store_without_maps_reads_an_intent_and_its_description() {
+    let medium = MemoryIo::default();
+    let writer = without_maps(&medium);
+    let fact = submit(&writer, "the fact the intent starts from");
+    block_on(writer.flush_pending()).expect("the writes reach the medium");
+
+    let id = CoordId::resolve("i_read_by_name");
+    block_on(writer.submit_intent(&Intent::new(
+        id,
+        vec![fact],
+        None,
+        "what the intent is for".to_string(),
+        "writer".to_string(),
+    )))
+    .expect("the intent is accepted");
+    block_on(writer.flush_pending()).expect("the intent reaches the medium");
+
+    // A second session with no maps: the identifier is the key, so the record is one read and
+    // its description another.
+    let reader = without_maps(&medium);
+    let (record, description) =
+        block_on(reader.get_intent(&id.to_string())).expect("the medium holds the intent");
+
+    assert_eq!(record.id, id.to_string());
+    assert_eq!(record.from_facts, vec![fact.to_string()]);
+    assert_eq!(record.creator, "writer");
+    assert_eq!(record.status, IntentStatus::Submitted);
+    assert_eq!(description.as_deref(), Some("what the intent is for"));
+
+    // The map answers the same intent, which is what keeps the two modes one read.
+    block_on(reader.rebuild_cache()).expect("the maps are built");
+    let (held, held_description) =
+        block_on(reader.get_intent(&id.to_string())).expect("the map holds the intent");
+    assert_eq!(
+        held, record,
+        "the map and the medium answer different intents"
+    );
+    assert_eq!(held_description, description);
+}
+
+/// A named hint is read from the medium, and its content is in the record rather than beside it.
+#[test]
+fn a_store_without_maps_reads_a_hint() {
+    let medium = MemoryIo::default();
+    let writer = without_maps(&medium);
+    let id = CoordId::resolve("h_read_by_name");
+    block_on(writer.submit_hint(&Hint {
+        id,
+        content: "what the hint says".to_string(),
+        creator: "writer".to_string(),
+    }))
+    .expect("the hint is accepted");
+    block_on(writer.flush_pending()).expect("the hint reaches the medium");
+
+    let reader = without_maps(&medium);
+    let record = block_on(reader.get_hint(&id.to_string())).expect("the medium holds the hint");
+
+    assert_eq!(record.id, id.to_string());
+    assert_eq!(record.content, "what the hint says");
+    assert_eq!(record.creator, "writer");
 }
 
 #[test]
