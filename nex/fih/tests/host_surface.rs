@@ -140,10 +140,10 @@ fn a_bundle_from_a_later_version_is_refused() {
     let mut bundle = export_from_io(&SyncFileIo::new(source)).expect("the volume exports");
 
     // postcard encodes the u16 version as a one-byte varint at the start of the payload.
-    bundle[8] = 2;
+    bundle[8] = 3;
     let error = import_into_io(&SyncFileIo::new(MemoryIo::default()), &bundle)
         .expect_err("a later version is refused");
-    assert_eq!(error, "unsupported bundle version: 2");
+    assert_eq!(error, "unsupported bundle version: 3");
 }
 
 #[test]

@@ -24,7 +24,7 @@ use nex::storage::core::record::{ContentMeta, FactRecord, HintRecord, IntentReco
 use nex::storage::core::store::FihStorage;
 use nex::contract::fih::FihContract;
 use nex::io::FileIo;
-use nex_fih::{Content, CoordId, FihHash};
+use nex_fih::{Content, CoordId, FihHash, RecordTimeUnit};
 use nexus_storage_sim::SimIo;
 
 use crate::hint::Constraint;
@@ -197,6 +197,7 @@ impl CalcEngine {
             creator: "user".into(),
             status: IntentStatus::Submitted,
             created_at: now,
+            time_unit: RecordTimeUnit::Nanos,
         };
         self.storage.intent_records.borrow_mut().insert(id_str, record);
         Ok(id)
@@ -337,6 +338,7 @@ impl CalcEngine {
                 creator: "user".into(),
                 submitted_at: nanos(),
                 ttl_secs: None,
+                time_unit: RecordTimeUnit::Nanos,
             };
             self.storage.hint_records.borrow_mut().insert(id_str, record);
         }

@@ -60,7 +60,10 @@ use crate::{
 use nex_core::Now;
 
 use crate::core::index::Cell2;
-use crate::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
+use crate::core::record::{
+    ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus, RecordTimeUnit,
+    decode_hint_record, decode_intent_record,
+};
 use crate::io::file_io::{FileIo, WriteOp, default_apply_batch};
 use crate::semantic::record::{Query, RecordLoad};
 
@@ -654,9 +657,8 @@ impl<I: FileIo> FihStorage<I> {
         let mut intents: Vec<(String, IntentRecord)> = Vec::new();
         for key in intent_keys {
             if let Some(bytes) = self.io.read(&key).await?
-                && let Ok(mut record) = postcard::from_bytes::<IntentRecord>(&bytes)
+                && let Ok(record) = decode_intent_record(&bytes)
             {
-                record.created_at = to_nanos(record.created_at);
                 intents.push((record.id.clone(), record));
             }
         }
@@ -665,9 +667,8 @@ impl<I: FileIo> FihStorage<I> {
         let mut hints: Vec<(String, HintRecord)> = Vec::new();
         for key in hint_keys {
             if let Some(bytes) = self.io.read(&key).await?
-                && let Ok(mut record) = postcard::from_bytes::<HintRecord>(&bytes)
+                && let Ok(record) = decode_hint_record(&bytes)
             {
-                record.submitted_at = to_nanos(record.submitted_at);
                 hints.push((record.id.clone(), record));
             }
         }
@@ -987,6 +988,7 @@ impl<I: FileIo> FihStorage<I> {
                         creator: creator.clone(),
                         status: status.clone(),
                         created_at: *created_at,
+                        time_unit: RecordTimeUnit::Nanos,
                     },
                 );
                 // Link the inverse index: this intent references each
@@ -1013,6 +1015,7 @@ impl<I: FileIo> FihStorage<I> {
                         creator: creator.clone(),
                         submitted_at: *submitted_at,
                         ttl_secs: None,
+                        time_unit: RecordTimeUnit::Nanos,
                     },
                 );
             }
@@ -1203,11 +1206,8 @@ impl<I: FileIo> FihStorage<I> {
         let Some(bytes) = self.io.read(&key).await? else {
             return Ok(None);
         };
-        match postcard::from_bytes::<IntentRecord>(&bytes) {
-            Ok(mut record) => {
-                record.created_at = to_nanos(record.created_at);
-                Ok(Some(record))
-            }
+        match decode_intent_record(&bytes) {
+            Ok(record) => Ok(Some(record)),
             Err(error) => Err(format!("decode {key}: {error}")),
         }
     }
@@ -1218,11 +1218,8 @@ impl<I: FileIo> FihStorage<I> {
         let Some(bytes) = self.io.read(&key).await? else {
             return Ok(None);
         };
-        match postcard::from_bytes::<HintRecord>(&bytes) {
-            Ok(mut record) => {
-                record.submitted_at = to_nanos(record.submitted_at);
-                Ok(Some(record))
-            }
+        match decode_hint_record(&bytes) {
+            Ok(record) => Ok(Some(record)),
             Err(error) => Err(format!("decode {key}: {error}")),
         }
     }
@@ -1690,19 +1687,6 @@ fn nanos_to_secs(nanos: u64) -> u64 {
     nanos / 1_000_000_000
 }
 
-/// A record written before the nanosecond convention holds seconds. Seconds stay below
-/// 1e12 until the year 33658 and wall-clock nanoseconds passed it in 1970, so the
-/// threshold separates the two for a wall-clock epoch. A clock that starts at boot is
-/// below 1e12 too, so this is a migration for records that predate the convention, not
-/// a unit inference. Facts were already nanoseconds and are never lifted.
-fn to_nanos(value: u64) -> u64 {
-    if value < 1_000_000_000_000 {
-        value.saturating_mul(1_000_000_000)
-    } else {
-        value
-    }
-}
-
 fn content_hash(data: &[u8]) -> String {
     // SHA-256 content hash. WASM-compatible (sha2 crate works on wasm32).
     use sha2::{Digest, Sha256};
@@ -1983,6 +1967,7 @@ impl<I: FileIo> crate::AsyncHintCapable for FihStorage<I> {
             creator: hint.creator.clone(),
             submitted_at: self.clock.now_nanos(),
             ttl_secs: None,
+            time_unit: RecordTimeUnit::Nanos,
         };
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -2064,6 +2049,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             creator: intent.creator.clone(),
             status: super::record::IntentStatus::Submitted,
             created_at: self.clock.now_nanos(),
+            time_unit: RecordTimeUnit::Nanos,
         };
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -2094,8 +2080,8 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             .await
             .map_err(BlackboardError::Internal)?
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
-        let mut record = postcard::from_bytes::<IntentRecord>(&bytes)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let mut record =
+            decode_intent_record(&bytes).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let now = self.clock.now_nanos();
         let old_status = record.status.clone();
@@ -2137,8 +2123,8 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             .await
             .map_err(BlackboardError::Internal)?
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
-        let mut record = postcard::from_bytes::<IntentRecord>(&bytes)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let mut record =
+            decode_intent_record(&bytes).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let now = self.clock.now_nanos();
         let old_status = record.status.clone();
@@ -2180,8 +2166,8 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             .await
             .map_err(BlackboardError::Internal)?
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
-        let mut record = postcard::from_bytes::<IntentRecord>(&bytes)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let mut record =
+            decode_intent_record(&bytes).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let old_status = record.status.clone();
         match &record.status {
@@ -2237,8 +2223,8 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             .await
             .map_err(BlackboardError::Internal)?
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
-        let mut record = postcard::from_bytes::<IntentRecord>(&bytes)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let mut record =
+            decode_intent_record(&bytes).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let worker = match &record.status {
             IntentStatus::Claimed { worker, .. } => worker.clone(),

@@ -15,8 +15,9 @@ use futures_executor::block_on;
 use nex_core::{Now, SystemClock};
 use nex_fih::io::file_io::{FileIo, IoFuture};
 use nex_fih::{
-    AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead, BlackboardError, Content, CoordId,
-    Fact, FactRecord, FihStorage, Intent,
+    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, BlackboardError,
+    Content, CoordId, Fact, FactRecord, FihStorage, Hint, HintRecord, Intent, IntentStatus,
+    RecordTimeUnit,
 };
 
 #[derive(Clone, Default)]
@@ -412,4 +413,106 @@ fn a_fact_time_below_the_legacy_second_threshold_survives_every_read() {
     let framed =
         block_on(keeper.get_fact_framing(&fact.id.to_string())).expect("the map holds the record");
     assert_eq!(framed.submitted_at, submitted_at);
+}
+
+/// The shape of an intent record written before `time_unit` existed.
+#[derive(serde::Serialize)]
+struct LegacyIntentRecord {
+    id: String,
+    from_facts: Vec<String>,
+    description_hash: String,
+    creator: String,
+    status: IntentStatus,
+    created_at: u64,
+}
+
+#[test]
+fn a_legacy_intent_timestamp_is_lifted_once_on_every_read() {
+    let medium = MemoryIo::default();
+    let id = CoordId::resolve("i_legacy").to_string();
+    let legacy = LegacyIntentRecord {
+        id: id.clone(),
+        from_facts: Vec::new(),
+        description_hash: String::new(),
+        creator: "agent".into(),
+        status: IntentStatus::Submitted,
+        created_at: 1_700_000_000, // seconds
+    };
+    medium.put(
+        &nex_fih::IntentRecord::intent_key(&id),
+        &postcard::to_allocvec(&legacy).expect("the legacy record serializes"),
+    );
+
+    let reader = FihStorage::new_without_maps(medium.clone(), "surface");
+    let (record, _) = block_on(reader.get_intent(&id)).expect("the medium holds the intent");
+    assert_eq!(record.created_at, 1_700_000_000_000_000_000);
+    assert_eq!(record.time_unit, RecordTimeUnit::Nanos);
+
+    let keeper = FihStorage::new(medium, "surface");
+    block_on(keeper.rebuild_cache()).expect("the maps are built");
+    let (_, _, _, _, created_at) = keeper
+        .get_intent_by_id(&id)
+        .expect("the map holds the intent");
+    assert_eq!(created_at, 1_700_000_000_000_000_000);
+}
+
+#[test]
+fn a_hint_ttl_is_seconds_while_the_record_timestamp_is_nanoseconds() {
+    let hint = HintRecord {
+        id: CoordId::resolve("h_ttl").to_string(),
+        content: "a hint".into(),
+        creator: "agent".into(),
+        submitted_at: 5_000_000_000, // five seconds
+        ttl_secs: Some(2),
+        time_unit: RecordTimeUnit::Nanos,
+    };
+
+    assert!(!hint.is_expired(6_999_999_999));
+    assert!(!hint.is_expired(7_000_000_000));
+    assert!(hint.is_expired(7_000_000_001));
+}
+
+#[test]
+fn a_boot_epoch_intent_and_hint_keep_their_nanoseconds() {
+    let medium = MemoryIo::default();
+    let submitted_at = 5_000_000_000; // five seconds since boot
+    let writer = FihStorage::with_clock(
+        medium.clone(),
+        "surface",
+        Box::new(FixedClock(submitted_at)),
+    );
+
+    let base = payload_fact("f_base", "base");
+    submit(&writer, &base);
+    block_on(writer.flush_pending()).expect("the fact reaches the medium");
+    let intent = Intent::new(
+        CoordId::resolve("i_boot"),
+        vec![base.id],
+        None,
+        "a boot intent".into(),
+        "agent".into(),
+    );
+    block_on(writer.submit_intent(&intent)).expect("the intent is accepted");
+    block_on(writer.submit_hint(&Hint {
+        id: CoordId::resolve("h_boot"),
+        content: "a boot hint".into(),
+        creator: "agent".into(),
+    }))
+    .expect("the hint is accepted");
+    block_on(writer.flush_pending()).expect("the writes reach the medium");
+
+    let reader = FihStorage::new_without_maps(medium.clone(), "surface");
+    let (record, _) = block_on(reader.get_intent("i_boot")).expect("the intent");
+    assert_eq!(record.created_at, submitted_at);
+    assert_eq!(record.time_unit, RecordTimeUnit::Nanos);
+    let hint = block_on(reader.get_hint("h_boot")).expect("the hint");
+    assert_eq!(hint.submitted_at, submitted_at);
+    assert_eq!(hint.time_unit, RecordTimeUnit::Nanos);
+
+    let keeper = FihStorage::new(medium, "surface");
+    block_on(keeper.rebuild_cache()).expect("the maps are built");
+    let (_, _, _, _, created_at) = keeper
+        .get_intent_by_id(&intent.id.to_string())
+        .expect("the map holds the intent");
+    assert_eq!(created_at, submitted_at);
 }

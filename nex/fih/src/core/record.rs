@@ -57,6 +57,16 @@ pub enum IntentStatus {
     },
 }
 
+/// The unit of the timestamps in a persisted intent or hint record.
+///
+/// A record written before the nanosecond convention has no field and decodes through
+/// the legacy shape as `Seconds`. A record written now carries `Nanos`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RecordTimeUnit {
+    Seconds,
+    Nanos,
+}
+
 /// On-disk Intent record. State machine: Submitted → Claimed → Concluded.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct IntentRecord {
@@ -65,8 +75,10 @@ pub struct IntentRecord {
     pub description_hash: BlobHash, // → blob/{hash}.bin
     pub creator: String,
     pub status: IntentStatus,
-    /// When the intent was created, in nanoseconds since the UNIX epoch.
+    /// When the intent was created, in the unit `time_unit` states.
     pub created_at: u64,
+    /// The unit of `created_at` and the status timestamps.
+    pub time_unit: RecordTimeUnit,
 }
 
 /// On-disk Hint record. Ephemeral — may be garbage-collected by TTL.
@@ -75,9 +87,122 @@ pub struct HintRecord {
     pub id: String,
     pub content: String,
     pub creator: String,
-    /// When the hint was submitted, in nanoseconds since the UNIX epoch.
+    /// When the hint was submitted, in the unit `time_unit` states.
     pub submitted_at: u64,
     pub ttl_secs: Option<u64>, // None = permanent
+    /// The unit of `submitted_at`.
+    pub time_unit: RecordTimeUnit,
+}
+
+/// The shape of an intent record written before `time_unit` existed. Its timestamps are
+/// seconds.
+#[derive(Debug, Deserialize)]
+pub(crate) struct IntentRecordV1 {
+    id: String,
+    from_facts: Vec<String>,
+    description_hash: BlobHash,
+    creator: String,
+    status: IntentStatus,
+    created_at: u64,
+}
+
+/// The shape of a hint record written before `time_unit` existed. Its timestamp is
+/// seconds.
+#[derive(Debug, Deserialize)]
+pub(crate) struct HintRecordV1 {
+    id: String,
+    content: String,
+    creator: String,
+    submitted_at: u64,
+    ttl_secs: Option<u64>,
+}
+
+fn lift_legacy_seconds(seconds: u64) -> u64 {
+    seconds.saturating_mul(1_000_000_000)
+}
+
+fn lift_status(status: IntentStatus) -> IntentStatus {
+    match status {
+        IntentStatus::Claimed {
+            worker,
+            last_heartbeat_at,
+        } => IntentStatus::Claimed {
+            worker,
+            last_heartbeat_at: lift_legacy_seconds(last_heartbeat_at),
+        },
+        IntentStatus::Concluded {
+            to_fact,
+            concluded_at,
+            worker,
+        } => IntentStatus::Concluded {
+            to_fact,
+            concluded_at: lift_legacy_seconds(concluded_at),
+            worker,
+        },
+        other => other,
+    }
+}
+
+impl IntentRecordV1 {
+    pub(crate) fn into_current(self) -> IntentRecord {
+        IntentRecord {
+            id: self.id,
+            from_facts: self.from_facts,
+            description_hash: self.description_hash,
+            creator: self.creator,
+            status: lift_status(self.status),
+            created_at: lift_legacy_seconds(self.created_at),
+            time_unit: RecordTimeUnit::Nanos,
+        }
+    }
+}
+
+impl HintRecordV1 {
+    pub(crate) fn into_current(self) -> HintRecord {
+        HintRecord {
+            id: self.id,
+            content: self.content,
+            creator: self.creator,
+            submitted_at: lift_legacy_seconds(self.submitted_at),
+            ttl_secs: self.ttl_secs,
+            time_unit: RecordTimeUnit::Nanos,
+        }
+    }
+}
+
+/// Decode an intent record, lifting one written before the unit field existed.
+pub(crate) fn decode_intent_record(bytes: &[u8]) -> Result<IntentRecord, postcard::Error> {
+    match postcard::from_bytes::<IntentRecord>(bytes) {
+        Ok(mut record) => {
+            if record.time_unit == RecordTimeUnit::Seconds {
+                record.created_at = lift_legacy_seconds(record.created_at);
+                record.status = lift_status(record.status);
+                record.time_unit = RecordTimeUnit::Nanos;
+            }
+            Ok(record)
+        }
+        Err(current_error) => match postcard::from_bytes::<IntentRecordV1>(bytes) {
+            Ok(legacy) => Ok(legacy.into_current()),
+            Err(_) => Err(current_error),
+        },
+    }
+}
+
+/// Decode a hint record, lifting one written before the unit field existed.
+pub(crate) fn decode_hint_record(bytes: &[u8]) -> Result<HintRecord, postcard::Error> {
+    match postcard::from_bytes::<HintRecord>(bytes) {
+        Ok(mut record) => {
+            if record.time_unit == RecordTimeUnit::Seconds {
+                record.submitted_at = lift_legacy_seconds(record.submitted_at);
+                record.time_unit = RecordTimeUnit::Nanos;
+            }
+            Ok(record)
+        }
+        Err(current_error) => match postcard::from_bytes::<HintRecordV1>(bytes) {
+            Ok(legacy) => Ok(legacy.into_current()),
+            Err(_) => Err(current_error),
+        },
+    }
 }
 
 impl FactRecord {
@@ -125,9 +250,17 @@ impl HintRecord {
         Self::hint_key(&self.id)
     }
 
-    pub fn is_expired(&self, now_secs: u64) -> bool {
+    /// Whether the hint's TTL has elapsed at `now_nanos`.
+    ///
+    /// The record timestamp is nanoseconds and the TTL is seconds, so the TTL is
+    /// converted once here rather than being added to the timestamp.
+    pub fn is_expired(&self, now_nanos: u64) -> bool {
         self.ttl_secs
-            .map(|ttl| self.submitted_at + ttl < now_secs)
+            .map(|ttl_secs| {
+                self.submitted_at
+                    .saturating_add(ttl_secs.saturating_mul(1_000_000_000))
+                    < now_nanos
+            })
             .unwrap_or(false)
     }
 }
