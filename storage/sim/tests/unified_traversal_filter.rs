@@ -129,7 +129,8 @@ fn test_intent_since_filter_over_unified_store() {
         Box::new(common::FakeClock::with_step(1_000_000_000, 1_000_000_000)),
     );
     block_on(store.submit_fact(&fact("f1"))).unwrap();
-    // Clock now_secs reads 2 after the fact submission advanced now_nanos.
+    // Each now_nanos call advances the clock by one second: i1 lands at 2s
+    // and i2 at 3s.
     block_on(store.submit_intent(&intent("i1", vec!["f1"]))).unwrap();
     block_on(store.submit_intent(&intent("i2", vec!["f1"]))).unwrap();
 
@@ -140,14 +141,28 @@ fn test_intent_since_filter_over_unified_store() {
     assert_eq!(
         before.intents.len(),
         2,
-        "intents created at 2s pass since=1s"
+        "intents created at 2s and 3s pass since=1s"
     );
 
-    let after = block_on(store.read_state_filtered(&StateFilter {
+    let at_bound = block_on(store.read_state_filtered(&StateFilter {
         since: Some("3000000000".into()),
         ..Default::default()
     }));
-    assert_eq!(after.intents.len(), 0, "intents at 2s fail since=3s");
+    assert_eq!(
+        at_bound.intents.len(),
+        1,
+        "the bound is inclusive: the intent at exactly 3s passes"
+    );
+
+    let after = block_on(store.read_state_filtered(&StateFilter {
+        since: Some("3000000001".into()),
+        ..Default::default()
+    }));
+    assert_eq!(
+        after.intents.len(),
+        0,
+        "intents at 2s and 3s fail since=3s+1ns"
+    );
 }
 
 // ── Test 5: hint_ids filter matches identity coordinates ───────────────

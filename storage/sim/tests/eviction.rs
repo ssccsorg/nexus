@@ -2,7 +2,7 @@
 //
 // Eviction removes records from io, not just from the in-memory stores:
 // read_state and later flushes must agree with the eviction. Hint
-// submitted_at and intent created_at are second-granularity, so a
+// submitted_at and intent created_at are nanosecond timestamps, so a
 // FakeClock controls old vs new records unambiguously.
 
 mod common;
@@ -68,7 +68,7 @@ fn evict_before_removes_only_old_hints() {
 
         // Cutoff at t=101s: only h_old is evicted; h_new survives.
         let removed = store
-            .evict_before(&(START_NS / 1_000_000_000 + 1).to_string())
+            .evict_before(&(START_NS + 1_000_000_000).to_string())
             .await
             .unwrap();
         assert_eq!(removed, 1);
@@ -121,8 +121,8 @@ fn evict_stale_intents_removes_old_submitted() {
         store.submit_intent(&intent("i_old")).await.unwrap(); // created_at = 100s
         advance.advance_secs(2);
 
-        // older_than = 1s: cutoff = 102 - 1 = 101 > 100, so i_old is stale.
-        let removed = store.evict_stale_intents(1).await.unwrap();
+        // older_than = 1s in nanoseconds: cutoff = 102 - 1 = 101 > 100, so i_old is stale.
+        let removed = store.evict_stale_intents(1_000_000_000).await.unwrap();
         assert_eq!(removed, 1);
         assert_eq!(store.intent_records.borrow().len(), 0);
 

@@ -140,7 +140,11 @@ fn main() {
         let concl = AsyncIntentCapable::conclude_intent(&store, "i001", "result data")
             .await
             .unwrap();
-        assert_eq!(concl.id, CoordId::from_label("f_concl_i001"));
+        let canonical_intent = CoordId::resolve("i001").to_string();
+        assert_eq!(
+            concl.id,
+            CoordId::from_label(&format!("f_concl_{canonical_intent}"))
+        );
         let state = AsyncStorageRead::read_state(&store).await;
         assert_eq!(state.facts.len(), 2, "base + conclusion");
     });

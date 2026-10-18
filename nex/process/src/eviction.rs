@@ -12,23 +12,25 @@
 
 /// Eviction cycle: evict when memory exceeds threshold.
 ///
-/// Removes stale records (older than `cutoff_secs`) once the store size
-/// passes `threshold`. Returns the number of evicted records.
+/// Removes stale records (older than `cutoff_ns`, a nanosecond duration) once the store
+/// size passes `threshold`. Returns the number of evicted records.
 ///
 /// Failure is non-fatal, retry next iteration.
 pub fn try_evict(
     backend: &mut impl nex_fih::EvictCapable,
     threshold: usize,
-    cutoff_secs: u64,
+    cutoff_ns: u64,
 ) -> Result<u64, String> {
     let size = nex_fih::EvictCapable::approximate_size(&*backend);
     if size < threshold {
         return Ok(0);
     }
-    let now_secs = std::time::SystemTime::now()
+    let now_ns = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
-        .as_secs();
-    let cutoff = now_secs.saturating_sub(cutoff_secs);
+        .as_nanos();
+    let cutoff = u64::try_from(now_ns)
+        .unwrap_or(u64::MAX)
+        .saturating_sub(cutoff_ns);
     backend.evict_before(&cutoff.to_string())
 }

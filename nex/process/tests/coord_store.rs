@@ -220,11 +220,12 @@ fn conclusion_fact_carries_the_conclude_time() {
         );
 
         let state = store.read_state().await;
+        let canonical_intent = CoordId::resolve("i_ts").to_string();
         assert!(
             state
                 .facts
                 .iter()
-                .any(|f| f.origin.starts_with("conclusion:i_ts")),
+                .any(|f| f.origin == format!("conclusion:{canonical_intent}")),
             "conclusion fact present with its origin"
         );
     });
@@ -250,15 +251,16 @@ fn conclusion_fact_content_survives_reopen() {
             // its content and a consistent hash from io.
             let store = FihStorage::new(io, "coord");
             store.rebuild_cache().await.unwrap();
-            // Derive the conclusion id from the intent id so the test
-            // survives the id-derivation scheme changing.
-            let canonical = CoordId::resolve(&format!("f_concl_{intent_id}")).to_string();
+            // Derive the conclusion id from the intent's canonical id, which is the
+            // identity the record layer stores.
+            let canonical_intent = CoordId::resolve(intent_id).to_string();
+            let canonical = CoordId::resolve(&format!("f_concl_{canonical_intent}")).to_string();
             let (content, hash, origin, _creator) = store
                 .get_fact_by_id(&canonical)
                 .await
                 .expect("conclusion fact readable after reopen");
             assert_eq!(String::from_utf8_lossy(&content.data), "resolved");
-            assert_eq!(origin, format!("conclusion:{intent_id}"));
+            assert_eq!(origin, format!("conclusion:{canonical_intent}"));
             assert!(
                 hash.0.iter().any(|b| *b != 0),
                 "content hash must be derived from the persisted blob"

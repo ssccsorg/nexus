@@ -191,7 +191,7 @@ fn test_eviction_preserves_fact_removes_old_hint() {
     }))
     .unwrap();
 
-    block_on(store.evict_before("99999999999")).unwrap();
+    block_on(store.evict_before(&u64::MAX.to_string())).unwrap();
 
     // Eviction deletes the record files from io, so the state read and
     // the in-memory store agree: the hint is gone from both.

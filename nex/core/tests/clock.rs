@@ -5,7 +5,7 @@
 // conversion, and the saturating arithmetic at the u64 boundary that an
 // MCU without an RTC relies on.
 
-use nex_core::{EpochClock, Monotonic, Now};
+use nex_core::{EpochClock, HostClock, InstantClock, Monotonic, Now};
 
 #[derive(Debug, Clone, Default)]
 struct FakeTick(u64);
@@ -77,4 +77,33 @@ fn monotonic_in_tick() {
         assert!(now >= prev, "clock moved backwards");
         prev = now;
     }
+}
+
+#[test]
+fn the_host_monotonic_source_measures_from_its_construction() {
+    let clock = InstantClock::new();
+    let first = clock.elapsed_nanos();
+    let second = clock.elapsed_nanos();
+
+    assert!(second >= first, "the host source moved backwards");
+    assert!(
+        first < 60_000_000_000,
+        "a fresh clock has not been running for a minute: {first}"
+    );
+}
+
+#[test]
+fn the_host_monotonic_source_has_a_default() {
+    let clock = InstantClock::default();
+    assert!(clock.elapsed_nanos() < 60_000_000_000);
+}
+
+#[test]
+fn the_host_wall_clock_is_the_pinned_epoch_plus_the_host_source() {
+    let clock = HostClock::new(1_700_000_000, InstantClock::new());
+
+    // The epoch is reported as given; the host source only adds what has elapsed since.
+    assert!(clock.now_secs() >= 1_700_000_000);
+    assert!(clock.now_secs() < 1_700_000_060);
+    assert!(clock.now_nanos() >= 1_700_000_000_000_000_000);
 }

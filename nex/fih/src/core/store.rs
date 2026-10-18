@@ -60,7 +60,10 @@ use crate::{
 use nex_core::Now;
 
 use crate::core::index::Cell2;
-use crate::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus};
+use crate::core::record::{
+    ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus, RecordTimeUnit,
+    decode_hint_record, decode_intent_record,
+};
 use crate::io::file_io::{FileIo, WriteOp, default_apply_batch};
 use crate::semantic::record::{Query, RecordLoad};
 
@@ -95,6 +98,7 @@ pub enum Record {
         content_hash: FihHash,
         origin: String,
         creator: String,
+        /// Submission time in nanoseconds since the UNIX epoch.
         submitted_at: u64,
     },
     Intent {
@@ -102,11 +106,13 @@ pub enum Record {
         description_hash: String,
         creator: String,
         status: IntentStatus,
+        /// Creation time in nanoseconds since the UNIX epoch.
         created_at: u64,
     },
     Hint {
         content: String,
         creator: String,
+        /// Submission time in nanoseconds since the UNIX epoch.
         submitted_at: u64,
     },
 }
@@ -294,7 +300,6 @@ pub struct FihStorage<I: FileIo> {
     clock: Box<dyn Now + Send + Sync>,
     /// When true, every write operation also flushes pending ops to IO
     /// immediately, ensuring durability at the cost of batching.
-    #[expect(dead_code)]
     auto_flush: bool,
     /// Whether this store keeps the record maps. A store without them holds nothing about
     /// the volume, which is what the reference path asks for: its writes reach the medium
@@ -339,8 +344,10 @@ pub struct FihStorage<I: FileIo> {
     blob_cache_cap: Cell2<usize>,
     // Semantic stores (for similarity search).
     semantic_stores: Cell2<Vec<crate::semantic::DynSemanticStore>>,
-    /// Counter for assigning semantic IDs to facts incrementally.
-    semantic_id_counter: Cell2<u32>,
+    /// The fact id each semantic index was assigned to, in index order. The store
+    /// reports matches by index, so this is the only thing that can resolve one back
+    /// to a record without depending on map iteration order.
+    semantic_ids: Cell2<Vec<String>>,
     // Pending writes (for FihSession coordination).
     pub(crate) pending: Cell2<Vec<WriteOp>>,
 }
@@ -439,7 +446,7 @@ impl<I: FileIo> FihStorage<I> {
             blob_cache_order: Cell2::new(VecDeque::new()),
             blob_cache_cap: Cell2::new(BLOB_CACHE_CAP),
             semantic_stores: Cell2::new(Vec::new()),
-            semantic_id_counter: Cell2::new(0u32),
+            semantic_ids: Cell2::new(Vec::new()),
             pending: Cell2::new(Vec::new()),
         }
     }
@@ -593,13 +600,15 @@ impl<I: FileIo> FihStorage<I> {
                     last_heartbeat_at: match &r.status {
                         IntentStatus::Claimed {
                             last_heartbeat_at, ..
-                        } => Some(*last_heartbeat_at),
+                        } => Some(nanos_to_secs(*last_heartbeat_at)),
                         _ => None,
                     },
-                    created_at: Some(r.created_at),
+                    created_at: Some(nanos_to_secs(r.created_at)),
                     is_concluded: matches!(r.status, IntentStatus::Concluded { .. }),
                     concluded_at: match &r.status {
-                        IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
+                        IntentStatus::Concluded { concluded_at, .. } => {
+                            Some(nanos_to_secs(*concluded_at))
+                        }
                         _ => None,
                     },
                 });
@@ -648,7 +657,7 @@ impl<I: FileIo> FihStorage<I> {
         let mut intents: Vec<(String, IntentRecord)> = Vec::new();
         for key in intent_keys {
             if let Some(bytes) = self.io.read(&key).await?
-                && let Ok(record) = postcard::from_bytes::<IntentRecord>(&bytes)
+                && let Ok(record) = decode_intent_record(&bytes)
             {
                 intents.push((record.id.clone(), record));
             }
@@ -658,7 +667,7 @@ impl<I: FileIo> FihStorage<I> {
         let mut hints: Vec<(String, HintRecord)> = Vec::new();
         for key in hint_keys {
             if let Some(bytes) = self.io.read(&key).await?
-                && let Ok(record) = postcard::from_bytes::<HintRecord>(&bytes)
+                && let Ok(record) = decode_hint_record(&bytes)
             {
                 hints.push((record.id.clone(), record));
             }
@@ -715,6 +724,14 @@ impl<I: FileIo> FihStorage<I> {
         Ok(())
     }
 
+    /// Flush pending writes when the store was opened for durability on every write.
+    async fn flush_if_auto(&self) -> Result<(), String> {
+        if self.auto_flush {
+            self.flush_pending().await?;
+        }
+        Ok(())
+    }
+
     /// Flush pending writes to IO.
     ///
     /// On apply failure the batch is re-queued at the front of `pending`
@@ -755,6 +772,10 @@ impl<I: FileIo> FihStorage<I> {
         }
 
         let facts: Vec<FactRecord> = self.fact_records.borrow().values().cloned().collect();
+        // The index is assigned in the order this rebuild walks the records, so the
+        // list is replaced rather than extended: an id from before the rebuild names a
+        // position the new index may not use.
+        self.semantic_ids.borrow_mut().clear();
         struct TextRecord {
             text: String,
         }
@@ -767,7 +788,7 @@ impl<I: FileIo> FihStorage<I> {
             }
         }
 
-        for (i, r) in facts.iter().enumerate() {
+        for r in facts.iter() {
             let content = load_blob(&self.io, &r.blob_hash).await;
             if content.data.is_empty() {
                 continue;
@@ -776,9 +797,15 @@ impl<I: FileIo> FihStorage<I> {
             if text.trim().is_empty() {
                 continue;
             }
+            let idx = {
+                let mut ids = self.semantic_ids.borrow_mut();
+                let idx = ids.len() as u32;
+                ids.push(r.id.clone());
+                idx
+            };
             let load = TextRecord { text };
             for store in stores.iter_mut() {
-                let _ = store.insert(i as u32, &load).await;
+                let _ = store.insert(idx, &load).await;
             }
         }
 
@@ -961,6 +988,7 @@ impl<I: FileIo> FihStorage<I> {
                         creator: creator.clone(),
                         status: status.clone(),
                         created_at: *created_at,
+                        time_unit: RecordTimeUnit::Nanos,
                     },
                 );
                 // Link the inverse index: this intent references each
@@ -987,6 +1015,7 @@ impl<I: FileIo> FihStorage<I> {
                         creator: creator.clone(),
                         submitted_at: *submitted_at,
                         ttl_secs: None,
+                        time_unit: RecordTimeUnit::Nanos,
                     },
                 );
             }
@@ -1072,21 +1101,15 @@ impl<I: FileIo> FihStorage<I> {
     }
 
     /// CoordPath<6> for an intent record under the given status: entity=1,
-    /// status axis 0/1/2 (Submitted/Claimed/Concluded). `created_at` is
-    /// stored in seconds; the path time axis is nanoseconds.
+    /// status axis 0/1/2 (Submitted/Claimed/Concluded). `created_at` is a
+    /// nanosecond timestamp and is used as the path time axis directly.
     fn intent_path_with(record: &IntentRecord, status: &IntentStatus) -> tagma_core::CoordPath<6> {
         let status_coord = match status {
             IntentStatus::Submitted => 0u16,
             IntentStatus::Claimed { .. } => 1u16,
             IntentStatus::Concluded { .. } => 2u16,
         };
-        structural_path(
-            1u16,
-            "",
-            &record.creator,
-            status_coord,
-            record.created_at * 1_000_000_000,
-        )
+        structural_path(1u16, "", &record.creator, status_coord, record.created_at)
     }
 
     /// CoordPath<6> for an intent record under its current status.
@@ -1094,16 +1117,10 @@ impl<I: FileIo> FihStorage<I> {
         Self::intent_path_with(record, &record.status)
     }
 
-    /// CoordPath<6> for a hint record: entity=2. `submitted_at` is stored
-    /// in seconds; the path time axis is nanoseconds.
+    /// CoordPath<6> for a hint record: entity=2. `submitted_at` is a
+    /// nanosecond timestamp and is used as the path time axis directly.
     fn hint_path(record: &HintRecord) -> tagma_core::CoordPath<6> {
-        structural_path(
-            2u16,
-            "",
-            &record.creator,
-            0u16,
-            record.submitted_at * 1_000_000_000,
-        )
+        structural_path(2u16, "", &record.creator, 0u16, record.submitted_at)
     }
 
     /// Place an intent in the record layer under its current status.
@@ -1122,12 +1139,14 @@ impl<I: FileIo> FihStorage<I> {
     }
 
     /// Resolve a semantic index back to its ID string.
+    ///
+    /// A store reports matches by the index it was given, so the mapping is the list
+    /// built when the record was indexed rather than a position in the record maps.
     pub fn resolve_semantic_idx(&self, idx: u32) -> String {
-        self.needs_maps("a semantic index lookup");
-        let records: Vec<FactRecord> = self.fact_records.borrow().values().cloned().collect();
-        records
+        self.semantic_ids
+            .borrow()
             .get(idx as usize)
-            .map(|r| r.id.clone())
+            .cloned()
             .unwrap_or_default()
     }
 
@@ -1137,18 +1156,15 @@ impl<I: FileIo> FihStorage<I> {
         self.fact_records.borrow().contains_key(id)
     }
 
-    /// Content hash of the fact currently occupying `id`, if any.
+    /// The fact record occupying `id` in the map the session keeps, if any.
     ///
-    /// The id-keyed record map is the single chokepoint for the record
-    /// layer, so this is an O(1) lookup for every writer: `submit_fact`,
-    /// `rebuild_cache` (which re-places loaded records), and direct
-    /// writers (nex-calc). The hash is parsed from the persisted blob
-    /// hash, so the check also fires after `rebuild_cache`.
-    fn existing_fact_content_hash(&self, id: &str) -> Option<FihHash> {
-        self.fact_records
-            .borrow()
-            .get(id)
-            .and_then(|r| Self::hex_blob_hash(&r.blob_hash))
+    /// The id-keyed record map is the single chokepoint for the record layer, so this is
+    /// an O(1) lookup for every writer: `submit_fact`, `rebuild_cache` (which re-places
+    /// loaded records), and direct writers (nex-calc). The whole record is returned
+    /// because the identity of an address is its content and the fields the id was
+    /// derived from, not the content hash alone.
+    fn existing_fact_record(&self, id: &str) -> Option<FactRecord> {
+        self.fact_records.borrow().get(id).cloned()
     }
 
     /// The fact the medium holds at `id`, if any.
@@ -1172,14 +1188,6 @@ impl<I: FileIo> FihStorage<I> {
         }
     }
 
-    /// Content hash of the fact the medium holds at `id`, if any.
-    async fn medium_fact_content_hash(&self, id: &str) -> Result<Option<FihHash>, String> {
-        Ok(self
-            .medium_fact_record(id)
-            .await?
-            .and_then(|record| Self::hex_blob_hash(&record.blob_hash)))
-    }
-
     /// Whether the medium holds a record at the key `id` implies.
     ///
     /// A read and no decode, because the question is whether the address is taken and not
@@ -1198,7 +1206,7 @@ impl<I: FileIo> FihStorage<I> {
         let Some(bytes) = self.io.read(&key).await? else {
             return Ok(None);
         };
-        match postcard::from_bytes::<IntentRecord>(&bytes) {
+        match decode_intent_record(&bytes) {
             Ok(record) => Ok(Some(record)),
             Err(error) => Err(format!("decode {key}: {error}")),
         }
@@ -1210,7 +1218,7 @@ impl<I: FileIo> FihStorage<I> {
         let Some(bytes) = self.io.read(&key).await? else {
             return Ok(None);
         };
-        match postcard::from_bytes::<HintRecord>(&bytes) {
+        match decode_hint_record(&bytes) {
             Ok(record) => Ok(Some(record)),
             Err(error) => Err(format!("decode {key}: {error}")),
         }
@@ -1227,14 +1235,14 @@ impl<I: FileIo> FihStorage<I> {
     /// is a content address, and the guard is about an identifier carrying content that
     /// is not its own rather than about what a read should see. A walk answers that other
     /// question, and there a key takes the fate of the last operation on it.
-    fn pending_fact_content_hash(&self, id: &str) -> Option<FihHash> {
+    fn pending_fact_record(&self, id: &str) -> Option<FactRecord> {
         let key = FactRecord::fact_key(id);
         for op in self.pending.borrow().iter().rev() {
             if let WriteOp::Write { path, data } = op
                 && path == &key
                 && let Ok(record) = postcard::from_bytes::<FactRecord>(data)
             {
-                return Self::hex_blob_hash(&record.blob_hash);
+                return Some(record);
             }
         }
         None
@@ -1364,7 +1372,8 @@ impl<I: FileIo> FihStorage<I> {
     ///
     /// An intent the volume does not hold is `None`. A record the medium holds and this reader
     /// cannot decode is reported as absent, which is what the map reports for a record it never
-    /// saw.
+    /// saw. The returned record keeps the storage unit: `created_at` and the conclusion time are
+    /// nanoseconds. Read through `read_state` for the model's seconds.
     pub async fn get_intent(&self, id: &str) -> Option<(IntentRecord, Option<String>)> {
         let id = self.normalize_intent_id(id);
         let held = {
@@ -1417,7 +1426,8 @@ impl<I: FileIo> FihStorage<I> {
         }
     }
 
-    /// Get an intent by its ID (record-map lookup).
+    /// Get an intent by its ID (record-map lookup). The returned `created_at` and the
+    /// status's conclusion time are nanoseconds, the storage unit.
     pub fn get_intent_by_id(
         &self,
         id: &str,
@@ -1672,6 +1682,11 @@ fn simple_status_key(status: &IntentStatus) -> &'static str {
     }
 }
 
+/// The public model reports seconds; every stored record timestamp is nanoseconds.
+fn nanos_to_secs(nanos: u64) -> u64 {
+    nanos / 1_000_000_000
+}
+
 fn content_hash(data: &[u8]) -> String {
     // SHA-256 content hash. WASM-compatible (sha2 crate works on wasm32).
     use sha2::{Digest, Sha256};
@@ -1799,22 +1814,28 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
         // The map answers this when the session has the record in hand. When it does
         // not, the medium answers it, because the guard has to hold for a volume this
         // session did not write: that is what the computed address is for.
-        let existing = match self.existing_fact_content_hash(&id) {
-            Some(hash) => Some(hash),
+        let existing = match self.existing_fact_record(&id) {
+            Some(record) => Some(record),
             // A record this session has written and not flushed is on neither the medium
             // nor a map a store without one keeps.
-            None => match self.pending_fact_content_hash(&id) {
-                Some(hash) => Some(hash),
+            None => match self.pending_fact_record(&id) {
+                Some(record) => Some(record),
                 None => self
-                    .medium_fact_content_hash(&id)
+                    .medium_fact_record(&id)
                     .await
                     .map_err(|e| BlackboardError::Internal(format!("read fact {id}: {e}")))?,
             },
         };
-        if let Some(existing_hash) = existing {
-            if existing_hash != fact.content_hash {
+        if let Some(record) = existing {
+            // The address is a function of content, origin, and creator, but the digest
+            // is taken over concatenated fields, so two different triples can reach one
+            // address. The first record wins and the second is a conflict rather than a
+            // silent retry, so the store never holds one record for two identities.
+            let same_content = Self::hex_blob_hash(&record.blob_hash) == Some(fact.content_hash);
+            let same_identity = record.origin == fact.origin && record.creator == fact.creator;
+            if !same_content || !same_identity {
                 return Err(BlackboardError::Conflict(format!(
-                    "fact id {id} already exists with a different content_hash"
+                    "fact id {id} already exists with a different content_hash or identity"
                 )));
             }
             return Ok(fact.id);
@@ -1904,11 +1925,11 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
         self.pending.borrow_mut().push(op);
 
         // Auto-index into semantic stores (skip conclusion facts to reduce noise)
-        if !fact.origin.starts_with("conclusion:") {
+        if !fact.origin.starts_with("conclusion:") && !self.semantic_stores.borrow().is_empty() {
             let semantic_idx = {
-                let mut ctr = self.semantic_id_counter.borrow_mut();
-                let idx = *ctr;
-                *ctr += 1;
+                let mut ids = self.semantic_ids.borrow_mut();
+                let idx = ids.len() as u32;
+                ids.push(record.id.clone());
                 idx
             };
             let text = String::from_utf8_lossy(&fact.content.data).to_string();
@@ -1928,6 +1949,10 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
                 .ok();
         }
 
+        self.flush_if_auto()
+            .await
+            .map_err(BlackboardError::Internal)?;
+
         Ok(fact.id)
     }
 }
@@ -1940,8 +1965,9 @@ impl<I: FileIo> crate::AsyncHintCapable for FihStorage<I> {
             id: hint.id.to_string(),
             content: hint.content.clone(),
             creator: hint.creator.clone(),
-            submitted_at: self.clock.now_secs(),
+            submitted_at: self.clock.now_nanos(),
             ttl_secs: None,
+            time_unit: RecordTimeUnit::Nanos,
         };
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -1959,6 +1985,11 @@ impl<I: FileIo> crate::AsyncHintCapable for FihStorage<I> {
             },
         );
         self.pending.borrow_mut().push(op);
+
+        self.flush_if_auto()
+            .await
+            .map_err(BlackboardError::Internal)?;
+
         Ok(())
     }
 }
@@ -2017,7 +2048,8 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             description_hash,
             creator: intent.creator.clone(),
             status: super::record::IntentStatus::Submitted,
-            created_at: self.clock.now_secs(),
+            created_at: self.clock.now_nanos(),
+            time_unit: RecordTimeUnit::Nanos,
         };
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
@@ -2028,6 +2060,11 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
 
         self.place_intent(&record);
         self.pending.borrow_mut().push(op);
+
+        self.flush_if_auto()
+            .await
+            .map_err(BlackboardError::Internal)?;
+
         Ok(intent.id)
     }
 
@@ -2043,10 +2080,10 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             .await
             .map_err(BlackboardError::Internal)?
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
-        let mut record = postcard::from_bytes::<IntentRecord>(&bytes)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let mut record =
+            decode_intent_record(&bytes).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
-        let now = self.clock.now_secs();
+        let now = self.clock.now_nanos();
         let old_status = record.status.clone();
         let new_status = record.status.try_claim(agent, now).map_err(|e| {
             if e.starts_with("already claimed") {
@@ -2086,10 +2123,10 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             .await
             .map_err(BlackboardError::Internal)?
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
-        let mut record = postcard::from_bytes::<IntentRecord>(&bytes)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let mut record =
+            decode_intent_record(&bytes).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
-        let now = self.clock.now_secs();
+        let now = self.clock.now_nanos();
         let old_status = record.status.clone();
         let new_status = record.status.try_heartbeat(agent, now).map_err(|e| {
             if e.contains("not") {
@@ -2129,8 +2166,8 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             .await
             .map_err(BlackboardError::Internal)?
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
-        let mut record = postcard::from_bytes::<IntentRecord>(&bytes)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let mut record =
+            decode_intent_record(&bytes).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let old_status = record.status.clone();
         match &record.status {
@@ -2186,8 +2223,8 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             .await
             .map_err(BlackboardError::Internal)?
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
-        let mut record = postcard::from_bytes::<IntentRecord>(&bytes)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        let mut record =
+            decode_intent_record(&bytes).map_err(|e| BlackboardError::Internal(e.to_string()))?;
 
         let worker = match &record.status {
             IntentStatus::Claimed { worker, .. } => worker.clone(),
@@ -2197,7 +2234,11 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             }
         };
 
-        let conclusion_id = CoordId::from_label(&format!("f_concl_{}", intent_id)).to_string();
+        // The conclusion record belongs to the intent, so its address and origin come
+        // from the record's canonical id rather than from the spelling the caller used.
+        // Two spellings of one intent must not produce two conclusion facts.
+        let intent_label = format!("f_concl_{}", record.id);
+        let conclusion_id = CoordId::from_label(&intent_label).to_string();
         let content_data = result.as_bytes().to_vec();
         let content_hash = {
             let mut h = sha2::Sha256::new();
@@ -2207,7 +2248,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
         let new_fact = Fact {
             id: CoordId::resolve(&conclusion_id),
             content_hash,
-            origin: format!("conclusion:{}", intent_id),
+            origin: format!("conclusion:{}", record.id),
             content: Content {
                 mime_type: "text/plain".into(),
                 data: result.as_bytes().to_vec(),
@@ -2418,7 +2459,7 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                 {
                     return false;
                 }
-                let created_ns = r.created_at * 1_000_000_000;
+                let created_ns = r.created_at;
                 if let Some(ts) = since
                     && created_ns < ts
                 {
@@ -2469,13 +2510,15 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                     last_heartbeat_at: match &r.status {
                         IntentStatus::Claimed {
                             last_heartbeat_at, ..
-                        } => Some(*last_heartbeat_at),
+                        } => Some(nanos_to_secs(*last_heartbeat_at)),
                         _ => None,
                     },
-                    created_at: Some(r.created_at),
+                    created_at: Some(nanos_to_secs(r.created_at)),
                     is_concluded: matches!(r.status, IntentStatus::Concluded { .. }),
                     concluded_at: match &r.status {
-                        IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
+                        IntentStatus::Concluded { concluded_at, .. } => {
+                            Some(nanos_to_secs(*concluded_at))
+                        }
                         _ => None,
                     },
                 });
@@ -2583,13 +2626,13 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
     }
 
     async fn evict_before(&self, before: &str) -> Result<u64, String> {
-        let before_secs: u64 = before.parse().unwrap_or(0);
+        let before_ns: u64 = before.parse().unwrap_or(0);
         let all: Vec<HintRecord> = self.hint_records.borrow().values().cloned().collect();
         let old_len = all.len();
         let mut kept = 0usize;
         let mut evict_keys = Vec::new();
         for record in all {
-            if record.submitted_at >= before_secs {
+            if record.submitted_at >= before_ns {
                 kept += 1;
             } else {
                 // read_state serves from the in-memory record maps, so
@@ -2606,13 +2649,14 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
         }
         self.hint_records
             .borrow_mut()
-            .retain(|_, r| r.submitted_at >= before_secs);
+            .retain(|_, r| r.submitted_at >= before_ns);
+        self.flush_if_auto().await?;
         Ok(evicted)
     }
 
-    async fn evict_stale_intents(&self, older_than_secs: u64) -> Result<u64, String> {
-        let now = self.clock.now_secs();
-        let cutoff = now.saturating_sub(older_than_secs);
+    async fn evict_stale_intents(&self, older_than_ns: u64) -> Result<u64, String> {
+        let now = self.clock.now_nanos();
+        let cutoff = now.saturating_sub(older_than_ns);
 
         let all: Vec<IntentRecord> = self.intent_records.borrow().values().cloned().collect();
         let old_len = all.len();
@@ -2639,6 +2683,7 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
         self.intent_records
             .borrow_mut()
             .retain(|_, r| !(matches!(r.status, IntentStatus::Submitted) && r.created_at < cutoff));
+        self.flush_if_auto().await?;
         Ok(evicted)
     }
 }
@@ -2710,13 +2755,15 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
                     last_heartbeat_at: match &r.status {
                         IntentStatus::Claimed {
                             last_heartbeat_at, ..
-                        } => Some(*last_heartbeat_at),
+                        } => Some(nanos_to_secs(*last_heartbeat_at)),
                         _ => None,
                     },
-                    created_at: Some(r.created_at),
+                    created_at: Some(nanos_to_secs(r.created_at)),
                     is_concluded: matches!(r.status, IntentStatus::Concluded { .. }),
                     concluded_at: match &r.status {
-                        IntentStatus::Concluded { concluded_at, .. } => Some(*concluded_at),
+                        IntentStatus::Concluded { concluded_at, .. } => {
+                            Some(nanos_to_secs(*concluded_at))
+                        }
                         _ => None,
                     },
                 });

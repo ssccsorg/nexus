@@ -15,7 +15,10 @@
 //   - SimIo-based: export/import in-memory (for testing)
 //   - CfFihIo: (future) export/import over R2
 
-use crate::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
+use crate::core::record::{
+    ContentMeta, FactRecord, HintRecord, HintRecordV1, IntentRecord, IntentRecordV1,
+    decode_hint_record, decode_intent_record,
+};
 #[cfg(feature = "std")]
 use crate::io::file_io::{FileIo, SyncFileIo};
 use alloc::format;
@@ -35,6 +38,10 @@ use std::collections::HashSet;
 /// Magic bytes for .fihbundle format identification.
 const BUNDLE_MAGIC: &[u8; 8] = b"FIHBUNDL";
 
+/// The current bundle layout. Version 2 carries records with an explicit time unit;
+/// version 1 carried records without one, whose timestamps are seconds.
+const BUNDLE_VERSION: u16 = 2;
+
 /// Complete bundle: all StateSpace records in one postcard-serialized struct.
 #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq)]
 struct Bundle {
@@ -42,6 +49,17 @@ struct Bundle {
     facts: Vec<FactRecord>,
     intents: Vec<IntentRecord>,
     hints: Vec<HintRecord>,
+    blobs: Vec<BlobEntry>,
+}
+
+/// The version 1 bundle layout, kept so a bundle written before the time-unit field
+/// still imports. Its intent and hint records hold seconds.
+#[derive(serde::Deserialize)]
+struct BundleV1 {
+    version: u16,
+    facts: Vec<FactRecord>,
+    intents: Vec<IntentRecordV1>,
+    hints: Vec<HintRecordV1>,
     blobs: Vec<BlobEntry>,
 }
 
@@ -80,7 +98,7 @@ pub fn export_from_io<A: FileIo>(io: &SyncFileIo<A>) -> Result<Vec<u8>, String> 
     let mut intents: Vec<IntentRecord> = Vec::with_capacity(intent_keys.len());
     for key in &intent_keys {
         if let Some(bytes) = sync.read(key)?
-            && let Ok(record) = postcard::from_bytes::<IntentRecord>(&bytes)
+            && let Ok(record) = decode_intent_record(&bytes)
         {
             intents.push(record);
         }
@@ -90,7 +108,7 @@ pub fn export_from_io<A: FileIo>(io: &SyncFileIo<A>) -> Result<Vec<u8>, String> 
     let mut hints: Vec<HintRecord> = Vec::with_capacity(hint_keys.len());
     for key in &hint_keys {
         if let Some(bytes) = sync.read(key)?
-            && let Ok(record) = postcard::from_bytes::<HintRecord>(&bytes)
+            && let Ok(record) = decode_hint_record(&bytes)
         {
             hints.push(record);
         }
@@ -140,7 +158,7 @@ pub fn export_from_io<A: FileIo>(io: &SyncFileIo<A>) -> Result<Vec<u8>, String> 
 
     // Serialize entire bundle as a single postcard struct
     let bundle_struct = Bundle {
-        version: 1,
+        version: BUNDLE_VERSION,
         facts,
         intents,
         hints,
@@ -169,11 +187,35 @@ pub fn import_into_io<A: FileIo>(io: &SyncFileIo<A>, bundle: &[u8]) -> Result<()
         return Err("invalid bundle: bad magic".into());
     }
 
-    // Deserialize entire bundle
-    let bundle_struct: Bundle =
-        postcard::from_bytes(&bundle[8..]).map_err(|e| format!("invalid bundle: {e}"))?;
+    // The version is the first field of the payload, and the supported versions are
+    // one-byte postcard varints. Read it before choosing the layout: trying the current
+    // layout first could consume a version 1 record's following field as the unit byte.
+    let version = *bundle.get(8).ok_or("invalid bundle: missing version")?;
+    let bundle_struct = match version {
+        2 => postcard::from_bytes::<Bundle>(&bundle[8..])
+            .map_err(|e| format!("invalid bundle: {e}"))?,
+        1 => {
+            let legacy: BundleV1 =
+                postcard::from_bytes(&bundle[8..]).map_err(|e| format!("invalid bundle: {e}"))?;
+            if legacy.version != 1 {
+                return Err(format!("unsupported bundle version: {}", legacy.version));
+            }
+            Bundle {
+                version: BUNDLE_VERSION,
+                facts: legacy.facts,
+                intents: legacy
+                    .intents
+                    .into_iter()
+                    .map(|r| r.into_current())
+                    .collect(),
+                hints: legacy.hints.into_iter().map(|r| r.into_current()).collect(),
+                blobs: legacy.blobs,
+            }
+        }
+        other => return Err(format!("unsupported bundle version: {other}")),
+    };
 
-    if bundle_struct.version != 1 {
+    if bundle_struct.version != BUNDLE_VERSION {
         return Err(format!(
             "unsupported bundle version: {}",
             bundle_struct.version

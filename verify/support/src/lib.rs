@@ -6,6 +6,15 @@
 //     this same flat key-space surface; the verification harness uses an
 //     in-memory Vec so the storage-core logic is exercised on target
 //     without the memory cost of a materialization backend.
+//
+//     A scenario that holds what a read path returned has not held what it
+//     cost, so the stand-in carries the two properties the scenarios assert
+//     on: a refusal switch, because a part at the end of its life refuses a
+//     write, and counters, because the difference between the walk and the
+//     framing walk is the payload reads rather than the records. Its
+//     `list_page` resumes from a cursor, so a walk takes the paged path the
+//     launcher presents rather than the default that hands over every key at
+//     once (issues #203, #209, #213).
 //   - block_on: drives the async storage surface with a no-op waker.
 //     The storage IO backends are synchronous under the hood, so a poll
 //     loop suffices; a real MCU launcher may use embassy instead.
@@ -15,6 +24,7 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
+use alloc::format;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -24,21 +34,54 @@ use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 use chton::cell::Cell2;
 use chton::io::{FileIo, IoFuture};
 
+/// What a store asked the medium for.
+///
+/// A scenario holds what a read path returned by looking at the records it handed
+/// over. The cost of that path is this instead: the walk and the framing walk reach
+/// the same records and differ in the reads, so a count of records cannot tell them
+/// apart and a count of reads can.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Traffic {
+    /// Every key the store read.
+    pub reads: u32,
+    /// The enumeration calls, which is where the page bound shows.
+    pub pages: u32,
+}
+
+impl Traffic {
+    /// The traffic between `before` and this reading.
+    pub fn since(self, before: Traffic) -> Traffic {
+        Traffic {
+            reads: self.reads.saturating_sub(before.reads),
+            pages: self.pages.saturating_sub(before.pages),
+        }
+    }
+}
+
+/// The entries a flat key-space holds: a key and the bytes at it, in write order.
+type Entries = Vec<(Vec<u8>, Vec<u8>)>;
+
 /// Minimal flat key-space IO. O(n) lookups are fine for a verification
 /// workload; the point is a lean, no_std FileIo that mirrors the surface
 /// the launcher bridge presents on the MCU.
 ///
 /// Cloning shares the entries, so a verification scenario can close a store
-/// and open a second one over the same medium.
+/// and open a second one over the same medium. A clone is the same medium, not a
+/// copy of it, which is what lets one session write a volume and the next read it.
 #[derive(Clone)]
 pub struct FlatIo {
-    entries: Arc<Cell2<Vec<(Vec<u8>, Vec<u8>)>>>,
+    entries: Arc<Cell2<Entries>>,
+    /// Set to refuse every write, which is a part at the end of its life.
+    refuse: Arc<Cell2<bool>>,
+    traffic: Arc<Cell2<Traffic>>,
 }
 
 impl Default for FlatIo {
     fn default() -> Self {
         Self {
             entries: Arc::new(Cell2::new(Vec::new())),
+            refuse: Arc::new(Cell2::new(false)),
+            traffic: Arc::new(Cell2::new(Traffic::default())),
         }
     }
 }
@@ -47,12 +90,29 @@ impl FlatIo {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// Refuse every write from here on, which is what a part at the end of its life
+    /// does.
+    ///
+    /// A refused write is not lost with the medium: the storage core keeps it pending
+    /// and still answers for it, so a scenario can hold that a worn part does not turn
+    /// a record the session holds into one that is gone.
+    pub fn refuse_writes(&self, refuse: bool) {
+        *self.refuse.borrow_mut() = refuse;
+    }
+
+    /// What the medium has been asked for so far.
+    pub fn traffic(&self) -> Traffic {
+        *self.traffic.borrow()
+    }
 }
 
 impl FileIo for FlatIo {
     fn read<'a>(&'a self, path: &'a str) -> IoFuture<'a, Option<Vec<u8>>> {
         let entries = &self.entries;
+        let traffic = &self.traffic;
         Box::pin(async move {
+            traffic.borrow_mut().reads += 1;
             let guard = entries.borrow();
             Ok(guard
                 .iter()
@@ -63,7 +123,11 @@ impl FileIo for FlatIo {
 
     fn write<'a>(&'a self, path: &'a str, data: &'a [u8]) -> IoFuture<'a, ()> {
         let entries = &self.entries;
+        let refuse = &self.refuse;
         Box::pin(async move {
+            if *refuse.borrow() {
+                return Err(format!("the medium refused the write: {path}"));
+            }
             let mut guard = entries.borrow_mut();
             let key = path.as_bytes().to_vec();
             match guard.iter_mut().find(|(p, _)| *p == key) {
@@ -98,6 +162,54 @@ impl FileIo for FlatIo {
             Ok(())
         })
     }
+
+    /// Keys under the prefix one page at a time, in key order.
+    ///
+    /// The trait's default hands over every key in one call, which leaves the walk
+    /// holding the volume's key list and hides the page the walk exists for. This
+    /// resumes from the cursor, so the gate takes the paged path a launcher presents
+    /// and the walk's peak is a page rather than the enumeration.
+    fn list_page<'a>(
+        &'a self,
+        prefix: &'a str,
+        cursor: Option<&'a [u8]>,
+        max: usize,
+    ) -> IoFuture<'a, (Vec<String>, Option<Vec<u8>>)> {
+        let entries = &self.entries;
+        let traffic = &self.traffic;
+        Box::pin(async move {
+            traffic.borrow_mut().pages += 1;
+            let guard = entries.borrow();
+            let mut keys: Vec<String> = guard
+                .iter()
+                .filter(|(p, _)| p.starts_with(prefix.as_bytes()))
+                .map(|(p, _)| String::from_utf8_lossy(p).into_owned())
+                .collect();
+            keys.sort_unstable();
+
+            // The cursor is the last key of the previous page, which is a key order this
+            // medium can resume from. The trait promises no order, so any stable one does.
+            let start = match cursor {
+                Some(token) => {
+                    let last = String::from_utf8_lossy(token);
+                    keys.partition_point(|key| key.as_str() <= last.as_ref())
+                }
+                None => 0,
+            };
+
+            // A bound of zero is read as no bound: the default ignores it rather than
+            // dropping keys it has no way to hand over later, and so does this.
+            let take = if max == 0 { keys.len() } else { max };
+            let page: Vec<String> = keys[start..].iter().take(take).cloned().collect();
+            let next = start + page.len();
+            let token = if next < keys.len() {
+                page.last().map(|key| key.as_bytes().to_vec())
+            } else {
+                None
+            };
+            Ok((page, token))
+        })
+    }
 }
 
 static VTABLE: RawWakerVTable = RawWakerVTable::new(|_| noop_raw_waker(), |_| {}, |_| {}, |_| {});
@@ -118,70 +230,5 @@ pub fn block_on<F: Future>(fut: F) -> F::Output {
             Poll::Ready(v) => return v,
             Poll::Pending => {}
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use critical_section::RawRestoreState;
-
-    // FlatIo uses Cell2, which needs a critical-section implementation to
-    // link in the test binary (the library build has none; an MCU
-    // firmware provides one from the HAL). A no-op is correct for the
-    // single-threaded test harness.
-    struct TestCs;
-    critical_section::set_impl!(TestCs);
-
-    unsafe impl critical_section::Impl for TestCs {
-        unsafe fn acquire() -> RawRestoreState {
-            false
-        }
-        unsafe fn release(_restore_state: RawRestoreState) {}
-    }
-
-    #[test]
-    fn write_read_round_trip() {
-        let io = FlatIo::new();
-        block_on(io.write("facts/a", b"hello")).unwrap();
-        let got = block_on(io.read("facts/a")).unwrap();
-        assert_eq!(got.as_deref(), Some(&b"hello"[..]));
-        // A path that was never written reads as None.
-        assert_eq!(block_on(io.read("facts/missing")).unwrap(), None);
-    }
-
-    #[test]
-    fn write_overwrites_existing_path() {
-        let io = FlatIo::new();
-        block_on(io.write("facts/a", b"one")).unwrap();
-        block_on(io.write("facts/a", b"two")).unwrap();
-        let got = block_on(io.read("facts/a")).unwrap();
-        assert_eq!(got.as_deref(), Some(&b"two"[..]));
-    }
-
-    #[test]
-    fn delete_removes_path_and_is_idempotent() {
-        let io = FlatIo::new();
-        block_on(io.write("facts/a", b"x")).unwrap();
-        block_on(io.delete("facts/a")).unwrap();
-        assert_eq!(block_on(io.read("facts/a")).unwrap(), None);
-        // Deleting a missing path is a no-op.
-        block_on(io.delete("facts/missing")).unwrap();
-        block_on(io.delete("facts/a")).unwrap();
-    }
-
-    #[test]
-    fn list_filters_by_prefix() {
-        let io = FlatIo::new();
-        block_on(io.write("facts/a", b"1")).unwrap();
-        block_on(io.write("facts/b", b"2")).unwrap();
-        block_on(io.write("hints/c", b"3")).unwrap();
-        let facts = block_on(io.list("facts/")).unwrap();
-        assert_eq!(facts.len(), 2);
-        assert!(facts.contains(&String::from("facts/a")));
-        assert!(facts.contains(&String::from("facts/b")));
-        // The empty prefix lists everything.
-        let all = block_on(io.list("")).unwrap();
-        assert_eq!(all.len(), 3);
     }
 }

@@ -5,6 +5,7 @@
 // handling, and end-to-end round trips with various storage backends.
 
 use nex_fih::CoordId;
+use nex_fih::RecordTimeUnit;
 use nexus_storage_sim::SimIo;
 use nexus_storage_sim::{ContentMeta, FactRecord, HintRecord, IntentRecord, SyncFileIo};
 use nexus_storage_sim::{IntentStatus, export_from_io, import_into_io};
@@ -41,6 +42,7 @@ fn seeded_io() -> SimIo {
         creator: "bob".into(),
         status: IntentStatus::Submitted,
         created_at: 1001,
+        time_unit: RecordTimeUnit::Nanos,
     };
     sync.write(&intent.key(), &postcard::to_allocvec(&intent).unwrap())
         .unwrap();
@@ -51,6 +53,7 @@ fn seeded_io() -> SimIo {
         creator: "tester".into(),
         submitted_at: 1002,
         ttl_secs: None,
+        time_unit: RecordTimeUnit::Nanos,
     };
     sync.write(&hint.key(), &postcard::to_allocvec(&hint).unwrap())
         .unwrap();
@@ -215,6 +218,7 @@ fn test_export_full_fih_lifecycle() {
         creator: "tester".into(),
         status: IntentStatus::Submitted,
         created_at: 200,
+        time_unit: RecordTimeUnit::Nanos,
     };
     sync.write(&intent1.key(), &postcard::to_allocvec(&intent1).unwrap())
         .unwrap();
@@ -226,6 +230,7 @@ fn test_export_full_fih_lifecycle() {
         creator: "tester".into(),
         status: IntentStatus::Submitted,
         created_at: 201,
+        time_unit: RecordTimeUnit::Nanos,
     };
     sync.write(&intent2.key(), &postcard::to_allocvec(&intent2).unwrap())
         .unwrap();
@@ -236,6 +241,7 @@ fn test_export_full_fih_lifecycle() {
         creator: "tester".into(),
         submitted_at: 300,
         ttl_secs: None,
+        time_unit: RecordTimeUnit::Nanos,
     };
     sync.write(&hint1.key(), &postcard::to_allocvec(&hint1).unwrap())
         .unwrap();
@@ -297,9 +303,87 @@ struct TestBlobEntry {
     meta: ContentMeta,
 }
 
+/// The version 1 bundle shape, with records written before the time-unit field.
+#[derive(serde::Serialize)]
+struct TestBundleV1 {
+    version: u16,
+    facts: Vec<FactRecord>,
+    intents: Vec<TestLegacyIntent>,
+    hints: Vec<TestLegacyHint>,
+    blobs: Vec<TestBlobEntry>,
+}
+
+#[derive(serde::Serialize)]
+struct TestLegacyIntent {
+    id: String,
+    from_facts: Vec<String>,
+    description_hash: String,
+    creator: String,
+    status: IntentStatus,
+    created_at: u64,
+}
+
+#[derive(serde::Serialize)]
+struct TestLegacyHint {
+    id: String,
+    content: String,
+    creator: String,
+    submitted_at: u64,
+    ttl_secs: Option<u64>,
+}
+
+#[test]
+fn test_export_version_1_lifts_legacy_timestamps_on_import() {
+    let intent_id = id_of("i_legacy");
+    let hint_id = id_of("h_legacy");
+    let legacy = TestBundleV1 {
+        version: 1,
+        facts: vec![],
+        intents: vec![TestLegacyIntent {
+            id: intent_id.clone(),
+            from_facts: vec![],
+            description_hash: String::new(),
+            creator: "tester".into(),
+            status: IntentStatus::Submitted,
+            created_at: 1_700_000_000,
+        }],
+        hints: vec![TestLegacyHint {
+            id: hint_id.clone(),
+            content: "a legacy hint".into(),
+            creator: "tester".into(),
+            submitted_at: 1_700_000_001,
+            ttl_secs: None,
+        }],
+        blobs: vec![],
+    };
+    let mut bundle = Vec::new();
+    bundle.extend_from_slice(b"FIHBUNDL");
+    bundle.extend_from_slice(&postcard::to_allocvec(&legacy).unwrap());
+
+    let io = SimIo::new();
+    let sync = SyncFileIo::new(io);
+    import_into_io(&sync, &bundle).expect("a version 1 bundle imports");
+
+    let intent_bytes = sync
+        .read(&IntentRecord::intent_key(&intent_id))
+        .unwrap()
+        .expect("the intent landed");
+    let intent = postcard::from_bytes::<IntentRecord>(&intent_bytes).expect("the intent decodes");
+    assert_eq!(intent.created_at, 1_700_000_000_000_000_000);
+    assert_eq!(intent.time_unit, RecordTimeUnit::Nanos);
+
+    let hint_bytes = sync
+        .read(&HintRecord::hint_key(&hint_id))
+        .unwrap()
+        .expect("the hint landed");
+    let hint = postcard::from_bytes::<HintRecord>(&hint_bytes).expect("the hint decodes");
+    assert_eq!(hint.submitted_at, 1_700_000_001_000_000_000);
+    assert_eq!(hint.time_unit, RecordTimeUnit::Nanos);
+}
+
 #[test]
 fn test_export_version_mismatch_rejected() {
-    // Build a bundle with version 99 (unsupported — only version 1 is valid).
+    // Build a bundle with version 99 (unsupported — the current version is 2).
     let bad_bundle = {
         let bad_struct = TestBundle {
             version: 99,

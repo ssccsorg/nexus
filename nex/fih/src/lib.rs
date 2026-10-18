@@ -41,7 +41,7 @@ pub use core::export::{export_from_io, import_into_io};
 pub use core::fih_blackboard::FihBlackboard;
 pub use core::index::{Cell2, OrderedIndex};
 pub use core::intent_status::IntentStatus;
-pub use core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
+pub use core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, RecordTimeUnit};
 #[cfg(feature = "std")]
 pub use core::session::FihSession;
 pub use core::store::FihStorage;

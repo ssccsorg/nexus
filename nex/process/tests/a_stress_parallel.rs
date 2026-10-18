@@ -72,7 +72,7 @@ impl ParallelAnt {
         match action {
             0 | 1 if step < 50 => {
                 // Submit fact (high prob early on)
-                let id = format!("fact_{}", step);
+                let id = format!("fact_{}_{}", self.name, step);
                 bb.submit_fact(&Fact::with_id(
                     CoordId::resolve(&id),
                     self.name.clone(),

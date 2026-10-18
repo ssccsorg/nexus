@@ -31,8 +31,8 @@ impl FakeClock {
         }
     }
 
-    /// Advance the clock by whole seconds, for second-granularity
-    /// timestamps such as hint and intent submission times.
+    /// Advance the clock by whole seconds. Records store nanoseconds; this is the
+    /// test's convenience for moving a whole number of seconds.
     #[allow(dead_code)]
     pub fn advance_secs(&self, secs: u64) {
         let mut now = self.now.lock().unwrap();
