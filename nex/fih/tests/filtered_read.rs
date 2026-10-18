@@ -408,11 +408,10 @@ fn each_kind_is_filtered_by_its_own_fields() {
 }
 
 #[test]
-fn time_bounds_use_each_kinds_own_unit() {
+fn time_bounds_are_nanoseconds_for_every_kind() {
     let (_, storage) = lifecycle_volume();
 
-    // Facts carry nanoseconds since the epoch, and so do the intent bounds once the
-    // record's whole seconds are converted.
+    // The filter bounds and every stored record timestamp are nanoseconds.
     let state = read(
         &storage,
         StateFilter {

@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use futures_executor::block_on;
-use nex_core::SystemClock;
+use nex_core::{Now, SystemClock};
 use nex_fih::io::file_io::{FileIo, IoFuture};
 use nex_fih::{
     AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead, BlackboardError, Content, CoordId,
@@ -109,6 +109,20 @@ fn payload_fact(id: &str, payload: &str) -> Fact {
 
 fn submit(storage: &FihStorage<MemoryIo>, fact: &Fact) {
     block_on(storage.submit_fact(fact)).expect("the fact is accepted");
+}
+
+/// A clock pinned to one nanosecond instant, for a device whose epoch is its own boot.
+#[derive(Clone, Copy)]
+struct FixedClock(u64);
+
+impl Now for FixedClock {
+    fn now_nanos(&self) -> u64 {
+        self.0
+    }
+
+    fn now_secs(&self) -> u64 {
+        self.0 / 1_000_000_000
+    }
 }
 
 #[test]
@@ -358,4 +372,44 @@ fn a_record_with_no_blob_hash_reads_as_empty() {
         state.facts[0].content.data.is_empty(),
         "a record with no blob has no payload to read"
     );
+}
+
+#[test]
+fn a_fact_time_below_the_legacy_second_threshold_survives_every_read() {
+    // A device that starts its clock at boot writes nanoseconds below 1e12. That is a
+    // legitimate nanosecond timestamp, not a pre-convention seconds value.
+    let medium = MemoryIo::default();
+    let submitted_at = 5_000_000_000; // five seconds since boot
+    let writer = FihStorage::with_clock(
+        medium.clone(),
+        "surface",
+        Box::new(FixedClock(submitted_at)),
+    );
+    let fact = payload_fact("f_boot", "a fact written at five seconds");
+    submit(&writer, &fact);
+    block_on(writer.flush_pending()).expect("the write reaches the medium");
+
+    // The by-name read on a store without maps.
+    let reader = FihStorage::new_without_maps(medium.clone(), "surface");
+    let framing = block_on(reader.get_fact_framing(&fact.id.to_string()))
+        .expect("the medium holds the record");
+    assert_eq!(framing.submitted_at, submitted_at);
+
+    // The walk reads the same record from the same medium.
+    let mut walked = None;
+    block_on(reader.for_each_fact_record(|record| {
+        if record.id == fact.id.to_string() {
+            walked = Some(record.submitted_at);
+        }
+        true
+    }))
+    .expect("the walk reaches the medium");
+    assert_eq!(walked, Some(submitted_at));
+
+    // A reopen through the record maps must not lift it either.
+    let keeper = FihStorage::new(medium, "surface");
+    block_on(keeper.rebuild_cache()).expect("the maps are built");
+    let framed =
+        block_on(keeper.get_fact_framing(&fact.id.to_string())).expect("the map holds the record");
+    assert_eq!(framed.submitted_at, submitted_at);
 }

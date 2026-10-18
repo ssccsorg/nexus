@@ -49,8 +49,10 @@ pub trait AsyncFilterCapable: AsyncStorageRead {
 /// Async counterpart of [`super::evict::EvictCapable`].
 pub trait AsyncEvictCapable: AsyncStorageRead {
     async fn approximate_size(&self) -> usize;
+    /// Evict hints submitted before `before`, a nanosecond timestamp.
     async fn evict_before(&self, before: &str) -> Result<u64, String>;
-    async fn evict_stale_intents(&self, older_than_secs: u64) -> Result<u64, String>;
+    /// Evict submitted intents older than `older_than_ns` nanoseconds.
+    async fn evict_stale_intents(&self, older_than_ns: u64) -> Result<u64, String>;
 }
 
 /// Async counterpart of [`super::scan::ScanCapable`].

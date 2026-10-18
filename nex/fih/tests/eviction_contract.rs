@@ -134,7 +134,8 @@ fn evicting_stale_intents_keeps_the_claimed_one_and_the_medium_agrees() {
     block_on(storage.claim_intent("i_claimed", "worker")).expect("the intent is claimed");
 
     clock.at_secs(S0 + 100);
-    let evicted = block_on(storage.evict_stale_intents(60)).expect("the eviction runs");
+    // The storage layer takes the age in nanoseconds.
+    let evicted = block_on(storage.evict_stale_intents(60_000_000_000)).expect("the eviction runs");
     assert_eq!(evicted, 1, "only the unclaimed and old intent is evicted");
 
     let state = block_on(storage.read_state());
@@ -183,8 +184,8 @@ fn evicting_hints_by_time_keeps_the_newer_ones_on_the_medium() {
     block_on(storage.submit_hint(&new)).expect("the hint is accepted");
     block_on(storage.flush_pending()).expect("the writes reach the medium");
 
-    let evicted =
-        block_on(storage.evict_before(&(S0 + 50).to_string())).expect("the eviction runs");
+    let evicted = block_on(storage.evict_before(&((S0 + 50) * 1_000_000_000).to_string()))
+        .expect("the eviction runs");
     assert_eq!(evicted, 1);
 
     block_on(storage.flush_pending()).expect("the delete reaches the medium");

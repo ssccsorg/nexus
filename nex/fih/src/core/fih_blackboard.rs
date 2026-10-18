@@ -138,7 +138,7 @@ impl<I: FileIo> EvictCapable for FihBlackboard<I> {
         futures_executor::block_on(self.storage.evict_before(before))
     }
 
-    fn evict_stale_intents(&self, older_than_secs: u64) -> Result<u64, String> {
-        futures_executor::block_on(self.storage.evict_stale_intents(older_than_secs))
+    fn evict_stale_intents(&self, older_than_ns: u64) -> Result<u64, String> {
+        futures_executor::block_on(self.storage.evict_stale_intents(older_than_ns))
     }
 }

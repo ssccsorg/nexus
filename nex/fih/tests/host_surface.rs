@@ -278,7 +278,7 @@ fn the_blackboard_sync_surface_writes_reads_and_flushes() {
         0
     );
     assert_eq!(
-        EvictCapable::evict_stale_intents(&board, 60).expect("the board evicts"),
+        EvictCapable::evict_stale_intents(&board, 60_000_000_000).expect("the board evicts"),
         0
     );
 }

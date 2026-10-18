@@ -72,7 +72,8 @@ fn the_null_storage_answers_every_trait_with_its_no_op() {
         0
     );
     assert_eq!(
-        EvictCapable::evict_stale_intents(&storage, 60).expect("the default is a no-op"),
+        EvictCapable::evict_stale_intents(&storage, 60_000_000_000)
+            .expect("the default is a no-op"),
         0
     );
     assert!(ColdStorage::write_blob(&storage, "key", b"data").is_ok());

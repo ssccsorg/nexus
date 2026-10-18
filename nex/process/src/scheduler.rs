@@ -78,9 +78,13 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
     /// flushes pending writes, so the cycle never drops un-flushed data.
     pub fn tick_with_flush(&mut self) -> Result<usize, ProcessError> {
         let threshold = self.config.eviction_threshold;
-        let cutoff_secs = self.config.eviction_cutoff_secs;
+        // The config is seconds; the storage layer takes nanoseconds.
+        let cutoff_ns = self
+            .config
+            .eviction_cutoff_secs
+            .saturating_mul(1_000_000_000);
         self._tick_inner(move |bb: &mut B| {
-            super::eviction::try_evict(bb, threshold, cutoff_secs)
+            super::eviction::try_evict(bb, threshold, cutoff_ns)
                 .map(|_| ())
                 .map_err(ProcessError::Eviction)
         })
@@ -126,10 +130,9 @@ impl<B: Blackboard + EvictCapable> Scheduler<B> {
         evict_fn(&mut self.bb)?;
 
         // Evict stale unclaimed intents
-        if self.config.unclaimed_intent_ttl.as_secs() > 0 {
-            let _ = self
-                .bb
-                .evict_stale_intents(self.config.unclaimed_intent_ttl.as_secs());
+        let ttl_ns = u64::try_from(self.config.unclaimed_intent_ttl.as_nanos()).unwrap_or(u64::MAX);
+        if ttl_ns > 0 {
+            let _ = self.bb.evict_stale_intents(ttl_ns);
         }
 
         Ok(fact_count)

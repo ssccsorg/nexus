@@ -644,9 +644,8 @@ impl<I: FileIo> FihStorage<I> {
         let mut facts: Vec<(String, FactRecord)> = Vec::new();
         for key in fact_keys {
             if let Some(bytes) = self.io.read(&key).await?
-                && let Ok(mut record) = postcard::from_bytes::<FactRecord>(&bytes)
+                && let Ok(record) = postcard::from_bytes::<FactRecord>(&bytes)
             {
-                record.submitted_at = to_nanos(record.submitted_at);
                 facts.push((record.id.clone(), record));
             }
         }
@@ -1181,10 +1180,7 @@ impl<I: FileIo> FihStorage<I> {
             return Ok(None);
         };
         match postcard::from_bytes::<FactRecord>(&bytes) {
-            Ok(mut record) => {
-                record.submitted_at = to_nanos(record.submitted_at);
-                Ok(Some(record))
-            }
+            Ok(record) => Ok(Some(record)),
             Err(error) => Err(format!("decode {key}: {error}")),
         }
     }
@@ -1695,9 +1691,10 @@ fn nanos_to_secs(nanos: u64) -> u64 {
 }
 
 /// A record written before the nanosecond convention holds seconds. Seconds stay below
-/// 1e12 until the year 33658 and nanoseconds passed it in 1970, so the threshold
-/// separates the two for any record this project can hold. Apply this only where bytes
-/// enter from the medium, never to a value a live clock produced.
+/// 1e12 until the year 33658 and wall-clock nanoseconds passed it in 1970, so the
+/// threshold separates the two for a wall-clock epoch. A clock that starts at boot is
+/// below 1e12 too, so this is a migration for records that predate the convention, not
+/// a unit inference. Facts were already nanoseconds and are never lifted.
 fn to_nanos(value: u64) -> u64 {
     if value < 1_000_000_000_000 {
         value.saturating_mul(1_000_000_000)
@@ -2643,9 +2640,7 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
     }
 
     async fn evict_before(&self, before: &str) -> Result<u64, String> {
-        // The public bound is seconds; the records are nanoseconds.
-        let before_secs: u64 = before.parse().unwrap_or(0);
-        let before_ns = before_secs.saturating_mul(1_000_000_000);
+        let before_ns: u64 = before.parse().unwrap_or(0);
         let all: Vec<HintRecord> = self.hint_records.borrow().values().cloned().collect();
         let old_len = all.len();
         let mut kept = 0usize;
@@ -2673,9 +2668,9 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
         Ok(evicted)
     }
 
-    async fn evict_stale_intents(&self, older_than_secs: u64) -> Result<u64, String> {
+    async fn evict_stale_intents(&self, older_than_ns: u64) -> Result<u64, String> {
         let now = self.clock.now_nanos();
-        let cutoff = now.saturating_sub(older_than_secs.saturating_mul(1_000_000_000));
+        let cutoff = now.saturating_sub(older_than_ns);
 
         let all: Vec<IntentRecord> = self.intent_records.borrow().values().cloned().collect();
         let old_len = all.len();

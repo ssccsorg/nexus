@@ -85,9 +85,9 @@ fn test_by_from_fact_cleared_on_evict_stale() {
     assert_eq!(store.intents_by_fact("f_ev").len(), 1);
 
     // Advance the clock so the intent's created_at is older than the
-    // cutoff computed by evict_stale_intents(60).
+    // cutoff computed by evict_stale_intents(60s).
     clock.advance_secs(100);
-    let evicted = block_on(store.evict_stale_intents(60)).unwrap();
+    let evicted = block_on(store.evict_stale_intents(60_000_000_000)).unwrap();
     assert_eq!(evicted, 1, "the stale Submitted intent is evicted");
 
     assert!(
