@@ -32,7 +32,7 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
-run_check()  { cargo check -p nex && cargo check -p nexd && cargo check -p nexus-storage-sim; }
+run_check()  { cargo check -p nex && cargo check -p nexd && cargo check -p nexus-storage-sim && cargo check -p nexus-storage-ref; }
 
 # ── WASM check: ensure storage-sim builds for wasm32 target ────────────
 
@@ -60,6 +60,7 @@ run_wasm_check() {
         -not -path './verify/*' \
         -not -path './storage/ve-composite/*' \
         -not -path './storage/sim/*' \
+        -not -path './storage/ref/*' \
         -not -path './nexd/*' \
         -not -path './nex-server/*' \
         -not -path './playbooks/*' \
