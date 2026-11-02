@@ -2,7 +2,13 @@
 
 The smallest consumer of the neXus storage surface. It reads a volume through the storage contract and nothing else.
 
-This crate is a consumer of `nex-fih` and `chton`'s `FsIo`. It depends on no product crate, writes no record, and decodes none.
+## Scope and goal
+
+The goal is that a reader can see what the storage contract guarantees, and can run that part in a few minutes, before choosing an implementation to build on.
+
+The scope is the read side of one volume on a host: the key space, one point read, and one listing.
+
+It is not a product, a conformance suite, or a measurement. It reads a committed volume and reports what the bytes are. A product built on this surface covers the layers in [What a full implementation adds](#what-a-full-implementation-adds), and this crate deliberately stops below them.
 
 ## What it shows
 
@@ -46,16 +52,19 @@ cargo run -p nexus-storage-ref -- self-check
 
 `read` prints the key and the number of bytes at it. An address the volume does not hold exits with a failure, so a script can tell the two outcomes apart.
 
-## What it does not do
+## What a full implementation adds
 
-- No write path. The sample volume is the input.
-- No query over several axes. A box over a coordinate is a layer above the storage contract.
-- No index, resident or otherwise. The listing is the scan.
-- No record decoding. The bytes are handed back as they are.
-- No performance claim. Nothing in this crate is timed or measured.
-- No target build. The commands are a host program.
+The crate stops at the storage contract by design. Each row is a layer above it, and the difference between the two columns is what a product built on this surface provides. Nothing below is measured here.
 
-Those are outside this crate. An external claim system attaches at the seam in `docs/integration-seam.md`.
+| Layer | Here | In a full implementation |
+|---|---|---|
+| Query | A listing hands over the keys, and the caller reads the records it wants | A range over several coordinate axes, answered from the keys, so a box reads no record |
+| Record | Opaque bytes | A framing read and typed views, so a caller never decodes the encoding, and a read that answers what a record says about itself without its payload |
+| Medium | A host directory | A log a part can take: segments, an index on the medium, a ring that retires its oldest segment, and recovery from a power cut |
+| Format | A committed fixture | A version declared on the volume, key validation, and the volume directory, so two implementations agree on a volume |
+| Device | A host program | A target build under a stated memory budget, a caller-supplied storage seam of bytes, a write and an erase, and a C ABI so firmware links a prebuilt archive |
+
+No number in this crate is a performance claim. An external claim system attaches at the seam in `docs/integration-seam.md`, which is a mapping rather than an integration.
 
 ## License
 
