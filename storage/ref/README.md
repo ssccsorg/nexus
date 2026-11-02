@@ -4,11 +4,11 @@ The smallest consumer of the neXus storage surface. It reads a volume through th
 
 ## Scope and goal
 
-The goal is that a reader can see what the storage contract guarantees, and can run that part in a few minutes, before choosing an implementation to build on.
+The goal is that a developer or a technical auditor can see what the storage contract guarantees, and can run that part in a few minutes, before choosing an implementation to build on.
 
 The scope is the read side of one volume on a host: the key space, one point read, and one listing.
 
-It is not a product, a conformance suite, or a measurement. It reads a committed volume and reports what the bytes are. A product built on this surface covers the layers in [What a full implementation adds](#what-a-full-implementation-adds), and this crate deliberately stops below them.
+It is not a product, a conformance suite, or a measurement. It reads a volume and reports what the bytes are. A product built on this surface covers the layers in [What a full implementation adds](#what-a-full-implementation-adds), and this crate deliberately stops below them.
 
 ## What it shows
 
@@ -18,7 +18,7 @@ Three things follow from that, and they are what the commands exercise.
 
 - An address resolves to a key by a rule, not by a lookup.
 - A point read is one read of the medium.
-- A listing is the only scan, so a prefix read is a listing.
+- A prefix read is a listing followed by a filter.
 
 A volume also sits beside an existing application file and leaves that file alone.
 
@@ -31,17 +31,22 @@ A volume also sits beside an existing application file and leaves that file alon
 
 The record's origin is `did:example:asset-1`, its creator is `sensor-1`, and the payload is one JSON event. The coordinate is the file name between `f_` and `.fact`. The bytes are the record encoding, and nothing here decodes them.
 
+Copy an address out of `keys` rather than typing one. Coordinate characters are visually similar, and a mistyped character is still a well formed address, so the tool reports it as absent rather than as a typo.
+
 ## Commands
 
 ```bash
 # List the record keys.
 cargo run -p nexus-storage-ref -- keys --volume ./samples/volume
 
+# Keep the keys under a prefix, a coordinate prefix included.
+cargo run -p nexus-storage-ref -- keys --volume ./samples/volume --prefix "facts/f_<one coordinate character>"
+
 # List the whole key space, payload keys included.
 cargo run -p nexus-storage-ref -- keys --volume ./samples/volume --prefix ""
 
 # Read the bytes at the key an address implies.
-cargo run -p nexus-storage-ref -- read --volume ./samples/volume --coordinate <coordinate>
+cargo run -p nexus-storage-ref -- read --volume ./samples/volume --address <coordinate>
 
 # Place the sample volume beside an existing application file.
 cargo run -p nexus-storage-ref -- sidecar --app ./app.db --volume ./records
@@ -50,7 +55,23 @@ cargo run -p nexus-storage-ref -- sidecar --app ./app.db --volume ./records
 cargo run -p nexus-storage-ref -- self-check
 ```
 
-`read` prints the key and the number of bytes at it. An address the volume does not hold exits with a failure, so a script can tell the two outcomes apart.
+`keys` lists the volume and keeps the keys that start with the prefix, because this channel resolves a listing prefix as a path. The filter is the tool's, and the cost it shows is the listing itself.
+
+`read` accepts one address form, the canonical 20 coordinate characters, and refuses anything else before it touches the volume.
+
+`sidecar` refuses a directory that already holds content, then compares the application file before and after the copy and prints the result it measured.
+
+`self-check` takes the coordinate from the listing rather than from a constant, derives the key from it again, reads the record, and checks that the application file is unchanged.
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | The command finished. For `read`, the record is present. |
+| 1 | The request or the volume is wrong, so no question was asked. A missing volume, an address that is not a coordinate, a directory that already holds content. |
+| 2 | The request was well formed and the volume holds no record at that address. |
+
+A read never creates the directory it reads. Exit 2 is the answer for an address that parsed and found nothing, which keeps it apart from a misplaced path or a mistyped address.
 
 ## What a full implementation adds
 
