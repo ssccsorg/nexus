@@ -5,6 +5,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
+use nex_fih::{CoordId, ascii};
+
 fn run(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_nexus-storage-ref"))
         .args(args)
@@ -164,6 +166,62 @@ fn a_second_placement_is_refused_and_the_app_file_is_unchanged() {
     ]);
     assert_eq!(second.status.code(), Some(1), "{}", stderr(&second));
     assert!(stderr(&second).contains("already holds content"));
+}
+
+#[test]
+fn an_address_in_the_rendering_reads_the_same_record() {
+    let (address, size) = sample_record();
+    let coordinate = CoordId::<20>::from_string(&address).expect("a coordinate");
+    let rendered = ascii::encode(&coordinate);
+
+    let out = run(&["read", "--volume", &volume_arg(), "--address", &rendered]);
+
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let text = stdout(&out);
+    assert!(text.contains(&format!("bytes:      {size}")), "{text}");
+    assert!(
+        text.contains(&address),
+        "the rendering resolved to another address: {text}"
+    );
+}
+
+#[test]
+fn a_rendering_the_volume_does_not_hold_is_absent() {
+    let absent = CoordId::<20>::from_string(&"가".repeat(20)).expect("a coordinate");
+    let rendered = ascii::encode(&absent);
+
+    let out = run(&["read", "--volume", &volume_arg(), "--address", &rendered]);
+
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+    assert!(stderr(&out).contains("absent:"));
+}
+
+#[test]
+fn a_sixty_character_string_outside_the_alphabet_is_refused() {
+    let out = run(&[
+        "read",
+        "--volume",
+        &volume_arg(),
+        "--address",
+        &"a".repeat(60),
+    ]);
+
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(stderr(&out).contains("is not a record address"));
+}
+
+#[test]
+fn a_usage_error_is_a_refused_question_rather_than_an_absent_record() {
+    let out = run(&["read", "--address", "가"]);
+
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+}
+
+#[test]
+fn help_is_not_a_failure() {
+    let out = run(&["--help"]);
+
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
 }
 
 #[test]

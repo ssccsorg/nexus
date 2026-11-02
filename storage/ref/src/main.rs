@@ -15,7 +15,7 @@ use std::time::SystemTime;
 
 use clap::{Parser, Subcommand};
 use nex::io::{FileIo, fs_io::FsIo};
-use nex_fih::{CoordId, FactRecord};
+use nex_fih::{CoordId, FactRecord, ascii};
 
 #[derive(Parser)]
 #[command(
@@ -74,7 +74,23 @@ enum Failure {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    // A usage error is a refused question, not an absent record, so it must not
+    // land on exit 2. `--help` and `--version` are not failures.
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(error) => {
+            let asked_for_help = matches!(
+                error.kind(),
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
+            );
+            let _ = error.print();
+            return if asked_for_help {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            };
+        }
+    };
     let result = match cli.command {
         Command::Keys(args) => keys(&args.volume, &args.prefix),
         Command::Read(args) => read(&args.volume, &args.address),
@@ -133,9 +149,9 @@ fn keys(volume: &Path, prefix: &str) -> Result<(), Failure> {
 }
 
 fn read(volume: &Path, address: &str) -> Result<(), Failure> {
-    let coordinate = CoordId::<20>::from_string(address).ok_or_else(|| {
+    let coordinate = resolve(address).ok_or_else(|| {
         Failure::Refused(format!(
-            "{address:?} is not a record address; an address is 20 coordinate characters"
+            "{address:?} is not a record address; an address is 20 coordinate characters, or the 60-character rendering of one"
         ))
     })?;
     let io = open_volume(volume)?;
@@ -153,6 +169,16 @@ fn read(volume: &Path, address: &str) -> Result<(), Failure> {
         }
         None => Err(Failure::Missing(format!("{key} holds no record"))),
     }
+}
+
+/// The coordinate an address names, in either form this crate accepts.
+///
+/// The canonical form is the coordinate itself. The rendering is the optional
+/// base-36 text from `fih_model::ascii`, which a person can paste into a shell.
+/// A build that must not pay the decode keeps the canonical form alone; this
+/// crate takes both because it is a demonstration.
+fn resolve(address: &str) -> Option<CoordId<20>> {
+    CoordId::<20>::from_string(address).or_else(|| ascii::decode::<20>(address))
 }
 
 fn sidecar(args: &SidecarArgs) -> Result<(), Failure> {

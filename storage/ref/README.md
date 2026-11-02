@@ -59,7 +59,7 @@ cargo run -p nexus-storage-ref -- sidecar --app ./app.db --volume ./records
 
 `keys` lists the volume and keeps the keys that start with the prefix, because this channel resolves a listing prefix as a path. The filter is the tool's, and the cost it shows is the listing itself.
 
-`read` accepts one address form, the canonical 20 coordinate characters, and refuses anything else before it touches the volume.
+`read` accepts the canonical coordinate, and also the 60-character ASCII rendering of one, which `fih_model::ascii` produces. A rendering is decoded to the coordinate before the key is derived, so both forms address the same record and a rendering that decodes to nothing the volume holds still exits 2. Anything else is refused before the volume is touched.
 
 `sidecar` refuses a directory that already holds content, then compares the application file's size and modification time before and after the copy and prints what it measured. Size and modification time keep the check bounded when the application file is large, so the check is a guard against the copy touching the file rather than a content hash of it.
 
@@ -77,19 +77,26 @@ A read never creates the directory it reads. Exit 2 is the answer for an address
 
 `keys` answers 0 or 1 only. An empty volume and a prefix that matches nothing are finished commands, not an absent record, so a script that needs to know whether a prefix found anything reads the count it prints.
 
-## What a full implementation adds
+## What a production implementation adds
 
-The crate stops at the storage contract by design. Each row is a layer above it, and the difference between the two columns is what a product built on this surface provides. Nothing below is measured here.
+The crate stops at the storage contract by design. This table compares it with the production implementation that exists today, layer by layer. It states capabilities and no numbers.
 
-| Layer | Here | In a full implementation |
+| Area | This crate | A production implementation |
 |---|---|---|
-| Query | A listing hands over the keys, and the caller reads the records it wants | A range over several coordinate axes, answered from the keys, so a box reads no record |
-| Record | Opaque bytes | A framing read and typed views, so a caller never decodes the encoding, and a read that answers what a record says about itself without its payload |
+| Write | None. The volume is a committed fixture. | A record addressed by the coordinate the writer assigns or by its content, with a conflict and idempotence rule for a repeated write |
+| Point read | One key, and the bytes at it | One key, and a framing read that answers what a record says about itself without its payload |
+| Multi-axis read | A listing and a prefix filter in the tool | A range over several coordinate positions, answered from the keys alone, so a box reads no record |
+| Enumeration | The whole listing in memory | A walk that holds one page, and a store that keeps no record map, so memory does not follow the record count |
+| Address input | The coordinate and its ASCII rendering | The coordinate alone, because the decode is a cost a device does not pay |
 | Medium | A host directory | A log a part can take: segments, an index on the medium, a ring that retires its oldest segment, and recovery from a power cut |
-| Format | A committed fixture | A version declared on the volume, key validation, and the volume directory, so two implementations agree on a volume |
-| Device | A host program | A target build under a stated memory budget, a caller-supplied storage seam of bytes, a write and an erase, and a C ABI so firmware links a prebuilt archive |
+| Format | None. The fixture states the layout. | A version declared on the volume, key validation, and a volume directory, so two implementations agree on a volume |
+| Target | A host program | A host and a no_std target under a stated memory budget |
+| Integration | A command line | A C ABI over a prebuilt archive, on a caller-supplied seam of bytes, a write, and an erase |
+| Search | None | Text and semantic search over the records |
 
-No number in this crate is a performance claim. An external claim system attaches at the seam in `docs/integration-seam.md`, which is a mapping rather than an integration.
+The comparison covers the record layer. The seal that proves who was in control is in development and is in neither column. Nothing here is measured, so no number in this crate is a performance claim.
+
+An external claim system attaches at the seam in `docs/integration-seam.md`, which is a mapping rather than an integration.
 
 ## License
 
