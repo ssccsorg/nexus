@@ -26,12 +26,16 @@ pub const DIGITS_PER_AXIS: usize = 3;
 /// both properties.
 const ALPHABET: &[u8; 36] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
+/// The number of values one digit carries, taken from the alphabet so the
+/// arithmetic cannot drift from the characters it writes.
+const RADIX: u32 = ALPHABET.len() as u32;
+
 /// Render a coordinate as fixed-width base-36 ASCII.
 ///
 /// Each axis value is below 11,172, which three base-36 digits carry (46,656),
 /// so the text is `DIGITS_PER_AXIS` characters per axis and the axis count
 /// decides the length. The text is `N * 3` bytes, the same length as the native
-/// form for the default depth, because a Hangul syllable is three UTF-8 bytes.
+/// form at any depth, because a Hangul syllable is three UTF-8 bytes.
 ///
 /// The cost is two divisions per axis and no allocation per axis beyond the
 /// string itself.
@@ -39,11 +43,11 @@ pub fn encode<const N: usize>(id: &CoordId<N>) -> String {
     let mut out = String::with_capacity(N * DIGITS_PER_AXIS);
     for coord in id.0.iter() {
         let value = coord.index() as u32;
-        let high = value / (36 * 36);
-        let rest = value % (36 * 36);
+        let high = value / (RADIX * RADIX);
+        let rest = value % (RADIX * RADIX);
         out.push(ALPHABET[high as usize] as char);
-        out.push(ALPHABET[(rest / 36) as usize] as char);
-        out.push(ALPHABET[(rest % 36) as usize] as char);
+        out.push(ALPHABET[(rest / RADIX) as usize] as char);
+        out.push(ALPHABET[(rest % RADIX) as usize] as char);
     }
     out
 }
@@ -53,6 +57,9 @@ pub fn encode<const N: usize>(id: &CoordId<N>) -> String {
 /// A wrong length, a character outside the alphabet, or an axis value above the
 /// coordinate space is `None`. The surplus of the alphabet is refused: three
 /// digits carry 46,656 values and the space holds 11,172.
+///
+/// A system that folds case cannot carry the rendering, because folding would
+/// map two texts to one coordinate. The native form has no such problem.
 pub fn decode<const N: usize>(text: &str) -> Option<CoordId<N>> {
     let bytes = text.as_bytes();
     if bytes.len() != N * DIGITS_PER_AXIS {
@@ -62,7 +69,7 @@ pub fn decode<const N: usize>(text: &str) -> Option<CoordId<N>> {
     for (axis, chunk) in bytes.as_chunks::<DIGITS_PER_AXIS>().0.iter().enumerate() {
         let mut value: u32 = 0;
         for &byte in chunk {
-            value = value * 36 + digit(byte)?;
+            value = value * RADIX + digit(byte)?;
         }
         coords[axis] = Coord::new(value as u16)?;
     }
