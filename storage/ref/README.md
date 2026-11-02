@@ -36,6 +36,9 @@ Copy an address out of `keys` rather than typing one. Coordinate characters are 
 ## Commands
 
 ```bash
+# Run the contract in a temporary volume. Start here.
+cargo run -p nexus-storage-ref -- self-check
+
 # List the record keys.
 cargo run -p nexus-storage-ref -- keys --volume ./samples/volume
 
@@ -50,16 +53,15 @@ cargo run -p nexus-storage-ref -- read --volume ./samples/volume --address <coor
 
 # Place the sample volume beside an existing application file.
 cargo run -p nexus-storage-ref -- sidecar --app ./app.db --volume ./records
-
-# Run the read path in a temporary volume.
-cargo run -p nexus-storage-ref -- self-check
 ```
+
+`cargo test -p nexus-storage-ref` holds the contract these commands promise: the exit codes below, a read that creates nothing, and the prefix filter.
 
 `keys` lists the volume and keeps the keys that start with the prefix, because this channel resolves a listing prefix as a path. The filter is the tool's, and the cost it shows is the listing itself.
 
 `read` accepts one address form, the canonical 20 coordinate characters, and refuses anything else before it touches the volume.
 
-`sidecar` refuses a directory that already holds content, then compares the application file before and after the copy and prints the result it measured.
+`sidecar` refuses a directory that already holds content, then compares the application file's size and modification time before and after the copy and prints what it measured. Size and modification time keep the check bounded when the application file is large, so the check is a guard against the copy touching the file rather than a content hash of it.
 
 `self-check` takes the coordinate from the listing rather than from a constant, derives the key from it again, reads the record, and checks that the application file is unchanged.
 
@@ -72,6 +74,8 @@ cargo run -p nexus-storage-ref -- self-check
 | 2 | The request was well formed and the volume holds no record at that address. |
 
 A read never creates the directory it reads. Exit 2 is the answer for an address that parsed and found nothing, which keeps it apart from a misplaced path or a mistyped address.
+
+`keys` answers 0 or 1 only. An empty volume and a prefix that matches nothing are finished commands, not an absent record, so a script that needs to know whether a prefix found anything reads the count it prints.
 
 ## What a full implementation adds
 

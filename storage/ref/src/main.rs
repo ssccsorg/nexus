@@ -11,6 +11,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::time::SystemTime;
 
 use clap::{Parser, Subcommand};
 use nex::io::{FileIo, fs_io::FsIo};
@@ -70,12 +71,6 @@ enum Failure {
     Refused(String),
     /// The question was well formed and the volume holds nothing at that address.
     Missing(String),
-}
-
-impl From<String> for Failure {
-    fn from(message: String) -> Self {
-        Self::Refused(message)
-    }
 }
 
 fn main() -> ExitCode {
@@ -161,9 +156,10 @@ fn read(volume: &Path, address: &str) -> Result<(), Failure> {
 }
 
 fn sidecar(args: &SidecarArgs) -> Result<(), Failure> {
-    let before = refused(&format!("app {}", args.app.display()), fs::read(&args.app))?;
+    let before = fingerprint(&args.app)?;
 
-    if args.volume.exists() {
+    let existed = args.volume.exists();
+    if existed {
         let mut entries = refused(
             &format!("inspect {}", args.volume.display()),
             fs::read_dir(&args.volume),
@@ -178,7 +174,7 @@ fn sidecar(args: &SidecarArgs) -> Result<(), Failure> {
 
     copy_volume(&sample_volume(), &args.volume)?;
 
-    let after = refused(&format!("app {}", args.app.display()), fs::read(&args.app))?;
+    let after = fingerprint(&args.app)?;
     if after != before {
         return Err(Failure::Refused(format!(
             "{} changed while the volume was placed",
@@ -187,12 +183,26 @@ fn sidecar(args: &SidecarArgs) -> Result<(), Failure> {
     }
 
     println!(
-        "app:       {} (unchanged, {} bytes, verified)",
+        "app:       {} (unchanged, {} bytes and modification time)",
         args.app.display(),
-        before.len()
+        before.0
     );
-    println!("volume:    {} (created)", args.volume.display());
+    println!(
+        "volume:    {} ({})",
+        args.volume.display(),
+        if existed {
+            "filled an empty directory"
+        } else {
+            "created"
+        }
+    );
     Ok(())
+}
+
+/// What a copy must not change, read without loading a file that may be large.
+fn fingerprint(path: &Path) -> Result<(u64, Option<SystemTime>), Failure> {
+    let metadata = refused(&format!("app {}", path.display()), fs::metadata(path))?;
+    Ok((metadata.len(), metadata.modified().ok()))
 }
 
 fn copy_volume(from: &Path, to: &Path) -> Result<(), Failure> {
@@ -218,6 +228,9 @@ fn copy_volume(from: &Path, to: &Path) -> Result<(), Failure> {
 
 fn self_check() -> Result<(), Failure> {
     let root = std::env::temp_dir().join(format!("nexus-storage-ref-{}", std::process::id()));
+    // A run that was killed leaves its directory behind, and a container can
+    // reuse the pid, so the check starts from an empty one every time.
+    let _ = fs::remove_dir_all(&root);
     refused(
         &format!("create {}", root.display()),
         fs::create_dir_all(&root),
@@ -235,10 +248,19 @@ fn self_check() -> Result<(), Failure> {
 
         // The address is in the key, so the coordinate comes from the listing
         // rather than from a constant, and the key has to follow from it again.
-        let key = listing
+        let records: Vec<&String> = listing
             .iter()
-            .find(|key| key.starts_with("facts/"))
-            .ok_or_else(|| Failure::Refused("the sample volume holds no record key".to_string()))?;
+            .filter(|key| key.starts_with("facts/"))
+            .collect();
+        let key = match records.as_slice() {
+            [only] => *only,
+            other => {
+                return Err(Failure::Refused(format!(
+                    "the sample volume holds {} record keys; the check expects one",
+                    other.len()
+                )));
+            }
+        };
         let coordinate = key
             .strip_prefix("facts/f_")
             .and_then(|rest| rest.strip_suffix(".fact"))
