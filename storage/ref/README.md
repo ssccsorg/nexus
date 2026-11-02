@@ -1,53 +1,61 @@
 # nexus-storage-ref
 
-The reference implementation of the neXus storage domain. One volume, one record, one coordinate. No resident index, no database replacement.
+The smallest consumer of the neXus storage surface. It reads a volume through the storage contract and nothing else.
 
-This crate is a consumer of the public storage surface: `fih-model`, `nex-fih`, `nex`, and `chton`'s `FsIo`. It does not depend on any product crate.
+This crate is a consumer of `nex-fih` and `chton`'s `FsIo`. It depends on no product crate, writes no record, and decodes none.
 
 ## What it shows
 
-The record is the unit. A record has content, an origin, and a creator. Its coordinate is derived from those three values, so the same record produces the same coordinate on a host and on a smaller target.
+The volume is a key space. A record's address is the key its bytes live at, so a reader that holds an address reads one key and no other. A listing hands over the keys, and that is the only scan the surface offers.
 
-The volume is the storage. The reference uses `FsIo`, a directory of keys. It adds the volume beside an existing application file and does not touch the file, its schema, or its queries. That is the no-migration claim.
+Three things follow from that, and they are what the commands exercise.
 
-The query is the key set. A multi-axis question reads the record keys; there is no resident index whose memory grows with the record count.
+- An address resolves to a key by a rule, not by a lookup.
+- A point read is one read of the medium.
+- A listing is the only scan, so a prefix read is a listing.
+
+A volume also sits beside an existing application file and leaves that file alone.
+
+## The sample volume
+
+`samples/volume/` is one record as the format writes it, and it is committed so the crate has something to read without a write path.
+
+- `facts/f_<coordinate>.fact` is the record.
+- `blob/<hash>.bin` is the payload, and `blob/<hash>.bin.meta` is its media type.
+
+The record's origin is `did:example:asset-1`, its creator is `sensor-1`, and the payload is one JSON event. The coordinate is the file name between `f_` and `.fact`. The bytes are the record encoding, and nothing here decodes them.
 
 ## Commands
 
 ```bash
-# Write the sample record to a volume.
-cargo run -p nexus-storage-ref -- write --volume ./records
+# List the record keys.
+cargo run -p nexus-storage-ref -- keys --volume ./samples/volume
 
-# Read it back by coordinate.
-cargo run -p nexus-storage-ref -- read --volume ./records --id <coordinate>
+# List the whole key space, payload keys included.
+cargo run -p nexus-storage-ref -- keys --volume ./samples/volume --prefix ""
 
-# List the records.
-cargo run -p nexus-storage-ref -- query --volume ./records
+# Read the bytes at the key an address implies.
+cargo run -p nexus-storage-ref -- read --volume ./samples/volume --coordinate <coordinate>
 
-# Recompute the coordinate and the content hash.
-cargo run -p nexus-storage-ref -- verify --volume ./records --id <coordinate>
-
-# Add a volume beside an existing application file.
+# Place the sample volume beside an existing application file.
 cargo run -p nexus-storage-ref -- sidecar --app ./app.db --volume ./records
 
-# Print the host-side coordinate for the sample record.
-cargo run -p nexus-storage-ref -- device-id
-
-# Run the full host path in a temporary volume.
+# Run the read path in a temporary volume.
 cargo run -p nexus-storage-ref -- self-check
 ```
 
-`--record` takes a JSON file with `origin`, `creator`, `mime_type`, and `payload`. The sample lives at `samples/asset-event.json`.
+`read` prints the key and the number of bytes at it. An address the volume does not hold exits with a failure, so a script can tell the two outcomes apart.
 
-## Portability
+## What it does not do
 
-The host prints a coordinate with `device-id`. The MCU verifier computes the same coordinate when it is given the same payload bytes, origin, and creator. The two strings matching is the portability evidence. The record does not need to travel through a network for the coordinates to agree.
+- No write path. The sample volume is the input.
+- No query over several axes. A box over a coordinate is a layer above the storage contract.
+- No index, resident or otherwise. The listing is the scan.
+- No record decoding. The bytes are handed back as they are.
+- No performance claim. Nothing in this crate is timed or measured.
+- No target build. The commands are a host program.
 
-The current MCU evidence is `verify/mcu` in this workspace: a riscv32imac firmware that boots under QEMU and runs the storage round trip inside the memory budget. The reference CLI is the host side of that comparison.
-
-## Boundary
-
-The reference is a downstream consumer. It uses the public API and the file-backed channel. It does not add a new storage backend to the core, and it does not expose an external claim protocol. An external claim system attaches at the seam described in `docs/integration-seam.md`.
+Those are outside this crate. An external claim system attaches at the seam in `docs/integration-seam.md`.
 
 ## License
 

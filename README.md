@@ -44,7 +44,7 @@ Root workspace members:
 | `nex-server/server/` | `nex-server` | JSON-RPC 2.0 storage server over a Unix socket. The handler holds an `Arc<FihStorage<FsIo>>`. |
 | `nex-server/client/` | `nex-client` | Typed JSON-RPC client for the server and daemon sockets. |
 | `storage/sim/` | `nexus-storage-sim` | Scenario-driven verification runner with in-memory IO backends. |
-| `storage/ref/` | `nexus-storage-ref` | Reference CLI for the storage domain: write, read, query, verify, sidecar, device-id, self-check. |
+| `storage/ref/` | `nexus-storage-ref` | Smallest consumer of the storage surface: keys, read, sidecar, self-check. Reads a committed volume through the key space, with no write path, no index, and no record decoding. |
 | `libs/` | `nexus-gateway-serde-proxy`, `nexus-session-server`, `nexus-async-store` | Shared host libraries. |
 | `playbooks/agents/` | `nexus-privileged-agent` | Consumer playbook used by `./playbooks/run.sh`. |
 | `apps/nex-calc/` | `nex-calc` | Coordinate accumulation CLI, the current design basis for deterministic path accumulation. |
