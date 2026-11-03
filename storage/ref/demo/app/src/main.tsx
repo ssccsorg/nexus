@@ -1,4 +1,9 @@
 import { createRoot } from 'react-dom/client';
+// The pictures this deployment draws, each a package that installs itself.
+import '@ssccsorg/skene-view-media';
+import '@ssccsorg/skene-view-map';
+import '@ssccsorg/skene-view-shell';
+import '@ssccsorg/skene-view-graph';
 import { Frame } from '@ssccsorg/skene-frame';
 import { brand } from './brand';
 import './pack';
