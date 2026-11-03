@@ -1,4 +1,4 @@
-// KvIo: Spin KV Store-backed FileIo + BatchIo for Fermyon Cloud persistence.
+// KvIo: Spin KV Store-backed FileIo for Fermyon Cloud persistence.
 //
 // Each key is prefixed with "fih:" to namespace within the KV store.
 // Writes are immediate (no batch buffering), matching MemIo semantics.
@@ -6,7 +6,7 @@
 
 use spin_sdk::key_value::Store;
 
-use nex::io::{FileIo, IoFuture, WriteOp};
+use nex::io::{FileIo, IoFuture};
 
 pub struct KvIo {
     store: Store,
@@ -62,33 +62,6 @@ impl FileIo for KvIo {
             self.store
                 .delete(&key)
                 .map_err(|e| format!("kv delete {path}: {e}"))?;
-            Ok(())
-        })
-    }
-}
-
-// Spin KV does not expose multi-key transactions, so apply_batch is not atomic.
-// If a mid-batch operation fails, earlier writes are already committed and
-// later operations are skipped. Callers should design for this: prefer
-// idempotent writes and tolerate partial application.
-impl nex::io::BatchIo for KvIo {
-    fn apply_batch<'a>(&'a self, ops: &'a [WriteOp]) -> IoFuture<'a, ()> {
-        let ops_vec = ops.to_vec();
-        Box::pin(async move {
-            for op in &ops_vec {
-                match op {
-                    WriteOp::Write { path, data } => {
-                        self.store
-                            .set(&format!("fih:{path}"), data)
-                            .map_err(|e| format!("kv batch write {path}: {e}"))?;
-                    }
-                    WriteOp::Delete { path } => {
-                        self.store
-                            .delete(&format!("fih:{path}"))
-                            .map_err(|e| format!("kv batch delete {path}: {e}"))?;
-                    }
-                }
-            }
             Ok(())
         })
     }

@@ -64,7 +64,7 @@ use crate::core::record::{
     ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus, RecordTimeUnit,
     decode_hint_record, decode_intent_record,
 };
-use crate::io::file_io::{FileIo, WriteOp, default_apply_batch};
+use crate::io::file_io::{FileIo, WriteOp};
 use crate::semantic::record::{Query, RecordLoad};
 
 // `std::collections::HashMap` exists only under the std feature; alloc has
@@ -745,7 +745,7 @@ impl<I: FileIo> FihStorage<I> {
             }
             core::mem::take(&mut *pending)
         };
-        if let Err(e) = default_apply_batch(&self.io, &ops).await {
+        if let Err(e) = self.io.apply_batch(&ops).await {
             let mut pending = self.pending.borrow_mut();
             pending.splice(0..0, ops);
             return Err(e);
