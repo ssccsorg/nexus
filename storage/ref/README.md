@@ -24,7 +24,9 @@ Nothing in these claims depends on where the layer runs or who sells it. The tab
 
 ## The sample volume
 
-`samples/volume/` is one record as the format writes it, and it is committed so the crate has something to read without a write path.
+`demo/volume/` is one record as the format writes it, and it is committed so the crate has something to read without a write path.
+
+`demo/app/` is the demonstration: a Vite application that reads this volume through the `skene` frame and draws the five claims below. It keeps no second model of the store, and the numbers it draws are the ones this tool printed.
 
 - `facts/f_<coordinate>.fact` is the record.
 - `blob/<hash>.bin` is the payload, and `blob/<hash>.bin.meta` is its media type.
@@ -40,22 +42,22 @@ Copy an address out of `keys` rather than typing one. Coordinate characters are 
 cargo run -p nexus-storage-ref -- self-check
 
 # List the record keys.
-cargo run -p nexus-storage-ref -- keys --volume ./samples/volume
+cargo run -p nexus-storage-ref -- keys --volume ./demo/volume
 
 # Keep the keys under a prefix, a coordinate prefix included.
-cargo run -p nexus-storage-ref -- keys --volume ./samples/volume --prefix "facts/f_<one coordinate character>"
+cargo run -p nexus-storage-ref -- keys --volume ./demo/volume --prefix "facts/f_<one coordinate character>"
 
 # List the whole key space, payload keys included.
-cargo run -p nexus-storage-ref -- keys --volume ./samples/volume --prefix ""
+cargo run -p nexus-storage-ref -- keys --volume ./demo/volume --prefix ""
 
 # The records a box over coordinate axes admits, answered from the keys.
-cargo run -p nexus-storage-ref -- box --volume ./samples/volume --axis 0=가-가
+cargo run -p nexus-storage-ref -- box --volume ./demo/volume --axis 0=가-가
 
 # Read the bytes at the key an address implies.
-cargo run -p nexus-storage-ref -- read --volume ./samples/volume --address <coordinate>
+cargo run -p nexus-storage-ref -- read --volume ./demo/volume --address <coordinate>
 
 # Recompute a record's address from what it holds.
-cargo run -p nexus-storage-ref -- verify --volume ./samples/volume --address <coordinate>
+cargo run -p nexus-storage-ref -- verify --volume ./demo/volume --address <coordinate>
 
 # Place the sample volume beside an existing application file.
 cargo run -p nexus-storage-ref -- sidecar --app ./app.db --volume ./records

@@ -1,10 +1,13 @@
-# nex-view
+# nexus-storage-ref-demo
 
 The storage reference, drawn on the shared frame. One board, one run per volume, and every number on the screen came
 from `nexus-storage-ref`.
 
 The application is a Vite deployment of `@ssccsorg/skene-frame`. It draws nothing of the frame: it supplies a brand, a
 board, and one pack, and the frame supplies the address, the record model, the panels, and the router.
+
+It lives inside the crate it demonstrates, beside the volume it reads, because it is the reference's own demonstration
+rather than one more application on the shelf.
 
 ## What it shows
 
@@ -29,11 +32,11 @@ The frame is a sibling checkout, and the manifest names it by a `file:` path. Fr
 git clone --depth 1 https://github.com/ssccsorg/skene ../skene
 ```
 
-Then build the reference tool and import the committed sample volume:
+Then build the reference tool and import the committed volume:
 
 ```bash
 cargo build -p nexus-storage-ref
-cd apps/nex-view
+cd storage/ref/demo/app
 npm install
 npm run import -- --id sample-volume --title "Sample volume"
 npm run dev

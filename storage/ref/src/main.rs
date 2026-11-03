@@ -204,7 +204,7 @@ fn main() -> ExitCode {
 }
 
 fn sample_volume() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("samples/volume")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("demo/volume")
 }
 
 /// Open a volume that has to exist. A read creates nothing.

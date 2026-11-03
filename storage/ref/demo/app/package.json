@@ -1,5 +1,5 @@
 {
-  "name": "nex-view",
+  "name": "nexus-storage-ref-demo",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -13,7 +13,7 @@
     "import": "node tools/import-volume.mjs"
   },
   "dependencies": {
-    "@ssccsorg/skene-frame": "file:../../../skene/packages/frame",
+    "@ssccsorg/skene-frame": "file:../../../../../skene/packages/frame",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

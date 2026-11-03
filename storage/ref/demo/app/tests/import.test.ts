@@ -21,11 +21,11 @@ const COORDINATE =
   '00024O7M35346N71GE0EV7VJ33Q5CP6FG6OW3230BA3OO00G6MP0LM4RH0UQ';
 const BLOB = 'blob/578e724ee7e9c587be42c260a6d7e89abf7b75d502d3946ddc473b25aa22e3b8';
 
-/** What the tool answered for `storage/ref/samples/volume`. */
+/** What the tool answered for `storage/ref/demo/volume`. */
 const measured = {
   id: 'sample-volume',
   title: 'Sample volume',
-  volume: 'storage/ref/samples/volume',
+  volume: 'storage/ref/demo/volume',
   coordinate: COORDINATE,
   keys: [`${BLOB}.bin`, `${BLOB}.bin.meta`, `facts/f_${COORDINATE}.fact`],
   keyCount: 3,
@@ -88,7 +88,7 @@ const bin = defaultBin();
 
 describe.skipIf(!runs(bin))('the importer over the committed volume', () => {
   test('writes the bytes that are committed', () => {
-    const out = mkdtempSync(join(tmpdir(), 'nex-view-import-'));
+    const out = mkdtempSync(join(tmpdir(), 'nex-ref-demo-import-'));
     try {
       const run = spawnSync(
         process.execPath,
@@ -97,7 +97,7 @@ describe.skipIf(!runs(bin))('the importer over the committed volume', () => {
           '--bin',
           bin,
           '--volume',
-          'storage/ref/samples/volume',
+          'storage/ref/demo/volume',
           '--id',
           'sample-volume',
           '--title',

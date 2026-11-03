@@ -16,7 +16,7 @@
         {
           "kind": "keyspace",
           "at": {
-            "volume": "storage/ref/samples/volume",
+            "volume": "storage/ref/demo/volume",
             "keys": [
               "blob/578e724ee7e9c587be42c260a6d7e89abf7b75d502d3946ddc473b25aa22e3b8.bin",
               "blob/578e724ee7e9c587be42c260a6d7e89abf7b75d502d3946ddc473b25aa22e3b8.bin.meta",

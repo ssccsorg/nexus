@@ -32,9 +32,25 @@ const NOTE =
   'One project per volume, and every number on the screen came from the reference tool. This board is written by ' +
   '`npm run import`; nothing here counts a key.';
 
+/**
+ * The repository this application sits in, found by walking up to the checkout.
+ *
+ * The demo is four directories inside the repository (`storage/ref/demo/app`), so a fixed run of `..` would be a number to
+ * keep in step with a move. The checkout is the directory that holds `.git`.
+ */
+function repoRoot() {
+  let dir = APP;
+  while (!existsSync(join(dir, '.git'))) {
+    const parent = dirname(dir);
+    if (parent === dir) throw new Error(`no checkout above ${APP}`);
+    dir = parent;
+  }
+  return dir;
+}
+
 /** The tool beside this checkout, debug first. */
 export function defaultBin() {
-  const root = resolve(APP, '..', '..');
+  const root = repoRoot();
   for (const build of ['debug', 'release']) {
     const candidate = join(root, 'target', build, 'nexus-storage-ref');
     if (existsSync(candidate)) return candidate;
@@ -120,7 +136,7 @@ export function measure({ bin, volume, volumePath, id, title }) {
 
   // The sidecar measurement is taken on a volume of its own, because it places one and refuses a directory that
   // already holds content. What it reports is the application file's size and that it did not change.
-  const scratch = mkdtempSync(join(tmpdir(), 'nex-view-sidecar-'));
+  const scratch = mkdtempSync(join(tmpdir(), 'nex-ref-demo-sidecar-'));
   let sidecar;
   try {
     const app = join(scratch, 'app.db');
@@ -322,10 +338,10 @@ function main() {
   };
 
   const bin = option('bin') ?? process.env.NEX_REF_BIN ?? defaultBin();
-  const repo = resolve(APP, '..', '..');
+  const repo = repoRoot();
   // A path relative to the repository, so the command runs from the application directory and the board stays
   // machine independent. An absolute path is taken as given.
-  const volume = option('volume', 'storage/ref/samples/volume');
+  const volume = option('volume', 'storage/ref/demo/volume');
   const volumePath = resolve(repo, volume);
   const id = option('id') ?? basename(volumePath);
   const title = option('title') ?? id;
