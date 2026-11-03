@@ -100,45 +100,45 @@ Run these from the repository root, which is where `-p` finds the workspace and 
 # Run the contract in a temporary volume. Start here.
 cargo run -p nexus-storage-ref -- self-check
 
-# List the record keys.
-cargo run -p nexus-storage-ref -- keys --volume storage/ref/demo/volume
+# List the record keys, each address in its base-36 rendering.
+cargo run -p nexus-storage-ref -- keys --ascii --volume storage/ref/demo/volume --prefix ""
 
-# Keep the keys under a prefix, a coordinate prefix included.
-cargo run -p nexus-storage-ref -- keys --volume storage/ref/demo/volume --prefix "facts/f_<one coordinate character>"
+# Keep the keys under a prefix. The prefix is matched against the stored key.
+cargo run -p nexus-storage-ref -- keys --ascii --volume storage/ref/demo/volume --prefix "facts/"
 
-# List the whole key space, payload keys included.
-cargo run -p nexus-storage-ref -- keys --volume storage/ref/demo/volume --prefix ""
+# The records a box over one coordinate axis admits, answered from the keys.
+cargo run -p nexus-storage-ref -- box --ascii --volume storage/ref/demo/volume --axis 0=000-000
 
-# The records a box over coordinate axes admits, answered from the keys.
-cargo run -p nexus-storage-ref -- box --volume storage/ref/demo/volume --axis 0=가-가
+# Read the bytes at the address a key implies.
+cargo run -p nexus-storage-ref -- read --ascii --volume storage/ref/demo/volume \
+  --address 00024O7M35346N71GE0EV7VJ33Q5CP6FG6OW3230BA3OO00G6MP0LM4RH0UQ
 
-# The same, with every address printed in its rendering.
-cargo run -p nexus-storage-ref -- box --ascii --volume storage/ref/demo/volume --axis 0=<three characters>
-
-# Read the bytes at the key an address implies.
-cargo run -p nexus-storage-ref -- read --volume storage/ref/demo/volume --address <coordinate>
-
-# Recompute a record's address from what it holds.
-cargo run -p nexus-storage-ref -- verify --volume storage/ref/demo/volume --address <coordinate>
+# Recompute the address from what the record holds.
+cargo run -p nexus-storage-ref -- verify --ascii --volume storage/ref/demo/volume \
+  --address 00024O7M35346N71GE0EV7VJ33Q5CP6FG6OW3230BA3OO00G6MP0LM4RH0UQ
 
 # Place the volume beside an existing application file.
 cargo run -p nexus-storage-ref -- sidecar --app ./app.db --volume ./records
 ```
+
+Every example reads and prints addresses in their rendering, so a terminal with no font for the native coordinate
+shows the same thing the demonstration shows.
 
 `cargo test -p nexus-storage-ref` holds the contract these commands promise: the exit codes below, a read that creates
 nothing, and the prefix filter.
 
 `--ascii` prints every address in its base-36 rendering, three characters an axis, which is the form `fih_model::ascii`
 produces and the one `read` and `verify` already accept. A box's bounds are read in the same form, so a printed address
-can be handed back to the tool unchanged. The volume still holds the native key: the rendering is a display form, and
-`keys --ascii` prints a record's key with its address rendered.
+can be handed back to the tool unchanged. The volume still holds the native key: the rendering is a display form, and a
+prefix is always matched against the stored key rather than against what is printed.
 
 `keys` lists the volume and keeps the keys that start with the prefix, because this channel resolves a listing prefix as
 a path. The filter is the tool's, and the cost it shows is the listing itself.
 
 `box` reads the coordinate out of each key and answers the range from it. The store opens without record maps and no
 record is read, so the answer costs the keys and nothing else. An axis the box does not name is free. `--axis` names one,
-and both of its bounds use the same width, so `--axis 0=가-가 --axis 4=하-하` constrains two axes.
+and both of its bounds use the same width, so a second flag constrains a second axis. With `--ascii` a bound is written in
+the rendering, which is what the example above does.
 
 `read` accepts the canonical coordinate, and also the 60-character ASCII rendering of one, which `fih_model::ascii`
 produces. A rendering is decoded to the coordinate before the key is derived, so both forms address the same record and a
