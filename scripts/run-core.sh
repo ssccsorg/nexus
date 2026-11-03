@@ -7,7 +7,8 @@
 # suggestions before strict checks — eliminating most CI noise.
 #
 # Pipeline:
-#   fmt --all → clippy --fix --workspace → fix --workspace → fmt → check → clippy → test
+#   fmt --all → clippy --fix --workspace → fix --workspace → fmt → check →
+#   app check → clippy → test
 #
 # Usage:
 #   scripts/run-core.sh               # Full check
@@ -156,6 +157,29 @@ run_verify_check() {
     fi
 }
 
+# ── Standalone app manifests (issue #223) ──────────────────────────────
+#
+# Each app under apps/ resolves its own dependencies: it declares its own
+# [workspace] or sits in the root workspace's exclude list. A workspace-wide
+# cargo check never compiles one, so a change there can break the build with
+# nothing to notice. This compiles every app manifest, which is what makes the
+# fast gate cover every crate a change can touch.
+
+run_apps_check() {
+    local failed=0
+    while IFS= read -r manifest; do
+        echo "=== app check: $manifest ==="
+        if ! cargo check --manifest-path "$manifest" --all-targets 2>&1; then
+            echo "app check failed: $manifest"
+            failed=1
+        fi
+    done < <(find apps -maxdepth 2 -name Cargo.toml | sort)
+    if [ "$failed" -ne 0 ]; then
+        echo "run_apps_check: one or more app manifests failed to compile"
+        return 1
+    fi
+}
+
 # ── Pre-flight auto-fixes: catch trivial issues before strict checks ────
 
 run_fmt() {
@@ -222,6 +246,7 @@ run_all() {
     echo "=== fix --workspace ===" && run_compiler_fix
     echo "=== fmt (after fixes) ===" && run_fmt
     echo "=== check ===" && run_check
+    echo "=== app check ===" && run_apps_check
     echo "=== wasm check ===" && run_wasm_check
     echo "=== wasip2 smoke ===" && run_wasip2_check
     echo "=== no_std anchors ===" && run_nostd_check
@@ -231,7 +256,7 @@ run_all() {
 }
 
 case $MODE in
-    check)  echo "=== fmt --all ===" && run_fmt && run_check && run_wasm_check && run_wasip2_check && run_nostd_check && run_verify_check ;;
+    check)  echo "=== fmt --all ===" && run_fmt && run_check && run_apps_check && run_wasm_check && run_wasip2_check && run_nostd_check && run_verify_check ;;
     clippy) run_auto_fix && run_clippy ;;
     test)   echo "=== fmt --all ===" && run_fmt && run_wasm_check && run_test ;;
     all)
