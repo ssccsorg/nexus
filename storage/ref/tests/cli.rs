@@ -15,7 +15,7 @@ fn run(args: &[&str]) -> Output {
 }
 
 fn sample_volume() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("samples/volume")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("demo/volume")
 }
 
 fn volume_arg() -> String {
@@ -318,6 +318,134 @@ fn the_whole_key_space_lists_the_record_and_its_payload() {
     );
     // One record, its payload, and that payload's media type.
     assert!(text.contains("3 key(s)"), "{text}");
+}
+
+#[test]
+fn the_ascii_mode_prints_the_rendering_and_no_native_character() {
+    let (address, size) = sample_record();
+    let rendered = ascii::encode(&CoordId::<20>::from_string(&address).expect("a coordinate"));
+
+    let out = run(&[
+        "read",
+        "--ascii",
+        "--volume",
+        &volume_arg(),
+        "--address",
+        &address,
+    ]);
+
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let text = stdout(&out);
+    assert!(text.contains(&format!("coordinate: {rendered}")), "{text}");
+    assert!(
+        text.contains(&format!("key:        facts/f_{rendered}.fact")),
+        "{text}"
+    );
+    assert!(text.contains(&format!("bytes:      {size}")), "{text}");
+    assert!(text.is_ascii(), "the rendering is ASCII: {text}");
+}
+
+#[test]
+fn the_ascii_mode_reads_the_rendering_back() {
+    let (address, _) = sample_record();
+    let rendered = ascii::encode(&CoordId::<20>::from_string(&address).expect("a coordinate"));
+
+    let out = run(&[
+        "read",
+        "--ascii",
+        "--volume",
+        &volume_arg(),
+        "--address",
+        &rendered,
+    ]);
+
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert!(
+        stdout(&out).contains(&format!("coordinate: {rendered}")),
+        "{}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn a_box_in_the_rendering_narrows_to_the_same_record() {
+    let (address, _) = sample_record();
+    let rendered = ascii::encode(&CoordId::<20>::from_string(&address).expect("a coordinate"));
+    let first: String = rendered.chars().take(ascii::DIGITS_PER_AXIS).collect();
+
+    let hit = run(&[
+        "box",
+        "--ascii",
+        "--volume",
+        &volume_arg(),
+        "--axis",
+        &format!("0={first}-{first}"),
+    ]);
+    assert_eq!(hit.status.code(), Some(0), "{}", stderr(&hit));
+    assert!(stdout(&hit).contains(&rendered), "{}", stdout(&hit));
+    assert!(stdout(&hit).contains("1 record(s)"), "{}", stdout(&hit));
+    assert!(stdout(&hit).is_ascii(), "{}", stdout(&hit));
+
+    let other = if first == "000" { "001" } else { "000" };
+    let miss = run(&[
+        "box",
+        "--ascii",
+        "--volume",
+        &volume_arg(),
+        "--axis",
+        &format!("0={other}-{other}"),
+    ]);
+    assert_eq!(miss.status.code(), Some(0), "{}", stderr(&miss));
+    assert!(stdout(&miss).contains("0 record(s)"), "{}", stdout(&miss));
+}
+
+#[test]
+fn the_keys_in_the_rendering_are_ascii() {
+    let (address, _) = sample_record();
+    let rendered = ascii::encode(&CoordId::<20>::from_string(&address).expect("a coordinate"));
+
+    let out = run(&["keys", "--ascii", "--volume", &volume_arg(), "--prefix", ""]);
+
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let text = stdout(&out);
+    assert!(text.is_ascii(), "{text}");
+    assert!(text.contains(&format!("facts/f_{rendered}.fact")), "{text}");
+    assert!(text.contains("blob/"), "{text}");
+    assert!(text.contains("3 key(s)"), "{text}");
+}
+
+#[test]
+fn a_rendered_bound_is_refused_when_the_bounds_disagree_on_width() {
+    let out = run(&[
+        "box",
+        "--ascii",
+        "--volume",
+        &volume_arg(),
+        "--axis",
+        "0=0-000",
+    ]);
+
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(stderr(&out).contains("same width"), "{}", stderr(&out));
+}
+
+#[test]
+fn a_bound_that_is_neither_a_character_nor_a_rendering_is_refused() {
+    let out = run(&[
+        "box",
+        "--ascii",
+        "--volume",
+        &volume_arg(),
+        "--axis",
+        "0=00-00",
+    ]);
+
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("a bound is one character"),
+        "{}",
+        stderr(&out)
+    );
 }
 
 #[test]

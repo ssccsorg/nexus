@@ -253,7 +253,7 @@ fn a_store_without_maps_has_nothing_to_index() {
 /// The mode's own invariant, held where the mode is defined rather than where its footprint
 /// is measured: a store without maps holds nothing about the volume it writes, which is what
 /// keeps the memory a product needs independent of how many records it keeps. The footprint
-/// consequence is measured on the device tier in ktema; this is the half that fails first,
+/// consequence belongs to whichever deployment measures it; this is the half that fails first,
 /// because a path that starts remembering shows up as a map with entries in it.
 #[test]
 fn a_store_without_maps_keeps_nothing_about_the_volume() {

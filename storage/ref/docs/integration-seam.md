@@ -1,30 +1,42 @@
 # Integration seam
 
-An external claim or identity system attaches to the record layer at one place: the record's content, origin, and creator. Nothing in the core needs to know the external protocol.
+neXus records a fact, an intent, and a hint over one coordinate space. An external claim or identity system attaches at
+one place: the three things a fact says about its own provenance, which are its content, its origin, and its creator. The
+core does not learn the external protocol, and the adapter does not change the record.
 
-| External claim system | neXus |
+## The seam
+
+| What the external system holds | What it becomes |
 |---|---|
-| Claim payload | Record content |
-| DID or issuer | Origin and creator |
-| Claim proof | Content hash and coordinate |
-| Oracle evaluation | Intent and conclusion |
+| a payload | the record's content |
+| an issuer or subject identifier | the record's origin and creator |
+| a proof over the payload | the record's content hash and coordinate |
+| an evaluation or decision | an intent and its conclusion |
 
-The adapter lives outside the core. In this repository it would be a downstream crate, and in a product tree it would be a product integration. The core keeps the storage contract and does not depend on the external system.
+The proof is the row worth reading. A record's coordinate follows from what the record holds, so a verifier that holds the
+record recomputes the coordinate and compares. The external proof needs no copy inside the record, because the record is
+its own check.
 
-## Example: IXO
+## Writing the adapter
 
-IXO's impact credits carry Entity, Claims, Location, Period, Oracle, Protocol, Data, and Proof. A thin adapter can map those fields as follows.
+1. Map the payload to content and store it. The content hash is the payload's identity.
+2. Map the issuer to origin and creator. Both are part of the address, so two issuers publishing the same payload keep two
+   records.
+3. Map the decision to an intent and its conclusion. The intent lifecycle then records when the work was proposed, who
+   claimed it, and when it concluded.
 
-- Entity and Oracle become origin and creator.
-- Claims and Data become the record content.
-- Location and Period become query dimensions in the adapter.
-- Proof becomes the content hash and the coordinate.
+Nothing else is needed. A field the external system keeps only for its own search can become a coordinate axis, and the
+same question is then asked of the record layer instead of the external system.
 
-This is a mapping, not an integration. No IXO chain, token, or portal is part of this crate.
+## Where the adapter lives
+
+Outside the core. In this repository it would be a downstream crate, and in a product tree it would be the product's
+integration. The rule is that the core depends on no external system, and an external system reaches the core through this
+seam alone.
 
 ## What is not included
 
-- No external chain or token.
-- No identity registry.
+- No external chain, token, or registry.
+- No identity provider.
 - No production SLA.
 - No second storage format.

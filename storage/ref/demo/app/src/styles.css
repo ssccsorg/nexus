@@ -1,0 +1,13 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import '@ssccsorg/skene-frame/tokens.css';
+
+/* The frame's own source is scanned beside this application's, so a class the frame writes is a class Tailwind kept.
+   Both paths name the installed package, so a checkout under another directory or a published version reads the same. */
+@source '../node_modules/@ssccsorg/skene-ui/src';
+@source '../node_modules/@ssccsorg/skene-frame/src';
+@source '../node_modules/@ssccsorg/skene-view-media/src';
+@source '../node_modules/@ssccsorg/skene-view-map/src';
+@source '../node_modules/@ssccsorg/skene-view-shell/src';
+@source '../node_modules/@ssccsorg/skene-view-graph/src';
+@source './';

@@ -1,0 +1,51 @@
+{
+  "note": "One project per volume, and every number on the screen came from the reference tool. This board is written by `npm run import`; nothing here counts a key.",
+  "projects": [
+    {
+      "format": "project/1",
+      "id": "sample-volume",
+      "resources": [
+        {
+          "kind": "channel",
+          "at": "sim"
+        },
+        {
+          "kind": "record",
+          "at": "scenario/sample-volume.txt"
+        },
+        {
+          "kind": "keyspace",
+          "at": {
+            "volume": "storage/ref/demo/volume",
+            "keys": [
+              "blob/578e724ee7e9c587be42c260a6d7e89abf7b75d502d3946ddc473b25aa22e3b8.bin",
+              "blob/578e724ee7e9c587be42c260a6d7e89abf7b75d502d3946ddc473b25aa22e3b8.bin.meta",
+              "facts/f_00024O7M35346N71GE0EV7VJ33Q5CP6FG6OW3230BA3OO00G6MP0LM4RH0UQ.fact"
+            ],
+            "listed": 3,
+            "box": {
+              "axis": 0,
+              "from": "000",
+              "until": "000",
+              "records": 1
+            },
+            "records": 1
+          }
+        },
+        {
+          "kind": "views",
+          "at": {
+            "pack": "volume",
+            "main": "keyspace"
+          }
+        },
+        {
+          "kind": "layout",
+          "at": {
+            "console": true
+          }
+        }
+      ]
+    }
+  ]
+}

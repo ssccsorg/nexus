@@ -192,3 +192,38 @@ jobs:
           python-version: "3.12"
       - name: Playbook verification
         run: bash ./run.sh --playbooks
+
+  # The demonstration is a deployment of a package it does not own, so it is checked against the frame as published
+  # rather than against a copy: the clone is what a reader's first run does.
+  demo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: storage/ref
+          cache-targets: true
+          cache-on-failure: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: storage/ref/demo/app/package-lock.json
+      # The application names the frame five levels up from itself, so the frame sits beside this checkout.
+      - name: Put the frame beside this checkout
+        run: git clone --depth 1 https://github.com/ssccsorg/skene "${{ github.workspace }}/../skene"
+      # The end-to-end case runs the importer against the committed volume; without this binary it skips.
+      - name: Build the reference tool
+        run: cargo build -p nexus-storage-ref
+      - name: Install the application
+        working-directory: storage/ref/demo/app
+        run: npm ci
+      - name: Test the application
+        working-directory: storage/ref/demo/app
+        run: npm test
+      - name: Build the application
+        working-directory: storage/ref/demo/app
+        run: npm run build
+      - name: The build carries the board
+        run: test -f storage/ref/demo/app/dist/projects.json && test -d storage/ref/demo/app/dist/scenario

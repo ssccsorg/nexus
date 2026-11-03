@@ -8,8 +8,8 @@ storage demo should show and test.
 Two rules bind this work and the report itself.
 
 - No commercial product name appears in the demo, its board, its run files, its brand, or its tests. The
-  frame is open source and a deployment brings only its own domain. The section on residuals lists where
-  product vocabulary still sits inside `skene`, so it is not imported by accident.
+  frame is open source and a deployment brings only its own domain. The frame's own source and tests carry
+  none either, so there is no example to inherit by accident.
 - The numbers a screen shows are the tool's own. A second model of the store inside the demo is a model
   free to disagree with the store.
 
@@ -365,19 +365,20 @@ What a deployment owes is what only it can answer, in `tests/`, run with `vitest
 - Do not edit the frame to make one demo easier. If a seam is missing, the seam is the change, and it is
   proposed to `skene` on its own issue.
 
-## Residuals inside skene today
+## Product vocabulary inside skene
 
-These are recorded so the next agent does not mistake them for the contract, and so nobody imports them.
+The frame names no product in its source or in its tests. The last of it was removed in `skene` commit
+`f93fb81`: three prose mentions, four fixtures, and the one test that had been written against two product
+binaries and skipped without them. That test now runs against wire records it owns, so its cases execute
+instead of skipping.
 
-- `packages/frame/src/lib/scenario.ts` opens with a comment naming a product's simulation command.
-- `packages/frame/tests/` carries product vocabulary in fixtures and in one test's comment:
-  `records-source.test.ts` (a product CLI and an environment variable named after it),
-  `tracks.test.ts`, `holds.test.ts`, `tree.test.ts`, and `hex.test.ts`.
-- `packages/frame/tests/persist.test.ts` contains a product name list, which is the opposite case: it
-  exists to assert that persisted state carries none, so it should stay.
+The names survive in exactly one place, on purpose. `packages/frame/tests/persist.test.ts` holds the list so
+it can refuse it, because the frame is one package every deployment links and a key named after one of them
+is a key another deployment reads that state from. The guard reads the frame's source rather than its
+tests, so a product name in `src/` fails the suite and a fixture is a reviewer's call.
 
-None of these reaches a public API, and the deployment is unaffected by them. Cleaning them is a change to
-`skene` and belongs in its own commit, with the test that guards the namespace left intact.
+The consequence for this work is simple: there is no vocabulary to copy. A name that belongs to a product
+in the demo's code, board, runs, or tests comes from the demo, and it is a change to the demo.
 
 ## Open questions for the owner
 

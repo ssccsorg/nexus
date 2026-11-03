@@ -28,6 +28,12 @@ const KEY_PAGE: usize = 32;
     about = "Read a neXus volume through the storage contract"
 )]
 struct Cli {
+    /// Print every address in its base-36 rendering, and read a box's bounds in that form.
+    ///
+    /// The volume still holds the native key. The rendering is the form `read` and `verify`
+    /// already accept, so a printed address can be handed back to the tool unchanged.
+    #[arg(long, global = true)]
+    ascii: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -95,19 +101,25 @@ struct SidecarArgs {
 }
 
 /// One axis constrained to the coordinate characters it admits, inclusive.
-#[derive(Clone, Copy)]
+///
+/// A bound is one character, or the fixed-width rendering of one when the tool prints the rendering. The coordinate
+/// being tested is in the same form, so a bound and the text it is compared against are the same width.
+#[derive(Clone)]
 struct Axis {
     at: usize,
-    from: char,
-    until: char,
+    from: String,
+    until: String,
 }
 
 impl Axis {
-    fn admits(self, coordinate: &str) -> bool {
-        coordinate
+    fn admits(&self, coordinate: &str) -> bool {
+        let width = self.from.chars().count();
+        let value: String = coordinate
             .chars()
-            .nth(self.at)
-            .is_some_and(|value| value >= self.from && value <= self.until)
+            .skip(self.at * width)
+            .take(width)
+            .collect();
+        value.chars().count() == width && value >= self.from && value <= self.until
     }
 }
 
@@ -121,19 +133,25 @@ fn parse_axis(text: &str) -> Result<Axis, String> {
     let at: usize = at
         .parse()
         .map_err(|_| format!("{text}: the axis is a number"))?;
-    let from = one_character(text, from)?;
-    let until = one_character(text, until)?;
+    let from = bound(text, from)?;
+    let until = bound(text, until)?;
+    if from.chars().count() != until.chars().count() {
+        return Err(format!("{text}: the bounds are not the same width"));
+    }
     if from > until {
         return Err(format!("{text}: the lower bound is above the upper one"));
     }
     Ok(Axis { at, from, until })
 }
 
-fn one_character(text: &str, part: &str) -> Result<char, String> {
-    let mut chars = part.chars();
-    match (chars.next(), chars.next()) {
-        (Some(value), None) => Ok(value),
-        _ => Err(format!("{text}: a bound is one character")),
+fn bound(text: &str, part: &str) -> Result<String, String> {
+    match part.chars().count() {
+        1 => Ok(part.to_string()),
+        ascii::DIGITS_PER_AXIS => Ok(part.to_string()),
+        _ => Err(format!(
+            "{text}: a bound is one character, or {} in the rendering",
+            ascii::DIGITS_PER_AXIS
+        )),
     }
 }
 
@@ -163,13 +181,14 @@ fn main() -> ExitCode {
             };
         }
     };
+    let ascii = cli.ascii;
     let result = match cli.command {
-        Command::Keys(args) => keys(&args.volume, &args.prefix),
-        Command::Box(args) => boxed(&args.volume, &args.axes),
-        Command::Read(args) => read(&args.volume, &args.address),
-        Command::Verify(args) => verify(&args.volume, &args.address),
+        Command::Keys(args) => keys(&args.volume, &args.prefix, ascii),
+        Command::Box(args) => boxed(&args.volume, &args.axes, ascii),
+        Command::Read(args) => read(&args.volume, &args.address, ascii),
+        Command::Verify(args) => verify(&args.volume, &args.address, ascii),
         Command::Sidecar(args) => sidecar(&args),
-        Command::SelfCheck => self_check(),
+        Command::SelfCheck => self_check(ascii),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -185,7 +204,7 @@ fn main() -> ExitCode {
 }
 
 fn sample_volume() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("samples/volume")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("demo/volume")
 }
 
 /// Open a volume that has to exist. A read creates nothing.
@@ -225,16 +244,35 @@ fn record_coordinate(key: &str) -> Option<&str> {
     key.strip_prefix("facts/f_")?.strip_suffix(".fact")
 }
 
+/// An address as this run prints it: the native form, or its base-36 rendering when that was asked for.
+fn render(coordinate: &str, ascii: bool) -> String {
+    if !ascii {
+        return coordinate.to_string();
+    }
+    CoordId::<20>::from_string(coordinate)
+        .map(|id| ascii::encode(&id))
+        .unwrap_or_else(|| coordinate.to_string())
+}
+
+/// A key as this run prints it. In the rendering a record's address is replaced, and every other key stands as it is.
+fn display_key(key: &str, ascii: bool) -> String {
+    match record_coordinate(key) {
+        Some(coordinate) if ascii => FactRecord::fact_key(&render(coordinate, true)),
+        _ => key.to_string(),
+    }
+}
+
 fn refused<T>(what: &str, result: Result<T, std::io::Error>) -> Result<T, Failure> {
     result.map_err(|e| Failure::Refused(format!("{what}: {e}")))
 }
 
-fn keys(volume: &Path, prefix: &str) -> Result<(), Failure> {
+fn keys(volume: &Path, prefix: &str, ascii: bool) -> Result<(), Failure> {
     let io = open_volume(volume)?;
     let mut matched = 0;
     for_each_key(&io, |key| {
-        if key.starts_with(prefix) {
-            println!("{key}");
+        let shown = display_key(key, ascii);
+        if shown.starts_with(prefix) {
+            println!("{shown}");
             matched += 1;
         }
         true
@@ -243,7 +281,7 @@ fn keys(volume: &Path, prefix: &str) -> Result<(), Failure> {
     Ok(())
 }
 
-fn boxed(volume: &Path, axes: &[Axis]) -> Result<(), Failure> {
+fn boxed(volume: &Path, axes: &[Axis], ascii: bool) -> Result<(), Failure> {
     let io = open_volume(volume)?;
     let mut matched = 0;
     // The coordinate is in the key, so the whole box is answered by the listing
@@ -252,8 +290,9 @@ fn boxed(volume: &Path, axes: &[Axis]) -> Result<(), Failure> {
         let Some(coordinate) = record_coordinate(key) else {
             return true;
         };
-        if axes.iter().all(|axis| axis.admits(coordinate)) {
-            println!("{coordinate}");
+        let shown = render(coordinate, ascii);
+        if axes.iter().all(|axis| axis.admits(&shown)) {
+            println!("{shown}");
             matched += 1;
         }
         true
@@ -262,26 +301,29 @@ fn boxed(volume: &Path, axes: &[Axis]) -> Result<(), Failure> {
     Ok(())
 }
 
-fn read(volume: &Path, address: &str) -> Result<(), Failure> {
+fn read(volume: &Path, address: &str, ascii: bool) -> Result<(), Failure> {
     let coordinate = resolve(address).ok_or_else(|| {
         Failure::Refused(format!(
             "{address:?} is not a record address; an address is 20 coordinate characters, or the 60-character rendering of one"
         ))
     })?;
+    let native = coordinate.to_string();
+    let shown = render(&native, ascii);
+    let shown_key = FactRecord::fact_key(&shown);
     let io = open_volume(volume)?;
-    let key = FactRecord::fact_key(&coordinate.to_string());
+    let key = FactRecord::fact_key(&native);
     let bytes = futures_executor::block_on(io.read(&key))
         .map_err(|e| Failure::Refused(format!("read {key}: {e}")))?;
 
-    println!("coordinate: {coordinate}");
-    println!("key:        {key}");
+    println!("coordinate: {shown}");
+    println!("key:        {shown_key}");
     match bytes {
         Some(bytes) => {
             println!("bytes:      {}", bytes.len());
             println!("present:    yes");
             Ok(())
         }
-        None => Err(Failure::Missing(format!("{key} holds no record"))),
+        None => Err(Failure::Missing(format!("{shown_key} holds no record"))),
     }
 }
 
@@ -295,13 +337,14 @@ fn resolve(address: &str) -> Option<CoordId<20>> {
     CoordId::<20>::from_string(address).or_else(|| ascii::decode::<20>(address))
 }
 
-fn verify(volume: &Path, address: &str) -> Result<(), Failure> {
+fn verify(volume: &Path, address: &str, ascii: bool) -> Result<(), Failure> {
     let coordinate = resolve(address).ok_or_else(|| {
         Failure::Refused(format!(
             "{address:?} is not a record address; an address is 20 coordinate characters, or the 60-character rendering of one"
         ))
     })?;
     let name = coordinate.to_string();
+    let shown = render(&name, ascii);
 
     // A store that keeps no record map reads the medium at the key the address
     // implies, which is the read a device makes.
@@ -326,8 +369,8 @@ fn verify(volume: &Path, address: &str) -> Result<(), Failure> {
     );
     let address_ok = rebuilt.id.to_string() == framing.id;
 
-    println!("coordinate: {coordinate}");
-    println!("key:        {}", framing.key());
+    println!("coordinate: {shown}");
+    println!("key:        {}", FactRecord::fact_key(&shown));
     println!("origin:     {}", framing.origin);
     println!("creator:    {}", framing.creator);
     println!("written:    {} ns", framing.submitted_at);
@@ -424,7 +467,7 @@ fn copy_volume(from: &Path, to: &Path) -> Result<(), Failure> {
     Ok(())
 }
 
-fn self_check() -> Result<(), Failure> {
+fn self_check(ascii: bool) -> Result<(), Failure> {
     let root = std::env::temp_dir().join(format!("nexus-storage-ref-{}", std::process::id()));
     // A run that was killed leaves its directory behind, and a container can
     // reuse the pid, so the check starts from an empty one every time.
@@ -509,8 +552,11 @@ fn self_check() -> Result<(), Failure> {
         }
 
         println!("self-check: PASS");
-        println!("coordinate: {coordinate}");
-        println!("key:        {key}");
+        println!("coordinate: {}", render(coordinate, ascii));
+        println!(
+            "key:        {}",
+            FactRecord::fact_key(&render(coordinate, ascii))
+        );
         Ok(())
     })();
 
