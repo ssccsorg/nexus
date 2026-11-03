@@ -6,9 +6,9 @@ The smallest consumer of the neXus storage surface. It reads a volume through th
 
 The goal is that a developer or a technical auditor can see what the storage contract guarantees, and can run that part in a few minutes, before choosing an implementation to build on.
 
-The scope is the read side of one volume on a host: the key space, one point read, and one listing.
+The scope is the read side of one volume on a host: the key space, one point read, and one listing. The crate also carries its own demonstration in `demo/`, which is how the same claims are seen rather than read.
 
-It is not a product, a conformance suite, or a measurement. It reads a volume and reports what the bytes are. A product built on this surface covers the layers in [What a full implementation adds](#what-a-full-implementation-adds), and this crate deliberately stops below them.
+It is not a product, a conformance suite, or a measurement. It reads a volume and reports what the bytes are. A product built on this surface covers the layers in [Where a production implementation differs](#where-a-production-implementation-differs), and this crate deliberately stops below them.
 
 ## What this demonstrates
 
@@ -22,11 +22,22 @@ The record layer's claims are about the address, and this crate shows them on a 
 
 Nothing in these claims depends on where the layer runs or who sells it. The table near the end separates them from the deployment work a product adds.
 
-## The sample volume
+## Layout
 
-`demo/volume/` is one record as the format writes it, and it is committed so the crate has something to read without a write path.
+| Path | What it is |
+|---|---|
+| `src/main.rs` | the tool: `keys`, `box`, `read`, `verify`, `sidecar`, and `self-check` over the read surface |
+| `tests/cli.rs` | the contract, each case running the built binary |
+| `demo/volume/` | one record as the format writes it, committed so the crate has something to read without a write path |
+| `demo/app/` | the demonstration: a Vite application that reads this volume through the `skene` frame |
+| `demo/README.md` | what the demo holds, and how to run it |
+| `docs/integration-seam.md` | where an external claim system attaches |
 
-`demo/app/` is the demonstration: a Vite application that reads this volume through the `skene` frame and draws the five claims below. It keeps no second model of the store, and the numbers it draws are the ones this tool printed.
+This file describes the tool. `demo/README.md` describes the demonstration, and `demo/app/README.md` describes the application itself.
+
+## The volume
+
+`demo/volume/` is one record as the format writes it.
 
 - `facts/f_<coordinate>.fact` is the record.
 - `blob/<hash>.bin` is the payload, and `blob/<hash>.bin.meta` is its media type.
@@ -37,29 +48,34 @@ Copy an address out of `keys` rather than typing one. Coordinate characters are 
 
 ## Commands
 
+Run these from the repository root, which is where `-p` finds the workspace and where the volume's path is written from.
+
 ```bash
 # Run the contract in a temporary volume. Start here.
 cargo run -p nexus-storage-ref -- self-check
 
 # List the record keys.
-cargo run -p nexus-storage-ref -- keys --volume ./demo/volume
+cargo run -p nexus-storage-ref -- keys --volume storage/ref/demo/volume
 
 # Keep the keys under a prefix, a coordinate prefix included.
-cargo run -p nexus-storage-ref -- keys --volume ./demo/volume --prefix "facts/f_<one coordinate character>"
+cargo run -p nexus-storage-ref -- keys --volume storage/ref/demo/volume --prefix "facts/f_<one coordinate character>"
 
 # List the whole key space, payload keys included.
-cargo run -p nexus-storage-ref -- keys --volume ./demo/volume --prefix ""
+cargo run -p nexus-storage-ref -- keys --volume storage/ref/demo/volume --prefix ""
 
 # The records a box over coordinate axes admits, answered from the keys.
-cargo run -p nexus-storage-ref -- box --volume ./demo/volume --axis 0=가-가
+cargo run -p nexus-storage-ref -- box --volume storage/ref/demo/volume --axis 0=가-가
+
+# The same, with every address printed in its rendering.
+cargo run -p nexus-storage-ref -- box --ascii --volume storage/ref/demo/volume --axis 0=<three characters>
 
 # Read the bytes at the key an address implies.
-cargo run -p nexus-storage-ref -- read --volume ./demo/volume --address <coordinate>
+cargo run -p nexus-storage-ref -- read --volume storage/ref/demo/volume --address <coordinate>
 
 # Recompute a record's address from what it holds.
-cargo run -p nexus-storage-ref -- verify --volume ./demo/volume --address <coordinate>
+cargo run -p nexus-storage-ref -- verify --volume storage/ref/demo/volume --address <coordinate>
 
-# Place the sample volume beside an existing application file.
+# Place the volume beside an existing application file.
 cargo run -p nexus-storage-ref -- sidecar --app ./app.db --volume ./records
 ```
 
