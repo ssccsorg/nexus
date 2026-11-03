@@ -71,6 +71,8 @@ test('the project carries the key space the panel draws', () => {
     'record',
     'keyspace',
     'views',
+    // The board as text is a panel of the frame, and the demonstration opens it because it has no room to put beside it.
+    'layout',
   ]);
   const space = project.resources[2].at as { keys: string[]; listed: number; records: number };
   expect(space.keys).toEqual(measured.keys);

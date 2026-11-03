@@ -38,6 +38,12 @@
             "pack": "volume",
             "main": "keyspace"
           }
+        },
+        {
+          "kind": "layout",
+          "at": {
+            "console": true
+          }
         }
       ]
     }

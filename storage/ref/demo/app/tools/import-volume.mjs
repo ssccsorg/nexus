@@ -325,6 +325,9 @@ export function projectOf(measured) {
         },
       },
       { kind: 'views', at: { pack: 'volume', main: 'keyspace' } },
+      // The board as text stands beside the key space. The panel is the frame's own drawing of a run, so it is opened
+      // here rather than gated on a room this deployment does not have.
+      { kind: 'layout', at: { console: true } },
     ],
   };
 }
