@@ -7,9 +7,7 @@ every record it matched. What still grew with the volume was the key list the
 channel handed over. The walk read `io.list("facts/")` whole, merged the
 session's unflushed writes into it, sorted it, and deduped it. Holding a key
 costs about 165 bytes on riscv32, so a 64 KiB part capped a walk near 380
-records, which is the record maps' wall a little further out. ktema measured
-that wall from its side in its
-`docs/devlogs/2026-09-14-what-an-mcu-class-format-would-cost.md`.
+records, which is the record maps' wall a little further out.
 
 The list was not held for its own sake. It was held to sort it, and it was
 sorted because the walk promised to visit in the identifier order a state read
@@ -32,8 +30,8 @@ without the content. It reads `WALK_PAGE = 16` keys from the channel, visits
 them, and lets the page go before asking for the next. The `Walk` struct and its
 `record_at` go with the sorted merge they existed for.
 
-Measured on ktema's device tier, over volumes the device did not write, one run
-each:
+Measured on a riscv32 device tier, over volumes the writer did not produce, one
+run each:
 
 | records | peak before | peak after |
 |---|---|---|
@@ -66,10 +64,10 @@ can hand over an order the other holds, and neither should be asked to.
 
 ## What changes, and who it reached
 
-The order was already inconsistent between the layers. ktema's
-`Engine::fact_ids` documented its result as "in the order the medium reports
-them" over a walk that promised the identifier order a state read reports, so
-one of the two had to move, and it moved in the walk.
+The order was already inconsistent between the layers. A consumer's own API
+documented its result as "in the order the medium reports them" over a walk that
+promised the identifier order a state read reports, so one of the two had to
+move, and it moved in the walk.
 
 A state read is untouched. `read_state` and the field filters report the
 identifier order they always did, and they get it by sorting the record map
@@ -77,38 +75,24 @@ identifier order they always did, and they get it by sorting the record map
 therefore differ in sequence, and a consumer that compares the two compares
 sets.
 
-The in-tree consumers of the walk, checked at the call sites in ktema and this
-repository. No application in this repository consumes the walk: every one of
-them reaches the store through the state read or the field filters, which are
-untouched, so the walk's in-tree consumers here are its tests. The production
-consumers live in ktema:
+No consumer of the walk in this repository requires a global order. Every
+application here reaches the store through the state read or the field filters,
+which are untouched, so the walk's in-tree consumers are its tests. External
+consumers cannot be checked from this tree, so the statement is about this one.
 
-- ktema's device run folds the identifiers into the run digest and sorts them
-  first, because a digest that answers whether two runs wrote the same volume
-  cannot depend on which of them enumerated it. An order-independent fold would
-  remove even that sort.
-- rem's intent tool takes the smallest identifier, and now sorts to settle one.
-- ktema's C surface reports the walk through `ktema_each_fact`, whose header and
-  crate doc say the facts arrive "in order". That is now stronger than the
-  behavior, and the wording is a follow-up for ktema. This note is where the
-  reason is recorded.
-
-No production consumer of the walk requires a global order. The one place that
-required the identifier order was the comparison against a state read, and it is
-a test. External consumers cannot be checked from this tree, so the statement is
-about this one.
+An external consumer that folds the identifiers into a digest sorts them first,
+because a digest that answers whether two runs wrote the same volume cannot
+depend on which of them enumerated it. An order-independent fold would remove
+even that sort.
 
 ## What is not this change
 
-The paged walk does not turn the medium's own order into a promise. ktema's
-`docs/devlogs/2026-09-14-the-log-order-is-the-time-axis.md` wants the log's
-order surfaced, so that a time window becomes a contiguous byte range rather
-than a scan of the volume. For a log channel the channel's order is that order,
-so this change points the same way, and it stops short of the two things that
-devlog asks for: a contract that promises a channel's order where the channel
-has one, and a positional read that can seek to the start of a band. Those are
-future work, and this note is where their relationship to this change is
-recorded.
+The paged walk does not turn the medium's own order into a promise. A log
+channel's order is its time order, and surfacing it would make a time window a
+contiguous byte range rather than a scan of the volume, so this change points
+the same way. It stops short of the two things that would take: a contract that
+promises a channel's order where the channel has one, and a positional read that
+can seek to the start of a band. Those are future work.
 
 ## Tests
 
