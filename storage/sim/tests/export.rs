@@ -7,7 +7,9 @@
 use nex_fih::CoordId;
 use nex_fih::RecordTimeUnit;
 use nexus_storage_sim::SimIo;
-use nexus_storage_sim::{ContentMeta, FactRecord, HintRecord, IntentRecord, SyncFileIo};
+use nexus_storage_sim::{
+    BlockingIo, ContentMeta, FactRecord, FileIo, HintRecord, IntentRecord, SyncFileIo, WriteOp,
+};
 use nexus_storage_sim::{IntentStatus, export_from_io, import_into_io};
 
 // ── Helper: seed a SimIo with sample records ─────────────────────────────
@@ -410,4 +412,45 @@ fn test_export_version_mismatch_rejected() {
         "error should mention unsupported version, got: {err}"
     );
     assert!(err.contains("99"), "error should mention version 99");
+}
+
+// ── The export path asks for the capability, not the adapter ─────────────
+
+/// A channel that blocks by nature, with no async-to-blocking adapter between it
+/// and the caller.
+struct Direct(SimIo);
+
+impl BlockingIo for Direct {
+    fn read(&self, path: &str) -> Result<Option<Vec<u8>>, String> {
+        futures_executor::block_on(FileIo::read(&self.0, path))
+    }
+
+    fn write(&self, path: &str, data: &[u8]) -> Result<(), String> {
+        futures_executor::block_on(FileIo::write(&self.0, path, data))
+    }
+
+    fn list(&self, prefix: &str) -> Result<Vec<String>, String> {
+        futures_executor::block_on(FileIo::list(&self.0, prefix))
+    }
+
+    fn delete(&self, path: &str) -> Result<(), String> {
+        futures_executor::block_on(FileIo::delete(&self.0, path))
+    }
+
+    fn apply_batch(&self, ops: &[WriteOp]) -> Result<(), String> {
+        futures_executor::block_on(FileIo::apply_batch(&self.0, ops))
+    }
+}
+
+#[test]
+fn the_export_takes_the_blocking_capability_not_the_adapter() {
+    // `SyncFileIo` is one provider of `BlockingIo`. If the export path asked for
+    // it again, this channel would not be accepted and this test would not build.
+    let io = seeded_io();
+    let direct = Direct(io);
+
+    let bundle = export_from_io(&direct).expect("an export from a directly blocking channel");
+    import_into_io(&direct, &bundle).expect("an import back into the same channel");
+
+    assert_eq!(direct.list("facts/").expect("a listing").len(), 1);
 }

@@ -20,7 +20,7 @@ use crate::core::record::{
     decode_hint_record, decode_intent_record,
 };
 #[cfg(feature = "std")]
-use crate::io::file_io::{FileIo, SyncFileIo};
+use crate::io::file_io::BlockingIo;
 use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString;
@@ -76,11 +76,12 @@ struct BlobEntry {
 /// Scans the IO for fact, intent, hint records and blob entries,
 /// then serializes them into a single .fihbundle byte vector.
 ///
-/// Std-only: `SyncFileIo` wraps the async `FileIo` contract with
-/// `futures_executor::block_on`, which needs std. On no_std targets
-/// the caller drives the async surface directly.
+/// Std-only: the blocking surface needs `futures_executor::block_on`, which
+/// needs std. On no_std targets the caller drives the async surface directly.
+/// The parameter is the blocking capability, not an adapter type, so a channel
+/// that blocks by nature is passed as it is.
 #[cfg(feature = "std")]
-pub fn export_from_io<A: FileIo>(io: &SyncFileIo<A>) -> Result<Vec<u8>, String> {
+pub fn export_from_io(io: &impl BlockingIo) -> Result<Vec<u8>, String> {
     let sync = io;
 
     // Collect all records
@@ -177,9 +178,9 @@ pub fn export_from_io<A: FileIo>(io: &SyncFileIo<A>) -> Result<Vec<u8>, String> 
 /// Writes all records and blobs from the bundle into the IO,
 /// overwriting any existing data at the same paths.
 ///
-/// Std-only: same `SyncFileIo` (block_on) dependency as `export_from_io`.
+/// Std-only: the same blocking capability as `export_from_io`.
 #[cfg(feature = "std")]
-pub fn import_into_io<A: FileIo>(io: &SyncFileIo<A>, bundle: &[u8]) -> Result<(), String> {
+pub fn import_into_io(io: &impl BlockingIo, bundle: &[u8]) -> Result<(), String> {
     let sync = io;
 
     // Validate magic

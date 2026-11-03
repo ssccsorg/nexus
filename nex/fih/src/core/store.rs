@@ -64,7 +64,7 @@ use crate::core::record::{
     ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus, RecordTimeUnit,
     decode_hint_record, decode_intent_record,
 };
-use crate::io::file_io::{FileIo, WriteOp, default_apply_batch};
+use crate::io::file_io::{FileIo, WriteOp};
 use crate::semantic::record::{Query, RecordLoad};
 
 // `std::collections::HashMap` exists only under the std feature; alloc has
@@ -732,11 +732,19 @@ impl<I: FileIo> FihStorage<I> {
         Ok(())
     }
 
-    /// Flush pending writes to IO.
+    /// Apply the pending writes to IO, and settle them.
     ///
-    /// On apply failure the batch is re-queued at the front of `pending`
-    /// so a later flush retries it. Write and Delete are idempotent, so
-    /// re-applying an already-applied prefix is safe.
+    /// A batch is the boundary at which a channel with a buffer writes through, so
+    /// when this returns `Ok` the operations are applied and, for a channel that
+    /// buffers, on the medium. A channel that leaves state buffered is one whose
+    /// `apply_batch` does not settle, and that channel's own test is where it is
+    /// held.
+    ///
+    /// On failure the batch is re-queued at the front of `pending` so a later
+    /// flush retries it. Write and Delete are absolute, so re-applying an
+    /// operation that was already applied is safe. That covers the case a settle
+    /// adds: the operations applied and the flush failed, which returns an error
+    /// after the buffer was written.
     pub async fn flush_pending(&self) -> Result<(), String> {
         let ops = {
             let mut pending = self.pending.borrow_mut();
@@ -745,7 +753,7 @@ impl<I: FileIo> FihStorage<I> {
             }
             core::mem::take(&mut *pending)
         };
-        if let Err(e) = default_apply_batch(&self.io, &ops).await {
+        if let Err(e) = self.io.apply_batch(&ops).await {
             let mut pending = self.pending.borrow_mut();
             pending.splice(0..0, ops);
             return Err(e);
