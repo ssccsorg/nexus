@@ -27,10 +27,12 @@ facts. A run edited by hand has to keep its header and its counts in step or the
 ## Running it
 
 The prerequisites, the step by step first run, and the troubleshooting table live in `../README.md`, which is the
-demonstration's entry point. The scripts this application offers:
+demonstration's entry point. `npm run demo` there performs the whole first run in one step. The scripts this application
+offers:
 
 | Script | What it does |
 |---|---|
+| `npm run demo` | the whole first run: build, frame, install, import, serve |
 | `npm run import` | runs the reference tool over a volume and writes the board and the run |
 | `npm run dev` | serves the application on 5292, with the board injected |
 | `npm run build` | typechecks, then writes a production bundle carrying the board |
@@ -55,6 +57,7 @@ Without a built binary the importer reports what it could not run. `NEX_REF_BIN`
 | `src/pack.tsx` | the `volume` pack: the `keyspace` resource kind and its reading |
 | `src/brand.tsx` | the mark, the name, the version, and the layers |
 | `tools/import-volume.mjs` | runs the reference tool and writes the board and the run |
+| `tools/run-demo.mjs` | the first run in one command: build, frame, install, import, serve |
 | `tests/` | the board, the mark, and the importer |
 
 ## Tests

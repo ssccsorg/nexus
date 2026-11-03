@@ -5,6 +5,16 @@ Two directories, one purpose: to show what the reference crate claims rather tha
 `nexus-storage-ref` reads a volume and prints. This directory puts a screen on the same reads, so a developer or a
 technical auditor can see the key space, a point read, and a verification without reading the crate first.
 
+## Run it in one line
+
+```bash
+npm --prefix storage/ref/demo/app run demo
+```
+
+That builds the tool, puts the frame beside the checkout when it is absent, imports the committed volume, and serves the
+board on the address Vite prints. It is the same line on macOS, Linux, and Windows, and it needs no POSIX shell. The
+steps below are the same work one at a time, for a first run you want to watch.
+
 ## The two directories
 
 | Path | What it holds |
@@ -44,6 +54,11 @@ Each claim of the reference crate has a place on the screen.
 Every address is drawn in its base-36 rendering, three characters an axis, so the board and the runs carry no native
 character and a printed address can be handed back to the tool unchanged.
 
+The run the board draws is written in the same vocabulary the model defines: facts for the reads it took, hints for
+what the tool reported, and one intent that is claimed and then concluded. The screen therefore shows two things at once,
+the address of a record and the transition that asked the question about it. Storage is the surface being read. The
+structure on show is the record of the work over it.
+
 ## What the demo does not show
 
 - A write path. The volume is committed, so the demonstration reads and never writes.
@@ -58,19 +73,19 @@ character and a printed address can be handed back to the tool unchanged.
 |---|---|
 | A Rust toolchain | the importer runs the built `nexus-storage-ref` binary |
 | Node 20 or newer | the frame declares it, and Vite 6 wants it |
-| A `skene` checkout beside this repository | the application's manifest names the frame by a relative path, so the frame is installed from the checkout rather than from a registry |
+| A network connection on the first run | the frame is cloned beside this checkout when it is absent. The application's manifest names the frame by a relative path, so it is installed from the checkout rather than from a registry |
 
 Nothing else is installed globally. The volume is committed, so there is no data to prepare.
 
 ### The steps
 
-All commands start at the repository root.
+All commands start at the repository root. `npm run demo` performs them in this order.
 
 ```bash
 # 1. Build the reference tool. The importer runs this binary.
 cargo build -p nexus-storage-ref
 
-# 2. Put the frame beside this repository. The manifest expects exactly this place.
+# 2. Put the frame beside this repository. Skip this when it is already there.
 git clone --depth 1 https://github.com/ssccsorg/skene ../skene
 
 # 3. Install the application. This reads the frame out of the sibling checkout.
@@ -99,6 +114,9 @@ Run step 4 whenever you want the screen to reflect a volume you changed, or to s
 - `npm run import` runs `keys`, `box`, `read`, `verify`, `sidecar`, and `self-check` against `volume/` and overwrites
   `app/projects.json` and `app/scenario/sample-volume.txt` with what the tool printed.
 - `npm run dev` serves the application with the board injected. The page opens on the `keyspace` reading.
+
+The one-line command does all five on any of the three platforms. It clones only when `../skene/packages/frame` is
+missing, and installs only when `node_modules` is missing, so a second run goes straight to the import and the server.
 
 ### Checking it without a browser
 

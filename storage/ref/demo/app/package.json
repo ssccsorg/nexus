@@ -5,6 +5,7 @@
   "type": "module",
   "description": "The neXus storage reference, drawn on the shared frame: one board, one run per volume, and the tool's own numbers.",
   "scripts": {
+    "demo": "node tools/run-demo.mjs",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",

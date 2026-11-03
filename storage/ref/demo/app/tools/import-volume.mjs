@@ -48,14 +48,17 @@ function repoRoot() {
   return dir;
 }
 
+/** The tool's file name, which carries an extension on Windows. */
+const BIN = process.platform === 'win32' ? 'nexus-storage-ref.exe' : 'nexus-storage-ref';
+
 /** The tool beside this checkout, debug first. */
 export function defaultBin() {
   const root = repoRoot();
   for (const build of ['debug', 'release']) {
-    const candidate = join(root, 'target', build, 'nexus-storage-ref');
+    const candidate = join(root, 'target', build, BIN);
     if (existsSync(candidate)) return candidate;
   }
-  return 'nexus-storage-ref';
+  return BIN;
 }
 
 /** One run of the tool, with its exit code kept rather than thrown. */
