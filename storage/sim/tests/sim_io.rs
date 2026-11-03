@@ -2,7 +2,7 @@
 // Tests: write/read roundtrip, read nonexistent, delete, list prefix,
 // failure injection, clear.
 
-use nexus_storage_sim::{SimIo, SyncFileIo};
+use nexus_storage_sim::{BlockingIo, SimIo, SyncFileIo};
 
 #[test]
 fn test_write_read_roundtrip() {

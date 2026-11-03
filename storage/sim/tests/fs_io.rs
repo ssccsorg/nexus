@@ -4,7 +4,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use nexus_storage_sim::SyncFileIo;
+use nexus_storage_sim::{BlockingIo, SyncFileIo};
 use nexus_storage_sim::fs_io::FsIo;
 
 fn make_fs_blocking() -> (SyncFileIo<FsIo>, tempfile::TempDir) {

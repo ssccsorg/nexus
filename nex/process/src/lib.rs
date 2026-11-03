@@ -84,4 +84,4 @@ pub use nex_fih::{
 // IO re-exports
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub use nex_io::FsIo;
-pub use nex_io::{FileIo, SyncFileIo, WriteOp};
+pub use nex_io::{BlockingIo, FileIo, SyncFileIo, WriteOp};
