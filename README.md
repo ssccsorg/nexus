@@ -22,7 +22,7 @@ A fact's address is derived from what the fact holds. A reader who holds a recor
 
 ## What it gives
 
-| The concern | What neXus provides | Where it is shown |
+| If you need | neXus provides | Shown in |
 |---|---|---|
 | State that outlives the process | one coordinate space for the data and for the work that produced it | [apps/nex-calc](apps/nex-calc) |
 | Verification without a trusted writer | an address derived from content, origin, and creator, so a record is checked by recomputation | [fih/](fih) |
@@ -54,14 +54,21 @@ cd nex && cargo test --workspace  # the storage workspace
 
 Two entry points are one line each.
 
-```bash
-cargo run -q -p nexus-storage-ref -- self-check
-npm --prefix storage/ref/demo/app run demo
-```
+| Entry point | Needs | What it does |
+|---|---|---|
+| `cargo run -q -p nexus-storage-ref -- self-check` | a Rust toolchain | runs the storage contract in a temporary volume and prints the coordinate it derived |
+| `npm --prefix storage/ref/demo/app run demo` | a Rust toolchain and Node 20 or newer | builds the reference, imports the committed volume, and serves the board |
 
-The first reads a volume through the storage surface and prints what it found, and needs only a Rust toolchain. The second also needs Node 20 or newer: it builds the reference, imports the committed volume, and serves the board. Both are the same line on macOS, Linux, and Windows.
+Both are the same line on macOS, Linux, and Windows.
 
-The wasm and MCU checks need the `wasm32-unknown-unknown`, `wasm32-wasip2`, and `riscv32imac-unknown-none-elf` targets, which CI installs. The MCU runtime runs in the image `ghcr.io/ssccsorg/nexus-verify` and boots `nexus-mcu-verify` on `qemu-system-riscv32 -machine virt`.
+The wasm and MCU checks need targets and a runtime beyond the default build.
+
+| Check | Needs | Runs |
+|---|---|---|
+| wasm gate | `wasm32-unknown-unknown`, `wasm32-wasip2` | cargo, on the host |
+| MCU runtime | `riscv32imac-unknown-none-elf` | `nexus-mcu-verify` on `qemu-system-riscv32 -machine virt`, inside `ghcr.io/ssccsorg/nexus-verify`, built from `verify/Dockerfile` |
+
+CI installs all three targets. A local run of those checks needs them installed first.
 
 ## Use it
 
@@ -88,11 +95,27 @@ store.submit_fact(&fact).await?;
 store.flush_pending().await?;
 ```
 
-The storage surface is generic over a trait, so a backend is the consumer's. Three semantics hold for any of them: listing a missing prefix is an empty enumeration, listed keys include their prefix so they round-trip through `read`, and deleting a missing key is a no-op. The contract is in [chton](https://github.com/ssccsorg/chton).
+The storage surface is generic over a trait, so a backend is the consumer's. Three semantics hold for any of them.
 
-For a supervised deployment, `nexd` spawns `nex-server` and serves `/tmp/nexd.sock`, and `nex_client` is the typed client. The method list is in [docs/wire-protocol.md](docs/wire-protocol.md).
+- Listing a missing prefix is an empty enumeration.
+- Listed keys include their prefix, so they round-trip through `read`.
+- Deleting a missing key is a no-op.
 
-For a target without an operating system, consume `nex-fih` and `chton` with `default-features = false`, provide `alloc` and a `critical-section` implementation, and inject a clock through `Now`. [verify/mcu](verify/mcu) is the working reference.
+The contract is in [chton](https://github.com/ssccsorg/chton).
+
+A supervised deployment runs the board as a process.
+
+- `nexd` spawns `nex-server` and serves `/tmp/nexd.sock`.
+- `nex_client` is the typed client.
+- The method list is in [docs/wire-protocol.md](docs/wire-protocol.md).
+
+For a target without an operating system, three things are needed.
+
+- Consume `nex-fih` and `chton` with `default-features = false`.
+- Provide `alloc` and a `critical-section` implementation.
+- Inject a clock through `Now`.
+
+[verify/mcu](verify/mcu) is the working reference.
 
 ## Where everything lives
 
@@ -103,14 +126,22 @@ The repository holds a root workspace and a nested storage workspace under [nex/
 | [fih/](fih) | the pure model: `Fact`, `Intent`, `Hint`, `CoordId`, the capability traits, the `Now` clock, and the cold query contract, no_std with alloc |
 | [nex/](nex) | the storage engine workspace: `nex-fih`, `nex-io`, `nex-core`, and the `nex` process crate |
 | [nex-server/](nex-server), [nexd/](nexd) | the board as a process over a Unix socket, and the daemon that supervises it |
-| [storage/](storage) | the reference consumer and its demonstration, and the scenario runner |
+| [storage/](storage) | the reference consumer with its demonstration, and the scenario runner |
 | [verify/](verify) | host and MCU verification of the OS-less path |
 | [apps/](apps) | applications built on the model, each with its own workspace and verifier |
 | [libs/](libs), [benches/](benches), [playbooks/](playbooks) | shared host libraries, the multi-axis benchmarks, and consumer playbooks |
 
 ## Verification
 
-GitHub Actions runs the same flows [run.sh](run.sh) runs locally, one job each: core (fmt, clippy, tests, the wasm gate, and the MCU runtime under QEMU), server, gateway, apps, and playbooks.
+GitHub Actions runs the same flows [run.sh](run.sh) runs locally, one job each.
+
+| Job | What it verifies |
+|---|---|
+| core | fmt, clippy, tests, the wasm gate, and the MCU runtime under QEMU |
+| server | `nex-server` and `nex-client` over a Unix socket |
+| gateway | the HTTP API in `apps/nex-api` and the serialization proxy in `libs/serde-proxy` |
+| apps | the standalone app verifiers |
+| playbooks | the consumer playbook scenarios |
 
 ```bash
 ./run.sh              # everything
@@ -134,7 +165,10 @@ GitHub Actions runs the same flows [run.sh](run.sh) runs locally, one job each: 
 
 Open an issue first, then a branch named `{issue-number}-{subject-words}`, then a pull request titled `PR: {category}: {message}`. Commits use `{category}: {message}`, with `#{issue}` on a task branch.
 
-Two rules carry the rest: keep the change scoped to the goal, and put tests under `tests/` rather than inline. The infrastructure contract rule governs every change: the core defines capability traits and stable contracts, implementations implement them without modifying the core surface, and a change that alters a core contract has to demonstrate the capability gap first.
+Two rules carry the rest.
+
+- Keep the change scoped to the goal, and put tests under `tests/` rather than inline.
+- The infrastructure contract rule: the core defines capability traits and stable contracts, implementations implement them without modifying the core surface, and a change that alters a core contract has to demonstrate the capability gap first.
 
 Run `cargo fmt`, `cargo clippy`, and the relevant `./run.sh` target before opening the pull request.
 
