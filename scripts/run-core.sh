@@ -207,6 +207,11 @@ run_test()   {
     echo "---"
     cargo test -p nexus-storage-sim -- --nocapture 2>&1
     echo "---"
+    # The reference's own contract: exit codes, the read that creates nothing,
+    # and the prefix filter. It has no test elsewhere, so it runs here or
+    # nowhere.
+    cargo test -p nexus-storage-ref -- --nocapture 2>&1
+    echo "---"
     # smoke verification runner: exercises every storage capability end to end
     cargo run -p nexus-storage-sim 2>&1
     echo "---"
