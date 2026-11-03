@@ -33,7 +33,20 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
-run_check()  { cargo check -p nex && cargo check -p nexd && cargo check -p nexus-storage-sim && cargo check -p nexus-storage-ref; }
+# ── Floating git dependency (see .gitignore) ────────────────────────────
+#
+# Cargo.lock is untracked so a git dependency follows its branch, and cargo can
+# answer "which commit is that branch" from a cached bare repository rather
+# than from the branch tip. A gate that checks such a cached commit reports on a
+# revision nobody declared, which is how a merged dependency change can look
+# absent here. One update per run fetches the tip and pins it for the run.
+
+run_dep_refresh() {
+    echo "=== refresh the git dependency ==="
+    cargo update -p chton 2>&1
+}
+
+run_check()  { run_dep_refresh && cargo check -p nex && cargo check -p nexd && cargo check -p nexus-storage-sim && cargo check -p nexus-storage-ref; }
 
 # ── WASM check: ensure storage-sim builds for wasm32 target ────────────
 
