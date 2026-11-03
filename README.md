@@ -1,6 +1,6 @@
 # neXus
 
-Peer-to-peer state fabric for agents and storage, from microcontrollers to data centers. One coordinate space, one protocol, multiple directions, no orchestration.
+Index-free, P2P state fabric for multi-axis records across heterogeneous systems. One coordinate space, one protocol, multiple directions, no orchestration.
 
 neXus implements the FIH (Fact, Intent, Hint) model of the SSCCS stack: a board of records that any peer can read and extend, with no privileged orchestrator. The same core compiles for hosts, WASM targets, and no_std MCU-class parts.
 
