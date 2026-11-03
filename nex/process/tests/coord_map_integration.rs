@@ -37,10 +37,12 @@ fn fih_over_materialized_coordmap_persists_across_reopen() {
             let storage = FihStorage::new(CoordMapStoreIo::new(map), "coordmap");
             storage.submit_fact(&fact("f_persist")).await.unwrap();
             storage.flush_pending().await.unwrap();
-            // Persist the buffered map header and the file bytes.
-            assert!(storage.io.is_buffered());
-            storage.io.flush().await.unwrap();
-            assert!(!storage.io.is_buffered());
+            // A batch settles the buffer it writes through, so the map header and
+            // the file bytes are on the medium without a flush of our own.
+            assert!(
+                !storage.io.is_buffered(),
+                "flush_pending returned with state still buffered"
+            );
         }
 
         // Second session: reopen the file into a fresh map, rebuild, read.

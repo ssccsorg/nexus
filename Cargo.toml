@@ -10,6 +10,7 @@ members = [
     "libs/async-store",
     "playbooks/agents",
     "storage/sim",
+    "storage/ref",
     "apps/nex-calc",
     "apps/nex-derive",
     "benches",

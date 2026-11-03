@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use futures_executor::block_on;
-use nex_fih::io::file_io::{FileIo, IoFuture, SyncFileIo};
+use nex_fih::io::file_io::{BlockingIo, FileIo, IoFuture, SyncFileIo};
 use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, Content, ContentMeta,
     CoordId, EvictCapable, Fact, FactCapable, FihBlackboard, FihSession, FihStorage, Hint,
