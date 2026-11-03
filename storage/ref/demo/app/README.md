@@ -26,21 +26,17 @@ facts. A run edited by hand has to keep its header and its counts in step or the
 
 ## Running it
 
-The frame is a sibling checkout, and the manifest names it by a `file:` path. From the repository root:
+The prerequisites, the step by step first run, and the troubleshooting table live in `../README.md`, which is the
+demonstration's entry point. The scripts this application offers:
 
-```bash
-git clone --depth 1 https://github.com/ssccsorg/skene ../skene
-```
-
-Then build the reference tool and import the committed volume:
-
-```bash
-cargo build -p nexus-storage-ref
-cd storage/ref/demo/app
-npm install
-npm run import -- --id sample-volume --title "Sample volume"
-npm run dev
-```
+| Script | What it does |
+|---|---|
+| `npm run import` | runs the reference tool over a volume and writes the board and the run |
+| `npm run dev` | serves the application on 5292, with the board injected |
+| `npm run build` | typechecks, then writes a production bundle carrying the board |
+| `npm run preview` | serves that bundle on 5293 |
+| `npm test` | the board, the brand, and the importer |
+| `npm run typecheck` | `tsc --noEmit` alone |
 
 `npm run import` runs `keys`, `box`, `read`, `verify`, `sidecar`, and `self-check` against the volume and writes
 `projects.json` and `scenario/<id>.txt`. Every verb is run with `--ascii`, so the board and the run carry the base-36

@@ -52,16 +52,100 @@ character and a printed address can be handed back to the tool unchanged.
 
 ## Running it
 
-From the repository root, with a `skene` checkout beside this one:
+### What you need
+
+| Requirement | Why |
+|---|---|
+| A Rust toolchain | the importer runs the built `nexus-storage-ref` binary |
+| Node 20 or newer | the frame declares it, and Vite 6 wants it |
+| A `skene` checkout beside this repository | the application's manifest names the frame by a relative path, so the frame is installed from the checkout rather than from a registry |
+
+Nothing else is installed globally. The volume is committed, so there is no data to prepare.
+
+### The steps
+
+All commands start at the repository root.
 
 ```bash
+# 1. Build the reference tool. The importer runs this binary.
 cargo build -p nexus-storage-ref
+
+# 2. Put the frame beside this repository. The manifest expects exactly this place.
+git clone --depth 1 https://github.com/ssccsorg/skene ../skene
+
+# 3. Install the application. This reads the frame out of the sibling checkout.
 cd storage/ref/demo/app
 npm install
+
+# 4. Regenerate the board and the run from the committed volume.
 npm run import -- --id sample-volume --title "Sample volume"
+
+# 5. Serve it.
 npm run dev
 ```
 
-`npm test` in `app/` compares the committed run with a fresh import and fails when the two disagree, so a stale run is a
-test failure rather than a screen that lies. `app/README.md` covers the application's layout, its tests, and the frame
-it deploys.
+The last command prints the address it serves on, which is `http://localhost:5292`.
+
+A committed board and run are already in the tree, so a first look can skip step 4 and run step 3 followed by step 5.
+Run step 4 whenever you want the screen to reflect a volume you changed, or to see the tool run for yourself.
+
+### What each step does
+
+- The build produces `target/debug/nexus-storage-ref`. The importer looks for the debug build first and the release build
+  second, and never builds anything itself.
+- The clone has to be a sibling of this repository, because `app/package.json` names the frame as
+  `file:../../../../../skene/packages/frame`. Five levels up from `app` is this repository's parent.
+- `npm install` installs the frame from that path into `node_modules`, which is why the clone comes before it.
+- `npm run import` runs `keys`, `box`, `read`, `verify`, `sidecar`, and `self-check` against `volume/` and overwrites
+  `app/projects.json` and `app/scenario/sample-volume.txt` with what the tool printed.
+- `npm run dev` serves the application with the board injected. The page opens on the `keyspace` reading.
+
+### Checking it without a browser
+
+In the application directory:
+
+```bash
+npm test
+```
+
+From the repository root:
+
+```bash
+cargo test -p nexus-storage-ref
+```
+
+`npm test` regenerates the run in a temporary directory and compares it byte for byte with the committed one, so a stale
+run is a test failure rather than a screen that tells a story the tool no longer tells. The end-to-end case skips when no
+binary is present and says so, so build the tool first if you want it to run.
+
+To look at the production bundle instead of the dev server, still in the application directory:
+
+```bash
+npm run build
+npm run preview   # http://localhost:5293
+```
+
+### If it does not start
+
+| Symptom | Cause and fix |
+|---|---|
+| `npm install` fails while unpacking a tarball | the lock file names a frame path from before a move. Delete `node_modules` and `package-lock.json`, then install again |
+| `npm install` cannot resolve the frame | the `skene` checkout is not a sibling of this repository, or is missing `packages/frame` |
+| the importer reports it could not run the tool | no binary at `target/{debug,release}/nexus-storage-ref`. Build it, or name one with `--bin` or `NEX_REF_BIN` |
+| the board is empty | `projects.json` is missing or holds no project. Run `npm run import` |
+| the dev server refuses to start on 5292 | the port is strict, so another process holds it. Stop that process rather than changing the port, which the tests do not expect |
+
+### Importer options
+
+The importer has no `--help`, so this is the list.
+
+| Option | Default | What it does |
+|---|---|---|
+| `--id` | the volume's directory name | the project's id, and the run's file name |
+| `--title` | the id | the heading the run carries |
+| `--volume` | `storage/ref/demo/volume` | the volume to read, relative to the repository root |
+| `--out` | the application directory | where the board and the run are written |
+| `--bin` | the debug build, then the release build | the tool to run |
+| `--reset` | off | start a fresh board instead of adding this project to the existing one |
+
+`app/README.md` covers the application's layout, its tests, and the frame it deploys.
