@@ -271,6 +271,56 @@ fn a_box_over_one_axis_answers_from_the_keys() {
 }
 
 #[test]
+fn a_box_over_two_axes_narrows_the_answer() {
+    let (address, _) = sample_record();
+    let mut characters = address.chars();
+    let first = characters.next().expect("a coordinate");
+    let second = characters.next().expect("a coordinate");
+    let other = if second == '각' { '가' } else { '각' };
+
+    let hit = run(&[
+        "box",
+        "--volume",
+        &volume_arg(),
+        "--axis",
+        &format!("0={first}-{first}"),
+        "--axis",
+        &format!("1={second}-{second}"),
+    ]);
+    assert_eq!(hit.status.code(), Some(0), "{}", stderr(&hit));
+    assert!(stdout(&hit).contains("1 record(s)"), "{}", stdout(&hit));
+
+    let miss = run(&[
+        "box",
+        "--volume",
+        &volume_arg(),
+        "--axis",
+        &format!("0={first}-{first}"),
+        "--axis",
+        &format!("1={other}-{other}"),
+    ]);
+    assert_eq!(miss.status.code(), Some(0), "{}", stderr(&miss));
+    assert!(stdout(&miss).contains("0 record(s)"), "{}", stdout(&miss));
+}
+
+#[test]
+fn the_whole_key_space_lists_the_record_and_its_payload() {
+    let (address, _) = sample_record();
+
+    let out = run(&["keys", "--volume", &volume_arg(), "--prefix", ""]);
+
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let text = stdout(&out);
+    assert!(text.contains(&format!("facts/f_{address}.fact")), "{text}");
+    assert!(
+        text.contains(".bin.meta"),
+        "the payload's media type is part of the key space: {text}"
+    );
+    // One record, its payload, and that payload's media type.
+    assert!(text.contains("3 key(s)"), "{text}");
+}
+
+#[test]
 fn verifying_the_sample_record_passes() {
     let (address, _) = sample_record();
     let out = run(&["verify", "--volume", &volume_arg(), "--address", &address]);

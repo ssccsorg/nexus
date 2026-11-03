@@ -16,9 +16,8 @@ The record layer's claims are about the address, and this crate shows them on a 
 
 - An address is a key. It resolves by a rule, not by a lookup.
 - A point read is one read of the medium, and it reads nothing else.
-- A question over several axes is answered from the keys, so a box reads no record.
 - A record's address follows from what it holds, so holding the record is enough to check it. Verification is recomputation.
-- A listing is the only scan, and a box answers from it without reading a record.
+- A listing is the only scan, and a question over several axes is answered from it, so a box reads no record.
 - A volume sits beside an existing application file and leaves that file alone.
 
 Nothing in these claims depends on where the layer runs or who sells it. The table near the end separates them from the deployment work a product adds.

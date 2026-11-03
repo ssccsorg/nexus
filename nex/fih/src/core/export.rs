@@ -71,7 +71,7 @@ struct BlobEntry {
     meta: ContentMeta,
 }
 
-/// Export FIH StateSpace from a sync IO handle.
+/// Export FIH StateSpace from a blocking IO handle.
 ///
 /// Scans the IO for fact, intent, hint records and blob entries,
 /// then serializes them into a single .fihbundle byte vector.
@@ -82,33 +82,31 @@ struct BlobEntry {
 /// that blocks by nature is passed as it is.
 #[cfg(feature = "std")]
 pub fn export_from_io(io: &impl BlockingIo) -> Result<Vec<u8>, String> {
-    let sync = io;
-
     // Collect all records
-    let fact_keys = sync.list("facts/")?;
+    let fact_keys = io.list("facts/")?;
     let mut facts: Vec<FactRecord> = Vec::with_capacity(fact_keys.len());
     for key in &fact_keys {
-        if let Some(bytes) = sync.read(key)?
+        if let Some(bytes) = io.read(key)?
             && let Ok(record) = postcard::from_bytes::<FactRecord>(&bytes)
         {
             facts.push(record);
         }
     }
 
-    let intent_keys = sync.list("intents/")?;
+    let intent_keys = io.list("intents/")?;
     let mut intents: Vec<IntentRecord> = Vec::with_capacity(intent_keys.len());
     for key in &intent_keys {
-        if let Some(bytes) = sync.read(key)?
+        if let Some(bytes) = io.read(key)?
             && let Ok(record) = decode_intent_record(&bytes)
         {
             intents.push(record);
         }
     }
 
-    let hint_keys = sync.list("hints/")?;
+    let hint_keys = io.list("hints/")?;
     let mut hints: Vec<HintRecord> = Vec::with_capacity(hint_keys.len());
     for key in &hint_keys {
-        if let Some(bytes) = sync.read(key)?
+        if let Some(bytes) = io.read(key)?
             && let Ok(record) = decode_hint_record(&bytes)
         {
             hints.push(record);
@@ -118,7 +116,7 @@ pub fn export_from_io(io: &impl BlockingIo) -> Result<Vec<u8>, String> {
     // Collect blob entries (pair .bin + .bin.meta).
     // Use a HashSet to find metadata regardless of list ordering,
     // avoiding fragility across different IO backends.
-    let blob_keys = sync.list("blob/")?;
+    let blob_keys = io.list("blob/")?;
     let meta_keys: HashSet<String> = blob_keys
         .iter()
         .filter(|k| k.ends_with(".bin.meta"))
@@ -133,10 +131,10 @@ pub fn export_from_io(io: &impl BlockingIo) -> Result<Vec<u8>, String> {
                 .strip_suffix(".bin")
                 .unwrap()
                 .to_string();
-            let data = sync.read(key)?.unwrap_or_default();
+            let data = io.read(key)?.unwrap_or_default();
             let meta_key = format!("blob/{}.bin.meta", hash);
             let meta = if meta_keys.contains(&meta_key) {
-                if let Some(mbytes) = sync.read(&meta_key)? {
+                if let Some(mbytes) = io.read(&meta_key)? {
                     postcard::from_bytes::<ContentMeta>(&mbytes).unwrap_or(ContentMeta {
                         mime_type: "application/octet-stream".into(),
                         size: data.len() as u64,
@@ -173,7 +171,7 @@ pub fn export_from_io(io: &impl BlockingIo) -> Result<Vec<u8>, String> {
     Ok(bundle)
 }
 
-/// Import FIH StateSpace bundle into a sync IO handle.
+/// Import FIH StateSpace bundle into a blocking IO handle.
 ///
 /// Writes all records and blobs from the bundle into the IO,
 /// overwriting any existing data at the same paths.
@@ -181,8 +179,6 @@ pub fn export_from_io(io: &impl BlockingIo) -> Result<Vec<u8>, String> {
 /// Std-only: the same blocking capability as `export_from_io`.
 #[cfg(feature = "std")]
 pub fn import_into_io(io: &impl BlockingIo, bundle: &[u8]) -> Result<(), String> {
-    let sync = io;
-
     // Validate magic
     if bundle.len() < 8 || &bundle[..8] != BUNDLE_MAGIC {
         return Err("invalid bundle: bad magic".into());
@@ -226,26 +222,26 @@ pub fn import_into_io(io: &impl BlockingIo, bundle: &[u8]) -> Result<(), String>
     // Write facts
     for record in &bundle_struct.facts {
         let bytes = postcard::to_allocvec(record).map_err(|e| e.to_string())?;
-        sync.write(&record.key(), &bytes)?;
+        io.write(&record.key(), &bytes)?;
     }
 
     // Write intents
     for record in &bundle_struct.intents {
         let bytes = postcard::to_allocvec(record).map_err(|e| e.to_string())?;
-        sync.write(&record.key(), &bytes)?;
+        io.write(&record.key(), &bytes)?;
     }
 
     // Write hints
     for record in &bundle_struct.hints {
         let bytes = postcard::to_allocvec(record).map_err(|e| e.to_string())?;
-        sync.write(&record.key(), &bytes)?;
+        io.write(&record.key(), &bytes)?;
     }
 
     // Write blobs
     for entry in &bundle_struct.blobs {
-        sync.write(&format!("blob/{}.bin", entry.hash), &entry.data)?;
+        io.write(&format!("blob/{}.bin", entry.hash), &entry.data)?;
         let meta_bytes = postcard::to_allocvec(&entry.meta).map_err(|e| e.to_string())?;
-        sync.write(&format!("blob/{}.bin.meta", entry.hash), &meta_bytes)?;
+        io.write(&format!("blob/{}.bin.meta", entry.hash), &meta_bytes)?;
     }
 
     Ok(())

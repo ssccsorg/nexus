@@ -314,6 +314,8 @@ fn verify(volume: &Path, address: &str) -> Result<(), Failure> {
 
     // The address follows from what the record holds, so holding the record is
     // enough to check it. Nothing above this trusts the storage.
+    // The media type does not enter the address: `Fact::new` hashes the payload
+    // alone, so a record written under another type still verifies here.
     let rebuilt = Fact::new(
         framing.origin.clone(),
         Content {
@@ -399,6 +401,9 @@ fn fingerprint(path: &Path) -> Result<(u64, Option<SystemTime>), Failure> {
 }
 
 fn copy_volume(from: &Path, to: &Path) -> Result<(), Failure> {
+    // A volume's top level may hold a file, so the destination cannot wait for a
+    // nested entry to create it.
+    refused(&format!("create {}", to.display()), fs::create_dir_all(to))?;
     for entry in refused(&format!("read {}", from.display()), fs::read_dir(from))? {
         let entry = refused(&format!("read {}", from.display()), entry)?;
         let source = entry.path();
