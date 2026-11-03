@@ -1,0 +1,72 @@
+# Sample volume
+#
+# Imported from storage/ref/samples/volume by `npm run import`.
+#
+# tool:      nexus-storage-ref
+# volume:    storage/ref/samples/volume
+# keys:      3
+# records:   1
+# exit:      0/0/0
+#
+# Every number below came from the tool. Each count is the arithmetic of this file over
+# the facts it writes, so an edit that moves a line has to move its count.
+#
+#   nexus-storage-ref keys --volume storage/ref/samples/volume --prefix ""
+
+seed 12061
+
+tick 0
+position sample-volume 70,88
+position keys 186,52
+position read 338,88
+position verify 452,40
+count 4
+
+fact keyspace-listed 3 keys/sample
+fact blob/578e724ee7e9c587be42c260a6d7e89abf7b75d502d3946ddc473b25aa22e3b8.bin 0 keys/sample
+fact blob/578e724ee7e9c587be42c260a6d7e89abf7b75d502d3946ddc473b25aa22e3b8.bin.meta 0 keys/sample
+fact facts/f_가뛈튋엀춣덞긗폟뮶윙첌췠뭻궖뺨감춑꼊쐝끒.fact 0 keys/sample
+hint key-count facts=1,blobs=2,exit=0
+count 8
+
+tick 1
+fact 가뛈튋엀춣덞긗폟뮶윙첌췠뭻궖뺨감춑꼊쐝끒 0 box/sample
+hint box-axes 0=가-가
+hint box-count 1
+count 9
+
+intent read-sample keyspace-listed read-one-address
+claim read-sample read/sample
+tick 2
+fact sample-record 164 read/sample
+hint read-key facts/f_가뛈튋엀춣덞긗폟뮶윙첌췠뭻궖뺨감춑꼊쐝끒.fact
+hint read-exit 0
+conclude read-sample present
+count 11
+
+intent verify-sample sample-record recompute-the-address
+claim verify-sample verify/sample
+tick 3
+hint record-origin did:example:asset-1
+hint record-creator sensor-1
+hint record-written 1793630807643521000ns
+hint payload-bytes 125
+hint address-state valid
+conclude verify-sample verified
+count 12
+
+intent sidecar-sample sample-record measure-the-application-file
+claim sidecar-sample read/sample
+tick 4
+hint app-bytes 9
+hint app-state unchanged
+conclude sidecar-sample unchanged
+count 13
+
+intent self-check-sample sidecar-sample run-the-contract
+claim self-check-sample read/sample
+tick 5
+hint self-check-exit 0
+conclude self-check-sample pass
+count 14
+
