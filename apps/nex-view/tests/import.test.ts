@@ -16,7 +16,9 @@ import { defaultBin, projectOf, scenarioOf } from '../tools/import-volume.mjs';
 
 const HERE = fileURLToPath(new URL('../', import.meta.url));
 
-const COORDINATE = '가뛈튋엀춣덞긗폟뮶윙첌췠뭻궖뺨감춑꼊쐝끒';
+// The tool prints every address in its base-36 rendering, so the board and the run carry no native character.
+const COORDINATE =
+  '00024O7M35346N71GE0EV7VJ33Q5CP6FG6OW3230BA3OO00G6MP0LM4RH0UQ';
 const BLOB = 'blob/578e724ee7e9c587be42c260a6d7e89abf7b75d502d3946ddc473b25aa22e3b8';
 
 /** What the tool answered for `storage/ref/samples/volume`. */
@@ -28,7 +30,7 @@ const measured = {
   keys: [`${BLOB}.bin`, `${BLOB}.bin.meta`, `facts/f_${COORDINATE}.fact`],
   keyCount: 3,
   keyExit: 0,
-  box: { axis: 0, from: '가', until: '가', records: 1 },
+  box: { axis: 0, from: '000', until: '000', records: 1 },
   boxExit: 0,
   readBytes: 164,
   readKey: `facts/f_${COORDINATE}.fact`,

@@ -10,7 +10,7 @@ function Mark({ className }: { className?: string }) {
     <svg
       viewBox={`0 0 ${MARK_VIEWBOX} ${MARK_VIEWBOX}`}
       role="img"
-      aria-label="neXus storage"
+      aria-label="nexus storage demo"
       className={className}
     >
       <path
@@ -26,8 +26,8 @@ function Mark({ className }: { className?: string }) {
 }
 
 export const brand: Brand = {
-  title: 'NEXUS',
-  name: 'neXus storage',
+  title: 'NEXUS DEMO',
+  name: 'nexus storage demo',
   version: 'v0.1.0',
   layers: ['nexus', 'chton', 'skene'],
   Mark,

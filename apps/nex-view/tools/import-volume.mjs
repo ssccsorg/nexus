@@ -20,6 +20,14 @@ import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const APP = resolve(HERE, '..');
 
+/**
+ * Characters one axis value occupies in the rendering.
+ *
+ * The tool prints every address in the base-36 rendering, so nothing here has to decode a coordinate: the first axis of
+ * an address is its first three characters.
+ */
+const AXIS_WIDTH = 3;
+
 const NOTE =
   'One project per volume, and every number on the screen came from the reference tool. This board is written by ' +
   '`npm run import`; nothing here counts a key.';
@@ -82,15 +90,16 @@ function coordinateOf(keys) {
  * record over a non-zero exit would be a screen disagreeing with the tool.
  */
 export function measure({ bin, volume, volumePath, id, title }) {
-  const keys = tool(bin, ['keys', '--volume', volumePath, '--prefix', '']);
+  const keys = tool(bin, ['keys', '--ascii', '--volume', volumePath, '--prefix', '']);
   if (keys.code !== 0) throw new Error(`keys refused ${volume}: ${keys.stderr.trim()}`);
   const keySpace = listed(keys.stdout, 'key\\(s\\)');
   const coordinate = coordinateOf(keySpace.lines);
 
-  // The pilot narrows one axis to the record's own character, which is a box over the address the listing gave.
-  const first = [...coordinate][0];
+  // The pilot narrows one axis to the record's own value, which is a box over the address the listing gave.
+  const first = coordinate.slice(0, AXIS_WIDTH);
   const box = tool(bin, [
     'box',
+    '--ascii',
     '--volume',
     volumePath,
     '--axis',
@@ -99,8 +108,15 @@ export function measure({ bin, volume, volumePath, id, title }) {
   if (box.code !== 0) throw new Error(`box refused ${volume}: ${box.stderr.trim()}`);
   const boxed = listed(box.stdout, 'record\\(s\\) in the box');
 
-  const read = tool(bin, ['read', '--volume', volumePath, '--address', coordinate]);
-  const verify = tool(bin, ['verify', '--volume', volumePath, '--address', coordinate]);
+  const read = tool(bin, ['read', '--ascii', '--volume', volumePath, '--address', coordinate]);
+  const verify = tool(bin, [
+    'verify',
+    '--ascii',
+    '--volume',
+    volumePath,
+    '--address',
+    coordinate,
+  ]);
 
   // The sidecar measurement is taken on a volume of its own, because it places one and refuses a directory that
   // already holds content. What it reports is the application file's size and that it did not change.
@@ -114,7 +130,7 @@ export function measure({ bin, volume, volumePath, id, title }) {
     rmSync(scratch, { recursive: true, force: true });
   }
 
-  const contract = tool(bin, ['self-check']);
+  const contract = tool(bin, ['self-check', '--ascii']);
 
   const appSize = /unchanged, (\d+) bytes/.exec(sidecar.stdout);
   return {

@@ -136,6 +136,16 @@ test('the key space the panel draws is the one the run lists', () => {
   }
 });
 
+test('the board and its runs carry no native character', () => {
+  // Every address on the board is the tool's rendering, so the demo reads the same in a terminal that has no font for
+  // the native alphabet. The run and the key space are the two places an address is written down.
+  for (const id of ids) {
+    const { space, text } = read(id);
+    expect(text, `${id}'s run is ASCII`).toMatch(/^[\x20-\x7E\n]*$/);
+    expect(space.keys.join('\n'), `${id}'s keys are ASCII`).toMatch(/^[\x20-\x7E\n]*$/);
+  }
+});
+
 /** Every file the application is made of, so a name added anywhere is caught. */
 function files(under = ROOT): string[] {
   const found: string[] = [];
