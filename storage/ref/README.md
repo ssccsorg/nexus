@@ -63,6 +63,8 @@ cargo run -p nexus-storage-ref -- sidecar --app ./app.db --volume ./records
 
 `cargo test -p nexus-storage-ref` holds the contract these commands promise: the exit codes below, a read that creates nothing, and the prefix filter.
 
+`--ascii` prints every address in its base-36 rendering, three characters an axis, which is the form `fih_model::ascii` produces and the one `read` and `verify` already accept. A box's bounds are read in the same form, so a printed address can be handed back to the tool unchanged. The volume still holds the native key: the rendering is a display form, and `keys --ascii` prints a record's key with its address rendered.
+
 `keys` lists the volume and keeps the keys that start with the prefix, because this channel resolves a listing prefix as a path. The filter is the tool's, and the cost it shows is the listing itself.
 
 `box` reads the coordinate out of each key and answers the range from it. The store opens without record maps and no record is read, so the answer costs the keys and nothing else. An axis the box does not name is free; `--axis 0=가-가 --axis 4=하-하` constrains two.
