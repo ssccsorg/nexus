@@ -14,6 +14,7 @@
     "import": "node tools/import-volume.mjs"
   },
   "dependencies": {
+    "@ssccsorg/skene-board": "file:../../../../../skene/packages/board",
     "@ssccsorg/skene-frame": "file:../../../../../skene/packages/frame",
     "@ssccsorg/skene-kernel": "file:../../../../../skene/packages/kernel",
     "@ssccsorg/skene-ui": "file:../../../../../skene/packages/ui",
