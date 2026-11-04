@@ -21,10 +21,11 @@ pub const DIGITS_PER_AXIS: usize = 3;
 /// The alphabet in ascending code point order, which is also the digit order.
 ///
 /// Ascending order is what makes sorting the text sort the coordinate, and the
-/// fixed width is what makes a prefix of the text a prefix of the axes. Case is
-/// not accepted on the way back, because two spellings of one value would cost
-/// both properties.
-const ALPHABET: &[u8; 36] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+/// fixed width is what makes a prefix of the text a prefix of the axes. Lowercase
+/// is the form a base-36 conversion already emits and the case the hex beside a
+/// key is written in. The other case is not accepted on the way back, because two
+/// spellings of one value would cost both properties.
+const ALPHABET: &[u8; 36] = b"0123456789abcdefghijklmnopqrstuvwxyz";
 
 /// The number of values one digit carries, taken from the alphabet so the
 /// arithmetic cannot drift from the characters it writes.
@@ -79,7 +80,7 @@ pub fn decode<const N: usize>(text: &str) -> Option<CoordId<N>> {
 fn digit(byte: u8) -> Option<u32> {
     match byte {
         b'0'..=b'9' => Some((byte - b'0') as u32),
-        b'A'..=b'Z' => Some((byte - b'A' + 10) as u32),
+        b'a'..=b'z' => Some((byte - b'a' + 10) as u32),
         _ => None,
     }
 }

@@ -80,10 +80,10 @@ fn the_text_order_matches_the_coordinate_order() {
 }
 
 #[test]
-fn a_lowercase_character_is_refused() {
+fn an_uppercase_character_is_refused() {
     let mut text = ascii::encode(&id_from([11_171u16; 20]));
-    assert_eq!(&text[..3], "8MB");
-    text.replace_range(1..2, "m");
+    assert_eq!(&text[..3], "8mb");
+    text.replace_range(1..2, "M");
     assert_eq!(ascii::decode::<20>(&text), None);
 }
 
@@ -117,11 +117,11 @@ fn resolve_reads_the_rendering_as_a_label() {
 #[test]
 fn the_digit_carries_render_exactly() {
     assert_eq!(first_window(0), "000");
-    assert_eq!(first_window(35), "00Z");
+    assert_eq!(first_window(35), "00z");
     assert_eq!(first_window(36), "010");
-    assert_eq!(first_window(1_295), "0ZZ");
+    assert_eq!(first_window(1_295), "0zz");
     assert_eq!(first_window(1_296), "100");
-    assert_eq!(first_window(11_171), "8MB");
+    assert_eq!(first_window(11_171), "8mb");
 }
 
 #[test]
@@ -155,7 +155,7 @@ fn an_axis_position_moves_only_its_own_window() {
 fn every_axis_at_the_maximum_round_trips() {
     let id = id_from([11_171u16; 20]);
     let text = ascii::encode(&id);
-    assert_eq!(text, "8MB".repeat(20));
+    assert_eq!(text, "8mb".repeat(20));
     assert_eq!(ascii::decode::<20>(&text), Some(id));
 }
 
@@ -197,7 +197,7 @@ fn encoding_a_decoded_text_reproduces_the_text() {
 fn a_character_outside_the_alphabet_is_refused_in_every_window() {
     let text = ascii::encode(&id_with(1, 1));
     for at in [0, 3, 30, 59] {
-        for bad in ["-", " ", "_", "a", "z", "+"] {
+        for bad in ["-", " ", "_", "A", "Z", "+"] {
             let mut shaken = text.clone();
             shaken.replace_range(at..at + 1, bad);
             assert_eq!(ascii::decode::<20>(&shaken), None, "{bad:?} at {at}");
@@ -206,19 +206,19 @@ fn a_character_outside_the_alphabet_is_refused_in_every_window() {
 }
 
 #[test]
-fn a_lowercase_copy_of_the_whole_text_is_refused() {
+fn an_uppercase_copy_of_the_whole_text_is_refused() {
     let text = ascii::encode(&id_from([11_171u16; 20]));
-    let lowered = text.to_lowercase();
-    assert_ne!(lowered, text, "the sample holds no letter");
-    assert_eq!(lowered.len(), text.len());
-    assert_eq!(ascii::decode::<20>(&lowered), None);
+    let uppered = text.to_uppercase();
+    assert_ne!(uppered, text, "the sample holds no letter");
+    assert_eq!(uppered.len(), text.len());
+    assert_eq!(ascii::decode::<20>(&uppered), None);
 }
 
 #[test]
 fn a_six_axis_coordinate_round_trips() {
     let id = id_from([1u16, 2, 35, 36, 1_296, 11_171]);
     let text = ascii::encode(&id);
-    assert_eq!(text, "00100200Z0101008MB");
+    assert_eq!(text, "00100200z0101008mb");
     assert_eq!(ascii::decode::<6>(&text), Some(id));
 }
 
