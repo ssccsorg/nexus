@@ -18,7 +18,7 @@ const HERE = fileURLToPath(new URL('../', import.meta.url));
 
 // The tool prints every address in its base-36 rendering, so the board and the run carry no native character.
 const COORDINATE =
-  '00024O7M35346N71GE0EV7VJ33Q5CP6FG6OW3230BA3OO00G6MP0LM4RH0UQ';
+  '00024o7m35346n71ge0ev7vj33q5cp6fg6ow3230ba3oo00g6mp0lm4rh0uq';
 const BLOB = 'blob/578e724ee7e9c587be42c260a6d7e89abf7b75d502d3946ddc473b25aa22e3b8';
 
 /** What the tool answered for `storage/ref/demo/volume`. */

@@ -111,11 +111,11 @@ cargo run -p nexus-storage-ref -- box --ascii --volume storage/ref/demo/volume -
 
 # Read the bytes at the address a key implies.
 cargo run -p nexus-storage-ref -- read --ascii --volume storage/ref/demo/volume \
-  --address 00024O7M35346N71GE0EV7VJ33Q5CP6FG6OW3230BA3OO00G6MP0LM4RH0UQ
+  --address 00024o7m35346n71ge0ev7vj33q5cp6fg6ow3230ba3oo00g6mp0lm4rh0uq
 
 # Recompute the address from what the record holds.
 cargo run -p nexus-storage-ref -- verify --ascii --volume storage/ref/demo/volume \
-  --address 00024O7M35346N71GE0EV7VJ33Q5CP6FG6OW3230BA3OO00G6MP0LM4RH0UQ
+  --address 00024o7m35346n71ge0ev7vj33q5cp6fg6ow3230ba3oo00g6mp0lm4rh0uq
 
 # Place the volume beside an existing application file.
 cargo run -p nexus-storage-ref -- sidecar --app ./app.db --volume ./records
