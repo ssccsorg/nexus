@@ -109,7 +109,7 @@ function coordinateOf(keys) {
  * record over a non-zero exit would be a screen disagreeing with the tool.
  */
 export function measure({ bin, volume, volumePath, id, title }) {
-  const keys = tool(bin, ['keys', '--ascii', '--volume', volumePath, '--prefix', '']);
+  const keys = tool(bin, ['keys', '--volume', volumePath, '--prefix', '']);
   if (keys.code !== 0) throw new Error(`keys refused ${volume}: ${keys.stderr.trim()}`);
   const keySpace = listed(keys.stdout, 'key\\(s\\)');
   const coordinate = coordinateOf(keySpace.lines);
@@ -118,7 +118,6 @@ export function measure({ bin, volume, volumePath, id, title }) {
   const first = coordinate.slice(0, AXIS_WIDTH);
   const box = tool(bin, [
     'box',
-    '--ascii',
     '--volume',
     volumePath,
     '--axis',
@@ -127,10 +126,9 @@ export function measure({ bin, volume, volumePath, id, title }) {
   if (box.code !== 0) throw new Error(`box refused ${volume}: ${box.stderr.trim()}`);
   const boxed = listed(box.stdout, 'record\\(s\\) in the box');
 
-  const read = tool(bin, ['read', '--ascii', '--volume', volumePath, '--address', coordinate]);
+  const read = tool(bin, ['read', '--volume', volumePath, '--address', coordinate]);
   const verify = tool(bin, [
     'verify',
-    '--ascii',
     '--volume',
     volumePath,
     '--address',
@@ -149,7 +147,7 @@ export function measure({ bin, volume, volumePath, id, title }) {
     rmSync(scratch, { recursive: true, force: true });
   }
 
-  const contract = tool(bin, ['self-check', '--ascii']);
+  const contract = tool(bin, ['self-check']);
 
   const appSize = /unchanged, (\d+) bytes/.exec(sidecar.stdout);
   return {

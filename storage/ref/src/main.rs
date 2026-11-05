@@ -28,12 +28,13 @@ const KEY_PAGE: usize = 32;
     about = "Read a neXus volume through the storage contract"
 )]
 struct Cli {
-    /// Print every address in its base-36 rendering, and read a box's bounds in that form.
+    /// Print every address in its native form, and read a box's bounds in that form.
     ///
-    /// The volume still holds the native key. The rendering is the form `read` and `verify`
-    /// already accept, so a printed address can be handed back to the tool unchanged.
+    /// The default is the base-36 rendering, which needs no font and sorts to the
+    /// coordinate order. The volume still holds the native key, so this is the form
+    /// for reading a stored key or writing a bound in one character.
     #[arg(long, global = true)]
-    ascii: bool,
+    native: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -181,7 +182,7 @@ fn main() -> ExitCode {
             };
         }
     };
-    let ascii = cli.ascii;
+    let ascii = !cli.native;
     let result = match cli.command {
         Command::Keys(args) => keys(&args.volume, &args.prefix, ascii),
         Command::Box(args) => boxed(&args.volume, &args.axes, ascii),

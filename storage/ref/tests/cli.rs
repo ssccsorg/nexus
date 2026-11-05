@@ -129,6 +129,7 @@ fn a_coordinate_prefix_finds_the_record_and_a_wrong_one_finds_nothing() {
 
     let hit = run(&[
         "keys",
+        "--native",
         "--volume",
         &volume_arg(),
         "--prefix",
@@ -139,6 +140,7 @@ fn a_coordinate_prefix_finds_the_record_and_a_wrong_one_finds_nothing() {
 
     let miss = run(&[
         "keys",
+        "--native",
         "--volume",
         &volume_arg(),
         "--prefix",
@@ -188,7 +190,14 @@ fn an_address_in_the_rendering_reads_the_same_record() {
     let coordinate = CoordId::<20>::from_string(&address).expect("a coordinate");
     let rendered = ascii::encode(&coordinate);
 
-    let out = run(&["read", "--volume", &volume_arg(), "--address", &rendered]);
+    let out = run(&[
+        "read",
+        "--native",
+        "--volume",
+        &volume_arg(),
+        "--address",
+        &rendered,
+    ]);
 
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     let text = stdout(&out);
@@ -217,7 +226,7 @@ fn a_sixty_character_string_outside_the_alphabet_is_refused() {
         "--volume",
         &volume_arg(),
         "--address",
-        &"a".repeat(60),
+        &"A".repeat(60),
     ]);
 
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
@@ -246,6 +255,7 @@ fn a_box_over_one_axis_answers_from_the_keys() {
 
     let hit = run(&[
         "box",
+        "--native",
         "--volume",
         &volume_arg(),
         "--axis",
@@ -261,6 +271,7 @@ fn a_box_over_one_axis_answers_from_the_keys() {
 
     let miss = run(&[
         "box",
+        "--native",
         "--volume",
         &volume_arg(),
         "--axis",
@@ -280,6 +291,7 @@ fn a_box_over_two_axes_narrows_the_answer() {
 
     let hit = run(&[
         "box",
+        "--native",
         "--volume",
         &volume_arg(),
         "--axis",
@@ -292,6 +304,7 @@ fn a_box_over_two_axes_narrows_the_answer() {
 
     let miss = run(&[
         "box",
+        "--native",
         "--volume",
         &volume_arg(),
         "--axis",
@@ -307,7 +320,14 @@ fn a_box_over_two_axes_narrows_the_answer() {
 fn the_whole_key_space_lists_the_record_and_its_payload() {
     let (address, _) = sample_record();
 
-    let out = run(&["keys", "--volume", &volume_arg(), "--prefix", ""]);
+    let out = run(&[
+        "keys",
+        "--native",
+        "--volume",
+        &volume_arg(),
+        "--prefix",
+        "",
+    ]);
 
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     let text = stdout(&out);
@@ -321,18 +341,11 @@ fn the_whole_key_space_lists_the_record_and_its_payload() {
 }
 
 #[test]
-fn the_ascii_mode_prints_the_rendering_and_no_native_character() {
+fn the_rendering_is_the_default_and_holds_no_native_character() {
     let (address, size) = sample_record();
     let rendered = ascii::encode(&CoordId::<20>::from_string(&address).expect("a coordinate"));
 
-    let out = run(&[
-        "read",
-        "--ascii",
-        "--volume",
-        &volume_arg(),
-        "--address",
-        &address,
-    ]);
+    let out = run(&["read", "--volume", &volume_arg(), "--address", &address]);
 
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     let text = stdout(&out);
@@ -346,18 +359,11 @@ fn the_ascii_mode_prints_the_rendering_and_no_native_character() {
 }
 
 #[test]
-fn the_ascii_mode_reads_the_rendering_back() {
+fn the_rendering_is_read_back_as_the_same_coordinate() {
     let (address, _) = sample_record();
     let rendered = ascii::encode(&CoordId::<20>::from_string(&address).expect("a coordinate"));
 
-    let out = run(&[
-        "read",
-        "--ascii",
-        "--volume",
-        &volume_arg(),
-        "--address",
-        &rendered,
-    ]);
+    let out = run(&["read", "--volume", &volume_arg(), "--address", &rendered]);
 
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     assert!(
@@ -375,7 +381,6 @@ fn a_box_in_the_rendering_narrows_to_the_same_record() {
 
     let hit = run(&[
         "box",
-        "--ascii",
         "--volume",
         &volume_arg(),
         "--axis",
@@ -389,7 +394,6 @@ fn a_box_in_the_rendering_narrows_to_the_same_record() {
     let other = if first == "000" { "001" } else { "000" };
     let miss = run(&[
         "box",
-        "--ascii",
         "--volume",
         &volume_arg(),
         "--axis",
@@ -400,11 +404,11 @@ fn a_box_in_the_rendering_narrows_to_the_same_record() {
 }
 
 #[test]
-fn the_keys_in_the_rendering_are_ascii() {
+fn the_keys_are_printed_in_the_rendering() {
     let (address, _) = sample_record();
     let rendered = ascii::encode(&CoordId::<20>::from_string(&address).expect("a coordinate"));
 
-    let out = run(&["keys", "--ascii", "--volume", &volume_arg(), "--prefix", ""]);
+    let out = run(&["keys", "--volume", &volume_arg(), "--prefix", ""]);
 
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     let text = stdout(&out);
@@ -416,14 +420,7 @@ fn the_keys_in_the_rendering_are_ascii() {
 
 #[test]
 fn a_rendered_bound_is_refused_when_the_bounds_disagree_on_width() {
-    let out = run(&[
-        "box",
-        "--ascii",
-        "--volume",
-        &volume_arg(),
-        "--axis",
-        "0=0-000",
-    ]);
+    let out = run(&["box", "--volume", &volume_arg(), "--axis", "0=0-000"]);
 
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
     assert!(stderr(&out).contains("same width"), "{}", stderr(&out));
@@ -431,14 +428,7 @@ fn a_rendered_bound_is_refused_when_the_bounds_disagree_on_width() {
 
 #[test]
 fn a_bound_that_is_neither_a_character_nor_a_rendering_is_refused() {
-    let out = run(&[
-        "box",
-        "--ascii",
-        "--volume",
-        &volume_arg(),
-        "--axis",
-        "0=00-00",
-    ]);
+    let out = run(&["box", "--volume", &volume_arg(), "--axis", "0=00-00"]);
 
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
     assert!(
@@ -496,7 +486,7 @@ fn a_tampered_payload_fails_verification() {
 
 #[test]
 fn the_self_check_passes_on_the_address_the_volume_holds() {
-    let out = run(&["self-check"]);
+    let out = run(&["self-check", "--native"]);
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
 
     let text = stdout(&out);
