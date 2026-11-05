@@ -7,6 +7,7 @@
 //   4. Full StateSpace round-trip (submit → flush → rebuild → verify)
 //   5. Eviction durability (records deleted from io)
 
+use nex_fih::FihId20 as _;
 use nexus_storage_sim::BlockingIo;
 
 mod common;

@@ -38,7 +38,7 @@ mod firmware {
     use nex_core::{EpochClock, Monotonic, Now};
     use nex_fih::{
         AsyncFactCapable, AsyncHintCapable, AsyncStorageRead, BoardState, Content, CoordId, Fact,
-        FihStorage, Hint,
+        FihId20, FihStorage, Hint,
     };
     use nexus_verify_support::{FlatIo, block_on};
 

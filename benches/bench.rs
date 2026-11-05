@@ -92,6 +92,7 @@
 
 use criterion::{BatchSize, Criterion, black_box, criterion_group, criterion_main};
 use futures_executor::block_on;
+use nex_fih::FihId20 as _;
 
 // Real SSCCS documentation manifest (generated from docs/_llms/llms.txt):
 // (section, area, title) used by the kb_lifecycle scenario.

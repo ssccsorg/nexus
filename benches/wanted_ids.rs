@@ -7,6 +7,7 @@
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use futures_executor::block_on;
+use nex_fih::FihId20 as _;
 use nex_fih::{
     AsyncFactCapable, AsyncFilterCapable, Content, CoordId, Fact, FihStorage, StateFilter,
 };

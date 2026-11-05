@@ -7,6 +7,7 @@
 //   - heartbeat while another thread releases
 
 use nex::FihBlackboard;
+use nex_fih::FihId20 as _;
 use nex_fih::{Blackboard, CoordId, Fact, FactCapable, Intent, IntentCapable, StorageRead};
 use nexus_storage_sim::SimIo;
 use std::sync::{

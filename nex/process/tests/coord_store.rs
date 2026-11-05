@@ -8,6 +8,7 @@
 // a reopen.
 
 use futures_executor::block_on;
+use nex_fih::FihId20 as _;
 use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncScanCapable, AsyncStorageRead,
     AsyncTimeRangeCapable, Content, CoordId, Fact, FihStorage, Hint, Intent, IntentStatus,

@@ -5,6 +5,7 @@ use core::ops::Range;
 
 use crate::error::BlackboardError;
 use crate::fih::{BoardState, Content, CoordId, Fact, Hint, Intent};
+use crate::id::FihId20 as _;
 use crate::storage::aggregate::ColdStorage;
 use crate::storage::evict::EvictCapable;
 use crate::storage::fact::FactCapable;

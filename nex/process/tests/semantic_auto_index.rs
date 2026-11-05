@@ -6,6 +6,7 @@
 // features, and a store that needs a vector has to build it itself. Conclusion facts are
 // skipped, because they are the process layer's own output rather than an observation.
 
+use nex_fih::FihId20 as _;
 use std::sync::{Arc, Mutex};
 
 use futures_executor::block_on;

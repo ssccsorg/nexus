@@ -8,6 +8,7 @@
 
 #![cfg(feature = "std")]
 
+use nex_fih::FihId20 as _;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 

@@ -17,6 +17,7 @@
 //  10. FihCoord integration: semantic_insert / semantic_search via store
 
 use nex::storage::semantic::{Query, RecordLoad, SemanticStore};
+use nex_fih::FihId20 as _;
 
 mod common;
 use common::semantic::{MockBm25Store, MockSemanticStore};

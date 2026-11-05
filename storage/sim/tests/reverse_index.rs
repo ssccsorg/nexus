@@ -8,6 +8,7 @@
 //   - Index cleared on conclude (intent no longer references its from_facts)
 //   - Index survives flush + rebuild_cache round-trip
 
+use nex_fih::FihId20 as _;
 mod common;
 
 use crate::common::FakeClock;

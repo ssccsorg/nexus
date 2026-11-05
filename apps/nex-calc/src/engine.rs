@@ -17,6 +17,7 @@
 // bytes, the same derivation make_number_fact_id uses, so the blob key,
 // the record hash, and the id agree.
 
+use nex_fih::FihId20 as _;
 use std::fmt;
 
 use sha2::{Digest, Sha256};

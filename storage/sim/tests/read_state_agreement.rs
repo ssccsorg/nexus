@@ -4,6 +4,7 @@
 //! same content.
 
 use futures_executor::block_on;
+use nex_fih::FihId20 as _;
 use nex_fih::{
     AsyncFactCapable, AsyncFilterCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead,
     Content, CoordId, Fact, FihStorage, Hint, Intent, StateFilter,

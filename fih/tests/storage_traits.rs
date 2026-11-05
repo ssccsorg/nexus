@@ -6,6 +6,7 @@
 // used wherever the owner is. `NullStorage` is the reference implementor for the first,
 // and it is itself the smallest consumer of the second.
 
+use fih_model::FihId20 as _;
 use fih_model::{
     ColdQuery, ColdStorage, Content, CoordId, EvictCapable, Fact, FactCapable, FilterCapable, Hint,
     HintCapable, Intent, IntentCapable, NullStorage, QueryCapable, ScanCapable, StateFilter,

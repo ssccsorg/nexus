@@ -8,6 +8,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
 };
+use nex_fih::FihId20 as _;
 use nex_fih::{BlackboardError, Content, CoordId, Fact, Hint, Intent};
 use serde::{Deserialize, Serialize};
 
@@ -158,8 +159,7 @@ pub async fn submit_intent(
             "intent must be grounded in at least one fact".into(),
         )));
     }
-    let from_facts: Vec<CoordId> =
-        req.from_facts.iter().map(|s| CoordId::resolve(s)).collect();
+    let from_facts: Vec<CoordId> = req.from_facts.iter().map(|s| CoordId::resolve(s)).collect();
     let intent = Intent {
         id,
         from_facts,

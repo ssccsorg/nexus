@@ -1,6 +1,7 @@
 // Gap coverage tests for FihStorage<SimIo>.
 // Tests basic storage invariants not covered by existing scenario tests.
 
+use nex_fih::FihId20 as _;
 mod common;
 
 use nex_fih::{

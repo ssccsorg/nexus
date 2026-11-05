@@ -7,6 +7,8 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
+use fih_model::FihId as _;
+use fih_model::FihId6 as _;
 use fih_model::{BlackboardError, Content, CoordId, FihHash};
 
 #[test]
@@ -40,7 +42,7 @@ fn the_six_axis_surface_builds_and_reads_back() {
     let one_place = CoordId::<6>::new(11172);
     assert_eq!(one_place.axis(0).index(), 0);
     assert_eq!(one_place.axis(1).index(), 1);
-    assert_eq!(one_place.coord_at(1).index(), 1);
+    assert_eq!(one_place.coords()[1].index(), 1);
 
     let explicit =
         CoordId::<6>::from_indices([1, 2, 3, 4, 5, 6]).expect("the indices are in range");

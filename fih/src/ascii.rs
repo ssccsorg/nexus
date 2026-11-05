@@ -13,7 +13,7 @@
 use alloc::string::String;
 use tagma_core::{Coord, CoordPath};
 
-use crate::fih::CoordId;
+use crate::id::CoordId;
 
 /// Characters one axis value occupies in the ASCII rendering.
 pub const DIGITS_PER_AXIS: usize = 3;
@@ -74,7 +74,7 @@ pub fn decode<const N: usize>(text: &str) -> Option<CoordId<N>> {
         }
         coords[axis] = Coord::new(value as u16)?;
     }
-    Some(CoordId(CoordPath::new(coords)))
+    Some(tagma_core::CoordId(CoordPath::new(coords)))
 }
 
 fn digit(byte: u8) -> Option<u32> {

@@ -4,6 +4,7 @@
 // on top of SimIo (in-memory, no R2). Uses `futures_executor::block_on`
 // to drive async in test context (native only, not WASM).
 
+use nex_fih::FihId20 as _;
 use nex_fih::{
     AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncHintCapable, AsyncIntentCapable,
     AsyncScanCapable, AsyncStorageRead, AsyncTimeRangeCapable, CoordId, Hint, StateFilter,

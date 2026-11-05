@@ -3,6 +3,7 @@
 // Tests: since, until (as_of), range (since+until), empty results.
 // All timestamps are fully deterministic — no sleep(), no flakiness.
 
+use nex_fih::FihId20 as _;
 mod common;
 
 use nex_fih::{AsyncFactCapable, AsyncFilterCapable, AsyncStorageRead, CoordId, StateFilter};

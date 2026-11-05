@@ -33,6 +33,7 @@ use nex::process::tasks::contradiction_detector::ContradictionDetector;
 use nex::process::tasks::gap_detector::GapDetector;
 use nex::process::tasks::new_document_analyzer::NewDocumentAnalyzer;
 use nex::process::tasks::state_change_detector::StateChangeDetector;
+use nex_fih::FihId20 as _;
 use nex_fih::{
     Blackboard, BoardState, Content, CoordId, EvictCapable, Fact, FactCapable, Intent,
     IntentCapable, StorageRead,

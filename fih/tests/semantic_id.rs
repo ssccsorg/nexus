@@ -8,7 +8,8 @@
 // pin determinism, distinctness, and canonical form. Id coordinates are
 // opaque since the migration: the old axis-layout contract is gone.
 
-use fih_model::fih::encode_hash_into_coords;
+use fih_model::FihId20 as _;
+use fih_model::encode_hash_into_coords;
 use fih_model::{Content, CoordId, Fact, FihHash};
 use sha2::{Digest, Sha256};
 use tagma_core::CoordPath;
@@ -152,7 +153,7 @@ fn encode_hash_is_injective() {
 
     let ids: Vec<CoordId> = digests
         .iter()
-        .map(|d| CoordId(CoordPath::new(encode_hash_into_coords(d))))
+        .map(|d| tagma_core::CoordId(CoordPath::new(encode_hash_into_coords(d))))
         .collect();
     for i in 0..ids.len() {
         for j in (i + 1)..ids.len() {
@@ -178,7 +179,7 @@ fn encode_hash_uses_the_20th_digit_for_256_bit_values() {
     // Zero maps to the all-zero path (canonical 20 Hangul '가' chars).
     let zero = encode_hash_into_coords(&[0u8; 32]);
     assert!(zero.iter().all(|c| c.index() == 0));
-    let id: CoordId = CoordId(CoordPath::new(zero));
+    let id: CoordId = tagma_core::CoordId(CoordPath::new(zero));
     assert_eq!(id.to_string(), "가".repeat(20));
 }
 

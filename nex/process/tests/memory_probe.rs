@@ -32,6 +32,7 @@
 // the remaining per-record cost is a few hundred bytes to ~1 KB (longer
 // 20-syllable ids since Step 4).
 
+use nex_fih::FihId20 as _;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
 

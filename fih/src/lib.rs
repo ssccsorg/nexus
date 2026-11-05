@@ -8,7 +8,8 @@ extern crate alloc;
 // nex-specific IO, core storage engines, or any runtime implementation.
 //
 // Modules
-//   fih/       — Fact, Intent, Hint, CoordId, FihHash, Content, BoardState
+//   fih/       — Fact, Intent, Hint, FihHash, Content, BoardState
+//   id/        — CoordId (from tagma), its content derivation, the legacy six-syllable surface
 //   error/     — BlackboardError
 //   clock/     — Now trait (platform-independent timestamp abstraction)
 //   blackboard — Blackboard aggregate trait
@@ -24,6 +25,7 @@ pub mod clock;
 pub mod contract;
 pub mod error;
 pub mod fih;
+pub mod id;
 pub mod semantic;
 pub mod storage;
 
@@ -31,7 +33,8 @@ pub use blackboard::Blackboard;
 pub use clock::Now;
 pub use contract::core::{HealthStatus, NexConfig, NexInstanceInfo, NexLifecycle};
 pub use error::BlackboardError;
-pub use fih::{BoardState, Content, CoordId, Fact, FihHash, Hint, Intent};
+pub use fih::{BoardState, Content, Fact, FihHash, Hint, Intent};
+pub use id::{COORD_ID_DEPTH, CoordId, FihId, FihId6, FihId20, encode_hash_into_coords};
 pub use semantic::SemanticStore;
 pub use semantic::fih::FihRecordLoad;
 pub use semantic::record::{Query, RecordLoad};

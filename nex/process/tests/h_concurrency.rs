@@ -6,6 +6,7 @@
 // HybridBlackboard directly.
 
 use nex::FihBlackboard;
+use nex_fih::FihId20 as _;
 use nex_fih::{Blackboard, BlackboardError, Content, CoordId, Fact, Intent};
 use nexus_storage_sim::SimIo;
 use std::sync::{Arc, Mutex};

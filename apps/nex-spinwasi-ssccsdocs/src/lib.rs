@@ -7,6 +7,7 @@
 // tracing events are captured by the Spin runtime; no subscriber is
 // needed. For local debugging with `spin up`, use `RUST_LOG=info`.
 
+use nex_fih::FihId20 as _;
 mod bm25;
 mod kv_io;
 
@@ -51,7 +52,10 @@ async fn ensure_initialized() {
     }
     let s = get_storage();
     match restore_from_snapshot(s).await {
-        Ok(true) => tracing::info!("restored snapshot ({} facts)", s.fact_records.borrow().len()),
+        Ok(true) => tracing::info!(
+            "restored snapshot ({} facts)",
+            s.fact_records.borrow().len()
+        ),
         Ok(false) => {
             tracing::info!("no snapshot found, syncing docs");
             fetch_ssccs_docs(s).await;
@@ -136,21 +140,13 @@ async fn restore_from_snapshot(s: &AppStorage) -> Result<bool, String> {
     }
     {
         let mut m = s.fact_records.borrow_mut();
-        for (k, v) in snapshot
-            .facts
-            .into_iter()
-            .map(|r| (r.id.clone(), r))
-        {
+        for (k, v) in snapshot.facts.into_iter().map(|r| (r.id.clone(), r)) {
             m.insert(k, v);
         }
     }
     {
         let mut m = s.intent_records.borrow_mut();
-        for (k, v) in snapshot
-            .intents
-            .into_iter()
-            .map(|r| (r.id.clone(), r))
-        {
+        for (k, v) in snapshot.intents.into_iter().map(|r| (r.id.clone(), r)) {
             m.insert(k, v);
         }
     }

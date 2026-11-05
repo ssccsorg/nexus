@@ -5,6 +5,7 @@
 // handling, and end-to-end round trips with various storage backends.
 
 use nex_fih::CoordId;
+use nex_fih::FihId20 as _;
 use nex_fih::RecordTimeUnit;
 use nexus_storage_sim::SimIo;
 use nexus_storage_sim::{

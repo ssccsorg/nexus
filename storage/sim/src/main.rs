@@ -6,6 +6,7 @@
 // every verification step passes. Designed to be run as a smoke test in CI
 // or during development (cargo run, not cargo test).
 
+use nex_fih::FihId20 as _;
 use nex_fih::{
     AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncHintCapable, AsyncIntentCapable,
     AsyncStorageRead, Content, CoordId, Fact, Hint, Intent, StateFilter,

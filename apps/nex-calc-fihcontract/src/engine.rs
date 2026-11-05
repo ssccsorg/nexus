@@ -15,15 +15,16 @@
 //
 // The FihHash is content-addressed: SHA256(value_string + tag).
 
+use nex_fih::FihId20 as _;
 use std::fmt;
 
 use sha2::{Digest, Sha256};
 
+use nex::contract::fih::FihContract;
+use nex::io::FileIo;
 use nex::storage::core::intent_status::IntentStatus;
 use nex::storage::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
 use nex::storage::core::store::FihStorage;
-use nex::contract::fih::FihContract;
-use nex::io::FileIo;
 use nex_fih::{Content, CoordId, FihHash, RecordTimeUnit};
 use nexus_storage_sim::SimIo;
 
@@ -89,7 +90,9 @@ pub struct CalcEngine {
 impl CalcEngine {
     pub fn new() -> Self {
         let contract = FihContract::new();
-        contract.gate.register_schema(NUMBER_MIME, NUMBER_MIME.as_bytes());
+        contract
+            .gate
+            .register_schema(NUMBER_MIME, NUMBER_MIME.as_bytes());
         Self {
             storage: FihStorage::new(SimIo::new(), "nex-calc"),
             contract,
@@ -120,16 +123,14 @@ impl CalcEngine {
         write_blob_meta(&self.storage.io, &blob_hash, NUMBER_MIME, data.len()).await;
 
         let record = FactRecord::from_model(
-            &nex_fih::Fact::with_id(
-                id,
-                "nex-calc".into(),
-                Content::from(""),
-                "user".into(),
-            ),
+            &nex_fih::Fact::with_id(id, "nex-calc".into(), Content::from(""), "user".into()),
             blob_hash,
             0,
         );
-        self.storage.fact_records.borrow_mut().insert(id_str, record);
+        self.storage
+            .fact_records
+            .borrow_mut()
+            .insert(id_str, record);
         id
     }
 
@@ -147,7 +148,14 @@ impl CalcEngine {
     /// Look up a Fact by short hex prefix.
     pub async fn find_fact(&self, prefix: &str) -> Option<CoordId> {
         let prefix_lower = prefix.to_lowercase();
-        for r in self.storage.fact_records.borrow().values().cloned().collect::<Vec<_>>() {
+        for r in self
+            .storage
+            .fact_records
+            .borrow()
+            .values()
+            .cloned()
+            .collect::<Vec<_>>()
+        {
             if r.id.to_lowercase().starts_with(&prefix_lower) {
                 return Some(CoordId::resolve(&r.id));
             }
@@ -199,7 +207,10 @@ impl CalcEngine {
             created_at: now,
             time_unit: RecordTimeUnit::Nanos,
         };
-        self.storage.intent_records.borrow_mut().insert(id_str, record);
+        self.storage
+            .intent_records
+            .borrow_mut()
+            .insert(id_str, record);
         Ok(id)
     }
 
@@ -313,7 +324,9 @@ impl CalcEngine {
 
         // Record evidence via FihContract
         let ts = nanos();
-        self.contract.evidence.append(&intent_id.to_string(), "intent:conclude", ts);
+        self.contract
+            .evidence
+            .append(&intent_id.to_string(), "intent:conclude", ts);
 
         Ok(ResolvedIntent {
             intent_id: *intent_id,
@@ -340,7 +353,10 @@ impl CalcEngine {
                 ttl_secs: None,
                 time_unit: RecordTimeUnit::Nanos,
             };
-            self.storage.hint_records.borrow_mut().insert(id_str, record);
+            self.storage
+                .hint_records
+                .borrow_mut()
+                .insert(id_str, record);
         }
         id
     }
@@ -353,7 +369,14 @@ impl CalcEngine {
 
     pub async fn list_facts(&self) -> Vec<(CoordId, i64)> {
         let mut out = Vec::new();
-        for r in self.storage.fact_records.borrow().values().cloned().collect::<Vec<_>>() {
+        for r in self
+            .storage
+            .fact_records
+            .borrow()
+            .values()
+            .cloned()
+            .collect::<Vec<_>>()
+        {
             if let Some(v) = decode_blob(&self.storage.io, &r.blob_hash).await {
                 out.push((CoordId::resolve(&r.id), v));
             }
@@ -408,7 +431,14 @@ impl CalcEngine {
     // ── Internal ──────────────────────────────────────────────────
 
     async fn apply_operand_transforms(&self, mut lhs: i64, mut rhs: i64) -> (i64, i64) {
-        for r in self.storage.hint_records.borrow().values().cloned().collect::<Vec<_>>() {
+        for r in self
+            .storage
+            .hint_records
+            .borrow()
+            .values()
+            .cloned()
+            .collect::<Vec<_>>()
+        {
             let c = match Constraint::parse_str(&r.content) {
                 Some(c) => c,
                 None => continue,
@@ -421,7 +451,14 @@ impl CalcEngine {
     }
 
     async fn check_constraints(&self, result: i64) -> Result<(), CalcError> {
-        for r in self.storage.hint_records.borrow().values().cloned().collect::<Vec<_>>() {
+        for r in self
+            .storage
+            .hint_records
+            .borrow()
+            .values()
+            .cloned()
+            .collect::<Vec<_>>()
+        {
             let c = match Constraint::parse_str(&r.content) {
                 Some(c) => c,
                 None => continue,

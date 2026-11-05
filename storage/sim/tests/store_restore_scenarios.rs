@@ -4,6 +4,7 @@
 // restoration. These tests verify that the FIH StateSpace operates
 // correctly as a time-travelable knowledge store.
 
+use nex_fih::FihId20 as _;
 mod common;
 
 use futures_executor::block_on;

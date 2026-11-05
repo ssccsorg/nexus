@@ -9,6 +9,7 @@
 // Conflict instead of silently overwriting the earlier record.
 
 use futures_executor::block_on;
+use nex_fih::FihId20 as _;
 use nex_fih::core::store::{Record, structural_path};
 use nex_fih::{
     AsyncFactCapable, AsyncStorageRead, BlackboardError, Content, CoordId, Fact, FactRecord,

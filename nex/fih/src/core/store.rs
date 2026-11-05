@@ -40,6 +40,7 @@
 //   - no sync trait on FihStorage (async-only)
 //   - no static mutable state
 
+use crate::FihId20 as _;
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 use alloc::format;

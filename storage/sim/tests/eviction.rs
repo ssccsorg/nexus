@@ -5,6 +5,7 @@
 // submitted_at and intent created_at are nanosecond timestamps, so a
 // FakeClock controls old vs new records unambiguously.
 
+use nex_fih::FihId20 as _;
 mod common;
 
 use common::FakeClock;

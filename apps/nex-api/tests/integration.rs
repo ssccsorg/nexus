@@ -3,9 +3,10 @@
 // Starts the server on a random port, exercises every endpoint,
 // and verifies the full FIH lifecycle works over HTTP.
 
+use nex_fih::CoordId;
+use nex_fih::FihId20 as _;
 use nexus_gateway_api::build_router;
 use nexus_gateway_api::state::AppState;
-use nex_fih::CoordId;
 
 /// Canonical id for a fixture label (labels and canonical forms address
 /// the same record at the API boundary).

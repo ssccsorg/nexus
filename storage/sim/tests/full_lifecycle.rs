@@ -1,5 +1,6 @@
 // Full lifecycle test for FihStorage<SimIo>.
 
+use nex_fih::FihId20 as _;
 use nex_fih::{
     AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead, Content, CoordId, Fact, Intent,
 };

@@ -1,5 +1,6 @@
 use nex::helper::ContentJsonExt;
 use nex::process::tasks::state_change_detector::StateChangeDetector;
+use nex_fih::FihId20 as _;
 use nex_fih::{BoardState, Content, CoordId, DetectionCapable, Fact};
 
 fn make_fact(id: &str, origin: &str) -> Fact {

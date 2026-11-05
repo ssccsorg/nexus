@@ -4,6 +4,7 @@
 // all communicating through the FIH protocol via SerdeProxy's JSON boundary.
 
 use nex::FihBlackboard;
+use nex_fih::FihId20 as _;
 use nex_fih::{
     BlackboardError, Content, CoordId, Fact, FactCapable, Intent, IntentCapable, StorageRead,
 };

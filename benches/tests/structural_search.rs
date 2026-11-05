@@ -13,6 +13,7 @@
 // never surfaces as a mismatch; these tests verify the two paths stay
 // identical, they cannot detect a collision.
 
+use nex_fih::FihId20 as _;
 use std::sync::{Arc, Mutex};
 
 use futures_executor::block_on;

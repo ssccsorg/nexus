@@ -12,6 +12,7 @@
 // hint from the medium with the description an intent points at, and refuses the reads that are
 // the record maps rather than reporting an empty map as an empty volume.
 
+use nex_fih::FihId20 as _;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 

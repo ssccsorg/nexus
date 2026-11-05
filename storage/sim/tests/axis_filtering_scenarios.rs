@@ -11,6 +11,8 @@
 // that API directly as a standalone unit test of CoordId<6>.
 
 use futures_executor::block_on;
+use nex_fih::FihId6 as _;
+use nex_fih::FihId20 as _;
 use nex_fih::{
     AsyncFactCapable, AsyncFilterCapable, AsyncStorageRead, Content, CoordId, Fact, StateFilter,
 };

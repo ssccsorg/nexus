@@ -17,6 +17,7 @@
 // the nex sub-workspace; this crate verifies the runtime behavior of that
 // same no_std build.
 
+use nex_fih::FihId20 as _;
 use std::sync::Arc;
 use std::thread;
 

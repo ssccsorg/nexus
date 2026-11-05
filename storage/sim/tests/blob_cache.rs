@@ -4,6 +4,7 @@
 //! starve the read that triggered it.
 
 use futures_executor::block_on;
+use nex_fih::FihId20 as _;
 use nex_fih::{AsyncFactCapable, AsyncStorageRead, Content, CoordId, Fact, FihStorage};
 use nexus_storage_sim::SimIo;
 

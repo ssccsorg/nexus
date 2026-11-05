@@ -10,6 +10,7 @@
 // restructure and the entity store merge: a conflicting submit (occupied
 // id, different content), an idempotent retry, and a fresh submit.
 
+use nex_fih::FihId20 as _;
 use std::time::Instant;
 
 use futures_executor::block_on;

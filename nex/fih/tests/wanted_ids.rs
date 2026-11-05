@@ -7,6 +7,7 @@
 // different answers, and that the record maps are keyed by canonical ids, which is what lets the
 // comparison skip the derivation on the candidate side.
 
+use nex_fih::FihId20 as _;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 

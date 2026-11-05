@@ -13,6 +13,7 @@
 //   - intent time filters apply over the unified traversal
 //   - hint_ids filtering matches on identity coordinates
 
+use nex_fih::FihId20 as _;
 mod common;
 
 use futures_executor::block_on;

@@ -2,6 +2,7 @@
 // it buys, the exact digits it writes, and what it refuses.
 
 use fih_model::CoordId;
+use fih_model::FihId20 as _;
 use fih_model::ascii;
 
 fn coordinate(index: u16) -> char {

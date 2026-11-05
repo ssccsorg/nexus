@@ -1,5 +1,6 @@
 // ── Test helpers: shared across all storage/sim test files ─────────────
 
+use nex_fih::FihId20 as _;
 use std::sync::{Arc, Mutex};
 
 use nex_fih::{Content, CoordId, Fact, Intent};

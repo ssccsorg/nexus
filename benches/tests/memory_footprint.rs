@@ -22,6 +22,7 @@
 //     "constant index" claim: constant in record count, linear in
 //     distinct axis combos.
 
+use nex_fih::FihId20 as _;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};

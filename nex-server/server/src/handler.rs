@@ -1,5 +1,6 @@
 // ── Handler — JSON-RPC 2.0 method dispatch for FihStorage ────────────────
 
+use nex_fih::FihId20 as _;
 use std::sync::Arc;
 
 use nex::io::fs_io::FsIo;
