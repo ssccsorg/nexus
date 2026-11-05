@@ -1,6 +1,6 @@
 # neXus
 
-Content-addressed state fabric for interlinked multi-axis records at any scale. One coordinate space, one protocol, multiple directions, no orchestration.
+Content-Addressed State Fabric for Heterogeneous Systems. One coordinate space, one protocol, multiple directions, no orchestration.
 
 Status: pre-1.0 (0.1.0), Apache-2.0, not published to crates.io. Pin by git revision.
 
