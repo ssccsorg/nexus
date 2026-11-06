@@ -164,9 +164,10 @@ cd ../ktema && bash run.sh --check             # the record layer and its bounda
 cd ../ktema && bash benches/run.sh             # the record layer's measurement set
 ```
 
-The per-function numbers in this note came from `cargo bench -p nexus-bench`, a Criterion crate that was part
-of the record layer. It left with the layer, so the command runs at the commits it was taken on rather than in
-the tree that holds this note:
+The per-function numbers in this note came from `cargo bench -p nexus-bench`, the Criterion crate that measured
+the record layer here. This branch removed that crate along with the layer it measured, and the measurement set
+that replaced it in `ktema` has a different shape, so the command is reproduced at the commits it was taken on
+rather than in the tree that holds this note:
 
 ```bash
 git worktree add /tmp/nexus-5095f29b 5095f29b
