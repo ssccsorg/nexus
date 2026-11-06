@@ -92,14 +92,7 @@ digraph DOTGraph {
 
 ### Layer boundary
 
-- This repository connects, addresses, and records. It does not implement
-  storage. A change that decides where a record is held, how it is indexed, how it
-  is walked over a medium, or when it is flushed is out of scope for this layer and
-  is removed. See issue #229 and
-  `docs/2026-11-06-the-open-layer-is-a-fabric-and-not-a-store.md`.
-- A demonstration is allowed and is capped. It may hold records in memory and show
-  the shape of an implementation: a key space, a point read, a listing, and a round
-  trip. It may not reach the level a deployment runs at: no medium format of its own,
-  no durability or recovery, no index, no bounded device read, and no performance
-  claim. A demonstration that gains one of those has become the layer this
-  repository does not carry.
+- nexus is a network of states, not storage. Holding, indexing, walking a medium,
+  and flushing are out of scope and are removed (#229).
+- A demonstration may hold records in memory. Keep out a medium format, durability,
+  recovery, an index, a bounded device read, and performance claims.
