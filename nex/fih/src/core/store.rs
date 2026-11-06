@@ -2895,13 +2895,3 @@ impl<I: FileIo> crate::FactWalk for FihStorage<I> {
         FihStorage::for_each_fact_record(self, visit).await
     }
 }
-
-impl<I: FileIo> crate::StoreMaintenance for FihStorage<I> {
-    async fn flush(&self) -> Result<(), String> {
-        self.flush_pending().await
-    }
-
-    async fn rebuild(&self) -> Result<(), String> {
-        self.rebuild_cache().await
-    }
-}

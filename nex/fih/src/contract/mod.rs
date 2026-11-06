@@ -4,17 +4,17 @@
 //
 //   core/     ← primitives: GovernanceGate, HintEngine, EvidenceChain
 //   fih.rs    ← FIH-specific defaults (schemas, constraint factories)
-//   store.rs  ← the storage contract a store implementation supplies
+//   state.rs  ← the state network's read surface
 //
 // nex-apps import core primitives directly for custom contracts,
 // or use fih.rs for ready-made FIH governance.
 
 pub mod core;
 pub mod fih;
-pub mod store;
+pub mod state;
 
 pub use core::*;
-pub use store::{FactById, FactWalk, StoreMaintenance};
+pub use state::{FactById, FactWalk};
 
 // Backward-compatible re-exports from fih-model (these types are defined
 // in fih-model and re-exported at the crate root of nex-fih, but also

@@ -1,21 +1,22 @@
-// The storage contract, held to its behaviour.
+// The state network's read surface, held to its behaviour.
 //
-// The traits in `nex_fih::contract::store` are the port a fabric exposes, and a second
-// implementation has to be able to take this store's place behind it. The check below is
-// written against the traits alone: it names no concrete store, so it fails to compile if
-// the contract is missing an operation a consumer needs, and it fails at run time if an
-// implementation answers differently.
+// The traits in `nex_fih::contract::state` are what a network answers without saying where
+// the records live. The check below is written against the traits alone: it names no concrete
+// network, so it fails to compile if the surface is missing an operation a consumer needs, and
+// it fails at run time if an implementation answers differently.
+//
+// Holding the records is the caller's business. The setup here uses the concrete network
+// because writing, flushing, and loading are operations of a layer that implements persistence,
+// and that layer is what the read surface is read through.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
-use nex_fih::{
-    AsyncFactCapable, Content, Fact, FactById, FactRecord, FactWalk, FihStorage, StoreMaintenance,
-};
+use nex_fih::{AsyncFactCapable, Content, Fact, FactById, FactRecord, FactWalk, FihStorage};
 
-/// An in-memory medium, shared by every store that holds a clone of it.
+/// An in-memory medium, shared by every network that holds a clone of it.
 #[derive(Clone, Default)]
 struct MemoryIo {
     map: Arc<Mutex<HashMap<String, Vec<u8>>>>,
@@ -59,37 +60,32 @@ impl FileIo for MemoryIo {
     }
 }
 
-/// The behaviour every implementation of the contract owes a consumer.
+/// What every network owes a reader of its state.
 ///
-/// Nothing here names a store type, which is the point: an implementation that satisfies
-/// the traits can be substituted without touching this function.
-async fn conformance<S>(store: &S, ids: &[String])
+/// Nothing here names a network type, which is the point: an implementation that satisfies the
+/// traits answers the same way, whatever holds the records.
+async fn read_surface<S>(network: &S, ids: &[String])
 where
-    S: FactById + FactWalk + StoreMaintenance,
+    S: FactById + FactWalk,
 {
-    store
-        .rebuild()
-        .await
-        .expect("a reader opens the store before reading by identity");
-
     for id in ids {
-        let read = store.fact_by_id(id).await;
+        let read = network.fact_by_id(id).await;
         assert!(
             read.is_some(),
-            "a record the store holds is read by id: {id}"
+            "a record the network holds is read by id: {id}"
         );
 
-        let framing = store.fact_framing(id).await.expect("framing is readable");
+        let framing = network.fact_framing(id).await.expect("framing is readable");
         assert_eq!(&framing.id, id, "framing names the record asked for");
     }
 
     assert!(
-        store.fact_by_id("no-such-record").await.is_none(),
+        network.fact_by_id("no-such-record").await.is_none(),
         "an absent record is absent rather than an error"
     );
 
     let mut walked: Vec<String> = Vec::new();
-    store
+    network
         .for_each_fact(|record: &FactRecord, content: Content| {
             assert!(
                 !content.data.is_empty(),
@@ -100,24 +96,24 @@ where
             true
         })
         .await
-        .expect("the walk reaches the store");
+        .expect("the walk reaches the records");
     assert_eq!(
         walked, ids,
-        "the walk visits every record, in the store's order"
+        "the walk visits every record, in the network's order"
     );
 
     let mut framed: Vec<String> = Vec::new();
-    store
+    network
         .for_each_fact_record(|record: &FactRecord| {
             framed.push(record.id.clone());
             true
         })
         .await
-        .expect("the framing walk reaches the store");
+        .expect("the framing walk reaches the records");
     assert_eq!(framed, ids, "the framing walk visits the same set");
 
     let mut stopped = 0;
-    store
+    network
         .for_each_fact_record(|_: &FactRecord| {
             stopped += 1;
             false
@@ -125,13 +121,11 @@ where
         .await
         .expect("a walk that stops early still returns");
     assert_eq!(stopped, 1, "the visitor's stop ends the walk");
-
-    store.flush().await.expect("a session settles");
 }
 
 #[test]
-fn the_contract_answers_a_read_a_walk_and_maintenance() {
-    let store = FihStorage::new(MemoryIo::default(), "contract");
+fn the_read_surface_answers_over_a_held_volume() {
+    let network = FihStorage::new(MemoryIo::default(), "contract");
 
     for payload in ["first", "second", "third"] {
         let fact = Fact::new(
@@ -139,26 +133,26 @@ fn the_contract_answers_a_read_a_walk_and_maintenance() {
             Content::from(payload),
             "writer".into(),
         );
-        block_on(store.submit_fact(&fact)).expect("the fact is accepted");
+        block_on(network.submit_fact(&fact)).expect("the fact is accepted");
     }
-    block_on(store.flush_pending()).expect("the writes reach the medium");
+    block_on(network.flush_pending()).expect("the writes reach the medium");
 
-    // The identifiers a consumer would hold: taken through the walk, so the check reads
+    // The identifiers a consumer would hold, taken through the walk so the check reads
     // records it did not name itself.
     let mut ids: Vec<String> = Vec::new();
-    block_on(store.for_each_fact_record(|record: &FactRecord| {
+    block_on(network.for_each_fact_record(|record: &FactRecord| {
         ids.push(record.id.clone());
         true
     }))
-    .expect("the store enumerates");
+    .expect("the network enumerates");
     assert_eq!(ids.len(), 3, "three facts were submitted: {ids:?}");
     ids.sort();
 
-    block_on(conformance(&store, &ids));
+    block_on(read_surface(&network, &ids));
 }
 
 #[test]
-fn the_contract_survives_a_second_session_over_the_same_volume() {
+fn the_read_surface_answers_a_network_another_session_wrote() {
     let medium = MemoryIo::default();
     let writer = FihStorage::new(medium.clone(), "contract");
     let fact = Fact::new(
@@ -169,9 +163,9 @@ fn the_contract_survives_a_second_session_over_the_same_volume() {
     block_on(writer.submit_fact(&fact)).expect("the fact is accepted");
     block_on(writer.flush_pending()).expect("the writes reach the medium");
 
-    // A second session that has read nothing yet: the device asked about a past it did not
-    // write, which is the case the read contract exists for.
-    let reader = FihStorage::new(medium, "contract");
+    // A network that holds no map reads the medium at the key the identifier implies, so a
+    // session that read nothing yet answers for a volume it did not write.
+    let reader = FihStorage::new_without_maps(medium, "contract");
     let mut ids: Vec<String> = Vec::new();
     block_on(reader.for_each_fact_record(|record: &FactRecord| {
         ids.push(record.id.clone());
@@ -180,5 +174,5 @@ fn the_contract_survives_a_second_session_over_the_same_volume() {
     .expect("the second session enumerates");
     assert_eq!(ids.len(), 1, "the second session sees the record");
 
-    block_on(conformance(&reader, &ids));
+    block_on(read_surface(&reader, &ids));
 }
