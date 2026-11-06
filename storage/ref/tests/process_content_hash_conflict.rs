@@ -1,6 +1,6 @@
 // Record-layer content hash conflict detection (#176).
 //
-// The record layer keys facts by id. Since the CoordId<20> migration the
+// The record layer keys facts by id. Since the CoordId migration the
 // id injectively encodes the full content hash, so distinct contents
 // collide on one id only up to SHA-256 collision resistance (2^128
 // birthday). The conflict guard is kept as defense-in-depth: a second
@@ -91,7 +91,7 @@ fn conflict_detected_for_fact_store_only_record() {
         let store = RefFihStorage::new(SimIo::new(), "fstore-only");
         let f = fact("f_i", b"fstore-original");
         store.fact_records.borrow_mut().insert(
-            f.id.to_string(),
+            f.id,
             FactRecord {
                 id: f.id.to_string(),
                 blob_hash: f.content_hash.to_string(),
@@ -106,12 +106,7 @@ fn conflict_detected_for_fact_store_only_record() {
             .unwrap_err();
         assert!(matches!(err, BlackboardError::Conflict(_)));
         // The earlier record must be preserved, not overwritten.
-        let state = store
-            .fact_records
-            .borrow()
-            .get(&f.id.to_string())
-            .cloned()
-            .unwrap();
+        let state = store.fact_records.borrow().get(&f.id).cloned().unwrap();
         assert_eq!(state.blob_hash, f.content_hash.to_string());
     });
 }
@@ -124,7 +119,7 @@ fn idempotent_for_fact_store_only_record() {
         let store = RefFihStorage::new(SimIo::new(), "fstore-idem");
         let f = fact("f_j", b"fstore-same");
         store.fact_records.borrow_mut().insert(
-            f.id.to_string(),
+            f.id,
             FactRecord {
                 id: f.id.to_string(),
                 blob_hash: f.content_hash.to_string(),

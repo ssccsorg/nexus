@@ -410,8 +410,8 @@ fn read(source: &Source, coordinate: &CoordId<20>) -> Result<(), Failure> {
 /// The text names the sequence or it names nothing: a length that is not the
 /// depth's and a byte outside the alphabet are both refused, so a caller cannot
 /// address a record by a spelling of it.
-fn resolve(address: &str) -> Option<CoordId<20>> {
-    CoordId::<20>::from_string(address)
+fn resolve(address: &str) -> Option<CoordId> {
+    CoordId::from_string(address)
 }
 
 /// The coordinate an address names, refused before a volume or a hub is opened.

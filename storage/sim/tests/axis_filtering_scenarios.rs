@@ -1,6 +1,6 @@
 // ── Filtering scenario tests ──────────────────────────────────────────
 //
-// Record ids are opaque since the CoordId<20> migration: the default
+// Record ids are opaque since the CoordId migration: the default
 // CoordId depth is 20 and ids are SHA-256 content addresses with no
 // semantic axis layout. read_state_filtered matches on record fields
 // (origin, creator, submitted_at) supplied via Fact::with_id, not on

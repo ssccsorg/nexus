@@ -1,6 +1,6 @@
 // Semantic id layer contract tests.
 //
-// The semantic layer derives full-injective CoordId<20> addresses:
+// The semantic layer derives full-injective CoordId addresses:
 // content_id (SHA-256 over content hash + entity + origin + creator,
 // encoded injectively into 20 base-11172 coordinates), from_label
 // (content-addressed labels), resolve (canonical pass-through or label
@@ -10,7 +10,7 @@
 
 use fih_model::FihId20 as _;
 use fih_model::encode_hash_into_coords;
-use fih_model::{Content, CoordId, Fact, FihHash};
+use fih_model::{COORD_ID_DEPTH, Content, CoordId, Fact, FihHash};
 use sha2::{Digest, Sha256};
 use tagma_core::CoordPath;
 
@@ -48,7 +48,7 @@ fn content_id_is_canonical() {
     let s = id.to_string();
     assert_eq!(s.chars().count(), 60, "canonical id is 60 base-36 digits");
     assert_eq!(
-        CoordId::<20>::from_string(&s),
+        CoordId::<COORD_ID_DEPTH>::from_string(&s),
         Some(id),
         "canonical string round-trips"
     );
@@ -62,7 +62,7 @@ fn from_label_is_deterministic_and_canonical() {
     assert_ne!(a, CoordId::from_label("fixture-b"));
     let s = a.to_string();
     assert_eq!(s.chars().count(), 60);
-    assert_eq!(CoordId::<20>::from_string(&s), Some(a));
+    assert_eq!(CoordId::<COORD_ID_DEPTH>::from_string(&s), Some(a));
 }
 
 #[test]
@@ -82,7 +82,7 @@ fn resolve_accepts_canonical_and_label_equivalently() {
     );
     assert_eq!(
         CoordId::resolve(&canonical),
-        CoordId::<20>::from_string(&canonical).unwrap()
+        CoordId::<COORD_ID_DEPTH>::from_string(&canonical).unwrap()
     );
 }
 
@@ -92,14 +92,17 @@ fn from_string_is_canonical_only() {
     let s = canonical.to_string();
     assert_eq!(s.chars().count(), 60);
     assert_eq!(
-        CoordId::<20>::from_string(&s),
+        CoordId::<COORD_ID_DEPTH>::from_string(&s),
         Some(canonical),
         "canonical 60-digit string round-trips"
     );
-    assert_eq!(CoordId::<20>::from_string("not-hangul-id"), None);
-    assert_eq!(CoordId::<20>::from_string(""), None);
     assert_eq!(
-        CoordId::<20>::from_string("가나다라마바"),
+        CoordId::<COORD_ID_DEPTH>::from_string("not-hangul-id"),
+        None
+    );
+    assert_eq!(CoordId::<COORD_ID_DEPTH>::from_string(""), None);
+    assert_eq!(
+        CoordId::<COORD_ID_DEPTH>::from_string("가나다라마바"),
         None,
         "a 6-Hangul string is a label at depth 20, not canonical"
     );
@@ -184,7 +187,7 @@ fn coord_id_20_serde_round_trip() {
     let id = CoordId::from_label("serde-fixture");
     let json = serde_json::to_string(&id).unwrap();
     let back: CoordId = serde_json::from_str(&json).unwrap();
-    assert_eq!(id, back, "CoordId<20> serde round-trip");
+    assert_eq!(id, back, "CoordId serde round-trip");
 
     let fact = Fact::new("origin".into(), Content::from("payload"), "creator".into());
     let fjson = serde_json::to_string(&fact).unwrap();
@@ -198,12 +201,12 @@ fn coord_id_20_serde_round_trip() {
 fn six_syllable_strings_are_labels_after_the_depth_migration() {
     // A legacy 6-syllable canonical id is a label at depth 20: resolve
     // derives a different 20-syllable id instead of passing through.
-    // This pins the breaking migration boundary of the CoordId<20>
+    // This pins the breaking migration boundary of the CoordId
     // switch: old persisted ids are not addressable by their old
     // spelling.
     let legacy = "가나다라마바";
     assert_eq!(
-        CoordId::<20>::from_string(legacy),
+        CoordId::<COORD_ID_DEPTH>::from_string(legacy),
         None,
         "6 syllables are not canonical at depth 20"
     );

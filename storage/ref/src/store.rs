@@ -28,18 +28,18 @@ use sha2::{Digest, Sha256};
 
 use nex_core::Now;
 
-use nex_fih::Cell2;
 use crate::record::{
     ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus, RecordTimeUnit,
     decode_hint_record, decode_intent_record,
 };
+use nex_fih::Cell2;
+use nex_fih::FihId20 as _;
 use nex_fih::io::file_io::{FileIo, WriteOp};
 use nex_fih::semantic::record::{Query, RecordLoad};
 use nex_fih::{
     BlackboardError, BoardState, Content, CoordId, Fact, FihHash, Hint, Intent, PartitionData,
     StateFilter,
 };
-use nex_fih::FihId20 as _;
 
 /// The payload a caller places directly, which is a record it already holds in pieces.
 ///
@@ -85,9 +85,9 @@ pub struct RefFihStorage<I: FileIo> {
     /// Whether a write flushes on its own, which is what a deployment that cannot lose a
     /// record asks for.
     auto_flush: bool,
-    pub fact_records: Cell2<BTreeMap<String, FactRecord>>,
-    pub intent_records: Cell2<BTreeMap<String, IntentRecord>>,
-    pub hint_records: Cell2<BTreeMap<String, HintRecord>>,
+    pub fact_records: Cell2<BTreeMap<CoordId, FactRecord>>,
+    pub intent_records: Cell2<BTreeMap<CoordId, IntentRecord>>,
+    pub hint_records: Cell2<BTreeMap<CoordId, HintRecord>>,
     /// Writes waiting for `flush_pending` to commit them.
     pub(crate) pending: Cell2<Vec<WriteOp>>,
     semantic_stores: Cell2<Vec<nex_fih::semantic::DynSemanticStore>>,
@@ -185,7 +185,7 @@ impl<I: FileIo> RefFihStorage<I> {
     /// Build the maps from what the medium holds. This is the cold-start read: one listing
     /// and one read a record.
     pub async fn rebuild_cache(&self) -> Result<(), String> {
-        let mut facts: BTreeMap<String, FactRecord> = BTreeMap::new();
+        let mut facts: BTreeMap<CoordId, FactRecord> = BTreeMap::new();
         for key in self.io.list("facts/").await? {
             if let Some(bytes) = self.io.read(&key).await?
                 && let Ok(mut record) = postcard::from_bytes::<FactRecord>(&bytes)
@@ -203,23 +203,23 @@ impl<I: FileIo> RefFihStorage<I> {
                     h.update(&data);
                     record.blob_hash = format!("{:x}", h.finalize());
                 }
-                facts.insert(record.id.clone(), record);
+                facts.insert(CoordId::resolve(&record.id), record);
             }
         }
-        let mut intents: BTreeMap<String, IntentRecord> = BTreeMap::new();
+        let mut intents: BTreeMap<CoordId, IntentRecord> = BTreeMap::new();
         for key in self.io.list("intents/").await? {
             if let Some(bytes) = self.io.read(&key).await?
                 && let Ok(record) = decode_intent_record(&bytes)
             {
-                intents.insert(record.id.clone(), record);
+                intents.insert(CoordId::resolve(&record.id), record);
             }
         }
-        let mut hints: BTreeMap<String, HintRecord> = BTreeMap::new();
+        let mut hints: BTreeMap<CoordId, HintRecord> = BTreeMap::new();
         for key in self.io.list("hints/").await? {
             if let Some(bytes) = self.io.read(&key).await?
                 && let Ok(record) = decode_hint_record(&bytes)
             {
-                hints.insert(record.id.clone(), record);
+                hints.insert(CoordId::resolve(&record.id), record);
             }
         }
         *self.fact_records.borrow_mut() = facts;
@@ -252,9 +252,9 @@ impl<I: FileIo> RefFihStorage<I> {
         let facts = self
             .fact_records
             .borrow()
-            .values()
-            .map(|r| Fact {
-                id: CoordId::resolve(&r.id),
+            .iter()
+            .map(|(address, r)| Fact {
+                id: *address,
                 origin: r.origin.clone(),
                 content_hash: Self::blob_hash_or_zero(&r.blob_hash),
                 content: Content {
@@ -279,9 +279,9 @@ impl<I: FileIo> RefFihStorage<I> {
         let hints = self
             .hint_records
             .borrow()
-            .values()
-            .map(|r| Hint {
-                id: CoordId::resolve(&r.id),
+            .iter()
+            .map(|(address, r)| Hint {
+                id: *address,
                 content: r.content.clone(),
                 creator: r.creator.clone(),
             })
@@ -297,40 +297,24 @@ impl<I: FileIo> RefFihStorage<I> {
     /// state.
     async fn materialize(&self, mut state: BoardState) -> BoardState {
         for fact in &mut state.facts {
-            let Some(record) = self
-                .fact_records
-                .borrow()
-                .get(&fact.id.to_string())
-                .cloned()
-            else {
+            let Some(record) = self.fact_records.borrow().get(&fact.id).cloned() else {
                 continue;
             };
-            fact.content = self
-                .load_content(&record.blob_hash)
-                .await;
-            if Self::hex_blob_hash(&record.blob_hash).is_none()
-                && !fact.content.data.is_empty()
-            {
+            fact.content = self.load_content(&record.blob_hash).await;
+            if Self::hex_blob_hash(&record.blob_hash).is_none() && !fact.content.data.is_empty() {
                 let mut h = Sha256::new();
                 h.update(&fact.content.data);
                 fact.content_hash = FihHash(h.finalize().into());
             }
         }
         for intent in &mut state.intents {
-            let Some(record) = self
-                .intent_records
-                .borrow()
-                .get(&intent.id.to_string())
-                .cloned()
-            else {
+            let Some(record) = self.intent_records.borrow().get(&intent.id).cloned() else {
                 continue;
             };
             if record.description_hash.is_empty() {
                 continue;
             }
-            let content = self
-                .load_content(&record.description_hash)
-                .await;
+            let content = self.load_content(&record.description_hash).await;
             intent.description = String::from_utf8_lossy(&content.data).to_string();
         }
         state
@@ -351,7 +335,7 @@ impl<I: FileIo> RefFihStorage<I> {
                 ..
             } => {
                 self.fact_records.borrow_mut().insert(
-                    id.to_string(),
+                    CoordId::resolve(id),
                     FactRecord {
                         id: id.to_string(),
                         blob_hash: content_hash.to_string(),
@@ -369,7 +353,7 @@ impl<I: FileIo> RefFihStorage<I> {
                 created_at,
             } => {
                 self.intent_records.borrow_mut().insert(
-                    id.to_string(),
+                    CoordId::resolve(id),
                     IntentRecord {
                         id: id.to_string(),
                         from_facts,
@@ -387,7 +371,7 @@ impl<I: FileIo> RefFihStorage<I> {
                 submitted_at,
             } => {
                 self.hint_records.borrow_mut().insert(
-                    id.to_string(),
+                    CoordId::resolve(id),
                     HintRecord {
                         id: id.to_string(),
                         content,
@@ -403,9 +387,10 @@ impl<I: FileIo> RefFihStorage<I> {
 
     /// Drop a record a caller placed.
     pub fn vacate_record(&self, id: &str) {
-        self.fact_records.borrow_mut().remove(id);
-        self.intent_records.borrow_mut().remove(id);
-        self.hint_records.borrow_mut().remove(id);
+        let id = CoordId::resolve(id);
+        self.fact_records.borrow_mut().remove(&id);
+        self.intent_records.borrow_mut().remove(&id);
+        self.hint_records.borrow_mut().remove(&id);
     }
 
     /// Read one fact by identifier: its payload and the framing beside it.
@@ -422,11 +407,11 @@ impl<I: FileIo> RefFihStorage<I> {
 
     /// Read one fact's framing, without its payload.
     pub async fn get_fact_framing(&self, id: &str) -> Option<FactRecord> {
-        let normalized = CoordId::resolve(id).to_string();
-        if let Some(r) = self.fact_records.borrow().get(&normalized).cloned() {
+        let address = CoordId::resolve(id);
+        if let Some(r) = self.fact_records.borrow().get(&address).cloned() {
             return Some(r);
         }
-        let key = FactRecord::fact_key(&normalized);
+        let key = FactRecord::fact_key(&address.to_string());
         self.io
             .read(&key)
             .await
@@ -440,11 +425,11 @@ impl<I: FileIo> RefFihStorage<I> {
     /// The map answers for a volume this session holds; a fresh instance reads the medium at
     /// the key the identifier implies, which is the same read a consumer makes after a reopen.
     pub async fn get_intent(&self, id: &str) -> Option<(IntentRecord, Option<String>)> {
-        let normalized = CoordId::resolve(id).to_string();
-        let record = match self.intent_records.borrow().get(&normalized).cloned() {
+        let address = CoordId::resolve(id);
+        let record = match self.intent_records.borrow().get(&address).cloned() {
             Some(record) => record,
             None => {
-                let key = IntentRecord::intent_key(&normalized);
+                let key = IntentRecord::intent_key(&address.to_string());
                 let bytes = self.io.read(&key).await.ok().flatten()?;
                 decode_intent_record(&bytes).ok()?
             }
@@ -462,11 +447,11 @@ impl<I: FileIo> RefFihStorage<I> {
     ///
     /// A hint's content is in its record, so this is one read.
     pub async fn get_hint(&self, id: &str) -> Option<HintRecord> {
-        let normalized = CoordId::resolve(id).to_string();
-        if let Some(record) = self.hint_records.borrow().get(&normalized).cloned() {
+        let address = CoordId::resolve(id);
+        if let Some(record) = self.hint_records.borrow().get(&address).cloned() {
             return Some(record);
         }
-        let key = HintRecord::hint_key(&normalized);
+        let key = HintRecord::hint_key(&address.to_string());
         let bytes = self.io.read(&key).await.ok().flatten()?;
         decode_hint_record(&bytes).ok()
     }
@@ -477,8 +462,8 @@ impl<I: FileIo> RefFihStorage<I> {
         &self,
         id: &str,
     ) -> Option<(Vec<String>, String, String, IntentStatus, u64)> {
-        let normalized = CoordId::resolve(id).to_string();
-        let r = self.intent_records.borrow().get(&normalized).cloned()?;
+        let address = CoordId::resolve(id);
+        let r = self.intent_records.borrow().get(&address).cloned()?;
         Some((
             r.from_facts,
             r.description_hash,
@@ -490,41 +475,53 @@ impl<I: FileIo> RefFihStorage<I> {
 
     /// The hint's content, creator, and submission time.
     pub fn get_hint_by_id(&self, id: &str) -> Option<(String, String, u64)> {
-        let normalized = CoordId::resolve(id).to_string();
+        let address = CoordId::resolve(id);
         self.hint_records
             .borrow()
-            .get(&normalized)
+            .get(&address)
             .map(|r| (r.content.clone(), r.creator.clone(), r.submitted_at))
     }
 
     pub fn fact_exists(&self, id: &str) -> bool {
         self.fact_records
             .borrow()
-            .contains_key(&CoordId::resolve(id).to_string())
+            .contains_key(&CoordId::resolve(id))
     }
 
     pub fn intent_exists(&self, id: &str) -> bool {
         self.intent_records
             .borrow()
-            .contains_key(&CoordId::resolve(id).to_string())
+            .contains_key(&CoordId::resolve(id))
     }
 
     pub fn hint_exists(&self, id: &str) -> bool {
         self.hint_records
             .borrow()
-            .contains_key(&CoordId::resolve(id).to_string())
+            .contains_key(&CoordId::resolve(id))
     }
 
     pub fn all_fact_ids(&self) -> Vec<String> {
-        self.fact_records.borrow().keys().cloned().collect()
+        self.fact_records
+            .borrow()
+            .keys()
+            .map(|id| id.to_string())
+            .collect()
     }
 
     pub fn all_intent_ids(&self) -> Vec<String> {
-        self.intent_records.borrow().keys().cloned().collect()
+        self.intent_records
+            .borrow()
+            .keys()
+            .map(|id| id.to_string())
+            .collect()
     }
 
     pub fn all_hint_ids(&self) -> Vec<String> {
-        self.hint_records.borrow().keys().cloned().collect()
+        self.hint_records
+            .borrow()
+            .keys()
+            .map(|id| id.to_string())
+            .collect()
     }
 
     /// The intents that name `fact_id`, which is one scan of the intent map.
@@ -544,9 +541,7 @@ impl<I: FileIo> RefFihStorage<I> {
     {
         let mut visit = visit;
         for record in self.walk_records().await? {
-            let content = self
-                .load_content(&record.blob_hash)
-                .await;
+            let content = self.load_content(&record.blob_hash).await;
             if !visit(&record, content) {
                 break;
             }
@@ -604,7 +599,8 @@ impl<I: FileIo> RefFihStorage<I> {
         let until = filter.until.as_ref().and_then(|s| s.parse::<u64>().ok());
 
         let mut facts = Vec::new();
-        for r in self.fact_records.borrow().values() {
+        let wanted_facts = wanted(filter.fact_ids.as_ref());
+        for (address, r) in self.fact_records.borrow().iter() {
             if let Some(want) = filter.origin.as_deref()
                 && r.origin != want
             {
@@ -625,14 +621,14 @@ impl<I: FileIo> RefFihStorage<I> {
             {
                 continue;
             }
-            if let Some(ids) = filter.fact_ids.as_ref()
-                && !ids.iter().any(|id| CoordId::resolve(id).to_string() == r.id)
+            if let Some(ids) = wanted_facts.as_ref()
+                && !ids.contains(address)
             {
                 continue;
             }
             let content = self.load_content(&r.blob_hash).await;
             facts.push(Fact {
-                id: CoordId::resolve(&r.id),
+                id: *address,
                 origin: r.origin.clone(),
                 content_hash: Self::blob_hash_or_zero(&r.blob_hash),
                 content,
@@ -641,9 +637,10 @@ impl<I: FileIo> RefFihStorage<I> {
         }
 
         let mut intents = Vec::new();
-        for r in self.intent_records.borrow().values() {
-            if let Some(ids) = filter.intent_ids.as_ref()
-                && !ids.iter().any(|id| CoordId::resolve(id).to_string() == r.id)
+        let wanted_intents = wanted(filter.intent_ids.as_ref());
+        for (address, r) in self.intent_records.borrow().iter() {
+            if let Some(ids) = wanted_intents.as_ref()
+                && !ids.contains(address)
             {
                 continue;
             }
@@ -679,14 +676,13 @@ impl<I: FileIo> RefFihStorage<I> {
                 String::from_utf8_lossy(&content.data).to_string()
             };
             intents.push(Intent {
-                id: CoordId::resolve(&r.id),
+                id: *address,
                 from_facts: r.from_facts.iter().map(|s| CoordId::resolve(s)).collect(),
                 description,
                 creator: r.creator.clone(),
                 worker: match &r.status {
-                    IntentStatus::Claimed { worker, .. } | IntentStatus::Concluded { worker, .. } => {
-                        Some(worker.clone())
-                    }
+                    IntentStatus::Claimed { worker, .. }
+                    | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
                     IntentStatus::Submitted => None,
                 },
                 to_fact_id: match &r.status {
@@ -711,9 +707,10 @@ impl<I: FileIo> RefFihStorage<I> {
         }
 
         let mut hints = Vec::new();
-        for r in self.hint_records.borrow().values() {
-            if let Some(ids) = filter.hint_ids.as_ref()
-                && !ids.iter().any(|id| CoordId::resolve(id).to_string() == r.id)
+        let wanted_hints = wanted(filter.hint_ids.as_ref());
+        for (address, r) in self.hint_records.borrow().iter() {
+            if let Some(ids) = wanted_hints.as_ref()
+                && !ids.contains(address)
             {
                 continue;
             }
@@ -723,7 +720,7 @@ impl<I: FileIo> RefFihStorage<I> {
                 continue;
             }
             hints.push(Hint {
-                id: CoordId::resolve(&r.id),
+                id: *address,
                 content: r.content.clone(),
                 creator: r.creator.clone(),
             });
@@ -763,19 +760,19 @@ impl<I: FileIo> RefFihStorage<I> {
     /// Drop the hints submitted before `before` (a nanosecond timestamp as text).
     pub async fn evict_before(&self, before: &str) -> Result<u64, String> {
         let before_ns: u64 = before.parse().unwrap_or(0);
-        let expired: Vec<HintRecord> = self
+        let expired: Vec<(CoordId, HintRecord)> = self
             .hint_records
             .borrow()
-            .values()
-            .filter(|r| r.submitted_at < before_ns)
-            .cloned()
+            .iter()
+            .filter(|(_, r)| r.submitted_at < before_ns)
+            .map(|(address, r)| (*address, r.clone()))
             .collect();
         let mut evicted = 0u64;
-        for record in expired {
+        for (address, record) in expired {
             self.pending
                 .borrow_mut()
                 .push(WriteOp::Delete { path: record.key() });
-            self.hint_records.borrow_mut().remove(&record.id);
+            self.hint_records.borrow_mut().remove(&address);
             evicted += 1;
         }
         self.flush_if_auto().await?;
@@ -785,19 +782,19 @@ impl<I: FileIo> RefFihStorage<I> {
     /// Drop the unclaimed intents older than `older_than_ns` nanoseconds.
     pub async fn evict_stale_intents(&self, older_than_ns: u64) -> Result<u64, String> {
         let cutoff = self.clock.now_nanos().saturating_sub(older_than_ns);
-        let stale: Vec<IntentRecord> = self
+        let stale: Vec<(CoordId, IntentRecord)> = self
             .intent_records
             .borrow()
-            .values()
-            .filter(|r| matches!(r.status, IntentStatus::Submitted) && r.created_at < cutoff)
-            .cloned()
+            .iter()
+            .filter(|(_, r)| matches!(r.status, IntentStatus::Submitted) && r.created_at < cutoff)
+            .map(|(address, r)| (*address, r.clone()))
             .collect();
         let mut evicted = 0u64;
-        for record in stale {
+        for (address, record) in stale {
             self.pending
                 .borrow_mut()
                 .push(WriteOp::Delete { path: record.key() });
-            self.intent_records.borrow_mut().remove(&record.id);
+            self.intent_records.borrow_mut().remove(&address);
             evicted += 1;
         }
         self.flush_if_auto().await?;
@@ -963,7 +960,9 @@ impl<I: FileIo> RefFihStorage<I> {
                     .rev()
                     .find_map(|op| match op {
                         WriteOp::Write { path, data } if path == &meta_key => {
-                            postcard::from_bytes::<ContentMeta>(data).ok().map(|m| m.mime_type)
+                            postcard::from_bytes::<ContentMeta>(data)
+                                .ok()
+                                .map(|m| m.mime_type)
                         }
                         _ => None,
                     })
@@ -986,7 +985,13 @@ impl<I: FileIo> RefFihStorage<I> {
             .and_then(|bytes| postcard::from_bytes::<ContentMeta>(&bytes).ok())
             .map(|m| m.mime_type)
             .unwrap_or_else(|| "application/json".into());
-        let data = self.io.read(&data_key).await.ok().flatten().unwrap_or_default();
+        let data = self
+            .io
+            .read(&data_key)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
         Content {
             mime_type: mime,
             data,
@@ -1068,6 +1073,16 @@ fn nanos_to_secs(nanos: u64) -> u64 {
     nanos / 1_000_000_000
 }
 
+/// The addresses a filter names.
+///
+/// `StateFilter` names records as text and the maps are keyed by address, so the text is
+/// parsed once here rather than once per candidate. A filter that names none restricts
+/// nothing, and an empty list that is present names no record: `None` and `Some([])` are
+/// different answers.
+fn wanted(ids: Option<&Vec<String>>) -> Option<Vec<CoordId>> {
+    ids.map(|ids| ids.iter().map(|id| CoordId::resolve(id)).collect())
+}
+
 // ── The read surface ───────────────────────────────────────────────────
 
 impl<I: FileIo> nex_fih::AsyncStorageRead for RefFihStorage<I> {
@@ -1123,7 +1138,7 @@ impl<I: FileIo> nex_fih::AsyncFactCapable for RefFihStorage<I> {
         });
         self.fact_records
             .borrow_mut()
-            .insert(record.id.clone(), record);
+            .insert(CoordId::resolve(&record.id), record);
 
         // Index the payload where a meaning index is registered, so a search over what this
         // session wrote does not have to wait for a rebuild.
@@ -1163,7 +1178,9 @@ impl<I: FileIo> nex_fih::AsyncHintCapable for RefFihStorage<I> {
             path: record.key(),
             data: bytes,
         });
-        self.hint_records.borrow_mut().insert(record.id.clone(), record);
+        self.hint_records
+            .borrow_mut()
+            .insert(CoordId::resolve(&record.id), record);
         self.flush_if_auto()
             .await
             .map_err(BlackboardError::Internal)?;
@@ -1232,7 +1249,7 @@ impl<I: FileIo> nex_fih::AsyncIntentCapable for RefFihStorage<I> {
         });
         self.intent_records
             .borrow_mut()
-            .insert(record.id.clone(), record);
+            .insert(CoordId::resolve(&record.id), record);
         self.flush_if_auto()
             .await
             .map_err(BlackboardError::Internal)?;
@@ -1288,11 +1305,11 @@ impl<I: FileIo> nex_fih::AsyncIntentCapable for RefFihStorage<I> {
         self.flush_pending()
             .await
             .map_err(BlackboardError::Internal)?;
-        let normalized = CoordId::resolve(intent_id).to_string();
+        let address = CoordId::resolve(intent_id);
         let record = self
             .intent_records
             .borrow()
-            .get(&normalized)
+            .get(&address)
             .cloned()
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
         let status = match &record.status {
@@ -1324,11 +1341,11 @@ impl<I: FileIo> nex_fih::AsyncIntentCapable for RefFihStorage<I> {
         self.flush_pending()
             .await
             .map_err(BlackboardError::Internal)?;
-        let normalized = CoordId::resolve(intent_id).to_string();
+        let address = CoordId::resolve(intent_id);
         let record = self
             .intent_records
             .borrow()
-            .get(&normalized)
+            .get(&address)
             .cloned()
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
         let worker = match &record.status {
@@ -1392,11 +1409,11 @@ impl<I: FileIo> RefFihStorage<I> {
         F: FnOnce(&IntentStatus) -> Result<IntentStatus, String>,
         M: FnOnce(String) -> BlackboardError,
     {
-        let normalized = CoordId::resolve(intent_id).to_string();
+        let address = CoordId::resolve(intent_id);
         let record = self
             .intent_records
             .borrow()
-            .get(&normalized)
+            .get(&address)
             .cloned()
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
         let status = step(&record.status).map_err(map)?;
@@ -1417,7 +1434,7 @@ impl<I: FileIo> RefFihStorage<I> {
         });
         self.intent_records
             .borrow_mut()
-            .insert(record.id.clone(), record);
+            .insert(CoordId::resolve(&record.id), record);
         // A lifecycle move commits before it returns, so the state a reader sees after a
         // reopen agrees with the state this call reported.
         self.flush_pending()

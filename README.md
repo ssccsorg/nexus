@@ -13,8 +13,16 @@ Status: pre-1.0 (0.1.0), Apache-2.0, not published to crates.io. Pin by git revi
 - **Shared coordinate space.** A transition composes records into a new fact, `F x I x H -> F'`, on the same board as the data, so work and data resolve through one coordinate space.
 - **Recorded traversal.** A computation is a recorded path: the record is the state, the traversal is the computation, and replay equals recomputation.
 - **Spatial identity, immutable records.** Identity is a coordinate, not a hash. Resolving a record by identity is independent of record count; coordination cost scales with attachments, not data volume.
+- **One address, two forms.** The value is twenty axis values below 11,172 and is the authority for every comparison. Its text is a fixed-width lowercase base-36 spelling, ASCII, order preserving, sixty bytes at depth twenty. A process holds the value; the text exists at a boundary.
 - **Verification without trust.** A reader checks a record by recomputation rather than by trusting the writer.
 - **One core, many targets.** The same core compiles for hosts, WASM targets, and no_std MCU-class parts. `Now` is injected, so the core never reads a system clock.
+
+| Form | Size | Where it is used |
+|---|---|---|
+| value, `CoordId<20>` | 40 bytes | every in-process structure: indexes, maps, comparisons |
+| canonical text | 60 bytes | a storage key, a file name, a wire field, a log line |
+
+Both spellings are sixty UTF-8 bytes, so a volume's keys, segments, and indexes are the same size either way. The rule and its measurement are in [the address is a value and the text is a boundary](docs/2026-11-06-the-address-is-a-value-and-the-text-is-a-boundary.md).
 
 The full model, coordinate identity, storage tiers, runtime architecture, and measured behavior are specified in the [whitepaper](https://docs.ssccs.org/projects/nexus/whitepaper).
 
@@ -153,7 +161,7 @@ GitHub Actions runs the same flows [`run.sh`](run.sh) runs locally, one job each
 - **Whitepaper**: <https://docs.ssccs.org/projects/nexus/whitepaper> — the model, coordinate identity, storage tiers, runtime architecture, and verified behavior.
 - Development guide: <https://docs.ssccs.org/projects/nexus/development>
 - Project documentation: <https://docs.ssccs.org/projects/nexus/>
-- Design records: [`docs/`](docs), including the cold query direction and the wire protocol. The storage implementation's own design, measurement, and rejected alternatives are kept with the product rather than published here.
+- Design records: [`docs/`](docs), including the cold query direction, the wire protocol, and [the boundary between an address and its text](docs/2026-11-06-the-address-is-a-value-and-the-text-is-a-boundary.md). The storage implementation's own design, measurement, and rejected alternatives are kept with the product rather than published here.
 
 ## Contributing
 

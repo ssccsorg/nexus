@@ -105,8 +105,7 @@ impl CalcEngine {
     /// Store a number as a Fact. Content-addressed via SHA256 of the value.
     pub async fn put(&self, value: i64) -> CoordId {
         let id = make_number_fact_id(value);
-        let id_str = id.to_string();
-        if self.storage.fact_records.borrow().contains_key(&id_str) {
+        if self.storage.fact_records.borrow().contains_key(&id) {
             return id;
         }
 
@@ -131,7 +130,7 @@ impl CalcEngine {
         self.storage
             .fact_records
             .borrow_mut()
-            .insert(id_str, record);
+            .insert(id, record);
         id
     }
 
@@ -141,7 +140,7 @@ impl CalcEngine {
             .storage
             .fact_records
             .borrow()
-            .get(&fact_id.to_string())
+            .get(fact_id)
             .cloned()?;
         decode_blob(&self.storage.io, &record.blob_hash).await
     }
@@ -177,7 +176,7 @@ impl CalcEngine {
             .storage
             .fact_records
             .borrow()
-            .contains_key(&lhs_id.to_string())
+            .contains_key(&lhs_id)
         {
             return Err(CalcError::FactNotFound(lhs_id.to_string()));
         }
@@ -185,14 +184,14 @@ impl CalcEngine {
             .storage
             .fact_records
             .borrow()
-            .contains_key(&rhs_id.to_string())
+            .contains_key(&rhs_id)
         {
             return Err(CalcError::FactNotFound(rhs_id.to_string()));
         }
 
         let id = make_intent_id(op, lhs_id, rhs_id);
         let id_str = id.to_string();
-        if self.storage.intent_records.borrow().contains_key(&id_str) {
+        if self.storage.intent_records.borrow().contains_key(&id) {
             return Ok(id);
         }
 
@@ -211,7 +210,7 @@ impl CalcEngine {
         self.storage
             .intent_records
             .borrow_mut()
-            .insert(id_str, record);
+            .insert(id, record);
         Ok(id)
     }
 
@@ -227,7 +226,7 @@ impl CalcEngine {
             .storage
             .intent_records
             .borrow()
-            .get(&id_str)
+            .get(intent_id)
             .cloned()
             .ok_or_else(|| CalcError::IntentNotFound(id_str.clone()))?;
 
@@ -282,7 +281,7 @@ impl CalcEngine {
             .storage
             .fact_records
             .borrow()
-            .contains_key(&result_id.to_string())
+            .contains_key(&result_id)
         {
             let data = raw_result.to_le_bytes().to_vec();
             let bh = content_hash(&data);
@@ -305,7 +304,7 @@ impl CalcEngine {
             self.storage
                 .fact_records
                 .borrow_mut()
-                .insert(result_id.to_string(), rec);
+                .insert(result_id, rec);
         }
 
         // Mark intent concluded.
@@ -321,7 +320,7 @@ impl CalcEngine {
         self.storage
             .intent_records
             .borrow_mut()
-            .insert(id_str, updated);
+            .insert(*intent_id, updated);
 
         // Record evidence via FihContract
         let ts = nanos();
@@ -345,7 +344,7 @@ impl CalcEngine {
     pub async fn constrain(&self, constraint: Constraint) -> CoordId {
         let id = make_hint_id(&constraint);
         let id_str = id.to_string();
-        if !self.storage.hint_records.borrow().contains_key(&id_str) {
+        if !self.storage.hint_records.borrow().contains_key(&id) {
             let record = HintRecord {
                 id: id_str.clone(),
                 content: constraint.to_string(),
@@ -357,7 +356,7 @@ impl CalcEngine {
             self.storage
                 .hint_records
                 .borrow_mut()
-                .insert(id_str, record);
+                .insert(id, record);
         }
         id
     }
