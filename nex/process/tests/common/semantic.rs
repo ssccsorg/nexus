@@ -4,7 +4,7 @@
 // The `dead_code` allow is intentional: this is a shared mock library.
 #![allow(dead_code)]
 
-use nex::storage::semantic::{Query, RecordLoad, SemanticStore};
+use nex_fih::semantic::{Query, RecordLoad, SemanticStore};
 use std::fmt::Debug;
 
 // ── Mock SemanticStore (cosine vector) ───────────────────────────────────

@@ -1,7 +1,12 @@
 // ── FIH record types ────────────────────────────────────────────────────
 //
-// Canonical on-disk record formats for Fact, Intent, and Hint.
-// Serialized with postcard. Each record is stored as a separate file.
+// The reference node's reading of the published record format. A Fact, an Intent, and a
+// Hint are postcard payloads at the keys the format names, one record a key.
+//
+// This encoding is a format, not an implementation detail, so a storage layer implements
+// it independently rather than sharing this module. `tests/records_parity.rs` in the
+// storage tree is the check that the two readings agree, and that is the only thing tying
+// them together.
 //
 // Key paths:
 //   facts/f_{hash}.fact         → FactRecord

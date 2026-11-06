@@ -4,7 +4,7 @@ use nex_fih::FihId20 as _;
 use std::sync::Arc;
 
 use nex::io::fs_io::FsIo;
-use nex::storage::core::store::RefFihStorage;
+use nex_fih::RefFihStorage;
 use nex_client::{RpcRequest, RpcResponse};
 use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, BlackboardError,

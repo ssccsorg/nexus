@@ -16,7 +16,7 @@
 //   9. Dimension mismatch error
 //  10. FihCoord integration: semantic_insert / semantic_search via store
 
-use nex::storage::semantic::{Query, RecordLoad, SemanticStore};
+use nex_fih::semantic::{Query, RecordLoad, SemanticStore};
 use nex_fih::FihId20 as _;
 
 mod common;
@@ -756,7 +756,7 @@ fn scenario_manual_score_verification() {
 #[test]
 fn scenario_fihstorage_e2e_auto_index() {
     futures_executor::block_on(async {
-        use nex::RefFihStorage;
+        use nex_fih::RefFihStorage;
         use nex::io::FsIo;
         use nex_fih::{AsyncFactCapable, AsyncStorageRead, Content, CoordId, Fact};
 

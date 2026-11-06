@@ -18,7 +18,7 @@ use alloc::boxed::Box;
 use alloc::string::ToString;
 
 use crate::contract::core::{EvidenceChain, GovernanceGate, HintEngine, HintRule};
-use crate::core::store::RefFihStorage;
+use crate::reference::RefFihStorage;
 use crate::io::FileIo;
 use crate::{AsyncFactCapable, AsyncIntentCapable};
 use nex_core::Now;

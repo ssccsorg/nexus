@@ -7,7 +7,6 @@ members = [
     "nexd",
     "libs/serde-proxy",
     "libs/session-server",
-    "libs/async-store",
     "playbooks/agents",
     "storage/sim",
     "storage/ref",

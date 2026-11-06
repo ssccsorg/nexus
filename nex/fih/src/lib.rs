@@ -25,6 +25,7 @@ pub use fih_model::*;
 // Remaining modules defined in this crate
 pub mod contract;
 pub mod core;
+pub mod reference;
 pub mod detection;
 pub mod helper;
 pub mod interner;
@@ -45,7 +46,7 @@ pub use core::intent_status::IntentStatus;
 pub use core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, RecordTimeUnit};
 #[cfg(feature = "std")]
 pub use core::session::FihSession;
-pub use core::store::RefFihStorage;
+pub use reference::{Record, RefFihStorage};
 pub use core::{CoordEntityStore, EntityStore, MapEntityStore, MemoryEntityStore};
 pub use detection::{
     ContradictionDetection, DetectionCapable, DetectionCheckpoint, DetectionOutput, GapDetection,

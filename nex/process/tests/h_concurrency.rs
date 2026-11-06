@@ -5,7 +5,7 @@
 // access patterns. Uses create_blackboard() factory — never depends on
 // HybridBlackboard directly.
 
-use nex::FihBlackboard;
+use nex_fih::FihBlackboard;
 use nex_fih::FihId20 as _;
 use nex_fih::{Blackboard, BlackboardError, Content, CoordId, Fact, Intent};
 use nexus_storage_sim::SimIo;

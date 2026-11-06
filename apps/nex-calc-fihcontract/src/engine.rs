@@ -22,9 +22,9 @@ use sha2::{Digest, Sha256};
 
 use nex::contract::fih::FihContract;
 use nex::io::FileIo;
-use nex::storage::core::intent_status::IntentStatus;
-use nex::storage::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
-use nex::storage::core::store::RefFihStorage;
+use nex_fih::IntentStatus;
+use nex_fih::{ContentMeta, FactRecord, HintRecord, IntentRecord};
+use nex_fih::RefFihStorage;
 use nex_fih::{Content, CoordId, FihHash, RecordTimeUnit};
 use nexus_storage_sim::SimIo;
 

@@ -21,7 +21,7 @@
 //   let bb = FihBlackboard::new(io, "project");
 
 #[cfg(feature = "std")]
-use crate::core::store::RefFihStorage;
+use crate::reference::RefFihStorage;
 #[cfg(feature = "std")]
 use crate::io::FileIo;
 // Async* traits are needed for method resolution on RefFihStorage in non-WASM impl blocks.

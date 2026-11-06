@@ -13,7 +13,7 @@
 //   3. Track knowledge evolution when formal §2 revises manifesto claims
 //   4. Support multi-agent review across foundational layers
 
-use nex::FihBlackboard;
+use nex_fih::FihBlackboard;
 use nex::process::scheduler::Scheduler;
 use nex::process::tasks::contradiction_detector::ContradictionDetector;
 use nex::process::tasks::gap_detector::GapDetector;

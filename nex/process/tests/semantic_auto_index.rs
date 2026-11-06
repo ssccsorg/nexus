@@ -10,8 +10,8 @@ use nex_fih::FihId20 as _;
 use std::sync::{Arc, Mutex};
 
 use futures_executor::block_on;
-use nex::RefFihStorage;
-use nex::storage::semantic::{Query, RecordLoad, SemanticStore};
+use nex_fih::RefFihStorage;
+use nex_fih::semantic::{Query, RecordLoad, SemanticStore};
 use nex_fih::{AsyncFactCapable, AsyncIntentCapable, Content, CoordId, Fact};
 use nexus_storage_sim::SimIo;
 

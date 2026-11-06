@@ -306,7 +306,7 @@ impl<I: FileIo> RefFihStorage<I> {
                 continue;
             };
             fact.content = self
-                .load_content(&record.blob_hash, "application/json")
+                .load_content(&record.blob_hash)
                 .await;
             if Self::hex_blob_hash(&record.blob_hash).is_none()
                 && !fact.content.data.is_empty()
@@ -329,7 +329,7 @@ impl<I: FileIo> RefFihStorage<I> {
                 continue;
             }
             let content = self
-                .load_content(&record.description_hash, "application/json")
+                .load_content(&record.description_hash)
                 .await;
             intent.description = String::from_utf8_lossy(&content.data).to_string();
         }
@@ -411,7 +411,7 @@ impl<I: FileIo> RefFihStorage<I> {
     /// Read one fact by identifier: its payload and the framing beside it.
     pub async fn get_fact_by_id(&self, id: &str) -> Option<(Content, FihHash, String, String)> {
         let r = self.get_fact_framing(id).await?;
-        let content = self.load_content(&r.blob_hash, "application/octet-stream").await;
+        let content = self.load_content(&r.blob_hash).await;
         Some((
             content,
             Self::blob_hash_or_zero(&r.blob_hash),
@@ -452,7 +452,7 @@ impl<I: FileIo> RefFihStorage<I> {
         let description = if record.description_hash.is_empty() {
             None
         } else {
-            let content = self.load_content(&record.description_hash, "text/plain").await;
+            let content = self.load_content(&record.description_hash).await;
             Some(String::from_utf8_lossy(&content.data).into_owned())
         };
         Some((record, description))
@@ -545,7 +545,7 @@ impl<I: FileIo> RefFihStorage<I> {
         let mut visit = visit;
         for record in self.walk_records().await? {
             let content = self
-                .load_content(&record.blob_hash, "application/octet-stream")
+                .load_content(&record.blob_hash)
                 .await;
             if !visit(&record, content) {
                 break;
@@ -630,7 +630,7 @@ impl<I: FileIo> RefFihStorage<I> {
             {
                 continue;
             }
-            let content = self.load_content(&r.blob_hash, "application/octet-stream").await;
+            let content = self.load_content(&r.blob_hash).await;
             facts.push(Fact {
                 id: CoordId::resolve(&r.id),
                 origin: r.origin.clone(),
@@ -675,7 +675,7 @@ impl<I: FileIo> RefFihStorage<I> {
             let description = if r.description_hash.is_empty() {
                 r.id.clone()
             } else {
-                let content = self.load_content(&r.description_hash, "application/json").await;
+                let content = self.load_content(&r.description_hash).await;
                 String::from_utf8_lossy(&content.data).to_string()
             };
             intents.push(Intent {
@@ -915,7 +915,7 @@ impl<I: FileIo> RefFihStorage<I> {
         let records: Vec<FactRecord> = self.fact_records.borrow().values().cloned().collect();
         self.semantic_ids.borrow_mut().clear();
         for r in records {
-            let content = self.load_content(&r.blob_hash, "application/octet-stream").await;
+            let content = self.load_content(&r.blob_hash).await;
             if content.data.is_empty() {
                 continue;
             }
@@ -939,7 +939,7 @@ impl<I: FileIo> RefFihStorage<I> {
     }
 
     /// Read a payload: a buffered write first, then the medium.
-    async fn load_content(&self, blob_hash: &str, fallback_mime: &str) -> Content {
+    async fn load_content(&self, blob_hash: &str) -> Content {
         if blob_hash.is_empty() {
             return Content {
                 mime_type: "application/json".into(),

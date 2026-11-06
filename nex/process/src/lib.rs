@@ -1,11 +1,11 @@
 // ── nex: process layer ─────────────────────────────────────────────────
 //
-// nex is the OODA loop process layer. It depends on nex-fih for FIH
-// primitives, storage, contracts, and IO, and provides the scheduler
-// runtime that drives detection tasks over a Blackboard.
+// nex is the OODA loop process layer. It depends on nex-fih for the state
+// model and its contracts, and provides the scheduler runtime that drives
+// detection tasks over a Blackboard.
 //
-// All FIH types (RefFihStorage, FihBlackboard, Fact, Intent, etc.) are
-// re-exported from nex-fih for consumer convenience.
+// It names states, not the layer that holds them: a storage implementation is a
+// node on the network, reached over the protocol, and nothing here re-exports one.
 //
 // Platform adaptation is transparent via nex-fih's Cell2<T>:
 //   Mutex<T> on native, RefCell<T> on wasm.
@@ -26,22 +26,8 @@ pub mod process {
 
 // ── Backward-compatible module aliases ──────────────────────────────────
 //
-// These modules re-export from nex-fih and nex-io so that existing
-// consumers using paths like `nex::storage::core::RefFihStorage` or
-// `nex::io::FileIo` continue to compile without changes.
-
-/// Backward-compatible alias: shadow module preserving deep paths.
-/// Consumers can use `nex::storage::core::RefFihStorage`, etc.
-pub mod storage {
-    /// Nested module path: nex::storage::core
-    pub mod core {
-        pub use nex_fih::core::*;
-    }
-    /// Nested module path: nex::storage::semantic
-    pub mod semantic {
-        pub use nex_fih::semantic::*;
-    }
-}
+// `nex::io` re-exports nex-io so a consumer keeps one import root for the
+// transport-independent IO seam.
 
 /// Backward-compatible alias: re-exports nex-io.
 pub mod io {
@@ -67,18 +53,18 @@ pub mod helper {
     pub use nex_fih::helper::*;
 }
 
-// ── Top-level re-exports for common types ──────────────────────────────
+// ── Top-level re-exports for the state model ───────────────────────────
 //
-// These allow `use nex::RefFihStorage` etc. without nesting.
+// The model and its contracts, so a consumer of the process layer does not
+// reach past it for `Fact`, `Intent`, or a governance type. Nothing that holds
+// records is re-exported here.
 
 pub use nex_fih::{
-    Blackboard, BlackboardError, BoardState, Cell2, Content, ContentJsonExt,
-    ContradictionDetection, CoordId, DetectionCapable, DetectionOutput, EntityStore, EvictCapable,
-    EvidenceChain, EvidenceEntry, Fact, FactCapable, FactRecord, FihBlackboard, FihContract,
-    FihHash, FihSession, GapDetection, GovernanceGate, HealthStatus, Hint, HintCapable, HintEngine,
-    HintRecord, HintRule, Intent, IntentCapable, IntentRecord, IntentStatus, MemoryEntityStore,
-    NexConfig, NexInstanceInfo, NexLifecycle, OrderedIndex, Query, RecordLoad, RefFihStorage,
-    SemanticStore, StateChangeDetection, StorageRead, TaskStates, export_from_io, import_into_io,
+    Blackboard, BlackboardError, BoardState, Content, ContentJsonExt, ContradictionDetection,
+    CoordId, DetectionCapable, DetectionOutput, EvidenceChain, EvidenceEntry, Fact, FihContract,
+    FihHash, GapDetection, GovernanceGate, HealthStatus, Hint, HintEngine, HintRule, Intent,
+    NexConfig, NexInstanceInfo, NexLifecycle, Query, RecordLoad, SemanticStore,
+    StateChangeDetection, TaskStates,
 };
 
 // IO re-exports

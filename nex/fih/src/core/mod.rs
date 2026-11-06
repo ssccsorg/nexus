@@ -1,10 +1,8 @@
-// ── Core storage engine: RefFihStorage ───────────────────────────────────
+// ── Core primitives ─────────────────────────────────────────────────────
 //
-// Built-in storage engine for the nexus runtime. Implements the full FIH
-// lifecycle (Fact, Intent, Hint) on top of the IO abstraction layer.
-//
-// Uses crate::io::FileIo for all IO operations.
-// Can be swapped out for external storage engines.
+// The record format, the intent lifecycle, the ordered index, the session and blackboard
+// wrappers, and the IO re-exports. The reference store is not here: it is `crate::reference`,
+// because a store is not a primitive of the model.
 
 #[cfg(feature = "std")]
 pub mod export;
@@ -13,7 +11,6 @@ pub mod index;
 pub mod intent_status;
 pub mod record;
 pub mod session;
-pub mod store;
 
 // Store surface ownership: chton is the behavior layer. The EntityStore
 // family (trait + memory + materialized impls) lives in chton::store and
@@ -28,4 +25,3 @@ pub use intent_status::IntentStatus;
 pub use record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
 #[cfg(feature = "std")]
 pub use session::FihSession;
-pub use store::RefFihStorage;

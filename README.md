@@ -20,15 +20,16 @@ The full model, coordinate identity, storage tiers, runtime architecture, and me
 
 ## Repository Structure
 
-Root workspace and a nested storage workspace under [`nex/`](nex).
+Root workspace, and a nested workspace under [`nex/`](nex) for the state model, the IO seam,
+the reference store, and the process layer.
 
 | Path | Contents |
 |---|---|
 | [`fih/`](fih) | `Fact`, `Intent`, `Hint`, `CoordId`, capability traits, `Now`, cold query contract. `no_std + alloc` |
-| [`nex/`](nex) | storage engine workspace: `nex-fih`, `nex-io`, `nex-core`, `nex` process crate |
-| [`nex-server/`](nex-server), [`nexd/`](nexd) | board as a process over a Unix socket, and the daemon that supervises it |
+| [`nex/`](nex) | the state model (`nex-fih`, `fih-model`), the IO seam (`nex-io`), and the process layer (`nex`) |
+| [`nex-server/`](nex-server), [`nexd/`](nexd) | the board served over a Unix socket, and the daemon that supervises it |
 | [`nex_client`](nex_client) | typed client for `nexd` |
-| [`storage/ref/`](storage/ref) | reference consumer: read a volume by key, answer a multi-axis question, check a record by recomputing its address |
+| [`storage/ref/`](storage/ref) | reference node: read a volume by key, answer a multi-axis question, check a record by recomputing its address |
 | [`storage/sim/`](storage/sim) | scenario runner over in-memory backends |
 | [`apps/`](apps) | applications built on the model, each with its own workspace and verifier |
 | [`libs/`](libs) | shared host libraries |
@@ -41,7 +42,7 @@ Root workspace and a nested storage workspace under [`nex/`](nex).
 
 ```bash
 cargo build --workspace           # root workspace
-cd nex && cargo test --workspace  # storage workspace
+cd nex && cargo test --workspace  # model, IO seam, reference store, process layer
 ./run.sh --core                   # fmt, clippy, tests, wasm gate
 ```
 
@@ -76,7 +77,7 @@ tokio = { version = "1", features = ["full"] }
 
 ```rust
 use nex::io::FsIo;
-use nex::storage::core::RefFihStorage;
+use nex_fih::RefFihStorage;
 use nex_fih::{AsyncFactCapable, Content, Fact};
 
 let io = FsIo::new("/tmp/nexus-store")?;

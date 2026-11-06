@@ -23,9 +23,9 @@ use std::fmt;
 use sha2::{Digest, Sha256};
 
 use nex::FileIo;
-use nex::storage::core::intent_status::IntentStatus;
-use nex::storage::core::record::ContentMeta;
-use nex::storage::core::store::{Record, RefFihStorage};
+use nex_fih::IntentStatus;
+use nex_fih::ContentMeta;
+use nex_fih::{Record, RefFihStorage};
 use nex_fih::{Content, CoordId, FihHash};
 use nexus_storage_sim::SimIo;
 
@@ -330,11 +330,8 @@ impl CalcEngine {
     }
 
     pub async fn clear_hints(&self) {
-        let ids: Vec<String> = self.storage.all_hint_ids();
-        for id_str in ids {
-            if let Some((_content, _creator, submitted_at)) = self.storage.get_hint_by_id(&id_str) {
-                self.storage.vacate_record(&id_str);
-            }
+        for id_str in self.storage.all_hint_ids() {
+            self.storage.vacate_record(&id_str);
         }
     }
 

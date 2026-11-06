@@ -19,8 +19,8 @@ use spin_sdk::http::IntoResponse;
 use spin_sdk::http_component;
 
 use nex::io::FileIo;
-use nex::storage::core::RefFihStorage;
-use nex::storage::semantic::Query as SemanticQuery;
+use nex_fih::RefFihStorage;
+use nex_fih::semantic::Query as SemanticQuery;
 use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, Content, CoordId,
     Fact, Hint, Intent,
@@ -91,7 +91,7 @@ impl SemanticQuery for TextQuery {
 
 // ── Snapshot ─────────────────────────────────────────────────────────
 
-use nex::storage::core::record::{FactRecord, IntentRecord};
+use nex_fih::{FactRecord, IntentRecord};
 
 const SNAPSHOT_KEY: &str = "_snapshot/facts.bin";
 

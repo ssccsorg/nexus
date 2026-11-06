@@ -17,7 +17,7 @@
 // executor (e.g. embassy).
 
 #[cfg(feature = "std")]
-use crate::core::store::RefFihStorage;
+use crate::reference::RefFihStorage;
 #[cfg(feature = "std")]
 use crate::io::file_io::FileIo;
 
