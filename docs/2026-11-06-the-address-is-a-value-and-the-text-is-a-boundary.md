@@ -140,6 +140,20 @@ Three things are unchanged by design.
 The cost moves to the boundary: a text entry resolves once per call, and `place_record` resolves once per record
 it places. A record is placed once and read many times, so the trade faces the reads.
 
+### Held by a test
+
+The rule is enforced by `nex/fih/tests/identity_boundary.rs`, which the `core` job runs with the rest of the
+record layer's tests. One test, three properties.
+
+| Property | How it is checked |
+|:---|:---|
+| the record maps are keyed by the address | a type annotation, so a map keyed by its text stops the file from building |
+| a typed door never parses | a scan of `store.rs` that names the function and the line when it does |
+| an address lookup allocates its result and nothing else | a counting allocator, two allocations a call over a hundred calls |
+
+The third is the one that catches a reintroduced render, because a render allocates and the count moves. The
+second was verified by inserting a parse into `get_hint_at`: the scan named it and the test failed.
+
 ## Verification
 
 ```bash
