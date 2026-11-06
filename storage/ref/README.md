@@ -121,29 +121,26 @@ cargo run -p nexus-storage-ref -- verify --volume storage/ref/demo/volume \
 cargo run -p nexus-storage-ref -- sidecar --app ./app.db --volume ./records
 ```
 
-Every example reads and prints addresses in their rendering, so a terminal with no font for the native coordinate
-shows the same thing the demonstration shows.
+Every example reads and prints addresses as they are, so the terminal, the file name, and the demonstration all show the
+same text.
 
 `cargo test -p nexus-storage-ref` holds the contract these commands promise: the exit codes below, a read that creates
 nothing, and the prefix filter.
 
-Every command prints each address in its base-36 rendering, three characters an axis, which is the form `fih_model::ascii`
-produces and the one `read` and `verify` already accept. A box's bounds are read in the same form, so a printed address
-can be handed back to the tool unchanged. `--native` prints the stored form instead, and a native bound is written in
-that form. The volume still holds the native key: the rendering is a display form, and the prefix is matched against the
-key as this run prints it.
+Every command prints each address as 60 base-36 digits, three an axis. That is the identity's own text: the coordinate
+space is the syllable block's 11,172 values, and the spelling of a value is base-36. A box's bounds are read in the same
+form, so a printed address can be handed back to the tool unchanged, and a record's key is the same text, so a volume
+holds no character outside ASCII.
 
 `keys` lists the volume and keeps the keys that start with the prefix, because this channel resolves a listing prefix as
 a path. The filter is the tool's, and the cost it shows is the listing itself.
 
 `box` reads the coordinate out of each key and answers the range from it. The store opens without record maps and no
-record is read, so the answer costs the keys and nothing else. An axis the box does not name is free. `--axis` names one,
-and both of its bounds use the same width, so a second flag constrains a second axis. A bound is written in the
-rendering by default, which is what the example above does; `--native` writes one in a single character.
+record is read, so the answer costs the keys and nothing else. An axis the box does not name is free, `--axis` names
+one, and both of its bounds are one axis window, so a second flag constrains a second axis.
 
-`read` accepts the canonical coordinate, and also the 60-character ASCII rendering of one, which `fih_model::ascii`
-produces. A rendering is decoded to the coordinate before the key is derived, so both forms address the same record and a
-rendering that decodes to nothing the volume holds still exits 2. Anything else is refused before the volume is touched.
+`read` accepts the address and nothing else: a length that is not the depth's, a character outside the alphabet, or an
+axis value above the space is refused before the volume is touched. An address that decodes but is not stored exits 2.
 
 `sidecar` refuses a directory that already holds content, then compares the application file's size and modification time
 before and after the copy and prints what it measured. Size and modification time keep the check bounded when the

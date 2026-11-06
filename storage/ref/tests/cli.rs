@@ -5,7 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use nex_fih::{CoordId, ascii};
+use tagma_core::DIGITS_PER_AXIS;
 
 fn run(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_nexus-storage-ref"))
@@ -100,7 +100,7 @@ fn an_address_that_is_not_a_coordinate_is_refused_before_the_volume_is_opened() 
 
 #[test]
 fn an_address_the_volume_does_not_hold_is_absent() {
-    let absent = "가".repeat(20);
+    let absent = "0".repeat(60);
     let (address, _) = sample_record();
     assert_ne!(absent, address, "the absent address is the fixture's");
 
@@ -129,7 +129,6 @@ fn a_coordinate_prefix_finds_the_record_and_a_wrong_one_finds_nothing() {
 
     let hit = run(&[
         "keys",
-        "--native",
         "--volume",
         &volume_arg(),
         "--prefix",
@@ -140,7 +139,6 @@ fn a_coordinate_prefix_finds_the_record_and_a_wrong_one_finds_nothing() {
 
     let miss = run(&[
         "keys",
-        "--native",
         "--volume",
         &volume_arg(),
         "--prefix",
@@ -185,35 +183,22 @@ fn a_second_placement_is_refused_and_the_app_file_is_unchanged() {
 }
 
 #[test]
-fn an_address_in_the_rendering_reads_the_same_record() {
+fn an_address_reads_the_record_it_names() {
     let (address, size) = sample_record();
-    let coordinate = CoordId::<20>::from_string(&address).expect("a coordinate");
-    let rendered = ascii::encode(&coordinate);
 
-    let out = run(&[
-        "read",
-        "--native",
-        "--volume",
-        &volume_arg(),
-        "--address",
-        &rendered,
-    ]);
+    let out = run(&["read", "--volume", &volume_arg(), "--address", &address]);
 
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     let text = stdout(&out);
     assert!(text.contains(&format!("bytes:      {size}")), "{text}");
-    assert!(
-        text.contains(&address),
-        "the rendering resolved to another address: {text}"
-    );
+    assert!(text.contains(&address), "{text}");
 }
 
 #[test]
-fn a_rendering_the_volume_does_not_hold_is_absent() {
-    let absent = CoordId::<20>::from_string(&"가".repeat(20)).expect("a coordinate");
-    let rendered = ascii::encode(&absent);
+fn an_address_of_sixty_zeroes_is_absent() {
+    let absent = "0".repeat(60);
 
-    let out = run(&["read", "--volume", &volume_arg(), "--address", &rendered]);
+    let out = run(&["read", "--volume", &volume_arg(), "--address", &absent]);
 
     assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
     assert!(stderr(&out).contains("absent:"));
@@ -250,16 +235,15 @@ fn help_is_not_a_failure() {
 #[test]
 fn a_box_over_one_axis_answers_from_the_keys() {
     let (address, _) = sample_record();
-    let axis = address.chars().next().expect("a coordinate");
-    let other = if axis == '각' { '가' } else { '각' };
+    let window = &address[..DIGITS_PER_AXIS];
+    let other = if window == "000" { "001" } else { "000" };
 
     let hit = run(&[
         "box",
-        "--native",
         "--volume",
         &volume_arg(),
         "--axis",
-        &format!("0={axis}-{axis}"),
+        &format!("0={window}-{window}"),
     ]);
     assert_eq!(hit.status.code(), Some(0), "{}", stderr(&hit));
     assert!(stdout(&hit).contains("1 record(s)"), "{}", stdout(&hit));
@@ -271,7 +255,6 @@ fn a_box_over_one_axis_answers_from_the_keys() {
 
     let miss = run(&[
         "box",
-        "--native",
         "--volume",
         &volume_arg(),
         "--axis",
@@ -284,14 +267,12 @@ fn a_box_over_one_axis_answers_from_the_keys() {
 #[test]
 fn a_box_over_two_axes_narrows_the_answer() {
     let (address, _) = sample_record();
-    let mut characters = address.chars();
-    let first = characters.next().expect("a coordinate");
-    let second = characters.next().expect("a coordinate");
-    let other = if second == '각' { '가' } else { '각' };
+    let first = &address[..DIGITS_PER_AXIS];
+    let second = &address[DIGITS_PER_AXIS..DIGITS_PER_AXIS * 2];
+    let other = if second == "000" { "001" } else { "000" };
 
     let hit = run(&[
         "box",
-        "--native",
         "--volume",
         &volume_arg(),
         "--axis",
@@ -304,7 +285,6 @@ fn a_box_over_two_axes_narrows_the_answer() {
 
     let miss = run(&[
         "box",
-        "--native",
         "--volume",
         &volume_arg(),
         "--axis",
@@ -320,14 +300,7 @@ fn a_box_over_two_axes_narrows_the_answer() {
 fn the_whole_key_space_lists_the_record_and_its_payload() {
     let (address, _) = sample_record();
 
-    let out = run(&[
-        "keys",
-        "--native",
-        "--volume",
-        &volume_arg(),
-        "--prefix",
-        "",
-    ]);
+    let out = run(&["keys", "--volume", &volume_arg(), "--prefix", ""]);
 
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     let text = stdout(&out);
@@ -343,7 +316,7 @@ fn the_whole_key_space_lists_the_record_and_its_payload() {
 #[test]
 fn the_rendering_is_the_default_and_holds_no_native_character() {
     let (address, size) = sample_record();
-    let rendered = ascii::encode(&CoordId::<20>::from_string(&address).expect("a coordinate"));
+    let rendered = address.clone();
 
     let out = run(&["read", "--volume", &volume_arg(), "--address", &address]);
 
@@ -361,7 +334,7 @@ fn the_rendering_is_the_default_and_holds_no_native_character() {
 #[test]
 fn the_rendering_is_read_back_as_the_same_coordinate() {
     let (address, _) = sample_record();
-    let rendered = ascii::encode(&CoordId::<20>::from_string(&address).expect("a coordinate"));
+    let rendered = address.clone();
 
     let out = run(&["read", "--volume", &volume_arg(), "--address", &rendered]);
 
@@ -376,8 +349,8 @@ fn the_rendering_is_read_back_as_the_same_coordinate() {
 #[test]
 fn a_box_in_the_rendering_narrows_to_the_same_record() {
     let (address, _) = sample_record();
-    let rendered = ascii::encode(&CoordId::<20>::from_string(&address).expect("a coordinate"));
-    let first: String = rendered.chars().take(ascii::DIGITS_PER_AXIS).collect();
+    let rendered = address.clone();
+    let first: String = rendered.chars().take(DIGITS_PER_AXIS).collect();
 
     let hit = run(&[
         "box",
@@ -406,7 +379,7 @@ fn a_box_in_the_rendering_narrows_to_the_same_record() {
 #[test]
 fn the_keys_are_printed_in_the_rendering() {
     let (address, _) = sample_record();
-    let rendered = ascii::encode(&CoordId::<20>::from_string(&address).expect("a coordinate"));
+    let rendered = address.clone();
 
     let out = run(&["keys", "--volume", &volume_arg(), "--prefix", ""]);
 
@@ -419,20 +392,24 @@ fn the_keys_are_printed_in_the_rendering() {
 }
 
 #[test]
-fn a_rendered_bound_is_refused_when_the_bounds_disagree_on_width() {
+fn a_bound_that_is_not_one_axis_window_is_refused() {
     let out = run(&["box", "--volume", &volume_arg(), "--axis", "0=0-000"]);
 
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
-    assert!(stderr(&out).contains("same width"), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("a bound is 3 base-36 digits"),
+        "{}",
+        stderr(&out)
+    );
 }
 
 #[test]
-fn a_bound_that_is_neither_a_character_nor_a_rendering_is_refused() {
+fn a_bound_that_is_not_a_full_axis_window_is_refused() {
     let out = run(&["box", "--volume", &volume_arg(), "--axis", "0=00-00"]);
 
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
     assert!(
-        stderr(&out).contains("a bound is one character"),
+        stderr(&out).contains("a bound is 3 base-36 digits"),
         "{}",
         stderr(&out)
     );
@@ -486,7 +463,7 @@ fn a_tampered_payload_fails_verification() {
 
 #[test]
 fn the_self_check_passes_on_the_address_the_volume_holds() {
-    let out = run(&["self-check", "--native"]);
+    let out = run(&["self-check"]);
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
 
     let text = stdout(&out);

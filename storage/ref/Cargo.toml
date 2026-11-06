@@ -7,5 +7,6 @@ license.workspace = true
 [dependencies]
 nex = { path = "../../nex/process" }
 nex-fih = { path = "../../nex/fih" }
+tagma-core = { workspace = true }
 clap = { version = "4", features = ["derive"] }
 futures-executor = "0.3"

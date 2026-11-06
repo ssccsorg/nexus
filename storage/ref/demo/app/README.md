@@ -41,10 +41,10 @@ offers:
 | `npm run typecheck` | `tsc --noEmit` alone |
 
 `npm run import` runs `keys`, `box`, `read`, `verify`, `sidecar`, and `self-check` against the volume and writes
-`projects.json` and `scenario/<id>.txt`. Every verb prints the base-36 rendering by default, so the board and the run carry that
-rendering of an address and no native character. It counts nothing and evaluates nothing: a second model of the store
-would be a model free to disagree with the store. A path given to `--volume` is read relative to the repository root, so
-the command works from this directory and the board stays machine independent.
+`projects.json` and `scenario/<id>.txt`. Every verb prints the address in the identity's own base-36 text, so the board
+and the run carry that form and nothing outside ASCII. It counts nothing and evaluates nothing: a second model of the
+store would be a model free to disagree with the store. A path given to `--volume` is read relative to the repository
+root, so the command works from this directory and the board stays machine independent.
 
 Without a built binary the importer reports what it could not run. `NEX_REF_BIN` names one elsewhere.
 

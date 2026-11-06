@@ -10,6 +10,7 @@ use std::hash::{Hash, Hasher};
 use fih_model::FihId as _;
 use fih_model::FihId6 as _;
 use fih_model::{BlackboardError, Content, CoordId, FihHash};
+use tagma_core::DIGITS_PER_AXIS;
 
 #[test]
 fn a_coord_id_hashes_by_its_indices() {
@@ -62,7 +63,7 @@ fn the_six_axis_surface_builds_and_reads_back() {
 fn a_six_axis_id_round_trips_through_text_and_serde() {
     let id = CoordId::<6>::from_axes(1, 2, 3, 4, 5, 6).expect("the axes are in range");
     let text = id.to_string();
-    assert_eq!(text.chars().count(), 6);
+    assert_eq!(text.chars().count(), 6 * DIGITS_PER_AXIS);
 
     let json = serde_json::to_string(&id).expect("the id serializes");
     assert_eq!(json, format!("\"{text}\""));
@@ -74,18 +75,18 @@ fn a_six_axis_id_round_trips_through_text_and_serde() {
     let error = serde_json::from_str::<CoordId<6>>("\"abc\"")
         .expect_err("a short id is refused")
         .to_string();
-    assert!(error.contains("expected 6 chars"), "{error}");
-    let error = serde_json::from_str::<CoordId<6>>("\"abcdef\"")
-        .expect_err("a non-coordinate character is refused")
+    assert!(error.contains("expected 18 base-36 digits"), "{error}");
+    let error = serde_json::from_str::<CoordId<6>>(&format!("\"{}\"", "0".repeat(17) + "A"))
+        .expect_err("a character outside the alphabet is refused")
         .to_string();
-    assert!(error.contains("not a valid coordinate"), "{error}");
+    assert!(error.contains("base-36 digits"), "{error}");
 }
 
 #[test]
 fn a_twenty_axis_id_round_trips_and_refuses_malformed_input() {
-    let id = CoordId::<20>::from_string(&"가".repeat(20)).expect("the canonical id parses");
+    let id = CoordId::<20>::from_string(&"0".repeat(60)).expect("the canonical id parses");
     let text = id.to_string();
-    assert_eq!(text.chars().count(), 20);
+    assert_eq!(text.chars().count(), 60);
 
     let json = serde_json::to_string(&id).expect("the id serializes");
     assert_eq!(
@@ -96,11 +97,11 @@ fn a_twenty_axis_id_round_trips_and_refuses_malformed_input() {
     let error = serde_json::from_str::<CoordId<20>>("\"short\"")
         .expect_err("a short id is refused")
         .to_string();
-    assert!(error.contains("expected 20 chars"), "{error}");
-    let error = serde_json::from_str::<CoordId<20>>(&format!("\"{}\"", "a".repeat(20)))
-        .expect_err("a non-coordinate character is refused")
+    assert!(error.contains("expected 60 base-36 digits"), "{error}");
+    let error = serde_json::from_str::<CoordId<20>>(&format!("\"{}\"", "0".repeat(59) + "A"))
+        .expect_err("a character outside the alphabet is refused")
         .to_string();
-    assert!(error.contains("not a valid coordinate"), "{error}");
+    assert!(error.contains("base-36 digits"), "{error}");
 }
 
 #[test]

@@ -46,11 +46,7 @@ fn content_id_distinguishes_origin_and_creator() {
 fn content_id_is_canonical() {
     let id = CoordId::content_id(0, "origin", "creator", &hash(b"x"));
     let s = id.to_string();
-    assert_eq!(
-        s.chars().count(),
-        20,
-        "canonical id is 20 Hangul characters"
-    );
+    assert_eq!(s.chars().count(), 60, "canonical id is 60 base-36 digits");
     assert_eq!(
         CoordId::<20>::from_string(&s),
         Some(id),
@@ -65,7 +61,7 @@ fn from_label_is_deterministic_and_canonical() {
     assert_eq!(a, b, "same label must produce the same id");
     assert_ne!(a, CoordId::from_label("fixture-b"));
     let s = a.to_string();
-    assert_eq!(s.chars().count(), 20);
+    assert_eq!(s.chars().count(), 60);
     assert_eq!(CoordId::<20>::from_string(&s), Some(a));
 }
 
@@ -94,11 +90,11 @@ fn resolve_accepts_canonical_and_label_equivalently() {
 fn from_string_is_canonical_only() {
     let canonical = CoordId::from_label("fixture");
     let s = canonical.to_string();
-    assert_eq!(s.chars().count(), 20);
+    assert_eq!(s.chars().count(), 60);
     assert_eq!(
         CoordId::<20>::from_string(&s),
         Some(canonical),
-        "canonical 20-char string round-trips"
+        "canonical 60-digit string round-trips"
     );
     assert_eq!(CoordId::<20>::from_string("not-hangul-id"), None);
     assert_eq!(CoordId::<20>::from_string(""), None);
@@ -121,8 +117,8 @@ fn fact_new_is_content_addressed() {
     assert_ne!(f1.id, f3.id, "different content produces a different id");
     assert_eq!(
         f1.id.to_string().chars().count(),
-        20,
-        "fact id is canonical 20 Hangul"
+        60,
+        "fact id is canonical 60 base-36 digits"
     );
 }
 
@@ -176,11 +172,11 @@ fn encode_hash_uses_the_20th_digit_for_256_bit_values() {
         "leading coord must be non-zero for the max 256-bit value"
     );
 
-    // Zero maps to the all-zero path (canonical 20 Hangul '가' chars).
+    // Zero maps to the all-zero path.
     let zero = encode_hash_into_coords(&[0u8; 32]);
     assert!(zero.iter().all(|c| c.index() == 0));
     let id: CoordId = tagma_core::CoordId(CoordPath::new(zero));
-    assert_eq!(id.to_string(), "가".repeat(20));
+    assert_eq!(id.to_string(), "000".repeat(20));
 }
 
 #[test]
@@ -212,6 +208,6 @@ fn six_syllable_strings_are_labels_after_the_depth_migration() {
         "6 syllables are not canonical at depth 20"
     );
     let resolved = CoordId::resolve(legacy);
-    assert_eq!(resolved.to_string().chars().count(), 20);
+    assert_eq!(resolved.to_string().chars().count(), 60);
     assert_ne!(resolved.to_string(), legacy);
 }

@@ -57,8 +57,8 @@ fn test_sim_full_lifecycle() {
 
     assert_eq!(
         result.id.to_string().chars().count(),
-        20,
-        "CoordId should be 20 Hangul characters"
+        60,
+        "CoordId should be 60 base-36 digits"
     );
     let state = futures_executor::block_on(storage.read_state());
     assert_eq!(state.facts.len(), 2);

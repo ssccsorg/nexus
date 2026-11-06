@@ -16,10 +16,8 @@ extern crate alloc;
 //   storage/   — Storage capability traits: StorageRead, FactCapable, ...
 //                ColdStorage, NullStorage, async counterparts
 //   semantic/  — SemanticStore, RecordLoad, Query, FihRecordLoad
-//   ascii/     — optional fixed-width base-36 rendering of a coordinate
 //   contract/  — NexLifecycle, NexConfig, NexInstanceInfo, HealthStatus
 
-pub mod ascii;
 pub mod blackboard;
 pub mod clock;
 pub mod contract;

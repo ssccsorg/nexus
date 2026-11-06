@@ -27,9 +27,3 @@ harness = false
 name = "wanted_ids"
 path = "wanted_ids.rs"
 harness = false
-
-# The cost of a key, which a switch between renderings would move.
-[[bench]]
-name = "id_render"
-path = "id_render.rs"
-harness = false

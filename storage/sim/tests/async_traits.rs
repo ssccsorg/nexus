@@ -94,8 +94,8 @@ fn test_async_conclude_intent() {
     let fact = result.unwrap();
     assert_eq!(
         fact.id.to_string().chars().count(),
-        20,
-        "CoordId should be 20 Hangul characters"
+        60,
+        "CoordId should be 60 base-36 digits"
     );
 }
 
