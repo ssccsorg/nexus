@@ -675,7 +675,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tagma-core",
 ]
 
 [[package]]
@@ -695,6 +694,7 @@ dependencies = [
  "nex",
  "nex-core",
  "nex-fih",
+ "nexus-storage-ref",
  "postcard",
  "serde",
  "serde_json",
@@ -703,6 +703,22 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "nexus-storage-ref"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures-executor",
+ "log",
+ "nex-core",
+ "nex-fih",
+ "nex-io",
+ "postcard",
+ "serde",
+ "sha2 0.10.9",
+ "tagma-core",
 ]
 
 [[package]]

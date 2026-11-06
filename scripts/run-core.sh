@@ -57,6 +57,13 @@ run_wasm_check() {
     # playbooks/* (scripts), target/ (build artifacts).
     # apps/ is excluded: each app has its own build target (native, container, etc.)
     # and is not expected to compile for wasm32.
+    #
+    # nex/hub is a host process: it binds sockets, so it asks tokio for `net` and `mio`
+    # compiles only where an operating system provides a poller. The routing table it
+    # builds on is `nex-router`, which this check does reach, and which `run_nostd_check`
+    # takes to the MCU target. The `nex` workspace root is skipped because it would pull
+    # the hub in again; every member has its own manifest above and is checked there.
+    #
     # Failures must abort the gate: the find -exec form swallows the exit
     # code of the inner command, so iterate in bash instead.
     local failed=0
@@ -77,8 +84,10 @@ run_wasm_check() {
         -not -path './storage/ref/*' \
         -not -path './nexd/*' \
         -not -path './nex-server/*' \
+        -not -path './nex/hub/*' \
         -not -path './playbooks/*' \
-        -not -path './Cargo.toml')
+        -not -path './Cargo.toml' \
+        -not -path './nex/Cargo.toml')
     if [ "$failed" -ne 0 ]; then
         echo "run_wasm_check: one or more crates failed the wasm32 build"
         return 1

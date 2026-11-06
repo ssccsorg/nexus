@@ -6,10 +6,13 @@ license.workspace = true
 description = "The reference node: the storage contract answered over a volume, and the reader that shows its key space"
 
 [features]
-default = ["std"]
-# The node builds without an operating system. `std` adds the host transport the reader and
-# the synchronous wrappers use, and nothing in the record path needs it.
-std = ["nex-fih/std", "nex-core/std", "nex-io/std", "dep:futures-executor", "dep:clap", "dep:tokio", "dep:nex-client", "dep:serde_json"]
+default = ["std", "reader"]
+# The record path's host widening: the clock and the blocking surface. A wasm consumer takes
+# this alone, since the reader below is a host transport.
+std = ["nex-fih/std", "nex-core/std", "nex-io/std", "dep:futures-executor"]
+# The command-line reader, and the hub it reaches: a socket, a runtime, and a client to speak
+# through it. Nothing in the library needs any of this.
+reader = ["std", "dep:clap", "dep:tokio", "dep:nex-client", "dep:serde_json"]
 
 [dev-dependencies]
 critical-section = { version = "1", features = ["restore-state-bool"] }
@@ -48,4 +51,4 @@ clap = { version = "4", features = ["derive", "env"], optional = true }
 [[bin]]
 name = "nexus-storage-ref"
 path = "src/main.rs"
-required-features = ["std"]
+required-features = ["reader"]
