@@ -1359,7 +1359,12 @@ impl<I: FileIo> FihStorage<I> {
     /// the persisted blob hash, so records placed by direct writers
     /// (nex-calc writes blobs to IO directly) are readable.
     pub async fn get_fact_by_id(&self, id: &str) -> Option<(Content, FihHash, String, String)> {
-        let r = self.get_fact_framing(id).await?;
+        self.get_fact_at(CoordId::resolve(id)).await
+    }
+
+    /// The same read for a caller that already holds the address.
+    pub async fn get_fact_at(&self, id: CoordId) -> Option<(Content, FihHash, String, String)> {
+        let r = self.get_fact_framing_at(id).await?;
         let content_hash = Self::blob_hash_or_zero(&r.blob_hash);
         let content = self
             .load_content_any(&r.blob_hash, "application/octet-stream")
@@ -1384,14 +1389,18 @@ impl<I: FileIo> FihStorage<I> {
     /// what the map reports for a record it never saw. The conflict guard is where a decode
     /// failure is fatal, because there the question is whether it is safe to write over.
     pub async fn get_fact_framing(&self, id: &str) -> Option<FactRecord> {
-        let key: CoordId = CoordId::resolve(id);
+        self.get_fact_framing_at(CoordId::resolve(id)).await
+    }
+
+    /// The same read for a caller that already holds the address.
+    pub async fn get_fact_framing_at(&self, key: CoordId) -> Option<FactRecord> {
         let held = {
             let recs = self.fact_records.borrow();
             recs.get(&key).cloned()
         };
         match held {
             Some(record) => Some(record),
-            None if !*self.maps.borrow() => match self.medium_fact_record(id).await {
+            None if !*self.maps.borrow() => match self.medium_fact_record(&key.to_string()).await {
                 Ok(record) => record,
                 Err(error) => {
                     log::warn!("get_fact_framing: {error}");
@@ -1414,7 +1423,11 @@ impl<I: FileIo> FihStorage<I> {
     /// saw. The returned record keeps the storage unit: `created_at` and the conclusion time are
     /// nanoseconds. Read through `read_state` for the model's seconds.
     pub async fn get_intent(&self, id: &str) -> Option<(IntentRecord, Option<String>)> {
-        let key: CoordId = CoordId::resolve(id);
+        self.get_intent_at(CoordId::resolve(id)).await
+    }
+
+    /// The same read for a caller that already holds the address.
+    pub async fn get_intent_at(&self, key: CoordId) -> Option<(IntentRecord, Option<String>)> {
         let held = {
             let recs = self.intent_records.borrow();
             recs.get(&key).cloned()
@@ -1448,7 +1461,11 @@ impl<I: FileIo> FihStorage<I> {
     /// session holds, and a store that keeps no map reads the medium at the key the identifier
     /// implies. A hint the volume does not hold is `None`.
     pub async fn get_hint(&self, id: &str) -> Option<HintRecord> {
-        let key: CoordId = CoordId::resolve(id);
+        self.get_hint_at(CoordId::resolve(id)).await
+    }
+
+    /// The same read for a caller that already holds the address.
+    pub async fn get_hint_at(&self, key: CoordId) -> Option<HintRecord> {
         let held = {
             let recs = self.hint_records.borrow();
             recs.get(&key).cloned()
