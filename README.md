@@ -54,12 +54,12 @@ Two entry points, one line each.
 
 Both are the same line on macOS, Linux, and Windows.
 
-The wasm and MCU checks require targets and a runtime beyond the default build.
+The wasm check and the no_std anchor check require targets beyond the default build.
 
 | Check | Requirements | Execution |
 |---|---|---|
 | wasm gate | `wasm32-unknown-unknown`, `wasm32-wasip2` | cargo, on the host |
-| MCU runtime | `riscv32imac-unknown-none-elf` | `nexus-mcu-verify` on `qemu-system-riscv32 -machine virt`, inside `ghcr.io/ssccsorg/nexus-verify`, built from [`verify/Dockerfile`](verify/Dockerfile) |
+| no_std anchors | `riscv32imac-unknown-none-elf` | `cargo check -p nex-io --no-default-features` |
 
 CI installs all three targets. Local runs of those checks require installing them first.
 
