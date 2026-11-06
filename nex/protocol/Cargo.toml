@@ -1,0 +1,15 @@
+[package]
+name = "nex-protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The wire the hub speaks: request and response types, and the framing a transport carries"
+
+[features]
+default = []
+# std is for a host that wants the standard error type. The wire itself needs alloc only.
+std = ["serde/std", "serde_json/std"]
+
+[dependencies]
+serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
+serde_json = { version = "1", default-features = false, features = ["alloc"] }

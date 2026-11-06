@@ -1,70 +1,17 @@
-// ── nex-client: thin wire wrapper for nex-server IPC ──────────────────────
+// ── nex-client: the host transport for the wire ────────────────────────
 //
-// Pure protocol layer. No knowledge of RefFihStorage, FIH, or nex internals.
-// Only knows JSON-RPC 2.0 over Unix domain socket.
+// A byte channel over a Unix socket and the JSON framing the protocol names. The wire
+// types live in `nex-protocol`; this crate carries them.
 
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 
 // ── Protocol types ─────────────────────────────────────────────────────
 
-#[derive(Deserialize)]
-pub struct RpcRequest {
-    pub id: Value,
-    pub method: String,
-    #[serde(default)]
-    pub params: Value,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct RpcResponse {
-    pub id: Value,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub result: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<RpcError>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct RpcError {
-    pub code: i64,
-    pub message: String,
-}
-
-impl RpcResponse {
-    pub fn success(id: Value, result: Value) -> Self {
-        Self {
-            id,
-            result: Some(result),
-            error: None,
-        }
-    }
-
-    pub fn error(id: Value, code: i64, message: impl Into<String>) -> Self {
-        Self {
-            id,
-            result: None,
-            error: Some(RpcError {
-                code,
-                message: message.into(),
-            }),
-        }
-    }
-
-    pub fn invalid_request(id: Value) -> Self {
-        Self::error(id, -32600, "Invalid Request")
-    }
-
-    pub fn method_not_found(id: Value, method: &str) -> Self {
-        Self::error(id, -32601, format!("Method not found: {method}"))
-    }
-
-    pub fn invalid_params(id: Value, msg: String) -> Self {
-        Self::error(id, -32602, msg)
-    }
-}
+// The wire is the hub's, not this transport's, so the types come from `nex-protocol` and are
+// re-exported here for a caller that already depends on the client.
+pub use nex_protocol::{RpcError, RpcRequest, RpcResponse};
 
 // ── Client ─────────────────────────────────────────────────────────────
 

@@ -1,6 +1,6 @@
-// no_std anchors for nex-fih (issue #181).
+// no_std anchors for the reference node.
 //
-// nex-fih is the semantic layer of the OS-less storage path: it models
+// The node is built with no operating system: it models
 // facts, intents, hints, and governance, and never reads wall-clock time
 // or executes async I/O itself. Time comes from an injected `Now`
 // (`with_clock`), which is how an MCU launcher supplies an EpochClock

@@ -102,7 +102,7 @@ run_wasm_check() {
 run_wasip2_check() {
     echo "=== WASIp2: fih-model ==="
     cargo check -p fih-model --target wasm32-wasip2 2>&1
-    for pkg in nex-core nex-fih nex-io; do
+    for pkg in nex-core nex-fih nex-io nex-protocol; do
         echo "=== WASIp2: $pkg ==="
         (cd nex && cargo check -p "$pkg" --target wasm32-wasip2) 2>&1
     done
@@ -127,13 +127,13 @@ run_nostd_check() {
     # the std-less MCU target.
     echo "=== no_std check: fih-model (no-default-features) ==="
     cargo check -p fih-model --no-default-features 2>&1
-    for pkg in nex-core nex-fih nex-io; do
+    for pkg in nex-core nex-fih nex-io nex-protocol; do
         echo "=== no_std check: $pkg (no-default-features) ==="
         (cd nex && cargo check -p "$pkg" --no-default-features) 2>&1
     done
     echo "=== no_std anchor tests ==="
     (cd nex && cargo test -p nex-core --no-default-features --test no_std_anchors) 2>&1
-    (cd nex && cargo test -p nex-fih --no-default-features --test no_std_anchors) 2>&1
+    cargo test -p nexus-storage-ref --no-default-features --test no_std_anchors 2>&1
     echo "=== true no_std target: wasm32-unknown-unknown ==="
     (cd nex && cargo check -p nex-core --no-default-features --target wasm32-unknown-unknown) 2>&1
     (cd nex && cargo check -p nex-fih --no-default-features --target wasm32-unknown-unknown) 2>&1
@@ -141,6 +141,7 @@ run_nostd_check() {
     (cd nex && cargo check -p nex-core --no-default-features --target riscv32imac-unknown-none-elf) 2>&1
     (cd nex && cargo check -p nex-fih --no-default-features --target riscv32imac-unknown-none-elf) 2>&1
     (cd nex && cargo check -p nex-io --no-default-features --target riscv32imac-unknown-none-elf) 2>&1
+    (cd nex && cargo check -p nex-protocol --no-default-features --target riscv32imac-unknown-none-elf) 2>&1
 }
 
 
