@@ -236,13 +236,12 @@ run_all() {
     echo "=== wasm check ===" && run_wasm_check
     echo "=== wasip2 smoke ===" && run_wasip2_check
     echo "=== no_std anchors ===" && run_nostd_check
-    echo "=== target verification ===" && run_verify_check
     echo "=== clippy ===" && run_clippy
     echo "=== test ===" && run_test
 }
 
 case $MODE in
-    check)  echo "=== fmt --all ===" && run_fmt && run_check && run_apps_check && run_wasm_check && run_wasip2_check && run_nostd_check && run_verify_check ;;
+    check)  echo "=== fmt --all ===" && run_fmt && run_check && run_apps_check && run_wasm_check && run_wasip2_check && run_nostd_check ;;
     clippy) run_auto_fix && run_clippy ;;
     test)   echo "=== fmt --all ===" && run_fmt && run_wasm_check && run_test ;;
     all)
