@@ -30,7 +30,6 @@ Root workspace and a nested storage workspace under [`nex/`](nex).
 | [`nex_client`](nex_client) | typed client for `nexd` |
 | [`storage/ref/`](storage/ref) | reference consumer: read a volume by key, answer a multi-axis question, check a record by recomputing its address |
 | [`storage/sim/`](storage/sim) | scenario runner over in-memory backends |
-| [`verify/osless/`](verify/osless) | OS-less storage path on a host, including cross-thread critical section stress |
 | [`apps/`](apps) | applications built on the model, each with its own workspace and verifier |
 | [`libs/`](libs) | shared host libraries |
 | [`playbooks/`](playbooks) | consumer playbooks |
@@ -111,7 +110,7 @@ Targets without an operating system require three things.
 - Provide `alloc` and a `critical-section` implementation.
 - Inject a clock through `Now`.
 
-[`verify/osless`](verify/osless) is the working reference.
+The reference store is `RefFihStorage` in `nex/fih`.
 
 ## Minimal Examples
 
@@ -123,7 +122,6 @@ Each is one part of the project in its smallest complete form.
 | [`storage/ref`](storage/ref) | the storage surface: read a volume by key, answer a multi-axis question from the keys, check a record by recomputing its address. Carries a [demonstration board](storage/ref/demo) that draws the same reads |
 | [`apps/nex-derive`](apps/nex-derive) | a directed goal space: a goal is work, intent, and contract, and resolving it derives a fact |
 | [`storage/sim`](storage/sim) | a run driven by a scenario, over in-memory backends |
-| [`verify/osless`](verify/osless) | the OS-less storage path on a host, including the cross-thread critical section stress |
 
 ## Testing
 

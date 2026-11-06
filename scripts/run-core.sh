@@ -143,15 +143,7 @@ run_nostd_check() {
     (cd nex && cargo check -p nex-io --no-default-features --target riscv32imac-unknown-none-elf) 2>&1
 }
 
-# ── Target verification package (issue #181) ────────────────────────────
-#
-# verify/osless runs the OS-less storage surface on the host: a no_std
-# build with a caller-provided critical section.
 
-run_verify_check() {
-    echo "=== verify: nexus-osless-verify (host) ==="
-    cargo run -p nexus-osless-verify 2>&1
-}
 
 # ── Standalone app manifests (issue #223) ──────────────────────────────
 #
@@ -200,7 +192,6 @@ run_clippy() {
         nexus-storage-sim \
         nexus-gateway-serde-proxy \
         nexus-verify-support \
-        nexus-osless-verify \
         nexd
     do
         cargo clippy -p "$pkg" --all-targets -- -D warnings -A clippy::await-holding-refcell-ref
