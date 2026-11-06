@@ -6,5 +6,14 @@
 // existing consumers (nex, apps) compile unchanged.
 
 #![no_std]
+extern crate alloc;
+
+#[cfg(feature = "std")]
+extern crate std;
+
+#[cfg(feature = "std")]
+pub mod memory;
 
 pub use chton::io::*;
+#[cfg(feature = "std")]
+pub use memory::{MemoryIo, SimIo};

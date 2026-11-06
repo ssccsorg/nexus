@@ -4,11 +4,10 @@
 // that implements the FileIo trait defined in nex::io.
 //
 // The reference node supplies the implementation types, the model supplies the primitives,
-// and this crate supplies the in-memory medium. The filesystem IO backend lives in nex-io.
-
-pub mod sim_io;
+// and nex-io supplies the media, in memory and on a file system. This crate supplies the
+// scenarios that drive them.
 
 pub use nex::io::*;
 pub use nex_fih::core::*;
 pub use nexus_storage_ref::*;
-pub use sim_io::SimIo;
+pub use nex_io::{MemoryIo, SimIo};

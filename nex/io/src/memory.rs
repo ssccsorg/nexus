@@ -1,15 +1,23 @@
-// ── SimIo: in-memory deterministic IO implementation ─────────────────
+// ── MemoryIo: the in-memory medium ─────────────────────────────────────
 //
-// Backed by HashMap. All operations are O(1) and synchronous.
-// Supports failure injection for scenario testing.
-// Compatible with wasm32-unknown-unknown (no std::fs dependency).
+// A flat key space in a map. A consumer that needs a medium without a file system, an
+// operating system, or an executor takes this and nothing else: it is the IO seam's own
+// test double, so it does not drag a storage implementation along.
+//
+// Backed by a map. Every operation is O(1) and synchronous. Failure injection is for a
+// scenario that has to see a write refused.
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use nex::io::file_io::{FileIo, IoFuture};
+use alloc::boxed::Box;
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 
-/// Deterministic in-memory IO. No filesystem, no network, no async.
+use crate::file_io::{FileIo, IoFuture};
+
+/// Deterministic in-memory IO. No file system, no network, no executor.
 /// On wasm32, uses Rc<RefCell<>> internally; on native, Arc<RwLock<>>.
 pub struct SimIo {
     data: Arc<RwLock<HashMap<String, Vec<u8>>>>,
@@ -114,3 +122,6 @@ impl FileIo for SimIo {
         })
     }
 }
+
+/// The name a caller reaches for when it thinks of the map as a medium.
+pub type MemoryIo = SimIo;
