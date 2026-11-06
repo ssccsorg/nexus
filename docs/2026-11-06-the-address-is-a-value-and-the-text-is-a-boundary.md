@@ -159,6 +159,23 @@ The `nexd` integration tests bind a Unix socket under the system temporary direc
 than the length. Run them with `TMPDIR=/tmp` in a sandbox that sets a long temporary path; they pass in 3.6
 seconds once the socket fits.
 
+The measurement set runs its volumes in argument order, and the first volume in the process is ten to twenty-five
+percent slower on every number, `open` included, and `open` touches no record map. Running the same pair in the
+other order moves the penalty to the other volume and clears the first. Compare volumes in the same position, or
+run the set twice and read the second run.
+
+Against the text-keyed build, the ktema set is neutral once that position is held fixed.
+
+| Volume | Metric | Text keys | Address keys |
+|:---|:---|---:|---:|
+| 1000 records | query | 127.2 us | 132.6 us |
+| 1000 records | point read | 1.084 us | 1.125 us |
+| 10000 records | query | 2638 us | 2419 us |
+| 10000 records | point read | 1.625 us | 1.584 us |
+
+The answers and the medium bytes are identical in both builds, which is the property that makes the comparison
+meaningful at all.
+
 For a comparison across commits, build the earlier commit in a worktree and run the same filter in both trees.
 The criterion baseline is the previous run in the same target directory, so two runs of one tree compare a tree
 to itself and the resulting percentages measure load rather than code. That mistake produced a set of numbers
