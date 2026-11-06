@@ -2864,3 +2864,44 @@ impl<I: FileIo> crate::AsyncTimeRangeCapable for FihStorage<I> {
         found.then(|| min.to_string()..max.to_string())
     }
 }
+
+// ── The storage contract, implemented by this store ─────────────────────
+//
+// These delegate to the inherent methods. A consumer written against the contract does not
+// name this type, which is what lets a second implementation serve the same consumer.
+
+impl<I: FileIo> crate::FactById for FihStorage<I> {
+    async fn fact_by_id(&self, id: &str) -> Option<(Content, FihHash, String, String)> {
+        self.get_fact_by_id(id).await
+    }
+
+    async fn fact_framing(&self, id: &str) -> Option<FactRecord> {
+        self.get_fact_framing(id).await
+    }
+}
+
+impl<I: FileIo> crate::FactWalk for FihStorage<I> {
+    async fn for_each_fact<F>(&self, visit: F) -> Result<(), String>
+    where
+        F: FnMut(&FactRecord, Content) -> bool,
+    {
+        FihStorage::for_each_fact(self, visit).await
+    }
+
+    async fn for_each_fact_record<F>(&self, visit: F) -> Result<(), String>
+    where
+        F: FnMut(&FactRecord) -> bool,
+    {
+        FihStorage::for_each_fact_record(self, visit).await
+    }
+}
+
+impl<I: FileIo> crate::StoreMaintenance for FihStorage<I> {
+    async fn flush(&self) -> Result<(), String> {
+        self.flush_pending().await
+    }
+
+    async fn rebuild(&self) -> Result<(), String> {
+        self.rebuild_cache().await
+    }
+}

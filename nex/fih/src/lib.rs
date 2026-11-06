@@ -35,6 +35,7 @@ pub use contract::core::{
     EvidenceChain, EvidenceEntry, GovernanceBypassError, GovernanceGate, HintEngine, HintRule,
 };
 pub use contract::fih::FihContract;
+pub use contract::store::{FactById, FactWalk, StoreMaintenance};
 #[cfg(feature = "std")]
 pub use core::export::{export_from_io, import_into_io};
 #[cfg(feature = "std")]
