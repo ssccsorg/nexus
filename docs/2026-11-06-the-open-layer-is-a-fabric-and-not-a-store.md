@@ -132,3 +132,44 @@ The record kinds, the lifecycle, the coordinate identity, the conflict rule, the
 protocol, the applications, and the license of this repository stay as they are. The demo
 reader in `storage/ref` stays: it reads a volume through the read surface, creates none, and
 holds no index.
+
+## The hub's portability tier
+
+The connection layer is not storage, and its portability requirement is not lower for that. A
+fabric that connects heterogeneous nodes has to run where the least capable node runs, so the
+core of the hub is a `no_std + alloc` surface and the host pieces are transports around it.
+In the least capable direction the requirement is stricter than storage's: a node that only
+connects must still be able to connect.
+
+What exists today, by layer:
+
+| Layer | Crate | Build | Portable |
+|---|---|---|---|
+| model and read surface | `fih-model`, `nex-fih` | `no_std + alloc` | yes, gated |
+| clock and IO seams | `nex-core`, `nex-io` | `no_std + alloc` | yes, gated |
+| wire types and dispatch | `nex-client` | std (`tokio`, `UnixStream`) | no |
+| store server | `nex-server` | std | no |
+| process supervisor | `nexd` | std | no |
+| process layer | `nex` | std (`serde` default features) | no |
+
+The wire types are serde-only. The transport is the part that needs a host: a Unix socket, a
+TCP port, a UART. Splitting the two gives the hub the tier this section requires.
+
+The shape, named so the branch that does the split has a target:
+
+- `nex-protocol` holds the message types, the framing, and the dispatch. Its build is
+  `no_std + alloc`, and its gate is a bare-metal check beside the model's.
+- `nex-client` keeps the host transport: a byte channel over a Unix socket, with the framing
+  the protocol names.
+- A transport trait is the only thing a link implements. A UART link and an in-memory bus
+  link are both legitimate, and neither is a host.
+- The backend seam and the transport seam are independent: a node with no medium can still
+  connect, and a node with no socket can still answer.
+
+The gate this section adds belongs to ssccsorg/nexus#231:
+`cargo check -p nex-protocol --no-default-features --target riscv32imac-unknown-none-elf`,
+and the same check for every hub crate that declares itself portable. A crate that cannot
+pass it does not belong to the hub core.
+
+The baseline is stated plainly: the wire layer is std-only today, so the gate cannot be added
+before the split. It is the first gate of that branch.
