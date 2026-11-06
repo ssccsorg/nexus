@@ -17,7 +17,7 @@ use nex_core::{Now, SystemClock};
 use nex_fih::io::file_io::{FileIo, IoFuture};
 use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, BlackboardError,
-    Content, CoordId, Fact, FactRecord, FihStorage, Hint, HintRecord, Intent, IntentStatus,
+    Content, CoordId, Fact, FactRecord, RefFihStorage, Hint, HintRecord, Intent, IntentStatus,
     RecordTimeUnit,
 };
 
@@ -109,7 +109,7 @@ fn payload_fact(id: &str, payload: &str) -> Fact {
     )
 }
 
-fn submit(storage: &FihStorage<MemoryIo>, fact: &Fact) {
+fn submit(storage: &RefFihStorage<MemoryIo>, fact: &Fact) {
     block_on(storage.submit_fact(fact)).expect("the fact is accepted");
 }
 
@@ -130,11 +130,11 @@ impl Now for FixedClock {
 #[test]
 fn an_auto_flush_store_is_durable_when_the_call_returns() {
     let medium = MemoryIo::default();
-    let storage = FihStorage::with_auto_flush(medium.clone(), "surface");
+    let storage = RefFihStorage::with_auto_flush(medium.clone(), "surface");
     let fact = payload_fact("f_flush", "payload");
     submit(&storage, &fact);
 
-    let reader = FihStorage::new_without_maps(medium, "surface");
+    let reader = RefFihStorage::new_without_maps(medium, "surface");
     assert!(
         block_on(reader.get_fact_framing(&fact.id.to_string())).is_some(),
         "the write reached the medium without an explicit flush"
@@ -144,11 +144,11 @@ fn an_auto_flush_store_is_durable_when_the_call_returns() {
 #[test]
 fn with_all_decides_whether_a_write_is_pending() {
     let medium = MemoryIo::default();
-    let storage = FihStorage::with_all(medium.clone(), "surface", Box::new(SystemClock), false);
+    let storage = RefFihStorage::with_all(medium.clone(), "surface", Box::new(SystemClock), false);
     let fact = payload_fact("f_pending", "payload");
     submit(&storage, &fact);
 
-    let reader = FihStorage::new_without_maps(medium.clone(), "surface");
+    let reader = RefFihStorage::new_without_maps(medium.clone(), "surface");
     assert!(
         block_on(reader.get_fact_framing(&fact.id.to_string())).is_none(),
         "a non-flushing store keeps the write in memory"
@@ -160,7 +160,7 @@ fn with_all_decides_whether_a_write_is_pending() {
 
 #[test]
 fn a_structured_read_omits_payloads_and_descriptions() {
-    let storage = FihStorage::new(MemoryIo::default(), "surface");
+    let storage = RefFihStorage::new(MemoryIo::default(), "surface");
     let base = payload_fact("f_struct", "the payload");
     submit(&storage, &base);
     for (id, description) in [("i_with_text", "a description"), ("i_without_text", "")] {
@@ -201,7 +201,7 @@ fn a_structured_read_omits_payloads_and_descriptions() {
 #[test]
 fn the_blob_cache_is_bounded_and_reloads_what_it_evicts() {
     let medium = MemoryIo::default();
-    let storage = FihStorage::new(medium.clone(), "surface");
+    let storage = RefFihStorage::new(medium.clone(), "surface");
     storage.set_blob_cache_cap(1);
     submit(&storage, &payload_fact("f_one", "first payload"));
     submit(&storage, &payload_fact("f_two", "second payload"));
@@ -227,7 +227,7 @@ fn the_blob_cache_is_bounded_and_reloads_what_it_evicts() {
 #[test]
 fn a_blob_whose_metadata_is_gone_keeps_its_bytes_and_defaults_the_mime() {
     let medium = MemoryIo::default();
-    let storage = FihStorage::new(medium.clone(), "surface");
+    let storage = RefFihStorage::new(medium.clone(), "surface");
     let fact = payload_fact("f_meta", "the payload");
     submit(&storage, &fact);
     block_on(storage.flush_pending()).expect("the write reaches the medium");
@@ -235,7 +235,7 @@ fn a_blob_whose_metadata_is_gone_keeps_its_bytes_and_defaults_the_mime() {
     medium.remove(&format!("blob/{hash}.bin.meta"));
     drop(storage);
 
-    let reader = FihStorage::new(medium, "surface");
+    let reader = RefFihStorage::new(medium, "surface");
     block_on(reader.rebuild_cache()).expect("the volume reopens");
     let state = block_on(reader.read_state());
     assert_eq!(state.facts[0].content.data, b"the payload");
@@ -248,7 +248,7 @@ fn a_blob_whose_metadata_is_gone_keeps_its_bytes_and_defaults_the_mime() {
 #[test]
 fn a_blob_whose_payload_is_gone_reads_as_empty() {
     let medium = MemoryIo::default();
-    let storage = FihStorage::new(medium.clone(), "surface");
+    let storage = RefFihStorage::new(medium.clone(), "surface");
     let fact = payload_fact("f_payload", "the payload");
     submit(&storage, &fact);
     block_on(storage.flush_pending()).expect("the write reaches the medium");
@@ -257,7 +257,7 @@ fn a_blob_whose_payload_is_gone_reads_as_empty() {
     medium.remove(&format!("blob/{hash}.bin.meta"));
     drop(storage);
 
-    let reader = FihStorage::new(medium, "surface");
+    let reader = RefFihStorage::new(medium, "surface");
     block_on(reader.rebuild_cache()).expect("the volume reopens");
     let state = block_on(reader.read_state());
     assert!(state.facts[0].content.data.is_empty());
@@ -288,7 +288,7 @@ fn a_legacy_record_hash_is_recomputed_at_open() {
     medium.put("blob/legacy.bin", payload.as_bytes());
     medium.put(&format!("blob/{hash}.bin"), payload.as_bytes());
 
-    let reader = FihStorage::new(medium, "surface");
+    let reader = RefFihStorage::new(medium, "surface");
     block_on(reader.rebuild_cache()).expect("the volume reopens");
     let state = block_on(reader.read_state());
     assert_eq!(state.facts.len(), 1);
@@ -299,7 +299,7 @@ fn a_legacy_record_hash_is_recomputed_at_open() {
 #[test]
 fn a_failed_flush_does_not_stop_a_state_read() {
     let medium = MemoryIo::default();
-    let storage = FihStorage::new(medium.clone(), "surface");
+    let storage = RefFihStorage::new(medium.clone(), "surface");
     submit(&storage, &payload_fact("f_refused", "the payload"));
     *medium.refuse.lock().unwrap() = true;
 
@@ -315,7 +315,7 @@ fn a_failed_flush_does_not_stop_a_state_read() {
 
 #[test]
 fn the_intent_lifecycle_reports_what_each_state_forbids() {
-    let storage = FihStorage::with_clock(MemoryIo::default(), "surface", Box::new(SystemClock));
+    let storage = RefFihStorage::with_clock(MemoryIo::default(), "surface", Box::new(SystemClock));
 
     let empty = Intent::new(
         CoordId::resolve("i_empty"),
@@ -366,7 +366,7 @@ fn a_record_with_no_blob_hash_reads_as_empty() {
         &postcard::to_allocvec(&record).expect("the record serializes"),
     );
 
-    let reader = FihStorage::new(medium, "surface");
+    let reader = RefFihStorage::new(medium, "surface");
     block_on(reader.rebuild_cache()).expect("the volume reopens");
     let state = block_on(reader.read_state());
     assert_eq!(state.facts.len(), 1);
@@ -382,7 +382,7 @@ fn a_fact_time_below_the_legacy_second_threshold_survives_every_read() {
     // legitimate nanosecond timestamp, not a pre-convention seconds value.
     let medium = MemoryIo::default();
     let submitted_at = 5_000_000_000; // five seconds since boot
-    let writer = FihStorage::with_clock(
+    let writer = RefFihStorage::with_clock(
         medium.clone(),
         "surface",
         Box::new(FixedClock(submitted_at)),
@@ -392,7 +392,7 @@ fn a_fact_time_below_the_legacy_second_threshold_survives_every_read() {
     block_on(writer.flush_pending()).expect("the write reaches the medium");
 
     // The by-name read on a store without maps.
-    let reader = FihStorage::new_without_maps(medium.clone(), "surface");
+    let reader = RefFihStorage::new_without_maps(medium.clone(), "surface");
     let framing = block_on(reader.get_fact_framing(&fact.id.to_string()))
         .expect("the medium holds the record");
     assert_eq!(framing.submitted_at, submitted_at);
@@ -409,7 +409,7 @@ fn a_fact_time_below_the_legacy_second_threshold_survives_every_read() {
     assert_eq!(walked, Some(submitted_at));
 
     // A reopen through the record maps must not lift it either.
-    let keeper = FihStorage::new(medium, "surface");
+    let keeper = RefFihStorage::new(medium, "surface");
     block_on(keeper.rebuild_cache()).expect("the maps are built");
     let framed =
         block_on(keeper.get_fact_framing(&fact.id.to_string())).expect("the map holds the record");
@@ -444,12 +444,12 @@ fn a_legacy_intent_timestamp_is_lifted_once_on_every_read() {
         &postcard::to_allocvec(&legacy).expect("the legacy record serializes"),
     );
 
-    let reader = FihStorage::new_without_maps(medium.clone(), "surface");
+    let reader = RefFihStorage::new_without_maps(medium.clone(), "surface");
     let (record, _) = block_on(reader.get_intent(&id)).expect("the medium holds the intent");
     assert_eq!(record.created_at, 1_700_000_000_000_000_000);
     assert_eq!(record.time_unit, RecordTimeUnit::Nanos);
 
-    let keeper = FihStorage::new(medium, "surface");
+    let keeper = RefFihStorage::new(medium, "surface");
     block_on(keeper.rebuild_cache()).expect("the maps are built");
     let (_, _, _, _, created_at) = keeper
         .get_intent_by_id(&id)
@@ -477,7 +477,7 @@ fn a_hint_ttl_is_seconds_while_the_record_timestamp_is_nanoseconds() {
 fn a_boot_epoch_intent_and_hint_keep_their_nanoseconds() {
     let medium = MemoryIo::default();
     let submitted_at = 5_000_000_000; // five seconds since boot
-    let writer = FihStorage::with_clock(
+    let writer = RefFihStorage::with_clock(
         medium.clone(),
         "surface",
         Box::new(FixedClock(submitted_at)),
@@ -502,7 +502,7 @@ fn a_boot_epoch_intent_and_hint_keep_their_nanoseconds() {
     .expect("the hint is accepted");
     block_on(writer.flush_pending()).expect("the writes reach the medium");
 
-    let reader = FihStorage::new_without_maps(medium.clone(), "surface");
+    let reader = RefFihStorage::new_without_maps(medium.clone(), "surface");
     let (record, _) = block_on(reader.get_intent("i_boot")).expect("the intent");
     assert_eq!(record.created_at, submitted_at);
     assert_eq!(record.time_unit, RecordTimeUnit::Nanos);
@@ -510,7 +510,7 @@ fn a_boot_epoch_intent_and_hint_keep_their_nanoseconds() {
     assert_eq!(hint.submitted_at, submitted_at);
     assert_eq!(hint.time_unit, RecordTimeUnit::Nanos);
 
-    let keeper = FihStorage::new(medium, "surface");
+    let keeper = RefFihStorage::new(medium, "surface");
     block_on(keeper.rebuild_cache()).expect("the maps are built");
     let (_, _, _, _, created_at) = keeper
         .get_intent_by_id(&intent.id.to_string())

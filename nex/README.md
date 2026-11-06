@@ -7,7 +7,7 @@ workflows over an abstract flat key-space I/O layer.
 ## Execution Model
 
 nex is **not a general-purpose library**. It is an **execution unit** — each
-`FihStorage` instance runs on a single thread with exclusive ownership of its
+`RefFihStorage` instance runs on a single thread with exclusive ownership of its
 in-memory state and I/O channel. There is no internal concurrency.
 
 ### Key properties
@@ -48,9 +48,9 @@ nex does not scale by adding threads or internal sharding. It scales by
 **physical instance replication**:
 
 ```
-Process A (port 3000) ─── FihStorage ─── FsIo("./data/shard-a")
-Process B (port 3001) ─── FihStorage ─── FsIo("./data/shard-b")
-Process C (port 3002) ─── FihStorage ─── FsIo("./data/shard-c")
+Process A (port 3000) ─── RefFihStorage ─── FsIo("./data/shard-a")
+Process B (port 3001) ─── RefFihStorage ─── FsIo("./data/shard-b")
+Process C (port 3002) ─── RefFihStorage ─── FsIo("./data/shard-c")
 ```
 
 Each instance is an island with exclusive state. Instances communicate by
@@ -68,9 +68,9 @@ physical replication is achieved by creating additional named instances.
 ┌─────────────────────────────────────────────────┐
 │                  FihBlackboard                    │
 │  (sync Blackboard trait impl, delegates to       │
-│   FihStorage via block_on — native only)         │
+│   RefFihStorage via block_on — native only)         │
 ├─────────────────────────────────────────────────┤
-│                  FihStorage                       │
+│                  RefFihStorage                       │
 │  ┌─────────────┐  ┌──────────────┐               │
 │  │ EntityStore  │  │  FihCoord    │               │
 │  │ (fact,       │  │  ┌─────────┐ │               │
@@ -93,7 +93,7 @@ physical replication is achieved by creating additional named instances.
 
 ## Trait design: flashlight pattern
 
-`SemanticStore` implementations do not hold references to `FihStorage`. They
+`SemanticStore` implementations do not hold references to `RefFihStorage`. They
 receive a `RecordLoad` handle at `insert()` time and call only the accessors
 they need:
 
@@ -152,7 +152,7 @@ crash. The caller controls durability by choosing when to flush.
 
 ## Cold start recovery
 
-When a `FihStorage` instance starts for the first time (or after a restart),
+When a `RefFihStorage` instance starts for the first time (or after a restart),
 its in-memory caches are empty. The `rebuild_cache` method reads all records
 from the I/O layer and populates `FihCoord` indices and entity stores. The
 `rebuild_semantic` method then re-populates all registered `SemanticStore`
@@ -180,7 +180,7 @@ curl http://localhost:8080/search?q=semantic
 These rules hold across all nex code:
 
 1. No `Mutex`, `RwLock`, or any thread-blocking primitive in hot paths.
-2. No `block_on` inside `FihStorage` methods.
+2. No `block_on` inside `RefFihStorage` methods.
 3. `RefCell` borrows are never held across `.await` points unles explicitly
    allowed and justified by the single-threaded execution model.
 4. `SemanticStore` implementations must not re-enter `FihCoord` during
@@ -298,6 +298,6 @@ This is tracked in issue #138.
 |-------|------|------|
 | Formalize FIH coordinate system | Define baking, projection, n-dimensional state space semantics | #139 |
 | Extract nex-server | Standalone binary with Unix socket IPC | #138 Phase 2 |
-| Sync trait removal | Remove remaining sync trait impls from FihStorage | After #138 |
+| Sync trait removal | Remove remaining sync trait impls from RefFihStorage | After #138 |
 | Distributed sync | Multi-instance FIH synchronization | Future |
 

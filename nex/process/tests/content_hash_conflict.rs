@@ -13,7 +13,7 @@ use nex_fih::FihId20 as _;
 use nex_fih::core::store::{Record, structural_path};
 use nex_fih::{
     AsyncFactCapable, AsyncStorageRead, BlackboardError, Content, CoordId, Fact, FactRecord,
-    FihStorage,
+    RefFihStorage,
 };
 use nexus_storage_sim::SimIo;
 
@@ -32,7 +32,7 @@ fn fact(id: &str, data: &[u8]) -> Fact {
 #[test]
 fn same_id_different_content_is_rejected() {
     block_on(async {
-        let store = FihStorage::new(SimIo::new(), "conflict");
+        let store = RefFihStorage::new(SimIo::new(), "conflict");
         store.submit_fact(&fact("f_a", b"alpha")).await.unwrap();
         let err = store.submit_fact(&fact("f_a", b"beta")).await.unwrap_err();
         assert!(
@@ -49,7 +49,7 @@ fn same_id_different_content_is_rejected() {
 #[test]
 fn same_id_same_content_is_idempotent() {
     block_on(async {
-        let store = FihStorage::new(SimIo::new(), "idem");
+        let store = RefFihStorage::new(SimIo::new(), "idem");
         let f = fact("f_b", b"same");
         let first = store.submit_fact(&f).await.unwrap();
         let second = store.submit_fact(&f).await.unwrap();
@@ -64,14 +64,14 @@ fn conflict_is_detected_after_reopen() {
     block_on(async {
         let io = SimIo::new();
         {
-            let store = FihStorage::new(io.clone(), "reopen-conflict");
+            let store = RefFihStorage::new(io.clone(), "reopen-conflict");
             store.submit_fact(&fact("f_c", b"original")).await.unwrap();
             store.flush_pending().await.unwrap();
         }
         {
             // After rebuild the record map is empty; the id index built by
             // the reopened placement must still catch the conflict.
-            let store = FihStorage::new(io, "reopen-conflict");
+            let store = RefFihStorage::new(io, "reopen-conflict");
             store.rebuild_cache().await.unwrap();
             let err = store
                 .submit_fact(&fact("f_c", b"different"))
@@ -88,7 +88,7 @@ fn conflict_is_detected_after_reopen() {
 #[test]
 fn conflict_detected_against_direct_writer_record() {
     block_on(async {
-        let store = FihStorage::new(SimIo::new(), "direct-writer");
+        let store = RefFihStorage::new(SimIo::new(), "direct-writer");
         let f = fact("f_g", b"direct-original");
         let id_str = f.id.to_string();
         let path = structural_path(0u16, "", "user", 0u16, 0);
@@ -116,7 +116,7 @@ fn conflict_detected_against_direct_writer_record() {
 #[test]
 fn idempotent_against_direct_writer_record() {
     block_on(async {
-        let store = FihStorage::new(SimIo::new(), "direct-idem");
+        let store = RefFihStorage::new(SimIo::new(), "direct-idem");
         let f = fact("f_h", b"direct-same");
         let id_str = f.id.to_string();
         let path = structural_path(0u16, "", "user", 0u16, 0);
@@ -150,7 +150,7 @@ fn idempotent_against_direct_writer_record() {
 #[test]
 fn conflict_detected_for_fact_store_only_record() {
     block_on(async {
-        let store = FihStorage::new(SimIo::new(), "fstore-only");
+        let store = RefFihStorage::new(SimIo::new(), "fstore-only");
         let f = fact("f_i", b"fstore-original");
         store.fact_records.borrow_mut().insert(
             f.id.to_string(),
@@ -183,7 +183,7 @@ fn conflict_detected_for_fact_store_only_record() {
 #[test]
 fn idempotent_for_fact_store_only_record() {
     block_on(async {
-        let store = FihStorage::new(SimIo::new(), "fstore-idem");
+        let store = RefFihStorage::new(SimIo::new(), "fstore-idem");
         let f = fact("f_j", b"fstore-same");
         store.fact_records.borrow_mut().insert(
             f.id.to_string(),

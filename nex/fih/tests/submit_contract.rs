@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
 use nex_fih::{
-    AsyncFactCapable, AsyncStorageRead, BlackboardError, Content, CoordId, Fact, FihStorage,
+    AsyncFactCapable, AsyncStorageRead, BlackboardError, Content, CoordId, Fact, RefFihStorage,
 };
 
 /// An in-memory medium shared by every storage that holds a clone of it.
@@ -87,14 +87,14 @@ fn at(id: &str, payload: &str) -> Fact {
     )
 }
 
-fn submit(storage: &FihStorage<MemoryIo>, fact: &Fact) -> Result<CoordId, BlackboardError> {
+fn submit(storage: &RefFihStorage<MemoryIo>, fact: &Fact) -> Result<CoordId, BlackboardError> {
     block_on(storage.submit_fact(fact))
 }
 
 #[test]
 fn an_identical_retry_keeps_one_record_and_one_blob() {
     let medium = MemoryIo::default();
-    let storage = FihStorage::new(medium.clone(), "submit");
+    let storage = RefFihStorage::new(medium.clone(), "submit");
     let fact = at("f_taken", "the payload");
 
     submit(&storage, &fact).expect("the fact is accepted");
@@ -112,7 +112,7 @@ fn an_identical_retry_keeps_one_record_and_one_blob() {
 #[test]
 fn a_second_content_at_a_taken_id_is_a_conflict_and_keeps_the_first() {
     let medium = MemoryIo::default();
-    let storage = FihStorage::new(medium.clone(), "submit");
+    let storage = RefFihStorage::new(medium.clone(), "submit");
 
     submit(&storage, &at("f_taken", "the first content")).expect("the first fact is accepted");
     let error = submit(&storage, &at("f_taken", "the second content"))
@@ -135,7 +135,7 @@ fn a_second_content_at_a_taken_id_is_a_conflict_and_keeps_the_first() {
 
     // The refused submission enqueued nothing, so a reopen sees the same volume.
     drop(storage);
-    let reader = FihStorage::new(medium, "submit");
+    let reader = RefFihStorage::new(medium, "submit");
     block_on(reader.rebuild_cache()).expect("the volume reopens");
     let state = block_on(reader.read_state());
     assert_eq!(state.facts[0].content.data, b"the first content");
@@ -143,7 +143,7 @@ fn a_second_content_at_a_taken_id_is_a_conflict_and_keeps_the_first() {
 
 #[test]
 fn a_pending_record_is_a_taken_id_for_a_store_that_keeps_no_maps() {
-    let storage = FihStorage::new_without_maps(MemoryIo::default(), "submit");
+    let storage = RefFihStorage::new_without_maps(MemoryIo::default(), "submit");
 
     submit(&storage, &at("f_taken", "the first content")).expect("the first fact is accepted");
     submit(&storage, &at("f_taken", "the first content")).expect("the retry is idempotent");
@@ -156,14 +156,14 @@ fn a_pending_record_is_a_taken_id_for_a_store_that_keeps_no_maps() {
 #[test]
 fn a_volume_another_session_wrote_reports_the_conflict_from_the_medium() {
     let medium = MemoryIo::default();
-    let writer = FihStorage::new(medium.clone(), "submit");
+    let writer = RefFihStorage::new(medium.clone(), "submit");
     submit(&writer, &at("f_taken", "the first content")).expect("the first fact is accepted");
     block_on(writer.flush_pending()).expect("the write reaches the medium");
     drop(writer);
 
     // The reader holds no maps and has read nothing, so the medium is the only place
     // that can answer whether the address is taken.
-    let reader = FihStorage::new(medium.clone(), "submit");
+    let reader = RefFihStorage::new(medium.clone(), "submit");
     let error = submit(&reader, &at("f_taken", "the second content"))
         .expect_err("the medium's record is the earlier one");
     assert!(matches!(error, BlackboardError::Conflict(_)), "{error:?}");
@@ -176,7 +176,7 @@ fn a_volume_another_session_wrote_reports_the_conflict_from_the_medium() {
 #[test]
 fn a_different_identity_at_a_colliding_address_is_a_conflict() {
     let medium = MemoryIo::default();
-    let storage = FihStorage::new(medium, "submit");
+    let storage = RefFihStorage::new(medium, "submit");
 
     // The digest is taken over concatenated fields, so these two identities reach one
     // address. The store must keep the first and refuse the second rather than accept

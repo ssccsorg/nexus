@@ -16,7 +16,7 @@ use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
 use nex_fih::{
     AsyncEvictCapable, AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead,
-    BlackboardError, Content, CoordId, Fact, FihStorage, Hint, Intent, Now,
+    BlackboardError, Content, CoordId, Fact, RefFihStorage, Hint, Intent, Now,
 };
 
 const S0: u64 = 1_700_000_000;
@@ -89,11 +89,11 @@ impl Now for StepClock {
     }
 }
 
-fn new_storage(medium: MemoryIo, clock: &StepClock) -> FihStorage<MemoryIo> {
-    FihStorage::with_clock(medium, "evict", Box::new(clock.clone()))
+fn new_storage(medium: MemoryIo, clock: &StepClock) -> RefFihStorage<MemoryIo> {
+    RefFihStorage::with_clock(medium, "evict", Box::new(clock.clone()))
 }
 
-fn base_fact(storage: &FihStorage<MemoryIo>) -> Fact {
+fn base_fact(storage: &RefFihStorage<MemoryIo>) -> Fact {
     let fact = Fact::with_id(
         CoordId::resolve("f_base"),
         "origin/one".into(),
@@ -105,7 +105,7 @@ fn base_fact(storage: &FihStorage<MemoryIo>) -> Fact {
 }
 
 fn submit_intent(
-    storage: &FihStorage<MemoryIo>,
+    storage: &RefFihStorage<MemoryIo>,
     id: &str,
     from: &Fact,
     description: &str,
@@ -156,7 +156,7 @@ fn evicting_stale_intents_keeps_the_claimed_one_and_the_medium_agrees() {
     );
 
     drop(storage);
-    let reader = FihStorage::new(medium, "evict");
+    let reader = RefFihStorage::new(medium, "evict");
     block_on(reader.rebuild_cache()).expect("the volume reopens");
     let state = block_on(reader.read_state());
     assert_eq!(state.intents.len(), 1, "a reopen does not bring it back");
@@ -194,7 +194,7 @@ fn evicting_hints_by_time_keeps_the_newer_ones_on_the_medium() {
     assert!(medium.holds(&nex_fih::HintRecord::hint_key(&new.id.to_string())));
 
     drop(storage);
-    let reader = FihStorage::new(medium, "evict");
+    let reader = RefFihStorage::new(medium, "evict");
     block_on(reader.rebuild_cache()).expect("the volume reopens");
     let state = block_on(reader.read_state());
     assert_eq!(state.hints.len(), 1);

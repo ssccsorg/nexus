@@ -8,7 +8,7 @@ use nex_fih::{Content, CoordId, Fact, Intent};
 // ── FakeClock ──────────────────────────────────────────────────────────
 
 /// Cloneable fake clock: the shared handle lets a test advance the clock
-/// after it has been moved into a `FihStorage` via `with_clock`.
+/// after it has been moved into a `RefFihStorage` via `with_clock`.
 #[derive(Clone)]
 pub struct FakeClock {
     now: Arc<Mutex<u64>>,

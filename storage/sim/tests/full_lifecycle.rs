@@ -1,15 +1,15 @@
-// Full lifecycle test for FihStorage<SimIo>.
+// Full lifecycle test for RefFihStorage<SimIo>.
 
 use nex_fih::FihId20 as _;
 use nex_fih::{
     AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead, Content, CoordId, Fact, Intent,
 };
-use nexus_storage_sim::{FihStorage, SimIo};
+use nexus_storage_sim::{RefFihStorage, SimIo};
 
 #[test]
 fn test_sim_fact_submit_and_read() {
     let io = SimIo::new();
-    let storage = FihStorage::new(io, "test");
+    let storage = RefFihStorage::new(io, "test");
 
     futures_executor::block_on(storage.submit_fact(&Fact::with_id(
         CoordId::resolve("f001"),
@@ -27,7 +27,7 @@ fn test_sim_fact_submit_and_read() {
 #[test]
 fn test_sim_full_lifecycle() {
     let io = SimIo::new();
-    let storage = FihStorage::new(io, "test");
+    let storage = RefFihStorage::new(io, "test");
 
     futures_executor::block_on(storage.submit_fact(&Fact::with_id(
         CoordId::resolve("f_base"),

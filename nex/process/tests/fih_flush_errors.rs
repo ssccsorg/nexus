@@ -1,4 +1,4 @@
-// FihStorage flush error surfacing.
+// RefFihStorage flush error surfacing.
 //
 // Intent operations flush pending writes before reading the intent record
 // from IO. A failed flush must surface as BlackboardError::Internal, not
@@ -8,7 +8,7 @@ use futures_executor::block_on;
 use nex_fih::FihId20 as _;
 use nex_fih::io::file_io::{FileIo, IoFuture};
 use nex_fih::{
-    AsyncFactCapable, AsyncIntentCapable, BlackboardError, Content, CoordId, Fact, FihStorage,
+    AsyncFactCapable, AsyncIntentCapable, BlackboardError, Content, CoordId, Fact, RefFihStorage,
     Intent,
 };
 use std::collections::HashMap;
@@ -122,7 +122,7 @@ fn intent(id: &str) -> Intent {
 
 /// Submit the base fact and an intent referencing it; submit only enqueues,
 /// so this succeeds even with a failing IO backend.
-async fn seed(storage: &FihStorage<FailingIo>) {
+async fn seed(storage: &RefFihStorage<FailingIo>) {
     storage.submit_fact(&fact("f_base")).await.unwrap();
     storage.submit_intent(&intent("i_flush")).await.unwrap();
 }
@@ -130,7 +130,7 @@ async fn seed(storage: &FihStorage<FailingIo>) {
 #[test]
 fn claim_flush_failure_is_internal_not_not_found() {
     block_on(async {
-        let storage = FihStorage::new(FailingIo, "flush-error");
+        let storage = RefFihStorage::new(FailingIo, "flush-error");
         seed(&storage).await;
 
         // The pre-read flush in claim fails, and the failure must surface
@@ -143,7 +143,7 @@ fn claim_flush_failure_is_internal_not_not_found() {
 #[test]
 fn heartbeat_flush_failure_is_internal_not_not_found() {
     block_on(async {
-        let storage = FihStorage::new(FailingIo, "flush-error");
+        let storage = RefFihStorage::new(FailingIo, "flush-error");
         seed(&storage).await;
 
         let err = storage.heartbeat("i_flush", "worker").await.unwrap_err();
@@ -154,7 +154,7 @@ fn heartbeat_flush_failure_is_internal_not_not_found() {
 #[test]
 fn release_flush_failure_is_internal_not_not_found() {
     block_on(async {
-        let storage = FihStorage::new(FailingIo, "flush-error");
+        let storage = RefFihStorage::new(FailingIo, "flush-error");
         seed(&storage).await;
 
         let err = storage
@@ -168,7 +168,7 @@ fn release_flush_failure_is_internal_not_not_found() {
 #[test]
 fn conclude_flush_failure_is_internal_not_not_found() {
     block_on(async {
-        let storage = FihStorage::new(FailingIo, "flush-error");
+        let storage = RefFihStorage::new(FailingIo, "flush-error");
         seed(&storage).await;
 
         let err = storage
@@ -182,7 +182,7 @@ fn conclude_flush_failure_is_internal_not_not_found() {
 #[test]
 fn failed_flush_requeues_ops_for_retry() {
     block_on(async {
-        let storage = FihStorage::new(FlakyIo::new(), "retry");
+        let storage = RefFihStorage::new(FlakyIo::new(), "retry");
         storage.submit_fact(&fact("f_base")).await.unwrap();
         storage.submit_intent(&intent("i_retry")).await.unwrap();
 

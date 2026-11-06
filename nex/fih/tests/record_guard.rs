@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
-use nex_fih::{AsyncFactCapable, BlackboardError, Content, Fact, FihStorage};
+use nex_fih::{AsyncFactCapable, BlackboardError, Content, Fact, RefFihStorage};
 
 /// An in-memory medium that keeps what was asked of it.
 #[derive(Clone, Default)]
@@ -79,7 +79,7 @@ fn stored(medium: &MemoryIo) -> Fact {
         Content::from("the payload"),
         "writer".into(),
     );
-    let writer = FihStorage::new(medium.clone(), "guard");
+    let writer = RefFihStorage::new(medium.clone(), "guard");
     // This is the guard's first case, and it has to hold for the tests below to mean
     // anything: the record reaches the medium.
     block_on(writer.submit_fact(&fact)).expect("the first write is accepted");
@@ -95,7 +95,7 @@ fn a_session_that_did_not_write_the_volume_recognizes_the_record() {
 
     // A second session over the same medium. Nothing has read the volume into memory, so
     // the map cannot answer and the medium has to.
-    let next = FihStorage::new(medium.clone(), "guard");
+    let next = RefFihStorage::new(medium.clone(), "guard");
     let again = block_on(next.submit_fact(&fact)).expect("the retry is accepted");
     block_on(next.flush_pending()).expect("there is nothing to flush");
 
@@ -120,7 +120,7 @@ fn a_session_that_did_not_write_the_volume_refuses_a_different_content() {
         Content::from("another payload"),
         fact.creator.clone(),
     );
-    let next = FihStorage::new(medium.clone(), "guard");
+    let next = RefFihStorage::new(medium.clone(), "guard");
     match block_on(next.submit_fact(&forged)) {
         Err(BlackboardError::Conflict(message)) => {
             assert!(

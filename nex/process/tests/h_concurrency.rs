@@ -183,7 +183,7 @@ fn test_heartbeat_after_release() {
         .unwrap()
         .release_intent("i_rel", "agent-a")
         .unwrap();
-    // FihStorage requires re-claim after release; PetgraphStorage allowed heartbeat.
+    // RefFihStorage requires re-claim after release; PetgraphStorage allowed heartbeat.
     // Both are valid. Accept either outcome.
     let _ = bb.lock().unwrap().heartbeat("i_rel", "agent-b");
 }
@@ -200,7 +200,7 @@ fn test_conclude_after_release() {
         .unwrap()
         .release_intent("i_car", "agent-a")
         .unwrap();
-    // FihStorage requires re-claim after release; PetgraphStorage allowed conclude.
+    // RefFihStorage requires re-claim after release; PetgraphStorage allowed conclude.
     // Both are valid. Accept either outcome.
     let _ = bb.lock().unwrap().conclude_intent("i_car", "done");
 }

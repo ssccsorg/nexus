@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 
 use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
-use nex_fih::{AsyncFactCapable, Content, Fact, FactById, FactRecord, FactWalk, FihStorage};
+use nex_fih::{AsyncFactCapable, Content, Fact, FactById, FactRecord, FactWalk, RefFihStorage};
 
 /// An in-memory medium, shared by every network that holds a clone of it.
 #[derive(Clone, Default)]
@@ -125,7 +125,7 @@ where
 
 #[test]
 fn the_read_surface_answers_over_a_held_volume() {
-    let network = FihStorage::new(MemoryIo::default(), "contract");
+    let network = RefFihStorage::new(MemoryIo::default(), "contract");
 
     for payload in ["first", "second", "third"] {
         let fact = Fact::new(
@@ -154,7 +154,7 @@ fn the_read_surface_answers_over_a_held_volume() {
 #[test]
 fn the_read_surface_answers_a_network_another_session_wrote() {
     let medium = MemoryIo::default();
-    let writer = FihStorage::new(medium.clone(), "contract");
+    let writer = RefFihStorage::new(medium.clone(), "contract");
     let fact = Fact::new(
         "origin/contract".into(),
         Content::from("written by the first session"),
@@ -165,7 +165,7 @@ fn the_read_surface_answers_a_network_another_session_wrote() {
 
     // A network that holds no map reads the medium at the key the identifier implies, so a
     // session that read nothing yet answers for a volume it did not write.
-    let reader = FihStorage::new_without_maps(medium, "contract");
+    let reader = RefFihStorage::new_without_maps(medium, "contract");
     let mut ids: Vec<String> = Vec::new();
     block_on(reader.for_each_fact_record(|record: &FactRecord| {
         ids.push(record.id.clone());

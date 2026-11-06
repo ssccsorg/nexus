@@ -5,7 +5,7 @@
 
 use futures_executor::block_on;
 use nex_fih::FihId20 as _;
-use nex_fih::{AsyncFactCapable, AsyncStorageRead, Content, CoordId, Fact, FihStorage};
+use nex_fih::{AsyncFactCapable, AsyncStorageRead, Content, CoordId, Fact, RefFihStorage};
 use nexus_storage_sim::SimIo;
 
 /// Exceeds the cache cap (10_000) so the earliest blobs are evicted.
@@ -14,7 +14,7 @@ const N_FACTS: u32 = 10_100;
 #[test]
 fn test_blob_cache_evicts_and_reloads() {
     block_on(async {
-        let store = FihStorage::new(SimIo::new(), "cache");
+        let store = RefFihStorage::new(SimIo::new(), "cache");
 
         for i in 0..N_FACTS {
             store

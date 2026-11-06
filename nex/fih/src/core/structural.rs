@@ -33,7 +33,7 @@ use alloc::vec::Vec;
 use tagma_core::Coord;
 
 use crate::StateFilter;
-use crate::core::store::{FihStorage, WantedIds, hash_str};
+use crate::core::store::{RefFihStorage, WantedIds, hash_str};
 use crate::io::file_io::FileIo;
 
 /// Nanoseconds in one day (the structural time axis is day-granular).
@@ -41,7 +41,7 @@ const DAY_NS: u64 = 86_400_000_000_000;
 /// Valid coordinate slot count (Coord::N_VALID).
 const N_SLOTS: u64 = 11_172;
 
-impl<I: FileIo> FihStorage<I> {
+impl<I: FileIo> RefFihStorage<I> {
     /// Fact ids matching `filter` via the structural filter index.
     ///
     /// Prunes with `iter_prefix` on the leading axes [time_hi, time_lo,

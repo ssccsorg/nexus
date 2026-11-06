@@ -10,7 +10,7 @@ use nex_fih::FihId20 as _;
 use std::sync::{Arc, Mutex};
 
 use futures_executor::block_on;
-use nex::FihStorage;
+use nex::RefFihStorage;
 use nex::storage::semantic::{Query, RecordLoad, SemanticStore};
 use nex_fih::{AsyncFactCapable, AsyncIntentCapable, Content, CoordId, Fact};
 use nexus_storage_sim::SimIo;
@@ -49,8 +49,8 @@ impl SemanticStore for Recorder {
     }
 }
 
-fn storage_with(recorder: &Recorder) -> FihStorage<SimIo> {
-    let storage = FihStorage::new(SimIo::new(), "auto-index");
+fn storage_with(recorder: &Recorder) -> RefFihStorage<SimIo> {
+    let storage = RefFihStorage::new(SimIo::new(), "auto-index");
     storage.register_semantic_store(Box::new(recorder.clone()));
     storage
 }
@@ -140,12 +140,12 @@ fn rebuilding_the_semantic_index_hands_text_and_no_features_again() {
 
 #[test]
 fn rebuilding_the_index_needs_maps_and_a_registered_store() {
-    let no_maps = FihStorage::new_without_maps(SimIo::new(), "auto-index");
+    let no_maps = RefFihStorage::new_without_maps(SimIo::new(), "auto-index");
     let error = block_on(no_maps.rebuild_semantic())
         .expect_err("a store that keeps no maps has nothing to index");
     assert!(error.contains("record maps"), "{error}");
 
-    let empty = FihStorage::new(SimIo::new(), "auto-index");
+    let empty = RefFihStorage::new(SimIo::new(), "auto-index");
     block_on(empty.rebuild_semantic()).expect("with no stores the rebuild is a no-op");
 }
 
@@ -225,7 +225,7 @@ impl Query for TextQuery {
 
 #[test]
 fn a_store_that_refuses_an_insert_reports_the_error_and_stays_registered() {
-    let storage = FihStorage::new(SimIo::new(), "auto-index");
+    let storage = RefFihStorage::new(SimIo::new(), "auto-index");
     storage.register_semantic_store(Box::new(Rejecting));
 
     let error =
@@ -245,7 +245,7 @@ fn a_store_that_refuses_an_insert_reports_the_error_and_stays_registered() {
 
 #[test]
 fn a_search_with_no_store_says_so_and_one_with_a_store_answers() {
-    let empty = FihStorage::new(SimIo::new(), "auto-index");
+    let empty = RefFihStorage::new(SimIo::new(), "auto-index");
     let error = block_on(empty.semantic_search(&TextQuery, 5)).expect_err("nothing to search");
     assert!(error.contains("no semantic stores"), "{error}");
 

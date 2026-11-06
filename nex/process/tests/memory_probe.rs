@@ -6,7 +6,7 @@
 //   cargo test -p nex --test memory_probe -- --ignored --nocapture
 //
 // The test binary installs a counting global allocator so the live heap
-// footprint of FihStorage is observable. Facts are placed through
+// footprint of RefFihStorage is observable. Facts are placed through
 // submit_fact with identity coordinates varying across all six axes (the
 // pseudo-random content-derived ids nexus actually uses), so the record
 // layer gets one entry per record.
@@ -37,7 +37,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use futures_executor::block_on;
-use nex_fih::{AsyncFactCapable, Content, CoordId, Fact, FihStorage};
+use nex_fih::{AsyncFactCapable, Content, CoordId, Fact, RefFihStorage};
 use nexus_storage_sim::SimIo;
 
 struct CountingAlloc;
@@ -85,7 +85,7 @@ fn fact_at(i: u32) -> Fact {
 #[ignore]
 fn report_per_fact_heap_cost() {
     const N: usize = 16;
-    let store = FihStorage::new(SimIo::new(), "memory-probe");
+    let store = RefFihStorage::new(SimIo::new(), "memory-probe");
     let baseline = LIVE.load(Ordering::Relaxed);
     let mut prev = baseline;
     let mut last_marginal = 0;

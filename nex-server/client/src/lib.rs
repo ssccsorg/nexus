@@ -1,6 +1,6 @@
 // ── nex-client: thin wire wrapper for nex-server IPC ──────────────────────
 //
-// Pure protocol layer. No knowledge of FihStorage, FIH, or nex internals.
+// Pure protocol layer. No knowledge of RefFihStorage, FIH, or nex internals.
 // Only knows JSON-RPC 2.0 over Unix domain socket.
 
 use serde::{Deserialize, Serialize};

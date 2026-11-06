@@ -3,7 +3,7 @@
 // The FIH contract layer orchestrates governance primitives into a
 // coherent pipeline: gate to storage to evidence. Apps that want governed
 // FIH operations create a `FihContract` and call its methods.
-// Apps without governance use FihStorage directly.
+// Apps without governance use RefFihStorage directly.
 //
 // The contract layer is a semantic model plus storage specification: it
 // never reads wall-clock time or executes async I/O itself. Time comes
@@ -18,7 +18,7 @@ use alloc::boxed::Box;
 use alloc::string::ToString;
 
 use crate::contract::core::{EvidenceChain, GovernanceGate, HintEngine, HintRule};
-use crate::core::store::FihStorage;
+use crate::core::store::RefFihStorage;
 use crate::io::FileIo;
 use crate::{AsyncFactCapable, AsyncIntentCapable};
 use nex_core::Now;
@@ -62,7 +62,7 @@ impl FihContract {
     /// Governed fact submission: gate.admit to storage.submit to evidence.
     pub async fn submit_fact<I: FileIo>(
         &self,
-        storage: &FihStorage<I>,
+        storage: &RefFihStorage<I>,
         fact: &Fact,
         schema: Option<&str>,
     ) -> Result<CoordId, BlackboardError> {
@@ -79,7 +79,7 @@ impl FihContract {
     /// Governed intent conclusion: hints.check to storage.conclude to evidence.
     pub async fn conclude_intent<I: FileIo>(
         &self,
-        storage: &FihStorage<I>,
+        storage: &RefFihStorage<I>,
         intent_id: &str,
         result: &str,
     ) -> Result<crate::Fact, BlackboardError> {

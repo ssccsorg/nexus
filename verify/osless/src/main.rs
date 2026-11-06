@@ -7,7 +7,7 @@
 // critical section and a no-op waker, so nothing on the path needs std:
 //   - Cell2 borrow semantics, including cross-thread serialization
 //   - EpochClock time flow from a monotonic tick
-//   - a FihStorage submit -> flush -> reopen -> read round trip, with the
+//   - a RefFihStorage submit -> flush -> reopen -> read round trip, with the
 //     filtered read and the intent and hint records sharing the layer
 //   - the read path a device uses: a store that keeps no record maps,
 //     answering a query by walking the medium one record at a time, which
@@ -26,7 +26,7 @@ use chton::io::FileIo;
 use nex_core::{EpochClock, Monotonic, Now};
 use nex_fih::{
     AsyncFactCapable, AsyncFilterCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead,
-    BoardState, Content, CoordId, Fact, FihStorage, Hint, Intent, StateFilter,
+    BoardState, Content, CoordId, Fact, RefFihStorage, Hint, Intent, StateFilter,
 };
 use nexus_verify_support::{FlatIo, block_on};
 
@@ -106,7 +106,7 @@ fn main() {
     assert_eq!(clock.now_nanos(), epoch_ns + 5_000_000_000);
     assert_eq!(clock.now_secs(), epoch_secs + 5);
 
-    // 4. FihStorage round trip on the no_std build, then a reopen over the same
+    // 4. RefFihStorage round trip on the no_std build, then a reopen over the same
     // medium. The reopen rebuilds the record layer from the channel, which is
     // the path a device takes every time it powers on.
     let io = FlatIo::new();
@@ -119,14 +119,14 @@ fn main() {
         "harness".into(),
     );
     let id = {
-        let storage = FihStorage::with_clock(io.clone(), "osless", Box::new(clock));
+        let storage = RefFihStorage::with_clock(io.clone(), "osless", Box::new(clock));
         let id = block_on(storage.submit_fact(&fact)).expect("submit_fact");
         block_on(storage.flush_pending()).expect("flush_pending");
         id
     };
 
     let tick = Tick::at(0);
-    let storage = FihStorage::with_clock(
+    let storage = RefFihStorage::with_clock(
         io.clone(),
         "osless",
         Box::new(EpochClock::new(epoch_secs, tick)),
@@ -209,7 +209,7 @@ fn device_read_path(epoch_secs: u64) {
     // nowhere to put it except the part.
     {
         let writer =
-            FihStorage::without_maps(medium.clone(), "osless/device", epoch_clock(epoch_secs));
+            RefFihStorage::without_maps(medium.clone(), "osless/device", epoch_clock(epoch_secs));
         for payload in ["one", "two", "three"] {
             let fact = Fact::new(
                 "osless/device".into(),
@@ -235,7 +235,7 @@ fn device_read_path(epoch_secs: u64) {
 
     // The reader is a later session that keeps nothing either: the device that reboots and is
     // asked about a past it wrote, with the medium as the only thing between the two.
-    let reader = FihStorage::without_maps(medium.clone(), "osless/device", epoch_clock(epoch_secs));
+    let reader = RefFihStorage::without_maps(medium.clone(), "osless/device", epoch_clock(epoch_secs));
 
     let before = medium.traffic();
     let mut walked: Vec<(String, String)> = Vec::new();
@@ -308,7 +308,7 @@ fn device_read_path(epoch_secs: u64) {
     // A host reads the same volume through the maps, and the two have to agree about which
     // records the volume holds. The walk promises no order, so the agreement is about the set
     // rather than about the order.
-    let keeper = FihStorage::with_clock(medium.clone(), "osless/device", epoch_clock(epoch_secs));
+    let keeper = RefFihStorage::with_clock(medium.clone(), "osless/device", epoch_clock(epoch_secs));
     block_on(keeper.rebuild_cache()).expect("rebuild_cache");
     let state: BoardState = block_on(keeper.read_state());
     let mut from_state: Vec<String> = state.facts.iter().map(|fact| fact.id.to_string()).collect();
@@ -324,7 +324,7 @@ fn device_read_path(epoch_secs: u64) {
     let large = FlatIo::new();
     {
         let writer =
-            FihStorage::without_maps(large.clone(), "osless/large", epoch_clock(epoch_secs));
+            RefFihStorage::without_maps(large.clone(), "osless/large", epoch_clock(epoch_secs));
         for index in 0..40 {
             let fact = Fact::new(
                 "osless/large".into(),
@@ -339,7 +339,7 @@ fn device_read_path(epoch_secs: u64) {
         block_on(writer.flush_pending()).expect("flush_pending");
     }
 
-    let reader = FihStorage::without_maps(large.clone(), "osless/large", epoch_clock(epoch_secs));
+    let reader = RefFihStorage::without_maps(large.clone(), "osless/large", epoch_clock(epoch_secs));
     let before = large.traffic();
     let mut seen = 0;
     block_on(reader.for_each_fact_record(|_record| {
@@ -360,7 +360,7 @@ fn device_read_path(epoch_secs: u64) {
     // is gone.
     let worn = FlatIo::new();
     worn.refuse_writes(true);
-    let storage = FihStorage::without_maps(worn.clone(), "osless/worn", epoch_clock(epoch_secs));
+    let storage = RefFihStorage::without_maps(worn.clone(), "osless/worn", epoch_clock(epoch_secs));
     let fact = Fact::new(
         "osless/worn".into(),
         Content {
@@ -408,7 +408,7 @@ fn named_read_path(epoch_secs: u64) {
 
     {
         let writer =
-            FihStorage::without_maps(medium.clone(), "osless/named", epoch_clock(epoch_secs));
+            RefFihStorage::without_maps(medium.clone(), "osless/named", epoch_clock(epoch_secs));
         let fact = Fact::with_id(
             fact_id,
             "osless/named".into(),
@@ -440,7 +440,7 @@ fn named_read_path(epoch_secs: u64) {
     }
 
     // A later session that keeps nothing, which is what reads a volume it did not write.
-    let reader = FihStorage::without_maps(medium.clone(), "osless/named", epoch_clock(epoch_secs));
+    let reader = RefFihStorage::without_maps(medium.clone(), "osless/named", epoch_clock(epoch_secs));
 
     // A fact's framing is one medium read, and the payload is not among it.
     let before = medium.traffic();

@@ -14,7 +14,7 @@ use nex_fih::FihId20 as _;
 use std::time::Instant;
 
 use futures_executor::block_on;
-use nex_fih::{AsyncFactCapable, BlackboardError, Content, CoordId, Fact, FihStorage};
+use nex_fih::{AsyncFactCapable, BlackboardError, Content, CoordId, Fact, RefFihStorage};
 use nexus_storage_sim::SimIo;
 
 fn fact(id: &str, data: &[u8]) -> Fact {
@@ -43,7 +43,7 @@ fn report_conflict_check_latency() {
     const N: usize = 1_000;
     const M: usize = 200;
 
-    let store = FihStorage::new(SimIo::new(), "timing-probe");
+    let store = RefFihStorage::new(SimIo::new(), "timing-probe");
     for i in 0..N {
         block_on(store.submit_fact(&fact(&format!("f-{i}"), b"payload"))).unwrap();
     }

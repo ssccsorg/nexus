@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 
 use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
-use nex_fih::{AsyncFactCapable, Content, CoordId, Fact, FihStorage};
+use nex_fih::{AsyncFactCapable, Content, CoordId, Fact, RefFihStorage};
 
 /// An in-memory medium, shared by every storage that holds a clone of it, that keeps the keys
 /// every read asked for. The log is how a test says what a read did not ask for, which is the half
@@ -66,7 +66,7 @@ impl FileIo for MemoryIo {
     }
 }
 
-fn submit(storage: &FihStorage<MemoryIo>, payload: &str, origin: &str) -> CoordId {
+fn submit(storage: &RefFihStorage<MemoryIo>, payload: &str, origin: &str) -> CoordId {
     let fact = Fact::new(origin.into(), Content::from(payload), "writer".into());
     block_on(storage.submit_fact(&fact)).expect("the fact is accepted")
 }
@@ -74,7 +74,7 @@ fn submit(storage: &FihStorage<MemoryIo>, payload: &str, origin: &str) -> CoordI
 #[test]
 fn a_named_record_s_framing_comes_back_without_a_payload_read() {
     let medium = MemoryIo::default();
-    let writer = FihStorage::new(medium.clone(), "framing");
+    let writer = RefFihStorage::new(medium.clone(), "framing");
     let id = submit(
         &writer,
         "the payload a framing read does not ask for",
@@ -84,7 +84,7 @@ fn a_named_record_s_framing_comes_back_without_a_payload_read() {
 
     // A store that keeps no map, which is the device asking about a record it did not write: the
     // identifier is the key, so the read reaches the record and stops there.
-    let reader = FihStorage::new_without_maps(medium.clone(), "framing");
+    let reader = RefFihStorage::new_without_maps(medium.clone(), "framing");
     let before = medium.reads.lock().unwrap().len();
     let framing =
         block_on(reader.get_fact_framing(&id.to_string())).expect("the volume holds the record");
@@ -118,14 +118,14 @@ fn a_named_record_s_framing_comes_back_without_a_payload_read() {
 #[test]
 fn a_store_with_maps_and_a_store_without_them_answer_the_same_framing() {
     let medium = MemoryIo::default();
-    let writer = FihStorage::new(medium.clone(), "framing");
+    let writer = RefFihStorage::new(medium.clone(), "framing");
     let first = submit(&writer, "one", "origin/framing");
     let second = submit(&writer, "two", "origin/other");
     block_on(writer.flush_pending()).expect("the writes reach the medium");
 
-    let with_maps = FihStorage::new(medium.clone(), "framing");
+    let with_maps = RefFihStorage::new(medium.clone(), "framing");
     block_on(with_maps.rebuild_cache()).expect("the maps are built");
-    let without_maps = FihStorage::new_without_maps(medium, "framing");
+    let without_maps = RefFihStorage::new_without_maps(medium, "framing");
 
     for id in [&first, &second] {
         let held = block_on(with_maps.get_fact_framing(&id.to_string()));
@@ -138,12 +138,12 @@ fn a_store_with_maps_and_a_store_without_them_answer_the_same_framing() {
 #[test]
 fn an_identifier_the_volume_does_not_hold_is_no_framing() {
     let medium = MemoryIo::default();
-    let writer = FihStorage::new(medium.clone(), "framing");
+    let writer = RefFihStorage::new(medium.clone(), "framing");
     block_on(writer.flush_pending()).expect("the medium is settled");
 
     // An absent record is an empty answer rather than a failed read, which is what the read that
     // answers the content reports for the same name.
-    let reader = FihStorage::new_without_maps(medium, "framing");
+    let reader = RefFihStorage::new_without_maps(medium, "framing");
     assert!(
         block_on(reader.get_fact_framing("f_not_written_anywhere")).is_none(),
         "an absent record answered a framing"

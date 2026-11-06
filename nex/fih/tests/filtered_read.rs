@@ -19,7 +19,7 @@ use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
 use nex_fih::{
     AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncHintCapable, AsyncIntentCapable,
-    AsyncScanCapable, BoardState, Content, CoordId, Fact, FihStorage, Hint, Intent, IntentStatus,
+    AsyncScanCapable, BoardState, Content, CoordId, Fact, RefFihStorage, Hint, Intent, IntentStatus,
     Now, PartitionData, StateFilter,
 };
 
@@ -115,24 +115,24 @@ fn hint(id: &str, creator: &str, content: &str) -> Hint {
     }
 }
 
-fn submit_fact(storage: &FihStorage<MemoryIo>, fact: &Fact) {
+fn submit_fact(storage: &RefFihStorage<MemoryIo>, fact: &Fact) {
     block_on(storage.submit_fact(fact)).expect("the fact is accepted");
 }
 
-fn submit_intent(storage: &FihStorage<MemoryIo>, intent: &Intent) {
+fn submit_intent(storage: &RefFihStorage<MemoryIo>, intent: &Intent) {
     block_on(storage.submit_intent(intent)).expect("the intent is accepted");
 }
 
-fn submit_hint(storage: &FihStorage<MemoryIo>, hint: &Hint) {
+fn submit_hint(storage: &RefFihStorage<MemoryIo>, hint: &Hint) {
     block_on(storage.submit_hint(hint)).expect("the hint is accepted");
 }
 
 /// Three facts, two of them sharing a payload, and two submitted intents.
 ///
 /// Nothing is flushed, so every payload is in the pending buffer when the read runs.
-fn pending_volume() -> FihStorage<MemoryIo> {
+fn pending_volume() -> RefFihStorage<MemoryIo> {
     let clock = StepClock::default();
-    let storage = FihStorage::with_clock(MemoryIo::default(), "filtered", Box::new(clock.clone()));
+    let storage = RefFihStorage::with_clock(MemoryIo::default(), "filtered", Box::new(clock.clone()));
 
     clock.at_secs(S0);
     submit_fact(
@@ -165,10 +165,10 @@ fn pending_volume() -> FihStorage<MemoryIo> {
 }
 
 /// A volume whose intents cover the three lifecycle states, flushed and reopened.
-fn lifecycle_volume() -> (MemoryIo, FihStorage<MemoryIo>) {
+fn lifecycle_volume() -> (MemoryIo, RefFihStorage<MemoryIo>) {
     let medium = MemoryIo::default();
     let clock = StepClock::default();
-    let writer = FihStorage::with_clock(medium.clone(), "filtered", Box::new(clock.clone()));
+    let writer = RefFihStorage::with_clock(medium.clone(), "filtered", Box::new(clock.clone()));
 
     clock.at_secs(S0);
     submit_fact(
@@ -220,7 +220,7 @@ fn lifecycle_volume() -> (MemoryIo, FihStorage<MemoryIo>) {
     block_on(writer.flush_pending()).expect("the writes reach the medium");
     drop(writer);
 
-    let reader = FihStorage::new(medium.clone(), "filtered");
+    let reader = RefFihStorage::new(medium.clone(), "filtered");
     block_on(reader.rebuild_cache()).expect("the volume reopens");
     (medium, reader)
 }
@@ -295,7 +295,7 @@ fn conclusion_fact() -> String {
     CoordId::resolve(&format!("f_concl_{}", CoordId::resolve("i_third"))).to_string()
 }
 
-fn read(storage: &FihStorage<MemoryIo>, filter: StateFilter) -> BoardState {
+fn read(storage: &RefFihStorage<MemoryIo>, filter: StateFilter) -> BoardState {
     block_on(storage.read_state_filtered(&filter))
 }
 
@@ -655,7 +655,7 @@ fn a_reopened_volume_materializes_content_from_the_medium() {
 #[test]
 fn a_pending_delete_is_skipped_rather_than_read_as_content() {
     let clock = StepClock::default();
-    let storage = FihStorage::with_clock(MemoryIo::default(), "filtered", Box::new(clock.clone()));
+    let storage = RefFihStorage::with_clock(MemoryIo::default(), "filtered", Box::new(clock.clone()));
     clock.at_secs(S0);
     submit_fact(&storage, &fact("f_kept", "origin/a", "agent/one", "kept"));
     submit_hint(&storage, &hint("h_gone", "agent/one", "gone"));
@@ -675,10 +675,10 @@ fn a_pending_delete_is_skipped_rather_than_read_as_content() {
 }
 
 /// A partition volume: alpha holds every kind, beta holds one fact.
-fn partition_volume() -> (MemoryIo, FihStorage<MemoryIo>) {
+fn partition_volume() -> (MemoryIo, RefFihStorage<MemoryIo>) {
     let medium = MemoryIo::default();
     let clock = StepClock::default();
-    let writer = FihStorage::with_clock(medium.clone(), "partition", Box::new(clock.clone()));
+    let writer = RefFihStorage::with_clock(medium.clone(), "partition", Box::new(clock.clone()));
 
     clock.at_secs(S0);
     submit_fact(
@@ -724,7 +724,7 @@ fn partition_volume() -> (MemoryIo, FihStorage<MemoryIo>) {
     block_on(writer.flush_pending()).expect("the writes reach the medium");
     drop(writer);
 
-    let reader = FihStorage::new(medium.clone(), "partition");
+    let reader = RefFihStorage::new(medium.clone(), "partition");
     block_on(reader.rebuild_cache()).expect("the volume reopens");
     (medium, reader)
 }

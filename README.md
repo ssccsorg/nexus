@@ -77,11 +77,11 @@ tokio = { version = "1", features = ["full"] }
 
 ```rust
 use nex::io::FsIo;
-use nex::storage::core::FihStorage;
+use nex::storage::core::RefFihStorage;
 use nex_fih::{AsyncFactCapable, Content, Fact};
 
 let io = FsIo::new("/tmp/nexus-store")?;
-let store = FihStorage::new(io, "my-app");
+let store = RefFihStorage::new(io, "my-app");
 store.rebuild_cache().await?;
 
 let fact = Fact::new("user-note".to_string(), Content::from("remember this"), "my-app".into());

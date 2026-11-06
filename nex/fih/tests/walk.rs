@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 
 use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
-use nex_fih::{AsyncFactCapable, AsyncStorageRead, Content, Fact, FactRecord, FihStorage};
+use nex_fih::{AsyncFactCapable, AsyncStorageRead, Content, Fact, FactRecord, RefFihStorage};
 
 /// An in-memory medium, shared by every storage that holds a clone of it.
 ///
@@ -76,7 +76,7 @@ impl FileIo for MemoryIo {
 }
 
 /// The identifiers a walk visited, and the bytes each record's content held.
-fn walk<IO: FileIo>(storage: &FihStorage<IO>) -> (Vec<String>, Vec<usize>) {
+fn walk<IO: FileIo>(storage: &RefFihStorage<IO>) -> (Vec<String>, Vec<usize>) {
     let mut ids: Vec<String> = Vec::new();
     let mut sizes: Vec<usize> = Vec::new();
     block_on(storage.for_each_fact(|record, content| {
@@ -88,7 +88,7 @@ fn walk<IO: FileIo>(storage: &FihStorage<IO>) -> (Vec<String>, Vec<usize>) {
     (ids, sizes)
 }
 
-fn submit<IO: FileIo>(storage: &FihStorage<IO>, payload: &str, origin: &str) {
+fn submit<IO: FileIo>(storage: &RefFihStorage<IO>, payload: &str, origin: &str) {
     let fact = Fact::new(origin.into(), Content::from(payload), "walker".into());
     block_on(storage.submit_fact(&fact)).expect("the fact is accepted");
 }
@@ -96,7 +96,7 @@ fn submit<IO: FileIo>(storage: &FihStorage<IO>, payload: &str, origin: &str) {
 #[test]
 fn a_walk_sees_a_volume_another_session_wrote() {
     let medium = MemoryIo::default();
-    let writer = FihStorage::new(medium.clone(), "walk");
+    let writer = RefFihStorage::new(medium.clone(), "walk");
     submit(&writer, "first payload", "origin/one");
     submit(&writer, "second payload", "origin/one");
     submit(&writer, "third payload", "origin/two");
@@ -104,7 +104,7 @@ fn a_walk_sees_a_volume_another_session_wrote() {
 
     // A second session over the same medium, with nothing read into memory yet: this is
     // the device that is asked about a past it did not write.
-    let reader = FihStorage::new(medium, "walk");
+    let reader = RefFihStorage::new(medium, "walk");
     let (ids, mut sizes) = walk(&reader);
 
     assert_eq!(ids.len(), 3, "a walk sees every record: {ids:?}");
@@ -132,13 +132,13 @@ fn a_walk_sees_a_volume_another_session_wrote() {
 #[test]
 fn a_walk_and_a_state_read_reach_the_same_records() {
     let medium = MemoryIo::default();
-    let writer = FihStorage::new(medium.clone(), "walk");
+    let writer = RefFihStorage::new(medium.clone(), "walk");
     for payload in ["one", "two", "three", "four", "five"] {
         submit(&writer, payload, "origin/same");
     }
     block_on(writer.flush_pending()).expect("the writes reach the medium");
 
-    let reader = FihStorage::new(medium, "walk");
+    let reader = RefFihStorage::new(medium, "walk");
     block_on(reader.rebuild_cache()).expect("the cache is rebuilt");
     let mut reported: Vec<String> = block_on(reader.read_state())
         .facts
@@ -243,13 +243,13 @@ impl FileIo for PagedIo {
 #[test]
 fn a_walk_reads_the_keys_a_page_at_a_time_in_the_channel_s_order() {
     let medium = PagedIo::default();
-    let writer = FihStorage::new(medium.clone(), "walk");
+    let writer = RefFihStorage::new(medium.clone(), "walk");
     for i in 0..40 {
         submit(&writer, &format!("payload {i}"), "origin/pages");
     }
     block_on(writer.flush_pending()).expect("the writes reach the medium");
 
-    let reader = FihStorage::new(medium.clone(), "walk");
+    let reader = RefFihStorage::new(medium.clone(), "walk");
     let (visited, _) = walk(&reader);
     let visited: Vec<String> = visited.iter().map(|id| FactRecord::fact_key(id)).collect();
 
@@ -280,7 +280,7 @@ fn a_walk_reads_the_keys_a_page_at_a_time_in_the_channel_s_order() {
 #[test]
 fn a_walk_sees_writes_this_session_has_not_flushed() {
     let medium = MemoryIo::default();
-    let storage = FihStorage::new(medium, "walk");
+    let storage = RefFihStorage::new(medium, "walk");
     submit(&storage, "unflushed", "origin/pending");
     submit(&storage, "also unflushed", "origin/pending");
 
@@ -297,13 +297,13 @@ fn a_walk_sees_writes_this_session_has_not_flushed() {
 #[test]
 fn a_walk_stops_when_the_visitor_says_so() {
     let medium = MemoryIo::default();
-    let writer = FihStorage::new(medium.clone(), "walk");
+    let writer = RefFihStorage::new(medium.clone(), "walk");
     for payload in ["one", "two", "three"] {
         submit(&writer, payload, "origin/stop");
     }
     block_on(writer.flush_pending()).expect("the writes reach the medium");
 
-    let reader = FihStorage::new(medium, "walk");
+    let reader = RefFihStorage::new(medium, "walk");
     let mut visited = 0;
     block_on(reader.for_each_fact(|_record, _content| {
         visited += 1;
@@ -319,13 +319,13 @@ fn a_walk_stops_when_the_visitor_says_so() {
 #[test]
 fn a_framing_walk_visits_the_same_records_without_reading_their_content() {
     let medium = MemoryIo::default();
-    let writer = FihStorage::new(medium.clone(), "walk");
+    let writer = RefFihStorage::new(medium.clone(), "walk");
     for payload in ["one", "two", "three"] {
         submit(&writer, payload, "origin/framing");
     }
     block_on(writer.flush_pending()).expect("the writes reach the medium");
 
-    let reader = FihStorage::new(medium.clone(), "walk");
+    let reader = RefFihStorage::new(medium.clone(), "walk");
     let (with_content, _) = walk(&reader);
 
     let before = medium.reads.lock().unwrap().len();
@@ -365,7 +365,7 @@ fn a_framing_walk_visits_the_same_records_without_reading_their_content() {
 fn a_walk_visits_writes_the_medium_refused() {
     let medium = MemoryIo::default();
     *medium.refuse.lock().unwrap() = true;
-    let storage = FihStorage::new(medium.clone(), "walk");
+    let storage = RefFihStorage::new(medium.clone(), "walk");
     submit(&storage, "a write the part refuses", "origin/worn");
 
     let (ids, sizes) = walk(&storage);

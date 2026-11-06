@@ -1,23 +1,23 @@
-// ── FihSession: hydrate/buffer/flush session for FihStorage ──────
+// ── FihSession: hydrate/buffer/flush session for RefFihStorage ──────
 //
-// Wraps FihStorage<I> and provides the hydrate/flush lifecycle that
+// Wraps RefFihStorage<I> and provides the hydrate/flush lifecycle that
 // StoreSession used to provide for CompositeColdStorage.
 //
 // Unlike StoreSession, FihSession is generic over any FihIo implementation
 // and does not require separate MetaStore/BlobStore/ObjectStore instances.
 //
 // FihSession is used by storage/sim (native-only verification runner).
-// It uses block_on internally to wrap FihStorage's async methods into
+// It uses block_on internally to wrap RefFihStorage's async methods into
 // a synchronous interface for convenience. This is acceptable because
 // storage/sim targets native platforms where block_on does not hang.
 //
 // The synchronous wrapper requires the `std` feature: `block_on` needs
 // an executor, which needs std. On no_std targets (MCU) the caller
-// drives FihStorage's async methods directly from the launcher's own
+// drives RefFihStorage's async methods directly from the launcher's own
 // executor (e.g. embassy).
 
 #[cfg(feature = "std")]
-use crate::core::store::FihStorage;
+use crate::core::store::RefFihStorage;
 #[cfg(feature = "std")]
 use crate::io::file_io::FileIo;
 
@@ -27,11 +27,11 @@ use alloc::string::String;
 #[cfg(feature = "std")]
 use futures_executor::block_on;
 
-/// Session wrapper around FihStorage that manages the
+/// Session wrapper around RefFihStorage that manages the
 /// hydrate → (read/write) → flush lifecycle.
 #[cfg(feature = "std")]
 pub struct FihSession<I: FileIo> {
-    pub storage: FihStorage<I>,
+    pub storage: RefFihStorage<I>,
     flushed: bool,
 }
 
@@ -41,7 +41,7 @@ impl<I: FileIo> FihSession<I> {
     /// operations are called.
     pub fn new(io: I, project_id: &str) -> Self {
         Self {
-            storage: FihStorage::new(io, project_id),
+            storage: RefFihStorage::new(io, project_id),
             flushed: true,
         }
     }
@@ -68,7 +68,7 @@ impl<I: FileIo> FihSession<I> {
     }
 
     /// Access the underlying storage for FIH operations.
-    pub fn storage(&self) -> &FihStorage<I> {
+    pub fn storage(&self) -> &RefFihStorage<I> {
         &self.storage
     }
 }

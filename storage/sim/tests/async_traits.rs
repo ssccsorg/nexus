@@ -9,15 +9,15 @@ use nex_fih::{
     AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncHintCapable, AsyncIntentCapable,
     AsyncScanCapable, AsyncStorageRead, AsyncTimeRangeCapable, CoordId, Hint, StateFilter,
 };
-use nexus_storage_sim::FihStorage;
+use nexus_storage_sim::RefFihStorage;
 use nexus_storage_sim::SimIo;
 
 mod common;
 
-fn setup() -> FihStorage<SimIo> {
+fn setup() -> RefFihStorage<SimIo> {
     let io = SimIo::new();
     let clock = Box::new(common::FakeClock::new(1_000_000_000));
-    FihStorage::with_clock(io, "test", clock)
+    RefFihStorage::with_clock(io, "test", clock)
 }
 
 // ── AsyncStorageRead + AsyncFactCapable ────────────────────────────────

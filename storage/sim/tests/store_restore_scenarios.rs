@@ -1,6 +1,6 @@
 // ── Real-use scenarios: FIH lifecycle + Store/Restore ──────────────────
 //
-// Validates complete FihStorage workflows using rebuild_cache for
+// Validates complete RefFihStorage workflows using rebuild_cache for
 // restoration. These tests verify that the FIH StateSpace operates
 // correctly as a time-travelable knowledge store.
 
@@ -12,7 +12,7 @@ use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, Content, CoordId,
     Fact, Hint, Intent,
 };
-use nexus_storage_sim::{FihStorage, FileIo, SimIo};
+use nexus_storage_sim::{RefFihStorage, FileIo, SimIo};
 
 fn fact(id: &str, data: &str) -> Fact {
     Fact::with_id(
@@ -46,7 +46,7 @@ fn intent(id: &str, from: Vec<&str>) -> Intent {
 #[test]
 fn test_scenario_full_lifecycle_store_restore() {
     let io = SimIo::new();
-    let store = FihStorage::new(io.clone(), "s");
+    let store = RefFihStorage::new(io.clone(), "s");
 
     block_on(store.submit_fact(&fact("f1", "alpha"))).unwrap();
     block_on(store.submit_fact(&fact("f2", "beta"))).unwrap();
@@ -56,7 +56,7 @@ fn test_scenario_full_lifecycle_store_restore() {
 
     block_on(store.flush_pending()).unwrap();
 
-    let restored = FihStorage::new(io, "s");
+    let restored = RefFihStorage::new(io, "s");
     block_on(restored.rebuild_cache()).unwrap();
 
     let state = block_on(restored.read_state());
@@ -70,7 +70,7 @@ fn test_scenario_full_lifecycle_store_restore() {
 #[test]
 fn test_scenario_reverse_index_survives_rebuild() {
     let io = SimIo::new();
-    let store = FihStorage::new(io.clone(), "s");
+    let store = RefFihStorage::new(io.clone(), "s");
 
     block_on(store.submit_fact(&fact("f_a", "a"))).unwrap();
     block_on(store.submit_fact(&fact("f_b", "b"))).unwrap();
@@ -79,7 +79,7 @@ fn test_scenario_reverse_index_survives_rebuild() {
 
     block_on(store.flush_pending()).unwrap();
 
-    let restored = FihStorage::new(io, "s");
+    let restored = RefFihStorage::new(io, "s");
     block_on(restored.rebuild_cache()).unwrap();
 
     assert_eq!(restored.intents_by_fact("f_a").len(), 2);
@@ -91,7 +91,7 @@ fn test_scenario_reverse_index_survives_rebuild() {
 #[test]
 fn test_scenario_concluded_intent_references_preserved() {
     let io = SimIo::new();
-    let store = FihStorage::new(io.clone(), "s");
+    let store = RefFihStorage::new(io.clone(), "s");
 
     block_on(store.submit_fact(&fact("f_base", "base"))).unwrap();
     block_on(store.submit_intent(&intent("i_concl", vec!["f_base"]))).unwrap();
@@ -104,7 +104,7 @@ fn test_scenario_concluded_intent_references_preserved() {
 
     block_on(store.flush_pending()).unwrap();
 
-    let restored = FihStorage::new(io, "s");
+    let restored = RefFihStorage::new(io, "s");
     block_on(restored.rebuild_cache()).unwrap();
     assert_eq!(restored.intents_by_fact("f_base").len(), 1);
 }
@@ -113,7 +113,7 @@ fn test_scenario_concluded_intent_references_preserved() {
 
 #[test]
 fn test_scenario_multi_fact_conclude() {
-    let store = FihStorage::new(SimIo::new(), "s");
+    let store = RefFihStorage::new(SimIo::new(), "s");
 
     block_on(store.submit_fact(&fact("f_x", "x"))).unwrap();
     block_on(store.submit_fact(&fact("f_y", "y"))).unwrap();
@@ -131,7 +131,7 @@ fn test_scenario_multi_fact_conclude() {
 #[test]
 fn test_scenario_hints_preserved_via_rebuild() {
     let io = SimIo::new();
-    let store = FihStorage::new(io.clone(), "s");
+    let store = RefFihStorage::new(io.clone(), "s");
 
     block_on(store.submit_fact(&fact("f_h", "hint test"))).unwrap();
     block_on(store.submit_hint(&Hint {
@@ -143,7 +143,7 @@ fn test_scenario_hints_preserved_via_rebuild() {
 
     block_on(store.flush_pending()).unwrap();
 
-    let restored = FihStorage::new(io, "s");
+    let restored = RefFihStorage::new(io, "s");
     block_on(restored.rebuild_cache()).unwrap();
 
     let state = block_on(restored.read_state());
@@ -157,7 +157,7 @@ fn test_scenario_hints_preserved_via_rebuild() {
 #[test]
 fn test_scenario_incremental_flushes() {
     let io = SimIo::new();
-    let store = FihStorage::new(io.clone(), "s");
+    let store = RefFihStorage::new(io.clone(), "s");
 
     block_on(store.submit_fact(&fact("f1", "first"))).unwrap();
     block_on(store.flush_pending()).unwrap();
@@ -166,7 +166,7 @@ fn test_scenario_incremental_flushes() {
     block_on(store.submit_fact(&fact("f3", "third"))).unwrap();
     block_on(store.flush_pending()).unwrap();
 
-    let restored = FihStorage::new(io, "s");
+    let restored = RefFihStorage::new(io, "s");
     block_on(restored.rebuild_cache()).unwrap();
 
     let state = block_on(restored.read_state());
@@ -179,7 +179,7 @@ fn test_scenario_incremental_flushes() {
 #[test]
 fn test_scenario_hints_only() {
     let io = SimIo::new();
-    let store = FihStorage::new(io.clone(), "s");
+    let store = RefFihStorage::new(io.clone(), "s");
 
     block_on(store.submit_hint(&Hint {
         id: CoordId::resolve("h_feature"),
@@ -190,7 +190,7 @@ fn test_scenario_hints_only() {
 
     block_on(store.flush_pending()).unwrap();
 
-    let restored = FihStorage::new(io, "s");
+    let restored = RefFihStorage::new(io, "s");
     block_on(restored.rebuild_cache()).unwrap();
 
     let state = block_on(restored.read_state());
@@ -204,10 +204,10 @@ fn test_scenario_hints_only() {
 #[test]
 fn test_scenario_empty_store() {
     let io = SimIo::new();
-    let store = FihStorage::new(io.clone(), "s");
+    let store = RefFihStorage::new(io.clone(), "s");
     block_on(store.flush_pending()).unwrap();
 
-    let restored = FihStorage::new(io, "s");
+    let restored = RefFihStorage::new(io, "s");
     block_on(restored.rebuild_cache()).unwrap();
 
     let state = block_on(restored.read_state());
@@ -220,7 +220,7 @@ fn test_scenario_empty_store() {
 
 #[test]
 fn test_scenario_multi_agent_collaboration() {
-    let store = FihStorage::new(SimIo::new(), "s");
+    let store = RefFihStorage::new(SimIo::new(), "s");
 
     block_on(store.submit_fact(&fact("obs_42", "observation value 42"))).unwrap();
     block_on(store.submit_intent(&intent("analysis_1", vec!["obs_42"]))).unwrap();
@@ -242,7 +242,7 @@ fn test_scenario_multi_agent_collaboration() {
 
 #[test]
 fn test_scenario_content_dedup() {
-    let store = FihStorage::new(SimIo::new(), "s");
+    let store = RefFihStorage::new(SimIo::new(), "s");
 
     block_on(store.submit_fact(&fact("f_dup1", "same content"))).unwrap();
     block_on(store.submit_fact(&fact("f_dup2", "same content"))).unwrap();
@@ -260,7 +260,7 @@ fn test_scenario_content_dedup() {
 
 #[test]
 fn test_scenario_empty_from_facts_rejected() {
-    let store = FihStorage::new(SimIo::new(), "s");
+    let store = RefFihStorage::new(SimIo::new(), "s");
 
     let result = block_on(store.submit_intent(&intent("i_empty", vec![])));
     assert!(
@@ -274,13 +274,13 @@ fn test_scenario_empty_from_facts_rejected() {
 #[test]
 fn test_scenario_storage_migration() {
     let io = SimIo::new();
-    let src = FihStorage::new(io.clone(), "s");
+    let src = RefFihStorage::new(io.clone(), "s");
 
     block_on(src.submit_fact(&fact("f_mig", "migrate me"))).unwrap();
     block_on(src.submit_intent(&intent("i_mig", vec!["f_mig"]))).unwrap();
     block_on(src.flush_pending()).unwrap();
 
-    let dst = FihStorage::new(io, "s");
+    let dst = RefFihStorage::new(io, "s");
     block_on(dst.rebuild_cache()).unwrap();
 
     let state = block_on(dst.read_state());
@@ -329,7 +329,7 @@ fn test_scenario_malformed_blob_hash_recomputes_content_hash() {
     )
     .unwrap();
 
-    let store = FihStorage::new(io, "badhash");
+    let store = RefFihStorage::new(io, "badhash");
     block_on(store.rebuild_cache()).unwrap();
 
     // The record map holds the hash recomputed from the blob: the same

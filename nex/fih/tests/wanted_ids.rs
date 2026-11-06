@@ -16,7 +16,7 @@ use nex_fih::core::store::{Record, structural_path};
 use nex_fih::io::file_io::{FileIo, IoFuture};
 use nex_fih::{
     AsyncFactCapable, AsyncFilterCapable, AsyncHintCapable, AsyncIntentCapable, BoardState,
-    Content, CoordId, Fact, FihStorage, Hint, Intent, StateFilter,
+    Content, CoordId, Fact, RefFihStorage, Hint, Intent, StateFilter,
 };
 
 /// An in-memory medium, shared by every storage that holds a clone of it.
@@ -87,8 +87,8 @@ fn hint_ids_of(state: &BoardState) -> Vec<String> {
 
 /// A volume of three facts, two intents, and two hints, the first of each named by a label, so
 /// that a wanted entry can be written both ways.
-fn volume(medium: &MemoryIo) -> FihStorage<MemoryIo> {
-    let storage = FihStorage::new(medium.clone(), "wanted");
+fn volume(medium: &MemoryIo) -> RefFihStorage<MemoryIo> {
+    let storage = RefFihStorage::new(medium.clone(), "wanted");
 
     let named = Fact::with_id(
         CoordId::from_label("fact-one"),
@@ -286,7 +286,7 @@ fn a_wanted_list_longer_than_the_volume_selects_the_same_records() {
 #[should_panic(expected = "keyed by a canonical id")]
 fn a_record_key_that_is_not_canonical_is_refused() {
     let medium = MemoryIo::default();
-    let storage = FihStorage::new(medium, "wanted");
+    let storage = RefFihStorage::new(medium, "wanted");
     let path = structural_path(0u16, "origin/wanted", "writer", 0u16, 0);
     let fact = Fact::new(
         "origin/wanted".into(),
@@ -314,7 +314,7 @@ fn a_record_key_that_is_not_canonical_is_refused() {
 #[should_panic(expected = "keyed by a canonical id")]
 fn a_record_key_that_is_not_canonical_cannot_be_vacated() {
     let medium = MemoryIo::default();
-    let storage = FihStorage::new(medium, "wanted");
+    let storage = RefFihStorage::new(medium, "wanted");
     let path = structural_path(0u16, "origin/wanted", "writer", 0u16, 0);
 
     storage.vacate_record(&path, "not-an-id");

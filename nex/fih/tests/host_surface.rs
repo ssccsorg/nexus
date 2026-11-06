@@ -16,7 +16,7 @@ use futures_executor::block_on;
 use nex_fih::io::file_io::{BlockingIo, FileIo, IoFuture, SyncFileIo};
 use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, Content, ContentMeta,
-    CoordId, EvictCapable, Fact, FactCapable, FihBlackboard, FihSession, FihStorage, Hint,
+    CoordId, EvictCapable, Fact, FactCapable, FihBlackboard, FihSession, RefFihStorage, Hint,
     HintCapable, Intent, StorageRead, export_from_io, import_into_io,
 };
 
@@ -75,7 +75,7 @@ fn fact(payload: &str) -> Fact {
 /// A volume with one fact, one intent over it, and one hint.
 fn seeded() -> (MemoryIo, Fact) {
     let medium = MemoryIo::default();
-    let storage = FihStorage::new(medium.clone(), "host");
+    let storage = RefFihStorage::new(medium.clone(), "host");
     let fact = fact("the payload");
     block_on(storage.submit_fact(&fact)).expect("the fact is accepted");
     block_on(storage.submit_intent(&Intent::new(
@@ -109,7 +109,7 @@ fn a_bundle_carries_the_records_and_the_blobs_to_another_volume() {
     let target = MemoryIo::default();
     import_into_io(&SyncFileIo::new(target.clone()), &bundle).expect("the bundle imports");
 
-    let reader = FihStorage::new(target, "host");
+    let reader = RefFihStorage::new(target, "host");
     block_on(reader.rebuild_cache()).expect("the imported volume opens");
     let state = block_on(reader.read_state());
 

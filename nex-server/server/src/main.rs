@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use nex::io::fs_io::FsIo;
-use nex::storage::core::store::FihStorage;
+use nex::storage::core::store::RefFihStorage;
 use nex_client::{RpcRequest, RpcResponse};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
@@ -38,12 +38,12 @@ async fn main() {
     // Remove stale socket file
     let _ = tokio::fs::remove_file(&socket_path).await;
 
-    // Initialize FihStorage with FsIo
+    // Initialize RefFihStorage with FsIo
     let io = FsIo::new(&data_dir).unwrap_or_else(|e| {
         panic!("failed to create FsIo at {:?}: {e}", data_dir);
     });
 
-    let storage = FihStorage::with_auto_flush(io, "nex-server");
+    let storage = RefFihStorage::with_auto_flush(io, "nex-server");
     storage.rebuild_cache().await.unwrap_or_else(|e| {
         panic!("failed to rebuild cache: {e}");
     });
@@ -72,7 +72,7 @@ async fn main() {
     }
 }
 
-async fn handle_client(stream: tokio::net::UnixStream, storage: Arc<FihStorage<FsIo>>) {
+async fn handle_client(stream: tokio::net::UnixStream, storage: Arc<RefFihStorage<FsIo>>) {
     let (reader, mut writer) = stream.into_split();
     let mut lines = BufReader::new(reader).lines();
 

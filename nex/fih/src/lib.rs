@@ -12,7 +12,7 @@ extern crate std;
 // implementation layer. This crate extends fih-model with
 // nex-specific implementations.
 //
-//   core/       — FihStorage, EntityStore, FihSession, records
+//   core/       — RefFihStorage, EntityStore, FihSession, records
 //   contract/   — GovernanceGate, EvidenceChain, HintEngine, FihContract
 //   helper/     — ContentJsonExt
 //   io/         — IO re-exports from nex-io (compatibility shim)
@@ -45,7 +45,7 @@ pub use core::intent_status::IntentStatus;
 pub use core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, RecordTimeUnit};
 #[cfg(feature = "std")]
 pub use core::session::FihSession;
-pub use core::store::FihStorage;
+pub use core::store::RefFihStorage;
 pub use core::{CoordEntityStore, EntityStore, MapEntityStore, MemoryEntityStore};
 pub use detection::{
     ContradictionDetection, DetectionCapable, DetectionCheckpoint, DetectionOutput, GapDetection,

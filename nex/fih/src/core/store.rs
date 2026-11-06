@@ -1,16 +1,16 @@
-// ── FihStorage — unified FIH storage over FileIo ───────────────────────
+// ── RefFihStorage — unified FIH storage over FileIo ───────────────────────
 //
-// FihStorage is an execution unit. Each instance runs on a single thread
+// RefFihStorage is an execution unit. Each instance runs on a single thread
 // with exclusive ownership of its in-memory state (FihCoord indices,
 // entity stores, pending buffer) and I/O channel. There is no internal
 // concurrency: no Mutex, no RwLock, no thread pool. Scaling happens
-// through physical instance replication (multiple FihStorage instances,
+// through physical instance replication (multiple RefFihStorage instances,
 // each independent), not through internal sharding.
 //
-// FihStorage does NOT implement sync storage traits (FactCapable,
+// RefFihStorage does NOT implement sync storage traits (FactCapable,
 // IntentCapable, etc.). All public methods are async. This is not a
 // WASM concession — it is a consequence of storage being inherently
-// I/O-bound and FihStorage being a single-threaded execution unit.
+// I/O-bound and RefFihStorage being a single-threaded execution unit.
 // Blocking on I/O would stall the sole thread and starve all pending
 // operations. Sync callers use futures_executor::block_on externally
 // (see FihBlackboard for a convenience wrapper on native platforms).
@@ -22,10 +22,10 @@
 // exclusive borrow panics; callers must borrow cells one at a time. This
 // is the simplest correct implementation for a single-owner model. If
 // thread-safe access is needed, the caller wraps the instance in
-// Arc<Mutex<FihStorage>> — that is an external composition, not an
+// Arc<Mutex<RefFihStorage>> — that is an external composition, not an
 // internal requirement.
 //
-// No static or static mut state exists in FihStorage except fixed
+// No static or static mut state exists in RefFihStorage except fixed
 // constants. Every resource is owned by the instance. Spawning a new
 // instance is purely a construction operation with no global side
 // effects.
@@ -37,7 +37,7 @@
 //     materializes blob Content from pending writes first, then IO
 //   - conclude_intent() passes real to_fact/concluded_at to try_conclude()
 //   - all timestamps flow through Now trait, never SystemTime::now() directly
-//   - no sync trait on FihStorage (async-only)
+//   - no sync trait on RefFihStorage (async-only)
 //   - no static mutable state
 
 use crate::FihId20 as _;
@@ -178,7 +178,7 @@ pub fn structural_path(
 /// Oldest entries are evicted first; evicted blobs reload from io on
 /// demand. The bound keeps the in-memory content working set from
 /// growing unbounded with the store; tune with
-/// [`FihStorage::set_blob_cache_cap`] for workloads whose distinct blob
+/// [`RefFihStorage::set_blob_cache_cap`] for workloads whose distinct blob
 /// working set exceeds the default.
 const BLOB_CACHE_CAP: usize = 10_000;
 
@@ -295,7 +295,7 @@ impl WantedIds {
 /// All FIH trait methods are sync. They enqueue WriteOps into a buffer
 /// for batch commit by the outer FihSession layer.
 /// IO-bound operations (flush_pending, rebuild_cache) are async.
-pub struct FihStorage<I: FileIo> {
+pub struct RefFihStorage<I: FileIo> {
     pub io: I,
     project_id: String,
     clock: Box<dyn Now + Send + Sync>,
@@ -353,7 +353,7 @@ pub struct FihStorage<I: FileIo> {
     pub(crate) pending: Cell2<Vec<WriteOp>>,
 }
 
-impl<I: FileIo> FihStorage<I> {
+impl<I: FileIo> RefFihStorage<I> {
     /// Create storage with a system wall clock. Std-only: `SystemClock`
     /// wraps `std::time`. On no_std targets use `with_clock` with an
     /// injected `Now` (e.g. `EpochClock` on an MCU).
@@ -1341,13 +1341,13 @@ impl<I: FileIo> FihStorage<I> {
     /// What a named fact says about itself: its identifier, its blob hash, its origin, its
     /// creator, and when it was written.
     ///
-    /// The lookup is the one [`FihStorage::get_fact_by_id`] makes, kept in one place so the
+    /// The lookup is the one [`RefFihStorage::get_fact_by_id`] makes, kept in one place so the
     /// two reads cannot come to two records. The map answers for a volume the session holds,
     /// and a store that keeps no map reads the medium at the key the identifier implies: the
     /// address is computed, so one identifier is one read rather than a walk of the volume.
     /// An identifier the volume does not hold is `None`.
     ///
-    /// The content is what [`FihStorage::get_fact_by_id`] reads after the record. A caller
+    /// The content is what [`RefFihStorage::get_fact_by_id`] reads after the record. A caller
     /// that wants the framing alone stops at the record, and on a device that is the medium
     /// read it does not spend.
     ///
@@ -1488,7 +1488,7 @@ impl<I: FileIo> FihStorage<I> {
 
     /// Visit every fact the volume holds, one at a time, without its content.
     ///
-    /// The same walk as [`FihStorage::for_each_fact`] with one difference: a reader that
+    /// The same walk as [`RefFihStorage::for_each_fact`] with one difference: a reader that
     /// only needs what a record says about itself, which is its identifier, its origin,
     /// its creator, and when it was written, reads the framing and not the content. The
     /// content of every record a walk passes is a medium read it does not make, and on a
@@ -1735,7 +1735,7 @@ async fn load_blob(io: &impl FileIo, blob_hash: &str) -> Content {
 
 // ── AsyncStorageRead ───────────────────────────────────────────────────────
 
-impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
+impl<I: FileIo> crate::AsyncStorageRead for RefFihStorage<I> {
     fn project_id(&self) -> &str {
         &self.project_id
     }
@@ -1812,7 +1812,7 @@ impl<I: FileIo> crate::AsyncStorageRead for FihStorage<I> {
 
 // ── AsyncFactCapable ───────────────────────────────────────────────────────
 
-impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
+impl<I: FileIo> crate::AsyncFactCapable for RefFihStorage<I> {
     async fn submit_fact(&self, fact: &Fact) -> Result<CoordId, BlackboardError> {
         let id = fact.id.to_string();
         // The id is the record-layer key. A second fact at the same id is
@@ -1968,7 +1968,7 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
 
 // ── AsyncHintCapable ───────────────────────────────────────────────────────
 
-impl<I: FileIo> crate::AsyncHintCapable for FihStorage<I> {
+impl<I: FileIo> crate::AsyncHintCapable for RefFihStorage<I> {
     async fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         let record = super::record::HintRecord {
             id: hint.id.to_string(),
@@ -2005,7 +2005,7 @@ impl<I: FileIo> crate::AsyncHintCapable for FihStorage<I> {
 
 // ── AsyncIntentCapable ─────────────────────────────────────────────────────
 
-impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
+impl<I: FileIo> crate::AsyncIntentCapable for RefFihStorage<I> {
     async fn submit_intent(&self, intent: &Intent) -> Result<CoordId, BlackboardError> {
         if intent.from_facts.is_empty() {
             return Err(BlackboardError::Forbidden(
@@ -2337,7 +2337,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
 
 // ── AsyncFilterCapable (in-memory filtering) ────────────────────────────
 
-impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
+impl<I: FileIo> crate::AsyncFilterCapable for RefFihStorage<I> {
     async fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
         self.needs_maps("a filtered state read");
         // Build blob lookup map once from pending writes (avoid O(N×P)
@@ -2626,7 +2626,7 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
 
 // ── AsyncEvictCapable (in-memory eviction) ──────────────────────────────
 
-impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
+impl<I: FileIo> crate::AsyncEvictCapable for RefFihStorage<I> {
     async fn approximate_size(&self) -> usize {
         let facts = self.fact_records.borrow().len();
         let intents = self.intent_records.borrow().len();
@@ -2699,7 +2699,7 @@ impl<I: FileIo> crate::AsyncEvictCapable for FihStorage<I> {
 
 // ── AsyncScanCapable (in-memory scan) ───────────────────────────────────
 
-impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
+impl<I: FileIo> crate::AsyncScanCapable for RefFihStorage<I> {
     async fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
         let prefix = format!("partition:{}", partition);
 
@@ -2845,7 +2845,7 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
 
 // ── AsyncTimeRangeCapable (in-memory time range) ────────────────────────
 
-impl<I: FileIo> crate::AsyncTimeRangeCapable for FihStorage<I> {
+impl<I: FileIo> crate::AsyncTimeRangeCapable for RefFihStorage<I> {
     async fn time_range(&self) -> Option<Range<String>> {
         // Exact min/max over the Fact records in the application-layer
         // record map. The structural index is coordinate-ordered, but
@@ -2870,7 +2870,7 @@ impl<I: FileIo> crate::AsyncTimeRangeCapable for FihStorage<I> {
 // These delegate to the inherent methods. A reader written against the surface does not name
 // this type, which is what lets another implementation answer for the same network.
 
-impl<I: FileIo> crate::FactById for FihStorage<I> {
+impl<I: FileIo> crate::FactById for RefFihStorage<I> {
     async fn fact_by_id(&self, id: &str) -> Option<(Content, FihHash, String, String)> {
         self.get_fact_by_id(id).await
     }
@@ -2880,18 +2880,18 @@ impl<I: FileIo> crate::FactById for FihStorage<I> {
     }
 }
 
-impl<I: FileIo> crate::FactWalk for FihStorage<I> {
+impl<I: FileIo> crate::FactWalk for RefFihStorage<I> {
     async fn for_each_fact<F>(&self, visit: F) -> Result<(), String>
     where
         F: FnMut(&FactRecord, Content) -> bool,
     {
-        FihStorage::for_each_fact(self, visit).await
+        RefFihStorage::for_each_fact(self, visit).await
     }
 
     async fn for_each_fact_record<F>(&self, visit: F) -> Result<(), String>
     where
         F: FnMut(&FactRecord) -> bool,
     {
-        FihStorage::for_each_fact_record(self, visit).await
+        RefFihStorage::for_each_fact_record(self, visit).await
     }
 }

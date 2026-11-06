@@ -4,7 +4,7 @@
 // primitives, storage, contracts, and IO, and provides the scheduler
 // runtime that drives detection tasks over a Blackboard.
 //
-// All FIH types (FihStorage, FihBlackboard, Fact, Intent, etc.) are
+// All FIH types (RefFihStorage, FihBlackboard, Fact, Intent, etc.) are
 // re-exported from nex-fih for consumer convenience.
 //
 // Platform adaptation is transparent via nex-fih's Cell2<T>:
@@ -27,11 +27,11 @@ pub mod process {
 // ── Backward-compatible module aliases ──────────────────────────────────
 //
 // These modules re-export from nex-fih and nex-io so that existing
-// consumers using paths like `nex::storage::core::FihStorage` or
+// consumers using paths like `nex::storage::core::RefFihStorage` or
 // `nex::io::FileIo` continue to compile without changes.
 
 /// Backward-compatible alias: shadow module preserving deep paths.
-/// Consumers can use `nex::storage::core::FihStorage`, etc.
+/// Consumers can use `nex::storage::core::RefFihStorage`, etc.
 pub mod storage {
     /// Nested module path: nex::storage::core
     pub mod core {
@@ -69,13 +69,13 @@ pub mod helper {
 
 // ── Top-level re-exports for common types ──────────────────────────────
 //
-// These allow `use nex::FihStorage` etc. without nesting.
+// These allow `use nex::RefFihStorage` etc. without nesting.
 
 pub use nex_fih::{
     Blackboard, BlackboardError, BoardState, Cell2, Content, ContentJsonExt,
     ContradictionDetection, CoordId, DetectionCapable, DetectionOutput, EntityStore, EvictCapable,
     EvidenceChain, EvidenceEntry, Fact, FactCapable, FactRecord, FihBlackboard, FihContract,
-    FihHash, FihSession, FihStorage, GapDetection, GovernanceGate, HealthStatus, Hint, HintCapable,
+    FihHash, FihSession, RefFihStorage, GapDetection, GovernanceGate, HealthStatus, Hint, HintCapable,
     HintEngine, HintRecord, HintRule, Intent, IntentCapable, IntentRecord, IntentStatus,
     MemoryEntityStore, NexConfig, NexInstanceInfo, NexLifecycle, OrderedIndex, Query, RecordLoad,
     SemanticStore, StateChangeDetection, StorageRead, TaskStates, export_from_io, import_into_io,

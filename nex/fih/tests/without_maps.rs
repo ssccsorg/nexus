@@ -20,7 +20,7 @@ use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
 use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, BlackboardError,
-    Content, CoordId, Fact, FihStorage, Hint, Intent, IntentStatus,
+    Content, CoordId, Fact, RefFihStorage, Hint, Intent, IntentStatus,
 };
 
 /// An in-memory medium, shared by every storage that holds a clone of it.
@@ -67,11 +67,11 @@ impl FileIo for MemoryIo {
     }
 }
 
-fn without_maps(medium: &MemoryIo) -> FihStorage<MemoryIo> {
-    FihStorage::new_without_maps(medium.clone(), "without-maps")
+fn without_maps(medium: &MemoryIo) -> RefFihStorage<MemoryIo> {
+    RefFihStorage::new_without_maps(medium.clone(), "without-maps")
 }
 
-fn submit(storage: &FihStorage<MemoryIo>, payload: &str) -> CoordId {
+fn submit(storage: &RefFihStorage<MemoryIo>, payload: &str) -> CoordId {
     let fact = Fact::new(
         "origin/maps".into(),
         Content::from(payload),

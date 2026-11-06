@@ -16,7 +16,7 @@ use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
 use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, Content, CoordId, Fact, FactRecord,
-    FihStorage, Hint, HintRecord, Intent, IntentRecord,
+    RefFihStorage, Hint, HintRecord, Intent, IntentRecord,
 };
 
 #[derive(Clone, Default)]
@@ -80,7 +80,7 @@ fn fact() -> Fact {
     )
 }
 
-fn base_fact(storage: &FihStorage<MemoryIo>) -> Fact {
+fn base_fact(storage: &RefFihStorage<MemoryIo>) -> Fact {
     let fact = fact();
     block_on(storage.submit_fact(&fact)).expect("the fact is accepted");
     fact
@@ -89,7 +89,7 @@ fn base_fact(storage: &FihStorage<MemoryIo>) -> Fact {
 #[test]
 fn a_named_fact_is_read_from_the_map_or_the_medium() {
     let medium = MemoryIo::default();
-    let storage = FihStorage::new(medium.clone(), "by-name");
+    let storage = RefFihStorage::new(medium.clone(), "by-name");
     let fact = base_fact(&storage);
 
     let held = block_on(storage.get_fact_framing(&fact.id.to_string())).expect("the map holds it");
@@ -100,7 +100,7 @@ fn a_named_fact_is_read_from_the_map_or_the_medium() {
     );
 
     block_on(storage.flush_pending()).expect("the write reaches the medium");
-    let reader = FihStorage::new_without_maps(medium.clone(), "by-name");
+    let reader = RefFihStorage::new_without_maps(medium.clone(), "by-name");
     assert!(
         block_on(reader.get_fact_framing(&fact.id.to_string())).is_some(),
         "a store without maps reads the medium"
@@ -109,14 +109,14 @@ fn a_named_fact_is_read_from_the_map_or_the_medium() {
     // A record the medium holds and the reader cannot decode is reported as absent.
     let corrupted = MemoryIo::default();
     corrupted.put(&FactRecord::fact_key(&fact.id.to_string()), b"not a record");
-    let reader = FihStorage::new_without_maps(corrupted, "by-name");
+    let reader = RefFihStorage::new_without_maps(corrupted, "by-name");
     assert!(block_on(reader.get_fact_framing(&fact.id.to_string())).is_none());
 }
 
 #[test]
 fn a_named_intent_carries_its_description_only_when_it_has_one() {
     let medium = MemoryIo::default();
-    let storage = FihStorage::new(medium.clone(), "by-name");
+    let storage = RefFihStorage::new(medium.clone(), "by-name");
     let base = base_fact(&storage);
     let with_text = Intent::new(
         CoordId::resolve("i_with_text"),
@@ -151,7 +151,7 @@ fn a_named_intent_carries_its_description_only_when_it_has_one() {
     assert!(!storage.intent_exists("i_absent"));
 
     block_on(storage.flush_pending()).expect("the writes reach the medium");
-    let reader = FihStorage::new_without_maps(medium.clone(), "by-name");
+    let reader = RefFihStorage::new_without_maps(medium.clone(), "by-name");
     assert!(
         block_on(reader.get_intent("i_with_text"))
             .expect("the medium holds the intent")
@@ -166,14 +166,14 @@ fn a_named_intent_carries_its_description_only_when_it_has_one() {
         &IntentRecord::intent_key(&with_text.id.to_string()),
         b"not a record",
     );
-    let reader = FihStorage::new_without_maps(corrupted, "by-name");
+    let reader = RefFihStorage::new_without_maps(corrupted, "by-name");
     assert!(block_on(reader.get_intent("i_with_text")).is_none());
 }
 
 #[test]
 fn a_named_hint_is_read_from_the_map_or_the_medium() {
     let medium = MemoryIo::default();
-    let storage = FihStorage::new(medium.clone(), "by-name");
+    let storage = RefFihStorage::new(medium.clone(), "by-name");
     let hint = Hint {
         id: CoordId::resolve("h_named"),
         content: "what the hint says".into(),
@@ -194,7 +194,7 @@ fn a_named_hint_is_read_from_the_map_or_the_medium() {
     assert!(block_on(storage.get_hint("h_absent")).is_none());
 
     block_on(storage.flush_pending()).expect("the write reaches the medium");
-    let reader = FihStorage::new_without_maps(medium.clone(), "by-name");
+    let reader = RefFihStorage::new_without_maps(medium.clone(), "by-name");
     assert!(
         block_on(reader.get_hint("h_named")).is_some(),
         "a store without maps reads the medium"
@@ -203,13 +203,13 @@ fn a_named_hint_is_read_from_the_map_or_the_medium() {
 
     let corrupted = MemoryIo::default();
     corrupted.put(&HintRecord::hint_key(&hint.id.to_string()), b"not a record");
-    let reader = FihStorage::new_without_maps(corrupted, "by-name");
+    let reader = RefFihStorage::new_without_maps(corrupted, "by-name");
     assert!(block_on(reader.get_hint("h_named")).is_none());
 }
 
 #[test]
 fn the_inverse_index_answers_by_fact_and_keeps_concluded_intents() {
-    let storage = FihStorage::new(MemoryIo::default(), "by-name");
+    let storage = RefFihStorage::new(MemoryIo::default(), "by-name");
     let base = base_fact(&storage);
     for id in ["i_one", "i_two"] {
         let intent = Intent::new(
@@ -250,7 +250,7 @@ fn the_inverse_index_answers_by_fact_and_keeps_concluded_intents() {
 fn a_semantic_index_is_empty_without_a_registered_store() {
     // An index is assigned when a fact is handed to a semantic store. With none
     // registered there is no index, so a lookup has nothing to resolve.
-    let storage = FihStorage::new(MemoryIo::default(), "by-name");
+    let storage = RefFihStorage::new(MemoryIo::default(), "by-name");
     let fact = Fact::with_id(
         CoordId::resolve("f_one"),
         "origin/one".into(),

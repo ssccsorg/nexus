@@ -1,4 +1,4 @@
-// ── Core storage engine: FihStorage ───────────────────────────────────
+// ── Core storage engine: RefFihStorage ───────────────────────────────────
 //
 // Built-in storage engine for the nexus runtime. Implements the full FIH
 // lifecycle (Fact, Intent, Hint) on top of the IO abstraction layer.
@@ -29,4 +29,4 @@ pub use intent_status::IntentStatus;
 pub use record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
 #[cfg(feature = "std")]
 pub use session::FihSession;
-pub use store::FihStorage;
+pub use store::RefFihStorage;

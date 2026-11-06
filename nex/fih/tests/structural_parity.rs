@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 
 use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
-use nex_fih::{AsyncFactCapable, AsyncFilterCapable, Content, Fact, FihStorage, Now, StateFilter};
+use nex_fih::{AsyncFactCapable, AsyncFilterCapable, Content, Fact, RefFihStorage, Now, StateFilter};
 
 const DAY_NS: u64 = 86_400_000_000_000;
 /// The day the volume starts on, chosen inside the coordinate space rather than at 0.
@@ -92,7 +92,7 @@ fn day(days: u64) -> u64 {
 
 fn submit(
     clock: &StepClock,
-    storage: &FihStorage<MemoryIo>,
+    storage: &RefFihStorage<MemoryIo>,
     at_nanos: u64,
     origin: &str,
     creator: &str,
@@ -109,10 +109,10 @@ fn submit(
 /// The layout is what makes the pruning cases distinguishable: the earliest two share
 /// the origin, the next two share a creator, and the last one is alone on its day. The
 /// medium is returned so a test can reopen the volume in a second session.
-fn volume() -> (MemoryIo, FihStorage<MemoryIo>, [String; 5]) {
+fn volume() -> (MemoryIo, RefFihStorage<MemoryIo>, [String; 5]) {
     let medium = MemoryIo::default();
     let clock = StepClock::default();
-    let storage = FihStorage::with_clock(medium.clone(), "structural", Box::new(clock.clone()));
+    let storage = RefFihStorage::with_clock(medium.clone(), "structural", Box::new(clock.clone()));
     let ids = [
         submit(
             &clock,
@@ -165,7 +165,7 @@ fn sorted(mut ids: Vec<String>) -> Vec<String> {
 }
 
 /// The two paths over one filter, both sorted, and the assertion that they agree.
-fn compare(storage: &FihStorage<MemoryIo>, filter: &StateFilter) -> Vec<String> {
+fn compare(storage: &RefFihStorage<MemoryIo>, filter: &StateFilter) -> Vec<String> {
     let mut indexed = storage.structural_fact_ids(filter);
     let mut scanned: Vec<String> = block_on(storage.read_state_filtered(filter))
         .facts
@@ -336,7 +336,7 @@ fn the_two_paths_agree_after_a_reopen() {
     let (medium, writer, ids) = volume();
     drop(writer);
 
-    let reader = FihStorage::new(medium, "structural");
+    let reader = RefFihStorage::new(medium, "structural");
     block_on(reader.rebuild_cache()).expect("the volume reopens");
 
     let filter = StateFilter {

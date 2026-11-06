@@ -28,7 +28,7 @@ use core::fmt::Debug;
 
 // ── Platform-adaptive async trait bounds ───────────────────────────
 //
-// On native/WASIX: require Send + Sync so FihStorage is Send + Sync.
+// On native/WASIX: require Send + Sync so RefFihStorage is Send + Sync.
 // On wasm32-unknown-unknown: use ?Send (single-threaded).
 // External implementations use the same trait regardless of platform.
 
