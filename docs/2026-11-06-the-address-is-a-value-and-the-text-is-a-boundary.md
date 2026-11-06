@@ -104,41 +104,60 @@ opposite trade and the correct one: a record is placed once and looked up many t
 
 ## What was measured and left
 
-Two sites pay the same cost and were left unchanged. Both are recorded here with the reason and the price.
+One site still pays both conversions, and it is outside this crate.
 
 | Site | Cost | Why it stays |
 |:---|:---|:---|
-| `fih/wanted_ids/scan` | 121.9 us to 133.6 us (+9.6%) | `WantedIds` renders one string per wanted id, and the record maps it probes are keyed by text |
-| `fih/wanted_ids/struct` | 1.506 ms to 1.536 ms (+2.0%) | the structural path is dominated by the index walk, and the text is a minor part |
-| ktema `read_framing` | an estimated 90 ns of a 1.08 us read, from the parse and the render | the engine delegates to a store keyed by text, so a typed argument would still render |
+| ktema `read_framing` | an estimated 90 ns of a 1.08 us read, and one of the two conversions is now redundant | the engine resolves a name, renders it, and the store resolves the text again; a typed entry point on the store removes the round trip |
 
-The common cause is one decision: the record maps, `fact_records`, `intent_records`, and `hint_records`, are
-keyed by the canonical text. Each is a public field, and several callers outside the crate read it.
+The two filter benchmarks this note first recorded as left are applied in the section that follows.
 
-## The next step and its cost
+## The record layer, keyed by the address
 
-Keying the record maps by the address removes the render from every read, not only from this one lookup. The
-change is contained in the crate apart from four keyed accesses, and it preserves ordering because the notation
-is order preserving.
+The three record maps and the structural index hold `CoordId`. A text entry point resolves once and delegates;
+everything behind it compares values.
 
-| Work | Note |
+| Change | Effect |
 |:---|:---|
-| change three field types | `CoordId<20>` keys |
-| update the chokepoints | `place_record`, `vacate_record`, and the structural index |
-| update four outside accesses | `apps/nex-calc-fihcontract`, one benchmark |
-| keep the serialized record | the format keeps the text, so no volume changes |
+| `fact_records`, `intent_records`, `hint_records` keyed by `CoordId` | a lookup that holds an address renders nothing |
+| `WantedIds` holds addresses and compares them | the wanted text is parsed once per call, not once per candidate |
+| the structural index holds addresses | the structural path stops parsing the candidates it materializes |
+| `CoordId` defaults to `COORD_ID_DEPTH` | the depth literal is gone, and one constant sets the width |
 
-The blocker is the public field, not the type. A field that is read from outside the crate is a contract, so
-the change also states which of those readers keep their access.
+| Benchmark | Text keys | Address keys | Change |
+|:---|---:|---:|---:|
+| `fih/wanted_ids/scan` | 133.6 us | 95.6 us | -28% |
+| `fih/wanted_ids/struct` | 1.536 ms | 1.015 ms | -34% |
+| `fih/intents_by_fact_100` | 33.4 us | 13.0 us | -61% |
+
+The structural path is the one that shows why the container matters and the argument alone does not. Keying only
+the record maps made `struct` 50% slower, because the index handed over text that the lookup then parsed. The
+index is a container too, so it took the address, and the 50% became a 34% gain.
+
+Three things are unchanged by design.
+
+- The serialized record keeps the text, so no volume changes and no migration exists.
+- Sorting by the key keeps its order, because the notation is order preserving. A map keyed by the address
+  sorts as a map keyed by its text did, which is what let the sort expressions stay as they were.
+- The text a caller prints is the id the record already carries, so iteration renders nothing it did not
+  already hold.
+
+The cost moves to the boundary: a text entry resolves once per call, and `place_record` resolves once per record
+it places. A record is placed once and read many times, so the trade faces the reads.
 
 ## Verification
 
 ```bash
-cargo test -p nex-fih -p nexus-storage-sim     # 100 and the simulation suite, green
-cargo clippy -p nex-fih --all-targets -- -D warnings
+cargo test --workspace --no-fail-fast          # run it with TMPDIR short, see below
+cargo clippy --workspace --all-targets -- -D warnings
 cargo bench -p nexus-bench --bench bench -- "fih/intents_by_fact_100"
 cargo bench -p nexus-bench --bench wanted_ids
 ```
+
+The `nexd` integration tests bind a Unix socket under the system temporary directory. A deep `TMPDIR` exceeds
+`SUN_LEN`, the server fails to bind, and all twenty-eight tests fail with a message that names the path rather
+than the length. Run them with `TMPDIR=/tmp` in a sandbox that sets a long temporary path; they pass in 3.6
+seconds once the socket fits.
 
 For a comparison across commits, build the earlier commit in a worktree and run the same filter in both trees.
 The criterion baseline is the previous run in the same target directory, so two runs of one tree compare a tree
