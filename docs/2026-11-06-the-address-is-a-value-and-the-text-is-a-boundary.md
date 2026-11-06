@@ -104,13 +104,7 @@ opposite trade and the correct one: a record is placed once and looked up many t
 
 ## What was measured and left
 
-One site still pays both conversions, and it is outside this crate.
-
-| Site | Cost | Why it stays |
-|:---|:---|:---|
-| ktema `read_framing` | an estimated 90 ns of a 1.08 us read, and one of the two conversions is now redundant | the engine resolves a name, renders it, and the store resolves the text again; a typed entry point on the store removes the round trip |
-
-The two filter benchmarks this note first recorded as left are applied in the section that follows.
+Nothing. The two filter benchmarks and the ktema read path this note first recorded as left are applied here.
 
 ## The record layer, keyed by the address
 
@@ -123,6 +117,7 @@ everything behind it compares values.
 | `WantedIds` holds addresses and compares them | the wanted text is parsed once per call, not once per candidate |
 | the structural index holds addresses | the structural path stops parsing the candidates it materializes |
 | `CoordId` defaults to `COORD_ID_DEPTH` | the depth literal is gone, and one constant sets the width |
+| the by-name reads take the typed doors | a name is parsed once and rendered once, and the store parses nothing |
 
 | Benchmark | Text keys | Address keys | Change |
 |:---|---:|---:|---:|
@@ -159,19 +154,19 @@ The `nexd` integration tests bind a Unix socket under the system temporary direc
 than the length. Run them with `TMPDIR=/tmp` in a sandbox that sets a long temporary path; they pass in 3.6
 seconds once the socket fits.
 
-The measurement set runs its volumes in argument order, and the first volume in the process is ten to twenty-five
-percent slower on every number, `open` included, and `open` touches no record map. Running the same pair in the
-other order moves the penalty to the other volume and clears the first. Compare volumes in the same position, or
-run the set twice and read the second run.
+The measurement set is sensitive to the machine's load. Six runs over four builds produced 1000-record query medians
+of 127.2, 127.5, 127.8 and 180.4, 201.0 microseconds on code paths that differ by nothing that touches that query.
+The slow runs were taken while builds were running in other shells. A comparison counts only between runs taken
+on an idle machine, and two runs that agree within a few percent are worth more than one run that does not.
 
-Against the text-keyed build, the ktema set is neutral once that position is held fixed.
+Against the text-keyed build, with both sides measured on an idle machine, the ktema set is neutral.
 
 | Volume | Metric | Text keys | Address keys |
 |:---|:---|---:|---:|
-| 1000 records | query | 127.2 us | 132.6 us |
-| 1000 records | point read | 1.084 us | 1.125 us |
-| 10000 records | query | 2638 us | 2419 us |
-| 10000 records | point read | 1.625 us | 1.584 us |
+| 1000 records | query | 127.2 us | 127.8 us |
+| 1000 records | point read | 1.084 us | 1.083 us |
+| 10000 records | query | 2638 us | 2583 us |
+| 10000 records | point read | 1.625 us | 1.583 us |
 
 The answers and the medium bytes are identical in both builds, which is the property that makes the comparison
 meaningful at all.
