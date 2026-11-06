@@ -59,6 +59,19 @@ operations, and a layer that keeps records supplies them to itself.
 deployment that needs durability supplies the layer that holds the records, because that is
 where durability is decided.
 
+## The demonstration
+
+`storage/ref` is a taste of the shape, not a storage. It reads a volume through the key space,
+answers one point read, and lists keys, so a reader can see what the address guarantees before
+choosing an implementation.
+
+The ceiling is the point. A demonstration may hold records in memory and show the shape: a key
+space, a point read, a listing, and a round trip. It may not reach the level a deployment runs
+at. That means no medium format of its own, no durability or recovery, no index, no bounded
+device read, and no performance claim. A demonstration that gains one of those has become the
+layer this repository does not carry, and the change is refused on that ground rather than on
+the size of the diff.
+
 ## What leaves the repository
 
 The storage layer takes its own material with it.
@@ -92,7 +105,9 @@ Milestone 5 adds the boundary rule to `AGENTS.md`. It is done.
 ## Gates
 
 - the tree builds and passes its tests with the in-memory demonstration only
-- the tree holds no record, walks no medium, and writes no medium
+- the tree holds no record of its own, walks no medium, and writes no medium
+- the demonstration gains none of a medium format, durability, recovery, an index, a bounded
+  device read, or a performance claim
 - the read surface's conformance tests pass over any implementation a consumer supplies
 - the whitepaper stops claiming storage performance once milestone 4 lands
 
