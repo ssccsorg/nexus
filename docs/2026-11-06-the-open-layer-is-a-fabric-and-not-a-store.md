@@ -84,8 +84,14 @@ The storage layer takes its own material with it.
   cost, the flat index size, the per-fact record cost, the filter speedups, and the walk peak
   against a whole-volume read
 
-The network keeps its own measured claims: addressing, provenance, lifecycle, conflict
-detection, and replay. Those describe behaviour this repository still carries.
+The network keeps its own claims: addressing, provenance, lifecycle, conflict detection, and
+replay. Those describe behaviour this repository still carries, and they are the claims the
+record model is.
+
+The measurements leave with the implementation rather than staying under a new attribution.
+This repository is the semantics of the state network, and a storage benchmark measures a
+layer that is not its subject. A reader who wants the numbers wants them from whoever ships
+the implementation.
 
 ## Order
 
@@ -98,7 +104,8 @@ the removed modules.
 Milestone 3 removes the modules, the device verification, and the storage benches from this
 tree.
 
-Milestone 4 revises the whitepaper and removes the storage material from it.
+Milestone 4 revises the whitepaper to the semantics and removes the storage material, which
+by then has no implementation in this repository to attribute it to.
 
 Milestone 5 adds the boundary rule to `AGENTS.md`. It is done.
 
