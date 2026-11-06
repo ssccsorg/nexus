@@ -328,10 +328,11 @@ pub struct FihStorage<I: FileIo> {
     /// From-fact to intent ids inverse index (Step 3, #176). Kept in sync
     /// by `place_record` (link) and `vacate_record` (unlink) for every
     /// intent, so `intents_by_fact` is O(fan-out) instead of an O(N)
-    /// scan. Keys are the canonical CoordId strings stored in
-    /// `IntentRecord::from_facts`; concluded intents stay linked (their
+    /// scan. The key is the address and not its text: a lookup that holds
+    /// an id then pays no parse and no render, and the text is resolved
+    /// once where the record arrives. Concluded intents stay linked (their
     /// from_facts never change).
-    fact_to_intents: Cell2<HashMap<String, Vec<String>>>,
+    fact_to_intents: Cell2<HashMap<CoordId<20>, Vec<String>>>,
     /// Content-addressed blob cache (#173 follow-up). Blobs are immutable
     /// (hash to content), so a cache keyed by blob hash never needs
     /// invalidation. Populated on first materialization and served on
@@ -891,20 +892,24 @@ impl<I: FileIo> FihStorage<I> {
         CoordId::resolve(intent_id).to_string()
     }
 
-    /// Query intents that reference a given fact.
+    /// Query intents that reference a given fact, named by its text.
     ///
     /// The from-fact to intent inverse index is kept in sync by
     /// `place_record` and `vacate_record` (Step 3, #176), so this is an
-    /// O(fan-out) lookup instead of an O(N) scan. The fact_id is resolved
-    /// via CoordId::resolve to match the canonical CoordId format stored
-    /// in IntentRecord.from_facts. Concluded intents remain referenced
-    /// (their from_facts never change).
+    /// O(fan-out) lookup instead of an O(N) scan. The index is keyed by the
+    /// address, so the text is resolved once here and a caller that already
+    /// holds one takes [`Self::intents_by_fact_id`] and pays nothing.
+    /// Concluded intents remain referenced (their from_facts never change).
     pub fn intents_by_fact(&self, fact_id: &str) -> Vec<String> {
+        self.intents_by_fact_id(CoordId::<20>::resolve(fact_id))
+    }
+
+    /// Query intents that reference a fact the caller already holds as an address.
+    pub fn intents_by_fact_id(&self, fact: CoordId<20>) -> Vec<String> {
         self.needs_maps("an intent lookup by fact");
-        let normalized = crate::CoordId::resolve(fact_id).to_string();
         self.fact_to_intents
             .borrow()
-            .get(&normalized)
+            .get(&fact)
             .cloned()
             .unwrap_or_default()
     }
@@ -1005,7 +1010,7 @@ impl<I: FileIo> FihStorage<I> {
                 // from_facts, so the net entry is unchanged.
                 let mut index = self.fact_to_intents.borrow_mut();
                 for fact in from_facts {
-                    let entry = index.entry(fact.clone()).or_default();
+                    let entry = index.entry(CoordId::<20>::resolve(fact)).or_default();
                     if !entry.iter().any(|x| x == id) {
                         entry.push(id.to_string());
                     }
@@ -1076,7 +1081,7 @@ impl<I: FileIo> FihStorage<I> {
                     .unwrap_or_default();
                 let mut index = self.fact_to_intents.borrow_mut();
                 for fact in from_facts {
-                    if let Some(entry) = index.get_mut(&fact) {
+                    if let Some(entry) = index.get_mut(&CoordId::<20>::resolve(&fact)) {
                         entry.retain(|x| x != id);
                     }
                 }
