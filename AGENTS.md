@@ -89,3 +89,10 @@ digraph DOTGraph {
 
 - Split codes as following their roles - do not code all in `lib.rs`.
 - Unit tests should be always located in `/tests` not in host code files.
+
+### Layer boundary
+
+- This repository connects, addresses, and records. It does not implement
+  storage. A change that lets this tree hold records, index them, walk a medium,
+  or persist durably is out of scope for this layer and is removed. See issue
+  #229 and `docs/2026-11-06-the-open-layer-is-a-fabric-and-not-a-store.md`.
