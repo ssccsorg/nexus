@@ -1199,8 +1199,8 @@ impl<I: FileIo> FihStorage<I> {
     /// A record the medium holds and this reader cannot decode is an error and not an
     /// absent record: reporting it absent would invite the overwrite the guard exists to
     /// stop.
-    async fn medium_fact_record(&self, id: &str) -> Result<Option<FactRecord>, String> {
-        let key = FactRecord::fact_key(id);
+    async fn medium_fact_record(&self, id: CoordId) -> Result<Option<FactRecord>, String> {
+        let key = FactRecord::fact_key(&id.to_string());
         let Some(bytes) = self.io.read(&key).await? else {
             return Ok(None);
         };
@@ -1223,8 +1223,8 @@ impl<I: FileIo> FihStorage<I> {
     /// The address is the identifier the caller supplied, so the key follows from it: one
     /// identifier is one read. A record the medium holds and this reader cannot decode is an
     /// error rather than an absent record, which is the rule the fact's medium read carries.
-    async fn medium_intent_record(&self, id: &str) -> Result<Option<IntentRecord>, String> {
-        let key = IntentRecord::intent_key(&self.normalize_intent_id(id));
+    async fn medium_intent_record(&self, id: CoordId) -> Result<Option<IntentRecord>, String> {
+        let key = IntentRecord::intent_key(&id.to_string());
         let Some(bytes) = self.io.read(&key).await? else {
             return Ok(None);
         };
@@ -1235,8 +1235,8 @@ impl<I: FileIo> FihStorage<I> {
     }
 
     /// The hint the medium holds at `id`, if any.
-    async fn medium_hint_record(&self, id: &str) -> Result<Option<HintRecord>, String> {
-        let key = HintRecord::hint_key(&CoordId::resolve(id).to_string());
+    async fn medium_hint_record(&self, id: CoordId) -> Result<Option<HintRecord>, String> {
+        let key = HintRecord::hint_key(&id.to_string());
         let Some(bytes) = self.io.read(&key).await? else {
             return Ok(None);
         };
@@ -1400,7 +1400,7 @@ impl<I: FileIo> FihStorage<I> {
         };
         match held {
             Some(record) => Some(record),
-            None if !*self.maps.borrow() => match self.medium_fact_record(&key.to_string()).await {
+            None if !*self.maps.borrow() => match self.medium_fact_record(key).await {
                 Ok(record) => record,
                 Err(error) => {
                     log::warn!("get_fact_framing: {error}");
@@ -1434,8 +1434,7 @@ impl<I: FileIo> FihStorage<I> {
         };
         let record = match held {
             Some(record) => record,
-            None if !*self.maps.borrow() => match self.medium_intent_record(&key.to_string()).await
-            {
+            None if !*self.maps.borrow() => match self.medium_intent_record(key).await {
                 Ok(record) => record?,
                 Err(error) => {
                     log::warn!("get_intent: {error}");
@@ -1472,7 +1471,7 @@ impl<I: FileIo> FihStorage<I> {
         };
         match held {
             Some(record) => Some(record),
-            None if !*self.maps.borrow() => match self.medium_hint_record(&key.to_string()).await {
+            None if !*self.maps.borrow() => match self.medium_hint_record(key).await {
                 Ok(record) => record,
                 Err(error) => {
                     log::warn!("get_hint: {error}");
@@ -1878,7 +1877,7 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
             None => match self.pending_fact_record(&id) {
                 Some(record) => Some(record),
                 None => self
-                    .medium_fact_record(&id)
+                    .medium_fact_record(CoordId::resolve(&id))
                     .await
                     .map_err(|e| BlackboardError::Internal(format!("read fact {id}: {e}")))?,
             },
