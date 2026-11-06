@@ -55,8 +55,8 @@ use core::ops::Range;
 use sha2::Digest;
 
 use crate::{
-    BlackboardError, BoardState, Content, CoordId, Fact, FihHash, Hint, Intent, PartitionData,
-    StateFilter,
+    BlackboardError, BoardState, COORD_ID_DEPTH, Content, CoordId, Fact, FihHash, Hint, Intent,
+    PartitionData, StateFilter,
 };
 use nex_core::Now;
 
@@ -216,7 +216,7 @@ where
 /// The list is sorted, so membership is a lookup rather than a walk of the wanted entries for
 /// every candidate.
 pub(crate) struct WantedIds {
-    canonical: Vec<String>,
+    canonical: Vec<CoordId>,
     /// Whether the filter named ids at all. An absent list restricts nothing, while a present
     /// and empty one names no record and excludes every candidate, and those are different
     /// answers.
@@ -231,10 +231,7 @@ impl WantedIds {
                 restricted: false,
             };
         };
-        let mut canonical: Vec<String> = ids
-            .iter()
-            .map(|id| CoordId::resolve(id).to_string())
-            .collect();
+        let mut canonical: Vec<CoordId> = ids.iter().map(|id| CoordId::resolve(id)).collect();
         // Unstable for the reason `sorted_matches` gives, and a repeated wanted id carries no
         // meaning, so there is no order to preserve.
         canonical.sort_unstable();
@@ -247,14 +244,13 @@ impl WantedIds {
 
     /// Whether the record at `id` is one the filter named.
     ///
-    /// `id` is the record-map key the caller's loop holds, not a reference to resolve.
-    pub(crate) fn allows(&self, id: &str) -> bool {
+    /// `id` is the record-map key the caller's loop holds, so the answer is a comparison of
+    /// addresses and the wanted text is parsed once in `new`, not once a candidate.
+    pub(crate) fn allows(&self, id: CoordId) -> bool {
         if !self.restricted {
             return true;
         }
-        self.canonical
-            .binary_search_by(|held| held.as_str().cmp(id))
-            .is_ok()
+        self.canonical.binary_search(&id).is_ok()
     }
 
     /// Whether the names are the side to walk, given how many records the map holds.
@@ -272,11 +268,11 @@ impl WantedIds {
     /// One lookup per name, so the work is the names and not the volume.
     pub(crate) fn lookup<'a, R, F>(
         &'a self,
-        map: &'a HashMap<String, R>,
+        map: &'a HashMap<CoordId, R>,
         keep: F,
-    ) -> Vec<(&'a String, &'a R)>
+    ) -> Vec<(&'a CoordId, &'a R)>
     where
-        F: Fn(&String, &R) -> bool,
+        F: Fn(&CoordId, &R) -> bool,
     {
         let mut matched = Vec::new();
         for id in &self.canonical {
@@ -321,10 +317,13 @@ pub struct FihStorage<I: FileIo> {
     /// a consumer that never queries it should not pay for it. The
     /// `iter_tree` ascending order contract is preserved.
     #[cfg(feature = "structural-index")]
-    pub(crate) store: Cell2<tagma_core::CoordSpaceN<6, Vec<String>>>,
-    pub fact_records: Cell2<HashMap<String, FactRecord>>,
-    pub intent_records: Cell2<HashMap<String, IntentRecord>>,
-    pub hint_records: Cell2<HashMap<String, HintRecord>>,
+    pub(crate) store: Cell2<tagma_core::CoordSpaceN<6, Vec<CoordId>>>,
+    /// The record maps are keyed by the address and not its text. A lookup that holds an id pays no
+    /// conversion, and the text a caller prints is the `id` field the record itself carries. The
+    /// depth is `COORD_ID_DEPTH`, the one place the identity's width is declared.
+    pub fact_records: Cell2<HashMap<CoordId, FactRecord>>,
+    pub intent_records: Cell2<HashMap<CoordId, IntentRecord>>,
+    pub hint_records: Cell2<HashMap<CoordId, HintRecord>>,
     /// From-fact to intent ids inverse index (Step 3, #176). Kept in sync
     /// by `place_record` (link) and `vacate_record` (unlink) for every
     /// intent, so `intents_by_fact` is O(fan-out) instead of an O(N)
@@ -332,7 +331,7 @@ pub struct FihStorage<I: FileIo> {
     /// an id then pays no parse and no render, and the text is resolved
     /// once where the record arrives. Concluded intents stay linked (their
     /// from_facts never change).
-    fact_to_intents: Cell2<HashMap<CoordId<20>, Vec<String>>>,
+    fact_to_intents: Cell2<HashMap<CoordId, Vec<String>>>,
     /// Content-addressed blob cache (#173 follow-up). Blobs are immutable
     /// (hash to content), so a cache keyed by blob hash never needs
     /// invalidation. Populated on first materialization and served on
@@ -557,13 +556,13 @@ impl<I: FileIo> FihStorage<I> {
         // there are no ties for stability to break.
         {
             let recs = self.fact_records.borrow();
-            let mut fact_recs: Vec<(&String, &FactRecord)> = recs.iter().collect();
+            let mut fact_recs: Vec<(&CoordId, &FactRecord)> = recs.iter().collect();
             fact_recs.sort_unstable_by(|a, b| a.0.cmp(b.0));
             for (id, r) in fact_recs {
                 let content_hash = Self::blob_hash_or_zero(&r.blob_hash);
                 fact_blob_jobs.push((facts.len(), r.blob_hash.clone()));
                 facts.push(Fact {
-                    id: CoordId::resolve(id),
+                    id: *id,
                     origin: r.origin.clone(),
                     content_hash,
                     content: Content {
@@ -576,17 +575,17 @@ impl<I: FileIo> FihStorage<I> {
         }
         {
             let recs = self.intent_records.borrow();
-            let mut intent_recs: Vec<(&String, &IntentRecord)> = recs.iter().collect();
+            let mut intent_recs: Vec<(&CoordId, &IntentRecord)> = recs.iter().collect();
             intent_recs.sort_unstable_by(|a, b| a.0.cmp(b.0));
             for (id, r) in intent_recs {
                 let description = if r.description_hash.is_empty() {
-                    id.clone()
+                    r.id.clone()
                 } else {
                     desc_jobs.push((intents.len(), r.description_hash.clone()));
                     String::new()
                 };
                 intents.push(Intent {
-                    id: CoordId::resolve(id),
+                    id: *id,
                     from_facts: r.from_facts.iter().map(|s| CoordId::resolve(s)).collect(),
                     description,
                     creator: r.creator.clone(),
@@ -618,11 +617,11 @@ impl<I: FileIo> FihStorage<I> {
         }
         {
             let recs = self.hint_records.borrow();
-            let mut hint_recs: Vec<(&String, &HintRecord)> = recs.iter().collect();
+            let mut hint_recs: Vec<(&CoordId, &HintRecord)> = recs.iter().collect();
             hint_recs.sort_unstable_by(|a, b| a.0.cmp(b.0));
             for (id, r) in hint_recs {
                 hints.push(Hint {
-                    id: CoordId::resolve(id),
+                    id: *id,
                     content: r.content.clone(),
                     creator: r.creator.clone(),
                 });
@@ -901,11 +900,11 @@ impl<I: FileIo> FihStorage<I> {
     /// holds one takes [`Self::intents_by_fact_id`] and pays nothing.
     /// Concluded intents remain referenced (their from_facts never change).
     pub fn intents_by_fact(&self, fact_id: &str) -> Vec<String> {
-        self.intents_by_fact_id(CoordId::<20>::resolve(fact_id))
+        self.intents_by_fact_id(CoordId::<COORD_ID_DEPTH>::resolve(fact_id))
     }
 
     /// Query intents that reference a fact the caller already holds as an address.
-    pub fn intents_by_fact_id(&self, fact: CoordId<20>) -> Vec<String> {
+    pub fn intents_by_fact_id(&self, fact: CoordId) -> Vec<String> {
         self.needs_maps("an intent lookup by fact");
         self.fact_to_intents
             .borrow()
@@ -923,7 +922,7 @@ impl<I: FileIo> FihStorage<I> {
     /// the caller that produced the id.
     fn assert_canonical(id: &str) {
         debug_assert!(
-            CoordId::<20>::from_string(id).is_some(),
+            CoordId::<COORD_ID_DEPTH>::from_string(id).is_some(),
             "the record maps are keyed by a canonical id; {id:?} is not one"
         );
     }
@@ -957,6 +956,7 @@ impl<I: FileIo> FihStorage<I> {
             return;
         }
         Self::assert_canonical(id);
+        let key: CoordId = CoordId::resolve(id);
         match &record {
             Record::Fact {
                 content_hash,
@@ -965,7 +965,7 @@ impl<I: FileIo> FihStorage<I> {
                 submitted_at,
                 ..
             } => {
-                if let Some(existing) = self.fact_records.borrow().get(id)
+                if let Some(existing) = self.fact_records.borrow().get(&key)
                     && let Some(existing_hash) = Self::hex_blob_hash(&existing.blob_hash)
                 {
                     debug_assert!(
@@ -976,7 +976,7 @@ impl<I: FileIo> FihStorage<I> {
                     );
                 }
                 self.fact_records.borrow_mut().insert(
-                    id.to_string(),
+                    key,
                     FactRecord {
                         id: id.to_string(),
                         blob_hash: content_hash.to_string(),
@@ -994,7 +994,7 @@ impl<I: FileIo> FihStorage<I> {
                 created_at,
             } => {
                 self.intent_records.borrow_mut().insert(
-                    id.to_string(),
+                    key,
                     IntentRecord {
                         id: id.to_string(),
                         from_facts: from_facts.clone(),
@@ -1010,7 +1010,9 @@ impl<I: FileIo> FihStorage<I> {
                 // from_facts, so the net entry is unchanged.
                 let mut index = self.fact_to_intents.borrow_mut();
                 for fact in from_facts {
-                    let entry = index.entry(CoordId::<20>::resolve(fact)).or_default();
+                    let entry = index
+                        .entry(CoordId::<COORD_ID_DEPTH>::resolve(fact))
+                        .or_default();
                     if !entry.iter().any(|x| x == id) {
                         entry.push(id.to_string());
                     }
@@ -1022,7 +1024,7 @@ impl<I: FileIo> FihStorage<I> {
                 submitted_at,
             } => {
                 self.hint_records.borrow_mut().insert(
-                    id.to_string(),
+                    key,
                     HintRecord {
                         id: id.to_string(),
                         content: content.clone(),
@@ -1040,12 +1042,12 @@ impl<I: FileIo> FihStorage<I> {
             let mut store = self.store.borrow_mut();
             match store.at_path_mut(path) {
                 Some(ids) => {
-                    if !ids.iter().any(|x| x == id) {
-                        ids.push(id.to_string());
+                    if !ids.iter().any(|x| x == &key) {
+                        ids.push(key);
                     }
                 }
                 None => {
-                    store.place_path(path, vec![id.to_string()]);
+                    store.place_path(path, vec![key]);
                 }
             }
         }
@@ -1065,9 +1067,10 @@ impl<I: FileIo> FihStorage<I> {
             return;
         }
         Self::assert_canonical(id);
+        let key: CoordId = CoordId::resolve(id);
         match path.coords()[2].index() {
             0 => {
-                self.fact_records.borrow_mut().remove(id);
+                self.fact_records.borrow_mut().remove(&key);
             }
             1 => {
                 // Unlink the inverse index before removing the record:
@@ -1076,19 +1079,19 @@ impl<I: FileIo> FihStorage<I> {
                 let from_facts: Vec<String> = self
                     .intent_records
                     .borrow()
-                    .get(id)
+                    .get(&key)
                     .map(|r| r.from_facts.clone())
                     .unwrap_or_default();
                 let mut index = self.fact_to_intents.borrow_mut();
                 for fact in from_facts {
-                    if let Some(entry) = index.get_mut(&CoordId::<20>::resolve(&fact)) {
+                    if let Some(entry) = index.get_mut(&CoordId::<COORD_ID_DEPTH>::resolve(&fact)) {
                         entry.retain(|x| x != id);
                     }
                 }
-                self.intent_records.borrow_mut().remove(id);
+                self.intent_records.borrow_mut().remove(&key);
             }
             2 => {
-                self.hint_records.borrow_mut().remove(id);
+                self.hint_records.borrow_mut().remove(&key);
             }
             _ => {}
         }
@@ -1097,7 +1100,7 @@ impl<I: FileIo> FihStorage<I> {
         {
             let mut store = self.store.borrow_mut();
             if let Some(ids) = store.at_path_mut(path) {
-                ids.retain(|x| x != id);
+                ids.retain(|x| x != &key);
             }
         }
     }
@@ -1167,7 +1170,9 @@ impl<I: FileIo> FihStorage<I> {
     /// Check if a fact with the given ID exists (fast-path: fact_records HashMap).
     pub fn fact_exists(&self, id: &str) -> bool {
         self.needs_maps("a fact existence check");
-        self.fact_records.borrow().contains_key(id)
+        self.fact_records
+            .borrow()
+            .contains_key(&CoordId::resolve(id))
     }
 
     /// The fact record occupying `id` in the map the session keeps, if any.
@@ -1178,7 +1183,10 @@ impl<I: FileIo> FihStorage<I> {
     /// because the identity of an address is its content and the fields the id was
     /// derived from, not the content hash alone.
     fn existing_fact_record(&self, id: &str) -> Option<FactRecord> {
-        self.fact_records.borrow().get(id).cloned()
+        self.fact_records
+            .borrow()
+            .get(&CoordId::resolve(id))
+            .cloned()
     }
 
     /// The fact the medium holds at `id`, if any.
@@ -1296,32 +1304,48 @@ impl<I: FileIo> FihStorage<I> {
     /// Check if an intent with the given ID exists (fast-path: intent_records HashMap).
     pub fn intent_exists(&self, id: &str) -> bool {
         self.needs_maps("an intent existence check");
-        self.intent_records.borrow().contains_key(id)
+        self.intent_records
+            .borrow()
+            .contains_key(&CoordId::resolve(id))
     }
 
     /// Check if a hint with the given ID exists (fast-path: hint_records HashMap).
     pub fn hint_exists(&self, id: &str) -> bool {
         self.needs_maps("a hint existence check");
-        self.hint_records.borrow().contains_key(id)
+        self.hint_records
+            .borrow()
+            .contains_key(&CoordId::resolve(id))
     }
 
     /// Returns all fact IDs (record-map keys; the record maps are the
     /// authoritative record layer since the L2 restructure, #176).
     pub fn all_fact_ids(&self) -> Vec<String> {
         self.needs_maps("a fact identifier listing");
-        self.fact_records.borrow().keys().cloned().collect()
+        self.fact_records
+            .borrow()
+            .keys()
+            .map(|id| id.to_string())
+            .collect()
     }
 
     /// Returns all intent IDs (record-map keys).
     pub fn all_intent_ids(&self) -> Vec<String> {
         self.needs_maps("an intent identifier listing");
-        self.intent_records.borrow().keys().cloned().collect()
+        self.intent_records
+            .borrow()
+            .keys()
+            .map(|id| id.to_string())
+            .collect()
     }
 
     /// Returns all hint IDs (record-map keys).
     pub fn all_hint_ids(&self) -> Vec<String> {
         self.needs_maps("a hint identifier listing");
-        self.hint_records.borrow().keys().cloned().collect()
+        self.hint_records
+            .borrow()
+            .keys()
+            .map(|id| id.to_string())
+            .collect()
     }
 
     /// Get a fact by its ID.
@@ -1360,9 +1384,10 @@ impl<I: FileIo> FihStorage<I> {
     /// what the map reports for a record it never saw. The conflict guard is where a decode
     /// failure is fatal, because there the question is whether it is safe to write over.
     pub async fn get_fact_framing(&self, id: &str) -> Option<FactRecord> {
+        let key: CoordId = CoordId::resolve(id);
         let held = {
             let recs = self.fact_records.borrow();
-            recs.get(id).cloned()
+            recs.get(&key).cloned()
         };
         match held {
             Some(record) => Some(record),
@@ -1389,14 +1414,15 @@ impl<I: FileIo> FihStorage<I> {
     /// saw. The returned record keeps the storage unit: `created_at` and the conclusion time are
     /// nanoseconds. Read through `read_state` for the model's seconds.
     pub async fn get_intent(&self, id: &str) -> Option<(IntentRecord, Option<String>)> {
-        let id = self.normalize_intent_id(id);
+        let key: CoordId = CoordId::resolve(id);
         let held = {
             let recs = self.intent_records.borrow();
-            recs.get(&id).cloned()
+            recs.get(&key).cloned()
         };
         let record = match held {
             Some(record) => record,
-            None if !*self.maps.borrow() => match self.medium_intent_record(&id).await {
+            None if !*self.maps.borrow() => match self.medium_intent_record(&key.to_string()).await
+            {
                 Ok(record) => record?,
                 Err(error) => {
                     log::warn!("get_intent: {error}");
@@ -1422,14 +1448,14 @@ impl<I: FileIo> FihStorage<I> {
     /// session holds, and a store that keeps no map reads the medium at the key the identifier
     /// implies. A hint the volume does not hold is `None`.
     pub async fn get_hint(&self, id: &str) -> Option<HintRecord> {
-        let id = CoordId::resolve(id).to_string();
+        let key: CoordId = CoordId::resolve(id);
         let held = {
             let recs = self.hint_records.borrow();
-            recs.get(&id).cloned()
+            recs.get(&key).cloned()
         };
         match held {
             Some(record) => Some(record),
-            None if !*self.maps.borrow() => match self.medium_hint_record(&id).await {
+            None if !*self.maps.borrow() => match self.medium_hint_record(&key.to_string()).await {
                 Ok(record) => record,
                 Err(error) => {
                     log::warn!("get_hint: {error}");
@@ -1448,7 +1474,7 @@ impl<I: FileIo> FihStorage<I> {
     ) -> Option<(Vec<String>, String, String, IntentStatus, u64)> {
         self.needs_maps("an intent lookup");
         let recs = self.intent_records.borrow();
-        let r = recs.get(id)?;
+        let r = recs.get(&CoordId::resolve(id))?;
         Some((
             r.from_facts.clone(),
             r.description_hash.clone(),
@@ -1462,7 +1488,7 @@ impl<I: FileIo> FihStorage<I> {
     pub fn get_hint_by_id(&self, id: &str) -> Option<(String, String, u64)> {
         self.needs_maps("a hint lookup");
         let recs = self.hint_records.borrow();
-        let r = recs.get(id)?;
+        let r = recs.get(&CoordId::resolve(id))?;
         Some((r.content.clone(), r.creator.clone(), r.submitted_at))
     }
 
@@ -1899,7 +1925,7 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
         let prev = if *self.maps.borrow() {
             self.fact_records
                 .borrow_mut()
-                .insert(record.id.clone(), record.clone())
+                .insert(CoordId::resolve(&record.id), record.clone())
         } else {
             None
         };
@@ -1912,7 +1938,7 @@ impl<I: FileIo> crate::AsyncFactCapable for FihStorage<I> {
                 .unwrap_or(false);
             self.fact_records
                 .borrow_mut()
-                .insert(record.id.clone(), prev_record);
+                .insert(CoordId::resolve(&record.id), prev_record);
             self.pending.borrow_mut().truncate(pending_len);
             if !same {
                 return Err(BlackboardError::Conflict(format!(
@@ -2022,7 +2048,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for FihStorage<I> {
             // The map answers when the session has the record. When it does not, or when
             // there is no map, the medium answers: the address is computed, so the key
             // follows from the identifier.
-            let known = self.fact_records.borrow().contains_key(&fid_str)
+            let known = self.fact_records.borrow().contains_key(fid)
                 || self
                     .medium_fact_exists(&fid_str)
                     .await
@@ -2421,7 +2447,7 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
         {
             let recs = self.fact_records.borrow();
             let wanted = WantedIds::new(filter.fact_ids.as_ref());
-            let keep = |id: &String, r: &FactRecord| {
+            let keep = |id: &CoordId, r: &FactRecord| {
                 if let Some(ref want) = filter.origin
                     && &r.origin != want
                 {
@@ -2442,7 +2468,7 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                 {
                     return false;
                 }
-                wanted.allows(id)
+                wanted.allows(*id)
             };
             let matched = if wanted.drives(recs.len()) {
                 wanted.lookup(&recs, keep)
@@ -2453,7 +2479,7 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                 let content_hash = Self::blob_hash_or_zero(&r.blob_hash);
                 fact_blob_jobs.push((facts.len(), r.blob_hash.clone()));
                 facts.push(Fact {
-                    id: CoordId::resolve(id),
+                    id: *id,
                     origin: r.origin.clone(),
                     content_hash,
                     content: Content {
@@ -2467,7 +2493,7 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
         {
             let recs = self.intent_records.borrow();
             let wanted = WantedIds::new(filter.intent_ids.as_ref());
-            let keep = |id: &String, r: &IntentRecord| {
+            let keep = |id: &CoordId, r: &IntentRecord| {
                 if let Some(ref want) = filter.creator
                     && &r.creator != want
                 {
@@ -2489,7 +2515,7 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
                 {
                     return false;
                 }
-                wanted.allows(id)
+                wanted.allows(*id)
             };
             let matched = if wanted.drives(recs.len()) {
                 wanted.lookup(&recs, keep)
@@ -2498,13 +2524,13 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
             };
             for (id, r) in matched {
                 let description = if r.description_hash.is_empty() {
-                    id.clone()
+                    r.id.clone()
                 } else {
                     desc_jobs.push((intents.len(), r.description_hash.clone()));
                     String::new()
                 };
                 intents.push(Intent {
-                    id: CoordId::resolve(id),
+                    id: *id,
                     from_facts: r
                         .from_facts
                         .iter()
@@ -2541,13 +2567,13 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
         {
             let recs = self.hint_records.borrow();
             let wanted = WantedIds::new(filter.hint_ids.as_ref());
-            let keep = |id: &String, r: &HintRecord| {
+            let keep = |id: &CoordId, r: &HintRecord| {
                 if let Some(ref want) = filter.creator
                     && &r.creator != want
                 {
                     return false;
                 }
-                wanted.allows(id)
+                wanted.allows(*id)
             };
             let matched = if wanted.drives(recs.len()) {
                 wanted.lookup(&recs, keep)
@@ -2556,7 +2582,7 @@ impl<I: FileIo> crate::AsyncFilterCapable for FihStorage<I> {
             };
             for (id, r) in matched {
                 hints.push(Hint {
-                    id: CoordId::resolve(id),
+                    id: *id,
                     content: r.content.clone(),
                     creator: r.creator.clone(),
                 });
@@ -2728,7 +2754,7 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
                 let content_hash = Self::blob_hash_or_zero(&r.blob_hash);
                 fact_blob_jobs.push((facts.len(), r.blob_hash.clone()));
                 facts.push(Fact {
-                    id: CoordId::resolve(id),
+                    id: *id,
                     origin: r.origin.clone(),
                     content_hash,
                     content: Content {
@@ -2743,13 +2769,13 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
             let recs = self.intent_records.borrow();
             for (id, r) in sorted_matches(&recs, |_, r| r.creator == prefix) {
                 let description = if r.description_hash.is_empty() {
-                    id.clone()
+                    r.id.clone()
                 } else {
                     desc_jobs.push((intents.len(), r.description_hash.clone()));
                     String::new()
                 };
                 intents.push(Intent {
-                    id: CoordId::resolve(id),
+                    id: *id,
                     from_facts: r
                         .from_facts
                         .iter()
@@ -2787,7 +2813,7 @@ impl<I: FileIo> crate::AsyncScanCapable for FihStorage<I> {
             let recs = self.hint_records.borrow();
             for (id, r) in sorted_matches(&recs, |_, r| r.creator == prefix) {
                 hints.push(Hint {
-                    id: CoordId::resolve(id),
+                    id: *id,
                     content: r.content.clone(),
                     creator: r.creator.clone(),
                 });

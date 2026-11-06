@@ -28,10 +28,12 @@
 #![cfg(feature = "structural-index")]
 
 use alloc::string::String;
+use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use tagma_core::Coord;
 
+use crate::CoordId;
 use crate::StateFilter;
 use crate::core::store::{FihStorage, WantedIds, hash_str};
 use crate::io::file_io::FileIo;
@@ -61,7 +63,7 @@ impl<I: FileIo> FihStorage<I> {
         // dedups within a path); sort plus dedup below is the safety net for
         // the documented direct-writer edge. A Vec avoids the hashing and
         // allocation cost of a set, which dominates the no-pruning fallback.
-        let mut candidates: Vec<String> = Vec::new();
+        let mut candidates: Vec<CoordId> = Vec::new();
         match (since, until) {
             (Some(s), Some(u)) => {
                 // Bounded day walk: each day contributes the subtree at
@@ -123,11 +125,12 @@ impl<I: FileIo> FihStorage<I> {
                 {
                     return false;
                 }
-                if !wanted.allows(id) {
+                if !wanted.allows(*id) {
                     return false;
                 }
                 true
             })
+            .map(|id| id.to_string())
             .collect();
         // Dedup guards the documented direct-writer edge where the same id
         // could be placed at two paths; the submit paths never produce one.
@@ -139,11 +142,11 @@ impl<I: FileIo> FihStorage<I> {
 
 /// Union the id sets under the day/time/entity/origin/creator prefix.
 fn collect_day_ids(
-    store: &tagma_core::CoordSpaceN<6, Vec<String>>,
+    store: &tagma_core::CoordSpaceN<6, Vec<CoordId>>,
     day: u64,
     origin_v: Option<u16>,
     creator_v: Option<u16>,
-    out: &mut Vec<String>,
+    out: &mut Vec<CoordId>,
 ) {
     let Some(iter) = store.iter_prefix(&fact_prefix(day, origin_v, creator_v)) else {
         return;

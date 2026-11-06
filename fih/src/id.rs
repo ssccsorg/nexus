@@ -47,7 +47,7 @@ pub trait FihId20: Sized {
     fn resolve(s: &str) -> Self;
 }
 
-impl FihId20 for CoordId<20> {
+impl FihId20 for CoordId {
     /// The id is SHA-256 over (content_hash ‖ entity ‖ origin ‖ creator),
     /// encoded injectively into 20 coordinates, so distinct inputs map to
     /// distinct ids up to SHA-256 collision resistance.

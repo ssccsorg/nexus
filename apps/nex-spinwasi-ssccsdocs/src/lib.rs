@@ -141,13 +141,13 @@ async fn restore_from_snapshot(s: &AppStorage) -> Result<bool, String> {
     {
         let mut m = s.fact_records.borrow_mut();
         for (k, v) in snapshot.facts.into_iter().map(|r| (r.id.clone(), r)) {
-            m.insert(k, v);
+            m.insert(CoordId::resolve(&k), v);
         }
     }
     {
         let mut m = s.intent_records.borrow_mut();
         for (k, v) in snapshot.intents.into_iter().map(|r| (r.id.clone(), r)) {
-            m.insert(k, v);
+            m.insert(CoordId::resolve(&k), v);
         }
     }
     let _ = s.rebuild_cache().await;

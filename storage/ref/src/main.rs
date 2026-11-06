@@ -303,8 +303,8 @@ fn read(volume: &Path, address: &str) -> Result<(), Failure> {
 /// The text names the sequence or it names nothing: a length that is not the
 /// depth's and a byte outside the alphabet are both refused, so a caller cannot
 /// address a record by a spelling of it.
-fn resolve(address: &str) -> Option<CoordId<20>> {
-    CoordId::<20>::from_string(address)
+fn resolve(address: &str) -> Option<CoordId> {
+    CoordId::from_string(address)
 }
 
 fn verify(volume: &Path, address: &str) -> Result<(), Failure> {

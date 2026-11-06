@@ -18,7 +18,7 @@
 // Measured on Apple M1 (ARMv8.4-A Firestorm 3.2GHz), release profile
 // (median of 10 samples, 2026-08-20). All 43 benches execute in the
 // criterion harness. The historical 2026-07-31 figures predate the L2
-// restructure and the CoordId<20> migration (issue #176), so only
+// restructure and the CoordId migration (issue #176), so only
 // within-run comparisons are meaningful. Fresh baseline:
 //   raw/full_scan_50k          2.63 s          (50K entries, full tree walk)
 //   raw/iter_prefix_50k        1.05 ms         (5×100 prefixes, O(subtree))
@@ -709,7 +709,7 @@ fn bench_multidim_scale(c: &mut Criterion, n_facts: usize, label: &str) {
             // Record-map lookups the wired path pays on materialization.
             let recs = store.fact_records.borrow();
             for id in &ids {
-                black_box(recs.get(id));
+                black_box(recs.get(&CoordId::resolve(id)));
             }
             black_box(ids);
         });
@@ -727,7 +727,7 @@ fn bench_multidim_scale(c: &mut Criterion, n_facts: usize, label: &str) {
             assert_eq!(ids.len(), narrow_hits);
             let recs = store.fact_records.borrow();
             for id in &ids {
-                black_box(recs.get(id));
+                black_box(recs.get(&CoordId::resolve(id)));
             }
             black_box(ids);
         });
@@ -748,7 +748,7 @@ fn bench_multidim_scale(c: &mut Criterion, n_facts: usize, label: &str) {
             assert_eq!(ids.len(), creator_only_hits);
             let recs = store.fact_records.borrow();
             for id in &ids {
-                black_box(recs.get(id));
+                black_box(recs.get(&CoordId::resolve(id)));
             }
             black_box(ids);
         });
@@ -768,7 +768,7 @@ fn bench_multidim_scale(c: &mut Criterion, n_facts: usize, label: &str) {
             assert_eq!(ids.len(), origin_only_hits);
             let recs = store.fact_records.borrow();
             for id in &ids {
-                black_box(recs.get(id));
+                black_box(recs.get(&CoordId::resolve(id)));
             }
             black_box(ids);
         });

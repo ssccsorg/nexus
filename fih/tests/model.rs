@@ -9,7 +9,7 @@ use std::hash::{Hash, Hasher};
 
 use fih_model::FihId as _;
 use fih_model::FihId6 as _;
-use fih_model::{BlackboardError, Content, CoordId, FihHash};
+use fih_model::{BlackboardError, COORD_ID_DEPTH, Content, CoordId, FihHash};
 use tagma_core::DIGITS_PER_AXIS;
 
 #[test]
@@ -84,21 +84,22 @@ fn a_six_axis_id_round_trips_through_text_and_serde() {
 
 #[test]
 fn a_twenty_axis_id_round_trips_and_refuses_malformed_input() {
-    let id = CoordId::<20>::from_string(&"0".repeat(60)).expect("the canonical id parses");
+    let id =
+        CoordId::<COORD_ID_DEPTH>::from_string(&"0".repeat(60)).expect("the canonical id parses");
     let text = id.to_string();
     assert_eq!(text.chars().count(), 60);
 
     let json = serde_json::to_string(&id).expect("the id serializes");
     assert_eq!(
-        serde_json::from_str::<CoordId<20>>(&json).expect("the id decodes"),
+        serde_json::from_str::<CoordId>(&json).expect("the id decodes"),
         id
     );
 
-    let error = serde_json::from_str::<CoordId<20>>("\"short\"")
+    let error = serde_json::from_str::<CoordId>("\"short\"")
         .expect_err("a short id is refused")
         .to_string();
     assert!(error.contains("expected 60 base-36 digits"), "{error}");
-    let error = serde_json::from_str::<CoordId<20>>(&format!("\"{}\"", "0".repeat(59) + "A"))
+    let error = serde_json::from_str::<CoordId>(&format!("\"{}\"", "0".repeat(59) + "A"))
         .expect_err("a character outside the alphabet is refused")
         .to_string();
     assert!(error.contains("base-36 digits"), "{error}");

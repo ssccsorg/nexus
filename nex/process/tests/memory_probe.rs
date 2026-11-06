@@ -16,7 +16,7 @@
 //   - after Step 1  (12 axes):               3.58 MB/fact
 //   - after Step 2  (6-axis filter index):  40 KB/fact average
 //                                            ~0.8 KB/fact marginal
-//   - after Step 4  (CoordId<20> ids):      41 KB/fact average,
+//   - after Step 4  (CoordId ids):      41 KB/fact average,
 //                                            ~1.2 KB/fact marginal
 //                                            (ids are now 20 Hangul,
 //                                            ~40 B each)
@@ -68,7 +68,7 @@ static GLOBAL: CountingAlloc = CountingAlloc;
 
 fn fact_at(i: u32) -> Fact {
     // Distinct ids via label derivation (ids are opaque 20-coordinate
-    // hashes since the CoordId<20> migration).
+    // hashes since the CoordId migration).
     let cid = CoordId::from_label(&format!("probe-{i}"));
     Fact::with_id(
         cid,
