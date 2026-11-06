@@ -16,6 +16,20 @@ use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// The method a node sends first, so the hub knows what it answers.
+pub const METHOD_REGISTER: &str = "node.register";
+/// The method the hub answers when no node claims a method.
+pub const NO_NODE: i64 = -32001;
+
+/// What a node tells the hub about itself.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NodeRegistration {
+    /// The node's name, which is also how it is addressed.
+    pub node: String,
+    /// The methods this node answers.
+    pub methods: Vec<String>,
+}
+
 /// A request from a client to a node.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RpcRequest {

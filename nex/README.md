@@ -9,6 +9,9 @@ layer.
 | `core` (`nex-core`) | the clock and error primitives a port supplies and the model consumes |
 | `fih` (`nex-fih`) | the model with the read surface and the contract |
 | `io` (`nex-io`) | the flat key-space IO seam |
+| `protocol` (`nex-protocol`) | the wire: request and response types, and the framing |
+| `router` (`nex-router`) | the hub's table: which node answers which method |
+| `hub` (`nex-hub`) | the hub as a process: a client's request reaches the node that answers it |
 | `process` (`nex`) | the process layer: scheduling and detection over a blackboard |
 
 A storage implementation is a node, and it is not here. `storage/ref` is the reference node: it

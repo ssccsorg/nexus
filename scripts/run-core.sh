@@ -46,7 +46,7 @@ run_dep_refresh() {
     cargo update -p chton 2>&1
 }
 
-run_check()  { run_dep_refresh && cargo check -p nex && cargo check -p nexd && cargo check -p nexus-storage-sim && cargo check -p nexus-storage-ref; }
+run_check()  { run_dep_refresh && cargo check -p nex && cargo check -p nexd && cargo check -p nexus-storage-sim && cargo check -p nexus-storage-ref && (cd nex && cargo check -p nex-protocol -p nex-router -p nex-hub); }
 
 # ── WASM check: ensure storage-sim builds for wasm32 target ────────────
 
@@ -102,7 +102,7 @@ run_wasm_check() {
 run_wasip2_check() {
     echo "=== WASIp2: fih-model ==="
     cargo check -p fih-model --target wasm32-wasip2 2>&1
-    for pkg in nex-core nex-fih nex-io nex-protocol; do
+    for pkg in nex-core nex-fih nex-io nex-protocol nex-router; do
         echo "=== WASIp2: $pkg ==="
         (cd nex && cargo check -p "$pkg" --target wasm32-wasip2) 2>&1
     done
@@ -127,7 +127,7 @@ run_nostd_check() {
     # the std-less MCU target.
     echo "=== no_std check: fih-model (no-default-features) ==="
     cargo check -p fih-model --no-default-features 2>&1
-    for pkg in nex-core nex-fih nex-io nex-protocol; do
+    for pkg in nex-core nex-fih nex-io nex-protocol nex-router; do
         echo "=== no_std check: $pkg (no-default-features) ==="
         (cd nex && cargo check -p "$pkg" --no-default-features) 2>&1
     done
@@ -205,6 +205,10 @@ run_test()   {
     # package's targets, so the record layer's tests and the model's run here or
     # nowhere.
     cargo test -p nex-core -p nex-fih -p fih-model -- --nocapture 2>&1
+    echo "---"
+    # The hub core and the wire. They live in the `nex` workspace, so they are checked from
+    # there; the reference test drives a client through the hub to a node over a real socket.
+    (cd nex && cargo test -p nex-protocol -p nex-router -p nex-hub 2>&1)
     echo "---"
     # The verification harness's own FileIo contract. The gates assert against it, so a break
     # has to fail here rather than as a confusing scenario failure later.

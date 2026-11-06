@@ -26,7 +26,7 @@ the reference store, and the process layer.
 | Path | Contents |
 |---|---|
 | [`fih/`](fih) | `Fact`, `Intent`, `Hint`, `CoordId`, capability traits, `Now`, cold query contract. `no_std + alloc` |
-| [`nex/`](nex) | the state model (`nex-fih`, `fih-model`), the IO seam (`nex-io`), and the process layer (`nex`) |
+| [`nex/`](nex) | the state model (`nex-fih`, `fih-model`), the IO seam (`nex-io`), the wire (`nex-protocol`), the routing table (`nex-router`), the hub (`nex-hub`), and the process layer (`nex`) |
 | [`nex-server/`](nex-server), [`nexd/`](nexd) | the board served over a Unix socket, and the daemon that supervises it |
 | [`nex_client`](nex_client) | typed client for `nexd` |
 | [`storage/ref/`](storage/ref) | reference node: read a volume by key, answer a multi-axis question, check a record by recomputing its address |

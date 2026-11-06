@@ -20,6 +20,22 @@ fn map_error(e: BlackboardError) -> (i64, String) {
     }
 }
 
+/// The methods this node answers, which is what it registers with the hub.
+pub const METHODS: &[&str] = &[
+    "read_state",
+    "read_state_struct",
+    "read_fact",
+    "read_intent",
+    "read_hint",
+    "write_fact",
+    "write_intent",
+    "write_hint",
+    "claim_intent",
+    "heartbeat_intent",
+    "release_intent",
+    "conclude_intent",
+];
+
 pub async fn dispatch(req: RpcRequest, storage: &Arc<RefFihStorage<FsIo>>) -> RpcResponse {
     let id = req.id;
 
