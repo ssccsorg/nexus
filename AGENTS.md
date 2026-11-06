@@ -89,10 +89,3 @@ digraph DOTGraph {
 
 - Split codes as following their roles - do not code all in `lib.rs`.
 - Unit tests should be always located in `/tests` not in host code files.
-
-### Layer boundary
-
-- nexus is a network of states, not storage. Holding, indexing, walking a medium,
-  and flushing are out of scope and are removed (#229).
-- A demonstration may hold records in memory. Keep out a medium format, durability,
-  recovery, an index, a bounded device read, and performance claims.
