@@ -17,8 +17,8 @@ use nex_core::{Now, SystemClock};
 use nex_fih::io::file_io::{FileIo, IoFuture};
 use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, BlackboardError,
-    Content, CoordId, Fact, FactRecord, RefFihStorage, Hint, HintRecord, Intent, IntentStatus,
-    RecordTimeUnit,
+    Content, CoordId, Fact, FactRecord, Hint, HintRecord, Intent, IntentStatus, RecordTimeUnit,
+    RefFihStorage,
 };
 
 #[derive(Clone, Default)]
@@ -134,7 +134,7 @@ fn an_auto_flush_store_is_durable_when_the_call_returns() {
     let fact = payload_fact("f_flush", "payload");
     submit(&storage, &fact);
 
-    let reader = RefFihStorage::new_without_maps(medium, "surface");
+    let reader = RefFihStorage::new(medium, "surface");
     assert!(
         block_on(reader.get_fact_framing(&fact.id.to_string())).is_some(),
         "the write reached the medium without an explicit flush"
@@ -148,7 +148,7 @@ fn with_all_decides_whether_a_write_is_pending() {
     let fact = payload_fact("f_pending", "payload");
     submit(&storage, &fact);
 
-    let reader = RefFihStorage::new_without_maps(medium.clone(), "surface");
+    let reader = RefFihStorage::new(medium.clone(), "surface");
     assert!(
         block_on(reader.get_fact_framing(&fact.id.to_string())).is_none(),
         "a non-flushing store keeps the write in memory"
@@ -196,32 +196,6 @@ fn a_structured_read_omits_payloads_and_descriptions() {
         CoordId::resolve("i_without_text").to_string(),
         "an intent with no description keeps its identifier"
     );
-}
-
-#[test]
-fn the_blob_cache_is_bounded_and_reloads_what_it_evicts() {
-    let medium = MemoryIo::default();
-    let storage = RefFihStorage::new(medium.clone(), "surface");
-    storage.set_blob_cache_cap(1);
-    submit(&storage, &payload_fact("f_one", "first payload"));
-    submit(&storage, &payload_fact("f_two", "second payload"));
-    block_on(storage.flush_pending()).expect("the writes reach the medium");
-
-    block_on(storage.read_state());
-    medium.clear_reads();
-    block_on(storage.read_state());
-    assert_eq!(
-        medium.blob_reads(),
-        1,
-        "the cap of one kept the newer blob and reloaded the older"
-    );
-
-    // The cap can be raised at runtime, and a larger cache answers without a read.
-    storage.set_blob_cache_cap(100);
-    block_on(storage.read_state());
-    medium.clear_reads();
-    block_on(storage.read_state());
-    assert_eq!(medium.blob_reads(), 0, "both blobs stayed in the cache");
 }
 
 #[test]
@@ -392,7 +366,7 @@ fn a_fact_time_below_the_legacy_second_threshold_survives_every_read() {
     block_on(writer.flush_pending()).expect("the write reaches the medium");
 
     // The by-name read on a store without maps.
-    let reader = RefFihStorage::new_without_maps(medium.clone(), "surface");
+    let reader = RefFihStorage::new(medium.clone(), "surface");
     let framing = block_on(reader.get_fact_framing(&fact.id.to_string()))
         .expect("the medium holds the record");
     assert_eq!(framing.submitted_at, submitted_at);
@@ -444,7 +418,7 @@ fn a_legacy_intent_timestamp_is_lifted_once_on_every_read() {
         &postcard::to_allocvec(&legacy).expect("the legacy record serializes"),
     );
 
-    let reader = RefFihStorage::new_without_maps(medium.clone(), "surface");
+    let reader = RefFihStorage::new(medium.clone(), "surface");
     let (record, _) = block_on(reader.get_intent(&id)).expect("the medium holds the intent");
     assert_eq!(record.created_at, 1_700_000_000_000_000_000);
     assert_eq!(record.time_unit, RecordTimeUnit::Nanos);
@@ -502,7 +476,7 @@ fn a_boot_epoch_intent_and_hint_keep_their_nanoseconds() {
     .expect("the hint is accepted");
     block_on(writer.flush_pending()).expect("the writes reach the medium");
 
-    let reader = RefFihStorage::new_without_maps(medium.clone(), "surface");
+    let reader = RefFihStorage::new(medium.clone(), "surface");
     let (record, _) = block_on(reader.get_intent("i_boot")).expect("the intent");
     assert_eq!(record.created_at, submitted_at);
     assert_eq!(record.time_unit, RecordTimeUnit::Nanos);

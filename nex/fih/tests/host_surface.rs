@@ -16,8 +16,8 @@ use futures_executor::block_on;
 use nex_fih::io::file_io::{BlockingIo, FileIo, IoFuture, SyncFileIo};
 use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, Content, ContentMeta,
-    CoordId, EvictCapable, Fact, FactCapable, FihBlackboard, FihSession, RefFihStorage, Hint,
-    HintCapable, Intent, StorageRead, export_from_io, import_into_io,
+    CoordId, EvictCapable, Fact, FactCapable, FihBlackboard, FihSession, Hint, HintCapable, Intent,
+    RefFihStorage, StorageRead, export_from_io, import_into_io,
 };
 
 /// An in-memory medium shared by every storage that holds a clone of it.

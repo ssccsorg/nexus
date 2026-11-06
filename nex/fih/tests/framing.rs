@@ -84,7 +84,7 @@ fn a_named_record_s_framing_comes_back_without_a_payload_read() {
 
     // A store that keeps no map, which is the device asking about a record it did not write: the
     // identifier is the key, so the read reaches the record and stops there.
-    let reader = RefFihStorage::new_without_maps(medium.clone(), "framing");
+    let reader = RefFihStorage::new(medium.clone(), "framing");
     let before = medium.reads.lock().unwrap().len();
     let framing =
         block_on(reader.get_fact_framing(&id.to_string())).expect("the volume holds the record");
@@ -125,7 +125,7 @@ fn a_store_with_maps_and_a_store_without_them_answer_the_same_framing() {
 
     let with_maps = RefFihStorage::new(medium.clone(), "framing");
     block_on(with_maps.rebuild_cache()).expect("the maps are built");
-    let without_maps = RefFihStorage::new_without_maps(medium, "framing");
+    let without_maps = RefFihStorage::new(medium, "framing");
 
     for id in [&first, &second] {
         let held = block_on(with_maps.get_fact_framing(&id.to_string()));
@@ -143,7 +143,7 @@ fn an_identifier_the_volume_does_not_hold_is_no_framing() {
 
     // An absent record is an empty answer rather than a failed read, which is what the read that
     // answers the content reports for the same name.
-    let reader = RefFihStorage::new_without_maps(medium, "framing");
+    let reader = RefFihStorage::new(medium, "framing");
     assert!(
         block_on(reader.get_fact_framing("f_not_written_anywhere")).is_none(),
         "an absent record answered a framing"

@@ -25,7 +25,7 @@ use sha2::{Digest, Sha256};
 use nex::FileIo;
 use nex::storage::core::intent_status::IntentStatus;
 use nex::storage::core::record::ContentMeta;
-use nex::storage::core::store::{RefFihStorage, Record, structural_path};
+use nex::storage::core::store::{Record, RefFihStorage};
 use nex_fih::{Content, CoordId, FihHash};
 use nexus_storage_sim::SimIo;
 
@@ -126,8 +126,7 @@ impl CalcEngine {
             submitted_at: 0,
         };
 
-        let path = structural_path(0u16, "nex-calc", "user", 0u16, 0);
-        self.storage.place_record(&path, &id_str, record);
+        self.storage.place_record(&id_str, record);
         id
     }
 
@@ -187,8 +186,7 @@ impl CalcEngine {
             created_at: now,
         };
 
-        let path = structural_path(1u16, "", "user", 0u16, now);
-        self.storage.place_record(&path, &id_str, record);
+        self.storage.place_record(&id_str, record);
         Ok(id)
     }
 
@@ -273,8 +271,8 @@ impl CalcEngine {
                 } => (origin.clone(), creator.clone()),
                 _ => unreachable!(),
             };
-            let path = structural_path(0u16, &fact_origin, &fact_creator, 0u16, 0);
-            self.storage.place_record(&path, &result_id_str, rec);
+            let _ = (fact_origin, fact_creator);
+            self.storage.place_record(&result_id_str, rec);
         }
 
         // Mark intent concluded: vacate old path, insert at new path with Concluded status.
@@ -291,10 +289,9 @@ impl CalcEngine {
             worker: "nex-calc".into(),
         };
         // Remove old entry.
-        let old_path = structural_path(1u16, "", "user", old_status_coord, created_at);
-        self.storage.vacate_record(&old_path, &id_str);
+        let _ = (old_status_coord, created_at);
+        self.storage.vacate_record(&id_str);
         // Insert new entry.
-        let new_path = structural_path(1u16, "", "user", 2u16, created_at);
         let new_record = Record::Intent {
             from_facts,
             description_hash,
@@ -302,7 +299,7 @@ impl CalcEngine {
             status: new_status,
             created_at,
         };
-        self.storage.place_record(&new_path, &id_str, new_record);
+        self.storage.place_record(&id_str, new_record);
 
         Ok(ResolvedIntent {
             intent_id: *intent_id,
@@ -327,8 +324,7 @@ impl CalcEngine {
                 creator: "user".into(),
                 submitted_at: now,
             };
-            let path = structural_path(2u16, "", "user", 0u16, now);
-            self.storage.place_record(&path, &id_str, record);
+            self.storage.place_record(&id_str, record);
         }
         id
     }
@@ -337,8 +333,7 @@ impl CalcEngine {
         let ids: Vec<String> = self.storage.all_hint_ids();
         for id_str in ids {
             if let Some((_content, _creator, submitted_at)) = self.storage.get_hint_by_id(&id_str) {
-                let path = structural_path(2u16, "", "user", 0u16, submitted_at);
-                self.storage.vacate_record(&path, &id_str);
+                self.storage.vacate_record(&id_str);
             }
         }
     }

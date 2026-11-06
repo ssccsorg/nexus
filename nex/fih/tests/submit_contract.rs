@@ -143,7 +143,7 @@ fn a_second_content_at_a_taken_id_is_a_conflict_and_keeps_the_first() {
 
 #[test]
 fn a_pending_record_is_a_taken_id_for_a_store_that_keeps_no_maps() {
-    let storage = RefFihStorage::new_without_maps(MemoryIo::default(), "submit");
+    let storage = RefFihStorage::new(MemoryIo::default(), "submit");
 
     submit(&storage, &at("f_taken", "the first content")).expect("the first fact is accepted");
     submit(&storage, &at("f_taken", "the first content")).expect("the retry is idempotent");

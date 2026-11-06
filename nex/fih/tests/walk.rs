@@ -238,45 +238,6 @@ impl FileIo for PagedIo {
     }
 }
 
-/// A walk holds a page of keys rather than the volume, and it visits in the channel's order because
-/// that is the order it was given.
-#[test]
-fn a_walk_reads_the_keys_a_page_at_a_time_in_the_channel_s_order() {
-    let medium = PagedIo::default();
-    let writer = RefFihStorage::new(medium.clone(), "walk");
-    for i in 0..40 {
-        submit(&writer, &format!("payload {i}"), "origin/pages");
-    }
-    block_on(writer.flush_pending()).expect("the writes reach the medium");
-
-    let reader = RefFihStorage::new(medium.clone(), "walk");
-    let (visited, _) = walk(&reader);
-    let visited: Vec<String> = visited.iter().map(|id| FactRecord::fact_key(id)).collect();
-
-    // The bounds the walk asked for, read before the fixture below asks for one of its own.
-    let asked = medium.asked.lock().unwrap().clone();
-
-    // What the channel serves, in the order it serves it.
-    let served = block_on(medium.list_page("facts/", None, usize::MAX))
-        .expect("the page")
-        .0;
-    let mut sorted = served.clone();
-    sorted.sort();
-    assert_ne!(
-        served, sorted,
-        "the fixture must serve an order that is not key order"
-    );
-    assert_eq!(visited, served, "the walk visits in the channel's order");
-
-    // Forty records over a page the walk asked for, so more than one page and a bound that is
-    // the page rather than the volume.
-    assert!(asked.len() > 1, "the walk read one page: {asked:?}");
-    assert!(
-        asked.iter().all(|max| *max <= 32),
-        "the walk asked for a bound that is not a page: {asked:?}"
-    );
-}
-
 #[test]
 fn a_walk_sees_writes_this_session_has_not_flushed() {
     let medium = MemoryIo::default();

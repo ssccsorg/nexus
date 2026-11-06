@@ -75,9 +75,9 @@ pub use nex_fih::{
     Blackboard, BlackboardError, BoardState, Cell2, Content, ContentJsonExt,
     ContradictionDetection, CoordId, DetectionCapable, DetectionOutput, EntityStore, EvictCapable,
     EvidenceChain, EvidenceEntry, Fact, FactCapable, FactRecord, FihBlackboard, FihContract,
-    FihHash, FihSession, RefFihStorage, GapDetection, GovernanceGate, HealthStatus, Hint, HintCapable,
-    HintEngine, HintRecord, HintRule, Intent, IntentCapable, IntentRecord, IntentStatus,
-    MemoryEntityStore, NexConfig, NexInstanceInfo, NexLifecycle, OrderedIndex, Query, RecordLoad,
+    FihHash, FihSession, GapDetection, GovernanceGate, HealthStatus, Hint, HintCapable, HintEngine,
+    HintRecord, HintRule, Intent, IntentCapable, IntentRecord, IntentStatus, MemoryEntityStore,
+    NexConfig, NexInstanceInfo, NexLifecycle, OrderedIndex, Query, RecordLoad, RefFihStorage,
     SemanticStore, StateChangeDetection, StorageRead, TaskStates, export_from_io, import_into_io,
 };
 

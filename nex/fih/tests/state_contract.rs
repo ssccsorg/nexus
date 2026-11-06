@@ -165,7 +165,7 @@ fn the_read_surface_answers_a_network_another_session_wrote() {
 
     // A network that holds no map reads the medium at the key the identifier implies, so a
     // session that read nothing yet answers for a volume it did not write.
-    let reader = RefFihStorage::new_without_maps(medium, "contract");
+    let reader = RefFihStorage::new(medium, "contract");
     let mut ids: Vec<String> = Vec::new();
     block_on(reader.for_each_fact_record(|record: &FactRecord| {
         ids.push(record.id.clone());

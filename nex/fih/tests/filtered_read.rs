@@ -19,8 +19,8 @@ use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
 use nex_fih::{
     AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncHintCapable, AsyncIntentCapable,
-    AsyncScanCapable, BoardState, Content, CoordId, Fact, RefFihStorage, Hint, Intent, IntentStatus,
-    Now, PartitionData, StateFilter,
+    AsyncScanCapable, BoardState, Content, CoordId, Fact, Hint, Intent, IntentStatus, Now,
+    PartitionData, RefFihStorage, StateFilter,
 };
 
 /// An in-memory medium shared by every storage that holds a clone of it.
@@ -132,7 +132,8 @@ fn submit_hint(storage: &RefFihStorage<MemoryIo>, hint: &Hint) {
 /// Nothing is flushed, so every payload is in the pending buffer when the read runs.
 fn pending_volume() -> RefFihStorage<MemoryIo> {
     let clock = StepClock::default();
-    let storage = RefFihStorage::with_clock(MemoryIo::default(), "filtered", Box::new(clock.clone()));
+    let storage =
+        RefFihStorage::with_clock(MemoryIo::default(), "filtered", Box::new(clock.clone()));
 
     clock.at_secs(S0);
     submit_fact(
@@ -655,7 +656,8 @@ fn a_reopened_volume_materializes_content_from_the_medium() {
 #[test]
 fn a_pending_delete_is_skipped_rather_than_read_as_content() {
     let clock = StepClock::default();
-    let storage = RefFihStorage::with_clock(MemoryIo::default(), "filtered", Box::new(clock.clone()));
+    let storage =
+        RefFihStorage::with_clock(MemoryIo::default(), "filtered", Box::new(clock.clone()));
     clock.at_secs(S0);
     submit_fact(&storage, &fact("f_kept", "origin/a", "agent/one", "kept"));
     submit_hint(&storage, &hint("h_gone", "agent/one", "gone"));

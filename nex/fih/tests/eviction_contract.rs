@@ -16,7 +16,7 @@ use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
 use nex_fih::{
     AsyncEvictCapable, AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead,
-    BlackboardError, Content, CoordId, Fact, RefFihStorage, Hint, Intent, Now,
+    BlackboardError, Content, CoordId, Fact, Hint, Intent, Now, RefFihStorage,
 };
 
 const S0: u64 = 1_700_000_000;

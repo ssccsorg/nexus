@@ -317,7 +317,7 @@ fn verify(volume: &Path, address: &str) -> Result<(), Failure> {
 
     // A store that keeps no record map reads the medium at the key the address
     // implies, which is the read a device makes.
-    let store = RefFihStorage::new_without_maps(open_volume(volume)?, PROJECT);
+    let store = RefFihStorage::new(open_volume(volume)?, PROJECT);
     let framing = futures_executor::block_on(store.get_fact_framing(&name))
         .ok_or_else(|| Failure::Missing(format!("the volume holds no record at {coordinate}")))?;
     let payload = futures_executor::block_on(store.io.read(&framing.blob_key()))

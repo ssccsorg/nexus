@@ -8,8 +8,8 @@ use futures_executor::block_on;
 use nex_fih::FihId20 as _;
 use nex_fih::io::file_io::{FileIo, IoFuture};
 use nex_fih::{
-    AsyncFactCapable, AsyncIntentCapable, BlackboardError, Content, CoordId, Fact, RefFihStorage,
-    Intent,
+    AsyncFactCapable, AsyncIntentCapable, BlackboardError, Content, CoordId, Fact, Intent,
+    RefFihStorage,
 };
 use std::collections::HashMap;
 use std::sync::Mutex;

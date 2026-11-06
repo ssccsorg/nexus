@@ -12,7 +12,7 @@ use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, Content, CoordId,
     Fact, Hint, Intent,
 };
-use nexus_storage_sim::{RefFihStorage, FileIo, SimIo};
+use nexus_storage_sim::{FileIo, RefFihStorage, SimIo};
 
 fn fact(id: &str, data: &str) -> Fact {
     Fact::with_id(

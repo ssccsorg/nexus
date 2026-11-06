@@ -90,6 +90,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "base11172"
+version = "0.1.0"
+source = "git+https://github.com/ssccsorg/syntagma?branch=main#ce88c5bd4737f5ba886f3c188442f42de64a9d31"
+dependencies = [
+ "tagma-core",
+]
+
+[[package]]
 name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -291,6 +299,7 @@ name = "fih-model"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base11172",
  "log",
  "serde",
  "serde_json",
@@ -1462,12 +1471,15 @@ dependencies = [
 [[package]]
 name = "tagma-core"
 version = "0.1.0"
-source = "git+https://github.com/ssccsorg/syntagma?branch=main#0c34521c9fe652454b406c18b63910a47bcda576"
+source = "git+https://github.com/ssccsorg/syntagma?branch=main#ce88c5bd4737f5ba886f3c188442f42de64a9d31"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "tagma-geo"
 version = "0.1.0"
-source = "git+https://github.com/ssccsorg/syntagma?branch=main#0c34521c9fe652454b406c18b63910a47bcda576"
+source = "git+https://github.com/ssccsorg/syntagma?branch=main#ce88c5bd4737f5ba886f3c188442f42de64a9d31"
 dependencies = [
  "tagma-core",
 ]
@@ -1475,7 +1487,7 @@ dependencies = [
 [[package]]
 name = "tagma-map"
 version = "0.1.0"
-source = "git+https://github.com/ssccsorg/syntagma?branch=main#0c34521c9fe652454b406c18b63910a47bcda576"
+source = "git+https://github.com/ssccsorg/syntagma?branch=main#ce88c5bd4737f5ba886f3c188442f42de64a9d31"
 dependencies = [
  "tagma-core",
  "tagma-geo",

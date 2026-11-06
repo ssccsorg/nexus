@@ -140,11 +140,6 @@ fn rebuilding_the_semantic_index_hands_text_and_no_features_again() {
 
 #[test]
 fn rebuilding_the_index_needs_maps_and_a_registered_store() {
-    let no_maps = RefFihStorage::new_without_maps(SimIo::new(), "auto-index");
-    let error = block_on(no_maps.rebuild_semantic())
-        .expect_err("a store that keeps no maps has nothing to index");
-    assert!(error.contains("record maps"), "{error}");
-
     let empty = RefFihStorage::new(SimIo::new(), "auto-index");
     block_on(empty.rebuild_semantic()).expect("with no stores the rebuild is a no-op");
 }

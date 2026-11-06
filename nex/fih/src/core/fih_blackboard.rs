@@ -29,7 +29,7 @@ use crate::io::FileIo;
 #[cfg(feature = "std")]
 #[cfg_attr(target_arch = "wasm32", allow(unused_imports))]
 use crate::{
-    AsyncEvictCapable, AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead,
+    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable,
     BlackboardError, BoardState, CoordId, EvictCapable, Fact, FactCapable, Hint, HintCapable,
     Intent, IntentCapable, StorageRead,
 };
@@ -131,7 +131,7 @@ impl<I: FileIo> HintCapable for FihBlackboard<I> {
 #[cfg(feature = "std")]
 impl<I: FileIo> EvictCapable for FihBlackboard<I> {
     fn approximate_size(&self) -> usize {
-        futures_executor::block_on(self.storage.approximate_size())
+        self.storage.record_count()
     }
 
     fn evict_before(&self, before: &str) -> Result<u64, String> {

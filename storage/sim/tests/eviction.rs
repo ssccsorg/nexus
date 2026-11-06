@@ -12,7 +12,7 @@ use common::FakeClock;
 use futures_executor::block_on;
 use nex_fih::{
     AsyncEvictCapable, AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead,
-    Content, CoordId, Fact, RefFihStorage, Hint, Intent,
+    Content, CoordId, Fact, Hint, Intent, RefFihStorage,
 };
 use nexus_storage_sim::{FileIo, SimIo};
 

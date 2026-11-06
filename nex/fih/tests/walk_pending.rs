@@ -214,7 +214,7 @@ fn a_walk_reports_a_pending_record_the_partial_flush_left_on_the_medium_once() {
         fail_after: 3,
         ..Default::default()
     };
-    let storage = RefFihStorage::new_without_maps(medium, "walk");
+    let storage = RefFihStorage::new(medium, "walk");
     let first = fact("f_one", "one");
     let second = fact("f_two", "two");
     block_on(storage.submit_fact(&first)).expect("the fact is accepted");
@@ -235,7 +235,7 @@ fn a_walk_reports_a_pending_record_the_partial_flush_left_on_the_medium_once() {
 
 #[test]
 fn a_listed_key_the_channel_cannot_read_is_skipped() {
-    let storage = RefFihStorage::new_without_maps(
+    let storage = RefFihStorage::new(
         ListingIo {
             key: "facts/f_ghost.fact",
             bytes: None,
@@ -255,7 +255,7 @@ fn a_listed_key_the_channel_cannot_read_is_skipped() {
 
 #[test]
 fn a_listed_key_whose_bytes_do_not_decode_is_skipped() {
-    let storage = RefFihStorage::new_without_maps(
+    let storage = RefFihStorage::new(
         ListingIo {
             key: "facts/f_garbled.fact",
             bytes: Some(b"not a record"),

@@ -14,7 +14,9 @@ use std::sync::{Arc, Mutex};
 
 use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
-use nex_fih::{AsyncFactCapable, AsyncIntentCapable, Content, CoordId, Fact, RefFihStorage, Intent};
+use nex_fih::{
+    AsyncFactCapable, AsyncIntentCapable, Content, CoordId, Fact, Intent, RefFihStorage,
+};
 
 #[derive(Clone, Default)]
 struct MemoryIo {

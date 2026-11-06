@@ -1,63 +1,31 @@
-// ── RefFihStorage — unified FIH storage over FileIo ───────────────────────
+// ── The reference store ────────────────────────────────────────────────
 //
-// RefFihStorage is an execution unit. Each instance runs on a single thread
-// with exclusive ownership of its in-memory state (FihCoord indices,
-// entity stores, pending buffer) and I/O channel. There is no internal
-// concurrency: no Mutex, no RwLock, no thread pool. Scaling happens
-// through physical instance replication (multiple RefFihStorage instances,
-// each independent), not through internal sharding.
+// This is the reference implementation of the storage contract, not a storage engine. It
+// holds the FIH records in maps, writes them at the keys the format publishes, and answers
+// the read surface a state network names. A consumer reads it to learn the shape of an
+// implementation: submit a fact, flush it, open the volume again, walk it, read one record
+// by its address.
 //
-// RefFihStorage does NOT implement sync storage traits (FactCapable,
-// IntentCapable, etc.). All public methods are async. This is not a
-// WASM concession — it is a consequence of storage being inherently
-// I/O-bound and RefFihStorage being a single-threaded execution unit.
-// Blocking on I/O would stall the sole thread and starve all pending
-// operations. Sync callers use futures_executor::block_on externally
-// (see FihBlackboard for a convenience wrapper on native platforms).
+// What it deliberately does not have is the part that is an implementation's own work: an
+// index over the axes, a walk that reads the medium a page at a time, a bounded device
+// read, a content cache with an eviction policy, a write-ahead path, or a recovery format.
+// Those are the things a storage implementation sells, and this file is the shape one
+// answers with rather than the implementation itself. See
+// `docs/2026-11-06-the-open-layer-is-a-fabric-and-not-a-store.md`.
 //
-// Interior mutability uses Cell2 (critical-section Mutex wrapping a
-// RefCell on native and MCU targets, a plain RefCell on
-// wasm32-unknown-unknown) because there is no concurrent access within
-// an instance. Cell2 adds a same-thread reentrancy check, so a nested
-// exclusive borrow panics; callers must borrow cells one at a time. This
-// is the simplest correct implementation for a single-owner model. If
-// thread-safe access is needed, the caller wraps the instance in
-// Arc<Mutex<RefFihStorage>> — that is an external composition, not an
-// internal requirement.
-//
-// No static or static mut state exists in RefFihStorage except fixed
-// constants. Every resource is owned by the instance. Spawning a new
-// instance is purely a construction operation with no global side
-// effects.
-//
-// Design invariants:
-//   - enqueue_content() enqueues WriteOps via pending, never calls
-//     io.write() directly
-//   - read_state() serves from the in-memory record maps and
-//     materializes blob Content from pending writes first, then IO
-//   - conclude_intent() passes real to_fact/concluded_at to try_conclude()
-//   - all timestamps flow through Now trait, never SystemTime::now() directly
-//   - no sync trait on RefFihStorage (async-only)
-//   - no static mutable state
+// What stays true here is the contract: a fact's address is derived from what it holds, a
+// record lives at the key its address implies, a walk visits records in key order, and a
+// write is visible to a read of the same instance before it reaches the medium.
 
-use crate::FihId20 as _;
 use alloc::boxed::Box;
-use alloc::collections::VecDeque;
+use alloc::collections::BTreeMap;
 use alloc::format;
-use alloc::string::String;
-use alloc::string::ToString;
-#[cfg(feature = "structural-index")]
-use alloc::vec;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-
 use core::ops::Range;
 
-use sha2::Digest;
+use sha2::{Digest, Sha256};
 
-use crate::{
-    BlackboardError, BoardState, Content, CoordId, Fact, FihHash, Hint, Intent, PartitionData,
-    StateFilter,
-};
 use nex_core::Now;
 
 use crate::core::index::Cell2;
@@ -67,31 +35,17 @@ use crate::core::record::{
 };
 use crate::io::file_io::{FileIo, WriteOp};
 use crate::semantic::record::{Query, RecordLoad};
+use crate::{
+    BlackboardError, BoardState, Content, CoordId, Fact, FihHash, Hint, Intent, PartitionData,
+    StateFilter,
+};
+use crate::FihId20 as _;
 
-// `std::collections::HashMap` exists only under the std feature; alloc has
-// no HashMap. The no_std path substitutes a BTreeMap, which satisfies the
-// same contract (iteration order is unspecified for HashMap, so callers
-// cannot rely on it).
-#[cfg(not(feature = "std"))]
-use alloc::collections::BTreeMap as HashMap;
-#[cfg(feature = "std")]
-use std::collections::HashMap;
-
-// `std::collections::HashSet` exists only under the std feature; alloc has
-// no HashSet. The no_std path substitutes a BTreeSet, which satisfies the
-// same contract (iteration order is unspecified for HashSet, so callers
-// cannot rely on it).
-#[cfg(not(feature = "std"))]
-use alloc::collections::BTreeSet as HashSet;
-#[cfg(feature = "std")]
-use std::collections::HashSet;
-
-/// Record-layer payload for the unified store (L2 restructure, #176).
+/// The payload a caller places directly, which is a record it already holds in pieces.
 ///
-/// The coordinate tree no longer stores record bodies: it holds id sets
-/// at structural paths. `Record` remains the write payload for
-/// `place_record`, which fans the fields out to the application layer
-/// (record maps), the inverse index (intents), and the tree id set.
+/// This is the write side of the reference store: a caller that has a fact, an intent, or a
+/// hint in hand hands it over, and the maps hold it. The medium is the caller's to write, or
+/// `flush_pending` is, depending on how the record was built.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub enum Record {
     Fact {
@@ -118,634 +72,93 @@ pub enum Record {
     },
 }
 
-/// Deterministic u16 fingerprint for an arbitrary string, used for the
-/// origin/creator axes of the structural index.
+/// Reference storage over an IO channel.
 ///
-/// Advisory only: the fingerprint is a 13.4-bit SHA-256 prefix, so
-/// collisions are possible. Record-field predicates compare exact
-/// strings; the axes provide ordering, not exact query keys.
-pub(crate) fn hash_str(s: &str) -> u16 {
-    use sha2::Digest;
-    let mut h = sha2::Sha256::new();
-    h.update(s.as_bytes());
-    let hash = h.finalize();
-    u16::from_le_bytes([hash[0], hash[1]]) % 11172
-}
-
-/// Build a CoordPath<6> structural path for the unified filter index.
-///
-/// Axis layout:
-///   [0-1]  time (days since epoch, split into two base-11172 axes so the
-///          leading-axis lexicographic order equals chronological order
-///          for up to u16 x 11172 days; second-level precision stays in
-///          the records)
-///   [2]    entity
-///   [3-4]  origin/creator fingerprints (advisory ordering only)
-///   [5]    status
-///
-/// The path carries no id and no content hash (L2 restructure, #176):
-/// the tree value is the set of record ids at the structural path, so
-/// the tree is a filter index whose memory is bounded by axis
-/// cardinality, not record count. Record bodies live in the application
-/// layer (record maps), and the record map's persisted blob hash is the
-/// sole defender against same-id collisions.
-pub fn structural_path(
-    entity: u16,
-    origin: &str,
-    creator: &str,
-    status: u16,
-    ts_ns: u64,
-) -> tagma_core::CoordPath<6> {
-    use tagma_core::{Coord, CoordPath};
-    let mk = |v: u16| Coord::new(v % 11172).unwrap();
-    let days = ts_ns / 86_400_000_000_000;
-    let days_hi = (days / 11172) as u16;
-    let days_lo = (days % 11172) as u16;
-    // Use hash-based coord for origin/creator (matches make_record_path convention)
-    let origin_v = hash_str(origin);
-    let creator_v = hash_str(creator);
-    let mut coords = [Coord::new(0).unwrap(); 6];
-    coords[0] = mk(days_hi);
-    coords[1] = mk(days_lo);
-    coords[2] = mk(entity);
-    coords[3] = mk(origin_v);
-    coords[4] = mk(creator_v);
-    coords[5] = mk(status);
-    CoordPath::new(coords)
-}
-
-/// Default upper bound on the content-addressed blob cache entry count.
-/// Oldest entries are evicted first; evicted blobs reload from io on
-/// demand. The bound keeps the in-memory content working set from
-/// growing unbounded with the store; tune with
-/// [`RefFihStorage::set_blob_cache_cap`] for workloads whose distinct blob
-/// working set exceeds the default.
-const BLOB_CACHE_CAP: usize = 10_000;
-
-/// Blob materialization jobs: (index into the state vector, blob hash)
-/// for fact content and intent descriptions.
-type BlobJobs = Vec<(usize, String)>;
-
-/// Collect the records that satisfy `keep`, sorted by key. Filtering runs
-/// before the sort so a selective query pays O(N) scan plus O(k log k)
-/// sort instead of a full-map sort, while the id-sorted result order
-/// matches `read_state`.
-///
-/// The sort is unstable because the key is the map key, so it is unique and
-/// the comparator is already a total order: there are no ties for stability
-/// to break. Unstable avoids carrying the stable sort's merge path into a
-/// no_std build.
-fn sorted_matches<K, R, F>(map: &HashMap<K, R>, keep: F) -> Vec<(&K, &R)>
-where
-    K: Ord,
-    F: Fn(&K, &R) -> bool,
-{
-    let mut matches: Vec<(&K, &R)> = map.iter().filter(|(k, r)| keep(k, r)).collect();
-    matches.sort_unstable_by(|a, b| a.0.cmp(b.0));
-    matches
-}
-
-/// The ids a filter named, normalized once per call.
-///
-/// A `StateFilter` names records by id, and the caller may write an id canonically or as a
-/// label, which `CoordId::resolve` makes interchangeable. That derivation belongs to the
-/// wanted side alone. A candidate is the record-map key the loop already holds, and a key is
-/// written as `CoordId::to_string()` by every path that writes one, so deriving the candidate
-/// again would allocate once per candidate to compare it against itself.
-///
-/// The list is sorted, so membership is a lookup rather than a walk of the wanted entries for
-/// every candidate.
-pub(crate) struct WantedIds {
-    canonical: Vec<String>,
-    /// Whether the filter named ids at all. An absent list restricts nothing, while a present
-    /// and empty one names no record and excludes every candidate, and those are different
-    /// answers.
-    restricted: bool,
-}
-
-impl WantedIds {
-    pub(crate) fn new(ids: Option<&Vec<String>>) -> Self {
-        let Some(ids) = ids else {
-            return Self {
-                canonical: Vec::new(),
-                restricted: false,
-            };
-        };
-        let mut canonical: Vec<String> = ids
-            .iter()
-            .map(|id| CoordId::resolve(id).to_string())
-            .collect();
-        // Unstable for the reason `sorted_matches` gives, and a repeated wanted id carries no
-        // meaning, so there is no order to preserve.
-        canonical.sort_unstable();
-        canonical.dedup();
-        Self {
-            canonical,
-            restricted: true,
-        }
-    }
-
-    /// Whether the record at `id` is one the filter named.
-    ///
-    /// `id` is the record-map key the caller's loop holds, not a reference to resolve.
-    pub(crate) fn allows(&self, id: &str) -> bool {
-        if !self.restricted {
-            return true;
-        }
-        self.canonical
-            .binary_search_by(|held| held.as_str().cmp(id))
-            .is_ok()
-    }
-
-    /// Whether the names are the side to walk, given how many records the map holds.
-    ///
-    /// Both directions reach the same records: walking the names probes the map once per name,
-    /// and walking the map looks each key up among the names. The smaller side is the one to
-    /// walk, so neither the walks nor the probes exceed it. An absent list leaves the map as the
-    /// only side there is.
-    pub(crate) fn drives(&self, records: usize) -> bool {
-        self.restricted && self.canonical.len() <= records
-    }
-
-    /// The records the names reach, in name order, from the map they live in.
-    ///
-    /// One lookup per name, so the work is the names and not the volume.
-    pub(crate) fn lookup<'a, R, F>(
-        &'a self,
-        map: &'a HashMap<String, R>,
-        keep: F,
-    ) -> Vec<(&'a String, &'a R)>
-    where
-        F: Fn(&String, &R) -> bool,
-    {
-        let mut matched = Vec::new();
-        for id in &self.canonical {
-            if let Some(record) = map.get(id)
-                && keep(id, record)
-            {
-                matched.push((id, record));
-            }
-        }
-        matched
-    }
-}
-
-/// Unified FIH storage backended by an abstract IO layer.
-///
-/// All FIH trait methods are sync. They enqueue WriteOps into a buffer
-/// for batch commit by the outer FihSession layer.
-/// IO-bound operations (flush_pending, rebuild_cache) are async.
+/// The maps are the record layer: one keyed by identifier per record type, rebuilt from the
+/// medium on `rebuild_cache` and updated on every write. A write is buffered in `pending`
+/// and reaches the medium on `flush_pending`; a read materializes a payload from the buffer
+/// first, so a session reads what it has written.
 pub struct RefFihStorage<I: FileIo> {
     pub io: I,
     project_id: String,
     clock: Box<dyn Now + Send + Sync>,
-    /// When true, every write operation also flushes pending ops to IO
-    /// immediately, ensuring durability at the cost of batching.
+    /// Whether a write flushes on its own, which is what a deployment that cannot lose a
+    /// record asks for.
     auto_flush: bool,
-    /// Whether this store keeps the record maps. A store without them holds nothing about
-    /// the volume, which is what the reference path asks for: its writes reach the medium
-    /// and are not remembered, and its checks read the medium at the key an identifier
-    /// implies. The maps below are empty and untouched in that mode, so a reader that
-    /// wants them asks for a store that has them.
-    maps: Cell2<bool>,
-    // In-memory stores: rebuilt from IO on hydrate, kept in sync for reads.
-    // The record maps are the application layer: one id-keyed HashMap per
-    // record type, authoritative for reads and writes since the L2
-    // restructure (#176). The id-keyed entity store duplication was
-    // removed; the maps serve both the internal read paths and the
-    // public surface.
-    /// Structural filter index: CoordPath<6> (time, entity, origin,
-    /// creator, status) to the set of record ids at that path. Memory is
-    /// bounded by axis cardinality, not record count (L2 restructure,
-    /// #176), which is why it is behind the `structural-index` feature:
-    /// a consumer that never queries it should not pay for it. The
-    /// `iter_tree` ascending order contract is preserved.
-    #[cfg(feature = "structural-index")]
-    pub(crate) store: Cell2<tagma_core::CoordSpaceN<6, Vec<String>>>,
-    pub fact_records: Cell2<HashMap<String, FactRecord>>,
-    pub intent_records: Cell2<HashMap<String, IntentRecord>>,
-    pub hint_records: Cell2<HashMap<String, HintRecord>>,
-    /// From-fact to intent ids inverse index (Step 3, #176). Kept in sync
-    /// by `place_record` (link) and `vacate_record` (unlink) for every
-    /// intent, so `intents_by_fact` is O(fan-out) instead of an O(N)
-    /// scan. Keys are the canonical CoordId strings stored in
-    /// `IntentRecord::from_facts`; concluded intents stay linked (their
-    /// from_facts never change).
-    fact_to_intents: Cell2<HashMap<String, Vec<String>>>,
-    /// Content-addressed blob cache (#173 follow-up). Blobs are immutable
-    /// (hash to content), so a cache keyed by blob hash never needs
-    /// invalidation. Populated on first materialization and served on
-    /// subsequent reads, removing the per-read io round trip for already
-    /// seen content. Bounded by [`blob_cache_cap`]: the oldest entries are
-    /// evicted first and reloaded from io on a later miss.
-    blob_cache: Cell2<HashMap<String, Content>>,
-    /// FIFO insertion order for the bounded blob cache eviction.
-    blob_cache_order: Cell2<VecDeque<String>>,
-    /// Cache entry cap, defaulting to [`BLOB_CACHE_CAP`].
-    blob_cache_cap: Cell2<usize>,
-    // Semantic stores (for similarity search).
-    semantic_stores: Cell2<Vec<crate::semantic::DynSemanticStore>>,
-    /// The fact id each semantic index was assigned to, in index order. The store
-    /// reports matches by index, so this is the only thing that can resolve one back
-    /// to a record without depending on map iteration order.
-    semantic_ids: Cell2<Vec<String>>,
-    // Pending writes (for FihSession coordination).
+    pub fact_records: Cell2<BTreeMap<String, FactRecord>>,
+    pub intent_records: Cell2<BTreeMap<String, IntentRecord>>,
+    pub hint_records: Cell2<BTreeMap<String, HintRecord>>,
+    /// Writes waiting for `flush_pending` to commit them.
     pub(crate) pending: Cell2<Vec<WriteOp>>,
+    semantic_stores: Cell2<Vec<crate::semantic::DynSemanticStore>>,
+    /// The fact id each semantic index was assigned to, in index order.
+    semantic_ids: Cell2<Vec<String>>,
 }
 
 impl<I: FileIo> RefFihStorage<I> {
-    /// Create storage with a system wall clock. Std-only: `SystemClock`
-    /// wraps `std::time`. On no_std targets use `with_clock` with an
-    /// injected `Now` (e.g. `EpochClock` on an MCU).
+    /// Create storage with a system wall clock. Std-only.
     #[cfg(feature = "std")]
     pub fn new(io: I, project_id: &str) -> Self {
         Self::with_clock(io, project_id, Box::new(nex_core::SystemClock))
     }
 
+    /// Create storage over an injected clock, which is what a target without a system
+    /// clock supplies.
     pub fn with_clock(io: I, project_id: &str, clock: Box<dyn Now + Send + Sync>) -> Self {
-        Self::with_clock_and_memory(io, project_id, clock)
+        Self::with_options(io, project_id, clock, false)
     }
 
-    /// Create storage that keeps no record maps.
-    ///
-    /// A store made this way holds nothing about the volume. A write reaches the medium
-    /// and is not remembered, a walk reads the medium one record at a time, and the checks
-    /// that guard a write read the medium at the key an identifier implies instead of
-    /// reading a map. This is what a device with no memory to spare asks for, and what
-    /// makes opening a volume cost the same at one record and at a thousand.
-    ///
-    /// The readers that are the record maps cannot answer here, and they refuse in debug
-    /// builds rather than reporting an empty map as an empty volume: `read_state`,
-    /// `read_state_filtered`, `fact_exists`, `intent_exists`, `hint_exists`, `all_fact_ids`,
-    /// `all_intent_ids`, `all_hint_ids`, `intents_by_fact`, `resolve_semantic_idx`, and the
-    /// intent and hint lookups. A caller that needs one of them asks for a store built with
-    /// the maps. The reads this mode has are the walks, and `get_fact_by_id`, which answers
-    /// from the medium at the key the identifier implies.
-    ///
-    /// The map is still what `rebuild_cache` builds, so a store that calls it stops being
-    /// this one.
-    pub fn without_maps(io: I, project_id: &str, clock: Box<dyn Now + Send + Sync>) -> Self {
-        Self::with_options(io, project_id, clock, false, false)
-    }
-
-    /// The same, with a system wall clock. Std-only.
-    #[cfg(feature = "std")]
-    pub fn new_without_maps(io: I, project_id: &str) -> Self {
-        Self::without_maps(io, project_id, Box::new(nex_core::SystemClock))
-    }
-
-    /// Create storage with auto-flush enabled. Every write operation
-    /// immediately flushes pending ops to IO for durability.
-    /// Useful for R2-backed or direct-write deployments.
-    /// Std-only: uses `SystemClock`.
+    /// Create storage that flushes every write, at the cost of batching.
     #[cfg(feature = "std")]
     pub fn with_auto_flush(io: I, project_id: &str) -> Self {
-        Self::with_all(io, project_id, Box::new(nex_core::SystemClock), true)
+        Self::with_options(io, project_id, Box::new(nex_core::SystemClock), true)
     }
 
-    /// Full constructor with all options.
+    /// The state-only constructor, named for the read path it serves.
+    pub fn with_clock_and_memory(
+        io: I,
+        project_id: &str,
+        clock: Box<dyn Now + Send + Sync>,
+    ) -> Self {
+        Self::with_options(io, project_id, clock, false)
+    }
+
+    /// The full constructor. Kept because a caller that names every option should not have
+    /// to know which ones this implementation ignores.
     pub fn with_all(
         io: I,
         project_id: &str,
         clock: Box<dyn Now + Send + Sync>,
         auto_flush: bool,
     ) -> Self {
-        Self::with_options(io, project_id, clock, auto_flush, true)
+        Self::with_options(io, project_id, clock, auto_flush)
     }
 
-    /// Create storage with in-memory state only (no auto-flush).
-    pub fn with_clock_and_memory(
-        io: I,
-        project_id: &str,
-        clock: Box<dyn Now + Send + Sync>,
-    ) -> Self {
-        Self::with_options(io, project_id, clock, false, true)
-    }
-
-    /// Every constructor, in one place: the record maps are the one option a caller
-    /// chooses for a reason the store cannot guess, so they are built here or not at all.
     fn with_options(
         io: I,
         project_id: &str,
         clock: Box<dyn Now + Send + Sync>,
         auto_flush: bool,
-        maps: bool,
     ) -> Self {
         Self {
             io,
             project_id: project_id.to_string(),
             clock,
             auto_flush,
-            maps: Cell2::new(maps),
-            #[cfg(feature = "structural-index")]
-            store: Cell2::new(tagma_core::CoordSpaceN::new()),
-            fact_records: Cell2::new(HashMap::new()),
-            intent_records: Cell2::new(HashMap::new()),
-            hint_records: Cell2::new(HashMap::new()),
-            fact_to_intents: Cell2::new(HashMap::new()),
-            blob_cache: Cell2::new(HashMap::new()),
-            blob_cache_order: Cell2::new(VecDeque::new()),
-            blob_cache_cap: Cell2::new(BLOB_CACHE_CAP),
+            fact_records: Cell2::new(BTreeMap::new()),
+            intent_records: Cell2::new(BTreeMap::new()),
+            hint_records: Cell2::new(BTreeMap::new()),
+            pending: Cell2::new(Vec::new()),
             semantic_stores: Cell2::new(Vec::new()),
             semantic_ids: Cell2::new(Vec::new()),
-            pending: Cell2::new(Vec::new()),
         }
     }
 
-    /// Refuse a read that is the record maps when this store keeps none.
-    ///
-    /// A store without maps holds nothing about the volume, so a reader that would consult a
-    /// map has no answer to give. An empty map is not that answer: it reads as a volume with
-    /// no records rather than as a store that cannot report them, and that is a difference a
-    /// caller acts on, by writing a record it believes is absent or by reporting a volume it
-    /// believes is empty. The walks, and the key-addressed lookups that read the medium, are
-    /// the reads this mode has.
-    ///
-    /// The refusal is an assertion rather than a returned error because every reader here is
-    /// a signature without an error channel, and it is a debug assertion because a release
-    /// build has no channel to report it through.
-    fn needs_maps(&self, what: &str) {
-        debug_assert!(
-            *self.maps.borrow(),
-            "{what} needs a store that keeps the record maps; this one was opened without them"
-        );
+    pub fn project_id(&self) -> &str {
+        &self.project_id
     }
 
-    /// Set the blob cache entry cap. A larger cap keeps more content in
-    /// memory at the cost of the working set; a smaller cap bounds memory
-    /// but makes large distinct-blob workloads reload from io more often.
-    pub fn set_blob_cache_cap(&self, cap: usize) {
-        *self.blob_cache_cap.borrow_mut() = cap;
-    }
-
-    /// Insert a blob into the bounded content cache, evicting the oldest
-    /// entry when the cap is exceeded. Safe to call for any hash: blobs
-    /// are immutable, so an evicted entry simply reloads from io later.
-    ///
-    /// The three cells are borrowed sequentially, never nested: under the
-    /// no_std cell (critical-section Mutex) a nested acquire would panic,
-    /// and the sequential order keeps the same observable behavior.
-    fn cache_blob(&self, hash: String, content: Content) {
-        let cap = *self.blob_cache_cap.borrow();
-        // Check and insert under one exclusive borrow. A racing caller can
-        // pass the shared check above only if it interleaves between the
-        // borrows, so re-checking under the write borrow keeps the FIFO
-        // order free of duplicate entries. The cells are still borrowed
-        // one at a time: no two cells are held simultaneously.
-        let mut cache = self.blob_cache.borrow_mut();
-        if cache.contains_key(&hash) {
-            return;
-        }
-        cache.insert(hash.clone(), content);
-        drop(cache);
-        self.blob_cache_order.borrow_mut().push_back(hash.clone());
-        // Evict until the order fits the cap. Each iteration re-borrows
-        // sequentially (the order guard drops before the cache guard), so
-        // no two cells are held at the same time.
-        loop {
-            let over = {
-                let order = self.blob_cache_order.borrow();
-                order.len() > cap
-            };
-            if !over {
-                break;
-            }
-            let evicted = {
-                let mut order = self.blob_cache_order.borrow_mut();
-                order.pop_front()
-            };
-            if let Some(evicted) = evicted {
-                self.blob_cache.borrow_mut().remove(&evicted);
-            } else {
-                break;
-            }
-        }
-    }
-
-    /// Clone a blob from the content cache, if present.
-    fn cached_content(&self, hash: &str) -> Option<Content> {
-        self.blob_cache.borrow().get(hash).cloned()
-    }
-
-    /// Structured state read without content materialization: returns
-    /// the same records as `read_state` with empty fact content and
-    /// intent descriptions. Callers that only need ids, origins,
-    /// creators, and status (for example the nexd scheduler's heartbeat
-    /// poll) avoid the blob loads and cache churn of a full read.
-    pub async fn read_state_struct(&self) -> BoardState {
-        let (state, _, _) = self.collect_state();
-        state
-    }
-
-    /// Build the structured BoardState from the application-layer record
-    /// maps (id-sorted) together with the blob jobs needed to
-    /// materialize fact content and intent descriptions. Sync: no io, no
-    /// awaits, so callers can release the maps before materializing.
-    fn collect_state(&self) -> (BoardState, BlobJobs, BlobJobs) {
-        self.needs_maps("a state read");
-        let mut facts = Vec::new();
-        let mut intents = Vec::new();
-        let mut hints = Vec::new();
-        let mut fact_blob_jobs: Vec<(usize, String)> = Vec::new();
-        let mut desc_jobs: Vec<(usize, String)> = Vec::new();
-
-        // The record maps are iterated in id order, replicating the
-        // sorted io-key enumeration of the pre-#173 implementation. This
-        // keeps the observable state ordering contract unchanged. The sort
-        // is unstable because the key is the map key, so it is unique and
-        // there are no ties for stability to break.
-        {
-            let recs = self.fact_records.borrow();
-            let mut fact_recs: Vec<(&String, &FactRecord)> = recs.iter().collect();
-            fact_recs.sort_unstable_by(|a, b| a.0.cmp(b.0));
-            for (id, r) in fact_recs {
-                let content_hash = Self::blob_hash_or_zero(&r.blob_hash);
-                fact_blob_jobs.push((facts.len(), r.blob_hash.clone()));
-                facts.push(Fact {
-                    id: CoordId::resolve(id),
-                    origin: r.origin.clone(),
-                    content_hash,
-                    content: Content {
-                        mime_type: "application/octet-stream".into(),
-                        data: Vec::new(),
-                    },
-                    creator: r.creator.clone(),
-                });
-            }
-        }
-        {
-            let recs = self.intent_records.borrow();
-            let mut intent_recs: Vec<(&String, &IntentRecord)> = recs.iter().collect();
-            intent_recs.sort_unstable_by(|a, b| a.0.cmp(b.0));
-            for (id, r) in intent_recs {
-                let description = if r.description_hash.is_empty() {
-                    id.clone()
-                } else {
-                    desc_jobs.push((intents.len(), r.description_hash.clone()));
-                    String::new()
-                };
-                intents.push(Intent {
-                    id: CoordId::resolve(id),
-                    from_facts: r.from_facts.iter().map(|s| CoordId::resolve(s)).collect(),
-                    description,
-                    creator: r.creator.clone(),
-                    worker: match &r.status {
-                        IntentStatus::Claimed { worker, .. }
-                        | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
-                        IntentStatus::Submitted => None,
-                    },
-                    to_fact_id: match &r.status {
-                        IntentStatus::Concluded { to_fact, .. } => Some(CoordId::resolve(to_fact)),
-                        _ => None,
-                    },
-                    last_heartbeat_at: match &r.status {
-                        IntentStatus::Claimed {
-                            last_heartbeat_at, ..
-                        } => Some(nanos_to_secs(*last_heartbeat_at)),
-                        _ => None,
-                    },
-                    created_at: Some(nanos_to_secs(r.created_at)),
-                    is_concluded: matches!(r.status, IntentStatus::Concluded { .. }),
-                    concluded_at: match &r.status {
-                        IntentStatus::Concluded { concluded_at, .. } => {
-                            Some(nanos_to_secs(*concluded_at))
-                        }
-                        _ => None,
-                    },
-                });
-            }
-        }
-        {
-            let recs = self.hint_records.borrow();
-            let mut hint_recs: Vec<(&String, &HintRecord)> = recs.iter().collect();
-            hint_recs.sort_unstable_by(|a, b| a.0.cmp(b.0));
-            for (id, r) in hint_recs {
-                hints.push(Hint {
-                    id: CoordId::resolve(id),
-                    content: r.content.clone(),
-                    creator: r.creator.clone(),
-                });
-            }
-        }
-
-        (
-            BoardState {
-                facts,
-                intents,
-                hints,
-            },
-            fact_blob_jobs,
-            desc_jobs,
-        )
-    }
-
-    /// Rebuild in-memory cache from IO storage.
-    pub async fn rebuild_cache(&self) -> Result<(), String> {
-        // The maps are what this builds, so a store that asked not to keep them stops
-        // being that kind of store here.
-        *self.maps.borrow_mut() = true;
-        let fact_keys = self.io.list("facts/").await?;
-        let mut facts: Vec<(String, FactRecord)> = Vec::new();
-        for key in fact_keys {
-            if let Some(bytes) = self.io.read(&key).await?
-                && let Ok(record) = postcard::from_bytes::<FactRecord>(&bytes)
-            {
-                facts.push((record.id.clone(), record));
-            }
-        }
-
-        let intent_keys = self.io.list("intents/").await?;
-        let mut intents: Vec<(String, IntentRecord)> = Vec::new();
-        for key in intent_keys {
-            if let Some(bytes) = self.io.read(&key).await?
-                && let Ok(record) = decode_intent_record(&bytes)
-            {
-                intents.push((record.id.clone(), record));
-            }
-        }
-
-        let hint_keys = self.io.list("hints/").await?;
-        let mut hints: Vec<(String, HintRecord)> = Vec::new();
-        for key in hint_keys {
-            if let Some(bytes) = self.io.read(&key).await?
-                && let Ok(record) = decode_hint_record(&bytes)
-            {
-                hints.push((record.id.clone(), record));
-            }
-        }
-
-        // Populate the structural filter index and the record maps so id
-        // enumeration and spatial queries work after a reopen. The
-        // content hash is parsed from the persisted blob hash; a
-        // malformed hash falls back to recomputing it from the blob.
-        for (_, r) in &facts {
-            let content_hash = match Self::hex_blob_hash(&r.blob_hash) {
-                Some(h) => h,
-                None => {
-                    // Legacy or corrupt hash: recompute from the blob.
-                    let content = load_blob(&self.io, &r.blob_hash).await;
-                    let mut h = sha2::Sha256::new();
-                    h.update(&content.data);
-                    FihHash(h.finalize().into())
-                }
-            };
-            self.place_record(
-                &Self::fact_path(r),
-                &r.id,
-                Record::Fact {
-                    content: Content {
-                        mime_type: "application/octet-stream".into(),
-                        data: Vec::new(),
-                    },
-                    content_hash,
-                    origin: r.origin.clone(),
-                    creator: r.creator.clone(),
-                    submitted_at: r.submitted_at,
-                },
-            );
-        }
-        for (_, r) in &intents {
-            self.place_intent(r);
-        }
-        for (_, r) in &hints {
-            self.place_record(
-                &Self::hint_path(r),
-                &r.id,
-                Record::Hint {
-                    content: r.content.clone(),
-                    creator: r.creator.clone(),
-                    submitted_at: r.submitted_at,
-                },
-            );
-        }
-
-        // The record maps are populated by the place_* calls above; the
-        // pre-merge entity stores are gone (L2 restructure, #176).
-
-        Ok(())
-    }
-
-    /// Flush pending writes when the store was opened for durability on every write.
-    async fn flush_if_auto(&self) -> Result<(), String> {
-        if self.auto_flush {
-            self.flush_pending().await?;
-        }
-        Ok(())
-    }
-
-    /// Apply the pending writes to IO, and settle them.
-    ///
-    /// A batch is the boundary at which a channel with a buffer writes through, so
-    /// when this returns `Ok` the operations are applied and, for a channel that
-    /// buffers, on the medium. A channel that leaves state buffered is one whose
-    /// `apply_batch` does not settle, and that channel's own test is where it is
-    /// held.
-    ///
-    /// On failure the batch is re-queued at the front of `pending` so a later
-    /// flush retries it. Write and Delete are absolute, so re-applying an
-    /// operation that was already applied is safe. That covers the case a settle
-    /// adds: the operations applied and the flush failed, which returns an error
-    /// after the buffer was written.
+    /// Commit the buffered writes to the medium.
     pub async fn flush_pending(&self) -> Result<(), String> {
         let ops = {
             let mut pending = self.pending.borrow_mut();
@@ -762,83 +175,692 @@ impl<I: FileIo> RefFihStorage<I> {
         Ok(())
     }
 
-    /// Rebuild semantic stores from the record maps after rebuild_cache.
-    pub async fn rebuild_semantic(&self) -> Result<(), String> {
-        // The index is built from the record maps, so a store without them has nothing to
-        // index. Saying so beats building an index of nothing, which a reader would take
-        // for a volume with no records.
-        if !*self.maps.borrow() {
-            return Err(
-                "the meaning index is built from the record maps, so it needs a store that \
-                 keeps them"
-                    .to_string(),
-            );
+    async fn flush_if_auto(&self) -> Result<(), String> {
+        if self.auto_flush {
+            self.flush_pending().await?;
         }
-        // Snapshot: take stores atomically, work on them, then put back.
-        let mut stores = core::mem::take(&mut *self.semantic_stores.borrow_mut());
-        if stores.is_empty() {
-            return Ok(());
-        }
-
-        let facts: Vec<FactRecord> = self.fact_records.borrow().values().cloned().collect();
-        // The index is assigned in the order this rebuild walks the records, so the
-        // list is replaced rather than extended: an id from before the rebuild names a
-        // position the new index may not use.
-        self.semantic_ids.borrow_mut().clear();
-        struct TextRecord {
-            text: String,
-        }
-        impl crate::semantic::record::RecordLoad for TextRecord {
-            fn content(&self, _id: u32) -> Option<Vec<u8>> {
-                Some(self.text.as_bytes().to_vec())
-            }
-            fn features(&self, _id: u32) -> Option<Vec<f32>> {
-                None
-            }
-        }
-
-        for r in facts.iter() {
-            let content = load_blob(&self.io, &r.blob_hash).await;
-            if content.data.is_empty() {
-                continue;
-            }
-            let text = String::from_utf8_lossy(&content.data).to_string();
-            if text.trim().is_empty() {
-                continue;
-            }
-            let idx = {
-                let mut ids = self.semantic_ids.borrow_mut();
-                let idx = ids.len() as u32;
-                ids.push(r.id.clone());
-                idx
-            };
-            let load = TextRecord { text };
-            for store in stores.iter_mut() {
-                let _ = store.insert(idx, &load).await;
-            }
-        }
-
-        // Put stores back
-        self.semantic_stores.borrow_mut().extend(stores);
         Ok(())
     }
 
-    /// Register a semantic store for auto-indexing on fact submission.
+    /// Build the maps from what the medium holds. This is the cold-start read: one listing
+    /// and one read a record.
+    pub async fn rebuild_cache(&self) -> Result<(), String> {
+        let mut facts: BTreeMap<String, FactRecord> = BTreeMap::new();
+        for key in self.io.list("facts/").await? {
+            if let Some(bytes) = self.io.read(&key).await?
+                && let Ok(mut record) = postcard::from_bytes::<FactRecord>(&bytes)
+            {
+                // A record written by an older path can name a blob hash that is not a
+                // digest. The bytes it names are the truth, so the map holds the digest the
+                // bytes compute to, which is what the conflict guard compares.
+                if Self::hex_blob_hash(&record.blob_hash).is_none()
+                    && let Ok(Some(data)) = self
+                        .io
+                        .read(&format!("blob/{}.bin", record.blob_hash))
+                        .await
+                {
+                    let mut h = Sha256::new();
+                    h.update(&data);
+                    record.blob_hash = format!("{:x}", h.finalize());
+                }
+                facts.insert(record.id.clone(), record);
+            }
+        }
+        let mut intents: BTreeMap<String, IntentRecord> = BTreeMap::new();
+        for key in self.io.list("intents/").await? {
+            if let Some(bytes) = self.io.read(&key).await?
+                && let Ok(record) = decode_intent_record(&bytes)
+            {
+                intents.insert(record.id.clone(), record);
+            }
+        }
+        let mut hints: BTreeMap<String, HintRecord> = BTreeMap::new();
+        for key in self.io.list("hints/").await? {
+            if let Some(bytes) = self.io.read(&key).await?
+                && let Ok(record) = decode_hint_record(&bytes)
+            {
+                hints.insert(record.id.clone(), record);
+            }
+        }
+        *self.fact_records.borrow_mut() = facts;
+        *self.intent_records.borrow_mut() = intents;
+        *self.hint_records.borrow_mut() = hints;
+        Ok(())
+    }
+
+    /// The state, assembled from the record maps in identifier order.
+    ///
+    /// A read commits what this session buffered first. A medium that refuses the write does
+    /// not refuse the read: the refusal is logged, the buffer is dropped, and the record stays
+    /// in the maps without its payload reaching the medium.
+    pub async fn read_state(&self) -> BoardState {
+        if let Err(error) = self.flush_pending().await {
+            log::warn!("read_state: {error}");
+            self.pending.borrow_mut().clear();
+        }
+        self.materialize(self.state_from_maps()).await
+    }
+
+    /// The same state without its payloads and descriptions, which is what a caller that
+    /// only needs the shape asks for.
+    pub async fn read_state_struct(&self) -> BoardState {
+        self.state_from_maps()
+    }
+
+    /// The state as the records state it, with no payload read.
+    fn state_from_maps(&self) -> BoardState {
+        let facts = self
+            .fact_records
+            .borrow()
+            .values()
+            .map(|r| Fact {
+                id: CoordId::resolve(&r.id),
+                origin: r.origin.clone(),
+                content_hash: Self::blob_hash_or_zero(&r.blob_hash),
+                content: Content {
+                    mime_type: "application/json".into(),
+                    data: Vec::new(),
+                },
+                creator: r.creator.clone(),
+            })
+            .collect();
+        let intents = self
+            .intent_records
+            .borrow()
+            .values()
+            .map(|r| {
+                let mut intent = intent_model(r);
+                if !r.description_hash.is_empty() {
+                    intent.description = String::new();
+                }
+                intent
+            })
+            .collect();
+        let hints = self
+            .hint_records
+            .borrow()
+            .values()
+            .map(|r| Hint {
+                id: CoordId::resolve(&r.id),
+                content: r.content.clone(),
+                creator: r.creator.clone(),
+            })
+            .collect();
+        BoardState {
+            facts,
+            intents,
+            hints,
+        }
+    }
+
+    /// Read the payload each fact and intent names, and settle a hash the record could not
+    /// state.
+    async fn materialize(&self, mut state: BoardState) -> BoardState {
+        for fact in &mut state.facts {
+            let Some(record) = self
+                .fact_records
+                .borrow()
+                .get(&fact.id.to_string())
+                .cloned()
+            else {
+                continue;
+            };
+            fact.content = self
+                .load_content(&record.blob_hash, "application/json")
+                .await;
+            if Self::hex_blob_hash(&record.blob_hash).is_none()
+                && !fact.content.data.is_empty()
+            {
+                let mut h = Sha256::new();
+                h.update(&fact.content.data);
+                fact.content_hash = FihHash(h.finalize().into());
+            }
+        }
+        for intent in &mut state.intents {
+            let Some(record) = self
+                .intent_records
+                .borrow()
+                .get(&intent.id.to_string())
+                .cloned()
+            else {
+                continue;
+            };
+            if record.description_hash.is_empty() {
+                continue;
+            }
+            let content = self
+                .load_content(&record.description_hash, "application/json")
+                .await;
+            intent.description = String::from_utf8_lossy(&content.data).to_string();
+        }
+        state
+    }
+
+    /// Place a record a caller built.
+    ///
+    /// A caller that writes its own blob and builds its own record uses this instead of
+    /// `submit_fact`, which derives the record from a model. The maps hold what is placed;
+    /// nothing reaches the medium here.
+    pub fn place_record(&self, id: &str, record: Record) {
+        match record {
+            Record::Fact {
+                content_hash,
+                origin,
+                creator,
+                submitted_at,
+                ..
+            } => {
+                self.fact_records.borrow_mut().insert(
+                    id.to_string(),
+                    FactRecord {
+                        id: id.to_string(),
+                        blob_hash: content_hash.to_string(),
+                        origin,
+                        creator,
+                        submitted_at,
+                    },
+                );
+            }
+            Record::Intent {
+                from_facts,
+                description_hash,
+                creator,
+                status,
+                created_at,
+            } => {
+                self.intent_records.borrow_mut().insert(
+                    id.to_string(),
+                    IntentRecord {
+                        id: id.to_string(),
+                        from_facts,
+                        description_hash,
+                        creator,
+                        status,
+                        created_at,
+                        time_unit: RecordTimeUnit::Nanos,
+                    },
+                );
+            }
+            Record::Hint {
+                content,
+                creator,
+                submitted_at,
+            } => {
+                self.hint_records.borrow_mut().insert(
+                    id.to_string(),
+                    HintRecord {
+                        id: id.to_string(),
+                        content,
+                        creator,
+                        submitted_at,
+                        ttl_secs: None,
+                        time_unit: RecordTimeUnit::Nanos,
+                    },
+                );
+            }
+        }
+    }
+
+    /// Drop a record a caller placed.
+    pub fn vacate_record(&self, id: &str) {
+        self.fact_records.borrow_mut().remove(id);
+        self.intent_records.borrow_mut().remove(id);
+        self.hint_records.borrow_mut().remove(id);
+    }
+
+    /// Read one fact by identifier: its payload and the framing beside it.
+    pub async fn get_fact_by_id(&self, id: &str) -> Option<(Content, FihHash, String, String)> {
+        let r = self.get_fact_framing(id).await?;
+        let content = self.load_content(&r.blob_hash, "application/octet-stream").await;
+        Some((
+            content,
+            Self::blob_hash_or_zero(&r.blob_hash),
+            r.origin,
+            r.creator,
+        ))
+    }
+
+    /// Read one fact's framing, without its payload.
+    pub async fn get_fact_framing(&self, id: &str) -> Option<FactRecord> {
+        let normalized = CoordId::resolve(id).to_string();
+        if let Some(r) = self.fact_records.borrow().get(&normalized).cloned() {
+            return Some(r);
+        }
+        let key = FactRecord::fact_key(&normalized);
+        self.io
+            .read(&key)
+            .await
+            .ok()
+            .flatten()
+            .and_then(|bytes| postcard::from_bytes::<FactRecord>(&bytes).ok())
+    }
+
+    /// Read one intent by identifier, with the description beside its record.
+    ///
+    /// The map answers for a volume this session holds; a fresh instance reads the medium at
+    /// the key the identifier implies, which is the same read a consumer makes after a reopen.
+    pub async fn get_intent(&self, id: &str) -> Option<(IntentRecord, Option<String>)> {
+        let normalized = CoordId::resolve(id).to_string();
+        let record = match self.intent_records.borrow().get(&normalized).cloned() {
+            Some(record) => record,
+            None => {
+                let key = IntentRecord::intent_key(&normalized);
+                let bytes = self.io.read(&key).await.ok().flatten()?;
+                decode_intent_record(&bytes).ok()?
+            }
+        };
+        let description = if record.description_hash.is_empty() {
+            None
+        } else {
+            let content = self.load_content(&record.description_hash, "text/plain").await;
+            Some(String::from_utf8_lossy(&content.data).into_owned())
+        };
+        Some((record, description))
+    }
+
+    /// Read one hint by identifier.
+    ///
+    /// A hint's content is in its record, so this is one read.
+    pub async fn get_hint(&self, id: &str) -> Option<HintRecord> {
+        let normalized = CoordId::resolve(id).to_string();
+        if let Some(record) = self.hint_records.borrow().get(&normalized).cloned() {
+            return Some(record);
+        }
+        let key = HintRecord::hint_key(&normalized);
+        let bytes = self.io.read(&key).await.ok().flatten()?;
+        decode_hint_record(&bytes).ok()
+    }
+
+    /// The intent's fields as the record map holds them. `created_at` and a status
+    /// timestamp are nanoseconds, which is the storage unit.
+    pub fn get_intent_by_id(
+        &self,
+        id: &str,
+    ) -> Option<(Vec<String>, String, String, IntentStatus, u64)> {
+        let normalized = CoordId::resolve(id).to_string();
+        let r = self.intent_records.borrow().get(&normalized).cloned()?;
+        Some((
+            r.from_facts,
+            r.description_hash,
+            r.creator,
+            r.status,
+            r.created_at,
+        ))
+    }
+
+    /// The hint's content, creator, and submission time.
+    pub fn get_hint_by_id(&self, id: &str) -> Option<(String, String, u64)> {
+        let normalized = CoordId::resolve(id).to_string();
+        self.hint_records
+            .borrow()
+            .get(&normalized)
+            .map(|r| (r.content.clone(), r.creator.clone(), r.submitted_at))
+    }
+
+    pub fn fact_exists(&self, id: &str) -> bool {
+        self.fact_records
+            .borrow()
+            .contains_key(&CoordId::resolve(id).to_string())
+    }
+
+    pub fn intent_exists(&self, id: &str) -> bool {
+        self.intent_records
+            .borrow()
+            .contains_key(&CoordId::resolve(id).to_string())
+    }
+
+    pub fn hint_exists(&self, id: &str) -> bool {
+        self.hint_records
+            .borrow()
+            .contains_key(&CoordId::resolve(id).to_string())
+    }
+
+    pub fn all_fact_ids(&self) -> Vec<String> {
+        self.fact_records.borrow().keys().cloned().collect()
+    }
+
+    pub fn all_intent_ids(&self) -> Vec<String> {
+        self.intent_records.borrow().keys().cloned().collect()
+    }
+
+    pub fn all_hint_ids(&self) -> Vec<String> {
+        self.hint_records.borrow().keys().cloned().collect()
+    }
+
+    /// The intents that name `fact_id`, which is one scan of the intent map.
+    pub fn intents_by_fact(&self, fact_id: &str) -> Vec<String> {
+        let normalized = CoordId::resolve(fact_id).to_string();
+        self.intent_records
+            .borrow()
+            .values()
+            .filter(|r| r.from_facts.iter().any(|f| f == &normalized))
+            .map(|r| r.id.clone())
+            .collect()
+    }
+
+    pub async fn for_each_fact<F>(&self, visit: F) -> Result<(), String>
+    where
+        F: FnMut(&FactRecord, Content) -> bool,
+    {
+        let mut visit = visit;
+        for record in self.walk_records().await? {
+            let content = self
+                .load_content(&record.blob_hash, "application/octet-stream")
+                .await;
+            if !visit(&record, content) {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn for_each_fact_record<F>(&self, visit: F) -> Result<(), String>
+    where
+        F: FnMut(&FactRecord) -> bool,
+    {
+        let mut visit = visit;
+        for record in self.walk_records().await? {
+            if !visit(&record) {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    /// The fact records the volume holds, in key order, read one at a time.
+    ///
+    /// The walk reads the medium rather than the map, so a session that has read nothing still
+    /// answers for a volume another session wrote. A write this session buffered but could not
+    /// commit is overlaid on what the medium holds: a part that refuses a write must not turn a
+    /// record the session is still holding into one that is gone.
+    async fn walk_records(&self) -> Result<Vec<FactRecord>, String> {
+        let mut records: BTreeMap<String, FactRecord> = BTreeMap::new();
+        for key in self.io.list("facts/").await? {
+            if let Some(bytes) = self.io.read(&key).await?
+                && let Ok(record) = postcard::from_bytes::<FactRecord>(&bytes)
+            {
+                records.insert(key, record);
+            }
+        }
+        for op in self.pending.borrow().iter() {
+            match op {
+                WriteOp::Write { path, data } if path.starts_with("facts/") => {
+                    if let Ok(record) = postcard::from_bytes::<FactRecord>(data) {
+                        records.insert(path.clone(), record);
+                    }
+                }
+                WriteOp::Delete { path } if path.starts_with("facts/") => {
+                    records.remove(path);
+                }
+                _ => {}
+            }
+        }
+        Ok(records.into_values().collect())
+    }
+
+    /// The filtered read, applied to the maps.
+    pub async fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
+        let since = filter.since.as_ref().and_then(|s| s.parse::<u64>().ok());
+        let until = filter.until.as_ref().and_then(|s| s.parse::<u64>().ok());
+
+        let mut facts = Vec::new();
+        for r in self.fact_records.borrow().values() {
+            if let Some(want) = filter.origin.as_deref()
+                && r.origin != want
+            {
+                continue;
+            }
+            if let Some(want) = filter.creator.as_deref()
+                && r.creator != want
+            {
+                continue;
+            }
+            if let Some(ts) = since
+                && r.submitted_at < ts
+            {
+                continue;
+            }
+            if let Some(ts) = until
+                && r.submitted_at > ts
+            {
+                continue;
+            }
+            if let Some(ids) = filter.fact_ids.as_ref()
+                && !ids.iter().any(|id| CoordId::resolve(id).to_string() == r.id)
+            {
+                continue;
+            }
+            let content = self.load_content(&r.blob_hash, "application/octet-stream").await;
+            facts.push(Fact {
+                id: CoordId::resolve(&r.id),
+                origin: r.origin.clone(),
+                content_hash: Self::blob_hash_or_zero(&r.blob_hash),
+                content,
+                creator: r.creator.clone(),
+            });
+        }
+
+        let mut intents = Vec::new();
+        for r in self.intent_records.borrow().values() {
+            if let Some(ids) = filter.intent_ids.as_ref()
+                && !ids.iter().any(|id| CoordId::resolve(id).to_string() == r.id)
+            {
+                continue;
+            }
+            if let Some(want) = filter.creator.as_deref()
+                && r.creator != want
+            {
+                continue;
+            }
+            if let Some(ts) = since
+                && r.created_at < ts
+            {
+                continue;
+            }
+            if let Some(ts) = until
+                && r.created_at > ts
+            {
+                continue;
+            }
+            let status = match &r.status {
+                IntentStatus::Submitted => "submitted",
+                IntentStatus::Claimed { .. } => "claimed",
+                IntentStatus::Concluded { .. } => "concluded",
+            };
+            if let Some(want) = filter.status.as_deref()
+                && status != want
+            {
+                continue;
+            }
+            let description = if r.description_hash.is_empty() {
+                r.id.clone()
+            } else {
+                let content = self.load_content(&r.description_hash, "application/json").await;
+                String::from_utf8_lossy(&content.data).to_string()
+            };
+            intents.push(Intent {
+                id: CoordId::resolve(&r.id),
+                from_facts: r.from_facts.iter().map(|s| CoordId::resolve(s)).collect(),
+                description,
+                creator: r.creator.clone(),
+                worker: match &r.status {
+                    IntentStatus::Claimed { worker, .. } | IntentStatus::Concluded { worker, .. } => {
+                        Some(worker.clone())
+                    }
+                    IntentStatus::Submitted => None,
+                },
+                to_fact_id: match &r.status {
+                    IntentStatus::Concluded { to_fact, .. } => Some(CoordId::resolve(to_fact)),
+                    _ => None,
+                },
+                last_heartbeat_at: match &r.status {
+                    IntentStatus::Claimed {
+                        last_heartbeat_at, ..
+                    } => Some(nanos_to_secs(*last_heartbeat_at)),
+                    _ => None,
+                },
+                created_at: Some(nanos_to_secs(r.created_at)),
+                is_concluded: matches!(r.status, IntentStatus::Concluded { .. }),
+                concluded_at: match &r.status {
+                    IntentStatus::Concluded { concluded_at, .. } => {
+                        Some(nanos_to_secs(*concluded_at))
+                    }
+                    _ => None,
+                },
+            });
+        }
+
+        let mut hints = Vec::new();
+        for r in self.hint_records.borrow().values() {
+            if let Some(ids) = filter.hint_ids.as_ref()
+                && !ids.iter().any(|id| CoordId::resolve(id).to_string() == r.id)
+            {
+                continue;
+            }
+            if let Some(want) = filter.creator.as_deref()
+                && r.creator != want
+            {
+                continue;
+            }
+            hints.push(Hint {
+                id: CoordId::resolve(&r.id),
+                content: r.content.clone(),
+                creator: r.creator.clone(),
+            });
+        }
+
+        // The window is over a set already narrowed by the predicates, so paging it here
+        // costs the answer and not the volume.
+        let offset = filter.offset.unwrap_or(0);
+        if offset > 0 || filter.limit.is_some() {
+            let take = |len: usize| {
+                let start = offset.min(len);
+                let end = filter.limit.map(|l| (start + l).min(len)).unwrap_or(len);
+                (start, end)
+            };
+            let (f0, f1) = take(facts.len());
+            let (i0, i1) = take(intents.len());
+            let (h0, h1) = take(hints.len());
+            facts = facts[f0..f1].to_vec();
+            intents = intents[i0..i1].to_vec();
+            hints = hints[h0..h1].to_vec();
+        }
+
+        BoardState {
+            facts,
+            intents,
+            hints,
+        }
+    }
+
+    /// How many records the maps hold.
+    pub fn record_count(&self) -> usize {
+        self.fact_records.borrow().len()
+            + self.intent_records.borrow().len()
+            + self.hint_records.borrow().len()
+    }
+
+    /// Drop the hints submitted before `before` (a nanosecond timestamp as text).
+    pub async fn evict_before(&self, before: &str) -> Result<u64, String> {
+        let before_ns: u64 = before.parse().unwrap_or(0);
+        let expired: Vec<HintRecord> = self
+            .hint_records
+            .borrow()
+            .values()
+            .filter(|r| r.submitted_at < before_ns)
+            .cloned()
+            .collect();
+        let mut evicted = 0u64;
+        for record in expired {
+            self.pending
+                .borrow_mut()
+                .push(WriteOp::Delete { path: record.key() });
+            self.hint_records.borrow_mut().remove(&record.id);
+            evicted += 1;
+        }
+        self.flush_if_auto().await?;
+        Ok(evicted)
+    }
+
+    /// Drop the unclaimed intents older than `older_than_ns` nanoseconds.
+    pub async fn evict_stale_intents(&self, older_than_ns: u64) -> Result<u64, String> {
+        let cutoff = self.clock.now_nanos().saturating_sub(older_than_ns);
+        let stale: Vec<IntentRecord> = self
+            .intent_records
+            .borrow()
+            .values()
+            .filter(|r| matches!(r.status, IntentStatus::Submitted) && r.created_at < cutoff)
+            .cloned()
+            .collect();
+        let mut evicted = 0u64;
+        for record in stale {
+            self.pending
+                .borrow_mut()
+                .push(WriteOp::Delete { path: record.key() });
+            self.intent_records.borrow_mut().remove(&record.id);
+            evicted += 1;
+        }
+        self.flush_if_auto().await?;
+        Ok(evicted)
+    }
+
+    /// The records a partition names, which is the `partition:<name>` prefix on a fact's
+    /// origin or on an intent's or hint's creator.
+    pub async fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
+        let named = format!("partition:{partition}");
+        let state = self.materialize(self.state_from_maps()).await;
+        Ok(PartitionData {
+            partition: partition.to_string(),
+            facts: state
+                .facts
+                .into_iter()
+                .filter(|f| f.origin == named)
+                .collect(),
+            intents: state
+                .intents
+                .into_iter()
+                .filter(|i| i.creator == named)
+                .collect(),
+            hints: state
+                .hints
+                .into_iter()
+                .filter(|h| h.creator == named)
+                .collect(),
+        })
+    }
+
+    /// The span the facts cover, as nanosecond timestamps.
+    fn fact_time_range(&self) -> Option<Range<String>> {
+        let recs = self.fact_records.borrow();
+        let mut iter = recs.values().map(|r| r.submitted_at);
+        let first = iter.next()?;
+        let (min, max) = iter.fold((first, first), |(lo, hi), t| (lo.min(t), hi.max(t)));
+        Some(min.to_string()..max.to_string())
+    }
+
+    /// Register a meaning index, which is a derived structure the reference store does not
+    /// build on its own.
     pub fn register_semantic_store(&self, store: crate::semantic::DynSemanticStore) {
         self.semantic_stores.borrow_mut().push(store);
     }
 
-    /// Access the semantic stores list (for downcasting to concrete types).
     pub fn semantic_stores(
         &self,
     ) -> impl core::ops::Deref<Target = Vec<crate::semantic::DynSemanticStore>> {
         self.semantic_stores.borrow()
     }
 
-    /// Search semantic stores with the given query.
-    ///
-    /// Uses take/extend pattern to avoid holding a non-Send MutexGuard
-    /// across an async boundary.
+    /// The identifier a meaning index assigned to a fact, or the empty string when the
+    /// index does not carry that position.
+    pub fn resolve_semantic_idx(&self, idx: u32) -> String {
+        self.semantic_ids
+            .borrow()
+            .get(idx as usize)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Search the registered meaning indexes and keep the best `top_k`.
     pub async fn semantic_search(
         &self,
         query: &dyn Query,
@@ -861,405 +883,116 @@ impl<I: FileIo> RefFihStorage<I> {
         Ok(results)
     }
 
-    /// Insert a record into semantic stores.
-    ///
-    /// Uses take/extend pattern (not borrow_mut across await) to avoid
-    /// holding a non-Send MutexGuard across an async boundary.
+    /// Insert one fact's text into every registered meaning index.
     pub async fn semantic_insert(&self, id: u32, load: &dyn RecordLoad) -> Result<(), String> {
         let mut stores = core::mem::take(&mut *self.semantic_stores.borrow_mut());
         if stores.is_empty() {
             self.semantic_stores.borrow_mut().extend(stores);
             return Err("no semantic stores configured".into());
         }
-        let mut last_err: Option<String> = None;
+        let mut failure = None;
         for store in stores.iter_mut() {
-            if let Err(e) = store.insert(id, load).await {
-                last_err = Some(e);
+            if let Err(error) = store.insert(id, load).await {
+                failure = Some(error);
+                break;
+            }
+        }
+        // Put the indexes back whichever way the insert went: one that refused a record is
+        // still registered for the next one.
+        self.semantic_stores.borrow_mut().extend(stores);
+        match failure {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
+    }
+
+    /// Build every registered meaning index from the facts the maps hold.
+    pub async fn rebuild_semantic(&self) -> Result<(), String> {
+        let mut stores = core::mem::take(&mut *self.semantic_stores.borrow_mut());
+        if stores.is_empty() {
+            return Ok(());
+        }
+        let records: Vec<FactRecord> = self.fact_records.borrow().values().cloned().collect();
+        self.semantic_ids.borrow_mut().clear();
+        for r in records {
+            let content = self.load_content(&r.blob_hash, "application/octet-stream").await;
+            if content.data.is_empty() {
+                continue;
+            }
+            let text = String::from_utf8_lossy(&content.data).to_string();
+            if text.trim().is_empty() {
+                continue;
+            }
+            let idx = {
+                let mut ids = self.semantic_ids.borrow_mut();
+                let idx = ids.len() as u32;
+                ids.push(r.id.clone());
+                idx
+            };
+            let load = TextRecord { text };
+            for store in stores.iter_mut() {
+                let _ = store.insert(idx, &load).await;
             }
         }
         self.semantic_stores.borrow_mut().extend(stores);
-        if let Some(e) = last_err {
-            Err(e)
-        } else {
-            Ok(())
-        }
+        Ok(())
     }
 
-    /// Normalize an intent id to its canonical CoordId string form. A
-    /// non-canonical id cannot reference any stored intent.
-    fn normalize_intent_id(&self, intent_id: &str) -> String {
-        CoordId::resolve(intent_id).to_string()
-    }
-
-    /// Query intents that reference a given fact.
-    ///
-    /// The from-fact to intent inverse index is kept in sync by
-    /// `place_record` and `vacate_record` (Step 3, #176), so this is an
-    /// O(fan-out) lookup instead of an O(N) scan. The fact_id is resolved
-    /// via CoordId::resolve to match the canonical CoordId format stored
-    /// in IntentRecord.from_facts. Concluded intents remain referenced
-    /// (their from_facts never change).
-    pub fn intents_by_fact(&self, fact_id: &str) -> Vec<String> {
-        self.needs_maps("an intent lookup by fact");
-        let normalized = crate::CoordId::resolve(fact_id).to_string();
-        self.fact_to_intents
-            .borrow()
-            .get(&normalized)
-            .cloned()
-            .unwrap_or_default()
-    }
-
-    /// Assert that an id is the canonical form the record maps are keyed by.
-    ///
-    /// A record is keyed by its id string, and a reader that names records by id compares
-    /// against that key: a key that is not canonical is invisible to such a reader, which is a
-    /// wrong answer rather than a crash. Every writer reaches the maps through `place_record` or
-    /// `vacate_record`, so the check sits at that boundary, where the violation is attributed to
-    /// the caller that produced the id.
-    fn assert_canonical(id: &str) {
-        debug_assert!(
-            CoordId::<20>::from_string(id).is_some(),
-            "the record maps are keyed by a canonical id; {id:?} is not one"
-        );
-    }
-
-    /// Direct record placement (for special cases like nex-calc) and the
-    /// single chokepoint for the record layer.
-    ///
-    /// Maintains three structures in one call:
-    ///   - the application-layer record map (`fact_records`,
-    ///     `intent_records`, `hint_records`), so reads (id enumeration,
-    ///     lookups, filtered traversal) see every writer including direct
-    ///     ones. For facts the persisted blob hash is the sole defender
-    ///     against same-id collisions;
-    ///   - the from-fact to intent inverse index (`fact_to_intents`,
-    ///     intents only), the O(1) reverse lookup;
-    ///   - the structural filter index (id set at the structural path).
-    ///
-    /// Blob enqueue is skipped (the caller owns blob IO). The conflict
-    /// guard lives in `submit_fact` (the mission scope): a direct writer
-    /// that places the same id with a different `content_hash` silently
-    /// overwrites here, and the next `submit_fact` against that id is
-    /// rejected. Direct writers must therefore be id-stable
-    /// (deterministic content per id), which nex-calc is
-    /// (`make_number_fact_id` and the content hash both derive from the
-    /// value). In debug builds the invariant is asserted.
-    #[cfg_attr(not(feature = "structural-index"), allow(unused_variables))]
-    pub fn place_record(&self, path: &tagma_core::CoordPath<6>, id: &str, record: Record) {
-        // Nothing to place in a store that keeps no maps. The write itself is the
-        // caller's, and it reaches the medium whether or not this ran.
-        if !*self.maps.borrow() {
-            return;
+    /// Read a payload: a buffered write first, then the medium.
+    async fn load_content(&self, blob_hash: &str, fallback_mime: &str) -> Content {
+        if blob_hash.is_empty() {
+            return Content {
+                mime_type: "application/json".into(),
+                data: Vec::new(),
+            };
         }
-        Self::assert_canonical(id);
-        match &record {
-            Record::Fact {
-                content_hash,
-                origin,
-                creator,
-                submitted_at,
-                ..
-            } => {
-                if let Some(existing) = self.fact_records.borrow().get(id)
-                    && let Some(existing_hash) = Self::hex_blob_hash(&existing.blob_hash)
-                {
-                    debug_assert!(
-                        existing_hash == *content_hash,
-                        "place_record: fact id {id} is being overwritten with a different \
-                         content_hash; direct writers must be id-stable or route through \
-                         submit_fact"
-                    );
-                }
-                self.fact_records.borrow_mut().insert(
-                    id.to_string(),
-                    FactRecord {
-                        id: id.to_string(),
-                        blob_hash: content_hash.to_string(),
-                        origin: origin.clone(),
-                        creator: creator.clone(),
-                        submitted_at: *submitted_at,
-                    },
-                );
-            }
-            Record::Intent {
-                from_facts,
-                description_hash,
-                creator,
-                status,
-                created_at,
-            } => {
-                self.intent_records.borrow_mut().insert(
-                    id.to_string(),
-                    IntentRecord {
-                        id: id.to_string(),
-                        from_facts: from_facts.clone(),
-                        description_hash: description_hash.clone(),
-                        creator: creator.clone(),
-                        status: status.clone(),
-                        created_at: *created_at,
-                        time_unit: RecordTimeUnit::Nanos,
-                    },
-                );
-                // Link the inverse index: this intent references each
-                // from-fact (Step 3, #176). Status moves relink the same
-                // from_facts, so the net entry is unchanged.
-                let mut index = self.fact_to_intents.borrow_mut();
-                for fact in from_facts {
-                    let entry = index.entry(fact.clone()).or_default();
-                    if !entry.iter().any(|x| x == id) {
-                        entry.push(id.to_string());
-                    }
-                }
-            }
-            Record::Hint {
-                content,
-                creator,
-                submitted_at,
-            } => {
-                self.hint_records.borrow_mut().insert(
-                    id.to_string(),
-                    HintRecord {
-                        id: id.to_string(),
-                        content: content.clone(),
-                        creator: creator.clone(),
-                        submitted_at: *submitted_at,
-                        ttl_secs: None,
-                        time_unit: RecordTimeUnit::Nanos,
-                    },
-                );
-            }
-        }
-        // Add the id to the structural path's id set.
-        #[cfg(feature = "structural-index")]
-        {
-            let mut store = self.store.borrow_mut();
-            match store.at_path_mut(path) {
-                Some(ids) => {
-                    if !ids.iter().any(|x| x == id) {
-                        ids.push(id.to_string());
-                    }
-                }
-                None => {
-                    store.place_path(path, vec![id.to_string()]);
-                }
-            }
-        }
-    }
+        let data_key = format!("blob/{blob_hash}.bin");
+        let meta_key = format!("blob/{blob_hash}.bin.meta");
 
-    /// Direct record removal (for special cases like nex-calc).
-    ///
-    /// Removes `id` from the authoritative record map (the entity axis
-    /// [2] selects fact/intent/hint), from the inverse index (intents),
-    /// and from the id set at the structural path. Facts are
-    /// append-only, so vacate is used only for intents (status moves)
-    /// and hints; the fact branches exist for completeness and also
-    /// remove the record-map entry.
-    pub fn vacate_record(&self, path: &tagma_core::CoordPath<6>, id: &str) {
-        // The mirror of `place_record`: a store that keeps no maps has none to vacate.
-        if !*self.maps.borrow() {
-            return;
-        }
-        Self::assert_canonical(id);
-        match path.coords()[2].index() {
-            0 => {
-                self.fact_records.borrow_mut().remove(id);
-            }
-            1 => {
-                // Unlink the inverse index before removing the record:
-                // the record map still holds the intent, so its
-                // from_facts are available.
-                let from_facts: Vec<String> = self
-                    .intent_records
-                    .borrow()
-                    .get(id)
-                    .map(|r| r.from_facts.clone())
-                    .unwrap_or_default();
-                let mut index = self.fact_to_intents.borrow_mut();
-                for fact in from_facts {
-                    if let Some(entry) = index.get_mut(&fact) {
-                        entry.retain(|x| x != id);
-                    }
-                }
-                self.intent_records.borrow_mut().remove(id);
-            }
-            2 => {
-                self.hint_records.borrow_mut().remove(id);
-            }
-            _ => {}
-        }
-        // Remove the id from the structural path's id set.
-        #[cfg(feature = "structural-index")]
-        {
-            let mut store = self.store.borrow_mut();
-            if let Some(ids) = store.at_path_mut(path) {
-                ids.retain(|x| x != id);
-            }
-        }
-    }
-
-    /// CoordPath<6> for a fact record: entity=0, status=0, time axis from
-    /// the nanosecond `submitted_at`.
-    fn fact_path(record: &FactRecord) -> tagma_core::CoordPath<6> {
-        structural_path(
-            0u16,
-            &record.origin,
-            &record.creator,
-            0u16,
-            record.submitted_at,
-        )
-    }
-
-    /// CoordPath<6> for an intent record under the given status: entity=1,
-    /// status axis 0/1/2 (Submitted/Claimed/Concluded). `created_at` is a
-    /// nanosecond timestamp and is used as the path time axis directly.
-    fn intent_path_with(record: &IntentRecord, status: &IntentStatus) -> tagma_core::CoordPath<6> {
-        let status_coord = match status {
-            IntentStatus::Submitted => 0u16,
-            IntentStatus::Claimed { .. } => 1u16,
-            IntentStatus::Concluded { .. } => 2u16,
+        // The buffer is a cell guard, which is not Send, so what it holds is copied out and
+        // the guard is released before the first await.
+        let buffered = {
+            let pending = self.pending.borrow();
+            let data = pending.iter().rev().find_map(|op| match op {
+                WriteOp::Write { path, data } if path == &data_key => Some(data.clone()),
+                _ => None,
+            });
+            data.map(|data| {
+                let mime = pending
+                    .iter()
+                    .rev()
+                    .find_map(|op| match op {
+                        WriteOp::Write { path, data } if path == &meta_key => {
+                            postcard::from_bytes::<ContentMeta>(data).ok().map(|m| m.mime_type)
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| "application/json".to_string());
+                (data, mime)
+            })
         };
-        structural_path(1u16, "", &record.creator, status_coord, record.created_at)
-    }
-
-    /// CoordPath<6> for an intent record under its current status.
-    fn intent_path(record: &IntentRecord) -> tagma_core::CoordPath<6> {
-        Self::intent_path_with(record, &record.status)
-    }
-
-    /// CoordPath<6> for a hint record: entity=2. `submitted_at` is a
-    /// nanosecond timestamp and is used as the path time axis directly.
-    fn hint_path(record: &HintRecord) -> tagma_core::CoordPath<6> {
-        structural_path(2u16, "", &record.creator, 0u16, record.submitted_at)
-    }
-
-    /// Place an intent in the record layer under its current status.
-    fn place_intent(&self, record: &IntentRecord) {
-        self.place_record(
-            &Self::intent_path(record),
-            &record.id,
-            Record::Intent {
-                from_facts: record.from_facts.clone(),
-                description_hash: record.description_hash.clone(),
-                creator: record.creator.clone(),
-                status: record.status.clone(),
-                created_at: record.created_at,
-            },
-        );
-    }
-
-    /// Resolve a semantic index back to its ID string.
-    ///
-    /// A store reports matches by the index it was given, so the mapping is the list
-    /// built when the record was indexed rather than a position in the record maps.
-    pub fn resolve_semantic_idx(&self, idx: u32) -> String {
-        self.semantic_ids
-            .borrow()
-            .get(idx as usize)
-            .cloned()
-            .unwrap_or_default()
-    }
-
-    /// Check if a fact with the given ID exists (fast-path: fact_records HashMap).
-    pub fn fact_exists(&self, id: &str) -> bool {
-        self.needs_maps("a fact existence check");
-        self.fact_records.borrow().contains_key(id)
-    }
-
-    /// The fact record occupying `id` in the map the session keeps, if any.
-    ///
-    /// The id-keyed record map is the single chokepoint for the record layer, so this is
-    /// an O(1) lookup for every writer: `submit_fact`, `rebuild_cache` (which re-places
-    /// loaded records), and direct writers (nex-calc). The whole record is returned
-    /// because the identity of an address is its content and the fields the id was
-    /// derived from, not the content hash alone.
-    fn existing_fact_record(&self, id: &str) -> Option<FactRecord> {
-        self.fact_records.borrow().get(id).cloned()
-    }
-
-    /// The fact the medium holds at `id`, if any.
-    ///
-    /// The map answers a read for a volume the session has written. This answers it for a
-    /// volume it has not, and for a store that keeps no map at all. The address is
-    /// computed from the record, so the key follows from the identifier alone: one
-    /// identifier is one read rather than the volume held in memory.
-    ///
-    /// A record the medium holds and this reader cannot decode is an error and not an
-    /// absent record: reporting it absent would invite the overwrite the guard exists to
-    /// stop.
-    async fn medium_fact_record(&self, id: &str) -> Result<Option<FactRecord>, String> {
-        let key = FactRecord::fact_key(id);
-        let Some(bytes) = self.io.read(&key).await? else {
-            return Ok(None);
-        };
-        match postcard::from_bytes::<FactRecord>(&bytes) {
-            Ok(record) => Ok(Some(record)),
-            Err(error) => Err(format!("decode {key}: {error}")),
+        if let Some((data, mime)) = buffered {
+            return Content {
+                mime_type: mime,
+                data,
+            };
+        }
+        let mime = self
+            .io
+            .read(&meta_key)
+            .await
+            .ok()
+            .flatten()
+            .and_then(|bytes| postcard::from_bytes::<ContentMeta>(&bytes).ok())
+            .map(|m| m.mime_type)
+            .unwrap_or_else(|| "application/json".into());
+        let data = self.io.read(&data_key).await.ok().flatten().unwrap_or_default();
+        Content {
+            mime_type: mime,
+            data,
         }
     }
 
-    /// Whether the medium holds a record at the key `id` implies.
-    ///
-    /// A read and no decode, because the question is whether the address is taken and not
-    /// what is at it.
-    async fn medium_fact_exists(&self, id: &str) -> Result<bool, String> {
-        Ok(self.io.read(&FactRecord::fact_key(id)).await?.is_some())
-    }
-
-    /// The intent the medium holds at `id`, if any.
-    ///
-    /// The address is the identifier the caller supplied, so the key follows from it: one
-    /// identifier is one read. A record the medium holds and this reader cannot decode is an
-    /// error rather than an absent record, which is the rule the fact's medium read carries.
-    async fn medium_intent_record(&self, id: &str) -> Result<Option<IntentRecord>, String> {
-        let key = IntentRecord::intent_key(&self.normalize_intent_id(id));
-        let Some(bytes) = self.io.read(&key).await? else {
-            return Ok(None);
-        };
-        match decode_intent_record(&bytes) {
-            Ok(record) => Ok(Some(record)),
-            Err(error) => Err(format!("decode {key}: {error}")),
-        }
-    }
-
-    /// The hint the medium holds at `id`, if any.
-    async fn medium_hint_record(&self, id: &str) -> Result<Option<HintRecord>, String> {
-        let key = HintRecord::hint_key(&CoordId::resolve(id).to_string());
-        let Some(bytes) = self.io.read(&key).await? else {
-            return Ok(None);
-        };
-        match decode_hint_record(&bytes) {
-            Ok(record) => Ok(Some(record)),
-            Err(error) => Err(format!("decode {key}: {error}")),
-        }
-    }
-
-    /// Content hash of the record this session has written at `id` and not yet flushed.
-    ///
-    /// A store that keeps no map has only the pending buffer between a write and the
-    /// medium, so a second write of the same record before a flush would otherwise look
-    /// new. The newest write for the key wins, which is what the buffer would apply.
-    ///
-    /// A pending delete is deliberately not consulted, so that a delete and a write of
-    /// other content at the same identifier in one session still refuses. The identifier
-    /// is a content address, and the guard is about an identifier carrying content that
-    /// is not its own rather than about what a read should see. A walk answers that other
-    /// question, and there a key takes the fate of the last operation on it.
-    fn pending_fact_record(&self, id: &str) -> Option<FactRecord> {
-        let key = FactRecord::fact_key(id);
-        for op in self.pending.borrow().iter().rev() {
-            if let WriteOp::Write { path, data } = op
-                && path == &key
-                && let Ok(record) = postcard::from_bytes::<FactRecord>(data)
-            {
-                return Some(record);
-            }
-        }
-        None
-    }
-
-    /// Parse a 64-char lowercase hex blob hash back into `FihHash`.
-    /// `FactRecord::blob_hash` is written by `FihHash::to_string`, so the
-    /// format is fixed; a malformed length or hex digit is corruption.
     fn hex_blob_hash(hex: &str) -> Option<FihHash> {
         let hex = hex.as_bytes();
         if hex.len() != 64 {
@@ -1274,466 +1007,68 @@ impl<I: FileIo> RefFihStorage<I> {
         Some(FihHash(bytes))
     }
 
-    /// Parse a persisted blob hash, logging a warning when it is
-    /// malformed. Legacy or corrupt records then surface a zero hash
-    /// instead of failing silently; the pre-#173 path recomputed SHA-256
-    /// from content, which the enumeration path no longer keeps available.
     fn blob_hash_or_zero(blob_hash: &str) -> FihHash {
         match Self::hex_blob_hash(blob_hash) {
             Some(h) => h,
-            None => {
-                log::warn!("record with unparseable blob hash: {blob_hash}");
-                FihHash([0u8; 32])
-            }
+            None => FihHash([0u8; 32]),
         }
     }
+}
 
-    /// Check if an intent with the given ID exists (fast-path: intent_records HashMap).
-    pub fn intent_exists(&self, id: &str) -> bool {
-        self.needs_maps("an intent existence check");
-        self.intent_records.borrow().contains_key(id)
-    }
-
-    /// Check if a hint with the given ID exists (fast-path: hint_records HashMap).
-    pub fn hint_exists(&self, id: &str) -> bool {
-        self.needs_maps("a hint existence check");
-        self.hint_records.borrow().contains_key(id)
-    }
-
-    /// Returns all fact IDs (record-map keys; the record maps are the
-    /// authoritative record layer since the L2 restructure, #176).
-    pub fn all_fact_ids(&self) -> Vec<String> {
-        self.needs_maps("a fact identifier listing");
-        self.fact_records.borrow().keys().cloned().collect()
-    }
-
-    /// Returns all intent IDs (record-map keys).
-    pub fn all_intent_ids(&self) -> Vec<String> {
-        self.needs_maps("an intent identifier listing");
-        self.intent_records.borrow().keys().cloned().collect()
-    }
-
-    /// Returns all hint IDs (record-map keys).
-    pub fn all_hint_ids(&self) -> Vec<String> {
-        self.needs_maps("a hint identifier listing");
-        self.hint_records.borrow().keys().cloned().collect()
-    }
-
-    /// Get a fact by its ID.
-    ///
-    /// The record map answers this for a volume the session has written. A store that
-    /// keeps no map has none to answer from, and the medium answers instead at the key
-    /// the identifier implies: the address is computed, so one identifier is one read
-    /// rather than a walk of the volume.
-    ///
-    /// Content is materialized from pending writes first, then from IO by
-    /// the persisted blob hash, so records placed by direct writers
-    /// (nex-calc writes blobs to IO directly) are readable.
-    pub async fn get_fact_by_id(&self, id: &str) -> Option<(Content, FihHash, String, String)> {
-        let r = self.get_fact_framing(id).await?;
-        let content_hash = Self::blob_hash_or_zero(&r.blob_hash);
-        let content = self
-            .load_content_any(&r.blob_hash, "application/octet-stream")
-            .await;
-        Some((content, content_hash, r.origin.clone(), r.creator.clone()))
-    }
-
-    /// What a named fact says about itself: its identifier, its blob hash, its origin, its
-    /// creator, and when it was written.
-    ///
-    /// The lookup is the one [`RefFihStorage::get_fact_by_id`] makes, kept in one place so the
-    /// two reads cannot come to two records. The map answers for a volume the session holds,
-    /// and a store that keeps no map reads the medium at the key the identifier implies: the
-    /// address is computed, so one identifier is one read rather than a walk of the volume.
-    /// An identifier the volume does not hold is `None`.
-    ///
-    /// The content is what [`RefFihStorage::get_fact_by_id`] reads after the record. A caller
-    /// that wants the framing alone stops at the record, and on a device that is the medium
-    /// read it does not spend.
-    ///
-    /// A record the medium holds and this reader cannot decode is reported as absent, which is
-    /// what the map reports for a record it never saw. The conflict guard is where a decode
-    /// failure is fatal, because there the question is whether it is safe to write over.
-    pub async fn get_fact_framing(&self, id: &str) -> Option<FactRecord> {
-        let held = {
-            let recs = self.fact_records.borrow();
-            recs.get(id).cloned()
-        };
-        match held {
-            Some(record) => Some(record),
-            None if !*self.maps.borrow() => match self.medium_fact_record(id).await {
-                Ok(record) => record,
-                Err(error) => {
-                    log::warn!("get_fact_framing: {error}");
-                    None
-                }
-            },
-            None => None,
-        }
-    }
-
-    /// One named intent: its record and the description the record points at.
-    ///
-    /// The description is a blob the record holds a hash for, so it is a second read, and an
-    /// intent with no description has no hash and no read is made. The map answers for a volume
-    /// the session holds, and a store that keeps no map reads the medium at the key the
-    /// identifier implies, which is one read for the record and one for its description.
-    ///
-    /// An intent the volume does not hold is `None`. A record the medium holds and this reader
-    /// cannot decode is reported as absent, which is what the map reports for a record it never
-    /// saw. The returned record keeps the storage unit: `created_at` and the conclusion time are
-    /// nanoseconds. Read through `read_state` for the model's seconds.
-    pub async fn get_intent(&self, id: &str) -> Option<(IntentRecord, Option<String>)> {
-        let id = self.normalize_intent_id(id);
-        let held = {
-            let recs = self.intent_records.borrow();
-            recs.get(&id).cloned()
-        };
-        let record = match held {
-            Some(record) => record,
-            None if !*self.maps.borrow() => match self.medium_intent_record(&id).await {
-                Ok(record) => record?,
-                Err(error) => {
-                    log::warn!("get_intent: {error}");
-                    return None;
-                }
-            },
-            None => return None,
-        };
-        let description = if record.description_hash.is_empty() {
-            None
+/// The intent model a record states, without reading its description.
+fn intent_model(r: &IntentRecord) -> Intent {
+    Intent {
+        id: CoordId::resolve(&r.id),
+        from_facts: r.from_facts.iter().map(|s| CoordId::resolve(s)).collect(),
+        description: if r.description_hash.is_empty() {
+            r.id.clone()
         } else {
-            let content = self
-                .load_content_any(&record.description_hash, "text/plain")
-                .await;
-            Some(String::from_utf8_lossy(&content.data).into_owned())
-        };
-        Some((record, description))
-    }
-
-    /// One named hint, as its record states it.
-    ///
-    /// The content is in the record, so this is one read. The map answers for a volume the
-    /// session holds, and a store that keeps no map reads the medium at the key the identifier
-    /// implies. A hint the volume does not hold is `None`.
-    pub async fn get_hint(&self, id: &str) -> Option<HintRecord> {
-        let id = CoordId::resolve(id).to_string();
-        let held = {
-            let recs = self.hint_records.borrow();
-            recs.get(&id).cloned()
-        };
-        match held {
-            Some(record) => Some(record),
-            None if !*self.maps.borrow() => match self.medium_hint_record(&id).await {
-                Ok(record) => record,
-                Err(error) => {
-                    log::warn!("get_hint: {error}");
-                    None
-                }
-            },
-            None => None,
-        }
-    }
-
-    /// Get an intent by its ID (record-map lookup). The returned `created_at` and the
-    /// status's conclusion time are nanoseconds, the storage unit.
-    pub fn get_intent_by_id(
-        &self,
-        id: &str,
-    ) -> Option<(Vec<String>, String, String, IntentStatus, u64)> {
-        self.needs_maps("an intent lookup");
-        let recs = self.intent_records.borrow();
-        let r = recs.get(id)?;
-        Some((
-            r.from_facts.clone(),
-            r.description_hash.clone(),
-            r.creator.clone(),
-            r.status.clone(),
-            r.created_at,
-        ))
-    }
-
-    /// Get a hint by its ID (record-map lookup).
-    pub fn get_hint_by_id(&self, id: &str) -> Option<(String, String, u64)> {
-        self.needs_maps("a hint lookup");
-        let recs = self.hint_records.borrow();
-        let r = recs.get(id)?;
-        Some((r.content.clone(), r.creator.clone(), r.submitted_at))
-    }
-
-    /// Visit every fact the volume holds, one at a time, with its content.
-    ///
-    /// The record maps answer a read by materializing the whole state, so a reader that wants to
-    /// look at each record holds all of them: 394 to 406 bytes per record on riscv32, which for a
-    /// few hundred records is most of what a 64 KiB part has. This walks the medium instead. It
-    /// reads one record, hands it and its content over, and lets both go before reading the next,
-    /// and it reads the keys a page at a time, so between two channel reads it holds a page and a
-    /// record rather than the volume.
-    ///
-    /// The order is the channel's, and none is promised: a walk visits in whatever order the
-    /// medium yields, which is entry order for a directory and write order for a log. A walk and
-    /// a state read reach the same records, in their own orders, and a reader that needs an order
-    /// of its own sorts what it keeps.
-    ///
-    /// `visit` returns whether to keep going. A walk that is looking for one record stops at it
-    /// rather than reading the rest of the volume, which is the other half of what makes a walk
-    /// affordable on a device: the memory is a page and a record, and the work is the records the
-    /// question reaches.
-    pub async fn for_each_fact<F>(&self, visit: F) -> Result<(), String>
-    where
-        F: FnMut(&FactRecord, Content) -> bool,
-    {
-        self.walk(true, visit).await
-    }
-
-    /// Visit every fact the volume holds, one at a time, without its content.
-    ///
-    /// The same walk as [`RefFihStorage::for_each_fact`] with one difference: a reader that
-    /// only needs what a record says about itself, which is its identifier, its origin,
-    /// its creator, and when it was written, reads the framing and not the content. The
-    /// content of every record a walk passes is a medium read it does not make, and on a
-    /// device the medium is the budget the walk spends.
-    pub async fn for_each_fact_record<F>(&self, mut visit: F) -> Result<(), String>
-    where
-        F: FnMut(&FactRecord) -> bool,
-    {
-        self.walk(false, |record, _| visit(record)).await
-    }
-
-    /// One page of keys the walk reads at a time.
-    ///
-    /// A page bounds what a walk holds between two channel reads. Sixteen keys is the order of the
-    /// record maps for a handful of records, and large enough that the channel call a page costs is
-    /// worth making. A channel that cannot page hands over the whole volume in one page, and what a
-    /// walk holds is then the volume's size rather than this page.
-    const WALK_PAGE: usize = 16;
-
-    /// The walk both readers above are, with and without the content of each record.
-    ///
-    /// Writes the session has not flushed are flushed first, so a reader that has just written
-    /// sees its own writes, as every other read path promises. A flush the medium refuses is not
-    /// fatal: the writes it refused stay pending, and they are visited from memory. A worn part
-    /// loses records, and it does not make the volume unreadable.
-    async fn walk<F>(&self, with_content: bool, mut visit: F) -> Result<(), String>
-    where
-        F: FnMut(&FactRecord, Content) -> bool,
-    {
-        if let Err(error) = self.flush_pending().await {
-            log::warn!("walk: flush pending failed: {error}");
-        }
-
-        // What the session holds rather than the channel: the writes a refused flush left behind,
-        // and the keys it deleted. Both are bounded by the batch the medium refused rather than by
-        // the volume, which is what lets the loop below hold them while it reads the channel a
-        // page at a time.
-        let (pending, deleted) = self.pending_facts();
-
-        let mut cursor: Option<Vec<u8>> = None;
-        loop {
-            let (keys, next) = self
-                .io
-                .list_page("facts/", cursor.as_deref(), Self::WALK_PAGE)
-                .await?;
-            for key in &keys {
-                // A key the session deleted has no record to report, whatever the channel still
-                // lists, and the session's copy of a key is newer than the channel's.
-                if deleted.iter().any(|gone| gone == key) {
-                    continue;
-                }
-                let record =
-                    match pending.binary_search_by(|(held, _)| held.as_str().cmp(key.as_str())) {
-                        Ok(at) => pending[at].1.clone(),
-                        Err(_) => match self.io.read(key).await? {
-                            Some(bytes) => match postcard::from_bytes::<FactRecord>(&bytes) {
-                                Ok(record) => record,
-                                // Bytes that do not decode are not a record, which is what a state
-                                // read makes of them too, by never having loaded them.
-                                Err(_) => continue,
-                            },
-                            // A channel that lists a key and then does not have it: a concurrent
-                            // delete, with no record to report.
-                            None => continue,
-                        },
-                    };
-                let content = if with_content {
-                    self.load_content_any(&record.blob_hash, "application/octet-stream")
-                        .await
-                } else {
-                    Content {
-                        mime_type: "application/octet-stream".into(),
-                        data: Vec::new(),
-                    }
-                };
-                if !visit(&record, content) {
-                    return Ok(());
-                }
+            String::new()
+        },
+        creator: r.creator.clone(),
+        worker: match &r.status {
+            IntentStatus::Claimed { worker, .. } | IntentStatus::Concluded { worker, .. } => {
+                Some(worker.clone())
             }
-            match next {
-                Some(token) => cursor = Some(token),
-                None => break,
-            }
-        }
-
-        // The session's own writes that the channel does not hold. A write the medium refused is
-        // not on the medium, so the pages above did not reach it; a write the flush applied is, so
-        // the pages did, and reporting it here would report it twice.
-        for (_, record) in &pending {
-            if self.medium_fact_exists(&record.id).await? {
-                continue;
-            }
-            let content = if with_content {
-                self.load_content_any(&record.blob_hash, "application/octet-stream")
-                    .await
-            } else {
-                Content {
-                    mime_type: "application/octet-stream".into(),
-                    data: Vec::new(),
-                }
-            };
-            if !visit(record, content) {
-                return Ok(());
-            }
-        }
-        Ok(())
-    }
-
-    /// The facts this session has written and not yet flushed, and the keys it has
-    /// deleted, both in key order.
-    ///
-    /// A key takes the fate of the last operation on it, so a write after a delete brings
-    /// the key back and a delete after a write takes it away.
-    fn pending_facts(&self) -> (Vec<(String, FactRecord)>, Vec<String>) {
-        let mut facts: Vec<(String, FactRecord)> = Vec::new();
-        let mut deleted: Vec<String> = Vec::new();
-        for op in self.pending.borrow().iter() {
-            match op {
-                WriteOp::Write { path, data } if path.starts_with("facts/") => {
-                    let Ok(record) = postcard::from_bytes::<FactRecord>(data) else {
-                        continue;
-                    };
-                    match facts.iter_mut().find(|(held, _)| held == path) {
-                        Some(slot) => slot.1 = record,
-                        None => facts.push((path.clone(), record)),
-                    }
-                    deleted.retain(|held| held != path);
-                }
-                WriteOp::Delete { path } if path.starts_with("facts/") => {
-                    facts.retain(|(held, _)| held != path);
-                    if !deleted.iter().any(|held| held == path) {
-                        deleted.push(path.clone());
-                    }
-                }
-                _ => {}
-            }
-        }
-        facts.sort_by(|a, b| a.0.cmp(&b.0));
-        (facts, deleted)
-    }
-
-    /// Load blob content from pending writes. No IO fallback — the sync
-    /// path only has access to in-memory caches; after `flush_pending` +
-    /// `rebuild_cache` the content lives in IO and `load_content_any`
-    /// crosses the async boundary instead.
-    fn load_content(&self, blob_hash: &str, default_mime: &str) -> Content {
-        let blob_path = format!("blob/{}.bin", blob_hash);
-        let meta_path = format!("blob/{}.bin.meta", blob_hash);
-
-        // Check pending writes for blob data and mime
-        let pending = self.pending.borrow();
-        let mut blob_data = None;
-        let mut mime = None;
-        for op in pending.iter() {
-            match op {
-                WriteOp::Write { path, data } if *path == blob_path => {
-                    blob_data = Some(data.clone());
-                }
-                WriteOp::Write { path, data } if *path == meta_path => {
-                    if let Ok(meta) = postcard::from_bytes::<ContentMeta>(data) {
-                        mime = Some(meta.mime_type);
-                    }
-                }
-                _ => {}
-            }
-        }
-        drop(pending);
-
-        if let Some(data) = blob_data {
-            return Content {
-                mime_type: mime.unwrap_or_else(|| default_mime.to_string()),
-                data,
-            };
-        }
-
-        Content {
-            mime_type: default_mime.to_string(),
-            data: Vec::new(),
-        }
-    }
-
-    /// Load blob content from pending writes, falling back to IO by hash.
-    /// Async because the IO fallback awaits; callers must not hold a
-    /// record-map or tree borrow across the call.
-    async fn load_content_any(&self, blob_hash: &str, default_mime: &str) -> Content {
-        let pending_content = self.load_content(blob_hash, default_mime);
-        if !pending_content.data.is_empty() {
-            return pending_content;
-        }
-        load_blob(&self.io, blob_hash).await
+            IntentStatus::Submitted => None,
+        },
+        to_fact_id: match &r.status {
+            IntentStatus::Concluded { to_fact, .. } => Some(CoordId::resolve(to_fact)),
+            _ => None,
+        },
+        last_heartbeat_at: match &r.status {
+            IntentStatus::Claimed {
+                last_heartbeat_at, ..
+            } => Some(nanos_to_secs(*last_heartbeat_at)),
+            _ => None,
+        },
+        created_at: Some(nanos_to_secs(r.created_at)),
+        is_concluded: matches!(r.status, IntentStatus::Concluded { .. }),
+        concluded_at: match &r.status {
+            IntentStatus::Concluded { concluded_at, .. } => Some(nanos_to_secs(*concluded_at)),
+            _ => None,
+        },
     }
 }
 
-/// Convert IntentStatus to a simple string key for fast-path status lookup.
-fn simple_status_key(status: &IntentStatus) -> &'static str {
-    match status {
-        IntentStatus::Submitted => "submitted",
-        IntentStatus::Claimed { .. } => "claimed",
-        IntentStatus::Concluded { .. } => "concluded",
+struct TextRecord {
+    text: String,
+}
+
+impl RecordLoad for TextRecord {
+    fn content(&self, _id: u32) -> Option<Vec<u8>> {
+        Some(self.text.as_bytes().to_vec())
+    }
+    fn features(&self, _id: u32) -> Option<Vec<f32>> {
+        None
     }
 }
 
-/// The public model reports seconds; every stored record timestamp is nanoseconds.
 fn nanos_to_secs(nanos: u64) -> u64 {
     nanos / 1_000_000_000
 }
 
-fn content_hash(data: &[u8]) -> String {
-    // SHA-256 content hash. WASM-compatible (sha2 crate works on wasm32).
-    use sha2::{Digest, Sha256};
-    let mut h = Sha256::new();
-    h.update(data);
-    format!("{:x}", h.finalize())
-}
-
-/// Load a content blob from IO by hash. Returns empty Content if not found.
-async fn load_blob(io: &impl FileIo, blob_hash: &str) -> Content {
-    if blob_hash.is_empty() {
-        return Content {
-            mime_type: "application/json".into(),
-            data: Vec::new(),
-        };
-    }
-    let key = format!("blob/{}.bin", blob_hash);
-    let meta_key = format!("blob/{}.bin.meta", blob_hash);
-
-    let mime = io.read(&meta_key).await.ok().flatten().and_then(|bytes| {
-        postcard::from_bytes::<ContentMeta>(&bytes)
-            .ok()
-            .map(|m| m.mime_type)
-    });
-
-    match io.read(&key).await {
-        Ok(Some(data)) => Content {
-            mime_type: mime.unwrap_or_else(|| "application/json".into()),
-            data,
-        },
-        _ => Content {
-            mime_type: mime.unwrap_or_else(|| "application/json".into()),
-            data: Vec::new(),
-        },
-    }
-}
-
-// ── AsyncStorageRead ───────────────────────────────────────────────────────
+// ── The read surface ───────────────────────────────────────────────────
 
 impl<I: FileIo> crate::AsyncStorageRead for RefFihStorage<I> {
     fn project_id(&self) -> &str {
@@ -1741,105 +1076,18 @@ impl<I: FileIo> crate::AsyncStorageRead for RefFihStorage<I> {
     }
 
     async fn read_state(&self) -> BoardState {
-        // Serve the latest in-memory state from the application-layer
-        // record maps, the authoritative record layer since the L2
-        // restructure (#176). This removes the previous O(N) io scan
-        // (list + read + decode + SHA-256 per record) from every state
-        // read (#173). Content is materialized through the
-        // content-addressed blob cache, so repeated reads serve already
-        // seen blobs from memory instead of an io round trip.
-        //
-        // Pending writes are flushed first. This is a deliberate tradeoff:
-        // the incremental write batch stays small, so cache misses below
-        // are limited to genuinely new blobs, at the cost of a read API
-        // that writes to io (write amplification for high-frequency
-        // readers on a non-auto-flush store). The alternative, deferring
-        // the flush to the session boundary, lets pending grow unbounded
-        // and reintroduces the per-read pending cost the cache removes.
-        // A failed flush is logged: the signature has no error channel.
-        if let Err(e) = self.flush_pending().await {
-            log::warn!("read_state: flush pending failed: {e}");
-        }
-
-        let (mut state, fact_blob_jobs, desc_jobs) = self.collect_state();
-
-        // Materialize fact content and intent descriptions now that the
-        // record-map borrows are released. Distinct blob hashes missing
-        // from the cache are loaded once each from IO into a local map;
-        // the current read resolves from it (so eviction never starves
-        // this read), then the bounded cache is populated for later reads.
-        let mut missing: Vec<String> = Vec::new();
-        let mut seen: HashSet<String> = HashSet::new();
-        for (_, hash) in fact_blob_jobs.iter().chain(desc_jobs.iter()) {
-            if !self.blob_cache.borrow().contains_key(hash) && seen.insert(hash.clone()) {
-                missing.push(hash.clone());
-            }
-        }
-        // Load into a local map first so no Cell2 borrow is held across
-        // an await (keeps the future Send for tokio::spawn).
-        let mut loaded: HashMap<String, Content> = HashMap::new();
-        for hash in missing {
-            loaded.insert(hash.clone(), load_blob(&self.io, &hash).await);
-        }
-        for (idx, hash) in fact_blob_jobs {
-            state.facts[idx].content = loaded
-                .get(&hash)
-                .cloned()
-                .or_else(|| self.cached_content(&hash))
-                .unwrap_or_else(|| Content {
-                    mime_type: "application/octet-stream".into(),
-                    data: Vec::new(),
-                });
-        }
-        for (idx, hash) in desc_jobs {
-            let content = loaded
-                .get(&hash)
-                .cloned()
-                .or_else(|| self.cached_content(&hash))
-                .unwrap_or_else(|| Content {
-                    mime_type: "text/plain".into(),
-                    data: Vec::new(),
-                });
-            state.intents[idx].description = String::from_utf8_lossy(&content.data).to_string();
-        }
-        for (hash, content) in loaded {
-            self.cache_blob(hash, content);
-        }
-
-        state
+        RefFihStorage::read_state(self).await
     }
 }
-
-// ── AsyncFactCapable ───────────────────────────────────────────────────────
 
 impl<I: FileIo> crate::AsyncFactCapable for RefFihStorage<I> {
     async fn submit_fact(&self, fact: &Fact) -> Result<CoordId, BlackboardError> {
         let id = fact.id.to_string();
-        // The id is the record-layer key. A second fact at the same id is
-        // legitimate only when it is the identical content (an idempotent
-        // retry); a different content_hash means the id is not a safe
-        // content address and the earlier record must not be overwritten.
-        //
-        // The map answers this when the session has the record in hand. When it does
-        // not, the medium answers it, because the guard has to hold for a volume this
-        // session did not write: that is what the computed address is for.
-        let existing = match self.existing_fact_record(&id) {
-            Some(record) => Some(record),
-            // A record this session has written and not flushed is on neither the medium
-            // nor a map a store without one keeps.
-            None => match self.pending_fact_record(&id) {
-                Some(record) => Some(record),
-                None => self
-                    .medium_fact_record(&id)
-                    .await
-                    .map_err(|e| BlackboardError::Internal(format!("read fact {id}: {e}")))?,
-            },
-        };
-        if let Some(record) = existing {
-            // The address is a function of content, origin, and creator, but the digest
-            // is taken over concatenated fields, so two different triples can reach one
-            // address. The first record wins and the second is a conflict rather than a
-            // silent retry, so the store never holds one record for two identities.
+
+        // A second fact at one address is legitimate only when it is the same record. The
+        // address is derived from content, origin, and creator, so a different payload
+        // under one address is a conflict rather than a retry.
+        if let Some(record) = self.get_fact_framing(&id).await {
             let same_content = Self::hex_blob_hash(&record.blob_hash) == Some(fact.content_hash);
             let same_identity = record.origin == fact.origin && record.creator == fact.creator;
             if !same_content || !same_identity {
@@ -1850,14 +1098,11 @@ impl<I: FileIo> crate::AsyncFactCapable for RefFihStorage<I> {
             return Ok(fact.id);
         }
 
-        // content_hash is SHA-256 already computed by Fact::new — use directly.
         let blob_hash = fact.content_hash.to_string();
-        let pending_len = self.pending.borrow().len();
+        let record = FactRecord::from_model(fact, blob_hash.clone(), self.clock.now_nanos());
 
-        // Enqueue blob data (mime from content).
-        let blob_path = format!("blob/{blob_hash}.bin");
         self.pending.borrow_mut().push(WriteOp::Write {
-            path: blob_path,
+            path: format!("blob/{blob_hash}.bin"),
             data: fact.content.data.clone(),
         });
         let meta = ContentMeta {
@@ -1870,107 +1115,41 @@ impl<I: FileIo> crate::AsyncFactCapable for RefFihStorage<I> {
             path: format!("blob/{blob_hash}.bin.meta"),
             data: meta_bytes,
         });
-
-        let record = FactRecord::from_model(fact, blob_hash, self.clock.now_nanos());
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-
-        let op = WriteOp::Write {
+        self.pending.borrow_mut().push(WriteOp::Write {
             path: record.key(),
             data: bytes,
-        };
+        });
+        self.fact_records
+            .borrow_mut()
+            .insert(record.id.clone(), record);
 
-        // Update in-memory cache immediately for subsequent reads, and read back what
-        // the insertion displaced: that is the detector at the id-keyed commit, and what
-        // it catches is a record the pre-check could not see because it was placed
-        // directly, which is what a direct writer does. An instance is a single-owner
-        // execution unit (see the header), so there is no second task to race it.
-        //
-        // A store that keeps no record maps has nowhere to insert and nothing to catch,
-        // and here the insertion is the one thing the mode must not do: the write reaches
-        // the medium and is not remembered, which is what makes the memory it costs
-        // independent of the volume. The pre-check is unaffected, because it reads the
-        // pending buffer and then the medium at the key an identifier implies.
-        let prev = if *self.maps.borrow() {
-            self.fact_records
-                .borrow_mut()
-                .insert(record.id.clone(), record.clone())
-        } else {
-            None
-        };
-        if let Some(prev_record) = prev {
-            // Occupied at the commit point. Restore the earlier record
-            // (keep its submitted_at) and drop the blob ops enqueued by
-            // this submit.
-            let same = Self::hex_blob_hash(&prev_record.blob_hash)
-                .map(|h| h == fact.content_hash)
-                .unwrap_or(false);
-            self.fact_records
-                .borrow_mut()
-                .insert(record.id.clone(), prev_record);
-            self.pending.borrow_mut().truncate(pending_len);
-            if !same {
-                return Err(BlackboardError::Conflict(format!(
-                    "fact id {id} already exists with a different content_hash"
-                )));
-            }
-            return Ok(fact.id);
-        }
-        // Record layer: structural index (time/entity/origin/creator/status)
-        // plus the record map and id set, all maintained by
-        // `place_record`. The entity store insert above is the atomic
-        // occupancy detector; this block runs only on the fresh-insert path.
-        self.place_record(
-            &Self::fact_path(&record),
-            &record.id,
-            Record::Fact {
-                content: fact.content.clone(),
-                content_hash: fact.content_hash,
-                origin: fact.origin.clone(),
-                creator: fact.creator.clone(),
-                submitted_at: record.submitted_at,
-            },
-        );
-        self.pending.borrow_mut().push(op);
-
-        // Auto-index into semantic stores (skip conclusion facts to reduce noise)
+        // Index the payload where a meaning index is registered, so a search over what this
+        // session wrote does not have to wait for a rebuild.
         if !fact.origin.starts_with("conclusion:") && !self.semantic_stores.borrow().is_empty() {
-            let semantic_idx = {
+            let idx = {
                 let mut ids = self.semantic_ids.borrow_mut();
                 let idx = ids.len() as u32;
-                ids.push(record.id.clone());
+                ids.push(fact.id.to_string());
                 idx
             };
-            let text = String::from_utf8_lossy(&fact.content.data).to_string();
-            struct FactTextRecord {
-                text: String,
-            }
-            impl crate::semantic::record::RecordLoad for FactTextRecord {
-                fn content(&self, _id: u32) -> Option<Vec<u8>> {
-                    Some(self.text.as_bytes().to_vec())
-                }
-                fn features(&self, _id: u32) -> Option<Vec<f32>> {
-                    None
-                }
-            }
-            self.semantic_insert(semantic_idx, &FactTextRecord { text })
-                .await
-                .ok();
+            let load = TextRecord {
+                text: String::from_utf8_lossy(&fact.content.data).to_string(),
+            };
+            self.semantic_insert(idx, &load).await.ok();
         }
 
         self.flush_if_auto()
             .await
             .map_err(BlackboardError::Internal)?;
-
         Ok(fact.id)
     }
 }
 
-// ── AsyncHintCapable ───────────────────────────────────────────────────────
-
 impl<I: FileIo> crate::AsyncHintCapable for RefFihStorage<I> {
     async fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
-        let record = super::record::HintRecord {
+        let record = HintRecord {
             id: hint.id.to_string(),
             content: hint.content.clone(),
             creator: hint.creator.clone(),
@@ -1980,240 +1159,159 @@ impl<I: FileIo> crate::AsyncHintCapable for RefFihStorage<I> {
         };
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        let op = WriteOp::Write {
+        self.pending.borrow_mut().push(WriteOp::Write {
             path: record.key(),
             data: bytes,
-        };
-        self.place_record(
-            &Self::hint_path(&record),
-            &record.id,
-            Record::Hint {
-                content: record.content.clone(),
-                creator: record.creator.clone(),
-                submitted_at: record.submitted_at,
-            },
-        );
-        self.pending.borrow_mut().push(op);
-
+        });
+        self.hint_records.borrow_mut().insert(record.id.clone(), record);
         self.flush_if_auto()
             .await
             .map_err(BlackboardError::Internal)?;
-
         Ok(())
     }
 }
 
-// ── AsyncIntentCapable ─────────────────────────────────────────────────────
-
 impl<I: FileIo> crate::AsyncIntentCapable for RefFihStorage<I> {
     async fn submit_intent(&self, intent: &Intent) -> Result<CoordId, BlackboardError> {
+        // An intent is work over facts, so it names at least one and every one has to exist.
         if intent.from_facts.is_empty() {
             return Err(BlackboardError::Forbidden(
-                "intent must reference at least one fact".into(),
+                "an intent names at least one fact".into(),
             ));
         }
-        for fid in &intent.from_facts {
-            let fid_str = fid.to_string();
-            // The map answers when the session has the record. When it does not, or when
-            // there is no map, the medium answers: the address is computed, so the key
-            // follows from the identifier.
-            let known = self.fact_records.borrow().contains_key(&fid_str)
-                || self
-                    .medium_fact_exists(&fid_str)
-                    .await
-                    .map_err(|e| BlackboardError::Internal(format!("read fact {fid_str}: {e}")))?;
-            if !known {
+        for fact in &intent.from_facts {
+            let id = fact.to_string();
+            if !self.fact_exists(&id) {
                 return Err(BlackboardError::NotFound(format!(
-                    "Fact {fid_str} not found"
+                    "intent references a fact that is not here: {id}"
                 )));
             }
         }
-
-        // Store description as a blob if non-empty
-        let description_hash = if !intent.description.is_empty() {
-            let desc_bytes = intent.description.as_bytes();
-            let hash = content_hash(desc_bytes);
-            let meta = super::record::ContentMeta {
-                mime_type: "text/plain".into(),
-                size: desc_bytes.len() as u64,
-            };
-            let meta_bytes = postcard::to_allocvec(&meta).unwrap_or_default();
-            self.pending.borrow_mut().push(WriteOp::Write {
-                path: format!("blob/{hash}.bin"),
-                data: desc_bytes.to_vec(),
-            });
-            self.pending.borrow_mut().push(WriteOp::Write {
-                path: format!("blob/{hash}.bin.meta"),
-                data: meta_bytes,
-            });
-            hash
-        } else {
+        let now = self.clock.now_nanos();
+        // An intent with no description carries no blob and no hash: the absence is the
+        // record's own statement, and the read reports it as one.
+        let description_bytes = intent.description.as_bytes().to_vec();
+        let description_hash = if description_bytes.is_empty() {
             String::new()
+        } else {
+            let mut h = Sha256::new();
+            h.update(&description_bytes);
+            format!("{:x}", h.finalize())
         };
-
-        let record = super::record::IntentRecord {
+        let record = IntentRecord {
             id: intent.id.to_string(),
             from_facts: intent.from_facts.iter().map(|f| f.to_string()).collect(),
-            description_hash,
+            description_hash: description_hash.clone(),
             creator: intent.creator.clone(),
-            status: super::record::IntentStatus::Submitted,
-            created_at: self.clock.now_nanos(),
+            status: IntentStatus::Submitted,
+            created_at: now,
             time_unit: RecordTimeUnit::Nanos,
         };
+
+        if !description_hash.is_empty() {
+            self.pending.borrow_mut().push(WriteOp::Write {
+                path: format!("blob/{description_hash}.bin"),
+                data: description_bytes.clone(),
+            });
+            let meta = ContentMeta {
+                mime_type: "application/json".into(),
+                size: description_bytes.len() as u64,
+            };
+            let meta_bytes = postcard::to_allocvec(&meta)
+                .map_err(|e| BlackboardError::Internal(e.to_string()))?;
+            self.pending.borrow_mut().push(WriteOp::Write {
+                path: format!("blob/{description_hash}.bin.meta"),
+                data: meta_bytes,
+            });
+        }
         let bytes =
             postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        let op = WriteOp::Write {
+        self.pending.borrow_mut().push(WriteOp::Write {
             path: record.key(),
             data: bytes,
-        };
-
-        self.place_intent(&record);
-        self.pending.borrow_mut().push(op);
-
+        });
+        self.intent_records
+            .borrow_mut()
+            .insert(record.id.clone(), record);
         self.flush_if_auto()
             .await
             .map_err(BlackboardError::Internal)?;
-
         Ok(intent.id)
     }
 
     async fn claim_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        // The lifecycle reads the record the medium holds, so what this session buffered
+        // reaches it first. A flush that fails is an internal error, not a missing intent.
         self.flush_pending()
             .await
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        let normalized = self.normalize_intent_id(intent_id);
-        let key = format!("intents/i_{}.intent", normalized);
-        let bytes = self
-            .io
-            .read(&key)
-            .await
-            .map_err(BlackboardError::Internal)?
-            .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
-        let mut record =
-            decode_intent_record(&bytes).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-
-        let now = self.clock.now_nanos();
-        let old_status = record.status.clone();
-        let new_status = record.status.try_claim(agent, now).map_err(|e| {
-            if e.starts_with("already claimed") {
-                BlackboardError::Conflict(e)
-            } else {
-                BlackboardError::Internal(e)
-            }
-        })?;
-        let old_path = Self::intent_path_with(&record, &old_status);
-        record.status = new_status;
-
-        let bytes =
-            postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.pending.borrow_mut().push(WriteOp::Write {
-            path: key,
-            data: bytes,
-        });
-        self.flush_pending()
-            .await
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        // Status move in the record layer: only after the io commit
-        // succeeds, so a failed flush leaves the store consistent with io.
-        self.vacate_record(&old_path, &normalized);
-        self.place_intent(&record);
-        Ok(())
+            .map_err(BlackboardError::Internal)?;
+        self.move_intent(
+            intent_id,
+            |status| status.try_claim(agent, self.clock.now_nanos()),
+            |e| {
+                if e.starts_with("already claimed") {
+                    BlackboardError::Conflict(e)
+                } else {
+                    BlackboardError::Internal(e)
+                }
+            },
+        )
+        .await
     }
 
+    // `try_claim` reports an occupied claim with a sentence that names it; the rest of the
+    // refusals are states the caller reaches by calling out of order.
+
     async fn heartbeat(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        // The lifecycle reads the record the medium holds, so what this session buffered
+        // reaches it first. A flush that fails is an internal error, not a missing intent.
         self.flush_pending()
             .await
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        let normalized = self.normalize_intent_id(intent_id);
-        let key = format!("intents/i_{}.intent", normalized);
-        let bytes = self
-            .io
-            .read(&key)
-            .await
-            .map_err(BlackboardError::Internal)?
-            .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
-        let mut record =
-            decode_intent_record(&bytes).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-
-        let now = self.clock.now_nanos();
-        let old_status = record.status.clone();
-        let new_status = record.status.try_heartbeat(agent, now).map_err(|e| {
-            if e.contains("not") {
-                BlackboardError::Conflict(e)
-            } else {
-                BlackboardError::Internal(e)
-            }
-        })?;
-        let old_path = Self::intent_path_with(&record, &old_status);
-        record.status = new_status;
-
-        let bytes =
-            postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.pending.borrow_mut().push(WriteOp::Write {
-            path: key.clone(),
-            data: bytes,
-        });
-        self.flush_pending()
-            .await
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        // Status move in the record layer: only after the io commit
-        // succeeds, so a failed flush leaves the store consistent with io.
-        self.vacate_record(&old_path, &normalized);
-        self.place_intent(&record);
-        Ok(())
+            .map_err(BlackboardError::Internal)?;
+        self.move_intent(
+            intent_id,
+            |status| status.try_heartbeat(agent, self.clock.now_nanos()),
+            |e| {
+                if e.contains("not") {
+                    BlackboardError::Conflict(e)
+                } else {
+                    BlackboardError::Internal(e)
+                }
+            },
+        )
+        .await
     }
 
     async fn release_intent(&self, intent_id: &str, agent: &str) -> Result<(), BlackboardError> {
+        // The lifecycle reads the record the medium holds, so what this session buffered
+        // reaches it first. A flush that fails is an internal error, not a missing intent.
         self.flush_pending()
             .await
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        let normalized = self.normalize_intent_id(intent_id);
-        let key = format!("intents/i_{}.intent", normalized);
-        let bytes = self
-            .io
-            .read(&key)
-            .await
-            .map_err(BlackboardError::Internal)?
+            .map_err(BlackboardError::Internal)?;
+        let normalized = CoordId::resolve(intent_id).to_string();
+        let record = self
+            .intent_records
+            .borrow()
+            .get(&normalized)
+            .cloned()
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
-        let mut record =
-            decode_intent_record(&bytes).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-
-        let old_status = record.status.clone();
-        match &record.status {
-            IntentStatus::Claimed { worker, .. } if worker == agent => {
-                record.status = IntentStatus::Submitted;
-            }
+        let status = match &record.status {
+            // Nothing holds an unclaimed intent, so there is no lease to release and the
+            // caller gets the state it asked for.
+            IntentStatus::Submitted => return Ok(()),
+            IntentStatus::Claimed { worker, .. } if worker == agent => IntentStatus::Submitted,
             IntentStatus::Claimed { worker, .. } => {
                 return Err(BlackboardError::Forbidden(format!(
-                    "Intent {intent_id} claimed by {worker}, not {agent}"
+                    "intent {intent_id} is claimed by {worker}"
                 )));
             }
-            IntentStatus::Submitted => return Ok(()),
             IntentStatus::Concluded { .. } => {
                 return Err(BlackboardError::NotFound(format!(
-                    "Intent {intent_id} already concluded"
+                    "intent {intent_id} is concluded"
                 )));
             }
-        }
-
-        // Status move in the record layer: vacate the claimed path, place
-        // the submitted path.
-        let old_path = Self::intent_path_with(&record, &old_status);
-
-        let bytes =
-            postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.pending.borrow_mut().push(WriteOp::Write {
-            path: key,
-            data: bytes,
-        });
-        self.flush_pending()
-            .await
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        // Status move in the record layer: only after the io commit
-        // succeeds, so a failed flush leaves the store consistent with io.
-        self.vacate_record(&old_path, &normalized);
-        self.place_intent(&record);
-        Ok(())
+        };
+        self.write_intent(record, status).await
     }
 
     async fn conclude_intent(
@@ -2221,662 +1319,153 @@ impl<I: FileIo> crate::AsyncIntentCapable for RefFihStorage<I> {
         intent_id: &str,
         result: &str,
     ) -> Result<Fact, BlackboardError> {
+        // The lifecycle reads the record the medium holds, so what this session buffered
+        // reaches it first. A flush that fails is an internal error, not a missing intent.
         self.flush_pending()
             .await
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        let normalized = self.normalize_intent_id(intent_id);
-        let key = format!("intents/i_{}.intent", normalized);
-        let bytes = self
-            .io
-            .read(&key)
-            .await
-            .map_err(BlackboardError::Internal)?
+            .map_err(BlackboardError::Internal)?;
+        let normalized = CoordId::resolve(intent_id).to_string();
+        let record = self
+            .intent_records
+            .borrow()
+            .get(&normalized)
+            .cloned()
             .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
-        let mut record =
-            decode_intent_record(&bytes).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-
         let worker = match &record.status {
             IntentStatus::Claimed { worker, .. } => worker.clone(),
-            IntentStatus::Submitted => return Err(BlackboardError::Internal("not claimed".into())),
+            IntentStatus::Submitted => {
+                return Err(BlackboardError::BadRequest(format!(
+                    "intent {intent_id} is not claimed"
+                )));
+            }
             IntentStatus::Concluded { .. } => {
-                return Err(BlackboardError::Internal("already concluded".into()));
+                return Err(BlackboardError::Internal(format!(
+                    "intent {intent_id} is already concluded"
+                )));
             }
         };
 
-        // The conclusion record belongs to the intent, so its address and origin come
-        // from the record's canonical id rather than from the spelling the caller used.
-        // Two spellings of one intent must not produce two conclusion facts.
-        let intent_label = format!("f_concl_{}", record.id);
-        let conclusion_id = CoordId::from_label(&intent_label).to_string();
-        let content_data = result.as_bytes().to_vec();
-        let content_hash = {
-            let mut h = sha2::Sha256::new();
-            h.update(&content_data);
-            FihHash(h.finalize().into())
+        // The conclusion is a fact about the intent, so its address comes from the intent's
+        // canonical identifier: two spellings of one intent must not produce two facts.
+        let conclusion_id = CoordId::from_label(&format!("f_concl_{}", record.id));
+        let content = Content {
+            mime_type: "text/plain".into(),
+            data: result.as_bytes().to_vec(),
         };
-        let new_fact = Fact {
-            id: CoordId::resolve(&conclusion_id),
-            content_hash,
+        let fact = Fact {
+            id: conclusion_id,
+            content_hash: {
+                let mut h = Sha256::new();
+                h.update(&content.data);
+                FihHash(h.finalize().into())
+            },
             origin: format!("conclusion:{}", record.id),
-            content: Content {
-                mime_type: "text/plain".into(),
-                data: result.as_bytes().to_vec(),
-            },
-            creator: worker.clone(),
+            content: content.clone(),
+            creator: worker,
         };
 
-        let now_ns = self.clock.now_nanos();
-        let old_status = record.status.clone();
-        record.status = record
+        let now = self.clock.now_nanos();
+        let status = record
             .status
-            .try_conclude(&conclusion_id, now_ns)
+            .try_conclude(&conclusion_id.to_string(), now)
             .map_err(BlackboardError::Internal)?;
-        let old_path = Self::intent_path_with(&record, &old_status);
 
-        // Write conclusion fact and updated intent via pending buffer.
-        // The conclusion fact carries the conclude time (now_ns) so it
-        // lands on the real day in the record layer and time_range
-        // reflects it. It is blob-backed like a submitted fact so a
-        // reopen materializes its content and hash consistently.
-        let blob_hash = new_fact.content_hash.to_string();
-        let meta = ContentMeta {
-            mime_type: new_fact.content.mime_type.clone(),
-            size: content_data.len() as u64,
-        };
-        let meta_bytes =
-            postcard::to_allocvec(&meta).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.pending.borrow_mut().push(WriteOp::Write {
-            path: format!("blob/{blob_hash}.bin"),
-            data: content_data.clone(),
-        });
-        self.pending.borrow_mut().push(WriteOp::Write {
-            path: format!("blob/{blob_hash}.bin.meta"),
-            data: meta_bytes,
-        });
-        let fact_rec = FactRecord::from_model(&new_fact, blob_hash, now_ns);
-        let fact_bytes = postcard::to_allocvec(&fact_rec)
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.pending.borrow_mut().push(WriteOp::Write {
-            path: fact_rec.key(),
-            data: fact_bytes,
-        });
-
-        let intent_bytes =
-            postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
-        self.pending.borrow_mut().push(WriteOp::Write {
-            path: key,
-            data: intent_bytes,
-        });
-        self.flush_pending()
-            .await
-            .map_err(|e| BlackboardError::Internal(e.to_string()))?;
-
-        // Record-layer moves happen only after the io commit succeeds, so
-        // a failed flush leaves the store consistent with io: vacate the
-        // old status path, place the concluded intent and the conclusion
-        // fact at the conclude time. A store that keeps no maps places
-        // nothing, and the conclusion fact reaches the medium above either
-        // way.
-        self.vacate_record(&old_path, &normalized);
-        self.place_intent(&record);
-        self.place_record(
-            &Self::fact_path(&fact_rec),
-            &fact_rec.id,
-            Record::Fact {
-                content: new_fact.content.clone(),
-                content_hash: new_fact.content_hash,
-                origin: new_fact.origin.clone(),
-                creator: new_fact.creator.clone(),
-                submitted_at: fact_rec.submitted_at,
-            },
-        );
-
-        Ok(new_fact)
+        crate::AsyncFactCapable::submit_fact(self, &fact).await?;
+        self.write_intent(record, status).await?;
+        Ok(fact)
     }
 }
 
-// ── AsyncFilterCapable (in-memory filtering) ────────────────────────────
+impl<I: FileIo> RefFihStorage<I> {
+    /// Apply a lifecycle move and write the record back.
+    ///
+    /// The transition reports its refusal as a sentence about the state it found, and the
+    /// caller decides whether that state is a conflict the caller could have read or an
+    /// internal one it could not.
+    async fn move_intent<F, M>(
+        &self,
+        intent_id: &str,
+        step: F,
+        map: M,
+    ) -> Result<(), BlackboardError>
+    where
+        F: FnOnce(&IntentStatus) -> Result<IntentStatus, String>,
+        M: FnOnce(String) -> BlackboardError,
+    {
+        let normalized = CoordId::resolve(intent_id).to_string();
+        let record = self
+            .intent_records
+            .borrow()
+            .get(&normalized)
+            .cloned()
+            .ok_or_else(|| BlackboardError::NotFound(format!("Intent {intent_id} not found")))?;
+        let status = step(&record.status).map_err(map)?;
+        self.write_intent(record, status).await
+    }
+
+    async fn write_intent(
+        &self,
+        mut record: IntentRecord,
+        status: IntentStatus,
+    ) -> Result<(), BlackboardError> {
+        record.status = status;
+        let bytes =
+            postcard::to_allocvec(&record).map_err(|e| BlackboardError::Internal(e.to_string()))?;
+        self.pending.borrow_mut().push(WriteOp::Write {
+            path: record.key(),
+            data: bytes,
+        });
+        self.intent_records
+            .borrow_mut()
+            .insert(record.id.clone(), record);
+        // A lifecycle move commits before it returns, so the state a reader sees after a
+        // reopen agrees with the state this call reported.
+        self.flush_pending()
+            .await
+            .map_err(BlackboardError::Internal)?;
+        Ok(())
+    }
+}
 
 impl<I: FileIo> crate::AsyncFilterCapable for RefFihStorage<I> {
     async fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
-        self.needs_maps("a filtered state read");
-        // Build blob lookup map once from pending writes (avoid O(N×P)
-        // scan). Data and meta writes merge per blob hash: the data
-        // entry carries the payload, the meta entry the mime type.
-        let mut blob_map: HashMap<String, (String, Vec<u8>)> = HashMap::new();
-        for op in self.pending.borrow().iter() {
-            match op {
-                WriteOp::Write { path, data }
-                    if path.ends_with(".bin") && !path.ends_with(".bin.meta") =>
-                {
-                    if let Some(blob_hash) = path
-                        .strip_prefix("blob/")
-                        .and_then(|p| p.strip_suffix(".bin"))
-                    {
-                        blob_map
-                            .entry(blob_hash.to_string())
-                            .or_insert_with(|| (String::new(), Vec::new()))
-                            .1 = data.clone();
-                    }
-                }
-                WriteOp::Write { path, data } if path.ends_with(".bin.meta") => {
-                    if let Some(blob_hash) = path
-                        .strip_prefix("blob/")
-                        .and_then(|p| p.strip_suffix(".bin.meta"))
-                        && let Ok(meta) = postcard::from_bytes::<ContentMeta>(data)
-                    {
-                        blob_map
-                            .entry(blob_hash.to_string())
-                            .or_insert_with(|| (String::new(), Vec::new()))
-                            .0 = meta.mime_type;
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        // Materialize content from pending blobs (no io fallback).
-        let load_content_fast = |blob_hash: &str, default_mime: &str| -> Content {
-            if let Some((mime, data)) = blob_map.get(blob_hash)
-                && !data.is_empty()
-            {
-                return Content {
-                    mime_type: if mime.is_empty() {
-                        default_mime.to_string()
-                    } else {
-                        mime.clone()
-                    },
-                    data: data.clone(),
-                };
-            }
-            Content {
-                mime_type: default_mime.to_string(),
-                data: Vec::new(),
-            }
-        };
-
-        // Predicates apply to record fields. The traversal is a full scan
-        // over the application-layer record maps, the authoritative record
-        // layer since the L2 restructure (#176). The structural index is
-        // maintained for spatial prefix queries but adds no pruning here:
-        // the hashed origin/creator axes are advisory and would introduce
-        // hash-collision false positives and negatives.
-        let since: Option<u64> = filter.since.as_ref().and_then(|s| s.parse().ok());
-        let until: Option<u64> = filter.until.as_ref().and_then(|s| s.parse().ok());
-
-        let mut facts = Vec::new();
-        let mut intents = Vec::new();
-        let mut hints = Vec::new();
-        // Blob hashes to materialize after the record-map borrows are
-        // released, so the async io fallback never awaits while holding a
-        // borrow: (index, blob hash).
-        let mut fact_blob_jobs: Vec<(usize, String)> = Vec::new();
-        let mut desc_jobs: Vec<(usize, String)> = Vec::new();
-
-        {
-            let recs = self.fact_records.borrow();
-            let wanted = WantedIds::new(filter.fact_ids.as_ref());
-            let keep = |id: &String, r: &FactRecord| {
-                if let Some(ref want) = filter.origin
-                    && &r.origin != want
-                {
-                    return false;
-                }
-                if let Some(ref want) = filter.creator
-                    && &r.creator != want
-                {
-                    return false;
-                }
-                if let Some(ts) = since
-                    && r.submitted_at < ts
-                {
-                    return false;
-                }
-                if let Some(ts) = until
-                    && r.submitted_at > ts
-                {
-                    return false;
-                }
-                wanted.allows(id)
-            };
-            let matched = if wanted.drives(recs.len()) {
-                wanted.lookup(&recs, keep)
-            } else {
-                sorted_matches(&recs, keep)
-            };
-            for (id, r) in matched {
-                let content_hash = Self::blob_hash_or_zero(&r.blob_hash);
-                fact_blob_jobs.push((facts.len(), r.blob_hash.clone()));
-                facts.push(Fact {
-                    id: CoordId::resolve(id),
-                    origin: r.origin.clone(),
-                    content_hash,
-                    content: Content {
-                        mime_type: "application/octet-stream".into(),
-                        data: Vec::new(),
-                    },
-                    creator: r.creator.clone(),
-                });
-            }
-        }
-        {
-            let recs = self.intent_records.borrow();
-            let wanted = WantedIds::new(filter.intent_ids.as_ref());
-            let keep = |id: &String, r: &IntentRecord| {
-                if let Some(ref want) = filter.creator
-                    && &r.creator != want
-                {
-                    return false;
-                }
-                let created_ns = r.created_at;
-                if let Some(ts) = since
-                    && created_ns < ts
-                {
-                    return false;
-                }
-                if let Some(ts) = until
-                    && created_ns > ts
-                {
-                    return false;
-                }
-                if let Some(st) = filter.status.as_ref()
-                    && simple_status_key(&r.status) != st.as_str()
-                {
-                    return false;
-                }
-                wanted.allows(id)
-            };
-            let matched = if wanted.drives(recs.len()) {
-                wanted.lookup(&recs, keep)
-            } else {
-                sorted_matches(&recs, keep)
-            };
-            for (id, r) in matched {
-                let description = if r.description_hash.is_empty() {
-                    id.clone()
-                } else {
-                    desc_jobs.push((intents.len(), r.description_hash.clone()));
-                    String::new()
-                };
-                intents.push(Intent {
-                    id: CoordId::resolve(id),
-                    from_facts: r
-                        .from_facts
-                        .iter()
-                        .map(|s| CoordId::from_string(s).expect("stored from_facts are canonical"))
-                        .collect(),
-                    description,
-                    creator: r.creator.clone(),
-                    worker: match &r.status {
-                        IntentStatus::Claimed { worker, .. }
-                        | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
-                        IntentStatus::Submitted => None,
-                    },
-                    to_fact_id: match &r.status {
-                        IntentStatus::Concluded { to_fact, .. } => Some(CoordId::resolve(to_fact)),
-                        _ => None,
-                    },
-                    last_heartbeat_at: match &r.status {
-                        IntentStatus::Claimed {
-                            last_heartbeat_at, ..
-                        } => Some(nanos_to_secs(*last_heartbeat_at)),
-                        _ => None,
-                    },
-                    created_at: Some(nanos_to_secs(r.created_at)),
-                    is_concluded: matches!(r.status, IntentStatus::Concluded { .. }),
-                    concluded_at: match &r.status {
-                        IntentStatus::Concluded { concluded_at, .. } => {
-                            Some(nanos_to_secs(*concluded_at))
-                        }
-                        _ => None,
-                    },
-                });
-            }
-        }
-        {
-            let recs = self.hint_records.borrow();
-            let wanted = WantedIds::new(filter.hint_ids.as_ref());
-            let keep = |id: &String, r: &HintRecord| {
-                if let Some(ref want) = filter.creator
-                    && &r.creator != want
-                {
-                    return false;
-                }
-                wanted.allows(id)
-            };
-            let matched = if wanted.drives(recs.len()) {
-                wanted.lookup(&recs, keep)
-            } else {
-                sorted_matches(&recs, keep)
-            };
-            for (id, r) in matched {
-                hints.push(Hint {
-                    id: CoordId::resolve(id),
-                    content: r.content.clone(),
-                    creator: r.creator.clone(),
-                });
-            }
-        }
-
-        // Materialize fact content and intent descriptions now that the
-        // record-map borrows are released. Distinct blob hashes are
-        // loaded once each from IO (content dedup makes many records
-        // share a blob), then every job resolves from the shared map.
-        let mut io_blobs: HashMap<String, Content> = HashMap::new();
-        let mut seen: HashSet<String> = HashSet::new();
-        for (_, hash) in fact_blob_jobs.iter() {
-            let c = load_content_fast(hash, "application/octet-stream");
-            if c.data.is_empty() && seen.insert(hash.clone()) {
-                io_blobs.insert(hash.clone(), load_blob(&self.io, hash).await);
-            }
-        }
-        for (_, hash) in desc_jobs.iter() {
-            let c = load_content_fast(hash, "text/plain");
-            if c.data.is_empty() && seen.insert(hash.clone()) {
-                io_blobs.insert(hash.clone(), load_blob(&self.io, hash).await);
-            }
-        }
-        for (idx, hash) in fact_blob_jobs {
-            let c = load_content_fast(&hash, "application/octet-stream");
-            facts[idx].content = if c.data.is_empty() {
-                io_blobs.get(&hash).cloned().unwrap_or_else(|| Content {
-                    mime_type: "application/octet-stream".into(),
-                    data: Vec::new(),
-                })
-            } else {
-                c
-            };
-        }
-        for (idx, hash) in desc_jobs {
-            let c = load_content_fast(&hash, "text/plain");
-            let text = if c.data.is_empty() {
-                String::from_utf8_lossy(
-                    io_blobs
-                        .get(&hash)
-                        .map(|c| c.data.as_slice())
-                        .unwrap_or(b""),
-                )
-                .to_string()
-            } else {
-                String::from_utf8_lossy(&c.data).to_string()
-            };
-            intents[idx].description = text;
-        }
-
-        // Apply offset/limit.
-        let mut state = BoardState {
-            facts,
-            intents,
-            hints,
-        };
-        let offset = filter.offset.unwrap_or(0);
-        if let Some(limit) = filter.limit {
-            state.facts = state.facts.into_iter().skip(offset).take(limit).collect();
-            state.intents = state.intents.into_iter().skip(offset).take(limit).collect();
-            state.hints = state.hints.into_iter().skip(offset).take(limit).collect();
-        } else if offset > 0 {
-            state.facts = state.facts.into_iter().skip(offset).collect();
-            state.intents = state.intents.into_iter().skip(offset).collect();
-            state.hints = state.hints.into_iter().skip(offset).collect();
-        }
-
-        state
+        RefFihStorage::read_state_filtered(self, filter).await
     }
 }
-
-// ── AsyncEvictCapable (in-memory eviction) ──────────────────────────────
 
 impl<I: FileIo> crate::AsyncEvictCapable for RefFihStorage<I> {
     async fn approximate_size(&self) -> usize {
-        let facts = self.fact_records.borrow().len();
-        let intents = self.intent_records.borrow().len();
-        let hints = self.hint_records.borrow().len();
-        (facts + intents + hints) * 256
+        RefFihStorage::record_count(self)
     }
 
     async fn evict_before(&self, before: &str) -> Result<u64, String> {
-        let before_ns: u64 = before.parse().unwrap_or(0);
-        let all: Vec<HintRecord> = self.hint_records.borrow().values().cloned().collect();
-        let old_len = all.len();
-        let mut kept = 0usize;
-        let mut evict_keys = Vec::new();
-        for record in all {
-            if record.submitted_at >= before_ns {
-                kept += 1;
-            } else {
-                // read_state serves from the in-memory record maps, so
-                // the eviction must also drop the map entries (retain
-                // below) and delete the record files; otherwise the
-                // evicted hint reappears after a rebuild_cache reopen.
-                evict_keys.push(WriteOp::Delete { path: record.key() });
-                self.vacate_record(&Self::hint_path(&record), &record.id);
-            }
-        }
-        let evicted = (old_len - kept) as u64;
-        if !evict_keys.is_empty() {
-            self.pending.borrow_mut().extend(evict_keys);
-        }
-        self.hint_records
-            .borrow_mut()
-            .retain(|_, r| r.submitted_at >= before_ns);
-        self.flush_if_auto().await?;
-        Ok(evicted)
+        RefFihStorage::evict_before(self, before).await
     }
 
     async fn evict_stale_intents(&self, older_than_ns: u64) -> Result<u64, String> {
-        let now = self.clock.now_nanos();
-        let cutoff = now.saturating_sub(older_than_ns);
-
-        let all: Vec<IntentRecord> = self.intent_records.borrow().values().cloned().collect();
-        let old_len = all.len();
-        let mut kept = 0usize;
-        let mut evict_keys = Vec::new();
-        for record in all {
-            let stale =
-                matches!(record.status, IntentStatus::Submitted) && record.created_at < cutoff;
-            if stale {
-                // read_state serves from the in-memory record maps, so
-                // the eviction must also drop the map entries (retain
-                // below) and delete the record files; otherwise the
-                // evicted intent reappears after a rebuild_cache reopen.
-                evict_keys.push(WriteOp::Delete { path: record.key() });
-                self.vacate_record(&Self::intent_path(&record), &record.id);
-            } else {
-                kept += 1;
-            }
-        }
-        let evicted = (old_len - kept) as u64;
-        if !evict_keys.is_empty() {
-            self.pending.borrow_mut().extend(evict_keys);
-        }
-        self.intent_records
-            .borrow_mut()
-            .retain(|_, r| !(matches!(r.status, IntentStatus::Submitted) && r.created_at < cutoff));
-        self.flush_if_auto().await?;
-        Ok(evicted)
+        RefFihStorage::evict_stale_intents(self, older_than_ns).await
     }
 }
-
-// ── AsyncScanCapable (in-memory scan) ───────────────────────────────────
 
 impl<I: FileIo> crate::AsyncScanCapable for RefFihStorage<I> {
     async fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
-        let prefix = format!("partition:{}", partition);
-
-        // Partition scan over the application-layer record maps (the
-        // authoritative record layer since the L2 restructure, #176).
-        // Facts match on the origin field, intents and hints on the
-        // creator field (the existing per-type convention). The
-        // comparison is exact on the record strings.
-        let mut facts = Vec::new();
-        let mut intents = Vec::new();
-        let mut hints = Vec::new();
-        // Blob hashes to materialize after the record-map borrows are
-        // released, so the async io fallback never awaits while holding a
-        // borrow: (index, blob hash).
-        let mut fact_blob_jobs: Vec<(usize, String)> = Vec::new();
-        let mut desc_jobs: Vec<(usize, String)> = Vec::new();
-
-        {
-            let recs = self.fact_records.borrow();
-            for (id, r) in sorted_matches(&recs, |_, r| r.origin == prefix) {
-                let content_hash = Self::blob_hash_or_zero(&r.blob_hash);
-                fact_blob_jobs.push((facts.len(), r.blob_hash.clone()));
-                facts.push(Fact {
-                    id: CoordId::resolve(id),
-                    origin: r.origin.clone(),
-                    content_hash,
-                    content: Content {
-                        mime_type: "application/octet-stream".into(),
-                        data: Vec::new(),
-                    },
-                    creator: r.creator.clone(),
-                });
-            }
-        }
-        {
-            let recs = self.intent_records.borrow();
-            for (id, r) in sorted_matches(&recs, |_, r| r.creator == prefix) {
-                let description = if r.description_hash.is_empty() {
-                    id.clone()
-                } else {
-                    desc_jobs.push((intents.len(), r.description_hash.clone()));
-                    String::new()
-                };
-                intents.push(Intent {
-                    id: CoordId::resolve(id),
-                    from_facts: r
-                        .from_facts
-                        .iter()
-                        .map(|s| CoordId::from_string(s).expect("stored from_facts are canonical"))
-                        .collect(),
-                    description,
-                    creator: r.creator.clone(),
-                    worker: match &r.status {
-                        IntentStatus::Claimed { worker, .. }
-                        | IntentStatus::Concluded { worker, .. } => Some(worker.clone()),
-                        IntentStatus::Submitted => None,
-                    },
-                    to_fact_id: match &r.status {
-                        IntentStatus::Concluded { to_fact, .. } => Some(CoordId::resolve(to_fact)),
-                        _ => None,
-                    },
-                    last_heartbeat_at: match &r.status {
-                        IntentStatus::Claimed {
-                            last_heartbeat_at, ..
-                        } => Some(nanos_to_secs(*last_heartbeat_at)),
-                        _ => None,
-                    },
-                    created_at: Some(nanos_to_secs(r.created_at)),
-                    is_concluded: matches!(r.status, IntentStatus::Concluded { .. }),
-                    concluded_at: match &r.status {
-                        IntentStatus::Concluded { concluded_at, .. } => {
-                            Some(nanos_to_secs(*concluded_at))
-                        }
-                        _ => None,
-                    },
-                });
-            }
-        }
-        {
-            let recs = self.hint_records.borrow();
-            for (id, r) in sorted_matches(&recs, |_, r| r.creator == prefix) {
-                hints.push(Hint {
-                    id: CoordId::resolve(id),
-                    content: r.content.clone(),
-                    creator: r.creator.clone(),
-                });
-            }
-        }
-
-        // Materialize fact content and intent descriptions now that the
-        // record-map borrows are released. Distinct blob hashes are
-        // loaded once each from IO (content dedup makes many records
-        // share a blob), then every job resolves from the shared map.
-        let mut io_blobs: HashMap<String, Content> = HashMap::new();
-        let mut seen: HashSet<String> = HashSet::new();
-        for (_, hash) in fact_blob_jobs.iter() {
-            let c = self.load_content(hash, "application/octet-stream");
-            if c.data.is_empty() && seen.insert(hash.clone()) {
-                io_blobs.insert(hash.clone(), load_blob(&self.io, hash).await);
-            }
-        }
-        for (_, hash) in desc_jobs.iter() {
-            let c = self.load_content(hash, "text/plain");
-            if c.data.is_empty() && seen.insert(hash.clone()) {
-                io_blobs.insert(hash.clone(), load_blob(&self.io, hash).await);
-            }
-        }
-        for (idx, hash) in fact_blob_jobs {
-            let c = self.load_content(&hash, "application/octet-stream");
-            facts[idx].content = if c.data.is_empty() {
-                io_blobs.get(&hash).cloned().unwrap_or_else(|| Content {
-                    mime_type: "application/octet-stream".into(),
-                    data: Vec::new(),
-                })
-            } else {
-                c
-            };
-        }
-        for (idx, hash) in desc_jobs {
-            let c = self.load_content(&hash, "text/plain");
-            let text = if c.data.is_empty() {
-                String::from_utf8_lossy(
-                    io_blobs
-                        .get(&hash)
-                        .map(|c| c.data.as_slice())
-                        .unwrap_or(b""),
-                )
-                .to_string()
-            } else {
-                String::from_utf8_lossy(&c.data).to_string()
-            };
-            intents[idx].description = text;
-        }
-
-        Ok(PartitionData {
-            partition: partition.into(),
-            facts,
-            intents,
-            hints,
-        })
+        RefFihStorage::scan_partition(self, partition).await
     }
 }
-
-// ── AsyncTimeRangeCapable (in-memory time range) ────────────────────────
 
 impl<I: FileIo> crate::AsyncTimeRangeCapable for RefFihStorage<I> {
     async fn time_range(&self) -> Option<Range<String>> {
-        // Exact min/max over the Fact records in the application-layer
-        // record map. The structural index is coordinate-ordered, but
-        // within a boundary day the order is set by the other axes, not
-        // the timestamp, so the first/last Fact in tree order cannot
-        // bound the range exactly.
-        let fact_recs = self.fact_records.borrow();
-        let mut min = u64::MAX;
-        let mut max = u64::MIN;
-        let mut found = false;
-        for r in fact_recs.values() {
-            found = true;
-            min = min.min(r.submitted_at);
-            max = max.max(r.submitted_at);
-        }
-        found.then(|| min.to_string()..max.to_string())
+        RefFihStorage::fact_time_range(self)
     }
 }
 
-// ── The read surface, answered by this implementation ───────────────────
-//
-// These delegate to the inherent methods. A reader written against the surface does not name
-// this type, which is what lets another implementation answer for the same network.
-
 impl<I: FileIo> crate::FactById for RefFihStorage<I> {
     async fn fact_by_id(&self, id: &str) -> Option<(Content, FihHash, String, String)> {
-        self.get_fact_by_id(id).await
+        RefFihStorage::get_fact_by_id(self, id).await
     }
 
     async fn fact_framing(&self, id: &str) -> Option<FactRecord> {
-        self.get_fact_framing(id).await
+        RefFihStorage::get_fact_framing(self, id).await
     }
 }
 
