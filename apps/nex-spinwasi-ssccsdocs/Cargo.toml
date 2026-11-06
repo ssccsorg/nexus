@@ -10,6 +10,7 @@ license = "Apache-2.0"
 crate-type = ["cdylib"]
 
 [dependencies]
+nexus-storage-ref = { path = "../../storage/ref", default-features = false, features = ["std"] }
 nex = { path = "../../nex/process" }
 nex-core = { path = "../../nex/core" }
 nex-fih = { path = "../../nex/fih" }

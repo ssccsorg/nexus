@@ -5,16 +5,8 @@ edition.workspace = true
 license.workspace = true
 
 [features]
-default = ["std", "structural-index"]
+default = ["std"]
 std = ["dep:futures-executor", "nex-core/std", "nex-io/std", "chton/std"]
-# The structural filter index is a memory-for-query-speed trade. Its memory is
-# bounded by axis cardinality rather than record count, so every level of the
-# CoordSpaceN tree is a full alphabet-sized array (11,172 slots). A consumer
-# that does not query it pays that memory and gains nothing, and a consumer on
-# a small device cannot afford it. It is on by default so existing consumers
-# keep their query path; a no_std or memory-bounded build turns it off with
-# default-features = false. See issue #179 for the index itself.
-structural-index = []
 
 [dependencies]
 fih-model = { path = "../../fih" }
@@ -24,7 +16,6 @@ chton = { workspace = true, default-features = false }
 serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
 serde_json = { version = "1", default-features = false, features = ["alloc"] }
 sha2 = { version = "0.10", default-features = false }
-tagma-core = { workspace = true }
 postcard = { version = "1", features = ["alloc"] }
 futures-executor = { version = "0.3", optional = true }
 async-trait.workspace = true

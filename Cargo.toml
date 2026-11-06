@@ -7,16 +7,12 @@ members = [
     "nexd",
     "libs/serde-proxy",
     "libs/session-server",
-    "libs/async-store",
     "playbooks/agents",
     "storage/sim",
     "storage/ref",
     "apps/nex-calc",
     "apps/nex-derive",
-    "benches",
     "verify/support",
-    "verify/osless",
-    "verify/mcu",
     ]
 exclude = [
     "apps/nex-wasmer-ssccsdocs",

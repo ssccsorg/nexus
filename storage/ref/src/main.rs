@@ -14,11 +14,14 @@ use std::process::ExitCode;
 use std::time::SystemTime;
 
 use clap::{Parser, Subcommand};
-use nex::io::{FileIo, fs_io::FsIo};
-use nex_fih::{Content, CoordId, Fact, FactRecord, FihStorage};
+use nex_client::NexClient;
+use nex_fih::{Content, CoordId, Fact};
+use nex_io::FileIo;
+use nex_io::fs_io::FsIo;
+use nexus_storage_ref::FactRecord;
+use std::cell::RefCell;
 use tagma_core::DIGITS_PER_AXIS;
-
-const PROJECT: &str = "nexus-storage-ref";
+use tokio::runtime::Runtime;
 
 /// Keys one listing call hands over.
 const KEY_PAGE: usize = 32;
@@ -29,6 +32,9 @@ const KEY_PAGE: usize = 32;
     about = "Read a neXus volume through the storage contract"
 )]
 struct Cli {
+    /// Read through the hub at this socket instead of opening a volume.
+    #[arg(long, env = "NEX_HUB_SOCKET", global = true)]
+    hub: Option<String>,
     #[command(subcommand)]
     command: Command,
 }
@@ -52,7 +58,7 @@ enum Command {
 #[derive(clap::Args)]
 struct KeysArgs {
     #[arg(long)]
-    volume: PathBuf,
+    volume: Option<PathBuf>,
     /// The key prefix to keep. An empty prefix lists the whole key space.
     #[arg(long, default_value = "facts/")]
     prefix: String,
@@ -61,7 +67,7 @@ struct KeysArgs {
 #[derive(clap::Args)]
 struct BoxArgs {
     #[arg(long)]
-    volume: PathBuf,
+    volume: Option<PathBuf>,
     /// An axis range, as `<axis>=<from>-<until>` with one axis window a bound.
     /// An axis the box does not name is free.
     #[arg(long = "axis", value_parser = parse_axis)]
@@ -71,7 +77,7 @@ struct BoxArgs {
 #[derive(clap::Args)]
 struct ReadArgs {
     #[arg(long)]
-    volume: PathBuf,
+    volume: Option<PathBuf>,
     /// The record address: 60 base-36 digits, three an axis.
     #[arg(long)]
     address: String,
@@ -80,7 +86,7 @@ struct ReadArgs {
 #[derive(clap::Args)]
 struct VerifyArgs {
     #[arg(long)]
-    volume: PathBuf,
+    volume: Option<PathBuf>,
     /// The record address, as 60 base-36 digits.
     #[arg(long)]
     address: String,
@@ -176,10 +182,18 @@ fn main() -> ExitCode {
         }
     };
     let result = match cli.command {
-        Command::Keys(args) => keys(&args.volume, &args.prefix),
-        Command::Box(args) => boxed(&args.volume, &args.axes),
-        Command::Read(args) => read(&args.volume, &args.address),
-        Command::Verify(args) => verify(&args.volume, &args.address),
+        Command::Keys(args) => open_source(args.volume.as_deref(), cli.hub.as_deref())
+            .and_then(|source| keys(&source, &args.prefix)),
+        Command::Box(args) => open_source(args.volume.as_deref(), cli.hub.as_deref())
+            .and_then(|source| boxed(&source, &args.axes)),
+        Command::Read(args) => resolve_address(&args.address).and_then(|coordinate| {
+            open_source(args.volume.as_deref(), cli.hub.as_deref())
+                .and_then(|source| read(&source, &coordinate))
+        }),
+        Command::Verify(args) => resolve_address(&args.address).and_then(|coordinate| {
+            open_source(args.volume.as_deref(), cli.hub.as_deref())
+                .and_then(|source| verify(&source, &coordinate))
+        }),
         Command::Sidecar(args) => sidecar(&args),
         Command::SelfCheck => self_check(),
     };
@@ -200,6 +214,118 @@ fn sample_volume() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("demo/volume")
 }
 
+/// Where the bytes come from: a volume this process opens, or a node reached through the hub.
+///
+/// The reader asks either one the same two questions, which is why a box and an address
+/// check are answered the same way over a socket as over a directory.
+enum Source {
+    Volume(FsIo),
+    Hub {
+        runtime: Runtime,
+        client: RefCell<NexClient>,
+    },
+}
+
+impl Source {
+    fn list(&self, prefix: &str) -> Result<Vec<String>, Failure> {
+        match self {
+            Source::Volume(io) => {
+                let mut keys = Vec::new();
+                let mut cursor: Option<Vec<u8>> = None;
+                loop {
+                    let (page, next) = futures_executor::block_on(io.list_page(
+                        prefix,
+                        cursor.as_deref(),
+                        KEY_PAGE,
+                    ))
+                    .map_err(|e| Failure::Refused(format!("list {prefix}: {e}")))?;
+                    keys.extend(page);
+                    match next {
+                        Some(next) => cursor = Some(next),
+                        None => return Ok(keys),
+                    }
+                }
+            }
+            Source::Hub { runtime, client } => {
+                let value = runtime
+                    .block_on(async {
+                        client
+                            .borrow_mut()
+                            .call("storage.keys", serde_json::json!({ "prefix": prefix }))
+                            .await
+                    })
+                    .map_err(|e| Failure::Refused(format!("the hub: {e}")))?;
+                Ok(value
+                    .get("keys")
+                    .and_then(|keys| keys.as_array())
+                    .map(|keys| {
+                        keys.iter()
+                            .filter_map(|key| key.as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default())
+            }
+        }
+    }
+
+    fn read(&self, key: &str) -> Result<Option<Vec<u8>>, Failure> {
+        match self {
+            Source::Volume(io) => futures_executor::block_on(io.read(key))
+                .map_err(|e| Failure::Refused(format!("read {key}: {e}"))),
+            Source::Hub { runtime, client } => {
+                let value = runtime
+                    .block_on(async {
+                        client
+                            .borrow_mut()
+                            .call("storage.read", serde_json::json!({ "key": key }))
+                            .await
+                    })
+                    .map_err(|e| Failure::Refused(format!("the hub: {e}")))?;
+                match value.get("data") {
+                    Some(serde_json::Value::String(hex)) => Ok(Some(from_hex(hex)?)),
+                    _ => Ok(None),
+                }
+            }
+        }
+    }
+}
+
+fn from_hex(text: &str) -> Result<Vec<u8>, Failure> {
+    if !text.len().is_multiple_of(2) {
+        return Err(Failure::Refused("a hex frame has an even length".into()));
+    }
+    let mut bytes = Vec::with_capacity(text.len() / 2);
+    for pair in text.as_bytes().chunks(2) {
+        let text = std::str::from_utf8(pair)
+            .map_err(|_| Failure::Refused("a hex frame is text".into()))?;
+        bytes.push(
+            u8::from_str_radix(text, 16)
+                .map_err(|_| Failure::Refused(format!("{text:?} is not hex")))?,
+        );
+    }
+    Ok(bytes)
+}
+
+/// Open the volume a subcommand names, or reach the node a hub names.
+fn open_source(volume: Option<&Path>, hub: Option<&str>) -> Result<Source, Failure> {
+    if let Some(socket) = hub {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| Failure::Refused(format!("start a runtime for the hub: {e}")))?;
+        let client = runtime
+            .block_on(NexClient::connect(socket))
+            .map_err(|e| Failure::Refused(format!("connect the hub at {socket}: {e}")))?;
+        return Ok(Source::Hub {
+            runtime,
+            client: RefCell::new(client),
+        });
+    }
+    let volume = volume
+        .ok_or_else(|| Failure::Refused("a volume is required unless --hub names a node".into()))?;
+    Ok(Source::Volume(open_volume(volume)?))
+}
+
 /// Open a volume that has to exist. A read creates nothing.
 fn open_volume(volume: &Path) -> Result<FsIo, Failure> {
     if !volume.is_dir() {
@@ -212,24 +338,14 @@ fn open_volume(volume: &Path) -> Result<FsIo, Failure> {
         .map_err(|e| Failure::Refused(format!("open volume {}: {e}", volume.display())))
 }
 
-/// Visit the keys a page at a time, so what a read holds is one page rather than
-/// the volume.
-fn for_each_key(io: &FsIo, mut visit: impl FnMut(&str) -> bool) -> Result<(), Failure> {
-    let mut cursor: Option<Vec<u8>> = None;
-    loop {
-        let (page, next) =
-            futures_executor::block_on(io.list_page("", cursor.as_deref(), KEY_PAGE))
-                .map_err(|e| Failure::Refused(format!("list the volume: {e}")))?;
-        for key in &page {
-            if !visit(key) {
-                return Ok(());
-            }
-        }
-        match next {
-            Some(token) => cursor = Some(token),
-            None => return Ok(()),
+/// Visit the keys the source names.
+fn for_each_key(source: &Source, mut visit: impl FnMut(&str) -> bool) -> Result<(), Failure> {
+    for key in source.list("")? {
+        if !visit(&key) {
+            return Ok(());
         }
     }
+    Ok(())
 }
 
 /// The coordinate a record key carries, or nothing when the key is not a record's.
@@ -241,10 +357,9 @@ fn refused<T>(what: &str, result: Result<T, std::io::Error>) -> Result<T, Failur
     result.map_err(|e| Failure::Refused(format!("{what}: {e}")))
 }
 
-fn keys(volume: &Path, prefix: &str) -> Result<(), Failure> {
-    let io = open_volume(volume)?;
+fn keys(source: &Source, prefix: &str) -> Result<(), Failure> {
     let mut matched = 0;
-    for_each_key(&io, |key| {
+    for_each_key(source, |key| {
         if key.starts_with(prefix) {
             println!("{key}");
             matched += 1;
@@ -255,12 +370,11 @@ fn keys(volume: &Path, prefix: &str) -> Result<(), Failure> {
     Ok(())
 }
 
-fn boxed(volume: &Path, axes: &[Axis]) -> Result<(), Failure> {
-    let io = open_volume(volume)?;
+fn boxed(source: &Source, axes: &[Axis]) -> Result<(), Failure> {
     let mut matched = 0;
     // The coordinate is in the key, so the whole box is answered by the listing
     // and no record is read.
-    for_each_key(&io, |key| {
+    for_each_key(source, |key| {
         let Some(coordinate) = record_coordinate(key) else {
             return true;
         };
@@ -274,17 +388,10 @@ fn boxed(volume: &Path, axes: &[Axis]) -> Result<(), Failure> {
     Ok(())
 }
 
-fn read(volume: &Path, address: &str) -> Result<(), Failure> {
-    let coordinate = resolve(address).ok_or_else(|| {
-        Failure::Refused(format!(
-            "{address:?} is not a record address; an address is {DIGITS_PER_AXIS} base-36 digits an axis, twenty axes"
-        ))
-    })?;
+fn read(source: &Source, coordinate: &CoordId<20>) -> Result<(), Failure> {
     let native = coordinate.to_string();
     let key = FactRecord::fact_key(&native);
-    let io = open_volume(volume)?;
-    let bytes = futures_executor::block_on(io.read(&key))
-        .map_err(|e| Failure::Refused(format!("read {key}: {e}")))?;
+    let bytes = source.read(&key)?;
 
     println!("coordinate: {native}");
     println!("key:        {key}");
@@ -307,21 +414,28 @@ fn resolve(address: &str) -> Option<CoordId> {
     CoordId::from_string(address)
 }
 
-fn verify(volume: &Path, address: &str) -> Result<(), Failure> {
-    let coordinate = resolve(address).ok_or_else(|| {
+/// The coordinate an address names, refused before a volume or a hub is opened.
+fn resolve_address(address: &str) -> Result<CoordId<20>, Failure> {
+    resolve(address).ok_or_else(|| {
         Failure::Refused(format!(
             "{address:?} is not a record address; an address is {DIGITS_PER_AXIS} base-36 digits an axis, twenty axes"
         ))
-    })?;
+    })
+}
+
+fn verify(source: &Source, coordinate: &CoordId<20>) -> Result<(), Failure> {
     let name = coordinate.to_string();
 
-    // A store that keeps no record map reads the medium at the key the address
-    // implies, which is the read a device makes.
-    let store = FihStorage::new_without_maps(open_volume(volume)?, PROJECT);
-    let framing = futures_executor::block_on(store.get_fact_framing(&name))
+    // The address implies the key, so the record is one read and the check needs nothing
+    // that trusts the medium.
+    let record_key = FactRecord::fact_key(&name);
+    let bytes = source
+        .read(&record_key)?
         .ok_or_else(|| Failure::Missing(format!("the volume holds no record at {coordinate}")))?;
-    let payload = futures_executor::block_on(store.io.read(&framing.blob_key()))
-        .map_err(|e| Failure::Refused(format!("read the payload: {e}")))?
+    let framing: FactRecord = postcard::from_bytes(&bytes)
+        .map_err(|e| Failure::Refused(format!("{record_key} is not a fact record: {e}")))?;
+    let payload = source
+        .read(&framing.blob_key())?
         .ok_or_else(|| Failure::Refused("the record's payload is missing".to_string()))?;
 
     // The address follows from what the record holds, so holding the record is
@@ -453,12 +567,12 @@ fn self_check() -> Result<(), Failure> {
         refused(&format!("write {}", app.display()), fs::write(&app, APP))?;
         copy_volume(&sample_volume(), &volume)?;
 
-        let io = open_volume(&volume)?;
+        let source = Source::Volume(open_volume(&volume)?);
 
         // The address is in the key, so the coordinate comes from the listing
         // rather than from a constant, and the key has to follow from it again.
         let mut records: Vec<String> = Vec::new();
-        for_each_key(&io, |key| {
+        for_each_key(&source, |key| {
             if key.starts_with("facts/") {
                 records.push(key.to_string());
             }
@@ -490,7 +604,7 @@ fn self_check() -> Result<(), Failure> {
             .next()
             .ok_or_else(|| Failure::Refused("the sample record has no coordinate".to_string()))?;
         let mut found = 0;
-        for_each_key(&io, |key| {
+        for_each_key(&source, |key| {
             let Some(other) = record_coordinate(key) else {
                 return true;
             };
@@ -505,8 +619,7 @@ fn self_check() -> Result<(), Failure> {
             )));
         }
 
-        let bytes = futures_executor::block_on(io.read(key))
-            .map_err(|e| Failure::Refused(format!("read {key}: {e}")))?;
+        let bytes = source.read(key)?;
         if bytes.is_none() {
             return Err(Failure::Refused(
                 "the key the address implies holds no bytes".to_string(),

@@ -1,16 +1,14 @@
-// Gap coverage tests for FihStorage<SimIo>.
+// Gap coverage tests for RefFihStorage<SimIo>.
 // Tests basic storage invariants not covered by existing scenario tests.
 
 use nex_fih::FihId20 as _;
 mod common;
 
-use nex_fih::{
-    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, CoordId, Hint,
-};
-use nexus_storage_sim::{FihStorage, SimIo};
+use nex_fih::{AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, CoordId, Hint};
+use nexus_storage_sim::{RefFihStorage, SimIo};
 
-fn store() -> FihStorage<SimIo> {
-    FihStorage::new(SimIo::new(), "test")
+fn store() -> RefFihStorage<SimIo> {
+    RefFihStorage::new(SimIo::new(), "test")
 }
 
 #[test]

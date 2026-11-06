@@ -2,7 +2,7 @@
 //
 // Defines the lifecycle contract for a nex blackboard instance.
 // Two implementations are anticipated:
-//   - InProcessNex: FihStorage in-process (for testing, single-binary)
+//   - InProcessNex: RefFihStorage in-process (for testing, single-binary)
 //   - ChildProcessNex: nex-server as subprocess (for nexd decoupled mode)
 //
 // Both implementations compile on wasm32-unknown-unknown since the trait

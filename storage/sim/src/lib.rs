@@ -3,13 +3,11 @@
 // Simulator (test double) layer. Provides in-memory IO backend (SimIo)
 // that implements the FileIo trait defined in nex::io.
 //
-// All core storage types (FihStorage, EntityStore, etc.) are
-// re-exported from nex::storage::core. The filesystem IO backend (FsIo)
-// now lives in nex::io::fs_io.
+// The reference node supplies the implementation types, the model supplies the primitives,
+// and nex-io supplies the media, in memory and on a file system. This crate supplies the
+// scenarios that drive them.
 
-pub mod sim_io;
-
-// Re-export core storage types from nex for backward compatibility.
 pub use nex::io::*;
-pub use nex::storage::core::*;
-pub use sim_io::SimIo;
+pub use nex_fih::core::*;
+pub use nexus_storage_ref::*;
+pub use nex_io::{MemoryIo, SimIo};

@@ -3,10 +3,52 @@ name = "nexus-storage-ref"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
+description = "The reference node: the storage contract answered over a volume, and the reader that shows its key space"
+
+[features]
+default = ["std", "reader"]
+# The record path's host widening: the clock and the blocking surface. A wasm consumer takes
+# this alone, since the reader below is a host transport.
+std = ["nex-fih/std", "nex-core/std", "nex-io/std", "dep:futures-executor"]
+# The command-line reader, and the hub it reaches: a socket, a runtime, and a client to speak
+# through it. Nothing in the library needs any of this.
+reader = ["std", "dep:clap", "dep:tokio", "dep:nex-client", "dep:serde_json"]
+
+[dev-dependencies]
+critical-section = { version = "1", features = ["restore-state-bool"] }
+# The process-layer tests live here because they exercise this node through the process
+# layer. The edge runs from the node to the layer, never the other way.
+nex = { path = "../../nex/process" }
+nex-hub = { path = "../../nex/hub" }
+nex-protocol = { path = "../../nex/protocol" }
+nexus-storage-sim = { path = "../sim" }
+nexus-gateway-serde-proxy = { path = "../../libs/serde-proxy" }
+tagma-core = { workspace = true }
+tagma-map = { workspace = true }
+chton = { workspace = true }
+futures-executor = "0.3"
+tempfile = "3"
+ureq = { version = "3", features = ["json"] }
 
 [dependencies]
-nex = { path = "../../nex/process" }
-nex-fih = { path = "../../nex/fih" }
+nex-fih = { path = "../../nex/fih", default-features = false }
+nex-core = { path = "../../nex/core", default-features = false }
+nex-io = { path = "../../nex/io", default-features = false }
+serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
+postcard = { version = "1", features = ["alloc"] }
+sha2 = { version = "0.10", default-features = false }
+log = { workspace = true }
+async-trait.workspace = true
 tagma-core = { workspace = true }
-clap = { version = "4", features = ["derive"] }
-futures-executor = "0.3"
+serde_json = { version = "1", default-features = false, features = ["alloc"], optional = true }
+# The reader reaches a node over the network, so the client belongs to the standard-library
+# build: a node does not depend on a client to be a node.
+nex-client = { path = "../../nex-server/client", optional = true }
+futures-executor = { version = "0.3", optional = true }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "net", "io-util", "time"], optional = true }
+clap = { version = "4", features = ["derive", "env"], optional = true }
+
+[[bin]]
+name = "nexus-storage-ref"
+path = "src/main.rs"
+required-features = ["reader"]

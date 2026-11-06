@@ -1,7 +1,7 @@
 // nex-calc CLI — interactive FIH-based calculator.
 //
 // Computation as state space traversal. All methods are async
-// through the FihStorage<SimIo> backend. The tokio runtime handles
+// through the RefFihStorage<SimIo> backend. The tokio runtime handles
 // IO — all of which is in-memory via SimIo.
 
 use std::io::{self, BufRead, Write};
@@ -14,7 +14,7 @@ async fn main() {
     let stdin = io::stdin();
     let mut stdout = io::stdout();
 
-    println!("nex-calc — FIH-based calculator (async, FihStorage<SimIo>)");
+    println!("nex-calc — FIH-based calculator (async, RefFihStorage<SimIo>)");
     println!("Type 'help' for commands, 'quit' to exit.\n");
 
     loop {

@@ -6,18 +6,20 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
-// ── nex-fih: FIH primitives ─────────────────────────────────────────────
+// ── nex-fih: the state model and its contracts ──────────────────────────
 //
-// FIH (Fact-Intent-Hint) primitive types, storage traits, and
-// implementation layer. This crate extends fih-model with
-// nex-specific implementations.
+// The model this network speaks: Fact, Intent, Hint, identity, the read surface, and the
+// governance primitives. It holds nothing.
 //
-//   core/       — FihStorage, EntityStore, FihSession, records
-//   contract/   — GovernanceGate, EvidenceChain, HintEngine, FihContract
+//   core/       — the entity-store family and the ordered index
+//   contract/   — GovernanceGate, EvidenceChain, HintEngine, FihContract, the read surface
 //   helper/     — ContentJsonExt
 //   io/         — IO re-exports from nex-io (compatibility shim)
 //   detection   — DetectionCapable trait family
 //   interner    — Deprecated string interner (moved from nexus-model)
+//
+// An implementation of the storage contract is a node, and it lives in storage/ref here
+// or in the storage layer it belongs to.
 
 // Re-export everything from fih-model (pure types + traits)
 pub use fih_model::*;
@@ -35,16 +37,8 @@ pub use contract::core::{
     EvidenceChain, EvidenceEntry, GovernanceBypassError, GovernanceGate, HintEngine, HintRule,
 };
 pub use contract::fih::FihContract;
-#[cfg(feature = "std")]
-pub use core::export::{export_from_io, import_into_io};
-#[cfg(feature = "std")]
-pub use core::fih_blackboard::FihBlackboard;
+pub use contract::state::{FactById, FactFraming, FactWalk};
 pub use core::index::{Cell2, OrderedIndex};
-pub use core::intent_status::IntentStatus;
-pub use core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord, RecordTimeUnit};
-#[cfg(feature = "std")]
-pub use core::session::FihSession;
-pub use core::store::FihStorage;
 pub use core::{CoordEntityStore, EntityStore, MapEntityStore, MemoryEntityStore};
 pub use detection::{
     ContradictionDetection, DetectionCapable, DetectionCheckpoint, DetectionOutput, GapDetection,

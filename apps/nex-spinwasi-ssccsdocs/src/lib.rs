@@ -19,12 +19,11 @@ use spin_sdk::http::IntoResponse;
 use spin_sdk::http_component;
 
 use nex::io::FileIo;
-use nex::storage::core::FihStorage;
-use nex::storage::semantic::Query as SemanticQuery;
+use nex_fih::semantic::Query as SemanticQuery;
 use nex_fih::{
-    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, Content, CoordId,
-    Fact, Hint, Intent,
+    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, Content, CoordId, Fact, Hint, Intent,
 };
+use nexus_storage_ref::RefFihStorage;
 use serde::{Deserialize, Serialize};
 
 use crate::bm25::InMemoryBm25;
@@ -33,14 +32,14 @@ use crate::kv_io::KvIo;
 const LLMS_TXT_URL: &str = "https://docs.ssccs.org/llms.txt";
 const DOCS_BASE_URL: &str = "https://docs.ssccs.org";
 
-type AppStorage = FihStorage<KvIo>;
+type AppStorage = RefFihStorage<KvIo>;
 static STORAGE: OnceLock<AppStorage> = OnceLock::new();
 static INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 fn get_storage() -> &'static AppStorage {
     STORAGE.get_or_init(|| {
         tracing::info!("init FIH (KV store)");
-        let s = FihStorage::new(KvIo::new().expect("KvIo"), "spin-ssccsdocs");
+        let s = RefFihStorage::new(KvIo::new().expect("KvIo"), "spin-ssccsdocs");
         s.register_semantic_store(Box::new(InMemoryBm25::new()));
         s
     })
@@ -91,7 +90,7 @@ impl SemanticQuery for TextQuery {
 
 // ── Snapshot ─────────────────────────────────────────────────────────
 
-use nex::storage::core::record::{FactRecord, IntentRecord};
+use nexus_storage_ref::{FactRecord, IntentRecord};
 
 const SNAPSHOT_KEY: &str = "_snapshot/facts.bin";
 
@@ -112,7 +111,7 @@ struct Snapshot {
 }
 
 /// Write a full checkpoint snapshot. Call periodically (not on every ingest).
-async fn write_checkpoint(s: &FihStorage<impl FileIo>) -> Result<(), String> {
+async fn write_checkpoint(s: &RefFihStorage<impl FileIo>) -> Result<(), String> {
     let facts: Vec<FactRecord> = s.fact_records.borrow().values().cloned().collect();
     let intents: Vec<IntentRecord> = s.intent_records.borrow().values().cloned().collect();
     let snapshot = Snapshot {
@@ -157,7 +156,7 @@ async fn restore_from_snapshot(s: &AppStorage) -> Result<bool, String> {
 // ── Ingestion ────────────────────────────────────────────────────────
 
 async fn ingest_document(
-    s: &FihStorage<impl FileIo>,
+    s: &RefFihStorage<impl FileIo>,
     text: &str,
     origin: &str,
 ) -> Result<String, String> {
@@ -632,10 +631,10 @@ mod tests {
     use super::*;
     use nex::io::FsIo;
 
-    fn test_storage() -> FihStorage<FsIo> {
+    fn test_storage() -> RefFihStorage<FsIo> {
         let dir = tempfile::tempdir().unwrap();
         let io = FsIo::new(dir.path()).unwrap();
-        let s = FihStorage::new(io, "test");
+        let s = RefFihStorage::new(io, "test");
         s.register_semantic_store(Box::new(InMemoryBm25::new()));
         s
     }

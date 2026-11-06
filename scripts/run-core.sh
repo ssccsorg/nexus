@@ -46,7 +46,7 @@ run_dep_refresh() {
     cargo update -p chton 2>&1
 }
 
-run_check()  { run_dep_refresh && cargo check -p nex && cargo check -p nexd && cargo check -p nexus-storage-sim && cargo check -p nexus-storage-ref; }
+run_check()  { run_dep_refresh && cargo check -p nex && cargo check -p nexd && cargo check -p nexus-storage-sim && cargo check -p nexus-storage-ref && (cd nex && cargo check -p nex-protocol -p nex-router -p nex-hub); }
 
 # ── WASM check: ensure storage-sim builds for wasm32 target ────────────
 
@@ -57,6 +57,13 @@ run_wasm_check() {
     # playbooks/* (scripts), target/ (build artifacts).
     # apps/ is excluded: each app has its own build target (native, container, etc.)
     # and is not expected to compile for wasm32.
+    #
+    # nex/hub is a host process: it binds sockets, so it asks tokio for `net` and `mio`
+    # compiles only where an operating system provides a poller. The routing table it
+    # builds on is `nex-router`, which this check does reach, and which `run_nostd_check`
+    # takes to the MCU target. The `nex` workspace root is skipped because it would pull
+    # the hub in again; every member has its own manifest above and is checked there.
+    #
     # Failures must abort the gate: the find -exec form swallows the exit
     # code of the inner command, so iterate in bash instead.
     local failed=0
@@ -77,8 +84,10 @@ run_wasm_check() {
         -not -path './storage/ref/*' \
         -not -path './nexd/*' \
         -not -path './nex-server/*' \
+        -not -path './nex/hub/*' \
         -not -path './playbooks/*' \
-        -not -path './Cargo.toml')
+        -not -path './Cargo.toml' \
+        -not -path './nex/Cargo.toml')
     if [ "$failed" -ne 0 ]; then
         echo "run_wasm_check: one or more crates failed the wasm32 build"
         return 1
@@ -102,7 +111,7 @@ run_wasm_check() {
 run_wasip2_check() {
     echo "=== WASIp2: fih-model ==="
     cargo check -p fih-model --target wasm32-wasip2 2>&1
-    for pkg in nex-core nex-fih nex-io; do
+    for pkg in nex-core nex-fih nex-io nex-protocol nex-router; do
         echo "=== WASIp2: $pkg ==="
         (cd nex && cargo check -p "$pkg" --target wasm32-wasip2) 2>&1
     done
@@ -127,13 +136,13 @@ run_nostd_check() {
     # the std-less MCU target.
     echo "=== no_std check: fih-model (no-default-features) ==="
     cargo check -p fih-model --no-default-features 2>&1
-    for pkg in nex-core nex-fih nex-io; do
+    for pkg in nex-core nex-fih nex-io nex-protocol nex-router; do
         echo "=== no_std check: $pkg (no-default-features) ==="
         (cd nex && cargo check -p "$pkg" --no-default-features) 2>&1
     done
     echo "=== no_std anchor tests ==="
     (cd nex && cargo test -p nex-core --no-default-features --test no_std_anchors) 2>&1
-    (cd nex && cargo test -p nex-fih --no-default-features --test no_std_anchors) 2>&1
+    cargo test -p nexus-storage-ref --no-default-features --test no_std_anchors 2>&1
     echo "=== true no_std target: wasm32-unknown-unknown ==="
     (cd nex && cargo check -p nex-core --no-default-features --target wasm32-unknown-unknown) 2>&1
     (cd nex && cargo check -p nex-fih --no-default-features --target wasm32-unknown-unknown) 2>&1
@@ -141,34 +150,13 @@ run_nostd_check() {
     (cd nex && cargo check -p nex-core --no-default-features --target riscv32imac-unknown-none-elf) 2>&1
     (cd nex && cargo check -p nex-fih --no-default-features --target riscv32imac-unknown-none-elf) 2>&1
     (cd nex && cargo check -p nex-io --no-default-features --target riscv32imac-unknown-none-elf) 2>&1
+    (cd nex && cargo check -p nex-protocol --no-default-features --target riscv32imac-unknown-none-elf) 2>&1
+    # The hub core is the portability floor: the router holds the routing table a hub needs
+    # and nothing a host provides, so it has to reach the MCU target with the wire.
+    (cd nex && cargo check -p nex-router --no-default-features --target riscv32imac-unknown-none-elf) 2>&1
 }
 
-# ── Target verification packages (issue #181) ───────────────────────────
-#
-# verify/osless runs the OS-less storage surface on the host (no_std
-# build, caller-provided critical section). verify/mcu builds the storage
-# core as riscv32imac firmware under a 512 KB RAM budget and, when QEMU is
-# available, boots it on the virt machine and checks the runtime behavior
-# (critical section, clock, FihStorage round trip, the no-maps walk).
 
-run_verify_check() {
-    echo "=== verify: nexus-osless-verify (host) ==="
-    cargo run -p nexus-osless-verify 2>&1
-    echo "=== verify: nexus-mcu-verify (riscv32imac release build) ==="
-    cargo build -p nexus-mcu-verify --target riscv32imac-unknown-none-elf --release 2>&1
-    echo "=== verify: nexus-mcu-verify (clippy on the firmware body) ==="
-    # The firmware body is riscv32-only, so the host clippy pass sees the stub and
-    # nothing else. This is where the code that runs on the target is linted.
-    cargo clippy -p nexus-mcu-verify --target riscv32imac-unknown-none-elf -- -D warnings 2>&1
-    if command -v qemu-system-riscv32 >/dev/null 2>&1; then
-        echo "=== verify: nexus-mcu-verify (QEMU virt runtime) ==="
-        qemu-system-riscv32 -machine virt -bios none \
-            -kernel target/riscv32imac-unknown-none-elf/release/nexus-mcu-verify \
-            -nographic -no-reboot 2>&1
-    else
-        echo "qemu-system-riscv32 not found; build gate only (runtime run skipped)"
-    fi
-}
 
 # ── Standalone app manifests (issue #223) ──────────────────────────────
 #
@@ -217,8 +205,6 @@ run_clippy() {
         nexus-storage-sim \
         nexus-gateway-serde-proxy \
         nexus-verify-support \
-        nexus-osless-verify \
-        nexus-mcu-verify \
         nexd
     do
         cargo clippy -p "$pkg" --all-targets -- -D warnings -A clippy::await-holding-refcell-ref
@@ -232,6 +218,10 @@ run_test()   {
     # nowhere.
     cargo test -p nex-core -p nex-fih -p fih-model -- --nocapture 2>&1
     echo "---"
+    # The hub core and the wire. They live in the `nex` workspace, so they are checked from
+    # there; the reference test drives a client through the hub to a node over a real socket.
+    (cd nex && cargo test -p nex-protocol -p nex-router -p nex-hub 2>&1)
+    echo "---"
     # The verification harness's own FileIo contract. The gates assert against it, so a break
     # has to fail here rather than as a confusing scenario failure later.
     cargo test -p nexus-verify-support 2>&1
@@ -239,6 +229,9 @@ run_test()   {
     # build nex-server before integration tests; cargo test -p nexd does not
     # pull in the nex-server binary as a dependency
     cargo build -p nex-server 2>&1
+    # The node's own methods, dispatched against the reference volume. Its key space has no
+    # test elsewhere, so it runs here or nowhere.
+    cargo test -p nex-server 2>&1
     # all nexd test targets (lib + integration + proc-daemon)
     cargo test -p nexd -- --test-threads=1 --nocapture 2>&1
     echo "---"
@@ -263,13 +256,12 @@ run_all() {
     echo "=== wasm check ===" && run_wasm_check
     echo "=== wasip2 smoke ===" && run_wasip2_check
     echo "=== no_std anchors ===" && run_nostd_check
-    echo "=== target verification ===" && run_verify_check
     echo "=== clippy ===" && run_clippy
     echo "=== test ===" && run_test
 }
 
 case $MODE in
-    check)  echo "=== fmt --all ===" && run_fmt && run_check && run_apps_check && run_wasm_check && run_wasip2_check && run_nostd_check && run_verify_check ;;
+    check)  echo "=== fmt --all ===" && run_fmt && run_check && run_apps_check && run_wasm_check && run_wasip2_check && run_nostd_check ;;
     clippy) run_auto_fix && run_clippy ;;
     test)   echo "=== fmt --all ===" && run_fmt && run_wasm_check && run_test ;;
     all)

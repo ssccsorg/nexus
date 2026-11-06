@@ -4,7 +4,7 @@
 // Suitable for <10K documents. For larger collections, add an external
 // vector database adapter.
 
-use nex::storage::semantic::{Query, RecordLoad, SemanticStore};
+use nex_fih::semantic::{Query, RecordLoad, SemanticStore};
 use std::collections::HashMap;
 
 /// In-memory BM25 semantic store.

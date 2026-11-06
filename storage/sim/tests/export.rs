@@ -6,7 +6,7 @@
 
 use nex_fih::CoordId;
 use nex_fih::FihId20 as _;
-use nex_fih::RecordTimeUnit;
+use nexus_storage_ref::RecordTimeUnit;
 use nexus_storage_sim::SimIo;
 use nexus_storage_sim::{
     BlockingIo, ContentMeta, FactRecord, FileIo, HintRecord, IntentRecord, SyncFileIo, WriteOp,
@@ -177,10 +177,9 @@ fn test_export_import_fs_to_sim() {
 
 #[test]
 fn test_export_full_fih_lifecycle() {
-    use nex_fih::AsyncStorageRead;
-    use nexus_storage_sim::FihStorage;
+    use nexus_storage_sim::RefFihStorage;
 
-    // Seed a SimIo directly with records (not through FihStorage).
+    // Seed a SimIo directly with records (not through RefFihStorage).
     let io = SimIo::new();
     let sync = SyncFileIo::new(io.clone());
 
@@ -257,8 +256,8 @@ fn test_export_full_fih_lifecycle() {
     let fresh_sync = SyncFileIo::new(fresh_io.clone());
     import_into_io(&fresh_sync, &bundle).unwrap();
 
-    // Rebuild a FihStorage on top of the fresh IO and verify.
-    let storage = FihStorage::new(fresh_io, "lifecycle");
+    // Rebuild a RefFihStorage on top of the fresh IO and verify.
+    let storage = RefFihStorage::new(fresh_io, "lifecycle");
     futures_executor::block_on(storage.rebuild_cache()).unwrap();
 
     let state = futures_executor::block_on(storage.read_state());

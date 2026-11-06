@@ -28,21 +28,19 @@ The full model, coordinate identity, storage tiers, runtime architecture, and me
 
 ## Repository Structure
 
-Root workspace and a nested storage workspace under [`nex/`](nex).
+Root workspace, and a nested workspace under [`nex/`](nex) for the state model, the IO seam,
+the reference store, and the process layer.
 
 | Path | Contents |
 |---|---|
 | [`fih/`](fih) | `Fact`, `Intent`, `Hint`, `CoordId`, capability traits, `Now`, cold query contract. `no_std + alloc` |
-| [`nex/`](nex) | storage engine workspace: `nex-fih`, `nex-io`, `nex-core`, `nex` process crate |
-| [`nex-server/`](nex-server), [`nexd/`](nexd) | board as a process over a Unix socket, and the daemon that supervises it |
+| [`nex/`](nex) | the state model (`nex-fih`, `fih-model`), the IO seam (`nex-io`), the wire (`nex-protocol`), the routing table (`nex-router`), the hub (`nex-hub`), and the process layer (`nex`) |
+| [`nex-server/`](nex-server), [`nexd/`](nexd) | the board served over a Unix socket, and the daemon that supervises it |
 | [`nex_client`](nex_client) | typed client for `nexd` |
-| [`storage/ref/`](storage/ref) | reference consumer: read a volume by key, answer a multi-axis question, check a record by recomputing its address |
+| [`storage/ref/`](storage/ref) | reference node: read a volume by key, answer a multi-axis question, check a record by recomputing its address |
 | [`storage/sim/`](storage/sim) | scenario runner over in-memory backends |
-| [`verify/osless/`](verify/osless) | OS-less storage path on a host, including cross-thread critical section stress |
-| [`verify/mcu/`](verify/mcu) | the same round trip as bare-metal firmware, under QEMU |
 | [`apps/`](apps) | applications built on the model, each with its own workspace and verifier |
 | [`libs/`](libs) | shared host libraries |
-| [`benches/`](benches) | multi-axis benchmarks |
 | [`playbooks/`](playbooks) | consumer playbooks |
 | [`docs/`](docs) | design records, cold query direction, wire protocol |
 
@@ -52,7 +50,7 @@ Root workspace and a nested storage workspace under [`nex/`](nex).
 
 ```bash
 cargo build --workspace           # root workspace
-cd nex && cargo test --workspace  # storage workspace
+cd nex && cargo test --workspace  # model, IO seam, reference store, process layer
 ./run.sh --core                   # fmt, clippy, tests, wasm gate
 ```
 
@@ -65,12 +63,12 @@ Two entry points, one line each.
 
 Both are the same line on macOS, Linux, and Windows.
 
-The wasm and MCU checks require targets and a runtime beyond the default build.
+The wasm check and the no_std anchor check require targets beyond the default build.
 
 | Check | Requirements | Execution |
 |---|---|---|
 | wasm gate | `wasm32-unknown-unknown`, `wasm32-wasip2` | cargo, on the host |
-| MCU runtime | `riscv32imac-unknown-none-elf` | `nexus-mcu-verify` on `qemu-system-riscv32 -machine virt`, inside `ghcr.io/ssccsorg/nexus-verify`, built from [`verify/Dockerfile`](verify/Dockerfile) |
+| no_std anchors | `riscv32imac-unknown-none-elf` | `cargo check -p nex-io --no-default-features` |
 
 CI installs all three targets. Local runs of those checks require installing them first.
 
@@ -87,11 +85,11 @@ tokio = { version = "1", features = ["full"] }
 
 ```rust
 use nex::io::FsIo;
-use nex::storage::core::FihStorage;
+use nex_fih::RefFihStorage;
 use nex_fih::{AsyncFactCapable, Content, Fact};
 
 let io = FsIo::new("/tmp/nexus-store")?;
-let store = FihStorage::new(io, "my-app");
+let store = RefFihStorage::new(io, "my-app");
 store.rebuild_cache().await?;
 
 let fact = Fact::new("user-note".to_string(), Content::from("remember this"), "my-app".into());
@@ -121,7 +119,7 @@ Targets without an operating system require three things.
 - Provide `alloc` and a `critical-section` implementation.
 - Inject a clock through `Now`.
 
-[`verify/mcu`](verify/mcu) is the working reference.
+The reference store is `RefFihStorage` in `nex/fih`.
 
 ## Minimal Examples
 
@@ -133,8 +131,6 @@ Each is one part of the project in its smallest complete form.
 | [`storage/ref`](storage/ref) | the storage surface: read a volume by key, answer a multi-axis question from the keys, check a record by recomputing its address. Carries a [demonstration board](storage/ref/demo) that draws the same reads |
 | [`apps/nex-derive`](apps/nex-derive) | a directed goal space: a goal is work, intent, and contract, and resolving it derives a fact |
 | [`storage/sim`](storage/sim) | a run driven by a scenario, over in-memory backends |
-| [`verify/osless`](verify/osless) | the OS-less storage path on a host, including the cross-thread critical section stress |
-| [`verify/mcu`](verify/mcu) | the same round trip as bare-metal firmware, under QEMU |
 
 ## Testing
 

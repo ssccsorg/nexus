@@ -1,7 +1,7 @@
 // ── Time Machine tests ──────────────────────────────────────────────────
 //
 // Validates FIH StateSpace as a 4D time-travelable storage:
-//   1. Storage migration (SimIo → fresh FihStorage)
+//   1. Storage migration (SimIo → fresh RefFihStorage)
 //   2. Time-travel consistency (as_of window excludes future)
 //   3. Content deduplication (same blob stored once)
 //   4. Full StateSpace round-trip (submit → flush → rebuild → verify)
@@ -13,19 +13,16 @@ use nexus_storage_sim::BlockingIo;
 mod common;
 
 use futures_executor::block_on;
-use nex_fih::{
-    AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncHintCapable, AsyncIntentCapable,
-    AsyncStorageRead, Content, CoordId, Fact, Hint, Intent, StateFilter,
-};
-use nexus_storage_sim::{FihStorage, SimIo, SyncFileIo};
+use nex_fih::{AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, Content, CoordId, Fact, Hint, Intent, StateFilter};
+use nexus_storage_sim::{RefFihStorage, SimIo, SyncFileIo};
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
-fn store() -> FihStorage<SimIo> {
-    FihStorage::new(SimIo::new(), "tm")
+fn store() -> RefFihStorage<SimIo> {
+    RefFihStorage::new(SimIo::new(), "tm")
 }
 
-fn submit_fact(store: &FihStorage<SimIo>, id: &str, data: &str) {
+fn submit_fact(store: &RefFihStorage<SimIo>, id: &str, data: &str) {
     block_on(store.submit_fact(&Fact::with_id(
         CoordId::resolve(id),
         "tm".into(),
@@ -38,7 +35,7 @@ fn submit_fact(store: &FihStorage<SimIo>, id: &str, data: &str) {
     .unwrap();
 }
 
-fn submit_intent(store: &FihStorage<SimIo>, id: &str, from: &[&str]) {
+fn submit_intent(store: &RefFihStorage<SimIo>, id: &str, from: &[&str]) {
     block_on(store.submit_intent(&Intent {
         id: CoordId::resolve(id),
         from_facts: from.iter().map(|s| CoordId::resolve(s)).collect(),
@@ -54,7 +51,7 @@ fn submit_intent(store: &FihStorage<SimIo>, id: &str, from: &[&str]) {
     .unwrap();
 }
 
-// ── Test 2: Storage migration (SimIo → fresh FihStorage) ────────
+// ── Test 2: Storage migration (SimIo → fresh RefFihStorage) ────────
 //
 // Simulate moving FIH data between stores: flush everything into io_a,
 // then a new store on the same io instance reads it all back.
@@ -64,14 +61,14 @@ fn test_storage_migration() {
     let io = SimIo::new();
 
     // Source store
-    let src = FihStorage::new(io.clone(), "tm");
+    let src = RefFihStorage::new(io.clone(), "tm");
     submit_fact(&src, "f1", "data1");
     submit_fact(&src, "f2", "data2");
     submit_intent(&src, "i1", &["f1", "f2"]);
     block_on(src.flush_pending()).unwrap();
 
     // Destination store — reads from same io
-    let dst = FihStorage::new(io, "tm");
+    let dst = RefFihStorage::new(io, "tm");
     block_on(dst.rebuild_cache()).unwrap();
 
     let state = block_on(dst.read_state());
@@ -89,7 +86,7 @@ fn test_storage_migration() {
 fn test_time_travel_consistency() {
     // FakeClock: start at 1_000_000_000, step 1_000_000_000 each call
     let clock = common::FakeClock::with_step(1_000_000_000, 1_000_000_000);
-    let store = FihStorage::with_clock(SimIo::new(), "tm", Box::new(clock));
+    let store = RefFihStorage::with_clock(SimIo::new(), "tm", Box::new(clock));
 
     // Fact submitted at clock call 1 (1_000_000_000), TimeIndex at call 2 (2_000_000_000)
     submit_fact(&store, "f_pre", "pre");
@@ -123,7 +120,7 @@ fn test_time_travel_consistency() {
 #[test]
 fn test_content_dedup() {
     let io = SimIo::new();
-    let store = FihStorage::new(io.clone(), "tm");
+    let store = RefFihStorage::new(io.clone(), "tm");
 
     submit_fact(&store, "f_dup_a", "shared content");
     submit_fact(&store, "f_dup_b", "shared content");
@@ -172,7 +169,7 @@ fn test_full_statespace_round_trip() {
 #[test]
 fn test_empty_statespace_is_valid() {
     let io = SimIo::new();
-    let store = FihStorage::new(io.clone(), "tm");
+    let store = RefFihStorage::new(io.clone(), "tm");
     block_on(store.flush_pending()).unwrap();
 
     let state = block_on(store.read_state());

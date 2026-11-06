@@ -12,7 +12,6 @@ set -euo pipefail
 #   ./run.sh --gateway     # Gateway layer checks (apps/nex-api, libs/serde-proxy)
 #   ./run.sh --apps        # All standalone app verification
 #   ./run.sh --server      # nex-server standalone verification
-#   ./run.sh --bench       # Run benchmarks (optional filter arg, e.g. --bench 2axis)
 #   ./run.sh --playbooks   # Consumer playbooks only
 #
 
@@ -524,20 +523,6 @@ verify_nex_tagma() {
     echo "nex-tagma: passed"
 }
 
-# ── Benchmarks ─────────────────────────────────────────────────────────────
-
-run_bench() {
-    local bench_filter="${1:-}"
-    echo "=== Tagma multi-axis index benchmarks ==="
-    if [ -n "$bench_filter" ]; then
-        cargo bench -p nexus-bench --bench bench -- "$bench_filter" 2>&1
-    else
-        cargo bench -p nexus-bench --bench bench 2>&1
-    fi
-    echo ""
-    echo "Benchmarks complete."
-}
-
 # ── App suite ─────────────────────────────────────────────────────────────
 
 run_apps() {
@@ -579,11 +564,6 @@ case "${1:-}" in
         verify_nex_server
         exit 0
         ;;
-    --bench)
-        shift
-        run_bench "$@"
-        exit $?
-        ;;
     --playbooks)
         kill_port 30922
         exec ./playbooks/run.sh
@@ -595,7 +575,6 @@ case "${1:-}" in
         echo "  --gateway     Gateway layer checks (apps/nex-api, libs/serde-proxy)"
         echo "  --apps        Standalone app verification (spinwasi, nex-tagma, ...)"
         echo "  --server      nex-server standalone verification"
-        echo "  --bench       Run benchmarks (optional filter arg, e.g. --bench 2axis)"
         echo "  --playbooks   Consumer playbooks only"
         ;;
     "")

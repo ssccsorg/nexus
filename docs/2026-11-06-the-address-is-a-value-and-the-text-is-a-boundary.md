@@ -142,13 +142,15 @@ it places. A record is placed once and read many times, so the trade faces the r
 
 ### Held by a test
 
-The rule is enforced by `nex/fih/tests/identity_boundary.rs`, which the `core` job runs with the rest of the
-record layer's tests. One test, three properties.
+The record layer was written here and now lives in `ktema`, at `crates/engine/src/holding.rs`, so the rule is
+enforced by `ktema/crates/engine/tests/identity_boundary.rs`, which the engine's gates run with the rest of the
+layer's tests. The file moved with the code it guards; this repository keeps the identity type that the layer
+consumes. One test, three properties.
 
 | Property | How it is checked |
 |:---|:---|
 | the record maps are keyed by the address | a type annotation, so a map keyed by its text stops the file from building |
-| a typed door never parses | a scan of `store.rs` that names the function and the line when it does |
+| a typed door never parses | a scan of `holding.rs` that names the function and the line when it does |
 | an address lookup allocates its result and nothing else | a counting allocator, two allocations a call over a hundred calls |
 
 The third is the one that catches a reintroduced render, because a render allocates and the count moves. The
@@ -157,11 +159,28 @@ second was verified by inserting a parse into `get_hint_at`: the scan named it a
 ## Verification
 
 ```bash
-cargo test --workspace --no-fail-fast          # run it with TMPDIR short, see below
-cargo clippy --workspace --all-targets -- -D warnings
-cargo bench -p nexus-bench --bench bench -- "fih/intents_by_fact_100"
-cargo bench -p nexus-bench --bench wanted_ids
+bash run.sh --core                             # the gate CI runs: fmt, check, wasm, no_std, clippy, tests
+cd ../ktema && bash run.sh --check             # the record layer and its boundary test
+cd ../ktema && bash benches/run.sh             # the record layer's measurement set
 ```
+
+The per-function numbers in this note came from `cargo bench -p nexus-bench`, the Criterion crate that measured
+the record layer here. This branch removed that crate along with the layer it measured, and the measurement set
+that replaced it in `ktema` has a different shape, so the command is reproduced at the commits it was taken on
+rather than in the tree that holds this note:
+
+```bash
+git worktree add /tmp/nexus-5095f29b 5095f29b
+cd /tmp/nexus-5095f29b && cargo bench -p nexus-bench --bench bench -- "fih/intents_by_fact_100"
+cd /tmp/nexus-5095f29b && cargo bench -p nexus-bench --bench wanted_ids
+```
+
+The worktree builds the tree the base-36 text was measured in. The same filter in a worktree of the commit
+before it (`772d9d1a`, the native text) is what the `Before` and `After` columns compare.
+
+`ktema/benches/run.sh` builds `ktema-bench`, which writes one JSON report for a volume ladder rather than a
+per-function baseline. It is the measurement set the record layer owns now, and it does not reproduce the
+Criterion table above.
 
 The `nexd` integration tests bind a Unix socket under the system temporary directory. A deep `TMPDIR` exceeds
 `SUN_LEN`, the server fails to bind, and all twenty-eight tests fail with a message that names the path rather

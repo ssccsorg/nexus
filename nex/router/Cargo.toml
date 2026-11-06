@@ -1,0 +1,11 @@
+[package]
+name = "nex-router"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The hub's routing table: which node answers which method"
+
+[features]
+default = []
+
+[dependencies]

@@ -1,6 +1,6 @@
 // ── Tagma index tests (FihCoord removed — intersect helpers remain) ─────
 
-use nex::storage::core::index::{OrderedIndex, intersect_2, intersect_3};
+use nex_fih::core::index::{OrderedIndex, intersect_2, intersect_3};
 
 // ── intersect helpers ────────────────────────────────────────────────
 

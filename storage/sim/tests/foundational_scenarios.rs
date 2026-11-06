@@ -13,9 +13,9 @@
 //   3. Track knowledge evolution when formal .2 revises manifesto claims
 //   4. Support multi-agent review across foundational layers
 //
-// Note: These tests drive the async FihStorage directly with block_on
+// Note: These tests drive the async RefFihStorage directly with block_on
 // instead of using Scheduler, because Scheduler requires sync traits
-// (Blackboard + EvictCapable) that FihStorage does not implement.
+// (Blackboard + EvictCapable) that RefFihStorage does not implement.
 // Detection tasks are run manually against the read state.
 
 use futures_executor::block_on;
@@ -25,10 +25,8 @@ use nex::process::tasks::new_document_analyzer::NewDocumentAnalyzer;
 use nex::process::tasks::state_change_detector::StateChangeDetector;
 use nex_fih::DetectionCapable;
 use nex_fih::FihId20 as _;
-use nex_fih::{
-    AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead, BoardState, CoordId, Fact, Intent,
-};
-use nexus_storage_sim::{FihStorage, SimIo};
+use nex_fih::{AsyncFactCapable, AsyncIntentCapable, BoardState, CoordId, Fact, Intent};
+use nexus_storage_sim::{RefFihStorage, SimIo};
 
 fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) -> Fact {
     Fact::with_id(
@@ -43,14 +41,14 @@ fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) 
     )
 }
 
-fn submit_facts(bb: &FihStorage<SimIo>, facts: &[Fact]) {
+fn submit_facts(bb: &RefFihStorage<SimIo>, facts: &[Fact]) {
     for f in facts {
         block_on(bb.submit_fact(f)).unwrap();
     }
 }
 
 /// Run a single detection tick manually: read state, run detectors, submit results.
-fn detection_tick(bb: &FihStorage<SimIo>, detectors: &mut [Box<dyn DetectionCapable>]) {
+fn detection_tick(bb: &RefFihStorage<SimIo>, detectors: &mut [Box<dyn DetectionCapable>]) {
     let state = block_on(bb.read_state());
 
     let mut all_facts = Vec::new();
@@ -76,7 +74,7 @@ fn facts_by_creator<'a>(state: &'a BoardState, creator: &str) -> Vec<&'a Fact> {
 //  Foundational Corpus
 // ═════════════════════════════════════════════════════════════════════════
 
-fn seed_foundational(bb: &FihStorage<SimIo>) -> Vec<String> {
+fn seed_foundational(bb: &RefFihStorage<SimIo>) -> Vec<String> {
     let facts = [
         // ── manifesto.llms.md — ontology ──────────────────────────
         claim(
@@ -279,7 +277,7 @@ fn seed_foundational(bb: &FihStorage<SimIo>) -> Vec<String> {
 #[test]
 fn scenario_foundational_consistency_audit() {
     let io = SimIo::new();
-    let bb = FihStorage::new(io, "test");
+    let bb = RefFihStorage::new(io, "test");
     let baseline = seed_foundational(&bb);
 
     let mut detectors: Vec<Box<dyn DetectionCapable>> = vec![
@@ -349,7 +347,7 @@ fn scenario_foundational_consistency_audit() {
 #[test]
 fn scenario_formal_revision_of_philosophy() {
     let io = SimIo::new();
-    let bb = FihStorage::new(io, "test");
+    let bb = RefFihStorage::new(io, "test");
 
     // Phase 1: Only manifesto + epistemology (philosophical layer)
     let phil_facts = [
@@ -511,7 +509,7 @@ fn scenario_formal_revision_of_philosophy() {
 #[test]
 fn scenario_theory_practice_gap() {
     let io = SimIo::new();
-    let bb = FihStorage::new(io, "test");
+    let bb = RefFihStorage::new(io, "test");
 
     // Theory layer: manifesto + epistemology
     let theory = [
@@ -655,7 +653,7 @@ fn scenario_theory_practice_gap() {
 #[test]
 fn scenario_epistemology_as_bridge() {
     let io = SimIo::new();
-    let bb = FihStorage::new(io, "test");
+    let bb = RefFihStorage::new(io, "test");
 
     // Manifesto (what IS) + Whitepaper .2 (formal definitions)
     let claims = [

@@ -13,13 +13,11 @@ mod common;
 
 use crate::common::FakeClock;
 use futures_executor::block_on;
-use nex_fih::{
-    AsyncEvictCapable, AsyncFactCapable, AsyncIntentCapable, Content, CoordId, Fact, Intent,
-};
-use nexus_storage_sim::{FihStorage, SimIo};
+use nex_fih::{AsyncFactCapable, AsyncIntentCapable, Content, CoordId, Fact, Intent};
+use nexus_storage_sim::{RefFihStorage, SimIo};
 
-fn storage() -> FihStorage<SimIo> {
-    FihStorage::new(SimIo::new(), "test")
+fn storage() -> RefFihStorage<SimIo> {
+    RefFihStorage::new(SimIo::new(), "test")
 }
 
 fn fact(id: &str) -> Fact {
@@ -79,7 +77,7 @@ fn test_by_from_fact_cleared_on_evict_stale() {
     // cutoff; vacate_record must unlink the reverse index so the evicted
     // intent no longer appears for its from-fact.
     let clock = FakeClock::new(1_000_000_000_000); // t = 1000s
-    let store = FihStorage::with_clock(SimIo::new(), "evict-rev", Box::new(clock.clone()));
+    let store = RefFihStorage::with_clock(SimIo::new(), "evict-rev", Box::new(clock.clone()));
 
     block_on(store.submit_fact(&fact("f_ev"))).unwrap();
     block_on(store.submit_intent(&intent("i_ev", vec!["f_ev"]))).unwrap();
@@ -123,14 +121,14 @@ fn test_by_from_fact_cleared_on_conclude() {
 #[test]
 fn test_by_from_fact_rebuild_from_io() {
     let io = SimIo::new();
-    let store = FihStorage::new(io.clone(), "test");
+    let store = RefFihStorage::new(io.clone(), "test");
 
     block_on(store.submit_fact(&fact("f_x"))).unwrap();
     block_on(store.submit_intent(&intent("i_ref", vec!["f_x"]))).unwrap();
 
     block_on(store.flush_pending()).unwrap();
 
-    let store2 = FihStorage::new(io, "test");
+    let store2 = RefFihStorage::new(io, "test");
     block_on(store2.rebuild_cache()).unwrap();
 
     let refs = store2.intents_by_fact("f_x");

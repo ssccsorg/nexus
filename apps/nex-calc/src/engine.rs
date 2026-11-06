@@ -1,13 +1,13 @@
-// Calculator engine — FIH-based computation via FihStorage<SimIo>.
+// Calculator engine — FIH-based computation via RefFihStorage<SimIo>.
 //
 //   F (Fact)  = number stored as immutable, content-addressed Fact
 //   I (Intent) = operator with direction through the FIH state space
 //   H (Hint)   = constraint or transform on computation
 //
-// Storage is backed by FihStorage<SimIo>: the same storage engine used
+// Storage is backed by RefFihStorage<SimIo>: the same storage engine used
 // throughout the neXus ecosystem. The IO layer (SimIo) is in-memory.
 // Swapping SimIo for FsIo or CfFihIo changes the persistence layer
-// without touching calculator logic — FihStorage's IO abstraction.
+// without touching calculator logic — RefFihStorage's IO abstraction.
 //
 // Number Facts store their value as a blob via the IO layer:
 //   blob/{blob_hash}.bin          ← i64 little-endian bytes
@@ -23,9 +23,9 @@ use std::fmt;
 use sha2::{Digest, Sha256};
 
 use nex::FileIo;
-use nex::storage::core::intent_status::IntentStatus;
-use nex::storage::core::record::ContentMeta;
-use nex::storage::core::store::{FihStorage, Record, structural_path};
+use nexus_storage_ref::IntentStatus;
+use nexus_storage_ref::ContentMeta;
+use nexus_storage_ref::{Record, RefFihStorage};
 use nex_fih::{Content, CoordId, FihHash};
 use nexus_storage_sim::SimIo;
 
@@ -77,19 +77,19 @@ pub struct ResolvedIntent {
     pub result_value: i64,
 }
 
-/// Calculator engine backed by FihStorage<SimIo>.
+/// Calculator engine backed by RefFihStorage<SimIo>.
 ///
-/// All state lives in FihStorage's in-memory unified store. The IO layer
+/// All state lives in RefFihStorage's in-memory unified store. The IO layer
 /// (SimIo) handles content blob reads and writes — entirely in memory,
-/// no filesystem. Calculator logic only sees the FihStorage API.
+/// no filesystem. Calculator logic only sees the RefFihStorage API.
 pub struct CalcEngine {
-    storage: FihStorage<SimIo>,
+    storage: RefFihStorage<SimIo>,
 }
 
 impl CalcEngine {
     pub fn new() -> Self {
         Self {
-            storage: FihStorage::new(SimIo::new(), "nex-calc"),
+            storage: RefFihStorage::new(SimIo::new(), "nex-calc"),
         }
     }
 
@@ -126,8 +126,7 @@ impl CalcEngine {
             submitted_at: 0,
         };
 
-        let path = structural_path(0u16, "nex-calc", "user", 0u16, 0);
-        self.storage.place_record(&path, &id_str, record);
+        self.storage.place_record(&id_str, record);
         id
     }
 
@@ -187,8 +186,7 @@ impl CalcEngine {
             created_at: now,
         };
 
-        let path = structural_path(1u16, "", "user", 0u16, now);
-        self.storage.place_record(&path, &id_str, record);
+        self.storage.place_record(&id_str, record);
         Ok(id)
     }
 
@@ -273,8 +271,8 @@ impl CalcEngine {
                 } => (origin.clone(), creator.clone()),
                 _ => unreachable!(),
             };
-            let path = structural_path(0u16, &fact_origin, &fact_creator, 0u16, 0);
-            self.storage.place_record(&path, &result_id_str, rec);
+            let _ = (fact_origin, fact_creator);
+            self.storage.place_record(&result_id_str, rec);
         }
 
         // Mark intent concluded: vacate old path, insert at new path with Concluded status.
@@ -291,10 +289,9 @@ impl CalcEngine {
             worker: "nex-calc".into(),
         };
         // Remove old entry.
-        let old_path = structural_path(1u16, "", "user", old_status_coord, created_at);
-        self.storage.vacate_record(&old_path, &id_str);
+        let _ = (old_status_coord, created_at);
+        self.storage.vacate_record(&id_str);
         // Insert new entry.
-        let new_path = structural_path(1u16, "", "user", 2u16, created_at);
         let new_record = Record::Intent {
             from_facts,
             description_hash,
@@ -302,7 +299,7 @@ impl CalcEngine {
             status: new_status,
             created_at,
         };
-        self.storage.place_record(&new_path, &id_str, new_record);
+        self.storage.place_record(&id_str, new_record);
 
         Ok(ResolvedIntent {
             intent_id: *intent_id,
@@ -327,19 +324,14 @@ impl CalcEngine {
                 creator: "user".into(),
                 submitted_at: now,
             };
-            let path = structural_path(2u16, "", "user", 0u16, now);
-            self.storage.place_record(&path, &id_str, record);
+            self.storage.place_record(&id_str, record);
         }
         id
     }
 
     pub async fn clear_hints(&self) {
-        let ids: Vec<String> = self.storage.all_hint_ids();
-        for id_str in ids {
-            if let Some((_content, _creator, submitted_at)) = self.storage.get_hint_by_id(&id_str) {
-                let path = structural_path(2u16, "", "user", 0u16, submitted_at);
-                self.storage.vacate_record(&path, &id_str);
-            }
+        for id_str in self.storage.all_hint_ids() {
+            self.storage.vacate_record(&id_str);
         }
     }
 

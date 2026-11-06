@@ -1,13 +1,13 @@
-// Calculator engine — FIH-based computation via FihStorage<SimIo>.
+// Calculator engine — FIH-based computation via RefFihStorage<SimIo>.
 //
 //   F (Fact)  = number stored as immutable, content-addressed Fact
 //   I (Intent) = operator with direction through the FIH state space
 //   H (Hint)   = constraint or transform on computation
 //
-// Storage is backed by FihStorage<SimIo>: the same storage engine used
+// Storage is backed by RefFihStorage<SimIo>: the same storage engine used
 // throughout the neXus ecosystem. The IO layer (SimIo) is in-memory.
 // Swapping SimIo for FsIo or CfFihIo changes the persistence layer
-// without touching calculator logic — FihStorage's IO abstraction.
+// without touching calculator logic — RefFihStorage's IO abstraction.
 //
 // Number Facts store their value as a blob via the IO layer:
 //   blob/{blob_hash}.bin          ← i64 little-endian bytes
@@ -22,10 +22,11 @@ use sha2::{Digest, Sha256};
 
 use nex::contract::fih::FihContract;
 use nex::io::FileIo;
-use nex::storage::core::intent_status::IntentStatus;
-use nex::storage::core::record::{ContentMeta, FactRecord, HintRecord, IntentRecord};
-use nex::storage::core::store::FihStorage;
-use nex_fih::{Content, CoordId, FihHash, RecordTimeUnit};
+use nexus_storage_ref::IntentStatus;
+use nexus_storage_ref::{ContentMeta, FactRecord, HintRecord, IntentRecord};
+use nexus_storage_ref::RefFihStorage;
+use nex_fih::{Content, CoordId, FihHash};
+use nexus_storage_ref::{RecordTimeUnit};
 use nexus_storage_sim::SimIo;
 
 use crate::hint::Constraint;
@@ -77,13 +78,13 @@ pub struct ResolvedIntent {
     pub result_value: i64,
 }
 
-/// Calculator engine backed by FihStorage<SimIo>.
+/// Calculator engine backed by RefFihStorage<SimIo>.
 ///
-/// All state lives in FihStorage's in-memory stores. The IO layer
+/// All state lives in RefFihStorage's in-memory stores. The IO layer
 /// (SimIo) handles content blob reads and writes — entirely in memory,
-/// no filesystem. Calculator logic only sees the FihStorage API.
+/// no filesystem. Calculator logic only sees the RefFihStorage API.
 pub struct CalcEngine {
-    storage: FihStorage<SimIo>,
+    storage: RefFihStorage<SimIo>,
     pub contract: FihContract,
 }
 
@@ -94,7 +95,7 @@ impl CalcEngine {
             .gate
             .register_schema(NUMBER_MIME, NUMBER_MIME.as_bytes());
         Self {
-            storage: FihStorage::new(SimIo::new(), "nex-calc"),
+            storage: RefFihStorage::new(SimIo::new(), "nex-calc"),
             contract,
         }
     }

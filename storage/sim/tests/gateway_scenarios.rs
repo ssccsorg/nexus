@@ -1,23 +1,21 @@
-// Scenario tests for FihStorage<SimIo> using async traits.
+// Scenario tests for RefFihStorage<SimIo> using async traits.
 //
 // Validates that the FIH protocol produces identical results when all
 // primitives go through the async trait interface. These scenarios
 // mirror the sync versions in other test files but use block_on
-// to drive the async FihStorage.
+// to drive the async RefFihStorage.
 //
 // Note: SerdeProxy<B> requires B: Blackboard (sync trait), so it
-// cannot wrap FihStorage. Instead, this file tests the async trait
-// interface directly on FihStorage.
+// cannot wrap RefFihStorage. Instead, this file tests the async trait
+// interface directly on RefFihStorage.
 
 use futures_executor::block_on;
 use nex_fih::FihId20 as _;
-use nex_fih::{
-    AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead, Content, CoordId, Fact, Intent,
-};
-use nexus_storage_sim::FihStorage;
+use nex_fih::{AsyncFactCapable, AsyncIntentCapable, Content, CoordId, Fact, Intent};
+use nexus_storage_sim::RefFihStorage;
 use nexus_storage_sim::SimIo;
 
-/// Contradiction Detection — via async traits on FihStorage.
+/// Contradiction Detection — via async traits on RefFihStorage.
 ///
 /// Two papers make contradictory claims about GNN oversmoothing.
 /// Agent-A and Agent-B each ingest a paper. Agent-C detects the
@@ -25,7 +23,7 @@ use nexus_storage_sim::SimIo;
 #[test]
 fn scenario_contradiction_detection_via_gateway() {
     let io = SimIo::new();
-    let storage = FihStorage::new(io, "test");
+    let storage = RefFihStorage::new(io, "test");
 
     // Agent-A: ingests paper claiming GNNs work fine at 50 layers
     block_on(storage.submit_fact(&Fact::with_id(

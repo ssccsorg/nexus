@@ -1,0 +1,18 @@
+[package]
+name = "nex-hub"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The hub: routes a client's request to the node that answers it, and holds no record"
+
+[[bin]]
+name = "nex-hub"
+path = "src/main.rs"
+
+[dependencies]
+nex-protocol = { path = "../protocol" }
+nex-router = { path = "../router" }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
