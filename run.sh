@@ -530,9 +530,9 @@ run_bench() {
     local bench_filter="${1:-}"
     echo "=== Tagma multi-axis index benchmarks ==="
     if [ -n "$bench_filter" ]; then
-        cargo bench -p nex --bench bench -- "$bench_filter" 2>&1
+        cargo bench -p nexus-bench --bench bench -- "$bench_filter" 2>&1
     else
-        cargo bench -p nex --bench bench 2>&1
+        cargo bench -p nexus-bench --bench bench 2>&1
     fi
     echo ""
     echo "Benchmarks complete."
