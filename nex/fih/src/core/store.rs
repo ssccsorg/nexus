@@ -2865,10 +2865,10 @@ impl<I: FileIo> crate::AsyncTimeRangeCapable for FihStorage<I> {
     }
 }
 
-// ── The storage contract, implemented by this store ─────────────────────
+// ── The read surface, answered by this implementation ───────────────────
 //
-// These delegate to the inherent methods. A consumer written against the contract does not
-// name this type, which is what lets a second implementation serve the same consumer.
+// These delegate to the inherent methods. A reader written against the surface does not name
+// this type, which is what lets another implementation answer for the same network.
 
 impl<I: FileIo> crate::FactById for FihStorage<I> {
     async fn fact_by_id(&self, id: &str) -> Option<(Content, FihHash, String, String)> {
