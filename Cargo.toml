@@ -13,10 +13,8 @@ members = [
     "storage/ref",
     "apps/nex-calc",
     "apps/nex-derive",
-    "benches",
     "verify/support",
     "verify/osless",
-    "verify/mcu",
     ]
 exclude = [
     "apps/nex-wasmer-ssccsdocs",
