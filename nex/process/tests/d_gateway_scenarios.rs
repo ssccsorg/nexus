@@ -6,7 +6,7 @@
 // but communicates through SerdeProxy instead of calling HybridBlackboard
 // directly.
 
-use nex_fih::FihBlackboard;
+use nexus_storage_ref::FihBlackboard;
 use nex_fih::FihId20 as _;
 use nex_fih::{Content, CoordId, Fact, FactCapable, Intent, IntentCapable, StorageRead};
 use nexus_gateway_serde_proxy::SerdeProxy;

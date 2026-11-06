@@ -11,9 +11,22 @@
 
 #![allow(async_fn_in_trait)]
 
-use crate::core::record::FactRecord;
 use crate::{Content, FihHash};
 use alloc::string::String;
+
+/// What a fact's record says about itself, without its payload.
+///
+/// The read surface names this rather than a storage encoding, so an implementation is free
+/// to write a different record and answer with the same framing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FactFraming {
+    pub id: String,
+    pub origin: String,
+    pub creator: String,
+    /// Submission time in nanoseconds since the UNIX epoch.
+    pub submitted_at: u64,
+    pub content_hash: FihHash,
+}
 
 /// Read one record by its identifier.
 pub trait FactById {
@@ -22,7 +35,7 @@ pub trait FactById {
     async fn fact_by_id(&self, id: &str) -> Option<(Content, FihHash, String, String)>;
 
     /// The framing of a fact: what the record says about itself, without its payload.
-    async fn fact_framing(&self, id: &str) -> Option<FactRecord>;
+    async fn fact_framing(&self, id: &str) -> Option<FactFraming>;
 }
 
 /// Visit the facts a network holds, one at a time.
@@ -32,10 +45,10 @@ pub trait FactById {
 pub trait FactWalk {
     async fn for_each_fact<F>(&self, visit: F) -> Result<(), String>
     where
-        F: FnMut(&FactRecord, Content) -> bool;
+        F: FnMut(&FactFraming, Content) -> bool;
 
     /// The same walk without the payload of each record.
     async fn for_each_fact_record<F>(&self, visit: F) -> Result<(), String>
     where
-        F: FnMut(&FactRecord) -> bool;
+        F: FnMut(&FactFraming) -> bool;
 }

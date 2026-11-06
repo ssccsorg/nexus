@@ -14,7 +14,8 @@ use nex_fih::FihId20 as _;
 use std::time::Instant;
 
 use futures_executor::block_on;
-use nex_fih::{AsyncFactCapable, BlackboardError, Content, CoordId, Fact, RefFihStorage};
+use nex_fih::{AsyncFactCapable, BlackboardError, Content, CoordId, Fact};
+use nexus_storage_ref::{RefFihStorage};
 use nexus_storage_sim::SimIo;
 
 fn fact(id: &str, data: &[u8]) -> Fact {

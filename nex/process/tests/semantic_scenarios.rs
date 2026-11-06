@@ -756,7 +756,7 @@ fn scenario_manual_score_verification() {
 #[test]
 fn scenario_fihstorage_e2e_auto_index() {
     futures_executor::block_on(async {
-        use nex_fih::RefFihStorage;
+        use nexus_storage_ref::RefFihStorage;
         use nex::io::FsIo;
         use nex_fih::{AsyncFactCapable, AsyncStorageRead, Content, CoordId, Fact};
 

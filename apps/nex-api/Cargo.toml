@@ -7,6 +7,7 @@ license = "Apache-2.0"
 [workspace]
 
 [dependencies]
+nexus-storage-ref = { path = "../../storage/ref" }
 nex = { path = "../../nex/process" }
 nex-core = { path = "../../nex/core" }
 nex-fih = { path = "../../nex/fih" }

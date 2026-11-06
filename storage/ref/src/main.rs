@@ -14,8 +14,10 @@ use std::process::ExitCode;
 use std::time::SystemTime;
 
 use clap::{Parser, Subcommand};
-use nex::io::{FileIo, fs_io::FsIo};
-use nex_fih::{Content, CoordId, Fact, FactRecord, RefFihStorage};
+use nex_io::FileIo;
+use nex_io::fs_io::FsIo;
+use nex_fih::{Content, CoordId, Fact};
+use nexus_storage_ref::{FactRecord, RefFihStorage};
 use tagma_core::DIGITS_PER_AXIS;
 
 const PROJECT: &str = "nexus-storage-ref";

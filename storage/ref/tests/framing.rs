@@ -13,7 +13,8 @@ use std::sync::{Arc, Mutex};
 
 use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
-use nex_fih::{AsyncFactCapable, Content, CoordId, Fact, RefFihStorage};
+use nex_fih::{AsyncFactCapable, Content, CoordId, Fact};
+use nexus_storage_ref::{RefFihStorage};
 
 /// An in-memory medium, shared by every storage that holds a clone of it, that keeps the keys
 /// every read asked for. The log is how a test says what a read did not ask for, which is the half

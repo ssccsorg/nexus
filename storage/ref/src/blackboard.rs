@@ -21,14 +21,14 @@
 //   let bb = FihBlackboard::new(io, "project");
 
 #[cfg(feature = "std")]
-use crate::reference::RefFihStorage;
+use crate::store::RefFihStorage;
 #[cfg(feature = "std")]
-use crate::io::FileIo;
+use nex_fih::io::FileIo;
 // Async* traits are needed for method resolution on RefFihStorage in non-WASM impl blocks.
 // The wasm32 check flags them as unused (impl blocks are cfg-gated).
 #[cfg(feature = "std")]
 #[cfg_attr(target_arch = "wasm32", allow(unused_imports))]
-use crate::{
+use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable,
     BlackboardError, BoardState, CoordId, EvictCapable, Fact, FactCapable, Hint, HintCapable,
     Intent, IntentCapable, StorageRead,

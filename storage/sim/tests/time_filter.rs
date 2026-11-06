@@ -6,7 +6,7 @@
 use nex_fih::FihId20 as _;
 mod common;
 
-use nex_fih::{AsyncFactCapable, AsyncFilterCapable, AsyncStorageRead, CoordId, StateFilter};
+use nex_fih::{AsyncFactCapable, CoordId, StateFilter};
 use nexus_storage_sim::{RefFihStorage, SimIo};
 
 fn make_clocked() -> RefFihStorage<SimIo> {

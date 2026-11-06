@@ -1,4 +1,4 @@
-use nex_fih::FihBlackboard;
+use nexus_storage_ref::FihBlackboard;
 use nex_fih::FihId20 as _;
 use nex_fih::{CoordId, Fact, FactCapable, StorageRead};
 use nexus_gateway_serde_proxy::SerdeProxy;

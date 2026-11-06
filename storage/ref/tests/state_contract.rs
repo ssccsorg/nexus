@@ -14,7 +14,8 @@ use std::sync::{Arc, Mutex};
 
 use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
-use nex_fih::{AsyncFactCapable, Content, Fact, FactById, FactRecord, FactWalk, RefFihStorage};
+use nex_fih::{AsyncFactCapable, Content, Fact, FactById, FactWalk};
+use nexus_storage_ref::RefFihStorage;
 
 /// An in-memory medium, shared by every network that holds a clone of it.
 #[derive(Clone, Default)]
@@ -86,7 +87,7 @@ where
 
     let mut walked: Vec<String> = Vec::new();
     network
-        .for_each_fact(|record: &FactRecord, content: Content| {
+        .for_each_fact(|record: &nex_fih::FactFraming, content: Content| {
             assert!(
                 !content.data.is_empty(),
                 "the content walk hands over the payload of {}",
@@ -104,7 +105,7 @@ where
 
     let mut framed: Vec<String> = Vec::new();
     network
-        .for_each_fact_record(|record: &FactRecord| {
+        .for_each_fact_record(|record: &nex_fih::FactFraming| {
             framed.push(record.id.clone());
             true
         })
@@ -114,7 +115,7 @@ where
 
     let mut stopped = 0;
     network
-        .for_each_fact_record(|_: &FactRecord| {
+        .for_each_fact_record(|_: &nex_fih::FactFraming| {
             stopped += 1;
             false
         })
@@ -140,7 +141,7 @@ fn the_read_surface_answers_over_a_held_volume() {
     // The identifiers a consumer would hold, taken through the walk so the check reads
     // records it did not name itself.
     let mut ids: Vec<String> = Vec::new();
-    block_on(network.for_each_fact_record(|record: &FactRecord| {
+    block_on(network.for_each_fact_record(|record: &nexus_storage_ref::FactRecord| {
         ids.push(record.id.clone());
         true
     }))
@@ -167,7 +168,7 @@ fn the_read_surface_answers_a_network_another_session_wrote() {
     // session that read nothing yet answers for a volume it did not write.
     let reader = RefFihStorage::new(medium, "contract");
     let mut ids: Vec<String> = Vec::new();
-    block_on(reader.for_each_fact_record(|record: &FactRecord| {
+    block_on(reader.for_each_fact_record(|record: &nexus_storage_ref::FactRecord| {
         ids.push(record.id.clone());
         true
     }))

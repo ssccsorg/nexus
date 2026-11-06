@@ -3,11 +3,9 @@
 // Each scenario simulates a different real-world transport and agent type,
 // all communicating through the FIH protocol via SerdeProxy's JSON boundary.
 
-use nex_fih::FihBlackboard;
+use nexus_storage_ref::FihBlackboard;
 use nex_fih::FihId20 as _;
-use nex_fih::{
-    BlackboardError, Content, CoordId, Fact, FactCapable, Intent, IntentCapable, StorageRead,
-};
+use nex_fih::{BlackboardError, Content, CoordId, Fact, FactCapable, Intent, IntentCapable, StorageRead};
 use nexus_gateway_serde_proxy::SerdeProxy;
 use nexus_storage_sim::SimIo;
 

@@ -4,12 +4,9 @@ use nex_fih::FihId20 as _;
 use std::sync::Arc;
 
 use nex::io::fs_io::FsIo;
-use nex_fih::RefFihStorage;
+use nexus_storage_ref::RefFihStorage;
 use nex_client::{RpcRequest, RpcResponse};
-use nex_fih::{
-    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, BlackboardError,
-    Content, CoordId, Fact, Hint, Intent,
-};
+use nex_fih::{AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, BlackboardError, Content, CoordId, Fact, Hint, Intent};
 use serde::Deserialize;
 use serde_json::{Value, json};
 

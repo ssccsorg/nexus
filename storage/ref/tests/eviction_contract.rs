@@ -14,10 +14,8 @@ use std::sync::{Arc, Mutex};
 
 use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
-use nex_fih::{
-    AsyncEvictCapable, AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead,
-    BlackboardError, Content, CoordId, Fact, Hint, Intent, Now, RefFihStorage,
-};
+use nex_fih::{AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, BlackboardError, Content, CoordId, Fact, Hint, Intent, Now};
+use nexus_storage_ref::{RefFihStorage};
 
 const S0: u64 = 1_700_000_000;
 
@@ -151,7 +149,7 @@ fn evicting_stale_intents_keeps_the_claimed_one_and_the_medium_agrees() {
 
     block_on(storage.flush_pending()).expect("the delete reaches the medium");
     assert!(
-        !medium.holds(&nex_fih::IntentRecord::intent_key(&old.id.to_string())),
+        !medium.holds(&nexus_storage_ref::IntentRecord::intent_key(&old.id.to_string())),
         "the evicted intent's record is gone from the medium"
     );
 
@@ -190,8 +188,8 @@ fn evicting_hints_by_time_keeps_the_newer_ones_on_the_medium() {
     assert_eq!(evicted, 1);
 
     block_on(storage.flush_pending()).expect("the delete reaches the medium");
-    assert!(!medium.holds(&nex_fih::HintRecord::hint_key(&old.id.to_string())));
-    assert!(medium.holds(&nex_fih::HintRecord::hint_key(&new.id.to_string())));
+    assert!(!medium.holds(&nexus_storage_ref::HintRecord::hint_key(&old.id.to_string())));
+    assert!(medium.holds(&nexus_storage_ref::HintRecord::hint_key(&new.id.to_string())));
 
     drop(storage);
     let reader = RefFihStorage::new(medium, "evict");

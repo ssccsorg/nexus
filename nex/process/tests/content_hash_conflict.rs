@@ -10,10 +10,8 @@
 
 use futures_executor::block_on;
 use nex_fih::FihId20 as _;
-use nex_fih::{
-    AsyncFactCapable, AsyncStorageRead, BlackboardError, Content, CoordId, Fact, FactRecord,
-    RefFihStorage,
-};
+use nex_fih::{AsyncFactCapable, BlackboardError, Content, CoordId, Fact};
+use nexus_storage_ref::{FactRecord, RefFihStorage};
 use nexus_storage_sim::SimIo;
 
 fn fact(id: &str, data: &[u8]) -> Fact {

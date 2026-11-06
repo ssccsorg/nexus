@@ -5,10 +5,8 @@
 
 use futures_executor::block_on;
 use nex_fih::FihId20 as _;
-use nex_fih::{
-    AsyncFactCapable, AsyncFilterCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead,
-    Content, CoordId, Fact, Hint, Intent, RefFihStorage, StateFilter,
-};
+use nex_fih::{AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, Content, CoordId, Fact, Hint, Intent, StateFilter};
+use nexus_storage_ref::{RefFihStorage};
 use nexus_storage_sim::SimIo;
 
 #[test]

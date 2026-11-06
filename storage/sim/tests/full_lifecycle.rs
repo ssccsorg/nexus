@@ -1,9 +1,7 @@
 // Full lifecycle test for RefFihStorage<SimIo>.
 
 use nex_fih::FihId20 as _;
-use nex_fih::{
-    AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead, Content, CoordId, Fact, Intent,
-};
+use nex_fih::{AsyncFactCapable, AsyncIntentCapable, Content, CoordId, Fact, Intent};
 use nexus_storage_sim::{RefFihStorage, SimIo};
 
 #[test]
@@ -70,7 +68,7 @@ fn test_sim_full_lifecycle() {
 
 #[test]
 fn test_session_hydrate_flush() {
-    use nex_fih::{AsyncFactCapable, AsyncStorageRead, Content, CoordId, Fact};
+    use nex_fih::{AsyncFactCapable, Content, CoordId, Fact};
     use nexus_storage_sim::FihSession;
 
     let io = SimIo::new();

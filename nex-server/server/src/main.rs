@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use nex::io::fs_io::FsIo;
-use nex_fih::RefFihStorage;
+use nexus_storage_ref::RefFihStorage;
 use nex_client::{RpcRequest, RpcResponse};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;

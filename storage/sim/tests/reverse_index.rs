@@ -13,9 +13,7 @@ mod common;
 
 use crate::common::FakeClock;
 use futures_executor::block_on;
-use nex_fih::{
-    AsyncEvictCapable, AsyncFactCapable, AsyncIntentCapable, Content, CoordId, Fact, Intent,
-};
+use nex_fih::{AsyncFactCapable, AsyncIntentCapable, Content, CoordId, Fact, Intent};
 use nexus_storage_sim::{RefFihStorage, SimIo};
 
 fn storage() -> RefFihStorage<SimIo> {

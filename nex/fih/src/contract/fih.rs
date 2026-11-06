@@ -18,8 +18,6 @@ use alloc::boxed::Box;
 use alloc::string::ToString;
 
 use crate::contract::core::{EvidenceChain, GovernanceGate, HintEngine, HintRule};
-use crate::reference::RefFihStorage;
-use crate::io::FileIo;
 use crate::{AsyncFactCapable, AsyncIntentCapable};
 use nex_core::Now;
 
@@ -60,9 +58,9 @@ impl FihContract {
     }
 
     /// Governed fact submission: gate.admit to storage.submit to evidence.
-    pub async fn submit_fact<I: FileIo>(
+    pub async fn submit_fact<S: AsyncFactCapable>(
         &self,
-        storage: &RefFihStorage<I>,
+        storage: &S,
         fact: &Fact,
         schema: Option<&str>,
     ) -> Result<CoordId, BlackboardError> {
@@ -77,9 +75,9 @@ impl FihContract {
     }
 
     /// Governed intent conclusion: hints.check to storage.conclude to evidence.
-    pub async fn conclude_intent<I: FileIo>(
+    pub async fn conclude_intent<S: AsyncIntentCapable>(
         &self,
-        storage: &RefFihStorage<I>,
+        storage: &S,
         intent_id: &str,
         result: &str,
     ) -> Result<crate::Fact, BlackboardError> {

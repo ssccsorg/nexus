@@ -5,10 +5,7 @@
 // to drive async in test context (native only, not WASM).
 
 use nex_fih::FihId20 as _;
-use nex_fih::{
-    AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncHintCapable, AsyncIntentCapable,
-    AsyncScanCapable, AsyncStorageRead, AsyncTimeRangeCapable, CoordId, Hint, StateFilter,
-};
+use nex_fih::{AsyncEvictCapable, AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncTimeRangeCapable, CoordId, Hint, StateFilter};
 use nexus_storage_sim::RefFihStorage;
 use nexus_storage_sim::SimIo;
 

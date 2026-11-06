@@ -11,9 +11,7 @@
 
 use futures_executor::block_on;
 use nex_fih::FihId20 as _;
-use nex_fih::{
-    AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead, Content, CoordId, Fact, Intent,
-};
+use nex_fih::{AsyncFactCapable, AsyncIntentCapable, Content, CoordId, Fact, Intent};
 use nexus_storage_sim::RefFihStorage;
 use nexus_storage_sim::SimIo;
 

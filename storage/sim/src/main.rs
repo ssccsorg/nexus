@@ -7,10 +7,7 @@
 // or during development (cargo run, not cargo test).
 
 use nex_fih::FihId20 as _;
-use nex_fih::{
-    AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncHintCapable, AsyncIntentCapable,
-    AsyncStorageRead, Content, CoordId, Fact, Hint, Intent, StateFilter,
-};
+use nex_fih::{AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, Content, CoordId, Fact, Hint, Intent, StateFilter};
 use nexus_storage_sim::{RefFihStorage, SimIo, intent_status};
 
 fn fact(id: &str, data: &[u8]) -> Fact {

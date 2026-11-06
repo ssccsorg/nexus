@@ -15,16 +15,12 @@ use std::sync::{Arc, Mutex};
 use futures_executor::block_on;
 use nex_core::{Now, SystemClock};
 use nex_fih::io::file_io::{FileIo, IoFuture};
-use nex_fih::{
-    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, BlackboardError,
-    Content, CoordId, Fact, FactRecord, Hint, HintRecord, Intent, IntentStatus, RecordTimeUnit,
-    RefFihStorage,
-};
+use nex_fih::{AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, BlackboardError, Content, CoordId, Fact, Hint, Intent};
+use nexus_storage_ref::{FactRecord, HintRecord, IntentStatus, RecordTimeUnit, RefFihStorage};
 
 #[derive(Clone, Default)]
 struct MemoryIo {
     map: Arc<Mutex<HashMap<String, Vec<u8>>>>,
-    reads: Arc<Mutex<Vec<String>>>,
     refuse: Arc<Mutex<bool>>,
 }
 
@@ -40,28 +36,12 @@ impl MemoryIo {
             .insert(key.to_string(), data.to_vec());
     }
 
-    fn clear_reads(&self) {
-        self.reads.lock().unwrap().clear();
-    }
-
-    fn blob_reads(&self) -> usize {
-        self.reads
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|path| path.ends_with(".bin") && !path.ends_with(".bin.meta"))
-            .count()
-    }
 }
 
 impl FileIo for MemoryIo {
     fn read<'a>(&'a self, path: &'a str) -> IoFuture<'a, Option<Vec<u8>>> {
         let map = Arc::clone(&self.map);
-        let reads = Arc::clone(&self.reads);
-        Box::pin(async move {
-            reads.lock().unwrap().push(path.to_string());
-            Ok(map.lock().unwrap().get(path).cloned())
-        })
+        Box::pin(async move { Ok(map.lock().unwrap().get(path).cloned()) })
     }
 
     fn write<'a>(&'a self, path: &'a str, data: &'a [u8]) -> IoFuture<'a, ()> {
@@ -414,7 +394,7 @@ fn a_legacy_intent_timestamp_is_lifted_once_on_every_read() {
         created_at: 1_700_000_000, // seconds
     };
     medium.put(
-        &nex_fih::IntentRecord::intent_key(&id),
+        &nexus_storage_ref::IntentRecord::intent_key(&id),
         &postcard::to_allocvec(&legacy).expect("the legacy record serializes"),
     );
 

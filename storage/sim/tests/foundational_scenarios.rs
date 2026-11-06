@@ -25,9 +25,7 @@ use nex::process::tasks::new_document_analyzer::NewDocumentAnalyzer;
 use nex::process::tasks::state_change_detector::StateChangeDetector;
 use nex_fih::DetectionCapable;
 use nex_fih::FihId20 as _;
-use nex_fih::{
-    AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead, BoardState, CoordId, Fact, Intent,
-};
+use nex_fih::{AsyncFactCapable, AsyncIntentCapable, BoardState, CoordId, Fact, Intent};
 use nexus_storage_sim::{RefFihStorage, SimIo};
 
 fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) -> Fact {

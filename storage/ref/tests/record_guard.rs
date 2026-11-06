@@ -12,7 +12,8 @@ use std::sync::{Arc, Mutex};
 
 use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
-use nex_fih::{AsyncFactCapable, BlackboardError, Content, Fact, RefFihStorage};
+use nex_fih::{AsyncFactCapable, BlackboardError, Content, Fact};
+use nexus_storage_ref::{RefFihStorage};
 
 /// An in-memory medium that keeps what was asked of it.
 #[derive(Clone, Default)]

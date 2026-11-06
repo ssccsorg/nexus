@@ -6,6 +6,7 @@ license.workspace = true
 description = "FIH-based calculator — computation as state space traversal"
 
 [dependencies]
+nexus-storage-ref = { path = "../../storage/ref" }
 nex-core = { path = "../../nex/core" }
 nex-fih = { path = "../../nex/fih" }
 nex = { path = "../../nex/process" }

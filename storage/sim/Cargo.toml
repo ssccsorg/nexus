@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+nexus-storage-ref = { path = "../ref" }
 nex-core = { path = "../../nex/core" }
 nex-fih = { path = "../../nex/fih" }
 nex = { path = "../../nex/process" }

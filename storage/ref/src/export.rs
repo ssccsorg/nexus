@@ -15,12 +15,12 @@
 //   - SimIo-based: export/import in-memory (for testing)
 //   - CfFihIo: (future) export/import over R2
 
-use crate::core::record::{
+use crate::record::{
     ContentMeta, FactRecord, HintRecord, HintRecordV1, IntentRecord, IntentRecordV1,
     decode_hint_record, decode_intent_record,
 };
 #[cfg(feature = "std")]
-use crate::io::file_io::BlockingIo;
+use nex_fih::io::file_io::BlockingIo;
 use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString;

@@ -28,18 +28,18 @@ use sha2::{Digest, Sha256};
 
 use nex_core::Now;
 
-use crate::core::index::Cell2;
-use crate::core::record::{
+use nex_fih::Cell2;
+use crate::record::{
     ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus, RecordTimeUnit,
     decode_hint_record, decode_intent_record,
 };
-use crate::io::file_io::{FileIo, WriteOp};
-use crate::semantic::record::{Query, RecordLoad};
-use crate::{
+use nex_fih::io::file_io::{FileIo, WriteOp};
+use nex_fih::semantic::record::{Query, RecordLoad};
+use nex_fih::{
     BlackboardError, BoardState, Content, CoordId, Fact, FihHash, Hint, Intent, PartitionData,
     StateFilter,
 };
-use crate::FihId20 as _;
+use nex_fih::FihId20 as _;
 
 /// The payload a caller places directly, which is a record it already holds in pieces.
 ///
@@ -90,7 +90,7 @@ pub struct RefFihStorage<I: FileIo> {
     pub hint_records: Cell2<BTreeMap<String, HintRecord>>,
     /// Writes waiting for `flush_pending` to commit them.
     pub(crate) pending: Cell2<Vec<WriteOp>>,
-    semantic_stores: Cell2<Vec<crate::semantic::DynSemanticStore>>,
+    semantic_stores: Cell2<Vec<nex_fih::semantic::DynSemanticStore>>,
     /// The fact id each semantic index was assigned to, in index order.
     semantic_ids: Cell2<Vec<String>>,
 }
@@ -840,13 +840,13 @@ impl<I: FileIo> RefFihStorage<I> {
 
     /// Register a meaning index, which is a derived structure the reference store does not
     /// build on its own.
-    pub fn register_semantic_store(&self, store: crate::semantic::DynSemanticStore) {
+    pub fn register_semantic_store(&self, store: nex_fih::semantic::DynSemanticStore) {
         self.semantic_stores.borrow_mut().push(store);
     }
 
     pub fn semantic_stores(
         &self,
-    ) -> impl core::ops::Deref<Target = Vec<crate::semantic::DynSemanticStore>> {
+    ) -> impl core::ops::Deref<Target = Vec<nex_fih::semantic::DynSemanticStore>> {
         self.semantic_stores.borrow()
     }
 
@@ -1070,7 +1070,7 @@ fn nanos_to_secs(nanos: u64) -> u64 {
 
 // ── The read surface ───────────────────────────────────────────────────
 
-impl<I: FileIo> crate::AsyncStorageRead for RefFihStorage<I> {
+impl<I: FileIo> nex_fih::AsyncStorageRead for RefFihStorage<I> {
     fn project_id(&self) -> &str {
         &self.project_id
     }
@@ -1080,7 +1080,7 @@ impl<I: FileIo> crate::AsyncStorageRead for RefFihStorage<I> {
     }
 }
 
-impl<I: FileIo> crate::AsyncFactCapable for RefFihStorage<I> {
+impl<I: FileIo> nex_fih::AsyncFactCapable for RefFihStorage<I> {
     async fn submit_fact(&self, fact: &Fact) -> Result<CoordId, BlackboardError> {
         let id = fact.id.to_string();
 
@@ -1147,7 +1147,7 @@ impl<I: FileIo> crate::AsyncFactCapable for RefFihStorage<I> {
     }
 }
 
-impl<I: FileIo> crate::AsyncHintCapable for RefFihStorage<I> {
+impl<I: FileIo> nex_fih::AsyncHintCapable for RefFihStorage<I> {
     async fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         let record = HintRecord {
             id: hint.id.to_string(),
@@ -1171,7 +1171,7 @@ impl<I: FileIo> crate::AsyncHintCapable for RefFihStorage<I> {
     }
 }
 
-impl<I: FileIo> crate::AsyncIntentCapable for RefFihStorage<I> {
+impl<I: FileIo> nex_fih::AsyncIntentCapable for RefFihStorage<I> {
     async fn submit_intent(&self, intent: &Intent) -> Result<CoordId, BlackboardError> {
         // An intent is work over facts, so it names at least one and every one has to exist.
         if intent.from_facts.is_empty() {
@@ -1370,7 +1370,7 @@ impl<I: FileIo> crate::AsyncIntentCapable for RefFihStorage<I> {
             .try_conclude(&conclusion_id.to_string(), now)
             .map_err(BlackboardError::Internal)?;
 
-        crate::AsyncFactCapable::submit_fact(self, &fact).await?;
+        nex_fih::AsyncFactCapable::submit_fact(self, &fact).await?;
         self.write_intent(record, status).await?;
         Ok(fact)
     }
@@ -1427,13 +1427,13 @@ impl<I: FileIo> RefFihStorage<I> {
     }
 }
 
-impl<I: FileIo> crate::AsyncFilterCapable for RefFihStorage<I> {
+impl<I: FileIo> nex_fih::AsyncFilterCapable for RefFihStorage<I> {
     async fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
         RefFihStorage::read_state_filtered(self, filter).await
     }
 }
 
-impl<I: FileIo> crate::AsyncEvictCapable for RefFihStorage<I> {
+impl<I: FileIo> nex_fih::AsyncEvictCapable for RefFihStorage<I> {
     async fn approximate_size(&self) -> usize {
         RefFihStorage::record_count(self)
     }
@@ -1447,40 +1447,53 @@ impl<I: FileIo> crate::AsyncEvictCapable for RefFihStorage<I> {
     }
 }
 
-impl<I: FileIo> crate::AsyncScanCapable for RefFihStorage<I> {
+impl<I: FileIo> nex_fih::AsyncScanCapable for RefFihStorage<I> {
     async fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
         RefFihStorage::scan_partition(self, partition).await
     }
 }
 
-impl<I: FileIo> crate::AsyncTimeRangeCapable for RefFihStorage<I> {
+impl<I: FileIo> nex_fih::AsyncTimeRangeCapable for RefFihStorage<I> {
     async fn time_range(&self) -> Option<Range<String>> {
         RefFihStorage::fact_time_range(self)
     }
 }
 
-impl<I: FileIo> crate::FactById for RefFihStorage<I> {
+impl<I: FileIo> nex_fih::FactById for RefFihStorage<I> {
     async fn fact_by_id(&self, id: &str) -> Option<(Content, FihHash, String, String)> {
         RefFihStorage::get_fact_by_id(self, id).await
     }
 
-    async fn fact_framing(&self, id: &str) -> Option<FactRecord> {
-        RefFihStorage::get_fact_framing(self, id).await
+    async fn fact_framing(&self, id: &str) -> Option<nex_fih::FactFraming> {
+        RefFihStorage::get_fact_framing(self, id)
+            .await
+            .map(|record| record.framing())
     }
 }
 
-impl<I: FileIo> crate::FactWalk for RefFihStorage<I> {
-    async fn for_each_fact<F>(&self, visit: F) -> Result<(), String>
+impl<I: FileIo> nex_fih::FactWalk for RefFihStorage<I> {
+    async fn for_each_fact<F>(&self, mut visit: F) -> Result<(), String>
     where
-        F: FnMut(&FactRecord, Content) -> bool,
+        F: FnMut(&nex_fih::FactFraming, Content) -> bool,
     {
-        RefFihStorage::for_each_fact(self, visit).await
+        for record in self.walk_records().await? {
+            let content = self.load_content(&record.blob_hash).await;
+            if !visit(&record.framing(), content) {
+                break;
+            }
+        }
+        Ok(())
     }
 
-    async fn for_each_fact_record<F>(&self, visit: F) -> Result<(), String>
+    async fn for_each_fact_record<F>(&self, mut visit: F) -> Result<(), String>
     where
-        F: FnMut(&FactRecord) -> bool,
+        F: FnMut(&nex_fih::FactFraming) -> bool,
     {
-        RefFihStorage::for_each_fact_record(self, visit).await
+        for record in self.walk_records().await? {
+            if !visit(&record.framing()) {
+                break;
+            }
+        }
+        Ok(())
     }
 }

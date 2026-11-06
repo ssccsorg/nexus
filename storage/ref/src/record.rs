@@ -211,6 +211,35 @@ pub(crate) fn decode_hint_record(bytes: &[u8]) -> Result<HintRecord, postcard::E
 }
 
 impl FactRecord {
+    /// What this record says about itself, as the read surface names it.
+    pub fn framing(&self) -> nex_fih::FactFraming {
+        nex_fih::FactFraming {
+            id: self.id.clone(),
+            origin: self.origin.clone(),
+            creator: self.creator.clone(),
+            submitted_at: self.submitted_at,
+            content_hash: Self::hex_hash(&self.blob_hash),
+        }
+    }
+
+    /// The digest a persisted hash string names, or zeros when it names none.
+    pub fn hex_hash(blob_hash: &str) -> nex_fih::FihHash {
+        let hex = blob_hash.as_bytes();
+        if hex.len() != 64 {
+            return nex_fih::FihHash([0u8; 32]);
+        }
+        let mut bytes = [0u8; 32];
+        for i in 0..32 {
+            let hi = (hex[i * 2] as char).to_digit(16);
+            let lo = (hex[i * 2 + 1] as char).to_digit(16);
+            match (hi, lo) {
+                (Some(hi), Some(lo)) => bytes[i] = ((hi << 4) | lo) as u8,
+                _ => return nex_fih::FihHash([0u8; 32]),
+            }
+        }
+        nex_fih::FihHash(bytes)
+    }
+
     /// The key a fact with this identifier lives at.
     ///
     /// The record's address is computed from what it holds, so the key follows from the
@@ -275,7 +304,7 @@ impl HintRecord {
 impl FactRecord {
     /// Build a FactRecord from a nex_fih::Fact, given a pre-computed
     /// blob_hash and submitted_at timestamp.
-    pub fn from_model(fact: &crate::Fact, blob_hash: BlobHash, submitted_at: u64) -> Self {
+    pub fn from_model(fact: &nex_fih::Fact, blob_hash: BlobHash, submitted_at: u64) -> Self {
         Self {
             id: fact.id.to_string(),
             blob_hash,

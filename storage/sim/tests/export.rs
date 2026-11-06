@@ -6,7 +6,7 @@
 
 use nex_fih::CoordId;
 use nex_fih::FihId20 as _;
-use nex_fih::RecordTimeUnit;
+use nexus_storage_ref::RecordTimeUnit;
 use nexus_storage_sim::SimIo;
 use nexus_storage_sim::{
     BlockingIo, ContentMeta, FactRecord, FileIo, HintRecord, IntentRecord, SyncFileIo, WriteOp,
@@ -177,7 +177,6 @@ fn test_export_import_fs_to_sim() {
 
 #[test]
 fn test_export_full_fih_lifecycle() {
-    use nex_fih::AsyncStorageRead;
     use nexus_storage_sim::RefFihStorage;
 
     // Seed a SimIo directly with records (not through RefFihStorage).

@@ -8,7 +8,8 @@ use chton::origin::FileOrigin;
 use futures_executor::block_on;
 use nex_fih::FihId20 as _;
 use nex_fih::io::file_io::BufferIo;
-use nex_fih::{AsyncFactCapable, AsyncStorageRead, Content, CoordId, Fact, RefFihStorage};
+use nex_fih::{AsyncFactCapable, Content, CoordId, Fact};
+use nexus_storage_ref::{RefFihStorage};
 
 fn fact(id: &str) -> Fact {
     Fact::with_id(

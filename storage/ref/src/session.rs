@@ -17,9 +17,9 @@
 // executor (e.g. embassy).
 
 #[cfg(feature = "std")]
-use crate::reference::RefFihStorage;
+use crate::store::RefFihStorage;
 #[cfg(feature = "std")]
-use crate::io::file_io::FileIo;
+use nex_fih::io::file_io::FileIo;
 
 #[cfg(feature = "std")]
 use alloc::string::String;

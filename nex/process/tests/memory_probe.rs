@@ -37,7 +37,8 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use futures_executor::block_on;
-use nex_fih::{AsyncFactCapable, Content, CoordId, Fact, RefFihStorage};
+use nex_fih::{AsyncFactCapable, Content, CoordId, Fact};
+use nexus_storage_ref::{RefFihStorage};
 use nexus_storage_sim::SimIo;
 
 struct CountingAlloc;

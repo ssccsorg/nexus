@@ -13,10 +13,7 @@ use nexus_storage_sim::BlockingIo;
 mod common;
 
 use futures_executor::block_on;
-use nex_fih::{
-    AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncHintCapable, AsyncIntentCapable,
-    AsyncStorageRead, Content, CoordId, Fact, Hint, Intent, StateFilter,
-};
+use nex_fih::{AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, Content, CoordId, Fact, Hint, Intent, StateFilter};
 use nexus_storage_sim::{RefFihStorage, SimIo, SyncFileIo};
 
 // ── Helpers ──────────────────────────────────────────────────────────────

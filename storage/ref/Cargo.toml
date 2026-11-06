@@ -3,10 +3,32 @@ name = "nexus-storage-ref"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
+description = "The reference node: the storage contract answered over a volume, and the reader that shows its key space"
+
+[features]
+default = ["std"]
+# The node builds without an operating system. `std` adds the host transport the reader and
+# the synchronous wrappers use, and nothing in the record path needs it.
+std = ["nex-fih/std", "nex-core/std", "nex-io/std", "dep:futures-executor", "dep:clap"]
+
+[dev-dependencies]
+serde_json = "1"
+critical-section = { version = "1", features = ["restore-state-bool"] }
 
 [dependencies]
-nex = { path = "../../nex/process" }
-nex-fih = { path = "../../nex/fih" }
+nex-fih = { path = "../../nex/fih", default-features = false }
+nex-core = { path = "../../nex/core", default-features = false }
+nex-io = { path = "../../nex/io", default-features = false }
+serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
+postcard = { version = "1", features = ["alloc"] }
+sha2 = { version = "0.10", default-features = false }
+log = { workspace = true }
+async-trait.workspace = true
 tagma-core = { workspace = true }
-clap = { version = "4", features = ["derive"] }
-futures-executor = "0.3"
+futures-executor = { version = "0.3", optional = true }
+clap = { version = "4", features = ["derive"], optional = true }
+
+[[bin]]
+name = "nexus-storage-ref"
+path = "src/main.rs"
+required-features = ["std"]

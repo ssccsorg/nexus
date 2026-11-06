@@ -8,10 +8,7 @@ use nex_fih::FihId20 as _;
 mod common;
 
 use futures_executor::block_on;
-use nex_fih::{
-    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, Content, CoordId,
-    Fact, Hint, Intent,
-};
+use nex_fih::{AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, Content, CoordId, Fact, Hint, Intent};
 use nexus_storage_sim::{FileIo, RefFihStorage, SimIo};
 
 fn fact(id: &str, data: &str) -> Fact {
@@ -293,7 +290,8 @@ fn test_scenario_storage_migration() {
 
 #[test]
 fn test_scenario_malformed_blob_hash_recomputes_content_hash() {
-    use nex_fih::{BlackboardError, ContentMeta, FactRecord};
+    use nex_fih::{BlackboardError};
+use nexus_storage_ref::{ContentMeta, FactRecord};
 
     let io = SimIo::new();
     let bad_key = "legacy-non-hex-blob-key";

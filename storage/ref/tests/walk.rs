@@ -13,7 +13,8 @@ use std::sync::{Arc, Mutex};
 
 use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
-use nex_fih::{AsyncFactCapable, AsyncStorageRead, Content, Fact, FactRecord, RefFihStorage};
+use nex_fih::{AsyncFactCapable, Content, Fact};
+use nexus_storage_ref::RefFihStorage;
 
 /// An in-memory medium, shared by every storage that holds a clone of it.
 ///
@@ -150,92 +151,6 @@ fn a_walk_and_a_state_read_reach_the_same_records() {
     reported.sort_unstable();
     walked.sort_unstable();
     assert_eq!(walked, reported, "a walk and a state read reach one set");
-}
-
-/// The entries of a [`PagedIo`], in the order they were written, shared by every clone.
-type Entries = Arc<Mutex<Vec<(String, Vec<u8>)>>>;
-
-/// A medium that hands over a prefix's keys a page at a time, in the reverse of the order they were
-/// written, which is neither the key order nor the write order.
-///
-/// Two things follow from that. The walk promises no order, so it visits in the order the channel
-/// serves, which a medium that served key order could not show. And `list` hands over nothing, so a
-/// walk that read the list rather than the pages would visit no record at all.
-#[derive(Clone, Default)]
-struct PagedIo {
-    entries: Entries,
-    /// The bound each page was asked for, which is the walk's page rather than the volume's.
-    asked: Arc<Mutex<Vec<usize>>>,
-}
-
-impl FileIo for PagedIo {
-    fn read<'a>(&'a self, path: &'a str) -> IoFuture<'a, Option<Vec<u8>>> {
-        let entries = Arc::clone(&self.entries);
-        Box::pin(async move {
-            Ok(entries
-                .lock()
-                .unwrap()
-                .iter()
-                .find(|(key, _)| key == path)
-                .map(|(_, data)| data.clone()))
-        })
-    }
-
-    fn write<'a>(&'a self, path: &'a str, data: &'a [u8]) -> IoFuture<'a, ()> {
-        let entries = Arc::clone(&self.entries);
-        Box::pin(async move {
-            let mut entries = entries.lock().unwrap();
-            match entries.iter_mut().find(|(key, _)| key == path) {
-                Some(slot) => slot.1 = data.to_vec(),
-                None => entries.push((path.to_string(), data.to_vec())),
-            }
-            Ok(())
-        })
-    }
-
-    fn list<'a>(&'a self, _prefix: &'a str) -> IoFuture<'a, Vec<String>> {
-        // A channel that pages does not owe the list.
-        Box::pin(async { Ok(Vec::new()) })
-    }
-
-    fn list_page<'a>(
-        &'a self,
-        prefix: &'a str,
-        cursor: Option<&'a [u8]>,
-        max: usize,
-    ) -> IoFuture<'a, (Vec<String>, Option<Vec<u8>>)> {
-        let entries = Arc::clone(&self.entries);
-        let asked = Arc::clone(&self.asked);
-        Box::pin(async move {
-            asked.lock().unwrap().push(max);
-            let start = match cursor {
-                Some(bytes) => {
-                    u32::from_le_bytes(bytes.try_into().expect("a four-byte cursor")) as usize
-                }
-                None => 0,
-            };
-            let matching: Vec<String> = entries
-                .lock()
-                .unwrap()
-                .iter()
-                .rev()
-                .map(|(key, _)| key.clone())
-                .filter(|key| key.starts_with(prefix))
-                .collect();
-            let page: Vec<String> = matching.iter().skip(start).take(max).cloned().collect();
-            let next = start + page.len();
-            let token = (next < matching.len()).then(|| (next as u32).to_le_bytes().to_vec());
-            Ok((page, token))
-        })
-    }
-
-    fn delete<'a>(&'a self, path: &'a str) -> IoFuture<'a, ()> {
-        let entries = Arc::clone(&self.entries);
-        Box::pin(async move {
-            entries.lock().unwrap().retain(|(key, _)| key != path);
-            Ok(())
-        })
-    }
 }
 
 #[test]

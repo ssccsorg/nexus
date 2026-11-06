@@ -14,10 +14,8 @@ use std::sync::{Arc, Mutex};
 
 use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
-use nex_fih::{
-    AsyncFactCapable, AsyncIntentCapable, AsyncStorageRead, BlackboardError, Content, CoordId,
-    Fact, FihContract, HintRule, Intent, RefFihStorage,
-};
+use nex_fih::{AsyncFactCapable, AsyncIntentCapable, BlackboardError, Content, CoordId, Fact, FihContract, HintRule, Intent};
+use nexus_storage_ref::{RefFihStorage};
 
 /// An in-memory medium shared by every storage that holds a clone of it.
 #[derive(Clone, Default)]

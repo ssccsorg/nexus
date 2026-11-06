@@ -9,10 +9,8 @@
 
 use futures_executor::block_on;
 use nex_fih::FihId20 as _;
-use nex_fih::{
-    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncScanCapable, AsyncStorageRead,
-    AsyncTimeRangeCapable, Content, CoordId, Fact, Hint, Intent, IntentStatus, RefFihStorage,
-};
+use nex_fih::{AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncTimeRangeCapable, Content, CoordId, Fact, Hint, Intent};
+use nexus_storage_ref::{IntentStatus, RefFihStorage};
 use nexus_storage_sim::SimIo;
 
 fn fact(id: &str, data: &[u8]) -> Fact {
