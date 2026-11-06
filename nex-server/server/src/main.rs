@@ -13,11 +13,10 @@ use nex::io::fs_io::FsIo;
 use nexus_storage_ref::RefFihStorage;
 use nex_client::{RpcRequest, RpcResponse};
 use nex_protocol::{METHOD_REGISTER, NodeRegistration};
+use nex_server::handler;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
 use tracing::{error, info};
-
-mod handler;
 
 #[tokio::main]
 async fn main() {

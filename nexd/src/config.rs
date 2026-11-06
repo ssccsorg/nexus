@@ -25,6 +25,13 @@ pub struct NexdConfig {
     pub nex_server_path: String,
     /// Unix socket path for nex-server IPC.
     pub nex_server_socket: String,
+    /// When set, the daemon hosts the hub on this socket, and nex-server registers with it.
+    ///
+    /// Off by default: a hub is a second binary, and a daemon that requires it would fail
+    /// on a host that has only the server installed.
+    pub hub_socket: Option<String>,
+    /// Path to the hub binary the daemon supervises.
+    pub hub_path: String,
 }
 
 impl Default for NexdConfig {
@@ -38,6 +45,8 @@ impl Default for NexdConfig {
             agent_args: Vec::new(),
             nex_server_path: "nex-server".into(),
             nex_server_socket: "/tmp/nex-server.sock".into(),
+            hub_socket: None,
+            hub_path: "nex-hub".into(),
         }
     }
 }
@@ -54,6 +63,12 @@ impl NexdConfig {
             && let Ok(v) = ms.parse()
         {
             config.tick_interval_ms = v;
+        }
+        if let Ok(socket) = std::env::var("NEXD_HUB_SOCKET") {
+            config.hub_socket = Some(socket);
+        }
+        if let Ok(path) = std::env::var("NEXD_HUB_PATH") {
+            config.hub_path = path;
         }
         if let Ok(secs) = std::env::var("NEXD_HEARTBEAT_TTL_SECS")
             && let Ok(v) = secs.parse()

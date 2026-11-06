@@ -4,9 +4,13 @@ use nex_fih::FihId20 as _;
 use std::sync::Arc;
 
 use nex::io::fs_io::FsIo;
-use nexus_storage_ref::RefFihStorage;
 use nex_client::{RpcRequest, RpcResponse};
-use nex_fih::{AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, BlackboardError, Content, CoordId, Fact, Hint, Intent};
+use nex_fih::{
+    AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, BlackboardError, Content, CoordId,
+    Fact, Hint, Intent,
+};
+use nex_io::FileIo;
+use nexus_storage_ref::RefFihStorage;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -34,6 +38,8 @@ pub const METHODS: &[&str] = &[
     "heartbeat_intent",
     "release_intent",
     "conclude_intent",
+    "storage.keys",
+    "storage.read",
 ];
 
 pub async fn dispatch(req: RpcRequest, storage: &Arc<RefFihStorage<FsIo>>) -> RpcResponse {
@@ -52,8 +58,63 @@ pub async fn dispatch(req: RpcRequest, storage: &Arc<RefFihStorage<FsIo>>) -> Rp
         "release_intent" => handle_release_intent(id, &req.params, storage).await,
         "conclude_intent" => handle_conclude_intent(id, &req.params, storage).await,
         "write_hint" => handle_write_hint(id, &req.params, storage).await,
+        "storage.keys" => handle_storage_keys(id, &req.params, storage).await,
+        "storage.read" => handle_storage_read(id, &req.params, storage).await,
         _ => RpcResponse::method_not_found(id, &req.method),
     }
+}
+
+// ── Key-space handlers ───────────────────────────────────────────────────
+//
+// The reader asks a node for the key space rather than for a record, so a node answers the
+// same questions a volume does: which keys a prefix holds, and what is at one key.
+
+async fn handle_storage_keys(
+    id: Value,
+    params: &Value,
+    storage: &Arc<RefFihStorage<FsIo>>,
+) -> RpcResponse {
+    #[derive(Deserialize)]
+    struct Params {
+        #[serde(default)]
+        prefix: String,
+    }
+    let p: Params = match serde_json::from_value(params.clone()) {
+        Ok(v) => v,
+        Err(e) => return RpcResponse::invalid_params(id, e.to_string()),
+    };
+    match storage.io.list(&p.prefix).await {
+        Ok(keys) => RpcResponse::success(id, serde_json::json!({ "keys": keys })),
+        Err(e) => RpcResponse::error(id, -32002, e),
+    }
+}
+
+async fn handle_storage_read(
+    id: Value,
+    params: &Value,
+    storage: &Arc<RefFihStorage<FsIo>>,
+) -> RpcResponse {
+    #[derive(Deserialize)]
+    struct Params {
+        key: String,
+    }
+    let p: Params = match serde_json::from_value(params.clone()) {
+        Ok(v) => v,
+        Err(e) => return RpcResponse::invalid_params(id, e.to_string()),
+    };
+    match storage.io.read(&p.key).await {
+        Ok(Some(bytes)) => RpcResponse::success(id, serde_json::json!({ "data": to_hex(&bytes) })),
+        Ok(None) => RpcResponse::success(id, serde_json::json!({ "data": Value::Null })),
+        Err(e) => RpcResponse::error(id, -32002, e),
+    }
+}
+
+fn to_hex(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        out.push_str(&format!("{byte:02x}"));
+    }
+    out
 }
 
 // ── Fact handlers ────────────────────────────────────────────────────────

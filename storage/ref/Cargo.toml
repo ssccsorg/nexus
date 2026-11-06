@@ -9,14 +9,15 @@ description = "The reference node: the storage contract answered over a volume, 
 default = ["std"]
 # The node builds without an operating system. `std` adds the host transport the reader and
 # the synchronous wrappers use, and nothing in the record path needs it.
-std = ["nex-fih/std", "nex-core/std", "nex-io/std", "dep:futures-executor", "dep:clap"]
+std = ["nex-fih/std", "nex-core/std", "nex-io/std", "dep:futures-executor", "dep:clap", "dep:tokio", "dep:nex-client", "dep:serde_json"]
 
 [dev-dependencies]
-serde_json = "1"
 critical-section = { version = "1", features = ["restore-state-bool"] }
 # The process-layer tests live here because they exercise this node through the process
 # layer. The edge runs from the node to the layer, never the other way.
 nex = { path = "../../nex/process" }
+nex-hub = { path = "../../nex/hub" }
+nex-protocol = { path = "../../nex/protocol" }
 nexus-storage-sim = { path = "../sim" }
 nexus-gateway-serde-proxy = { path = "../../libs/serde-proxy" }
 tagma-core = { workspace = true }
@@ -36,8 +37,13 @@ sha2 = { version = "0.10", default-features = false }
 log = { workspace = true }
 async-trait.workspace = true
 tagma-core = { workspace = true }
+serde_json = { version = "1", default-features = false, features = ["alloc"], optional = true }
+# The reader reaches a node over the network, so the client belongs to the standard-library
+# build: a node does not depend on a client to be a node.
+nex-client = { path = "../../nex-server/client", optional = true }
 futures-executor = { version = "0.3", optional = true }
-clap = { version = "4", features = ["derive"], optional = true }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "net", "io-util", "time"], optional = true }
+clap = { version = "4", features = ["derive", "env"], optional = true }
 
 [[bin]]
 name = "nexus-storage-ref"

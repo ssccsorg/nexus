@@ -44,26 +44,56 @@ async fn main() -> nexd::daemon::Result<()> {
     // ── Spawn nex-server as child process ──────────────────────────
     let process_manager = Arc::new(Mutex::new(nexd::manager::ProcessManager::new()));
 
+    // With a hub configured, the hub is supervised and the server registers with it. The
+    // server then answers what the hub forwards instead of listening on its own socket.
+    let hub_socket = cfg.hub_socket.clone();
+    if let Some(socket) = hub_socket.clone() {
+        {
+            let mut pm = process_manager.lock().unwrap();
+            if let Err(e) = pm.spawn_managed_env(
+                &cfg.hub_path,
+                &[],
+                true,
+                &[("NEX_HUB_SOCKET".to_string(), socket.clone())],
+            ) {
+                tracing::error!(path = %cfg.hub_path, error = %e, "failed to spawn nex-hub");
+            }
+        }
+        let waited = wait_for_socket(&socket).await;
+        if waited >= 60 {
+            tracing::error!("hub socket not ready after 60s");
+            return Ok(());
+        }
+        tracing::info!(path = %socket, waited_secs = waited, "hub ready");
+    }
+
     let nex_server_socket = cfg.nex_server_socket.clone();
     {
         let mut pm = process_manager.lock().unwrap();
         // nex-server is supervised: crash is detected by try_reap and it
-        // is respawned with its original command (#146).
-        if let Err(e) = pm.spawn_managed(&cfg.nex_server_path, &[], true) {
+        // is respawned with its original command and environment (#146).
+        let env: Vec<(String, String)> = hub_socket
+            .clone()
+            .map(|socket| vec![("NEX_HUB_SOCKET".to_string(), socket)])
+            .unwrap_or_default();
+        if let Err(e) = pm.spawn_managed_env(&cfg.nex_server_path, &[], true, &env) {
             tracing::error!(path = %cfg.nex_server_path, error = %e, "failed to spawn nex-server");
         }
     }
 
-    // Wait for nex-server socket to be ready
-    let waited = wait_for_socket(&nex_server_socket).await;
+    // The socket a client reaches is the hub's when there is one, and the server's otherwise.
+    let reachable = hub_socket
+        .clone()
+        .unwrap_or_else(|| nex_server_socket.clone());
+    let waited = wait_for_socket(&reachable).await;
     if waited >= 60 {
-        tracing::error!("nex-server socket not ready after 60s");
+        tracing::error!("{} was not ready after 60s", reachable);
         return Ok(());
     }
-    tracing::info!(path = %nex_server_socket, waited_secs = waited, "nex-server ready");
+    tracing::info!(path = %reachable, waited_secs = waited, "node ready");
 
     // Connect via NexClient
-    let _client = NexClient::connect(&nex_server_socket)
+    let _client = NexClient::connect(&reachable)
         .await
         .map_err(|e| nexd::daemon::Error::config(format!("nex-client connect: {e}")))?;
 

@@ -32,8 +32,19 @@ struct ChildEntry {
     handle: AgentHandle,
     child: Option<Child>,
     args: Vec<String>,
+    /// The environment this child was started with, which a respawn repeats because a
+    /// child that comes back without it would come back as a different process.
+    env: Vec<(String, String)>,
     respawn: bool,
     spawned_at: Instant,
+}
+
+/// What a respawn repeats: the command, its arguments, and the environment it was started
+/// with.
+struct Respawn {
+    command: String,
+    args: Vec<String>,
+    env: Vec<(String, String)>,
 }
 
 /// Manages lifecycle of child agent processes.
@@ -97,8 +108,22 @@ impl ProcessManager {
         args: &[String],
         respawn: bool,
     ) -> Result<AgentHandle, String> {
+        self.spawn_managed_env(command, args, respawn, &[])
+    }
+
+    /// The same, with variables added to the child's environment.
+    pub fn spawn_managed_env(
+        &mut self,
+        command: &str,
+        args: &[String],
+        respawn: bool,
+        env: &[(String, String)],
+    ) -> Result<AgentHandle, String> {
         let mut cmd = Command::new(command);
         cmd.args(args);
+        for (key, value) in env {
+            cmd.env(key, value);
+        }
         cmd.kill_on_drop(true);
 
         let child = cmd.spawn().map_err(|e| format!("spawn failed: {e}"))?;
@@ -116,6 +141,7 @@ impl ProcessManager {
                 handle: handle.clone(),
                 child: Some(child),
                 args: args.to_vec(),
+                env: env.to_vec(),
                 respawn,
                 spawned_at: Instant::now(),
             },
@@ -130,7 +156,7 @@ impl ProcessManager {
     /// respawned.
     pub fn try_reap(&mut self) {
         let mut dead: Vec<u32> = Vec::new();
-        let mut respawns: Vec<(String, Vec<String>)> = Vec::new();
+        let mut respawns: Vec<Respawn> = Vec::new();
         for (&pid, entry) in self.children.iter_mut() {
             if let Some(ref mut child) = entry.child
                 && let Ok(Some(status)) = child.try_wait()
@@ -152,7 +178,11 @@ impl ProcessManager {
                     *failures = new_failures;
                     if should_respawn {
                         self.respawn_tripped_at.remove(&entry.handle.command);
-                        respawns.push((entry.handle.command.clone(), entry.args.clone()));
+                        respawns.push(Respawn {
+                            command: entry.handle.command.clone(),
+                            args: entry.args.clone(),
+                            env: entry.env.clone(),
+                        });
                     } else {
                         self.respawn_tripped_at
                             .entry(entry.handle.command.clone())
@@ -171,8 +201,13 @@ impl ProcessManager {
         for pid in dead {
             self.children.remove(&pid);
         }
-        for (command, args) in respawns {
-            if let Ok(handle) = self.spawn_managed(&command, &args, true) {
+        for respawn in respawns {
+            let Respawn {
+                command,
+                args,
+                env,
+            } = respawn;
+            if let Ok(handle) = self.spawn_managed_env(&command, &args, true, &env) {
                 info!(command = %command, pid = handle.pid, "respawned crashed child");
             }
         }
