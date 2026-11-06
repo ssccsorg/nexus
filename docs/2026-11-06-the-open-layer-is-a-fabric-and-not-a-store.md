@@ -55,15 +55,21 @@ operations, and a layer that keeps records supplies them to itself.
 
 ## What the server ships
 
-`nex-server` holds its state in memory and is documented as a demonstration of the fabric. A
-deployment that needs durability supplies the layer that holds the records, because that is
-where durability is decided.
+`nex-server` ships the fabric: the protocol, the session, and the dispatch that names states
+and answers over them. It opens no volume and takes no data directory. Durability is not a
+property of the fabric, so a deployment that needs it runs a node that holds the records, and
+that node connects to the hub like any other.
+
+Storage and the hub are different layers, different tiers, and different implementations. The
+hub does not host a storage implementation behind a seam, because a seam would keep storage
+inside the hub. A record holder is a peer on the network, reached over the protocol.
 
 ## The demonstration
 
-`storage/ref` is a taste of the shape, not a storage. It reads a volume through the key space,
-answers one point read, and lists keys, so a reader can see what the address guarantees before
-choosing an implementation.
+`storage/ref` is a separate program and a taste of the shape, not a storage. It reads a volume
+through the key space, answers one point read, and lists keys, so a reader can see what the
+address guarantees before choosing an implementation. It is a node: it reaches the fabric over
+the protocol, and the fabric does not link it.
 
 The ceiling is the point. A demonstration may hold records in memory and show the shape: a key
 space, a point read, a listing, and a round trip. It may not reach the level a deployment runs
@@ -98,8 +104,8 @@ the implementation.
 Milestone 1 states the read surface as traits and writes its conformance tests here. It is
 done.
 
-Milestone 2 makes the demonstration the server default, so the tree builds and tests without
-the removed modules.
+Milestone 2 removes the volume from `nex-server`, so the tree builds and tests with the
+fabric alone. `storage/ref` stays a separate program.
 
 Milestone 3 removes the modules, the device verification, and the storage benches from this
 tree.
@@ -163,8 +169,9 @@ The shape, named so the branch that does the split has a target:
   the protocol names.
 - A transport trait is the only thing a link implements. A UART link and an in-memory bus
   link are both legitimate, and neither is a host.
-- The backend seam and the transport seam are independent: a node with no medium can still
-  connect, and a node with no socket can still answer.
+- There is no backend seam. A storage implementation is a node that connects over the
+  protocol, and the hub routes between nodes without holding a medium, so a node with no
+  medium can still connect and a node with no socket can still answer.
 
 The gate this section adds belongs to ssccsorg/nexus#231:
 `cargo check -p nex-protocol --no-default-features --target riscv32imac-unknown-none-elf`,
