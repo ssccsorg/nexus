@@ -24,6 +24,10 @@ pub mod record;
 pub mod session;
 pub mod store;
 
+// The blackboard is the std surface: it holds a record map and a clock, so the OS-less
+// build has the store and no blackboard. A re-export that ignored the gate would make the
+// no-default-features build fail on an item the feature removed.
+#[cfg(feature = "std")]
 pub use blackboard::FihBlackboard;
 #[cfg(feature = "std")]
 pub use export::{export_from_io, import_into_io};

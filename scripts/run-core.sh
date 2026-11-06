@@ -142,6 +142,9 @@ run_nostd_check() {
     (cd nex && cargo check -p nex-fih --no-default-features --target riscv32imac-unknown-none-elf) 2>&1
     (cd nex && cargo check -p nex-io --no-default-features --target riscv32imac-unknown-none-elf) 2>&1
     (cd nex && cargo check -p nex-protocol --no-default-features --target riscv32imac-unknown-none-elf) 2>&1
+    # The hub core is the portability floor: the router holds the routing table a hub needs
+    # and nothing a host provides, so it has to reach the MCU target with the wire.
+    (cd nex && cargo check -p nex-router --no-default-features --target riscv32imac-unknown-none-elf) 2>&1
 }
 
 
@@ -217,6 +220,9 @@ run_test()   {
     # build nex-server before integration tests; cargo test -p nexd does not
     # pull in the nex-server binary as a dependency
     cargo build -p nex-server 2>&1
+    # The node's own methods, dispatched against the reference volume. Its key space has no
+    # test elsewhere, so it runs here or nowhere.
+    cargo test -p nex-server 2>&1
     # all nexd test targets (lib + integration + proc-daemon)
     cargo test -p nexd -- --test-threads=1 --nocapture 2>&1
     echo "---"
