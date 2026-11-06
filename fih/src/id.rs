@@ -21,7 +21,7 @@ pub const COORD_ID_DEPTH: usize = 20;
 /// Encode a 256-bit digest as 20 base-11172 coordinates, most significant
 /// first. A 256-bit value fits in 20 digits by construction.
 pub fn encode_hash_into_coords(digest: &[u8; 32]) -> [Coord; 20] {
-    base11172::digits_be::<20>(digest).expect("a 256-bit digest fits in 20 digits")
+    base11172::digits_be::<20, 32>(digest).expect("a 256-bit digest fits in 20 digits")
 }
 
 /// The content hash of an identity: SHA-256 over its coordinate indices.
