@@ -78,7 +78,8 @@
                   "source": "meter:m17",
                   "value_kwh": 412000
                 },
-                "payloadText": "{\"asset_id\":\"plant-li-1\",\"event\":\"electricity\",\"observed_at\":\"2026-03-31T23:59:00Z\",\"period\":\"2026-Q1\",\"source\":\"meter:m17\",\"value_kwh\":412000}"
+                "payloadText": "{\"asset_id\":\"plant-li-1\",\"event\":\"electricity\",\"observed_at\":\"2026-03-31T23:59:00Z\",\"period\":\"2026-Q1\",\"source\":\"meter:m17\",\"value_kwh\":412000}",
+                "addressState": "valid"
               },
               {
                 "key": "facts/f_0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1.fact",
@@ -107,7 +108,8 @@
                   ],
                   "tco2e": 45.53
                 },
-                "payloadText": "{\"components\":{\"gas_tco2e\":19.43,\"refrigerant_tco2e\":26.1},\"period\":\"2026-Q1\",\"scope\":1,\"source_facts\":[\"0007cs53o32i2cq3fv5ie2jq7l60r34a92bb5c22h91lu80g22350022i7ho\",\"0012o00xp0381lz5nr06y0pe6k84ce4ls59m85p7334g273e08e3jm2pd7hs\"],\"tco2e\":45.53}"
+                "payloadText": "{\"components\":{\"gas_tco2e\":19.43,\"refrigerant_tco2e\":26.1},\"period\":\"2026-Q1\",\"scope\":1,\"source_facts\":[\"0007cs53o32i2cq3fv5ie2jq7l60r34a92bb5c22h91lu80g22350022i7ho\",\"0012o00xp0381lz5nr06y0pe6k84ce4ls59m85p7334g273e08e3jm2pd7hs\"],\"tco2e\":45.53}",
+                "addressState": null
               },
               {
                 "key": "facts/f_0007cs53o32i2cq3fv5ie2jq7l60r34a92bb5c22h91lu80g22350022i7ho.fact",
@@ -131,7 +133,8 @@
                   "source": "meter:g04",
                   "value_kwh": 96400
                 },
-                "payloadText": "{\"asset_id\":\"plant-li-1\",\"event\":\"natural_gas\",\"observed_at\":\"2026-03-31T23:59:00Z\",\"period\":\"2026-Q1\",\"source\":\"meter:g04\",\"value_kwh\":96400}"
+                "payloadText": "{\"asset_id\":\"plant-li-1\",\"event\":\"natural_gas\",\"observed_at\":\"2026-03-31T23:59:00Z\",\"period\":\"2026-Q1\",\"source\":\"meter:g04\",\"value_kwh\":96400}",
+                "addressState": "valid"
               },
               {
                 "key": "facts/f_0012o00xp0381lz5nr06y0pe6k84ce4ls59m85p7334g273e08e3jm2pd7hs.fact",
@@ -155,7 +158,8 @@
                   "substance": "R-410A",
                   "value_kg": 12.5
                 },
-                "payloadText": "{\"asset_id\":\"plant-li-1\",\"event\":\"refrigerant_topup\",\"observed_at\":\"2026-02-14T09:20:00Z\",\"source\":\"service:s-2026-014\",\"substance\":\"R-410A\",\"value_kg\":12.5}"
+                "payloadText": "{\"asset_id\":\"plant-li-1\",\"event\":\"refrigerant_topup\",\"observed_at\":\"2026-02-14T09:20:00Z\",\"source\":\"service:s-2026-014\",\"substance\":\"R-410A\",\"value_kg\":12.5}",
+                "addressState": "valid"
               },
               {
                 "key": "facts/f_0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by.fact",
@@ -179,7 +183,8 @@
                   "source_fact": "0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm",
                   "tco2e": 84.58
                 },
-                "payloadText": "{\"basis\":\"market-based\",\"factor_kg_per_kwh\":0.2053,\"period\":\"2026-Q1\",\"scope\":2,\"source_fact\":\"0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm\",\"tco2e\":84.58}"
+                "payloadText": "{\"basis\":\"market-based\",\"factor_kg_per_kwh\":0.2053,\"period\":\"2026-Q1\",\"scope\":2,\"source_fact\":\"0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm\",\"tco2e\":84.58}",
+                "addressState": null
               },
               {
                 "key": "hints/h_0008lk0fv1kl7rv1z11ca4b365u0r15st2oq6c67kz5yr81e1l83cs6qt8bj.hint",
@@ -197,7 +202,8 @@
                   "time_unit": "Nanos"
                 },
                 "payload": null,
-                "payloadText": null
+                "payloadText": null,
+                "addressState": null
               },
               {
                 "key": "intents/i_0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i.intent",
@@ -224,7 +230,8 @@
                   "time_unit": "Nanos"
                 },
                 "payload": null,
-                "payloadText": null
+                "payloadText": null,
+                "addressState": null
               },
               {
                 "key": "intents/i_0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k.intent",
@@ -252,7 +259,8 @@
                   "time_unit": "Nanos"
                 },
                 "payload": null,
-                "payloadText": null
+                "payloadText": null,
+                "addressState": null
               }
             ]
           }
@@ -330,7 +338,8 @@
                   "unit": "C",
                   "value": 21.5
                 },
-                "payloadText": "{\"asset_id\":\"asset-1\",\"event\":\"temperature\",\"observed_at\":\"2026-10-30T10:00:00Z\",\"source\":\"sensor-1\",\"unit\":\"C\",\"value\":21.5}"
+                "payloadText": "{\"asset_id\":\"asset-1\",\"event\":\"temperature\",\"observed_at\":\"2026-10-30T10:00:00Z\",\"source\":\"sensor-1\",\"unit\":\"C\",\"value\":21.5}",
+                "addressState": "valid"
               }
             ]
           }

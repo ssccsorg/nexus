@@ -5,7 +5,7 @@
 // numbers on the screen are the ones the reference tool printed, carried in the resource by the importer rather than
 // counted here.
 
-import { registerPack, registerResource, type Board } from '@ssccsorg/skene-frame';
+import { KindTag, registerPack, registerResource, type Board } from '@ssccsorg/skene-frame';
 import { LABEL, ROW, TITLE, cn } from '@ssccsorg/skene-frame/ui';
 
 /** What a project declares under `{ "kind": "keyspace", "at": ... }`. */
@@ -109,6 +109,8 @@ export interface EsgRecord {
   record: Record<string, unknown>;
   payload: Record<string, unknown> | null;
   payloadText: string | null;
+  /** What the tool's `verify` answered for this record's address, and null where it has no answer to give. */
+  addressState: string | null;
 }
 
 export interface EsgChain {
@@ -133,15 +135,31 @@ export function payloadLine(record: EsgRecord): string {
   return [...measured, ...named].map(([key, value]) => `${key}=${value}`).join(' · ');
 }
 
+/** The fact an intent concluded, which is the link the record itself carries. */
+export function concludedOf(record: EsgRecord): string | undefined {
+  const held = record.record as { status?: Record<string, { to_fact?: string }> };
+  return held.status?.Concluded?.to_fact;
+}
+
 /** The addresses an intent reads and the one it concluded, which is the link the record itself carries. */
 function intentLine(record: EsgRecord): string {
-  const held = record.record as {
-    from_facts?: string[];
-    status?: Record<string, { to_fact?: string }>;
-  };
+  const held = record.record as { from_facts?: string[] };
   const from = (held.from_facts ?? []).map((at) => at.slice(0, 12)).join(', ');
-  const concluded = held.status?.Concluded?.to_fact;
+  const concluded = concludedOf(record);
   return concluded ? `${from} → ${concluded.slice(0, 12)}` : from;
+}
+
+/**
+ * What a record does in the chain, in a reader's words.
+ *
+ * The format's kinds are the record's, and they are marked by the frame's own tag. What differs here is the place a
+ * record takes in the chain, which the records state themselves: an intent concluded a fact, and that fact is a result
+ * rather than an observation. It is read from the links, so the words follow the data rather than a list kept beside it.
+ */
+export function roleOf(record: EsgRecord, concluded: Set<string>): string {
+  if (record.kind === 'hint') return 'requirement';
+  if (record.kind === 'intent') return 'transformation';
+  return concluded.has(record.address) ? 'result' : 'measurement';
 }
 
 /** What a row says: the requirement for a hint, the payload for a fact, the link for an intent. */
@@ -177,30 +195,54 @@ function EsgView({ project }: Board) {
   // The medium writes each record a time, so sorting on it is the order the chain happened. The listing arrives by key,
   // which is the storage layer's order and not the audit's.
   const records = [...chain.records].sort((left, right) => left.written - right.written);
+  const concluded = new Set(
+    chain.records.map((record) => concludedOf(record)).filter((at): at is string => Boolean(at)),
+  );
+  // The tool recomputed an address for the facts it can, which are the ones whose address is their own content.
+  const measured = records.filter((record) => record.addressState !== null);
+  const verified = measured.filter((record) => record.addressState === 'valid').length;
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className={cn(ROW, 'gap-2 border-b')}>
         <span className={cn(LABEL, 'shrink-0')}>Evidence</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-muted-foreground" title={chain.volume}>
+        <span
+          className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground"
+          title={chain.volume}
+        >
           {chain.volume}
         </span>
         <span className="shrink-0 tabular-nums text-muted-foreground">
-          {chain.records.length} records
+          {records.length} records
+        </span>
+        <span
+          className="shrink-0 tabular-nums text-muted-foreground"
+          title={`the tool recomputed each address from the origin, the creator, and the payload, for the facts whose
+address is their own; a result is filed at its intent's address, and an intent and a hint are named`}
+        >
+          {verified} of {measured.length} addresses recomputed
         </span>
       </div>
 
       <div data-region="esg" className="min-h-0 flex-1 overflow-y-auto">
         {records.map((record) => (
-          <div key={record.key} className={cn(ROW, 'gap-2')}>
-            <span className={cn(LABEL, 'w-14 shrink-0')}>{record.kind}</span>
+          <div
+            key={record.key}
+            className={cn(ROW, 'gap-2', record.addressState === 'invalid' && 'text-destructive')}
+          >
+            <KindTag kind={record.kind as 'fact' | 'intent' | 'hint' | 'claim'} className="shrink-0" />
+            <span className={cn(LABEL, 'w-24 shrink-0 truncate')}>
+              {roleOf(record, concluded)}
+            </span>
             <span
               className="min-w-0 flex-1 truncate font-mono"
-              title={`${lineOf(record)}\n${record.key}`}
+              title={[lineOf(record), record.key, record.addressState ? `address ${record.addressState}` : null]
+                .filter(Boolean)
+                .join('\n')}
             >
               {lineOf(record)}
             </span>
-            <span className="max-w-40 shrink-0 truncate text-muted-foreground" title={record.creator ?? ''}>
+            <span className="max-w-36 shrink-0 truncate text-muted-foreground" title={record.creator ?? ''}>
               {record.creator}
             </span>
             <span className="shrink-0 tabular-nums text-muted-foreground" title={`${record.written} ns`}>

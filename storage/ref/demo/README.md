@@ -70,7 +70,8 @@ Each claim of the reference crate has a place on the screen.
   it admitted.
 - A volume sits beside an application file and leaves it alone. The run carries the size the `sidecar` verb measured.
 - A record can be read whole. The `esg` reading lists one entry per record the `show` verb printed, and a run's tick
-  holds the keys, the record count, and the kinds the volume carries.
+  holds the keys, the record count, and the kinds the volume carries. Each fact whose address is its own is put to the
+  `verify` verb, and the reading states how many held.
 
 Every address is drawn in its base-36 rendering, three characters an axis, so the board and the runs carry no native
 character and a printed address can be handed back to the tool unchanged.

@@ -178,6 +178,17 @@ export function measure({ bin, volume, volumePath, id, title }) {
 }
 
 /**
+ * What the tool answers about an address.
+ *
+ * `verify` recomputes an address from the fields the record holds, so the answer is the tool's and not a comparison
+ * made here.
+ */
+function verifyAddress(bin, volumePath, address) {
+  const check = tool(bin, ['verify', '--volume', volumePath, '--address', address]);
+  return (field(check.stdout, 'address') || '').split(',')[0] || 'unknown';
+}
+
+/**
  * One record as the tool prints it.
  *
  * `show` is the verb that reads a record and says what it holds, so the fields here are the tool's answer and not a
@@ -195,16 +206,20 @@ function showRecord(bin, volumePath, key) {
       payload = null;
     }
   }
+  const kind = field(run.stdout, 'kind');
+  const address = field(run.stdout, 'address');
   return {
     key,
-    kind: field(run.stdout, 'kind'),
-    address: field(run.stdout, 'address'),
+    kind,
+    address,
     origin: field(run.stdout, 'origin') || null,
     creator: field(run.stdout, 'creator') || null,
     written: Number((field(run.stdout, 'written') || '0').split(' ')[0]),
     record: JSON.parse(field(run.stdout, 'record')),
     payload,
     payloadText,
+    // Filled in by `measureRecords`, for the facts whose address the tool can recompute.
+    addressState: null,
   };
 }
 
@@ -220,7 +235,18 @@ function recordKeys(keys) {
  * names a kind in particular: what a record is, the tool prints.
  */
 function measureRecords(bin, volumePath, keys) {
-  return recordKeys(keys).map((key) => showRecord(bin, volumePath, key));
+  const shown = recordKeys(keys).map((key) => showRecord(bin, volumePath, key));
+  // A result is filed at the address of the intent that concluded it, so its address is not derived from its own
+  // content: `verify` recomputes a content address, and for a result there is nothing to recompute from. Only the
+  // facts whose address is their own are checked.
+  const concluded = new Set(
+    shown.map((record) => record.record?.status?.Concluded?.to_fact).filter(Boolean),
+  );
+  return shown.map((record) =>
+    record.kind === 'fact' && !concluded.has(record.address)
+      ? { ...record, addressState: verifyAddress(bin, volumePath, record.address) }
+      : record,
+  );
 }
 
 /** A seed derived from the volume's own name, so the same volume writes the same run. */

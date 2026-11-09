@@ -79,3 +79,9 @@ on nothing.
 The key space is the storage layer's own shape, so it arrives as a pack. Nothing in this application names a commercial
 product, and the frame learns no storage vocabulary: a key space, a prefix, an axis range, and an exit code are the
 demo's, and each one is a resource, a reading, or a run line.
+
+A record's kind is a term of the format, so its mark is the frame's: `KindTag` draws one colour and one letter, and this
+application imports it rather than choosing either. The word beside the mark is the application's own reading of the
+chain, because what a record does in a chain is a question about these records and not about the format: an intent
+concluded a fact, so that fact is a result rather than an observation. The two sit side by side because they answer
+different questions, and the word is derived from the links the records carry rather than from a list kept here.
