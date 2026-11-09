@@ -68,15 +68,17 @@ structure on show is the record of the work over it.
 
 ## The ESG scenario
 
-The `esg-scenario` project reads `esg-volume/` as a chain. The volume holds three measured quantities for one site and
-period, two intents that turn them into a reported figure, and one hint that names the disclosure requirement the
-figure answers. The `esg` reading draws the result in the order the records were written, one row per record, so a
-reader follows measured value, transformation, and requirement on one screen.
+The `esg-scenario` project reads `esg-volume/` as a chain. The volume holds eight records for one site and one
+quarter. Three are measured quantities; two are the intents that transform them, claimed and then concluded by the
+reporting controller; two are the facts each intent filed as its result, so a conclusion is a record of its own rather
+than a column on the intent; and one is the disclosure requirement the figures answer. The `esg` reading draws them in
+the order the medium recorded them, one row per record, so a reader follows measured value, transformation, result, and
+requirement down one screen.
 
 Two limits are part of the demonstration rather than a footnote to it.
 
 - The figures are synthetic. One site, one quarter, and one requirement were written to show the shape of a chain, and
-the emission factors in the intents are illustrative. Nothing here is a statement about any organisation's emissions.
+  the emission factors in the intents are illustrative. Nothing here is a statement about any organisation's emissions.
 - The claim is bounded. The demonstration shows that a fact, the transformation applied to it, and the requirement it
   answers are one addressable chain whose records can be read back and recomputed. Whether an organisation's reporting
   satisfies a regulation is a question about that organisation's governance and process, and this directory answers a

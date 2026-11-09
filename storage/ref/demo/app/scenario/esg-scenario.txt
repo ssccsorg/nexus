@@ -108,6 +108,5 @@ hint record-key-6 intents/i_0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6
 fact record-7 0 sustainability-controller
 hint record-key-7 intents/i_0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k.intent
 hint record-kinds fact=5,hint=1,intent=2
-hint requirement 0008lk0fv1kl
 count 42
 

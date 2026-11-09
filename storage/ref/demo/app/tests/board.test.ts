@@ -143,6 +143,74 @@ test('the key space the panel draws is the one the run lists', () => {
   }
 });
 
+test('the records the panel draws are the ones the run lists', () => {
+  for (const id of ids) {
+    const { bundle, text } = read(id);
+    const chain = (bundle as unknown as { esg?: { records: { key: string }[] } }).esg;
+    expect(chain, `${id} carries the records its run lists`).toBeDefined();
+    const { records } = parseScenario(text);
+    const drawn = records.filter(
+      (record) => record.kind === 'fact' && /^record-\d+$/.test(record.label ?? ''),
+    );
+    const keys = records.filter(
+      (record) => record.kind === 'hint' && /^record-key-\d+$/.test(record.label ?? ''),
+    );
+    const stated = records.find(
+      (record) => record.kind === 'fact' && record.label === 'records-held',
+    );
+
+    // The panel, the count the run states, the rows it writes, and the kinds it names are one answer.
+    expect(chain?.records.length, `${id} draws every record the run lists`).toBe(drawn.length);
+    expect(Number(stated?.bytes), `${id} states the count it draws`).toBe(drawn.length);
+    expect(
+      keys.map((record) => record.content),
+      `${id} names the key of each record it draws`,
+    ).toEqual(chain?.records.map((record) => record.key));
+    const kinds = (hint(text, 'record-kinds') ?? '')
+      .split(',')
+      .map((pair) => Number(pair.split('=')[1] ?? 0));
+    expect(
+      kinds.reduce((sum, at) => sum + at, 0),
+      `${id} states the kinds it draws`,
+    ).toBe(drawn.length);
+  }
+});
+
+test('every link an intent carries lands on a record the volume holds', () => {
+  // The chain is the claim: a conclusion is a fact of its own, and an intent names the facts it read and the fact it
+  // concluded. A link that names nothing would leave a reader a chain that cannot be followed, which is the one thing a
+  // record of evidence may not do.
+  let intents = 0;
+  for (const id of ids) {
+    const { bundle } = read(id);
+    const chain = (bundle as unknown as {
+      esg?: { records: { key: string; kind: string; address: string; record: Record<string, unknown> }[] };
+    }).esg;
+    expect(chain, `${id} carries the records its run lists`).toBeDefined();
+    const held = new Set(chain?.records.map((record) => record.address));
+
+    for (const record of chain?.records ?? []) {
+      if (record.kind !== 'intent') continue;
+      intents += 1;
+      const fields = record.record as {
+        from_facts?: string[];
+        status?: Record<string, { to_fact?: string }>;
+      };
+      const concluded = fields.status?.Concluded?.to_fact;
+      expect(concluded, `${id}: ${record.key} is concluded`).toBeTruthy();
+      const links = [...(fields.from_facts ?? []), String(concluded)];
+      expect(links.length, `${id}: ${record.key} reads something`).toBeGreaterThan(1);
+      for (const link of links) {
+        expect(held.has(link), `${id}: ${record.key} names ${link}, which the volume holds`).toBe(
+          true,
+        );
+      }
+    }
+  }
+  // Without this the test would pass over a volume that holds no chain at all.
+  expect(intents, 'a committed volume carries a concluded chain').toBeGreaterThan(0);
+});
+
 test('the board and its runs carry no native character', () => {
   // Every address on the board is the tool's rendering, so the demo reads the same in a terminal that has no font for
   // the native alphabet. The run and the key space are the two places an address is written down.

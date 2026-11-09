@@ -154,10 +154,10 @@ application file is large, so the check is a guard against the copy touching the
 that the record's own axis selects it from the keys, reads the record, and checks that the application file is unchanged.
 
 `show` resolves one key and prints the record the medium holds: its kind, address, origin, creator, write time, the
-record itself, and the payload beside it. A payload that is text is printed as text and anything else as hex, so the
-verb is the only path from bytes to what a record says, and a caller reads a record rather than decoding it. A key
-outside `facts/`, `intents/`, and `hints/` is refused, because those are the three kinds the format defines and a
-listing key is not a record.
+record itself, and the payload beside it. A payload that is one line of text is printed as text and anything else as
+hex, so a caller reads what a record says without decoding the format, and a multi-line payload stays one line of
+output that a parser can read. A key outside `facts/`, `intents/`, and `hints/` is refused before the volume is opened,
+because those are the three kinds the format defines and a listing key is not a record.
 
 ## Exit codes
 

@@ -16,8 +16,8 @@ use std::time::SystemTime;
 use clap::{Parser, Subcommand};
 use nex_client::NexClient;
 use nex_fih::{Content, CoordId, Fact};
-use nex_io::FileIo;
 use nex_io::fs_io::FsIo;
+use nex_io::FileIo;
 use nexus_storage_ref::{FactRecord, HintRecord, IntentRecord};
 use std::cell::RefCell;
 use tagma_core::DIGITS_PER_AXIS;
@@ -205,8 +205,10 @@ fn main() -> ExitCode {
             open_source(args.volume.as_deref(), cli.hub.as_deref())
                 .and_then(|source| verify(&source, &coordinate))
         }),
-        Command::Show(args) => open_source(args.volume.as_deref(), cli.hub.as_deref())
-            .and_then(|source| show(&source, &args.key)),
+        Command::Show(args) => record_key(&args.key).and_then(|kind| {
+            open_source(args.volume.as_deref(), cli.hub.as_deref())
+                .and_then(|source| show(&source, &args.key, kind))
+        }),
         Command::Sidecar(args) => sidecar(&args),
         Command::SelfCheck => self_check(),
     };
@@ -508,6 +510,15 @@ fn kind_of(key: &str) -> Option<Kind> {
     }
 }
 
+/// The kind a key names, refused before the volume is opened the way an address is.
+fn record_key(key: &str) -> Result<Kind, Failure> {
+    kind_of(key).ok_or_else(|| {
+        Failure::Refused(format!(
+            "{key:?} is not a record key; a record key begins with facts/, intents/, or hints/"
+        ))
+    })
+}
+
 /// The payload as one line: its text when it is text, its bytes otherwise.
 fn as_text(bytes: &[u8]) -> String {
     match std::str::from_utf8(bytes) {
@@ -517,12 +528,7 @@ fn as_text(bytes: &[u8]) -> String {
 }
 
 /// Print the record at a key: what it holds, and for a fact the payload the medium carries.
-fn show(source: &Source, key: &str) -> Result<(), Failure> {
-    let kind = kind_of(key).ok_or_else(|| {
-        Failure::Refused(format!(
-            "{key:?} is not a record key; a record key begins with facts/, intents/, or hints/"
-        ))
-    })?;
+fn show(source: &Source, key: &str, kind: Kind) -> Result<(), Failure> {
     let bytes = source
         .read(key)?
         .ok_or_else(|| Failure::Missing(format!("{key} holds no record")))?;

@@ -352,8 +352,7 @@ export function scenarioOf(measured) {
   count();
   push('');
 
-  // The records the volume holds, read one at a time. A fact carries a payload, an intent carries
-  // the addresses it reads and the one it concluded, and a hint carries the requirement.
+  // The records the volume holds, when it holds any: the `show` verb, one entry at a time.
   if (m.records.length) {
     push('tick 6');
     fact('records-held', m.records.length, 'show/volume');
@@ -374,8 +373,6 @@ export function scenarioOf(measured) {
         .map(([kind, at]) => `${kind}=${at}`)
         .join(','),
     );
-    const requirement = m.records.find((record) => record.kind === 'hint');
-    if (requirement) hint('requirement', requirement.address.slice(0, 12));
     count();
     push('');
   }
