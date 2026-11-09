@@ -24,7 +24,7 @@ const VOLUMES = [
     id: 'esg-scenario',
     title: 'ESG compliance - Alpine Precision AG, 2026-Q1',
     volume: 'storage/ref/demo/esg-volume',
-    reading: 'esg',
+    reading: 'map',
     reset: true,
   },
   {
