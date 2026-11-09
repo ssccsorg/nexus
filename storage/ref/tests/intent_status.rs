@@ -2,7 +2,7 @@
 // Tests: submit→claim→conclude lifecycle, double claim rejection,
 // wrong worker heartbeat rejection, concluded is not active, conclude unclaimed.
 
-use nexus_storage_sim::IntentStatus;
+use nexus_storage_ref::IntentStatus;
 
 #[test]
 fn test_submit_to_claim_to_conclude() {

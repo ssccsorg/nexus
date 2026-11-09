@@ -4,8 +4,8 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use nexus_storage_sim::fs_io::FsIo;
-use nexus_storage_sim::{BlockingIo, SyncFileIo};
+use nex_io::fs_io::FsIo;
+use nex_io::{BlockingIo, SyncFileIo};
 
 fn make_fs_blocking() -> (SyncFileIo<FsIo>, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();

@@ -1,19 +1,20 @@
-//! The content-addressed blob cache is bounded: when it exceeds the cap
-//! the oldest entries are evicted and reloaded from io on a later read.
-//! The current read always resolves its content, so eviction must never
-//! starve the read that triggered it.
+//! Every record's content materializes at scale.
+//!
+//! A read resolves its content from the medium and this node keeps no cache, so a store
+//! holding more records than a bounded cache would hold answers the same bytes. The
+//! assertion is the content, which is what a reader holds a node to.
 
 use futures_executor::block_on;
 use nex_fih::FihId20 as _;
 use nex_fih::{AsyncFactCapable, Content, CoordId, Fact};
 use nexus_storage_ref::{RefFihStorage};
-use nexus_storage_sim::SimIo;
+use nex_io::SimIo;
 
-/// Exceeds the cache cap (10_000) so the earliest blobs are evicted.
+/// More records than a bounded cache would hold, so nothing is served from one.
 const N_FACTS: u32 = 10_100;
 
 #[test]
-fn test_blob_cache_evicts_and_reloads() {
+fn every_record_reads_its_content_back() {
     block_on(async {
         let store = RefFihStorage::new(SimIo::new(), "cache");
 
@@ -32,8 +33,7 @@ fn test_blob_cache_evicts_and_reloads() {
         let state = store.read_state().await;
         assert_eq!(state.facts.len(), N_FACTS as usize);
 
-        // The earliest facts' blobs are evicted (FIFO) and reload from io;
-        // the latest stay cached. Both must materialize correctly.
+        // The first and the last record both read their content back from the medium.
         let content_of = |id: &str| -> String {
             state
                 .facts
@@ -51,7 +51,7 @@ fn test_blob_cache_evicts_and_reloads() {
             format!("payload {}", N_FACTS - 1)
         );
 
-        // A second read serves the cached tail without io and stays correct.
+        // A second read answers the same, which a cache would also have to do.
         let state2 = store.read_state().await;
         assert_eq!(state2.facts.len(), N_FACTS as usize);
         assert_eq!(

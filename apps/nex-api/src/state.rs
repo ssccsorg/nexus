@@ -1,7 +1,7 @@
 // Shared application state for the gateway API server.
 
 use nexus_storage_ref::FihBlackboard;
-use nexus_storage_sim::SimIo;
+use nex_io::SimIo;
 use nex_fih::Blackboard;
 use std::sync::{Arc, Mutex};
 

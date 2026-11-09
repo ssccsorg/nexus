@@ -6,10 +6,10 @@
 // Unlike StoreSession, FihSession is generic over any FihIo implementation
 // and does not require separate MetaStore/BlobStore/ObjectStore instances.
 //
-// FihSession is used by storage/sim (native-only verification runner).
+// FihSession is used by the storage-smoke binary (native-only verification runner).
 // It uses block_on internally to wrap RefFihStorage's async methods into
 // a synchronous interface for convenience. This is acceptable because
-// storage/sim targets native platforms where block_on does not hang.
+// that binary targets native platforms where block_on does not hang.
 //
 // The synchronous wrapper requires the `std` feature: `block_on` needs
 // an executor, which needs std. On no_std targets (MCU) the caller

@@ -12,7 +12,7 @@
 use nexus_storage_ref::FihBlackboard;
 use nex_fih::FihId20 as _;
 use nex_fih::{CoordId, Fact, FactCapable, Intent, IntentCapable, StorageRead};
-use nexus_storage_sim::SimIo;
+use nex_io::SimIo;
 
 fn main() {
     println!("=== Rust Privileged Agent: Direct Blackboard Access (FihBlackboard) ===\n");

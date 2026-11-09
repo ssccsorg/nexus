@@ -1,6 +1,6 @@
-// ── storage/sim verification runner ──────────────────────────────────────
+// ── storage-smoke: the node's capabilities, end to end ───────────────────
 //
-// Usage: cargo run -p nexus-storage-sim
+// Usage: cargo run -p nexus-storage-ref --bin storage-smoke
 //
 // Exercises every storage capability end-to-end and exits with 0 only when
 // every verification step passes. Designed to be run as a smoke test in CI
@@ -8,7 +8,8 @@
 
 use nex_fih::FihId20 as _;
 use nex_fih::{AsyncEvictCapable, AsyncFactCapable, AsyncFilterCapable, AsyncHintCapable, AsyncIntentCapable, AsyncStorageRead, Content, CoordId, Fact, Hint, Intent, StateFilter};
-use nexus_storage_sim::{RefFihStorage, SimIo, intent_status};
+use nexus_storage_ref::{RefFihStorage, intent_status};
+use nex_io::SimIo;
 
 fn fact(id: &str, data: &[u8]) -> Fact {
     Fact::with_id(
@@ -39,8 +40,8 @@ fn intent(id: &str, from_fact: &str) -> Intent {
 
 fn main() {
     eprintln!("+-----------------------------------------------------------+");
-    eprintln!("| nexus-storage-sim verification runner                      |");
-    eprintln!("| Phase 3: FileIo + durable eviction + FsIo            |");
+    eprintln!("| storage-smoke: the node's capabilities, end to end         |");
+    eprintln!("| FileIo, durable eviction, and the file-system medium       |");
     eprintln!("+-----------------------------------------------------------+");
     eprintln!();
 

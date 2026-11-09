@@ -6,8 +6,8 @@
 
 use nex_fih::FihId20 as _;
 use nex_fih::{AsyncEvictCapable, AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, AsyncTimeRangeCapable, CoordId, Hint, StateFilter};
-use nexus_storage_sim::RefFihStorage;
-use nexus_storage_sim::SimIo;
+use nexus_storage_ref::RefFihStorage;
+use nex_io::SimIo;
 
 mod common;
 

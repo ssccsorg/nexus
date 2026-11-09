@@ -8,13 +8,14 @@
 //   5. Eviction durability (records deleted from io)
 
 use nex_fih::FihId20 as _;
-use nexus_storage_sim::BlockingIo;
+use nex_io::BlockingIo;
 
 mod common;
 
 use futures_executor::block_on;
 use nex_fih::{AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, Content, CoordId, Fact, Hint, Intent, StateFilter};
-use nexus_storage_sim::{RefFihStorage, SimIo, SyncFileIo};
+use nexus_storage_ref::RefFihStorage;
+use nex_io::{SimIo, SyncFileIo};
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 

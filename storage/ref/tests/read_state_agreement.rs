@@ -7,7 +7,7 @@ use futures_executor::block_on;
 use nex_fih::FihId20 as _;
 use nex_fih::{AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, Content, CoordId, Fact, Hint, Intent, StateFilter};
 use nexus_storage_ref::{RefFihStorage};
-use nexus_storage_sim::SimIo;
+use nex_io::SimIo;
 
 #[test]
 fn test_read_state_and_filtered_agree_in_order() {

@@ -7,11 +7,12 @@
 use nex_fih::CoordId;
 use nex_fih::FihId20 as _;
 use nexus_storage_ref::RecordTimeUnit;
-use nexus_storage_sim::SimIo;
-use nexus_storage_sim::{
-    BlockingIo, ContentMeta, FactRecord, FileIo, HintRecord, IntentRecord, SyncFileIo, WriteOp,
+use nex_io::SimIo;
+use nexus_storage_ref::{
+    ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus, export_from_io,
+    import_into_io,
 };
-use nexus_storage_sim::{IntentStatus, export_from_io, import_into_io};
+use nex_io::{BlockingIo, FileIo, SyncFileIo, WriteOp};
 
 // ── Helper: seed a SimIo with sample records ─────────────────────────────
 
@@ -146,7 +147,7 @@ fn test_export_import_fs_to_sim() {
     let dir = std::env::temp_dir().join(format!("fih_export_test_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
 
-    let fs_io = nexus_storage_sim::fs_io::FsIo::new(&dir).unwrap();
+    let fs_io = nex_io::fs_io::FsIo::new(&dir).unwrap();
     let sync = SyncFileIo::new(fs_io);
 
     let fact = FactRecord {
@@ -177,7 +178,7 @@ fn test_export_import_fs_to_sim() {
 
 #[test]
 fn test_export_full_fih_lifecycle() {
-    use nexus_storage_sim::RefFihStorage;
+    use nexus_storage_ref::RefFihStorage;
 
     // Seed a SimIo directly with records (not through RefFihStorage).
     let io = SimIo::new();

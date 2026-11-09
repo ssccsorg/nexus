@@ -21,3 +21,6 @@ futures-executor = { version = "0.3", optional = true }
 async-trait.workspace = true
 log.workspace = true
 critical-section = { version = "1", features = ["restore-state-bool"] }
+
+[dev-dependencies]
+futures-executor = "0.3"

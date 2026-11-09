@@ -71,7 +71,6 @@ jobs:
           workspaces: |
             nex
             nexd
-            storage/sim
             libs/serde-proxy
             playbooks/agents
             nex-server/server

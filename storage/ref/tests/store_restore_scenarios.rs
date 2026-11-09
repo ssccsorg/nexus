@@ -9,7 +9,8 @@ mod common;
 
 use futures_executor::block_on;
 use nex_fih::{AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, Content, CoordId, Fact, Hint, Intent};
-use nexus_storage_sim::{FileIo, RefFihStorage, SimIo};
+use nexus_storage_ref::RefFihStorage;
+use nex_io::{FileIo, SimIo};
 
 fn fact(id: &str, data: &str) -> Fact {
     Fact::with_id(

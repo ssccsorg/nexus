@@ -7,7 +7,7 @@ use nexus_storage_ref::FihBlackboard;
 use nex_fih::FihId20 as _;
 use nex_fih::{BlackboardError, Content, CoordId, Fact, FactCapable, Intent, IntentCapable, StorageRead};
 use nexus_gateway_serde_proxy::SerdeProxy;
-use nexus_storage_sim::SimIo;
+use nex_io::SimIo;
 
 // ── Scenario: Intermittent agent (Bluetooth / short-range radio) ─────────
 //

@@ -21,10 +21,8 @@ critical-section = { version = "1", features = ["restore-state-bool"] }
 nex = { path = "../../nex/process" }
 nex-hub = { path = "../../nex/hub" }
 nex-protocol = { path = "../../nex/protocol" }
-nexus-storage-sim = { path = "../sim" }
 nexus-gateway-serde-proxy = { path = "../../libs/serde-proxy" }
 tagma-core = { workspace = true }
-tagma-map = { workspace = true }
 chton = { workspace = true }
 futures-executor = "0.3"
 tempfile = "3"
@@ -52,3 +50,8 @@ clap = { version = "4", features = ["derive", "env"], optional = true }
 name = "nexus-storage-ref"
 path = "src/main.rs"
 required-features = ["reader"]
+
+[[bin]]
+name = "storage-smoke"
+path = "src/bin/smoke.rs"
+required-features = ["std"]

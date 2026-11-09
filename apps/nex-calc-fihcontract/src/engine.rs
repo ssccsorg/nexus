@@ -27,7 +27,7 @@ use nexus_storage_ref::{ContentMeta, FactRecord, HintRecord, IntentRecord};
 use nexus_storage_ref::RefFihStorage;
 use nex_fih::{Content, CoordId, FihHash};
 use nexus_storage_ref::{RecordTimeUnit};
-use nexus_storage_sim::SimIo;
+use nex_io::SimIo;
 
 use crate::hint::Constraint;
 use crate::ops::OpType;

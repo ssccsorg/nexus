@@ -37,14 +37,31 @@ the reference store, and the process layer.
 | [`nex/`](nex) | the state model (`nex-fih`, `fih-model`), the IO seam (`nex-io`), the wire (`nex-protocol`), the routing table (`nex-router`), the hub (`nex-hub`), and the process layer (`nex`) |
 | [`nex-server/`](nex-server), [`nexd/`](nexd) | the board served over a Unix socket, and the daemon that supervises it |
 | [`nex_client`](nex_client) | typed client for `nexd` |
-| [`storage/ref/`](storage/ref) | reference node: read a volume by key, answer a multi-axis question, check a record by recomputing its address |
-| [`storage/sim/`](storage/sim) | scenario runner over in-memory backends |
+| [`storage/ref/`](storage/ref) | reference node: read a volume by key, answer a box from the keys, check a record by recomputing its address |
 | [`apps/`](apps) | applications built on the model, each with its own workspace and verifier |
 | [`libs/`](libs) | shared host libraries |
 | [`playbooks/`](playbooks) | consumer playbooks |
 | [`docs/`](docs) | design records, cold query direction, wire protocol |
 
 [`chton`](https://github.com/ssccsorg/chton) and [`nex-ext`](https://github.com/ssccsorg/nex-ext) are separate repositories: the storage contract, and the adapter that attaches a host database engine to it.
+
+### The reference node
+
+`storage/ref` demonstrates the storage contract at its simplest. It reads a key, lists a prefix, answers a box, and checks a record by recomputing its address. A box is answered by listing the keys and comparing their coordinates, so its cost is one pass over the key space.
+
+The contract states what a reader receives. What a node holds, how it finds it, and what it costs to find are the node's own decisions. The table is the whole of the distinction this repository draws.
+
+| Decision | This node | A node is free to decide otherwise |
+|:---|:---|:---|
+| Answering a box | lists the keys and compares their coordinates, one pass over the key space | prune by leading axis prefix and answer from what it keeps |
+| Filtering | walks the record maps and applies the predicates field by field | read `axis_hints` and narrow before touching a record |
+| Read cost | holds the record it returns | hold a read within a budget it declares |
+| Memory | the record maps grow with the records the volume holds | bound what it holds and re-read what it does not |
+| Caching | none, beyond the eviction calls the contract names | cache and evict under a policy it owns |
+| Writing | buffers in `pending` and reaches the medium on `flush_pending` | batch, journal, and recover on its own terms |
+| Target | the record path builds for `riscv32imac`; the reader is a host transport behind its own feature | run the same contract on a device with its own budget |
+
+None of the right-hand column is implemented here. A node is free to make those choices because the contract does not name them, and a reader receives the same record either way.
 
 ## Getting Started
 
@@ -119,7 +136,7 @@ Targets without an operating system require three things.
 - Provide `alloc` and a `critical-section` implementation.
 - Inject a clock through `Now`.
 
-The reference store is `RefFihStorage` in `nex/fih`.
+The reference node is `RefFihStorage` in [`storage/ref`](storage/ref). Its record path builds for `riscv32imac-unknown-none-elf` with `--no-default-features`; the command-line reader is a host transport behind its own `reader` feature.
 
 ## Minimal Examples
 
@@ -130,7 +147,6 @@ Each is one part of the project in its smallest complete form.
 | [`apps/nex-calc`](apps/nex-calc) | the FIH model itself: a calculation is a recorded traversal, and the traversal is the computation |
 | [`storage/ref`](storage/ref) | the storage surface: read a volume by key, answer a multi-axis question from the keys, check a record by recomputing its address. Carries a [demonstration board](storage/ref/demo) that draws the same reads |
 | [`apps/nex-derive`](apps/nex-derive) | a directed goal space: a goal is work, intent, and contract, and resolving it derives a fact |
-| [`storage/sim`](storage/sim) | a run driven by a scenario, over in-memory backends |
 
 ## Testing
 

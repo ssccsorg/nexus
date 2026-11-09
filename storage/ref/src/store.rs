@@ -114,17 +114,7 @@ impl<I: FileIo> RefFihStorage<I> {
         Self::with_options(io, project_id, Box::new(nex_core::SystemClock), true)
     }
 
-    /// The state-only constructor, named for the read path it serves.
-    pub fn with_clock_and_memory(
-        io: I,
-        project_id: &str,
-        clock: Box<dyn Now + Send + Sync>,
-    ) -> Self {
-        Self::with_options(io, project_id, clock, false)
-    }
-
-    /// The full constructor. Kept because a caller that names every option should not have
-    /// to know which ones this implementation ignores.
+    /// The full constructor, for a caller that names the clock and the write policy.
     pub fn with_all(
         io: I,
         project_id: &str,

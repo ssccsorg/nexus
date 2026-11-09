@@ -2,7 +2,7 @@ use nexus_storage_ref::FihBlackboard;
 use nex_fih::FihId20 as _;
 use nex_fih::{CoordId, Fact, FactCapable, StorageRead};
 use nexus_gateway_serde_proxy::SerdeProxy;
-use nexus_storage_sim::SimIo;
+use nex_io::SimIo;
 
 #[test]
 fn test_serde_proxy_submit_fact() {

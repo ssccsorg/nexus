@@ -2,7 +2,8 @@
 
 use nex_fih::FihId20 as _;
 use nex_fih::{AsyncFactCapable, AsyncIntentCapable, Content, CoordId, Fact, Intent};
-use nexus_storage_sim::{RefFihStorage, SimIo};
+use nexus_storage_ref::RefFihStorage;
+use nex_io::SimIo;
 
 #[test]
 fn test_sim_fact_submit_and_read() {
@@ -69,7 +70,7 @@ fn test_sim_full_lifecycle() {
 #[test]
 fn test_session_hydrate_flush() {
     use nex_fih::{AsyncFactCapable, Content, CoordId, Fact};
-    use nexus_storage_sim::FihSession;
+    use nexus_storage_ref::FihSession;
 
     let io = SimIo::new();
     let mut session = FihSession::new(io.clone(), "test");

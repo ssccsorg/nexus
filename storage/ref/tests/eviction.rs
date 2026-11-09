@@ -12,7 +12,7 @@ use common::FakeClock;
 use futures_executor::block_on;
 use nex_fih::{AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, Content, CoordId, Fact, Hint, Intent};
 use nexus_storage_ref::{RefFihStorage};
-use nexus_storage_sim::{FileIo, SimIo};
+use nex_io::{FileIo, SimIo};
 
 /// Clock start at exactly t=100s, far from the next second boundary even
 /// after the per-call step increments of the fake clock.

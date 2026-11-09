@@ -10,7 +10,7 @@ use nexus_storage_ref::FihBlackboard;
 use nex_fih::FihId20 as _;
 use nex_fih::{Content, CoordId, Fact, FactCapable, Intent, IntentCapable, StorageRead};
 use nexus_gateway_serde_proxy::SerdeProxy;
-use nexus_storage_sim::SimIo;
+use nex_io::SimIo;
 
 /// Contradiction Detection — via SerdeProxy (JSON transport boundary).
 ///

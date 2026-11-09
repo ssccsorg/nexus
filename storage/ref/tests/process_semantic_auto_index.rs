@@ -13,7 +13,7 @@ use futures_executor::block_on;
 use nexus_storage_ref::RefFihStorage;
 use nex_fih::semantic::{Query, RecordLoad, SemanticStore};
 use nex_fih::{AsyncFactCapable, AsyncIntentCapable, Content, CoordId, Fact};
-use nexus_storage_sim::SimIo;
+use nex_io::SimIo;
 
 #[derive(Debug, Clone, Default)]
 struct Recorder(Arc<Mutex<Vec<Call>>>);

@@ -18,7 +18,8 @@ mod common;
 
 use futures_executor::block_on;
 use nex_fih::{AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, Content, CoordId, Fact, Hint, StateFilter};
-use nexus_storage_sim::{RefFihStorage, SimIo};
+use nexus_storage_ref::RefFihStorage;
+use nex_io::SimIo;
 
 use crate::common::{fact, intent};
 

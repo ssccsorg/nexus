@@ -1,7 +1,7 @@
 // EntityStore unit tests for MemoryEntityStore.
 // Tests: insert, get, remove, contains_key, len, values, clear, retain, replace_from.
 
-use nexus_storage_sim::{EntityStore, MemoryEntityStore};
+use nex_fih::{EntityStore, MemoryEntityStore};
 
 // Helper to run async EntityStore methods synchronously in a sync test.
 // The methods are async but do no real I/O, so we can block on them.

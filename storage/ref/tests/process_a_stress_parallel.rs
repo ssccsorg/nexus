@@ -9,7 +9,7 @@
 use nexus_storage_ref::FihBlackboard;
 use nex_fih::FihId20 as _;
 use nex_fih::{Blackboard, CoordId, Fact, FactCapable, Intent, IntentCapable, StorageRead};
-use nexus_storage_sim::SimIo;
+use nex_io::SimIo;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicU64, Ordering},

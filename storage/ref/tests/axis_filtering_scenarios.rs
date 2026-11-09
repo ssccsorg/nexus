@@ -14,8 +14,8 @@ use futures_executor::block_on;
 use nex_fih::FihId6 as _;
 use nex_fih::FihId20 as _;
 use nex_fih::{AsyncFactCapable, Content, CoordId, Fact, StateFilter};
-use nexus_storage_sim::RefFihStorage;
-use nexus_storage_sim::SimIo;
+use nexus_storage_ref::RefFihStorage;
+use nex_io::SimIo;
 
 use crate::common::{FakeClock, fact};
 

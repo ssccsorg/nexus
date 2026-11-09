@@ -46,13 +46,13 @@ run_dep_refresh() {
     cargo update -p chton 2>&1
 }
 
-run_check()  { run_dep_refresh && cargo check -p nex && cargo check -p nexd && cargo check -p nexus-storage-sim && cargo check -p nexus-storage-ref && (cd nex && cargo check -p nex-protocol -p nex-router -p nex-hub); }
+run_check()  { run_dep_refresh && cargo check -p nex && cargo check -p nexd && cargo check -p nexus-storage-ref && (cd nex && cargo check -p nex-protocol -p nex-router -p nex-hub -p nex-io -p nex-fih); }
 
-# ── WASM check: ensure storage-sim builds for wasm32 target ────────────
+# ── WASM check: every core crate builds for the wasm32 target ──────────
 
 run_wasm_check() {
     # Find all Cargo.toml under core directories, excluding non-WASM targets.
-    # Exclusions: storage/ve-composite (tokio), storage/sim (tokio),
+    # Exclusions: storage/ve-composite (tokio),
     # apps/* (HTTP server), verify/* (host and MCU verification tooling),
     # playbooks/* (scripts), target/ (build artifacts).
     # apps/ is excluded: each app has its own build target (native, container, etc.)
@@ -80,7 +80,6 @@ run_wasm_check() {
         -not -path './apps/*' \
         -not -path './verify/*' \
         -not -path './storage/ve-composite/*' \
-        -not -path './storage/sim/*' \
         -not -path './storage/ref/*' \
         -not -path './nexd/*' \
         -not -path './nex-server/*' \
@@ -154,6 +153,8 @@ run_nostd_check() {
     # The hub core is the portability floor: the router holds the routing table a hub needs
     # and nothing a host provides, so it has to reach the MCU target with the wire.
     (cd nex && cargo check -p nex-router --no-default-features --target riscv32imac-unknown-none-elf) 2>&1
+    # The README says the record path reaches the MCU target, so the claim is held here.
+    cargo build -p nexus-storage-ref --no-default-features --target riscv32imac-unknown-none-elf 2>&1
 }
 
 
@@ -202,7 +203,6 @@ run_clippy() {
         nex-fih \
         nex-io \
         fih-model \
-        nexus-storage-sim \
         nexus-gateway-serde-proxy \
         nexus-verify-support \
         nexd
@@ -216,7 +216,7 @@ run_test()   {
     # The storage crates' own test targets. `-p nex` does not run another
     # package's targets, so the record layer's tests and the model's run here or
     # nowhere.
-    cargo test -p nex-core -p nex-fih -p fih-model -- --nocapture 2>&1
+    cargo test -p nex-core -p nex-fih -p fih-model -p nex-io -- --nocapture 2>&1
     echo "---"
     # The hub core and the wire. They live in the `nex` workspace, so they are checked from
     # there; the reference test drives a client through the hub to a node over a real socket.
@@ -235,15 +235,13 @@ run_test()   {
     # all nexd test targets (lib + integration + proc-daemon)
     cargo test -p nexd -- --test-threads=1 --nocapture 2>&1
     echo "---"
-    cargo test -p nexus-storage-sim -- --nocapture 2>&1
-    echo "---"
     # The reference's own contract: exit codes, the read that creates nothing,
     # and the prefix filter. It has no test elsewhere, so it runs here or
     # nowhere.
     cargo test -p nexus-storage-ref -- --nocapture 2>&1
     echo "---"
     # smoke verification runner: exercises every storage capability end to end
-    cargo run -p nexus-storage-sim 2>&1
+    cargo run -p nexus-storage-ref --bin storage-smoke 2>&1
     echo "---"
 }
 run_all() {

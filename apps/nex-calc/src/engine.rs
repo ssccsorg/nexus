@@ -27,7 +27,7 @@ use nexus_storage_ref::IntentStatus;
 use nexus_storage_ref::ContentMeta;
 use nexus_storage_ref::{Record, RefFihStorage};
 use nex_fih::{Content, CoordId, FihHash};
-use nexus_storage_sim::SimIo;
+use nex_io::SimIo;
 
 use crate::hint::Constraint;
 use crate::ops::OpType;

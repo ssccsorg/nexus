@@ -36,12 +36,10 @@ pub struct StateFilter {
     pub status: Option<String>,
     /// Axis hints for CoordSpaceN prefix queries.
     ///
-    /// Reserved: the concept is part of the spatial query surface (leading
-    /// axis prefix pruning) and is preserved as designed. The current
-    /// RefFihStorage implementation scans the record layer with
-    /// record-field predicates; the structural filter index is maintained
-    /// for spatial queries and does not consume them yet; wiring the
-    /// prefix-query path is a pending optimization, not a removal.
+    /// The contract reserves the concept, leading axis prefix pruning. The
+    /// reference node scans the record layer with record-field predicates and
+    /// leaves the hints unread; a node that prunes by prefix is free to use
+    /// them.
     pub axis_hints: Option<AxisHints>,
 }
 

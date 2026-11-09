@@ -7,7 +7,8 @@ use nex_fih::FihId20 as _;
 mod common;
 
 use nex_fih::{AsyncFactCapable, CoordId, StateFilter};
-use nexus_storage_sim::{RefFihStorage, SimIo};
+use nexus_storage_ref::RefFihStorage;
+use nex_io::SimIo;
 
 fn make_clocked() -> RefFihStorage<SimIo> {
     RefFihStorage::with_clock(
@@ -140,7 +141,7 @@ fn test_fact_ids_filter_independent_of_time() {
 
 // ── OrderedIndex unit tests (uses u32 compact IDs) ──────────────────────
 
-use nexus_storage_sim::OrderedIndex;
+use nex_fih::OrderedIndex;
 
 fn idx() -> OrderedIndex<u64> {
     let mut idx = OrderedIndex::new();

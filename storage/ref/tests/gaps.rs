@@ -5,7 +5,8 @@ use nex_fih::FihId20 as _;
 mod common;
 
 use nex_fih::{AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, CoordId, Hint};
-use nexus_storage_sim::{RefFihStorage, SimIo};
+use nexus_storage_ref::RefFihStorage;
+use nex_io::SimIo;
 
 fn store() -> RefFihStorage<SimIo> {
     RefFihStorage::new(SimIo::new(), "test")
