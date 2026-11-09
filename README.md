@@ -158,6 +158,7 @@ GitHub Actions runs the same flows [`run.sh`](run.sh) runs locally, one job each
 | server | `nex-server` and `nex-client` over a Unix socket |
 | gateway | the HTTP API in `apps/nex-api` and the serialization proxy in `libs/serde-proxy` |
 | apps | the standalone app verifiers |
+| demo | the reference tool and the Vite demonstration: install, tests, bundle, and the board the bundle carries |
 | playbooks | the consumer playbook scenarios |
 
 ```bash
@@ -166,7 +167,7 @@ GitHub Actions runs the same flows [`run.sh`](run.sh) runs locally, one job each
 ./run.sh --gateway    # the gateway layer
 ./run.sh --apps       # the standalone app verifiers
 ./run.sh --server     # nex-server over a Unix socket
-./run.sh --bench      # the multi-axis benchmarks
+./run.sh --demo       # the reference tool and its demonstration board
 ./run.sh --playbooks  # the consumer playbooks
 ```
 

@@ -179,7 +179,17 @@ missing, and installs only when `node_modules` is missing, so a second run goes 
 
 ### Checking it without a browser
 
-In the application directory:
+From the repository root, one command:
+
+```bash
+./run.sh --demo
+```
+
+It builds the tool, puts the frame beside the checkout when it is absent, installs the application with `npm ci`, runs
+the application's tests, builds the bundle, and checks that the bundle carries the board. It is the same sequence the
+CI job runs, because the job calls this runner rather than repeating it.
+
+In the application directory the steps are the same, one at a time:
 
 ```bash
 npm test
