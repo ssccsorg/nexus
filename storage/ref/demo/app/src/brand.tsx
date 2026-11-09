@@ -26,7 +26,7 @@ function Mark({ className }: { className?: string }) {
 }
 
 export const brand: Brand = {
-  title: 'NEXUS DEMO',
+  title: 'REF STORAGE DEMO',
   name: 'nexus storage demo',
   version: 'v0.1.0',
   // This deployment reads a committed volume and never writes, and the bar says so beside the name.

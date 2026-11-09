@@ -16,7 +16,7 @@ test('the mark is a path in a view box', () => {
 });
 
 test('the brand the bar draws is this deployment’s', () => {
-  expect(brand.title).toBe('NEXUS DEMO');
+  expect(brand.title).toBe('REF STORAGE DEMO');
   expect(brand.name).toBe('nexus storage demo');
   expect(brand.version).toMatch(/^v\d+\.\d+\.\d+$/);
   expect(brand.layers, 'the layers the mark stands on are named').toContain('nexus');
