@@ -26,14 +26,20 @@
               "blob/3aa2d6239717290bcea039142cc14237fa6c8581b7da8bc51f1796f0bbb2ff06.bin.meta",
               "blob/457c25d4efb6b9fd1d39593881022af3fe024bfee173c3dc79ab9cf9dd33ccd2.bin",
               "blob/457c25d4efb6b9fd1d39593881022af3fe024bfee173c3dc79ab9cf9dd33ccd2.bin.meta",
+              "blob/459ac6466c5519f9c2e78e5b48793da695f6e58ed8a2c457672d21341fa73dab.bin",
+              "blob/459ac6466c5519f9c2e78e5b48793da695f6e58ed8a2c457672d21341fa73dab.bin.meta",
               "blob/46a9fdc0fe7820c4ea713d9a3d6db608bd21a1574e712341661b4b36e9895b38.bin",
               "blob/46a9fdc0fe7820c4ea713d9a3d6db608bd21a1574e712341661b4b36e9895b38.bin.meta",
               "blob/4f3a9c5e9493b818df18983e9a2a6a7e629a7398948f74862ca6945e4a36593c.bin",
               "blob/4f3a9c5e9493b818df18983e9a2a6a7e629a7398948f74862ca6945e4a36593c.bin.meta",
+              "blob/8c4ae1f13b64df04d05b484c543b56e9bd4194163a850bd3076ec3e82809a581.bin",
+              "blob/8c4ae1f13b64df04d05b484c543b56e9bd4194163a850bd3076ec3e82809a581.bin.meta",
               "blob/906c3b2f0cb596b67389fef0ab0e49573c9f02890bc016b74982c1a616e66c0f.bin",
               "blob/906c3b2f0cb596b67389fef0ab0e49573c9f02890bc016b74982c1a616e66c0f.bin.meta",
               "blob/96939e2a7e6038b0a36d77deded4eba5f1c7a002ed51dbda3176c4bd48cc5e3c.bin",
               "blob/96939e2a7e6038b0a36d77deded4eba5f1c7a002ed51dbda3176c4bd48cc5e3c.bin.meta",
+              "blob/977124298be15f911835564c49015cdab6b4cf3415f3672cfdf9cd6b65d2eeba.bin",
+              "blob/977124298be15f911835564c49015cdab6b4cf3415f3672cfdf9cd6b65d2eeba.bin.meta",
               "blob/daedbd022957614e550fa0774714efedded0906f2352e9a7a80d87a9950c135b.bin",
               "blob/daedbd022957614e550fa0774714efedded0906f2352e9a7a80d87a9950c135b.bin.meta",
               "blob/e3f95dfd1213e39a5529e4b7ca95d4ce702f911f4435e1ffc38b664fbe93739a.bin",
@@ -41,23 +47,28 @@
               "facts/f_0000121d45742zs8ey2dk0540hj5c41si5475hv7s94t50md5fe1z72ag5d0.fact",
               "facts/f_00006t2x816s06m17q3hl0ur7t84vg4p56te1tr43x7m14qx5ju4682it39k.fact",
               "facts/f_0003cb3g68382rt06z7kv6bo7601da4k511u24k7ln5dm7aq5l84x05y1422.fact",
+              "facts/f_0003ku8d90is6tb1gl5bq1ti22i6y46km7oy3o78h045e20m4ud5n52mj0w6.fact",
               "facts/f_0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1.fact",
+              "facts/f_0004yp54i4ou8ef6cd0pe3nf3n31pz4d30kf0506ft03d18w0dg5h445x1qt.fact",
+              "facts/f_0006xm24p4da1f963860t1vo0uf74y24x6ja4kk0wz4uh6zp25g5765qt1xw.fact",
               "facts/f_00079h3xv77s0vb17d6371z73fw7cj2uj7ja58j5fq48b84l0py7ep2ay24w.fact",
               "facts/f_0008ak4ql2q42zn5wc0lr7nz2ks7ue83t6av2ln0mx4nd1t404j35i5nu6gd.fact",
               "facts/f_0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by.fact",
+              "hints/h_0003tx3ll18f1hq25l5ho20e2f523s8ac2d882s39j2ik00d72q1sb41d1sz.hint",
+              "hints/h_00063f0d48fm7s17t67ff0761r00ju1cw4o00go2vw7fx1bw7bs7et6hb6zv.hint",
               "hints/h_0008lk0fv1kl7rv1z11ca4b365u0r15st2oq6c67kz5yr81e1l83cs6qt8bj.hint",
               "intents/i_0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i.intent",
               "intents/i_0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k.intent",
               "intents/i_0011se68t04f7k94py52v7un3kj1283rn3e617b6th5mw8eb0a40k91cb1cw.intent"
             ],
-            "listed": 31,
+            "listed": 42,
             "box": {
               "axis": 0,
               "from": "000",
               "until": "000",
-              "records": 6
+              "records": 9
             },
-            "records": 6
+            "records": 9
           }
         },
         {
@@ -71,13 +82,13 @@
                 "address": "0000121d45742zs8ey2dk0540hj5c41si5475hv7s94t50md5fe1z72ag5d0",
                 "origin": "did:example:plant-li-1",
                 "creator": "meter:g04",
-                "written": 1794255235794927000,
+                "written": 1794257596745824000,
                 "record": {
                   "id": "0000121d45742zs8ey2dk0540hj5c41si5475hv7s94t50md5fe1z72ag5d0",
                   "blob_hash": "906c3b2f0cb596b67389fef0ab0e49573c9f02890bc016b74982c1a616e66c0f",
                   "origin": "did:example:plant-li-1",
                   "creator": "meter:g04",
-                  "submitted_at": 1794255235794927000
+                  "submitted_at": 1794257596745824000
                 },
                 "payload": {
                   "value": 96400,
@@ -98,13 +109,13 @@
                 "address": "00006t2x816s06m17q3hl0ur7t84vg4p56te1tr43x7m14qx5ju4682it39k",
                 "origin": "did:example:plant-li-1",
                 "creator": "service:contractor",
-                "written": 1794255235795136000,
+                "written": 1794257596746049000,
                 "record": {
                   "id": "00006t2x816s06m17q3hl0ur7t84vg4p56te1tr43x7m14qx5ju4682it39k",
                   "blob_hash": "daedbd022957614e550fa0774714efedded0906f2352e9a7a80d87a9950c135b",
                   "origin": "did:example:plant-li-1",
                   "creator": "service:contractor",
-                  "submitted_at": 1794255235795136000
+                  "submitted_at": 1794257596746049000
                 },
                 "payload": {
                   "value": 12.5,
@@ -128,13 +139,13 @@
                 "address": "0003cb3g68382rt06z7kv6bo7601da4k511u24k7ln5dm7aq5l84x05y1422",
                 "origin": "conclusion:0011se68t04f7k94py52v7un3kj1283rn3e617b6th5mw8eb0a40k91cb1cw",
                 "creator": "sustainability-controller",
-                "written": 1794255235797521000,
+                "written": 1794257596748644000,
                 "record": {
                   "id": "0003cb3g68382rt06z7kv6bo7601da4k511u24k7ln5dm7aq5l84x05y1422",
                   "blob_hash": "4f3a9c5e9493b818df18983e9a2a6a7e629a7398948f74862ca6945e4a36593c",
                   "origin": "conclusion:0011se68t04f7k94py52v7un3kj1283rn3e617b6th5mw8eb0a40k91cb1cw",
                   "creator": "sustainability-controller",
-                  "submitted_at": 1794255235797521000
+                  "submitted_at": 1794257596748644000
                 },
                 "payload": {
                   "kgco2e_per_unit": 7.07,
@@ -153,18 +164,45 @@
                 "addressState": null
               },
               {
+                "key": "facts/f_0003ku8d90is6tb1gl5bq1ti22i6y46km7oy3o78h045e20m4ud5n52mj0w6.fact",
+                "kind": "fact",
+                "address": "0003ku8d90is6tb1gl5bq1ti22i6y46km7oy3o78h045e20m4ud5n52mj0w6",
+                "origin": "did:example:plant-li-1",
+                "creator": "meter:w02",
+                "written": 1794257596746678000,
+                "record": {
+                  "id": "0003ku8d90is6tb1gl5bq1ti22i6y46km7oy3o78h045e20m4ud5n52mj0w6",
+                  "blob_hash": "8c4ae1f13b64df04d05b484c543b56e9bd4194163a850bd3076ec3e82809a581",
+                  "origin": "did:example:plant-li-1",
+                  "creator": "meter:w02",
+                  "submitted_at": 1794257596746678000
+                },
+                "payload": {
+                  "value": 1240,
+                  "unit": "m3",
+                  "metric": "water_withdrawal",
+                  "period": "2026-Q1",
+                  "site": "plant-li-1",
+                  "reference": "W02-2025-0031",
+                  "quality": "measured",
+                  "source": "meter:w02"
+                },
+                "payloadText": "{\"value\":1240.0,\"unit\":\"m3\",\"metric\":\"water_withdrawal\",\"period\":\"2026-Q1\",\"site\":\"plant-li-1\",\"reference\":\"W02-2025-0031\",\"quality\":\"measured\",\"source\":\"meter:w02\"}",
+                "addressState": "valid"
+              },
+              {
                 "key": "facts/f_0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1.fact",
                 "kind": "fact",
                 "address": "0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1",
                 "origin": "conclusion:0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k",
                 "creator": "sustainability-controller",
-                "written": 1794255235796751000,
+                "written": 1794257596747999000,
                 "record": {
                   "id": "0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1",
                   "blob_hash": "32873276879a15f4f13a079697812b0a75ca0d90deea0a9041c6b6e10fa6c167",
                   "origin": "conclusion:0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k",
                   "creator": "sustainability-controller",
-                  "submitted_at": 1794255235796751000
+                  "submitted_at": 1794257596747999000
                 },
                 "payload": {
                   "tco2e": 45.53,
@@ -185,18 +223,72 @@
                 "addressState": null
               },
               {
+                "key": "facts/f_0004yp54i4ou8ef6cd0pe3nf3n31pz4d30kf0506ft03d18w0dg5h445x1qt.fact",
+                "kind": "fact",
+                "address": "0004yp54i4ou8ef6cd0pe3nf3n31pz4d30kf0506ft03d18w0dg5h445x1qt",
+                "origin": "did:example:plant-li-1",
+                "creator": "scale:s01",
+                "written": 1794257596746883000,
+                "record": {
+                  "id": "0004yp54i4ou8ef6cd0pe3nf3n31pz4d30kf0506ft03d18w0dg5h445x1qt",
+                  "blob_hash": "459ac6466c5519f9c2e78e5b48793da695f6e58ed8a2c457672d21341fa73dab",
+                  "origin": "did:example:plant-li-1",
+                  "creator": "scale:s01",
+                  "submitted_at": 1794257596746883000
+                },
+                "payload": {
+                  "value": 3.8,
+                  "unit": "t",
+                  "metric": "metal_scrap_sold",
+                  "period": "2026-Q1",
+                  "site": "plant-li-1",
+                  "reference": "SC-2026-0033",
+                  "quality": "measured",
+                  "source": "scale:s01"
+                },
+                "payloadText": "{\"value\":3.8,\"unit\":\"t\",\"metric\":\"metal_scrap_sold\",\"period\":\"2026-Q1\",\"site\":\"plant-li-1\",\"reference\":\"SC-2026-0033\",\"quality\":\"measured\",\"source\":\"scale:s01\"}",
+                "addressState": "valid"
+              },
+              {
+                "key": "facts/f_0006xm24p4da1f963860t1vo0uf74y24x6ja4kk0wz4uh6zp25g5765qt1xw.fact",
+                "kind": "fact",
+                "address": "0006xm24p4da1f963860t1vo0uf74y24x6ja4kk0wz4uh6zp25g5765qt1xw",
+                "origin": "did:example:plant-li-1",
+                "creator": "inverter:pv1",
+                "written": 1794257596746465000,
+                "record": {
+                  "id": "0006xm24p4da1f963860t1vo0uf74y24x6ja4kk0wz4uh6zp25g5765qt1xw",
+                  "blob_hash": "977124298be15f911835564c49015cdab6b4cf3415f3672cfdf9cd6b65d2eeba",
+                  "origin": "did:example:plant-li-1",
+                  "creator": "inverter:pv1",
+                  "submitted_at": 1794257596746465000
+                },
+                "payload": {
+                  "value": 63500,
+                  "unit": "kWh",
+                  "metric": "solar_generation",
+                  "period": "2026-Q1",
+                  "site": "plant-li-1",
+                  "reference": "INV-2022-0009",
+                  "quality": "measured",
+                  "source": "inverter:pv1"
+                },
+                "payloadText": "{\"value\":63500.0,\"unit\":\"kWh\",\"metric\":\"solar_generation\",\"period\":\"2026-Q1\",\"site\":\"plant-li-1\",\"reference\":\"INV-2022-0009\",\"quality\":\"measured\",\"source\":\"inverter:pv1\"}",
+                "addressState": "valid"
+              },
+              {
                 "key": "facts/f_00079h3xv77s0vb17d6371z73fw7cj2uj7ja58j5fq48b84l0py7ep2ay24w.fact",
                 "kind": "fact",
                 "address": "00079h3xv77s0vb17d6371z73fw7cj2uj7ja58j5fq48b84l0py7ep2ay24w",
                 "origin": "did:example:plant-li-1",
                 "creator": "meter:m17",
-                "written": 1794255235794602000,
+                "written": 1794257596745483000,
                 "record": {
                   "id": "00079h3xv77s0vb17d6371z73fw7cj2uj7ja58j5fq48b84l0py7ep2ay24w",
                   "blob_hash": "457c25d4efb6b9fd1d39593881022af3fe024bfee173c3dc79ab9cf9dd33ccd2",
                   "origin": "did:example:plant-li-1",
                   "creator": "meter:m17",
-                  "submitted_at": 1794255235794602000
+                  "submitted_at": 1794257596745483000
                 },
                 "payload": {
                   "value": 412000,
@@ -217,13 +309,13 @@
                 "address": "0008ak4ql2q42zn5wc0lr7nz2ks7ue83t6av2ln0mx4nd1t404j35i5nu6gd",
                 "origin": "did:example:plant-li-1",
                 "creator": "erp:production",
-                "written": 1794255235795345000,
+                "written": 1794257596746258000,
                 "record": {
                   "id": "0008ak4ql2q42zn5wc0lr7nz2ks7ue83t6av2ln0mx4nd1t404j35i5nu6gd",
                   "blob_hash": "96939e2a7e6038b0a36d77deded4eba5f1c7a002ed51dbda3176c4bd48cc5e3c",
                   "origin": "did:example:plant-li-1",
                   "creator": "erp:production",
-                  "submitted_at": 1794255235795345000
+                  "submitted_at": 1794257596746258000
                 },
                 "payload": {
                   "value": 18400,
@@ -244,13 +336,13 @@
                 "address": "0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by",
                 "origin": "conclusion:0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i",
                 "creator": "sustainability-controller",
-                "written": 1794255235796026000,
+                "written": 1794257596747391000,
                 "record": {
                   "id": "0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by",
                   "blob_hash": "e3f95dfd1213e39a5529e4b7ca95d4ce702f911f4435e1ffc38b664fbe93739a",
                   "origin": "conclusion:0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i",
                   "creator": "sustainability-controller",
-                  "submitted_at": 1794255235796026000
+                  "submitted_at": 1794257596747391000
                 },
                 "payload": {
                   "market_based_tco2e": 84.58,
@@ -269,17 +361,55 @@
                 "addressState": null
               },
               {
+                "key": "hints/h_0003tx3ll18f1hq25l5ho20e2f523s8ac2d882s39j2ik00d72q1sb41d1sz.hint",
+                "kind": "hint",
+                "address": "0003tx3ll18f1hq25l5ho20e2f523s8ac2d882s39j2ik00d72q1sb41d1sz",
+                "origin": null,
+                "creator": "regulatory-baseline",
+                "written": 1794257596749008000,
+                "record": {
+                  "id": "0003tx3ll18f1hq25l5ho20e2f523s8ac2d882s39j2ik00d72q1sb41d1sz",
+                  "content": "ESRS E3-4: disclose total water consumption in cubic metres, with withdrawal and discharge by source, for the reporting period",
+                  "creator": "regulatory-baseline",
+                  "submitted_at": 1794257596749008000,
+                  "ttl_secs": null,
+                  "time_unit": "Nanos"
+                },
+                "payload": null,
+                "payloadText": null,
+                "addressState": null
+              },
+              {
+                "key": "hints/h_00063f0d48fm7s17t67ff0761r00ju1cw4o00go2vw7fx1bw7bs7et6hb6zv.hint",
+                "kind": "hint",
+                "address": "00063f0d48fm7s17t67ff0761r00ju1cw4o00go2vw7fx1bw7bs7et6hb6zv",
+                "origin": null,
+                "creator": "regulatory-baseline",
+                "written": 1794257596749077000,
+                "record": {
+                  "id": "00063f0d48fm7s17t67ff0761r00ju1cw4o00go2vw7fx1bw7bs7et6hb6zv",
+                  "content": "ESRS E5-5: disclose the total quantity of waste generated and the quantity diverted from disposal, by waste stream",
+                  "creator": "regulatory-baseline",
+                  "submitted_at": 1794257596749077000,
+                  "ttl_secs": null,
+                  "time_unit": "Nanos"
+                },
+                "payload": null,
+                "payloadText": null,
+                "addressState": null
+              },
+              {
                 "key": "hints/h_0008lk0fv1kl7rv1z11ca4b365u0r15st2oq6c67kz5yr81e1l83cs6qt8bj.hint",
                 "kind": "hint",
                 "address": "0008lk0fv1kl7rv1z11ca4b365u0r15st2oq6c67kz5yr81e1l83cs6qt8bj",
                 "origin": null,
                 "creator": "regulatory-baseline",
-                "written": 1794255235797804000,
+                "written": 1794257596748895000,
                 "record": {
                   "id": "0008lk0fv1kl7rv1z11ca4b365u0r15st2oq6c67kz5yr81e1l83cs6qt8bj",
                   "content": "ESRS E1-6: disclose gross Scope 1 and Scope 2 GHG emissions separately, Scope 2 on both a location-based and a market-based basis, with the consolidation approach, the base year, and the conversion factors used",
                   "creator": "regulatory-baseline",
-                  "submitted_at": 1794255235797804000,
+                  "submitted_at": 1794257596748895000,
                   "ttl_secs": null,
                   "time_unit": "Nanos"
                 },
@@ -293,7 +423,7 @@
                 "address": "0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i",
                 "origin": null,
                 "creator": "sustainability-controller",
-                "written": 1794255235795535000,
+                "written": 1794257596747081000,
                 "record": {
                   "id": "0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i",
                   "from_facts": [
@@ -304,11 +434,11 @@
                   "status": {
                     "Concluded": {
                       "to_fact": "0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by",
-                      "concluded_at": 1794255235795999000,
+                      "concluded_at": 1794257596747384000,
                       "worker": "sustainability-controller"
                     }
                   },
-                  "created_at": 1794255235795535000,
+                  "created_at": 1794257596747081000,
                   "time_unit": "Nanos"
                 },
                 "payload": null,
@@ -321,7 +451,7 @@
                 "address": "0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k",
                 "origin": null,
                 "creator": "sustainability-controller",
-                "written": 1794255235796424000,
+                "written": 1794257596747639000,
                 "record": {
                   "id": "0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k",
                   "from_facts": [
@@ -333,11 +463,11 @@
                   "status": {
                     "Concluded": {
                       "to_fact": "0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1",
-                      "concluded_at": 1794255235796736000,
+                      "concluded_at": 1794257596747975000,
                       "worker": "sustainability-controller"
                     }
                   },
-                  "created_at": 1794255235796424000,
+                  "created_at": 1794257596747639000,
                   "time_unit": "Nanos"
                 },
                 "payload": null,
@@ -350,7 +480,7 @@
                 "address": "0011se68t04f7k94py52v7un3kj1283rn3e617b6th5mw8eb0a40k91cb1cw",
                 "origin": null,
                 "creator": "sustainability-controller",
-                "written": 1794255235797193000,
+                "written": 1794257596748342000,
                 "record": {
                   "id": "0011se68t04f7k94py52v7un3kj1283rn3e617b6th5mw8eb0a40k91cb1cw",
                   "from_facts": [
@@ -363,11 +493,11 @@
                   "status": {
                     "Concluded": {
                       "to_fact": "0003cb3g68382rt06z7kv6bo7601da4k511u24k7ln5dm7aq5l84x05y1422",
-                      "concluded_at": 1794255235797514000,
+                      "concluded_at": 1794257596748633000,
                       "worker": "sustainability-controller"
                     }
                   },
-                  "created_at": 1794255235797193000,
+                  "created_at": 1794257596748342000,
                   "time_unit": "Nanos"
                 },
                 "payload": null,
@@ -382,6 +512,18 @@
           "at": {
             "meter": [
               "reads",
+              "shows"
+            ],
+            "flowmeter": [
+              "reads",
+              "shows"
+            ],
+            "scale": [
+              "reads",
+              "shows"
+            ],
+            "inverter": [
+              "emits",
               "shows"
             ],
             "service": [
@@ -428,6 +570,13 @@
                 "w": 170,
                 "h": 90,
                 "label": "service yard"
+              },
+              {
+                "x": 210,
+                "y": 120,
+                "w": 170,
+                "h": 90,
+                "label": "roof array"
               }
             ],
             "units": {
@@ -451,11 +600,41 @@
                 },
                 "role": "natural gas consumption, G04-2023-0117"
               },
+              "inverter:pv1": {
+                "icon": "inverter",
+                "at": {
+                  "record": [
+                    295,
+                    165
+                  ]
+                },
+                "role": "solar generation, INV-2022-0009"
+              },
+              "meter:w02": {
+                "icon": "flowmeter",
+                "at": {
+                  "record": [
+                    40,
+                    165
+                  ]
+                },
+                "role": "water withdrawal, W02-2025-0031"
+              },
+              "scale:s01": {
+                "icon": "scale",
+                "at": {
+                  "record": [
+                    100,
+                    165
+                  ]
+                },
+                "role": "metal scrap sold, SC-2026-0033"
+              },
               "service:contractor": {
                 "icon": "service",
                 "at": {
                   "record": [
-                    95,
+                    160,
                     165
                   ]
                 },
@@ -510,7 +689,7 @@
                 },
                 {
                   "id": "requirement",
-                  "title": "the requirement is on file",
+                  "title": "the requirements are on file",
                   "when": {
                     "fact": "requirement_recorded"
                   }

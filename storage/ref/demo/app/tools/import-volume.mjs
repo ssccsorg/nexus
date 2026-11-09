@@ -443,6 +443,10 @@ const DECLARATIONS = {
       // Only a unit needs a kind: the frame asks it for the atoms a member presents. The controller and the requirement
       // are a record and a bound rather than a place, so they stand in no unit and declare no atoms.
       meter: ['reads', 'shows'],
+      flowmeter: ['reads', 'shows'],
+      scale: ['reads', 'shows'],
+      // An inverter puts energy out rather than taking a reading, and the frame draws it for the same reason.
+      inverter: ['emits', 'shows'],
       service: ['writes', 'shows'],
     },
     place: {
@@ -453,13 +457,17 @@ const DECLARATIONS = {
         { x: 10, y: 10, w: 170, h: 90, label: 'meter room' },
         { x: 210, y: 10, w: 170, h: 90, label: 'boiler house' },
         { x: 10, y: 120, w: 170, h: 90, label: 'service yard' },
+        { x: 210, y: 120, w: 170, h: 90, label: 'roof array' },
       ],
       // A unit is where a machine stands. What it is called is read from the record its creator wrote, so a pin and a
       // measurement are the same instrument twice rather than two names to keep in step.
       units: {
         'meter:m17': { icon: 'meter', at: { record: [90, 55] } },
         'meter:g04': { icon: 'meter', at: { record: [295, 55] } },
-        'service:contractor': { icon: 'service', at: { record: [95, 165] } },
+        'inverter:pv1': { icon: 'inverter', at: { record: [295, 165] } },
+        'meter:w02': { icon: 'flowmeter', at: { record: [40, 165] } },
+        'scale:s01': { icon: 'scale', at: { record: [100, 165] } },
+        'service:contractor': { icon: 'service', at: { record: [160, 165] } },
       },
     },
     // The close, read over the run. The objectives are the artefacts a reporting period is made of, and each one is a mark
@@ -485,7 +493,7 @@ const DECLARATIONS = {
           { id: 'intensity', title: 'the intensity is stated', when: { fact: 'intensity_stated' } },
           {
             id: 'requirement',
-            title: 'the requirement is on file',
+            title: 'the requirements are on file',
             when: { fact: 'requirement_recorded' },
           },
         ],

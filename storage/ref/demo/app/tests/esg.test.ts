@@ -32,12 +32,17 @@ test('the chain reads as a measurement, a transformation, a result, and a requir
     'measurement',
     'measurement',
     'measurement',
+    'measurement',
+    'measurement',
+    'measurement',
     'transformation',
     'result',
     'transformation',
     'result',
     'transformation',
     'result',
+    'requirement',
+    'requirement',
     'requirement',
   ]);
 });
@@ -62,6 +67,9 @@ test('a payload line follows the order the record was written in', () => {
     natural_gas_consumption: 'value=96400',
     refrigerant_top_up: 'value=12.5',
     production_output: 'value=18400',
+    solar_generation: 'value=63500',
+    water_withdrawal: 'value=1240',
+    metal_scrap_sold: 'value=3.8',
   };
   let measured = 0;
   for (const record of facts) {
@@ -74,7 +82,7 @@ test('a payload line follows the order the record was written in', () => {
       true,
     );
   }
-  expect(measured, 'the scenario carries the measured records').toBe(4);
+  expect(measured, 'the scenario carries the measured records').toBe(7);
 });
 
 test('the reported figures of every conclusion are on its row', () => {

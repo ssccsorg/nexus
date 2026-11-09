@@ -85,13 +85,14 @@ structure on show is the record of the work over it.
 
 ## The ESG scenario
 
-The `esg-scenario` project reads `esg-volume/` as a chain. The volume holds eleven records for one site and one
-quarter, shaped the way a quarterly inventory is. Four are measured quantities: electricity, natural gas, a refrigerant
-top-up, and the quarter's output. Three are the intents that transform them, each claimed and then concluded by the
-reporting controller: Scope 2 on both a location-based and a market-based basis, Scope 1 split into combustion and
-fugitive refrigerant, and the intensity per assembly over the two results. Three are the facts each intent filed as its
-result, so a conclusion is a record of its own rather than a column on the intent. The last is the disclosure
-requirement the figures answer.
+The `esg-scenario` project reads `esg-volume/` as a chain. The volume holds sixteen records for one site and one
+quarter, shaped the way a quarterly inventory is. Seven are measured quantities: electricity, natural gas, a refrigerant
+top-up, the quarter's output, solar generation, water withdrawal, and metal scrap sold. Three are the intents that
+transform them, each claimed and then concluded by the reporting controller: Scope 2 on both a location-based and a
+market-based basis, Scope 1 split into combustion and fugitive refrigerant, and the intensity per assembly over the two
+results. Three are the facts each intent filed as its result, so a conclusion is a record of its own rather than a
+column on the intent. Three are the disclosure requirements the figures answer: E1-6 for the emissions, E3-4 for the
+water, E5-5 for the waste.
 
 The records carry what a reported figure has to be able to answer for: a reference for the meter, work order, or
 production system; a quality flag; the consolidation approach, the base year, and whether the figure was restated; the
@@ -100,10 +101,11 @@ one row per record, so a reader follows measured value, transformation, result, 
 
 The project opens on the map, and the `esg` reading is beside it in the bar.
 
-The same project declares a place, so the map draws the site the readings come from. The two meters and the service
-point stand on it as machines; the controller and the requirement do not, because one is a record and the other is a
-bound rather than a thing on the ground. That distinction is the frame's, not this demonstration's: a member is drawn
-on a map when its kind presents a location, and the project is what says which kinds do.
+The same project declares a place, so the map draws the site the readings come from. Six machines stand on it, of five
+kinds: two meters, a flow meter, a weighbridge, an inverter, and the service point. The controller and the requirements
+do not stand on it, because a record and a bound are not things on the ground. That distinction is the frame's, not this
+demonstration's: a member is drawn on a map when its kind presents a location, and the project is what says which kinds
+do.
 
 The boundary is drawn as a dashed box over the ground, from the box the place itself declares, so it cannot be a fence
 around ground the units do not stand on. The site's name and each unit's name are read from the records: the label is

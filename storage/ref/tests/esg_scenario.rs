@@ -212,6 +212,58 @@ fn author_the_esg_scenario() {
     )))
     .expect("the output record is accepted");
 
+    // The rest of the site's instruments, which are not meters of one kind: an inverter that generates, a flow meter on
+    // the water main, and a weighbridge at the scrap bay. They are the same volume and the same read path, which is the
+    // point of the demonstration.
+
+    let _generation = block_on(storage.submit_fact(&Fact::new(
+        "did:example:plant-li-1".into(),
+        content(&Measured {
+            value: 63_500.0,
+            unit: "kWh",
+            metric: "solar_generation",
+            period: "2026-Q1",
+            site: "plant-li-1",
+            reference: "INV-2022-0009",
+            quality: "measured",
+            source: "inverter:pv1",
+        }),
+        "inverter:pv1".into(),
+    )))
+    .expect("the generation record is accepted");
+
+    let _water = block_on(storage.submit_fact(&Fact::new(
+        "did:example:plant-li-1".into(),
+        content(&Measured {
+            value: 1_240.0,
+            unit: "m3",
+            metric: "water_withdrawal",
+            period: "2026-Q1",
+            site: "plant-li-1",
+            reference: "W02-2025-0031",
+            quality: "measured",
+            source: "meter:w02",
+        }),
+        "meter:w02".into(),
+    )))
+    .expect("the water record is accepted");
+
+    let _scrap = block_on(storage.submit_fact(&Fact::new(
+        "did:example:plant-li-1".into(),
+        content(&Measured {
+            value: 3.8,
+            unit: "t",
+            metric: "metal_scrap_sold",
+            period: "2026-Q1",
+            site: "plant-li-1",
+            reference: "SC-2026-0033",
+            quality: "measured",
+            source: "scale:s01",
+        }),
+        "scale:s01".into(),
+    )))
+    .expect("the scrap record is accepted");
+
     // The transformations, claimed and concluded.
     //
     // A conclusion is a fact about the intent, so the result is filed at the intent's own conclusion address and the chain
@@ -305,7 +357,7 @@ fn author_the_esg_scenario() {
     ))
     .expect("the conclusion is recorded");
 
-    // The requirement the results answer.
+    // The requirements the results answer.
 
     block_on(storage.submit_hint(&Hint {
         id: CoordId::from_label("esrs_e1_6"),
@@ -315,7 +367,25 @@ fn author_the_esg_scenario() {
             .into(),
         creator: "regulatory-baseline".into(),
     }))
-    .expect("the requirement is recorded");
+    .expect("the emissions requirement is recorded");
+
+    block_on(storage.submit_hint(&Hint {
+        id: CoordId::from_label("esrs_e3_4"),
+        content: "ESRS E3-4: disclose total water consumption in cubic metres, with withdrawal and discharge by \
+                  source, for the reporting period"
+            .into(),
+        creator: "regulatory-baseline".into(),
+    }))
+    .expect("the water requirement is recorded");
+
+    block_on(storage.submit_hint(&Hint {
+        id: CoordId::from_label("esrs_e5_5"),
+        content: "ESRS E5-5: disclose the total quantity of waste generated and the quantity diverted from disposal, \
+                  by waste stream"
+            .into(),
+        creator: "regulatory-baseline".into(),
+    }))
+    .expect("the waste requirement is recorded");
 
     block_on(storage.flush_pending()).expect("every write reaches the medium");
     println!("wrote {}", dir.display());
