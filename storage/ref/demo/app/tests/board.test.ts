@@ -228,7 +228,7 @@ function files(under = ROOT): string[] {
     if (['node_modules', 'dist'].includes(name)) continue;
     const path = join(under, name);
     if (statSync(path).isDirectory()) found.push(...files(path));
-    else if (/\.(ts|tsx|mjs|json|css|html|txt|md|npmrc)$/.test(path) || name === '.npmrc') {
+    else if (/\.(ts|tsx|mjs|sh|json|css|html|txt|md|npmrc)$/.test(path) || name === '.npmrc') {
       found.push(path);
     }
   }

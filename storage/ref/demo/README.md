@@ -7,13 +7,23 @@ technical auditor can see the key space, a point read, and a verification withou
 
 ## Run it in one line
 
+In a shell, from the repository root:
+
+```bash
+storage/ref/demo/app/run.sh
+```
+
+That builds the tool, puts the frame beside the checkout when it is absent, regenerates the board from the committed
+volumes, and serves it on the address Vite prints. `--fresh` reinstalls from the lock file first, which is what heals a
+frame that changed under the copy npm made of it earlier.
+
+The same work without a POSIX shell:
+
 ```bash
 npm --prefix storage/ref/demo/app run demo
 ```
 
-That builds the tool, puts the frame beside the checkout when it is absent, imports the committed volumes, and serves
-the board on the address Vite prints. It is the same line on macOS, Linux, and Windows, and it needs no POSIX shell. The
-steps below are the same work one at a time, for a first run you want to watch.
+The steps below are the same work one at a time, for a first run you want to watch.
 
 ## The three directories
 
@@ -39,6 +49,10 @@ supplies the address, the record model, the panels, and the router.
 `app/tools/import-volume.mjs` is the only path between them. It runs `keys`, `box`, `read`, `verify`, `show`,
 `sidecar`, and `self-check` against a volume, keeps each exit code, and writes `app/projects.json` and one run under
 `app/scenario/` from what the tool printed.
+
+The board holds one project per committed volume, and `app/tools/run-demo.mjs` regenerates it whole on every launch,
+with `--reset` on the first volume, so a board written by an earlier run is replaced rather than appended to. An append
+cannot restore a project that run never had.
 
 The importer counts nothing. A second model of the store would be a model free to disagree with the store, so every
 number on the screen is a number the tool printed, and each `count` line in a run is the parser's arithmetic over the
