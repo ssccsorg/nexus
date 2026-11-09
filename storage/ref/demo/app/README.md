@@ -85,3 +85,8 @@ application imports it rather than choosing either. The word beside the mark is 
 chain, because what a record does in a chain is a question about these records and not about the format: an intent
 concluded a fact, so that fact is a result rather than an observation. The two sit side by side because they answer
 different questions, and the word is derived from the links the records carry rather than from a list kept here.
+
+A map is the frame's reading of two resources, and both are declared here because both are about this project rather
+than about the volume: `kinds` says which participant kinds present a location, and `place` says where the ground is and
+where each member stands on it. The records on the map are still the tool's; the importer writes the declaration beside
+them and the frame draws it.

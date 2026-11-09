@@ -269,10 +269,6 @@ export function scenarioOf(measured) {
   let facts = 0;
 
   const push = (line) => lines.push(line);
-  const position = (unit, x, y) => {
-    push(`position ${unit} ${x},${y}`);
-    facts += 1;
-  };
   const fact = (label, bytes, origin) => {
     push(`fact ${label} ${bytes} ${origin}`);
     facts += 1;
@@ -304,16 +300,9 @@ export function scenarioOf(measured) {
   push(`seed ${seedOf(m.id)}`);
   push('');
 
-  // The place: the volume, the tool's own verbs, and the reader. A storage run does not move its members.
+  // An address is a key: one fact per key, with the key as its name. Where a member stands is the place's declaration
+  // and not a record, so this run carries no position.
   push('tick 0');
-  position('sample-volume', 70, 88);
-  position('keys', 186, 52);
-  position('read', 338, 88);
-  position('verify', 452, 40);
-  count();
-  push('');
-
-  // An address is a key: one fact per key, with the key as its name.
   fact('keyspace-listed', m.keyCount, 'keys/sample');
   for (const key of m.keys) fact(key, 0, 'keys/sample');
   // Every key is accounted for here, because a volume that holds records holds their keys too, and the header states
@@ -406,6 +395,68 @@ export function scenarioOf(measured) {
   return `${lines.join('\n')}\n`;
 }
 
+/**
+ * What the board declares about a volume beside what the tool answered.
+ *
+ * A map needs two declarations the run does not carry: which participant kinds present a location, and the ground they
+ * stand on. Both are the project's, so they are written here and read by the frame; the records still come from the tool.
+ *
+ * The site is a fixture like the figures. It is a schematic plant at an illustrative position, and nothing in the volume
+ * claims to be there.
+ */
+const DECLARATIONS = {
+  'esg-scenario': {
+    kinds: {
+      // Only a unit needs a kind: the frame asks it for the atoms a member presents. The controller and the requirement
+      // are a record and a bound rather than a place, so they stand in no unit and declare no atoms.
+      meter: ['reads', 'shows'],
+      service: ['writes', 'shows'],
+    },
+    place: {
+      view: [0, 0, 400, 220],
+      geo: { bounds: [7.452, 47.165, 7.462, 47.17] },
+      store: { label: 'example site' },
+      areas: [
+        { x: 10, y: 10, w: 170, h: 90, label: 'meter room' },
+        { x: 210, y: 10, w: 170, h: 90, label: 'boiler room' },
+        { x: 10, y: 120, w: 170, h: 90, label: 'service access' },
+        { x: 210, y: 120, w: 170, h: 90, label: 'site office' },
+      ],
+      units: {
+        'meter:m17': { icon: 'meter', role: 'electricity', at: { record: [90, 55] } },
+        'meter:g04': { icon: 'meter', role: 'natural gas', at: { record: [295, 55] } },
+        'service:contractor': {
+          icon: 'service',
+          role: 'refrigerant service',
+          at: { record: [95, 165] },
+        },
+      },
+    },
+    // The read as a checklist over the run. A campaign is a reading of the record at a cursor, so an objective is open
+    // until the step that satisfies it has arrived; nothing here asserts an outcome the run does not carry.
+    campaigns: [
+      {
+        id: 'evidence-chain',
+        title: 'The volume is read',
+        start: { time: 0 },
+        end: { fact: 'records-held' },
+        objectives: [
+          { id: 'listed', title: 'the key space is listed', when: { fact: 'keyspace-listed' } },
+          { id: 'boxed', title: 'a box is answered from the keys', when: { hint: 'box-count' } },
+          { id: 'read', title: 'one record is read', when: { fact: 'sample-record' } },
+          {
+            id: 'recomputed',
+            title: 'the address is recomputed',
+            when: { hint: 'address-state' },
+          },
+          { id: 'held', title: 'the volume holds records', when: { fact: 'records-held' } },
+          { id: 'contract', title: 'the contract is run', when: { hint: 'self-check-exit' } },
+        ],
+      },
+    ],
+  },
+};
+
 /** The project that carries the run, the key space, and the records the volume holds. */
 export function projectOf(measured, reading = 'keyspace') {
   const m = measured;
@@ -426,6 +477,12 @@ export function projectOf(measured, reading = 'keyspace') {
   // The records themselves, when the volume holds any: what the `show` verb printed, one entry a record.
   if (m.records.length) {
     resources.push({ kind: 'esg', at: { volume: m.volume, records: m.records } });
+  }
+  // What a map needs and the run does not carry: the kinds that present a location, and the ground.
+  const declared = DECLARATIONS[m.id];
+  if (declared) {
+    resources.push({ kind: 'kinds', at: declared.kinds }, { kind: 'place', at: declared.place });
+    resources.push({ kind: 'campaigns', at: declared.campaigns });
   }
   resources.push(
     { kind: 'views', at: { pack: 'volume', main: reading } },

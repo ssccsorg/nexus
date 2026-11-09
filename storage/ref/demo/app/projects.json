@@ -266,6 +266,162 @@
           }
         },
         {
+          "kind": "kinds",
+          "at": {
+            "meter": [
+              "reads",
+              "shows"
+            ],
+            "service": [
+              "writes",
+              "shows"
+            ]
+          }
+        },
+        {
+          "kind": "place",
+          "at": {
+            "view": [
+              0,
+              0,
+              400,
+              220
+            ],
+            "geo": {
+              "bounds": [
+                7.452,
+                47.165,
+                7.462,
+                47.17
+              ]
+            },
+            "store": {
+              "label": "example site"
+            },
+            "areas": [
+              {
+                "x": 10,
+                "y": 10,
+                "w": 170,
+                "h": 90,
+                "label": "meter room"
+              },
+              {
+                "x": 210,
+                "y": 10,
+                "w": 170,
+                "h": 90,
+                "label": "boiler room"
+              },
+              {
+                "x": 10,
+                "y": 120,
+                "w": 170,
+                "h": 90,
+                "label": "service access"
+              },
+              {
+                "x": 210,
+                "y": 120,
+                "w": 170,
+                "h": 90,
+                "label": "site office"
+              }
+            ],
+            "units": {
+              "meter:m17": {
+                "icon": "meter",
+                "role": "electricity",
+                "at": {
+                  "record": [
+                    90,
+                    55
+                  ]
+                }
+              },
+              "meter:g04": {
+                "icon": "meter",
+                "role": "natural gas",
+                "at": {
+                  "record": [
+                    295,
+                    55
+                  ]
+                }
+              },
+              "service:contractor": {
+                "icon": "service",
+                "role": "refrigerant service",
+                "at": {
+                  "record": [
+                    95,
+                    165
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "campaigns",
+          "at": [
+            {
+              "id": "evidence-chain",
+              "title": "The volume is read",
+              "start": {
+                "time": 0
+              },
+              "end": {
+                "fact": "records-held"
+              },
+              "objectives": [
+                {
+                  "id": "listed",
+                  "title": "the key space is listed",
+                  "when": {
+                    "fact": "keyspace-listed"
+                  }
+                },
+                {
+                  "id": "boxed",
+                  "title": "a box is answered from the keys",
+                  "when": {
+                    "hint": "box-count"
+                  }
+                },
+                {
+                  "id": "read",
+                  "title": "one record is read",
+                  "when": {
+                    "fact": "sample-record"
+                  }
+                },
+                {
+                  "id": "recomputed",
+                  "title": "the address is recomputed",
+                  "when": {
+                    "hint": "address-state"
+                  }
+                },
+                {
+                  "id": "held",
+                  "title": "the volume holds records",
+                  "when": {
+                    "fact": "records-held"
+                  }
+                },
+                {
+                  "id": "contract",
+                  "title": "the contract is run",
+                  "when": {
+                    "hint": "self-check-exit"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
           "kind": "views",
           "at": {
             "pack": "volume",

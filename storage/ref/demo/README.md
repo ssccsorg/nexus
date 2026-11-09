@@ -72,6 +72,8 @@ Each claim of the reference crate has a place on the screen.
 - A record can be read whole. The `esg` reading lists one entry per record the `show` verb printed, and a run's tick
   holds the keys, the record count, and the kinds the volume carries. Each fact whose address is its own is put to the
   `verify` verb, and the reading states how many held.
+- A place is a declaration and a record is a reading. The `esg` project declares its kinds and its ground, so the map
+  reading draws the machines the volume holds facts from, at the positions the declaration gives them.
 
 Every address is drawn in its base-36 rendering, three characters an axis, so the board and the runs carry no native
 character and a printed address can be handed back to the tool unchanged.
@@ -90,10 +92,21 @@ than a column on the intent; and one is the disclosure requirement the figures a
 the order the medium recorded them, one row per record, so a reader follows measured value, transformation, result, and
 requirement down one screen.
 
+The same project declares a place, so the map draws the site the readings come from. The two meters and the service
+point stand on it as machines; the controller and the requirement do not, because one is a record and the other is a
+bound rather than a thing on the ground. That distinction is the frame's, not this demonstration's: a member is drawn
+on a map when its kind presents a location, and the project is what says which kinds do.
+
+It also declares a campaign, which the frame draws under the board. A campaign is a reading of the run at a cursor, so
+an objective is open until the step that satisfies it has arrived and scrubbing the timeline back leaves the later
+steps open. The objectives are the read's own steps and they name labels the run writes, so the line cannot say the work
+went differently from what the record holds.
+
 Two limits are part of the demonstration rather than a footnote to it.
 
 - The figures are synthetic. One site, one quarter, and one requirement were written to show the shape of a chain, and
-  the emission factors in the intents are illustrative. Nothing here is a statement about any organisation's emissions.
+  the emission factors in the intents are illustrative. The site is schematic and its ground is an illustrative box of
+  coordinates, so the map is a sketch of where a plant could stand and not a claim about where one does.
 - The claim is bounded. The demonstration shows that a fact, the transformation applied to it, and the requirement it
   answers are one addressable chain whose records can be read back and recomputed. Whether an organisation's reporting
   satisfies a regulation is a question about that organisation's governance and process, and this directory answers a

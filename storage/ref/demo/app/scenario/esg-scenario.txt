@@ -16,12 +16,6 @@
 seed 35396
 
 tick 0
-position sample-volume 70,88
-position keys 186,52
-position read 338,88
-position verify 452,40
-count 4
-
 fact keyspace-listed 22 keys/sample
 fact blob/3cd9bf9945f027c203a3dbaa3359a4d8a4b2200d3f9d8fe3314fd9810cd81cfe.bin 0 keys/sample
 fact blob/3cd9bf9945f027c203a3dbaa3359a4d8a4b2200d3f9d8fe3314fd9810cd81cfe.bin.meta 0 keys/sample
@@ -46,13 +40,13 @@ fact hints/h_0008lk0fv1kl7rv1z11ca4b365u0r15st2oq6c67kz5yr81e1l83cs6qt8bj.hint 0
 fact intents/i_0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i.intent 0 keys/sample
 fact intents/i_0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k.intent 0 keys/sample
 hint key-count facts=5,blobs=14,hints=1,intents=2,exit=0
-count 27
+count 23
 
 tick 1
 fact 0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm 0 box/sample
 hint box-axes 0=000-000
 hint box-count 3
-count 28
+count 24
 
 intent read-sample keyspace-listed read-one-address
 claim read-sample read/sample
@@ -61,7 +55,7 @@ fact sample-record 168 read/sample
 hint read-key facts/f_0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm.fact
 hint read-exit 0
 conclude read-sample present
-count 30
+count 26
 
 intent verify-sample sample-record recompute-the-address
 claim verify-sample verify/sample
@@ -72,7 +66,7 @@ hint record-written 1794252120715529000ns
 hint payload-bytes 143
 hint address-state valid
 conclude verify-sample verified
-count 31
+count 27
 
 intent sidecar-sample sample-record measure-the-application-file
 claim sidecar-sample read/sample
@@ -80,14 +74,14 @@ tick 4
 hint app-bytes 9
 hint app-state unchanged
 conclude sidecar-sample unchanged
-count 32
+count 28
 
 intent self-check-sample sidecar-sample run-the-contract
 claim self-check-sample read/sample
 tick 5
 hint self-check-exit 0
 conclude self-check-sample pass
-count 33
+count 29
 
 tick 6
 fact records-held 8 show/volume
@@ -108,5 +102,5 @@ hint record-key-6 intents/i_0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6
 fact record-7 0 sustainability-controller
 hint record-key-7 intents/i_0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k.intent
 hint record-kinds fact=5,hint=1,intent=2
-count 42
+count 38
 
