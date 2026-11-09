@@ -12,6 +12,28 @@ export default defineConfig({
   optimizeDeps: { exclude: ['maplibre-gl'] },
   server: { port: 5292, strictPort: true },
   preview: { port: 5293, strictPort: true },
-  build: { outDir: 'dist', emptyOutDir: true },
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+    // The warning guards against an application that has grown, and this one is six kilobytes: the rest is two engines
+    // and the frame drawn with them. The limit sits above the largest of those so a build that starts to carry the
+    // application's own weight still says so.
+    chunkSizeWarningLimit: 1200,
+    // Keeping each engine in its own file lets a browser cache what a deploy does not change and fetch the rest beside
+    // it instead of behind it.
+    rollupOptions: {
+      output: {
+        manualChunks: (id: string) => {
+          if (id.includes('node_modules/maplibre-gl')) return 'maplibre';
+          if (id.includes('node_modules/three') || id.includes('node_modules/@react-three')) {
+            return 'three';
+          }
+          if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) return 'react';
+          if (id.includes('node_modules/@ssccsorg/')) return 'skene';
+          return undefined;
+        },
+      },
+    },
+  },
   test: { include: ['tests/**/*.test.ts'], environment: 'node' },
 });
