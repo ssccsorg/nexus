@@ -31,6 +31,9 @@ test('the chain reads as a measurement, a transformation, a result, and a requir
     'measurement',
     'measurement',
     'measurement',
+    'measurement',
+    'transformation',
+    'result',
     'transformation',
     'result',
     'transformation',
@@ -51,23 +54,39 @@ test('only the facts whose address is their own are recomputed, and every one ho
   }
 });
 
-test('a payload line leads with the quantities the record measured', () => {
-  expect(facts.length, 'the scenario carries measured facts').toBeGreaterThan(0);
+test('a payload line follows the order the record was written in', () => {
+  // The author of the record decides what it leads with. A screen that re-sorted the fields would be a second opinion
+  // about which field matters, and the record would have to be read past to find its figure.
+  const leading: Record<string, string> = {
+    electricity_consumption: 'value=412000',
+    natural_gas_consumption: 'value=96400',
+    refrigerant_top_up: 'value=12.5',
+    production_output: 'value=18400',
+  };
+  let measured = 0;
   for (const record of facts) {
-    const numeric = Object.values(record.payload ?? {}).filter(
-      (value) => typeof value === 'number',
+    // A conclusion is a fact too, and it carries no metric: the measured records are the ones a meter reported.
+    const metric = (record.payload as { metric?: string } | null)?.metric;
+    if (!metric) continue;
+    measured += 1;
+    expect(leading[metric], `${metric} is a metric the scenario writes`).toBeDefined();
+    expect(payloadLine(record).startsWith(leading[metric]), `${record.key} leads with its figure`).toBe(
+      true,
     );
-    if (numeric.length === 0) continue;
-    const first = payloadLine(record).split(' · ')[0] ?? '';
-    expect(first, `${record.key} leads with a quantity`).toMatch(/^[a-z_]+=-?[0-9]/);
   }
+  expect(measured, 'the scenario carries the measured records').toBe(4);
 });
 
-test('the reported figure of each conclusion is on its row', () => {
-  // The two conclusions are the facts the controller filed: the scenario states 84.58 and 45.53 tCO2e.
+test('the reported figures of every conclusion are on its row', () => {
+  // Scope 2 on both bases, Scope 1 split by source, and the intensity over the two.
   const lines = facts.map((record) => payloadLine(record)).join('\n');
-  expect(lines, 'Scope 2 states its result').toContain('tco2e=84.58');
+  expect(lines, 'Scope 2 states the market-based result').toContain('market_based_tco2e=84.58');
+  expect(lines, 'Scope 2 states the location-based result').toContain(
+    'location_based_tco2e=52.74',
+  );
   expect(lines, 'Scope 1 states its result').toContain('tco2e=45.53');
+  expect(lines, 'the intensity states its metric').toContain('kgco2e_per_unit=7.07');
+  expect(lines, 'the intensity states its numerator').toContain('total_tco2e=130.11');
 });
 
 test('a payload line drops no scalar field', () => {

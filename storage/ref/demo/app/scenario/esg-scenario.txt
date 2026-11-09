@@ -4,8 +4,8 @@
 #
 # tool:      nexus-storage-ref
 # volume:    storage/ref/demo/esg-volume
-# keys:      22
-# records:   3
+# keys:      31
+# records:   6
 # exit:      0/0/0
 #
 # Every number below came from the tool. Each count is the arithmetic of this file over
@@ -16,57 +16,66 @@
 seed 35396
 
 tick 0
-fact keyspace-listed 22 keys/sample
-fact blob/3cd9bf9945f027c203a3dbaa3359a4d8a4b2200d3f9d8fe3314fd9810cd81cfe.bin 0 keys/sample
-fact blob/3cd9bf9945f027c203a3dbaa3359a4d8a4b2200d3f9d8fe3314fd9810cd81cfe.bin.meta 0 keys/sample
-fact blob/3dbbc7eb52517d1e2ec126c6b4d71d37c8843db25c32ea1b6d05cbcf2a2bd6e4.bin 0 keys/sample
-fact blob/3dbbc7eb52517d1e2ec126c6b4d71d37c8843db25c32ea1b6d05cbcf2a2bd6e4.bin.meta 0 keys/sample
-fact blob/8fcca4a2f76eb22a2f28a3b777119dffaf3b8ae3ae49b4c161bc06efc852fb10.bin 0 keys/sample
-fact blob/8fcca4a2f76eb22a2f28a3b777119dffaf3b8ae3ae49b4c161bc06efc852fb10.bin.meta 0 keys/sample
-fact blob/cb0eadf004b6a2e83760a25432624fcc853d38758915eafc1c03f2f0e0ab8468.bin 0 keys/sample
-fact blob/cb0eadf004b6a2e83760a25432624fcc853d38758915eafc1c03f2f0e0ab8468.bin.meta 0 keys/sample
-fact blob/d2599be8b5819d7ac953186cbd6e9a15319858e87016d3d2562c53de213e877a.bin 0 keys/sample
-fact blob/d2599be8b5819d7ac953186cbd6e9a15319858e87016d3d2562c53de213e877a.bin.meta 0 keys/sample
-fact blob/e5089ec325f6fbe9d75254ca8cf929f2bf8e4218ca801242e7ad59f899a90717.bin 0 keys/sample
-fact blob/e5089ec325f6fbe9d75254ca8cf929f2bf8e4218ca801242e7ad59f899a90717.bin.meta 0 keys/sample
-fact blob/ed813eb1cc0a66f827dbd243a9e1b9c72c712fbb453fc12c1f4e6617ff970a9d.bin 0 keys/sample
-fact blob/ed813eb1cc0a66f827dbd243a9e1b9c72c712fbb453fc12c1f4e6617ff970a9d.bin.meta 0 keys/sample
-fact facts/f_0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm.fact 0 keys/sample
+fact keyspace-listed 31 keys/sample
+fact blob/1ed70375de4c790fcebf50033e1b2cd215c0467166a867f7401f37cf89b4aa9d.bin 0 keys/sample
+fact blob/1ed70375de4c790fcebf50033e1b2cd215c0467166a867f7401f37cf89b4aa9d.bin.meta 0 keys/sample
+fact blob/32873276879a15f4f13a079697812b0a75ca0d90deea0a9041c6b6e10fa6c167.bin 0 keys/sample
+fact blob/32873276879a15f4f13a079697812b0a75ca0d90deea0a9041c6b6e10fa6c167.bin.meta 0 keys/sample
+fact blob/3aa2d6239717290bcea039142cc14237fa6c8581b7da8bc51f1796f0bbb2ff06.bin 0 keys/sample
+fact blob/3aa2d6239717290bcea039142cc14237fa6c8581b7da8bc51f1796f0bbb2ff06.bin.meta 0 keys/sample
+fact blob/457c25d4efb6b9fd1d39593881022af3fe024bfee173c3dc79ab9cf9dd33ccd2.bin 0 keys/sample
+fact blob/457c25d4efb6b9fd1d39593881022af3fe024bfee173c3dc79ab9cf9dd33ccd2.bin.meta 0 keys/sample
+fact blob/46a9fdc0fe7820c4ea713d9a3d6db608bd21a1574e712341661b4b36e9895b38.bin 0 keys/sample
+fact blob/46a9fdc0fe7820c4ea713d9a3d6db608bd21a1574e712341661b4b36e9895b38.bin.meta 0 keys/sample
+fact blob/4f3a9c5e9493b818df18983e9a2a6a7e629a7398948f74862ca6945e4a36593c.bin 0 keys/sample
+fact blob/4f3a9c5e9493b818df18983e9a2a6a7e629a7398948f74862ca6945e4a36593c.bin.meta 0 keys/sample
+fact blob/906c3b2f0cb596b67389fef0ab0e49573c9f02890bc016b74982c1a616e66c0f.bin 0 keys/sample
+fact blob/906c3b2f0cb596b67389fef0ab0e49573c9f02890bc016b74982c1a616e66c0f.bin.meta 0 keys/sample
+fact blob/96939e2a7e6038b0a36d77deded4eba5f1c7a002ed51dbda3176c4bd48cc5e3c.bin 0 keys/sample
+fact blob/96939e2a7e6038b0a36d77deded4eba5f1c7a002ed51dbda3176c4bd48cc5e3c.bin.meta 0 keys/sample
+fact blob/daedbd022957614e550fa0774714efedded0906f2352e9a7a80d87a9950c135b.bin 0 keys/sample
+fact blob/daedbd022957614e550fa0774714efedded0906f2352e9a7a80d87a9950c135b.bin.meta 0 keys/sample
+fact blob/e3f95dfd1213e39a5529e4b7ca95d4ce702f911f4435e1ffc38b664fbe93739a.bin 0 keys/sample
+fact blob/e3f95dfd1213e39a5529e4b7ca95d4ce702f911f4435e1ffc38b664fbe93739a.bin.meta 0 keys/sample
+fact facts/f_0000121d45742zs8ey2dk0540hj5c41si5475hv7s94t50md5fe1z72ag5d0.fact 0 keys/sample
+fact facts/f_00006t2x816s06m17q3hl0ur7t84vg4p56te1tr43x7m14qx5ju4682it39k.fact 0 keys/sample
+fact facts/f_0003cb3g68382rt06z7kv6bo7601da4k511u24k7ln5dm7aq5l84x05y1422.fact 0 keys/sample
 fact facts/f_0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1.fact 0 keys/sample
-fact facts/f_0007cs53o32i2cq3fv5ie2jq7l60r34a92bb5c22h91lu80g22350022i7ho.fact 0 keys/sample
-fact facts/f_0012o00xp0381lz5nr06y0pe6k84ce4ls59m85p7334g273e08e3jm2pd7hs.fact 0 keys/sample
+fact facts/f_00079h3xv77s0vb17d6371z73fw7cj2uj7ja58j5fq48b84l0py7ep2ay24w.fact 0 keys/sample
+fact facts/f_0008ak4ql2q42zn5wc0lr7nz2ks7ue83t6av2ln0mx4nd1t404j35i5nu6gd.fact 0 keys/sample
 fact facts/f_0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by.fact 0 keys/sample
 fact hints/h_0008lk0fv1kl7rv1z11ca4b365u0r15st2oq6c67kz5yr81e1l83cs6qt8bj.hint 0 keys/sample
 fact intents/i_0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i.intent 0 keys/sample
 fact intents/i_0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k.intent 0 keys/sample
-hint key-count facts=5,blobs=14,hints=1,intents=2,exit=0
-count 23
+fact intents/i_0011se68t04f7k94py52v7un3kj1283rn3e617b6th5mw8eb0a40k91cb1cw.intent 0 keys/sample
+hint key-count facts=7,blobs=20,hints=1,intents=3,exit=0
+count 32
 
 tick 1
-fact 0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm 0 box/sample
+fact 0000121d45742zs8ey2dk0540hj5c41si5475hv7s94t50md5fe1z72ag5d0 0 box/sample
 hint box-axes 0=000-000
-hint box-count 3
-count 24
+hint box-count 6
+count 33
 
 intent read-sample keyspace-listed read-one-address
 claim read-sample read/sample
 tick 2
 fact sample-record 168 read/sample
-hint read-key facts/f_0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm.fact
+hint read-key facts/f_0000121d45742zs8ey2dk0540hj5c41si5475hv7s94t50md5fe1z72ag5d0.fact
 hint read-exit 0
 conclude read-sample present
-count 26
+count 35
 
 intent verify-sample sample-record recompute-the-address
 claim verify-sample verify/sample
 tick 3
 hint record-origin did:example:plant-li-1
-hint record-creator meter:m17
-hint record-written 1794252120715529000ns
-hint payload-bytes 143
+hint record-creator meter:g04
+hint record-written 1794255235794927000ns
+hint payload-bytes 174
 hint address-state valid
 conclude verify-sample verified
-count 27
+count 36
 
 intent sidecar-sample sample-record measure-the-application-file
 claim sidecar-sample read/sample
@@ -74,33 +83,39 @@ tick 4
 hint app-bytes 9
 hint app-state unchanged
 conclude sidecar-sample unchanged
-count 28
+count 37
 
 intent self-check-sample sidecar-sample run-the-contract
 claim self-check-sample read/sample
 tick 5
 hint self-check-exit 0
 conclude self-check-sample pass
-count 29
+count 38
 
 tick 6
-fact records-held 8 show/volume
-fact record-0 143 meter:m17
-hint record-key-0 facts/f_0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm.fact
-fact record-1 245 sustainability-controller
-hint record-key-1 facts/f_0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1.fact
-fact record-2 142 meter:g04
-hint record-key-2 facts/f_0007cs53o32i2cq3fv5ie2jq7l60r34a92bb5c22h91lu80g22350022i7ho.fact
-fact record-3 157 service:contractor
-hint record-key-3 facts/f_0012o00xp0381lz5nr06y0pe6k84ce4ls59m85p7334g273e08e3jm2pd7hs.fact
-fact record-4 171 sustainability-controller
-hint record-key-4 facts/f_0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by.fact
-fact record-5 0 regulatory-baseline
-hint record-key-5 hints/h_0008lk0fv1kl7rv1z11ca4b365u0r15st2oq6c67kz5yr81e1l83cs6qt8bj.hint
-fact record-6 0 sustainability-controller
-hint record-key-6 intents/i_0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i.intent
-fact record-7 0 sustainability-controller
-hint record-key-7 intents/i_0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k.intent
-hint record-kinds fact=5,hint=1,intent=2
-count 38
+fact records-held 11 show/volume
+fact record-0 174 meter:g04
+hint record-key-0 facts/f_0000121d45742zs8ey2dk0540hj5c41si5475hv7s94t50md5fe1z72ag5d0.fact
+fact record-1 236 service:contractor
+hint record-key-1 facts/f_00006t2x816s06m17q3hl0ur7t84vg4p56te1tr43x7m14qx5ju4682it39k.fact
+fact record-2 357 sustainability-controller
+hint record-key-2 facts/f_0003cb3g68382rt06z7kv6bo7601da4k511u24k7ln5dm7aq5l84x05y1422.fact
+fact record-3 360 sustainability-controller
+hint record-key-3 facts/f_0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1.fact
+fact record-4 175 meter:m17
+hint record-key-4 facts/f_00079h3xv77s0vb17d6371z73fw7cj2uj7ja58j5fq48b84l0py7ep2ay24w.fact
+fact record-5 177 erp:production
+hint record-key-5 facts/f_0008ak4ql2q42zn5wc0lr7nz2ks7ue83t6av2ln0mx4nd1t404j35i5nu6gd.fact
+fact record-6 370 sustainability-controller
+hint record-key-6 facts/f_0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by.fact
+fact record-7 0 regulatory-baseline
+hint record-key-7 hints/h_0008lk0fv1kl7rv1z11ca4b365u0r15st2oq6c67kz5yr81e1l83cs6qt8bj.hint
+fact record-8 0 sustainability-controller
+hint record-key-8 intents/i_0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i.intent
+fact record-9 0 sustainability-controller
+hint record-key-9 intents/i_0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k.intent
+fact record-10 0 sustainability-controller
+hint record-key-10 intents/i_0011se68t04f7k94py52v7un3kj1283rn3e617b6th5mw8eb0a40k91cb1cw.intent
+hint record-kinds fact=7,hint=1,intent=3
+count 50
 

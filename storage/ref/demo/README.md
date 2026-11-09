@@ -85,12 +85,20 @@ structure on show is the record of the work over it.
 
 ## The ESG scenario
 
-The `esg-scenario` project reads `esg-volume/` as a chain. The volume holds eight records for one site and one
-quarter. Three are measured quantities; two are the intents that transform them, claimed and then concluded by the
-reporting controller; two are the facts each intent filed as its result, so a conclusion is a record of its own rather
-than a column on the intent; and one is the disclosure requirement the figures answer. The `esg` reading draws them in
-the order the medium recorded them, one row per record, so a reader follows measured value, transformation, result, and
-requirement down one screen.
+The `esg-scenario` project reads `esg-volume/` as a chain. The volume holds eleven records for one site and one
+quarter, shaped the way a quarterly inventory is. Four are measured quantities: electricity, natural gas, a refrigerant
+top-up, and the quarter's output. Three are the intents that transform them, each claimed and then concluded by the
+reporting controller: Scope 2 on both a location-based and a market-based basis, Scope 1 split into combustion and
+fugitive refrigerant, and the intensity per assembly over the two results. Three are the facts each intent filed as its
+result, so a conclusion is a record of its own rather than a column on the intent. The last is the disclosure
+requirement the figures answer.
+
+The records carry what a reported figure has to be able to answer for: a reference for the meter, work order, or
+production system; a quality flag; the consolidation approach, the base year, and whether the figure was restated; the
+factor and its source; and, for Scope 2, both bases. The `esg` reading draws them in the order the medium recorded them,
+one row per record, so a reader follows measured value, transformation, result, and requirement down one screen.
+
+The project opens on the map, and the `esg` reading is beside it in the bar.
 
 The same project declares a place, so the map draws the site the readings come from. The two meters and the service
 point stand on it as machines; the controller and the requirement do not, because one is a record and the other is a

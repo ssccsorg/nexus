@@ -414,13 +414,13 @@ const DECLARATIONS = {
     },
     place: {
       view: [0, 0, 400, 220],
-      geo: { bounds: [7.452, 47.165, 7.462, 47.17] },
+      // Roughly 350 m by 200 m at this latitude: one plant, drawn as a sketch of where its meters stand.
+      geo: { bounds: [7.454, 47.1663, 7.4586, 47.1681] },
       store: { label: 'example site' },
       areas: [
         { x: 10, y: 10, w: 170, h: 90, label: 'meter room' },
-        { x: 210, y: 10, w: 170, h: 90, label: 'boiler room' },
-        { x: 10, y: 120, w: 170, h: 90, label: 'service access' },
-        { x: 210, y: 120, w: 170, h: 90, label: 'site office' },
+        { x: 210, y: 10, w: 170, h: 90, label: 'boiler house' },
+        { x: 10, y: 120, w: 170, h: 90, label: 'service yard' },
       ],
       units: {
         'meter:m17': { icon: 'meter', role: 'electricity', at: { record: [90, 55] } },

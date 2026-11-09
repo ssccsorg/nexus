@@ -121,18 +121,16 @@ export interface EsgChain {
 /**
  * The fields a fact's payload carries, as one line: what the record says, not what it counts.
  *
- * The quantities lead. A payload arrives with its keys in the medium's order, which puts `tco2e` after `basis`, so a
- * line cut to the first few fields dropped the one figure the record exists to state. Numbers are what a record
- * measured, and the text beside them is what names it.
+ * The order is the record's own. A payload arrives with the fields in the order its author wrote them, so the first one is
+ * the one the author put first, and a screen that re-sorted them would decide for the record what it leads with. Every
+ * scalar field is on the line and the cell clips it; the tooltip carries the whole of it.
  */
 export function payloadLine(record: EsgRecord): string {
   if (!record.payload) return '';
-  const scalars = Object.entries(record.payload).filter(([, value]) =>
-    ['string', 'number', 'boolean'].includes(typeof value),
-  );
-  const measured = scalars.filter(([, value]) => typeof value !== 'string');
-  const named = scalars.filter(([, value]) => typeof value === 'string');
-  return [...measured, ...named].map(([key, value]) => `${key}=${value}`).join(' · ');
+  return Object.entries(record.payload)
+    .filter(([, value]) => ['string', 'number', 'boolean'].includes(typeof value))
+    .map(([key, value]) => `${key}=${value}`)
+    .join(' · ');
 }
 
 /** The fact an intent concluded, which is the link the record itself carries. */

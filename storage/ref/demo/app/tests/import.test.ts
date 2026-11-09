@@ -98,7 +98,7 @@ describe.skipIf(!runs(bin))('the importer over the committed volumes', () => {
         volume: 'storage/ref/demo/esg-volume',
         id: 'esg-scenario',
         title: 'ESG compliance - Alpine Precision AG, 2026-Q1',
-        reading: 'esg',
+        reading: 'map',
         reset: true,
       },
       {

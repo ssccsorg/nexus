@@ -18,37 +18,46 @@
           "at": {
             "volume": "storage/ref/demo/esg-volume",
             "keys": [
-              "blob/3cd9bf9945f027c203a3dbaa3359a4d8a4b2200d3f9d8fe3314fd9810cd81cfe.bin",
-              "blob/3cd9bf9945f027c203a3dbaa3359a4d8a4b2200d3f9d8fe3314fd9810cd81cfe.bin.meta",
-              "blob/3dbbc7eb52517d1e2ec126c6b4d71d37c8843db25c32ea1b6d05cbcf2a2bd6e4.bin",
-              "blob/3dbbc7eb52517d1e2ec126c6b4d71d37c8843db25c32ea1b6d05cbcf2a2bd6e4.bin.meta",
-              "blob/8fcca4a2f76eb22a2f28a3b777119dffaf3b8ae3ae49b4c161bc06efc852fb10.bin",
-              "blob/8fcca4a2f76eb22a2f28a3b777119dffaf3b8ae3ae49b4c161bc06efc852fb10.bin.meta",
-              "blob/cb0eadf004b6a2e83760a25432624fcc853d38758915eafc1c03f2f0e0ab8468.bin",
-              "blob/cb0eadf004b6a2e83760a25432624fcc853d38758915eafc1c03f2f0e0ab8468.bin.meta",
-              "blob/d2599be8b5819d7ac953186cbd6e9a15319858e87016d3d2562c53de213e877a.bin",
-              "blob/d2599be8b5819d7ac953186cbd6e9a15319858e87016d3d2562c53de213e877a.bin.meta",
-              "blob/e5089ec325f6fbe9d75254ca8cf929f2bf8e4218ca801242e7ad59f899a90717.bin",
-              "blob/e5089ec325f6fbe9d75254ca8cf929f2bf8e4218ca801242e7ad59f899a90717.bin.meta",
-              "blob/ed813eb1cc0a66f827dbd243a9e1b9c72c712fbb453fc12c1f4e6617ff970a9d.bin",
-              "blob/ed813eb1cc0a66f827dbd243a9e1b9c72c712fbb453fc12c1f4e6617ff970a9d.bin.meta",
-              "facts/f_0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm.fact",
+              "blob/1ed70375de4c790fcebf50033e1b2cd215c0467166a867f7401f37cf89b4aa9d.bin",
+              "blob/1ed70375de4c790fcebf50033e1b2cd215c0467166a867f7401f37cf89b4aa9d.bin.meta",
+              "blob/32873276879a15f4f13a079697812b0a75ca0d90deea0a9041c6b6e10fa6c167.bin",
+              "blob/32873276879a15f4f13a079697812b0a75ca0d90deea0a9041c6b6e10fa6c167.bin.meta",
+              "blob/3aa2d6239717290bcea039142cc14237fa6c8581b7da8bc51f1796f0bbb2ff06.bin",
+              "blob/3aa2d6239717290bcea039142cc14237fa6c8581b7da8bc51f1796f0bbb2ff06.bin.meta",
+              "blob/457c25d4efb6b9fd1d39593881022af3fe024bfee173c3dc79ab9cf9dd33ccd2.bin",
+              "blob/457c25d4efb6b9fd1d39593881022af3fe024bfee173c3dc79ab9cf9dd33ccd2.bin.meta",
+              "blob/46a9fdc0fe7820c4ea713d9a3d6db608bd21a1574e712341661b4b36e9895b38.bin",
+              "blob/46a9fdc0fe7820c4ea713d9a3d6db608bd21a1574e712341661b4b36e9895b38.bin.meta",
+              "blob/4f3a9c5e9493b818df18983e9a2a6a7e629a7398948f74862ca6945e4a36593c.bin",
+              "blob/4f3a9c5e9493b818df18983e9a2a6a7e629a7398948f74862ca6945e4a36593c.bin.meta",
+              "blob/906c3b2f0cb596b67389fef0ab0e49573c9f02890bc016b74982c1a616e66c0f.bin",
+              "blob/906c3b2f0cb596b67389fef0ab0e49573c9f02890bc016b74982c1a616e66c0f.bin.meta",
+              "blob/96939e2a7e6038b0a36d77deded4eba5f1c7a002ed51dbda3176c4bd48cc5e3c.bin",
+              "blob/96939e2a7e6038b0a36d77deded4eba5f1c7a002ed51dbda3176c4bd48cc5e3c.bin.meta",
+              "blob/daedbd022957614e550fa0774714efedded0906f2352e9a7a80d87a9950c135b.bin",
+              "blob/daedbd022957614e550fa0774714efedded0906f2352e9a7a80d87a9950c135b.bin.meta",
+              "blob/e3f95dfd1213e39a5529e4b7ca95d4ce702f911f4435e1ffc38b664fbe93739a.bin",
+              "blob/e3f95dfd1213e39a5529e4b7ca95d4ce702f911f4435e1ffc38b664fbe93739a.bin.meta",
+              "facts/f_0000121d45742zs8ey2dk0540hj5c41si5475hv7s94t50md5fe1z72ag5d0.fact",
+              "facts/f_00006t2x816s06m17q3hl0ur7t84vg4p56te1tr43x7m14qx5ju4682it39k.fact",
+              "facts/f_0003cb3g68382rt06z7kv6bo7601da4k511u24k7ln5dm7aq5l84x05y1422.fact",
               "facts/f_0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1.fact",
-              "facts/f_0007cs53o32i2cq3fv5ie2jq7l60r34a92bb5c22h91lu80g22350022i7ho.fact",
-              "facts/f_0012o00xp0381lz5nr06y0pe6k84ce4ls59m85p7334g273e08e3jm2pd7hs.fact",
+              "facts/f_00079h3xv77s0vb17d6371z73fw7cj2uj7ja58j5fq48b84l0py7ep2ay24w.fact",
+              "facts/f_0008ak4ql2q42zn5wc0lr7nz2ks7ue83t6av2ln0mx4nd1t404j35i5nu6gd.fact",
               "facts/f_0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by.fact",
               "hints/h_0008lk0fv1kl7rv1z11ca4b365u0r15st2oq6c67kz5yr81e1l83cs6qt8bj.hint",
               "intents/i_0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i.intent",
-              "intents/i_0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k.intent"
+              "intents/i_0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k.intent",
+              "intents/i_0011se68t04f7k94py52v7un3kj1283rn3e617b6th5mw8eb0a40k91cb1cw.intent"
             ],
-            "listed": 22,
+            "listed": 31,
             "box": {
               "axis": 0,
               "from": "000",
               "until": "000",
-              "records": 3
+              "records": 6
             },
-            "records": 3
+            "records": 6
           }
         },
         {
@@ -57,29 +66,91 @@
             "volume": "storage/ref/demo/esg-volume",
             "records": [
               {
-                "key": "facts/f_0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm.fact",
+                "key": "facts/f_0000121d45742zs8ey2dk0540hj5c41si5475hv7s94t50md5fe1z72ag5d0.fact",
                 "kind": "fact",
-                "address": "0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm",
+                "address": "0000121d45742zs8ey2dk0540hj5c41si5475hv7s94t50md5fe1z72ag5d0",
                 "origin": "did:example:plant-li-1",
-                "creator": "meter:m17",
-                "written": 1794252120715529000,
+                "creator": "meter:g04",
+                "written": 1794255235794927000,
                 "record": {
-                  "id": "0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm",
-                  "blob_hash": "ed813eb1cc0a66f827dbd243a9e1b9c72c712fbb453fc12c1f4e6617ff970a9d",
+                  "id": "0000121d45742zs8ey2dk0540hj5c41si5475hv7s94t50md5fe1z72ag5d0",
+                  "blob_hash": "906c3b2f0cb596b67389fef0ab0e49573c9f02890bc016b74982c1a616e66c0f",
                   "origin": "did:example:plant-li-1",
-                  "creator": "meter:m17",
-                  "submitted_at": 1794252120715529000
+                  "creator": "meter:g04",
+                  "submitted_at": 1794255235794927000
                 },
                 "payload": {
-                  "asset_id": "plant-li-1",
-                  "event": "electricity",
-                  "observed_at": "2026-03-31T23:59:00Z",
+                  "value": 96400,
+                  "unit": "kWh",
+                  "metric": "natural_gas_consumption",
                   "period": "2026-Q1",
-                  "source": "meter:m17",
-                  "value_kwh": 412000
+                  "site": "plant-li-1",
+                  "reference": "G04-2023-0117",
+                  "quality": "measured",
+                  "source": "meter:g04"
                 },
-                "payloadText": "{\"asset_id\":\"plant-li-1\",\"event\":\"electricity\",\"observed_at\":\"2026-03-31T23:59:00Z\",\"period\":\"2026-Q1\",\"source\":\"meter:m17\",\"value_kwh\":412000}",
+                "payloadText": "{\"value\":96400.0,\"unit\":\"kWh\",\"metric\":\"natural_gas_consumption\",\"period\":\"2026-Q1\",\"site\":\"plant-li-1\",\"reference\":\"G04-2023-0117\",\"quality\":\"measured\",\"source\":\"meter:g04\"}",
                 "addressState": "valid"
+              },
+              {
+                "key": "facts/f_00006t2x816s06m17q3hl0ur7t84vg4p56te1tr43x7m14qx5ju4682it39k.fact",
+                "kind": "fact",
+                "address": "00006t2x816s06m17q3hl0ur7t84vg4p56te1tr43x7m14qx5ju4682it39k",
+                "origin": "did:example:plant-li-1",
+                "creator": "service:contractor",
+                "written": 1794255235795136000,
+                "record": {
+                  "id": "00006t2x816s06m17q3hl0ur7t84vg4p56te1tr43x7m14qx5ju4682it39k",
+                  "blob_hash": "daedbd022957614e550fa0774714efedded0906f2352e9a7a80d87a9950c135b",
+                  "origin": "did:example:plant-li-1",
+                  "creator": "service:contractor",
+                  "submitted_at": 1794255235795136000
+                },
+                "payload": {
+                  "value": 12.5,
+                  "unit": "kg",
+                  "metric": "refrigerant_top_up",
+                  "substance": "R-410A",
+                  "gwp": 2088,
+                  "gwp_source": "IPCC AR5 GWP100",
+                  "period": "2026-Q1",
+                  "site": "plant-li-1",
+                  "reference": "WO-2026-0142",
+                  "quality": "measured",
+                  "source": "service:contractor"
+                },
+                "payloadText": "{\"value\":12.5,\"unit\":\"kg\",\"metric\":\"refrigerant_top_up\",\"substance\":\"R-410A\",\"gwp\":2088,\"gwp_source\":\"IPCC AR5 GWP100\",\"period\":\"2026-Q1\",\"site\":\"plant-li-1\",\"reference\":\"WO-2026-0142\",\"quality\":\"measured\",\"source\":\"service:contractor\"}",
+                "addressState": "valid"
+              },
+              {
+                "key": "facts/f_0003cb3g68382rt06z7kv6bo7601da4k511u24k7ln5dm7aq5l84x05y1422.fact",
+                "kind": "fact",
+                "address": "0003cb3g68382rt06z7kv6bo7601da4k511u24k7ln5dm7aq5l84x05y1422",
+                "origin": "conclusion:0011se68t04f7k94py52v7un3kj1283rn3e617b6th5mw8eb0a40k91cb1cw",
+                "creator": "sustainability-controller",
+                "written": 1794255235797521000,
+                "record": {
+                  "id": "0003cb3g68382rt06z7kv6bo7601da4k511u24k7ln5dm7aq5l84x05y1422",
+                  "blob_hash": "4f3a9c5e9493b818df18983e9a2a6a7e629a7398948f74862ca6945e4a36593c",
+                  "origin": "conclusion:0011se68t04f7k94py52v7un3kj1283rn3e617b6th5mw8eb0a40k91cb1cw",
+                  "creator": "sustainability-controller",
+                  "submitted_at": 1794255235797521000
+                },
+                "payload": {
+                  "kgco2e_per_unit": 7.07,
+                  "total_tco2e": 130.11,
+                  "denominator_units": 18400,
+                  "basis": "market-based",
+                  "period": "2026-Q1",
+                  "consolidation": "operational control",
+                  "source_facts": [
+                    "0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1",
+                    "0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by",
+                    "0008ak4ql2q42zn5wc0lr7nz2ks7ue83t6av2ln0mx4nd1t404j35i5nu6gd"
+                  ]
+                },
+                "payloadText": "{\"kgco2e_per_unit\":7.07,\"total_tco2e\":130.11,\"denominator_units\":18400,\"basis\":\"market-based\",\"period\":\"2026-Q1\",\"consolidation\":\"operational control\",\"source_facts\":[\"0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1\",\"0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by\",\"0008ak4ql2q42zn5wc0lr7nz2ks7ue83t6av2ln0mx4nd1t404j35i5nu6gd\"]}",
+                "addressState": null
               },
               {
                 "key": "facts/f_0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1.fact",
@@ -87,78 +158,84 @@
                 "address": "0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1",
                 "origin": "conclusion:0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k",
                 "creator": "sustainability-controller",
-                "written": 1794252120717135000,
+                "written": 1794255235796751000,
                 "record": {
                   "id": "0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1",
-                  "blob_hash": "8fcca4a2f76eb22a2f28a3b777119dffaf3b8ae3ae49b4c161bc06efc852fb10",
+                  "blob_hash": "32873276879a15f4f13a079697812b0a75ca0d90deea0a9041c6b6e10fa6c167",
                   "origin": "conclusion:0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k",
                   "creator": "sustainability-controller",
-                  "submitted_at": 1794252120717135000
+                  "submitted_at": 1794255235796751000
                 },
                 "payload": {
-                  "components": {
-                    "gas_tco2e": 19.43,
-                    "refrigerant_tco2e": 26.1
-                  },
-                  "period": "2026-Q1",
+                  "tco2e": 45.53,
+                  "stationary_combustion_tco2e": 19.43,
+                  "fugitive_refrigerant_tco2e": 26.1,
                   "scope": 1,
+                  "period": "2026-Q1",
+                  "consolidation": "operational control",
+                  "gwp_source": "IPCC AR5 GWP100",
+                  "base_year": 2024,
+                  "restated": false,
                   "source_facts": [
-                    "0007cs53o32i2cq3fv5ie2jq7l60r34a92bb5c22h91lu80g22350022i7ho",
-                    "0012o00xp0381lz5nr06y0pe6k84ce4ls59m85p7334g273e08e3jm2pd7hs"
-                  ],
-                  "tco2e": 45.53
+                    "0000121d45742zs8ey2dk0540hj5c41si5475hv7s94t50md5fe1z72ag5d0",
+                    "00006t2x816s06m17q3hl0ur7t84vg4p56te1tr43x7m14qx5ju4682it39k"
+                  ]
                 },
-                "payloadText": "{\"components\":{\"gas_tco2e\":19.43,\"refrigerant_tco2e\":26.1},\"period\":\"2026-Q1\",\"scope\":1,\"source_facts\":[\"0007cs53o32i2cq3fv5ie2jq7l60r34a92bb5c22h91lu80g22350022i7ho\",\"0012o00xp0381lz5nr06y0pe6k84ce4ls59m85p7334g273e08e3jm2pd7hs\"],\"tco2e\":45.53}",
+                "payloadText": "{\"tco2e\":45.53,\"stationary_combustion_tco2e\":19.43,\"fugitive_refrigerant_tco2e\":26.1,\"scope\":1,\"period\":\"2026-Q1\",\"consolidation\":\"operational control\",\"gwp_source\":\"IPCC AR5 GWP100\",\"base_year\":2024,\"restated\":false,\"source_facts\":[\"0000121d45742zs8ey2dk0540hj5c41si5475hv7s94t50md5fe1z72ag5d0\",\"00006t2x816s06m17q3hl0ur7t84vg4p56te1tr43x7m14qx5ju4682it39k\"]}",
                 "addressState": null
               },
               {
-                "key": "facts/f_0007cs53o32i2cq3fv5ie2jq7l60r34a92bb5c22h91lu80g22350022i7ho.fact",
+                "key": "facts/f_00079h3xv77s0vb17d6371z73fw7cj2uj7ja58j5fq48b84l0py7ep2ay24w.fact",
                 "kind": "fact",
-                "address": "0007cs53o32i2cq3fv5ie2jq7l60r34a92bb5c22h91lu80g22350022i7ho",
+                "address": "00079h3xv77s0vb17d6371z73fw7cj2uj7ja58j5fq48b84l0py7ep2ay24w",
                 "origin": "did:example:plant-li-1",
-                "creator": "meter:g04",
-                "written": 1794252120715869000,
+                "creator": "meter:m17",
+                "written": 1794255235794602000,
                 "record": {
-                  "id": "0007cs53o32i2cq3fv5ie2jq7l60r34a92bb5c22h91lu80g22350022i7ho",
-                  "blob_hash": "e5089ec325f6fbe9d75254ca8cf929f2bf8e4218ca801242e7ad59f899a90717",
+                  "id": "00079h3xv77s0vb17d6371z73fw7cj2uj7ja58j5fq48b84l0py7ep2ay24w",
+                  "blob_hash": "457c25d4efb6b9fd1d39593881022af3fe024bfee173c3dc79ab9cf9dd33ccd2",
                   "origin": "did:example:plant-li-1",
-                  "creator": "meter:g04",
-                  "submitted_at": 1794252120715869000
+                  "creator": "meter:m17",
+                  "submitted_at": 1794255235794602000
                 },
                 "payload": {
-                  "asset_id": "plant-li-1",
-                  "event": "natural_gas",
-                  "observed_at": "2026-03-31T23:59:00Z",
+                  "value": 412000,
+                  "unit": "kWh",
+                  "metric": "electricity_consumption",
                   "period": "2026-Q1",
-                  "source": "meter:g04",
-                  "value_kwh": 96400
+                  "site": "plant-li-1",
+                  "reference": "M17-2024-0431",
+                  "quality": "measured",
+                  "source": "meter:m17"
                 },
-                "payloadText": "{\"asset_id\":\"plant-li-1\",\"event\":\"natural_gas\",\"observed_at\":\"2026-03-31T23:59:00Z\",\"period\":\"2026-Q1\",\"source\":\"meter:g04\",\"value_kwh\":96400}",
+                "payloadText": "{\"value\":412000.0,\"unit\":\"kWh\",\"metric\":\"electricity_consumption\",\"period\":\"2026-Q1\",\"site\":\"plant-li-1\",\"reference\":\"M17-2024-0431\",\"quality\":\"measured\",\"source\":\"meter:m17\"}",
                 "addressState": "valid"
               },
               {
-                "key": "facts/f_0012o00xp0381lz5nr06y0pe6k84ce4ls59m85p7334g273e08e3jm2pd7hs.fact",
+                "key": "facts/f_0008ak4ql2q42zn5wc0lr7nz2ks7ue83t6av2ln0mx4nd1t404j35i5nu6gd.fact",
                 "kind": "fact",
-                "address": "0012o00xp0381lz5nr06y0pe6k84ce4ls59m85p7334g273e08e3jm2pd7hs",
+                "address": "0008ak4ql2q42zn5wc0lr7nz2ks7ue83t6av2ln0mx4nd1t404j35i5nu6gd",
                 "origin": "did:example:plant-li-1",
-                "creator": "service:contractor",
-                "written": 1794252120716092000,
+                "creator": "erp:production",
+                "written": 1794255235795345000,
                 "record": {
-                  "id": "0012o00xp0381lz5nr06y0pe6k84ce4ls59m85p7334g273e08e3jm2pd7hs",
-                  "blob_hash": "d2599be8b5819d7ac953186cbd6e9a15319858e87016d3d2562c53de213e877a",
+                  "id": "0008ak4ql2q42zn5wc0lr7nz2ks7ue83t6av2ln0mx4nd1t404j35i5nu6gd",
+                  "blob_hash": "96939e2a7e6038b0a36d77deded4eba5f1c7a002ed51dbda3176c4bd48cc5e3c",
                   "origin": "did:example:plant-li-1",
-                  "creator": "service:contractor",
-                  "submitted_at": 1794252120716092000
+                  "creator": "erp:production",
+                  "submitted_at": 1794255235795345000
                 },
                 "payload": {
-                  "asset_id": "plant-li-1",
-                  "event": "refrigerant_topup",
-                  "observed_at": "2026-02-14T09:20:00Z",
-                  "source": "service:s-2026-014",
-                  "substance": "R-410A",
-                  "value_kg": 12.5
+                  "value": 18400,
+                  "unit": "assemblies",
+                  "metric": "production_output",
+                  "period": "2026-Q1",
+                  "site": "plant-li-1",
+                  "reference": "ERP-2026Q1",
+                  "quality": "measured",
+                  "source": "erp:production"
                 },
-                "payloadText": "{\"asset_id\":\"plant-li-1\",\"event\":\"refrigerant_topup\",\"observed_at\":\"2026-02-14T09:20:00Z\",\"source\":\"service:s-2026-014\",\"substance\":\"R-410A\",\"value_kg\":12.5}",
+                "payloadText": "{\"value\":18400.0,\"unit\":\"assemblies\",\"metric\":\"production_output\",\"period\":\"2026-Q1\",\"site\":\"plant-li-1\",\"reference\":\"ERP-2026Q1\",\"quality\":\"measured\",\"source\":\"erp:production\"}",
                 "addressState": "valid"
               },
               {
@@ -167,23 +244,28 @@
                 "address": "0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by",
                 "origin": "conclusion:0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i",
                 "creator": "sustainability-controller",
-                "written": 1794252120716607000,
+                "written": 1794255235796026000,
                 "record": {
                   "id": "0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by",
-                  "blob_hash": "3dbbc7eb52517d1e2ec126c6b4d71d37c8843db25c32ea1b6d05cbcf2a2bd6e4",
+                  "blob_hash": "e3f95dfd1213e39a5529e4b7ca95d4ce702f911f4435e1ffc38b664fbe93739a",
                   "origin": "conclusion:0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i",
                   "creator": "sustainability-controller",
-                  "submitted_at": 1794252120716607000
+                  "submitted_at": 1794255235796026000
                 },
                 "payload": {
-                  "basis": "market-based",
-                  "factor_kg_per_kwh": 0.2053,
-                  "period": "2026-Q1",
+                  "market_based_tco2e": 84.58,
+                  "location_based_tco2e": 52.74,
                   "scope": 2,
-                  "source_fact": "0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm",
-                  "tco2e": 84.58
+                  "period": "2026-Q1",
+                  "consolidation": "operational control",
+                  "base_year": 2024,
+                  "restated": false,
+                  "factor_market_kg_per_kwh": 0.2053,
+                  "factor_location_kg_per_kwh": 0.128,
+                  "factor_source": "illustrative 2026 residual mix and EEA grid mix",
+                  "source_fact": "00079h3xv77s0vb17d6371z73fw7cj2uj7ja58j5fq48b84l0py7ep2ay24w"
                 },
-                "payloadText": "{\"basis\":\"market-based\",\"factor_kg_per_kwh\":0.2053,\"period\":\"2026-Q1\",\"scope\":2,\"source_fact\":\"0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm\",\"tco2e\":84.58}",
+                "payloadText": "{\"market_based_tco2e\":84.58,\"location_based_tco2e\":52.74,\"scope\":2,\"period\":\"2026-Q1\",\"consolidation\":\"operational control\",\"base_year\":2024,\"restated\":false,\"factor_market_kg_per_kwh\":0.2053,\"factor_location_kg_per_kwh\":0.128,\"factor_source\":\"illustrative 2026 residual mix and EEA grid mix\",\"source_fact\":\"00079h3xv77s0vb17d6371z73fw7cj2uj7ja58j5fq48b84l0py7ep2ay24w\"}",
                 "addressState": null
               },
               {
@@ -192,12 +274,12 @@
                 "address": "0008lk0fv1kl7rv1z11ca4b365u0r15st2oq6c67kz5yr81e1l83cs6qt8bj",
                 "origin": null,
                 "creator": "regulatory-baseline",
-                "written": 1794252120717669000,
+                "written": 1794255235797804000,
                 "record": {
                   "id": "0008lk0fv1kl7rv1z11ca4b365u0r15st2oq6c67kz5yr81e1l83cs6qt8bj",
-                  "content": "ESRS E1-6: disclose gross Scope 1 and Scope 2 emissions for the reporting period, with the conversion factors used and the base year stated",
+                  "content": "ESRS E1-6: disclose gross Scope 1 and Scope 2 GHG emissions separately, Scope 2 on both a location-based and a market-based basis, with the consolidation approach, the base year, and the conversion factors used",
                   "creator": "regulatory-baseline",
-                  "submitted_at": 1794252120717669000,
+                  "submitted_at": 1794255235797804000,
                   "ttl_secs": null,
                   "time_unit": "Nanos"
                 },
@@ -211,22 +293,22 @@
                 "address": "0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i",
                 "origin": null,
                 "creator": "sustainability-controller",
-                "written": 1794252120716293000,
+                "written": 1794255235795535000,
                 "record": {
                   "id": "0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i",
                   "from_facts": [
-                    "0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm"
+                    "00079h3xv77s0vb17d6371z73fw7cj2uj7ja58j5fq48b84l0py7ep2ay24w"
                   ],
-                  "description_hash": "3cd9bf9945f027c203a3dbaa3359a4d8a4b2200d3f9d8fe3314fd9810cd81cfe",
+                  "description_hash": "3aa2d6239717290bcea039142cc14237fa6c8581b7da8bc51f1796f0bbb2ff06",
                   "creator": "sustainability-controller",
                   "status": {
                     "Concluded": {
                       "to_fact": "0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by",
-                      "concluded_at": 1794252120716600000,
+                      "concluded_at": 1794255235795999000,
                       "worker": "sustainability-controller"
                     }
                   },
-                  "created_at": 1794252120716293000,
+                  "created_at": 1794255235795535000,
                   "time_unit": "Nanos"
                 },
                 "payload": null,
@@ -239,23 +321,53 @@
                 "address": "0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k",
                 "origin": null,
                 "creator": "sustainability-controller",
-                "written": 1794252120716851000,
+                "written": 1794255235796424000,
                 "record": {
                   "id": "0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k",
                   "from_facts": [
-                    "0007cs53o32i2cq3fv5ie2jq7l60r34a92bb5c22h91lu80g22350022i7ho",
-                    "0012o00xp0381lz5nr06y0pe6k84ce4ls59m85p7334g273e08e3jm2pd7hs"
+                    "0000121d45742zs8ey2dk0540hj5c41si5475hv7s94t50md5fe1z72ag5d0",
+                    "00006t2x816s06m17q3hl0ur7t84vg4p56te1tr43x7m14qx5ju4682it39k"
                   ],
-                  "description_hash": "cb0eadf004b6a2e83760a25432624fcc853d38758915eafc1c03f2f0e0ab8468",
+                  "description_hash": "1ed70375de4c790fcebf50033e1b2cd215c0467166a867f7401f37cf89b4aa9d",
                   "creator": "sustainability-controller",
                   "status": {
                     "Concluded": {
                       "to_fact": "0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1",
-                      "concluded_at": 1794252120717121000,
+                      "concluded_at": 1794255235796736000,
                       "worker": "sustainability-controller"
                     }
                   },
-                  "created_at": 1794252120716851000,
+                  "created_at": 1794255235796424000,
+                  "time_unit": "Nanos"
+                },
+                "payload": null,
+                "payloadText": null,
+                "addressState": null
+              },
+              {
+                "key": "intents/i_0011se68t04f7k94py52v7un3kj1283rn3e617b6th5mw8eb0a40k91cb1cw.intent",
+                "kind": "intent",
+                "address": "0011se68t04f7k94py52v7un3kj1283rn3e617b6th5mw8eb0a40k91cb1cw",
+                "origin": null,
+                "creator": "sustainability-controller",
+                "written": 1794255235797193000,
+                "record": {
+                  "id": "0011se68t04f7k94py52v7un3kj1283rn3e617b6th5mw8eb0a40k91cb1cw",
+                  "from_facts": [
+                    "0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1",
+                    "0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by",
+                    "0008ak4ql2q42zn5wc0lr7nz2ks7ue83t6av2ln0mx4nd1t404j35i5nu6gd"
+                  ],
+                  "description_hash": "46a9fdc0fe7820c4ea713d9a3d6db608bd21a1574e712341661b4b36e9895b38",
+                  "creator": "sustainability-controller",
+                  "status": {
+                    "Concluded": {
+                      "to_fact": "0003cb3g68382rt06z7kv6bo7601da4k511u24k7ln5dm7aq5l84x05y1422",
+                      "concluded_at": 1794255235797514000,
+                      "worker": "sustainability-controller"
+                    }
+                  },
+                  "created_at": 1794255235797193000,
                   "time_unit": "Nanos"
                 },
                 "payload": null,
@@ -289,10 +401,10 @@
             ],
             "geo": {
               "bounds": [
-                7.452,
-                47.165,
-                7.462,
-                47.17
+                7.454,
+                47.1663,
+                7.4586,
+                47.1681
               ]
             },
             "store": {
@@ -311,21 +423,14 @@
                 "y": 10,
                 "w": 170,
                 "h": 90,
-                "label": "boiler room"
+                "label": "boiler house"
               },
               {
                 "x": 10,
                 "y": 120,
                 "w": 170,
                 "h": 90,
-                "label": "service access"
-              },
-              {
-                "x": 210,
-                "y": 120,
-                "w": 170,
-                "h": 90,
-                "label": "site office"
+                "label": "service yard"
               }
             ],
             "units": {
@@ -425,7 +530,7 @@
           "kind": "views",
           "at": {
             "pack": "volume",
-            "main": "esg"
+            "main": "map"
           }
         },
         {

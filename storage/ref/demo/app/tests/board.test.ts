@@ -16,9 +16,16 @@ import {
   type BoardDocument,
   type ProjectDocument,
 } from '@ssccsorg/skene-frame';
+import { standing } from '@ssccsorg/skene-frame/lib/packs';
+import { declaredReadings } from '@ssccsorg/skene-frame/lib/readings';
 
-// The pack registers the `keyspace` reader where it is imported, the same way the application's `main.tsx` does. A test
-// that resolved the board without it would be reading a bundle the app cannot read either.
+// The pack registers the `keyspace` reader where it is imported, the same way the application's `main.tsx` does. The view
+// packages are imported here too: a reading is registered where its module is, so a test that resolved the board without
+// them would be reading a register the application does not have.
+import '@ssccsorg/skene-view-graph';
+import '@ssccsorg/skene-view-map';
+import '@ssccsorg/skene-view-media';
+import '@ssccsorg/skene-view-shell';
 import '../src/pack';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
@@ -82,9 +89,11 @@ test('a project opens on the reading it names, and brings the pack that holds it
     expect(views?.pack, `${id} brings the volume pack`).toBe('volume');
     const main = String(views?.main ?? '');
     expect(main.length, `${id} names the reading it opens on`).toBeGreaterThan(0);
-    // A reading is a resource kind the pack registered, so the bundle it resolves to has to carry one under that name.
-    const bundle = bundleOf(document, board.projects) as unknown as Record<string, unknown>;
-    expect(bundle[main], `${id} opens on ${main}, which the pack holds`).toBeDefined();
+    // The reading has to stand for this project: a name no register holds is a board that opens on nothing.
+    const stands = standing(declaredReadings(), bundleOf(document, board.projects)).map(
+      (reading) => reading.key,
+    );
+    expect(stands, `${id} opens on ${main}, which stands for it`).toContain(main);
   }
 });
 
