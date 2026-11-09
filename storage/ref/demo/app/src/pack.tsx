@@ -116,16 +116,21 @@ export interface EsgChain {
   records: EsgRecord[];
 }
 
-/** The fields a fact's payload carries, as one line: what the record says, not what it counts. */
-function payloadLine(record: EsgRecord): string {
+/**
+ * The fields a fact's payload carries, as one line: what the record says, not what it counts.
+ *
+ * The quantities lead. A payload arrives with its keys in the medium's order, which puts `tco2e` after `basis`, so a
+ * line cut to the first few fields dropped the one figure the record exists to state. Numbers are what a record
+ * measured, and the text beside them is what names it.
+ */
+export function payloadLine(record: EsgRecord): string {
   if (!record.payload) return '';
-  const parts: string[] = [];
-  for (const [key, value] of Object.entries(record.payload)) {
-    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-      parts.push(`${key}=${value}`);
-    }
-  }
-  return parts.slice(0, 4).join(' · ');
+  const scalars = Object.entries(record.payload).filter(([, value]) =>
+    ['string', 'number', 'boolean'].includes(typeof value),
+  );
+  const measured = scalars.filter(([, value]) => typeof value !== 'string');
+  const named = scalars.filter(([, value]) => typeof value === 'string');
+  return [...measured, ...named].map(([key, value]) => `${key}=${value}`).join(' · ');
 }
 
 /** The addresses an intent reads and the one it concluded, which is the link the record itself carries. */
@@ -189,7 +194,10 @@ function EsgView({ project }: Board) {
         {records.map((record) => (
           <div key={record.key} className={cn(ROW, 'gap-2')}>
             <span className={cn(LABEL, 'w-14 shrink-0')}>{record.kind}</span>
-            <span className="min-w-0 flex-1 truncate font-mono" title={record.key}>
+            <span
+              className="min-w-0 flex-1 truncate font-mono"
+              title={`${lineOf(record)}\n${record.key}`}
+            >
               {lineOf(record)}
             </span>
             <span className="max-w-40 shrink-0 truncate text-muted-foreground" title={record.creator ?? ''}>
