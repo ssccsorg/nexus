@@ -115,10 +115,11 @@ device: the records hold no coordinate, so no pin is evidence that an instrument
 here is signed by hardware. What the tool does assert about a record is narrower and checkable: its address is
 recomputed from the origin, the creator, and the payload, and the record reading states how many held.
 
-It also declares a campaign, which the frame draws under the board. A campaign is a reading of the run at a cursor, so
-an objective is open until the step that satisfies it has arrived and scrubbing the timeline back leaves the later
-steps open. The objectives are the read's own steps and they name labels the run writes, so the line cannot say the work
-went differently from what the record holds.
+It also declares a campaign, which the frame draws under the board: the reporting close, read over the run. Its
+objectives are the artefacts a close is made of (measurements, Scope 1, Scope 2 on both bases, the intensity, the
+requirement), and each one is a mark the importer writes from the records' own fields. A volume that states Scope 2 on
+one basis writes no mark for both, so the close shows the gap instead of a green line. Scrubbing the timeline back
+leaves the later artefacts open, because the campaign is a reading of the record at a cursor.
 
 Two limits are part of the demonstration rather than a footnote to it.
 

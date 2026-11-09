@@ -471,8 +471,8 @@
           "kind": "campaigns",
           "at": [
             {
-              "id": "evidence-chain",
-              "title": "The volume is read",
+              "id": "reporting-close",
+              "title": "2026-Q1 reporting close",
               "start": {
                 "time": 0
               },
@@ -481,45 +481,38 @@
               },
               "objectives": [
                 {
-                  "id": "listed",
-                  "title": "the key space is listed",
+                  "id": "measurements",
+                  "title": "measurements for the period are in",
                   "when": {
-                    "fact": "keyspace-listed"
+                    "fact": "measurements_recorded"
                   }
                 },
                 {
-                  "id": "boxed",
-                  "title": "a box is answered from the keys",
+                  "id": "scope1",
+                  "title": "Scope 1 is stated",
                   "when": {
-                    "hint": "box-count"
+                    "fact": "scope1_stated"
                   }
                 },
                 {
-                  "id": "read",
-                  "title": "one record is read",
+                  "id": "scope2",
+                  "title": "Scope 2 is stated on both bases",
                   "when": {
-                    "fact": "sample-record"
+                    "fact": "scope2_stated"
                   }
                 },
                 {
-                  "id": "recomputed",
-                  "title": "the address is recomputed",
+                  "id": "intensity",
+                  "title": "the intensity is stated",
                   "when": {
-                    "hint": "address-state"
+                    "fact": "intensity_stated"
                   }
                 },
                 {
-                  "id": "held",
-                  "title": "the volume holds records",
+                  "id": "requirement",
+                  "title": "the requirement is on file",
                   "when": {
-                    "fact": "records-held"
-                  }
-                },
-                {
-                  "id": "contract",
-                  "title": "the contract is run",
-                  "when": {
-                    "hint": "self-check-exit"
+                    "fact": "requirement_recorded"
                   }
                 }
               ]

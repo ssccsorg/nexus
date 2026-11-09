@@ -388,11 +388,44 @@ export function scenarioOf(measured) {
         .map(([kind, at]) => `${kind}=${at}`)
         .join(','),
     );
+    // What the pack holds, stated as the artefacts a close is made of. Each mark is read from the records' own fields and
+    // written only when the record is there, so an objective built on one of them can be missed when the volume changes.
+    for (const mark of marksOf(m.records)) fact(mark.label, mark.count, 'show/volume');
     count();
     push('');
   }
 
   return `${lines.join('\n')}\n`;
+}
+
+/**
+ * The reporting artefacts a volume's records amount to.
+ *
+ * It reads the records' own fields, so a mark is written only when the record that stands for it is in the volume: a
+ * Scope 2 that states one basis writes no mark, and the close that asks for both shows the gap.
+ */
+export function marksOf(records) {
+  const payloads = records.map((record) => record.payload).filter(Boolean);
+  const marks = [
+    {
+      label: 'measurements_recorded',
+      count: payloads.filter((payload) => payload.metric && payload.unit).length,
+    },
+    { label: 'scope1_stated', count: payloads.filter((payload) => payload.scope === 1).length },
+    {
+      label: 'scope2_stated',
+      count: payloads.filter(
+        (payload) =>
+          payload.market_based_tco2e !== undefined && payload.location_based_tco2e !== undefined,
+      ).length,
+    },
+    {
+      label: 'intensity_stated',
+      count: payloads.filter((payload) => payload.kgco2e_per_unit !== undefined).length,
+    },
+    { label: 'requirement_recorded', count: records.filter((r) => r.kind === 'hint').length },
+  ];
+  return marks.filter((mark) => mark.count > 0);
 }
 
 /**
@@ -429,25 +462,32 @@ const DECLARATIONS = {
         'service:contractor': { icon: 'service', at: { record: [95, 165] } },
       },
     },
-    // The read as a checklist over the run. A campaign is a reading of the record at a cursor, so an objective is open
-    // until the step that satisfies it has arrived; nothing here asserts an outcome the run does not carry.
+    // The close, read over the run. The objectives are the artefacts a reporting period is made of, and each one is a mark
+    // the importer wrote from the records: an objective is open until the record behind it is in the volume.
     campaigns: [
       {
-        id: 'evidence-chain',
-        title: 'The volume is read',
+        id: 'reporting-close',
+        title: '2026-Q1 reporting close',
         start: { time: 0 },
         end: { fact: 'records-held' },
         objectives: [
-          { id: 'listed', title: 'the key space is listed', when: { fact: 'keyspace-listed' } },
-          { id: 'boxed', title: 'a box is answered from the keys', when: { hint: 'box-count' } },
-          { id: 'read', title: 'one record is read', when: { fact: 'sample-record' } },
           {
-            id: 'recomputed',
-            title: 'the address is recomputed',
-            when: { hint: 'address-state' },
+            id: 'measurements',
+            title: 'measurements for the period are in',
+            when: { fact: 'measurements_recorded' },
           },
-          { id: 'held', title: 'the volume holds records', when: { fact: 'records-held' } },
-          { id: 'contract', title: 'the contract is run', when: { hint: 'self-check-exit' } },
+          { id: 'scope1', title: 'Scope 1 is stated', when: { fact: 'scope1_stated' } },
+          {
+            id: 'scope2',
+            title: 'Scope 2 is stated on both bases',
+            when: { fact: 'scope2_stated' },
+          },
+          { id: 'intensity', title: 'the intensity is stated', when: { fact: 'intensity_stated' } },
+          {
+            id: 'requirement',
+            title: 'the requirement is on file',
+            when: { fact: 'requirement_recorded' },
+          },
         ],
       },
     ],
