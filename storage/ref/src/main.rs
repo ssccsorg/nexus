@@ -18,7 +18,7 @@ use nex_client::NexClient;
 use nex_fih::{Content, CoordId, Fact};
 use nex_io::FileIo;
 use nex_io::fs_io::FsIo;
-use nexus_storage_ref::FactRecord;
+use nexus_storage_ref::{FactRecord, HintRecord, IntentRecord};
 use std::cell::RefCell;
 use tagma_core::DIGITS_PER_AXIS;
 use tokio::runtime::Runtime;
@@ -49,6 +49,8 @@ enum Command {
     Read(ReadArgs),
     /// Recompute a record's address from what it holds.
     Verify(VerifyArgs),
+    /// Print the record at a key, with the fields it holds and the payload a fact carries.
+    Show(ShowArgs),
     /// Place a sample volume beside an existing application file.
     Sidecar(SidecarArgs),
     /// Run the read path in a temporary volume.
@@ -90,6 +92,15 @@ struct VerifyArgs {
     /// The record address, as 60 base-36 digits.
     #[arg(long)]
     address: String,
+}
+
+#[derive(clap::Args)]
+struct ShowArgs {
+    #[arg(long)]
+    volume: Option<PathBuf>,
+    /// A record key, as the listing named it.
+    #[arg(long)]
+    key: String,
 }
 
 #[derive(clap::Args)]
@@ -194,6 +205,8 @@ fn main() -> ExitCode {
             open_source(args.volume.as_deref(), cli.hub.as_deref())
                 .and_then(|source| verify(&source, &coordinate))
         }),
+        Command::Show(args) => open_source(args.volume.as_deref(), cli.hub.as_deref())
+            .and_then(|source| show(&source, &args.key)),
         Command::Sidecar(args) => sidecar(&args),
         Command::SelfCheck => self_check(),
     };
@@ -474,6 +487,88 @@ fn verify(source: &Source, coordinate: &CoordId<20>) -> Result<(), Failure> {
             "the address does not follow from the record".to_string(),
         ))
     }
+}
+
+/// Which kind of record a key names, from the prefix the format gives it.
+enum Kind {
+    Fact,
+    Intent,
+    Hint,
+}
+
+fn kind_of(key: &str) -> Option<Kind> {
+    if key.starts_with("facts/") {
+        Some(Kind::Fact)
+    } else if key.starts_with("intents/") {
+        Some(Kind::Intent)
+    } else if key.starts_with("hints/") {
+        Some(Kind::Hint)
+    } else {
+        None
+    }
+}
+
+/// The payload as one line: its text when it is text, its bytes otherwise.
+fn as_text(bytes: &[u8]) -> String {
+    match std::str::from_utf8(bytes) {
+        Ok(text) if !text.contains('\n') => text.to_string(),
+        _ => bytes.iter().map(|byte| format!("{byte:02x}")).collect(),
+    }
+}
+
+/// Print the record at a key: what it holds, and for a fact the payload the medium carries.
+fn show(source: &Source, key: &str) -> Result<(), Failure> {
+    let kind = kind_of(key).ok_or_else(|| {
+        Failure::Refused(format!(
+            "{key:?} is not a record key; a record key begins with facts/, intents/, or hints/"
+        ))
+    })?;
+    let bytes = source
+        .read(key)?
+        .ok_or_else(|| Failure::Missing(format!("{key} holds no record")))?;
+
+    println!("key:        {key}");
+    match kind {
+        Kind::Fact => {
+            let record: FactRecord = postcard::from_bytes(&bytes)
+                .map_err(|e| Failure::Refused(format!("{key} is not a fact record: {e}")))?;
+            println!("kind:       fact");
+            println!("address:    {}", record.id);
+            println!("origin:     {}", record.origin);
+            println!("creator:    {}", record.creator);
+            println!("written:    {} ns", record.submitted_at);
+            let held = serde_json::to_string(&record)
+                .map_err(|e| Failure::Refused(format!("{key} does not serialize: {e}")))?;
+            println!("record:     {held}");
+            let payload = source.read(&record.blob_key())?.ok_or_else(|| {
+                Failure::Refused(format!("{} is missing its payload", record.blob_key()))
+            })?;
+            println!("payload:    {}", as_text(&payload));
+        }
+        Kind::Intent => {
+            let record: IntentRecord = postcard::from_bytes(&bytes)
+                .map_err(|e| Failure::Refused(format!("{key} is not an intent record: {e}")))?;
+            println!("kind:       intent");
+            println!("address:    {}", record.id);
+            println!("creator:    {}", record.creator);
+            println!("written:    {} ns", record.created_at);
+            let held = serde_json::to_string(&record)
+                .map_err(|e| Failure::Refused(format!("{key} does not serialize: {e}")))?;
+            println!("record:     {held}");
+        }
+        Kind::Hint => {
+            let record: HintRecord = postcard::from_bytes(&bytes)
+                .map_err(|e| Failure::Refused(format!("{key} is not a hint record: {e}")))?;
+            println!("kind:       hint");
+            println!("address:    {}", record.id);
+            println!("creator:    {}", record.creator);
+            println!("written:    {} ns", record.submitted_at);
+            let held = serde_json::to_string(&record)
+                .map_err(|e| Failure::Refused(format!("{key} does not serialize: {e}")))?;
+            println!("record:     {held}");
+        }
+    }
+    Ok(())
 }
 
 fn sidecar(args: &SidecarArgs) -> Result<(), Failure> {

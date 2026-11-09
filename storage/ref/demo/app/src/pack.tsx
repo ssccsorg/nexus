@@ -98,8 +98,118 @@ function KeySpaceView({ project }: Board) {
   );
 }
 
+/** What a project declares under `{ "kind": "esg", "at": ... }`: the records the tool showed. */
+export interface EsgRecord {
+  key: string;
+  kind: string;
+  address: string;
+  origin: string | null;
+  creator: string | null;
+  written: number;
+  record: Record<string, unknown>;
+  payload: Record<string, unknown> | null;
+  payloadText: string | null;
+}
+
+export interface EsgChain {
+  volume: string;
+  records: EsgRecord[];
+}
+
+/** The fields a fact's payload carries, as one line: what the record says, not what it counts. */
+function payloadLine(record: EsgRecord): string {
+  if (!record.payload) return '';
+  const parts: string[] = [];
+  for (const [key, value] of Object.entries(record.payload)) {
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      parts.push(`${key}=${value}`);
+    }
+  }
+  return parts.slice(0, 4).join(' · ');
+}
+
+/** The addresses an intent reads and the one it concluded, which is the link the record itself carries. */
+function intentLine(record: EsgRecord): string {
+  const held = record.record as {
+    from_facts?: string[];
+    status?: Record<string, { to_fact?: string }>;
+  };
+  const from = (held.from_facts ?? []).map((at) => at.slice(0, 12)).join(', ');
+  const concluded = held.status?.Concluded?.to_fact;
+  return concluded ? `${from} → ${concluded.slice(0, 12)}` : from;
+}
+
+/** What a row says: the requirement for a hint, the payload for a fact, the link for an intent. */
+function lineOf(record: EsgRecord): string {
+  if (record.kind === 'hint') return String((record.record as { content?: string }).content ?? '');
+  if (record.kind === 'intent') return intentLine(record);
+  return payloadLine(record) || record.address;
+}
+
+/** The tool printed nanoseconds; a reader reads a date. */
+function when(nanos: number): string {
+  if (!nanos) return '';
+  return new Date(nanos / 1_000_000).toISOString().slice(0, 19).replace('T', ' ');
+}
+
+function ChainMark() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
+      <path d="M4 7h6v4H4zM14 13h6v4h-6z" />
+      <path d="M10 9h2a2 2 0 0 1 2 2v4" />
+    </svg>
+  );
+}
+
+function EsgView({ project }: Board) {
+  const chain = (project as { esg?: EsgChain } | null)?.esg;
+  if (!chain) {
+    return (
+      <div className={cn(ROW, 'text-muted-foreground')}>this project declares no records</div>
+    );
+  }
+
+  // The medium writes each record a time, so sorting on it is the order the chain happened. The listing arrives by key,
+  // which is the storage layer's order and not the audit's.
+  const records = [...chain.records].sort((left, right) => left.written - right.written);
+
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className={cn(ROW, 'gap-2 border-b')}>
+        <span className={cn(LABEL, 'shrink-0')}>Evidence</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-muted-foreground" title={chain.volume}>
+          {chain.volume}
+        </span>
+        <span className="shrink-0 tabular-nums text-muted-foreground">
+          {chain.records.length} records
+        </span>
+      </div>
+
+      <div data-region="esg" className="min-h-0 flex-1 overflow-y-auto">
+        {records.map((record) => (
+          <div key={record.key} className={cn(ROW, 'gap-2')}>
+            <span className={cn(LABEL, 'w-14 shrink-0')}>{record.kind}</span>
+            <span className="min-w-0 flex-1 truncate font-mono" title={record.key}>
+              {lineOf(record)}
+            </span>
+            <span className="max-w-40 shrink-0 truncate text-muted-foreground" title={record.creator ?? ''}>
+              {record.creator}
+            </span>
+            <span className="shrink-0 tabular-nums text-muted-foreground" title={`${record.written} ns`}>
+              {when(record.written)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** The reader for the kind, which is what a project's `keyspace` resource arrives through. */
 registerResource('keyspace', (at) => at as KeySpace);
+
+/** The records the volume holds, drawn as the tool showed them. */
+registerResource('esg', (at) => at as EsgChain);
 
 /** The pack itself. A module registers itself where it is imported, the way the frame imports its own views. */
 registerPack({
@@ -110,6 +220,12 @@ registerPack({
       path: '/keyspace',
       View: KeySpaceView,
       button: { order: 11, title: 'keys', Icon: KeyMark },
+    },
+    {
+      key: 'esg',
+      path: '/esg',
+      View: EsgView,
+      button: { order: 10, title: 'records', Icon: ChainMark },
     },
   ],
 });

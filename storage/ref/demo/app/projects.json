@@ -3,6 +3,277 @@
   "projects": [
     {
       "format": "project/1",
+      "id": "esg-scenario",
+      "resources": [
+        {
+          "kind": "channel",
+          "at": "sim"
+        },
+        {
+          "kind": "record",
+          "at": "scenario/esg-scenario.txt"
+        },
+        {
+          "kind": "keyspace",
+          "at": {
+            "volume": "storage/ref/demo/esg-volume",
+            "keys": [
+              "blob/3cd9bf9945f027c203a3dbaa3359a4d8a4b2200d3f9d8fe3314fd9810cd81cfe.bin",
+              "blob/3cd9bf9945f027c203a3dbaa3359a4d8a4b2200d3f9d8fe3314fd9810cd81cfe.bin.meta",
+              "blob/3dbbc7eb52517d1e2ec126c6b4d71d37c8843db25c32ea1b6d05cbcf2a2bd6e4.bin",
+              "blob/3dbbc7eb52517d1e2ec126c6b4d71d37c8843db25c32ea1b6d05cbcf2a2bd6e4.bin.meta",
+              "blob/8fcca4a2f76eb22a2f28a3b777119dffaf3b8ae3ae49b4c161bc06efc852fb10.bin",
+              "blob/8fcca4a2f76eb22a2f28a3b777119dffaf3b8ae3ae49b4c161bc06efc852fb10.bin.meta",
+              "blob/cb0eadf004b6a2e83760a25432624fcc853d38758915eafc1c03f2f0e0ab8468.bin",
+              "blob/cb0eadf004b6a2e83760a25432624fcc853d38758915eafc1c03f2f0e0ab8468.bin.meta",
+              "blob/d2599be8b5819d7ac953186cbd6e9a15319858e87016d3d2562c53de213e877a.bin",
+              "blob/d2599be8b5819d7ac953186cbd6e9a15319858e87016d3d2562c53de213e877a.bin.meta",
+              "blob/e5089ec325f6fbe9d75254ca8cf929f2bf8e4218ca801242e7ad59f899a90717.bin",
+              "blob/e5089ec325f6fbe9d75254ca8cf929f2bf8e4218ca801242e7ad59f899a90717.bin.meta",
+              "blob/ed813eb1cc0a66f827dbd243a9e1b9c72c712fbb453fc12c1f4e6617ff970a9d.bin",
+              "blob/ed813eb1cc0a66f827dbd243a9e1b9c72c712fbb453fc12c1f4e6617ff970a9d.bin.meta",
+              "facts/f_0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm.fact",
+              "facts/f_0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1.fact",
+              "facts/f_0007cs53o32i2cq3fv5ie2jq7l60r34a92bb5c22h91lu80g22350022i7ho.fact",
+              "facts/f_0012o00xp0381lz5nr06y0pe6k84ce4ls59m85p7334g273e08e3jm2pd7hs.fact",
+              "facts/f_0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by.fact",
+              "hints/h_0008lk0fv1kl7rv1z11ca4b365u0r15st2oq6c67kz5yr81e1l83cs6qt8bj.hint",
+              "intents/i_0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i.intent",
+              "intents/i_0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k.intent"
+            ],
+            "listed": 22,
+            "box": {
+              "axis": 0,
+              "from": "000",
+              "until": "000",
+              "records": 3
+            },
+            "records": 3
+          }
+        },
+        {
+          "kind": "esg",
+          "at": {
+            "volume": "storage/ref/demo/esg-volume",
+            "records": [
+              {
+                "key": "facts/f_0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm.fact",
+                "kind": "fact",
+                "address": "0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm",
+                "origin": "did:example:plant-li-1",
+                "creator": "meter:m17",
+                "written": 1794252120715529000,
+                "record": {
+                  "id": "0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm",
+                  "blob_hash": "ed813eb1cc0a66f827dbd243a9e1b9c72c712fbb453fc12c1f4e6617ff970a9d",
+                  "origin": "did:example:plant-li-1",
+                  "creator": "meter:m17",
+                  "submitted_at": 1794252120715529000
+                },
+                "payload": {
+                  "asset_id": "plant-li-1",
+                  "event": "electricity",
+                  "observed_at": "2026-03-31T23:59:00Z",
+                  "period": "2026-Q1",
+                  "source": "meter:m17",
+                  "value_kwh": 412000
+                },
+                "payloadText": "{\"asset_id\":\"plant-li-1\",\"event\":\"electricity\",\"observed_at\":\"2026-03-31T23:59:00Z\",\"period\":\"2026-Q1\",\"source\":\"meter:m17\",\"value_kwh\":412000}"
+              },
+              {
+                "key": "facts/f_0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1.fact",
+                "kind": "fact",
+                "address": "0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1",
+                "origin": "conclusion:0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k",
+                "creator": "sustainability-controller",
+                "written": 1794252120717135000,
+                "record": {
+                  "id": "0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1",
+                  "blob_hash": "8fcca4a2f76eb22a2f28a3b777119dffaf3b8ae3ae49b4c161bc06efc852fb10",
+                  "origin": "conclusion:0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k",
+                  "creator": "sustainability-controller",
+                  "submitted_at": 1794252120717135000
+                },
+                "payload": {
+                  "components": {
+                    "gas_tco2e": 19.43,
+                    "refrigerant_tco2e": 26.1
+                  },
+                  "period": "2026-Q1",
+                  "scope": 1,
+                  "source_facts": [
+                    "0007cs53o32i2cq3fv5ie2jq7l60r34a92bb5c22h91lu80g22350022i7ho",
+                    "0012o00xp0381lz5nr06y0pe6k84ce4ls59m85p7334g273e08e3jm2pd7hs"
+                  ],
+                  "tco2e": 45.53
+                },
+                "payloadText": "{\"components\":{\"gas_tco2e\":19.43,\"refrigerant_tco2e\":26.1},\"period\":\"2026-Q1\",\"scope\":1,\"source_facts\":[\"0007cs53o32i2cq3fv5ie2jq7l60r34a92bb5c22h91lu80g22350022i7ho\",\"0012o00xp0381lz5nr06y0pe6k84ce4ls59m85p7334g273e08e3jm2pd7hs\"],\"tco2e\":45.53}"
+              },
+              {
+                "key": "facts/f_0007cs53o32i2cq3fv5ie2jq7l60r34a92bb5c22h91lu80g22350022i7ho.fact",
+                "kind": "fact",
+                "address": "0007cs53o32i2cq3fv5ie2jq7l60r34a92bb5c22h91lu80g22350022i7ho",
+                "origin": "did:example:plant-li-1",
+                "creator": "meter:g04",
+                "written": 1794252120715869000,
+                "record": {
+                  "id": "0007cs53o32i2cq3fv5ie2jq7l60r34a92bb5c22h91lu80g22350022i7ho",
+                  "blob_hash": "e5089ec325f6fbe9d75254ca8cf929f2bf8e4218ca801242e7ad59f899a90717",
+                  "origin": "did:example:plant-li-1",
+                  "creator": "meter:g04",
+                  "submitted_at": 1794252120715869000
+                },
+                "payload": {
+                  "asset_id": "plant-li-1",
+                  "event": "natural_gas",
+                  "observed_at": "2026-03-31T23:59:00Z",
+                  "period": "2026-Q1",
+                  "source": "meter:g04",
+                  "value_kwh": 96400
+                },
+                "payloadText": "{\"asset_id\":\"plant-li-1\",\"event\":\"natural_gas\",\"observed_at\":\"2026-03-31T23:59:00Z\",\"period\":\"2026-Q1\",\"source\":\"meter:g04\",\"value_kwh\":96400}"
+              },
+              {
+                "key": "facts/f_0012o00xp0381lz5nr06y0pe6k84ce4ls59m85p7334g273e08e3jm2pd7hs.fact",
+                "kind": "fact",
+                "address": "0012o00xp0381lz5nr06y0pe6k84ce4ls59m85p7334g273e08e3jm2pd7hs",
+                "origin": "did:example:plant-li-1",
+                "creator": "service:contractor",
+                "written": 1794252120716092000,
+                "record": {
+                  "id": "0012o00xp0381lz5nr06y0pe6k84ce4ls59m85p7334g273e08e3jm2pd7hs",
+                  "blob_hash": "d2599be8b5819d7ac953186cbd6e9a15319858e87016d3d2562c53de213e877a",
+                  "origin": "did:example:plant-li-1",
+                  "creator": "service:contractor",
+                  "submitted_at": 1794252120716092000
+                },
+                "payload": {
+                  "asset_id": "plant-li-1",
+                  "event": "refrigerant_topup",
+                  "observed_at": "2026-02-14T09:20:00Z",
+                  "source": "service:s-2026-014",
+                  "substance": "R-410A",
+                  "value_kg": 12.5
+                },
+                "payloadText": "{\"asset_id\":\"plant-li-1\",\"event\":\"refrigerant_topup\",\"observed_at\":\"2026-02-14T09:20:00Z\",\"source\":\"service:s-2026-014\",\"substance\":\"R-410A\",\"value_kg\":12.5}"
+              },
+              {
+                "key": "facts/f_0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by.fact",
+                "kind": "fact",
+                "address": "0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by",
+                "origin": "conclusion:0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i",
+                "creator": "sustainability-controller",
+                "written": 1794252120716607000,
+                "record": {
+                  "id": "0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by",
+                  "blob_hash": "3dbbc7eb52517d1e2ec126c6b4d71d37c8843db25c32ea1b6d05cbcf2a2bd6e4",
+                  "origin": "conclusion:0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i",
+                  "creator": "sustainability-controller",
+                  "submitted_at": 1794252120716607000
+                },
+                "payload": {
+                  "basis": "market-based",
+                  "factor_kg_per_kwh": 0.2053,
+                  "period": "2026-Q1",
+                  "scope": 2,
+                  "source_fact": "0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm",
+                  "tco2e": 84.58
+                },
+                "payloadText": "{\"basis\":\"market-based\",\"factor_kg_per_kwh\":0.2053,\"period\":\"2026-Q1\",\"scope\":2,\"source_fact\":\"0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm\",\"tco2e\":84.58}"
+              },
+              {
+                "key": "hints/h_0008lk0fv1kl7rv1z11ca4b365u0r15st2oq6c67kz5yr81e1l83cs6qt8bj.hint",
+                "kind": "hint",
+                "address": "0008lk0fv1kl7rv1z11ca4b365u0r15st2oq6c67kz5yr81e1l83cs6qt8bj",
+                "origin": null,
+                "creator": "regulatory-baseline",
+                "written": 1794252120717669000,
+                "record": {
+                  "id": "0008lk0fv1kl7rv1z11ca4b365u0r15st2oq6c67kz5yr81e1l83cs6qt8bj",
+                  "content": "ESRS E1-6: disclose gross Scope 1 and Scope 2 emissions for the reporting period, with the conversion factors used and the base year stated",
+                  "creator": "regulatory-baseline",
+                  "submitted_at": 1794252120717669000,
+                  "ttl_secs": null,
+                  "time_unit": "Nanos"
+                },
+                "payload": null,
+                "payloadText": null
+              },
+              {
+                "key": "intents/i_0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i.intent",
+                "kind": "intent",
+                "address": "0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i",
+                "origin": null,
+                "creator": "sustainability-controller",
+                "written": 1794252120716293000,
+                "record": {
+                  "id": "0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i",
+                  "from_facts": [
+                    "0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm"
+                  ],
+                  "description_hash": "3cd9bf9945f027c203a3dbaa3359a4d8a4b2200d3f9d8fe3314fd9810cd81cfe",
+                  "creator": "sustainability-controller",
+                  "status": {
+                    "Concluded": {
+                      "to_fact": "0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by",
+                      "concluded_at": 1794252120716600000,
+                      "worker": "sustainability-controller"
+                    }
+                  },
+                  "created_at": 1794252120716293000,
+                  "time_unit": "Nanos"
+                },
+                "payload": null,
+                "payloadText": null
+              },
+              {
+                "key": "intents/i_0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k.intent",
+                "kind": "intent",
+                "address": "0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k",
+                "origin": null,
+                "creator": "sustainability-controller",
+                "written": 1794252120716851000,
+                "record": {
+                  "id": "0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k",
+                  "from_facts": [
+                    "0007cs53o32i2cq3fv5ie2jq7l60r34a92bb5c22h91lu80g22350022i7ho",
+                    "0012o00xp0381lz5nr06y0pe6k84ce4ls59m85p7334g273e08e3jm2pd7hs"
+                  ],
+                  "description_hash": "cb0eadf004b6a2e83760a25432624fcc853d38758915eafc1c03f2f0e0ab8468",
+                  "creator": "sustainability-controller",
+                  "status": {
+                    "Concluded": {
+                      "to_fact": "0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1",
+                      "concluded_at": 1794252120717121000,
+                      "worker": "sustainability-controller"
+                    }
+                  },
+                  "created_at": 1794252120716851000,
+                  "time_unit": "Nanos"
+                },
+                "payload": null,
+                "payloadText": null
+              }
+            ]
+          }
+        },
+        {
+          "kind": "views",
+          "at": {
+            "pack": "volume",
+            "main": "esg"
+          }
+        },
+        {
+          "kind": "layout",
+          "at": {
+            "console": true
+          }
+        }
+      ]
+    },
+    {
+      "format": "project/1",
       "id": "sample-volume",
       "resources": [
         {
@@ -30,6 +301,38 @@
               "records": 1
             },
             "records": 1
+          }
+        },
+        {
+          "kind": "esg",
+          "at": {
+            "volume": "storage/ref/demo/volume",
+            "records": [
+              {
+                "key": "facts/f_00024o7m35346n71ge0ev7vj33q5cp6fg6ow3230ba3oo00g6mp0lm4rh0uq.fact",
+                "kind": "fact",
+                "address": "00024o7m35346n71ge0ev7vj33q5cp6fg6ow3230ba3oo00g6mp0lm4rh0uq",
+                "origin": "did:example:asset-1",
+                "creator": "sensor-1",
+                "written": 1793630807643521000,
+                "record": {
+                  "id": "00024o7m35346n71ge0ev7vj33q5cp6fg6ow3230ba3oo00g6mp0lm4rh0uq",
+                  "blob_hash": "578e724ee7e9c587be42c260a6d7e89abf7b75d502d3946ddc473b25aa22e3b8",
+                  "origin": "did:example:asset-1",
+                  "creator": "sensor-1",
+                  "submitted_at": 1793630807643521000
+                },
+                "payload": {
+                  "asset_id": "asset-1",
+                  "event": "temperature",
+                  "observed_at": "2026-10-30T10:00:00Z",
+                  "source": "sensor-1",
+                  "unit": "C",
+                  "value": 21.5
+                },
+                "payloadText": "{\"asset_id\":\"asset-1\",\"event\":\"temperature\",\"observed_at\":\"2026-10-30T10:00:00Z\",\"source\":\"sensor-1\",\"unit\":\"C\",\"value\":21.5}"
+              }
+            ]
           }
         },
         {

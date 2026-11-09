@@ -26,7 +26,7 @@ fact keyspace-listed 3 keys/sample
 fact blob/578e724ee7e9c587be42c260a6d7e89abf7b75d502d3946ddc473b25aa22e3b8.bin 0 keys/sample
 fact blob/578e724ee7e9c587be42c260a6d7e89abf7b75d502d3946ddc473b25aa22e3b8.bin.meta 0 keys/sample
 fact facts/f_00024o7m35346n71ge0ev7vj33q5cp6fg6ow3230ba3oo00g6mp0lm4rh0uq.fact 0 keys/sample
-hint key-count facts=1,blobs=2,exit=0
+hint key-count facts=1,blobs=2,hints=0,intents=0,exit=0
 count 8
 
 tick 1
@@ -69,4 +69,11 @@ tick 5
 hint self-check-exit 0
 conclude self-check-sample pass
 count 14
+
+tick 6
+fact records-held 1 show/volume
+fact record-0 125 sensor-1
+hint record-key-0 facts/f_00024o7m35346n71ge0ev7vj33q5cp6fg6ow3230ba3oo00g6mp0lm4rh0uq.fact
+hint record-kinds fact=1
+count 16
 

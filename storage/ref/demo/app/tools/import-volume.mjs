@@ -173,7 +173,54 @@ export function measure({ bin, volume, volumePath, id, title }) {
     sidecarExit: sidecar.code,
     selfCheck: contract.stdout.includes('self-check: PASS'),
     selfCheckExit: contract.code,
+    records: measureRecords(bin, volumePath, keySpace.lines),
   };
+}
+
+/**
+ * One record as the tool prints it.
+ *
+ * `show` is the verb that reads a record and says what it holds, so the fields here are the tool's answer and not a
+ * decode of the medium. A fact carries the payload the medium holds beside it; an intent and a hint are the record.
+ */
+function showRecord(bin, volumePath, key) {
+  const run = tool(bin, ['show', '--volume', volumePath, '--key', key]);
+  if (run.code !== 0) throw new Error(`show refused ${key}: ${run.stderr.trim()}`);
+  const payloadText = field(run.stdout, 'payload') || null;
+  let payload = null;
+  if (payloadText) {
+    try {
+      payload = JSON.parse(payloadText);
+    } catch {
+      payload = null;
+    }
+  }
+  return {
+    key,
+    kind: field(run.stdout, 'kind'),
+    address: field(run.stdout, 'address'),
+    origin: field(run.stdout, 'origin') || null,
+    creator: field(run.stdout, 'creator') || null,
+    written: Number((field(run.stdout, 'written') || '0').split(' ')[0]),
+    record: JSON.parse(field(run.stdout, 'record')),
+    payload,
+    payloadText,
+  };
+}
+
+/** The record keys the listing handed over, which are the keys a kind prefix names. */
+function recordKeys(keys) {
+  return keys.filter((key) => /^(facts|intents|hints)\//.test(key));
+}
+
+/**
+ * The record at each key, in the order the listing reached them.
+ *
+ * A volume that holds only blobs has no records to show, and a volume with records has one entry each. Nothing here
+ * names a kind in particular: what a record is, the tool prints.
+ */
+function measureRecords(bin, volumePath, keys) {
+  return recordKeys(keys).map((key) => showRecord(bin, volumePath, key));
 }
 
 /** A seed derived from the volume's own name, so the same volume writes the same run. */
@@ -243,9 +290,14 @@ export function scenarioOf(measured) {
   // An address is a key: one fact per key, with the key as its name.
   fact('keyspace-listed', m.keyCount, 'keys/sample');
   for (const key of m.keys) fact(key, 0, 'keys/sample');
-  const factsUnder = m.keys.filter((key) => key.startsWith('facts/')).length;
-  const blobsUnder = m.keys.filter((key) => key.startsWith('blob/')).length;
-  hint('key-count', `facts=${factsUnder},blobs=${blobsUnder},exit=${m.keyExit}`);
+  // Every key is accounted for here, because a volume that holds records holds their keys too, and the header states
+  // one total. A prefix with no keys is written as zero so the shape of the line does not move with the volume.
+  const under = (prefix) => m.keys.filter((key) => key.startsWith(`${prefix}/`)).length;
+  hint(
+    'key-count',
+    `facts=${under('facts')},blobs=${under('blob')},hints=${under('hints')},intents=${under('intents')},` +
+      `exit=${m.keyExit}`,
+  );
   count();
   push('');
 
@@ -300,34 +352,65 @@ export function scenarioOf(measured) {
   count();
   push('');
 
+  // The records the volume holds, read one at a time. A fact carries a payload, an intent carries
+  // the addresses it reads and the one it concluded, and a hint carries the requirement.
+  if (m.records.length) {
+    push('tick 6');
+    fact('records-held', m.records.length, 'show/volume');
+    m.records.forEach((record, at) => {
+      // The record's own key is a hint rather than the fact's label: a label that is a key would be
+      // read as one more entry in the listing above, and the listing is the tool's to report.
+      const bytes = record.payloadText ? record.payloadText.length : 0;
+      fact(`record-${at}`, bytes, record.creator ?? 'record');
+      hint(`record-key-${at}`, record.key);
+    });
+    const kinds = m.records.reduce((held, record) => {
+      held[record.kind] = (held[record.kind] ?? 0) + 1;
+      return held;
+    }, {});
+    hint(
+      'record-kinds',
+      Object.entries(kinds)
+        .map(([kind, at]) => `${kind}=${at}`)
+        .join(','),
+    );
+    const requirement = m.records.find((record) => record.kind === 'hint');
+    if (requirement) hint('requirement', requirement.address.slice(0, 12));
+    count();
+    push('');
+  }
+
   return `${lines.join('\n')}\n`;
 }
 
-/** The project that carries the run and the key space. */
-export function projectOf(measured) {
+/** The project that carries the run, the key space, and the records the volume holds. */
+export function projectOf(measured, reading = 'keyspace') {
   const m = measured;
-  return {
-    format: 'project/1',
-    id: m.id,
-    resources: [
-      { kind: 'channel', at: 'sim' },
-      { kind: 'record', at: `scenario/${m.id}.txt` },
-      {
-        kind: 'keyspace',
-        at: {
-          volume: m.volume,
-          keys: m.keys,
-          listed: m.keyCount,
-          box: m.box,
-          records: m.box.records,
-        },
+  const resources = [
+    { kind: 'channel', at: 'sim' },
+    { kind: 'record', at: `scenario/${m.id}.txt` },
+    {
+      kind: 'keyspace',
+      at: {
+        volume: m.volume,
+        keys: m.keys,
+        listed: m.keyCount,
+        box: m.box,
+        records: m.box.records,
       },
-      { kind: 'views', at: { pack: 'volume', main: 'keyspace' } },
-      // The board as text stands beside the key space. The panel is the frame's own drawing of a run, so it is opened
-      // here rather than gated on a room this deployment does not have.
-      { kind: 'layout', at: { console: true } },
-    ],
-  };
+    },
+  ];
+  // The records themselves, when the volume holds any: what the `show` verb printed, one entry a record.
+  if (m.records.length) {
+    resources.push({ kind: 'esg', at: { volume: m.volume, records: m.records } });
+  }
+  resources.push(
+    { kind: 'views', at: { pack: 'volume', main: reading } },
+    // The board as text stands beside the key space. The panel is the frame's own drawing of a run, so it is opened
+    // here rather than gated on a room this deployment does not have.
+    { kind: 'layout', at: { console: true } },
+  );
+  return { format: 'project/1', id: m.id, resources };
 }
 
 function main() {
@@ -350,6 +433,7 @@ function main() {
   const id = option('id') ?? basename(volumePath);
   const title = option('title') ?? id;
   const out = resolve(option('out') ?? APP);
+  const reading = option('reading', 'keyspace');
   const reset = args.includes('--reset');
   if (reset) args.splice(args.indexOf('--reset'), 1);
   if (args.length) throw new Error(`unexpected argument ${args[0]}`);
@@ -364,7 +448,7 @@ function main() {
   const board = reset || !existsSync(boardPath)
     ? { note: NOTE, projects: [] }
     : JSON.parse(readFileSync(boardPath, 'utf8'));
-  const project = projectOf(measured);
+  const project = projectOf(measured, reading);
   const at = board.projects.findIndex((each) => each.id === id);
   if (at === -1) board.projects.push(project);
   else board.projects[at] = project;
@@ -372,7 +456,7 @@ function main() {
 
   console.log(
     `${id}: ${measured.keyCount} keys, ${measured.box.records} record(s) in the box, ` +
-      `${measured.readBytes} bytes at ${measured.coordinate}`,
+      `${measured.readBytes} bytes at ${measured.coordinate}, ${measured.records.length} shown`,
   );
 }
 

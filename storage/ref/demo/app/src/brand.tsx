@@ -29,6 +29,8 @@ export const brand: Brand = {
   title: 'NEXUS DEMO',
   name: 'nexus storage demo',
   version: 'v0.1.0',
+  // This deployment reads a committed volume and never writes, and the bar says so beside the name.
+  status: 'read-only',
   layers: ['nexus', 'chton', 'skene'],
   Mark,
   mark: { path: MARK, viewBox: MARK_VIEWBOX },

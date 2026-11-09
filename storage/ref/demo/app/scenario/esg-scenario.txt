@@ -1,0 +1,113 @@
+# ESG compliance - Alpine Precision AG, 2026-Q1
+#
+# Imported from storage/ref/demo/esg-volume by `npm run import`.
+#
+# tool:      nexus-storage-ref
+# volume:    storage/ref/demo/esg-volume
+# keys:      22
+# records:   3
+# exit:      0/0/0
+#
+# Every number below came from the tool. Each count is the arithmetic of this file over
+# the facts it writes, so an edit that moves a line has to move its count.
+#
+#   nexus-storage-ref keys --volume storage/ref/demo/esg-volume --prefix ""
+
+seed 35396
+
+tick 0
+position sample-volume 70,88
+position keys 186,52
+position read 338,88
+position verify 452,40
+count 4
+
+fact keyspace-listed 22 keys/sample
+fact blob/3cd9bf9945f027c203a3dbaa3359a4d8a4b2200d3f9d8fe3314fd9810cd81cfe.bin 0 keys/sample
+fact blob/3cd9bf9945f027c203a3dbaa3359a4d8a4b2200d3f9d8fe3314fd9810cd81cfe.bin.meta 0 keys/sample
+fact blob/3dbbc7eb52517d1e2ec126c6b4d71d37c8843db25c32ea1b6d05cbcf2a2bd6e4.bin 0 keys/sample
+fact blob/3dbbc7eb52517d1e2ec126c6b4d71d37c8843db25c32ea1b6d05cbcf2a2bd6e4.bin.meta 0 keys/sample
+fact blob/8fcca4a2f76eb22a2f28a3b777119dffaf3b8ae3ae49b4c161bc06efc852fb10.bin 0 keys/sample
+fact blob/8fcca4a2f76eb22a2f28a3b777119dffaf3b8ae3ae49b4c161bc06efc852fb10.bin.meta 0 keys/sample
+fact blob/cb0eadf004b6a2e83760a25432624fcc853d38758915eafc1c03f2f0e0ab8468.bin 0 keys/sample
+fact blob/cb0eadf004b6a2e83760a25432624fcc853d38758915eafc1c03f2f0e0ab8468.bin.meta 0 keys/sample
+fact blob/d2599be8b5819d7ac953186cbd6e9a15319858e87016d3d2562c53de213e877a.bin 0 keys/sample
+fact blob/d2599be8b5819d7ac953186cbd6e9a15319858e87016d3d2562c53de213e877a.bin.meta 0 keys/sample
+fact blob/e5089ec325f6fbe9d75254ca8cf929f2bf8e4218ca801242e7ad59f899a90717.bin 0 keys/sample
+fact blob/e5089ec325f6fbe9d75254ca8cf929f2bf8e4218ca801242e7ad59f899a90717.bin.meta 0 keys/sample
+fact blob/ed813eb1cc0a66f827dbd243a9e1b9c72c712fbb453fc12c1f4e6617ff970a9d.bin 0 keys/sample
+fact blob/ed813eb1cc0a66f827dbd243a9e1b9c72c712fbb453fc12c1f4e6617ff970a9d.bin.meta 0 keys/sample
+fact facts/f_0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm.fact 0 keys/sample
+fact facts/f_0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1.fact 0 keys/sample
+fact facts/f_0007cs53o32i2cq3fv5ie2jq7l60r34a92bb5c22h91lu80g22350022i7ho.fact 0 keys/sample
+fact facts/f_0012o00xp0381lz5nr06y0pe6k84ce4ls59m85p7334g273e08e3jm2pd7hs.fact 0 keys/sample
+fact facts/f_0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by.fact 0 keys/sample
+fact hints/h_0008lk0fv1kl7rv1z11ca4b365u0r15st2oq6c67kz5yr81e1l83cs6qt8bj.hint 0 keys/sample
+fact intents/i_0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i.intent 0 keys/sample
+fact intents/i_0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k.intent 0 keys/sample
+hint key-count facts=5,blobs=14,hints=1,intents=2,exit=0
+count 27
+
+tick 1
+fact 0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm 0 box/sample
+hint box-axes 0=000-000
+hint box-count 3
+count 28
+
+intent read-sample keyspace-listed read-one-address
+claim read-sample read/sample
+tick 2
+fact sample-record 168 read/sample
+hint read-key facts/f_0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm.fact
+hint read-exit 0
+conclude read-sample present
+count 30
+
+intent verify-sample sample-record recompute-the-address
+claim verify-sample verify/sample
+tick 3
+hint record-origin did:example:plant-li-1
+hint record-creator meter:m17
+hint record-written 1794252120715529000ns
+hint payload-bytes 143
+hint address-state valid
+conclude verify-sample verified
+count 31
+
+intent sidecar-sample sample-record measure-the-application-file
+claim sidecar-sample read/sample
+tick 4
+hint app-bytes 9
+hint app-state unchanged
+conclude sidecar-sample unchanged
+count 32
+
+intent self-check-sample sidecar-sample run-the-contract
+claim self-check-sample read/sample
+tick 5
+hint self-check-exit 0
+conclude self-check-sample pass
+count 33
+
+tick 6
+fact records-held 8 show/volume
+fact record-0 143 meter:m17
+hint record-key-0 facts/f_0003fd85l0dy2dg6x26ef3ez2q21lt4nl3l48h72rt2y04tu63b5s47aj6vm.fact
+fact record-1 245 sustainability-controller
+hint record-key-1 facts/f_0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1.fact
+fact record-2 142 meter:g04
+hint record-key-2 facts/f_0007cs53o32i2cq3fv5ie2jq7l60r34a92bb5c22h91lu80g22350022i7ho.fact
+fact record-3 157 service:contractor
+hint record-key-3 facts/f_0012o00xp0381lz5nr06y0pe6k84ce4ls59m85p7334g273e08e3jm2pd7hs.fact
+fact record-4 171 sustainability-controller
+hint record-key-4 facts/f_0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by.fact
+fact record-5 0 regulatory-baseline
+hint record-key-5 hints/h_0008lk0fv1kl7rv1z11ca4b365u0r15st2oq6c67kz5yr81e1l83cs6qt8bj.hint
+fact record-6 0 sustainability-controller
+hint record-key-6 intents/i_0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i.intent
+fact record-7 0 sustainability-controller
+hint record-key-7 intents/i_0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k.intent
+hint record-kinds fact=5,hint=1,intent=2
+hint requirement 0008lk0fv1kl
+count 42
+

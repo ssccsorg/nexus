@@ -69,7 +69,7 @@ deployment work a product adds.
 
 | Path | What it is |
 |---|---|
-| `src/main.rs` | the tool: `keys`, `box`, `read`, `verify`, `sidecar`, and `self-check` over the read surface |
+| `src/main.rs` | the tool: `keys`, `box`, `read`, `verify`, `sidecar`, `show`, and `self-check` over the read surface |
 | `tests/cli.rs` | the contract, each case running the built binary |
 | `demo/volume/` | one record as the format writes it, committed so the crate has something to read without a write path |
 | `demo/app/` | the demonstration: a Vite application that reads this volume through the `skene` frame |
@@ -117,6 +117,10 @@ cargo run -p nexus-storage-ref -- read --volume storage/ref/demo/volume \
 cargo run -p nexus-storage-ref -- verify --volume storage/ref/demo/volume \
   --address 00024o7m35346n71ge0ev7vj33q5cp6fg6ow3230ba3oo00g6mp0lm4rh0uq
 
+# Print one record as the volume holds it: kind, address, origin, creator, time, and payload.
+cargo run -p nexus-storage-ref -- show --volume storage/ref/demo/volume \
+  --key facts/f_00024o7m35346n71ge0ev7vj33q5cp6fg6ow3230ba3oo00g6mp0lm4rh0uq.fact
+
 # Place the volume beside an existing application file.
 cargo run -p nexus-storage-ref -- sidecar --app ./app.db --volume ./records
 ```
@@ -148,6 +152,12 @@ application file is large, so the check is a guard against the copy touching the
 
 `self-check` takes the coordinate from the listing rather than from a constant, derives the key from it again, checks
 that the record's own axis selects it from the keys, reads the record, and checks that the application file is unchanged.
+
+`show` resolves one key and prints the record the medium holds: its kind, address, origin, creator, write time, the
+record itself, and the payload beside it. A payload that is text is printed as text and anything else as hex, so the
+verb is the only path from bytes to what a record says, and a caller reads a record rather than decoding it. A key
+outside `facts/`, `intents/`, and `hints/` is refused, because those are the three kinds the format defines and a
+listing key is not a record.
 
 ## Exit codes
 

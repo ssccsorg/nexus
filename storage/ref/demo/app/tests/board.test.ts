@@ -57,16 +57,19 @@ function hint(text: string, label: string): string | undefined {
   )?.content;
 }
 
-test('the board holds one project for the committed sample volume', () => {
-  expect(ids).toEqual(['sample-volume']);
+test('the board holds one project for each committed volume', () => {
+  expect(ids).toEqual(['esg-scenario', 'sample-volume']);
+  expect(new Set(ids).size, 'each volume has one project').toBe(ids.length);
 });
 
 test('a project resolves through the frame, and its run is where it says', () => {
   for (const id of ids) {
-    const { bundle, text } = read(id);
+    const { bundle, space, text } = read(id);
     expect(bundle.record, `${id} declares a run`).toMatch(/^scenario\/.+\.txt$/);
     expect(text.length, `${id}'s run is not empty`).toBeGreaterThan(0);
-    expect(titleOf(text), `${id} is named by its own run`).toBe('Sample volume');
+    expect(titleOf(text).length, `${id}'s run names itself`).toBeGreaterThan(0);
+    // The board and the run describe one volume, and the run is the tool's own report of it.
+    expect(header(text, 'volume'), `${id}'s run names the volume it measured`).toBe(space.volume);
   }
 });
 
@@ -77,7 +80,11 @@ test('a project opens on the reading it names, and brings the pack that holds it
       | { pack?: string | string[]; main?: string }
       | undefined;
     expect(views?.pack, `${id} brings the volume pack`).toBe('volume');
-    expect(views?.main, `${id} opens on the key space`).toBe('keyspace');
+    const main = String(views?.main ?? '');
+    expect(main.length, `${id} names the reading it opens on`).toBeGreaterThan(0);
+    // A reading is a resource kind the pack registered, so the bundle it resolves to has to carry one under that name.
+    const bundle = bundleOf(document, board.projects) as unknown as Record<string, unknown>;
+    expect(bundle[main], `${id} opens on ${main}, which the pack holds`).toBeDefined();
   }
 });
 
@@ -103,9 +110,12 @@ test('the header agrees with the hints the run carries', () => {
     const stated = Object.fromEntries(
       bound.split(',').map((pair) => pair.split('=') as [string, string]),
     );
-    expect(Number(stated.facts) + Number(stated.blobs), `${id} states one key count`).toBe(
-      Number(header(text, 'keys')),
-    );
+    // The breakdown covers every prefix the volume holds, so its total is the header's key count. `exit` is the
+    // listing's own status and not part of the arithmetic.
+    const total = Object.entries(stated)
+      .filter(([name]) => name !== 'exit')
+      .reduce((sum, [, value]) => sum + Number(value), 0);
+    expect(total, `${id} states one key count`).toBe(Number(header(text, 'keys')));
     expect(Number(hint(text, 'box-count')), `${id} states one record count`).toBe(
       Number(header(text, 'records')),
     );
@@ -121,12 +131,9 @@ test('the header agrees with the hints the run carries', () => {
 test('the key space the panel draws is the one the run lists', () => {
   for (const id of ids) {
     const { space, text } = read(id);
+    // A key is a prefix and a name, so its label carries a slash. The synthetic labels the run uses elsewhere do not.
     const listed = parseScenario(text)
-      .records.filter(
-        (record) =>
-          record.kind === 'fact' &&
-          (record.label?.startsWith('facts/') || record.label?.startsWith('blob/')),
-      )
+      .records.filter((record) => record.kind === 'fact' && /^[a-z]+\//.test(record.label ?? ''))
       .map((record) => record.label);
     expect(listed, `${id} lists the keys it draws`).toEqual(space.keys);
     expect(space.listed, `${id} draws the count the tool printed`).toBe(space.keys.length);
