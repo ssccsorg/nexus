@@ -105,6 +105,16 @@ point stand on it as machines; the controller and the requirement do not, becaus
 bound rather than a thing on the ground. That distinction is the frame's, not this demonstration's: a member is drawn
 on a map when its kind presents a location, and the project is what says which kinds do.
 
+The boundary is drawn as a dashed box over the ground, from the box the place itself declares, so it cannot be a fence
+around ground the units do not stand on. The site's name and each unit's name are read from the records: the label is
+the `site` the measured facts carry, and a machine is called by the metric and reference of the record its creator
+wrote.
+
+What the map does not carry is as deliberate as what it does. A pin is a declared position and not a reading from a
+device: the records hold no coordinate, so no pin is evidence that an instrument is where the sketch puts it. Nothing
+here is signed by hardware. What the tool does assert about a record is narrower and checkable: its address is
+recomputed from the origin, the creator, and the payload, and the record reading states how many held.
+
 It also declares a campaign, which the frame draws under the board. A campaign is a reading of the run at a cursor, so
 an objective is open until the step that satisfies it has arrived and scrubbing the timeline back leaves the later
 steps open. The objectives are the read's own steps and they name labels the run writes, so the line cannot say the work

@@ -407,9 +407,6 @@
                 47.1681
               ]
             },
-            "store": {
-              "label": "example site"
-            },
             "areas": [
               {
                 "x": 10,
@@ -436,34 +433,37 @@
             "units": {
               "meter:m17": {
                 "icon": "meter",
-                "role": "electricity",
                 "at": {
                   "record": [
                     90,
                     55
                   ]
-                }
+                },
+                "role": "electricity consumption, M17-2024-0431"
               },
               "meter:g04": {
                 "icon": "meter",
-                "role": "natural gas",
                 "at": {
                   "record": [
                     295,
                     55
                   ]
-                }
+                },
+                "role": "natural gas consumption, G04-2023-0117"
               },
               "service:contractor": {
                 "icon": "service",
-                "role": "refrigerant service",
                 "at": {
                   "record": [
                     95,
                     165
                   ]
-                }
+                },
+                "role": "refrigerant top up, WO-2026-0142"
               }
+            },
+            "store": {
+              "label": "plant-li-1"
             }
           }
         },

@@ -416,20 +416,17 @@ const DECLARATIONS = {
       view: [0, 0, 400, 220],
       // Roughly 350 m by 200 m at this latitude: one plant, drawn as a sketch of where its meters stand.
       geo: { bounds: [7.454, 47.1663, 7.4586, 47.1681] },
-      store: { label: 'example site' },
       areas: [
         { x: 10, y: 10, w: 170, h: 90, label: 'meter room' },
         { x: 210, y: 10, w: 170, h: 90, label: 'boiler house' },
         { x: 10, y: 120, w: 170, h: 90, label: 'service yard' },
       ],
+      // A unit is where a machine stands. What it is called is read from the record its creator wrote, so a pin and a
+      // measurement are the same instrument twice rather than two names to keep in step.
       units: {
-        'meter:m17': { icon: 'meter', role: 'electricity', at: { record: [90, 55] } },
-        'meter:g04': { icon: 'meter', role: 'natural gas', at: { record: [295, 55] } },
-        'service:contractor': {
-          icon: 'service',
-          role: 'refrigerant service',
-          at: { record: [95, 165] },
-        },
+        'meter:m17': { icon: 'meter', at: { record: [90, 55] } },
+        'meter:g04': { icon: 'meter', at: { record: [295, 55] } },
+        'service:contractor': { icon: 'service', at: { record: [95, 165] } },
       },
     },
     // The read as a checklist over the run. A campaign is a reading of the record at a cursor, so an objective is open
@@ -457,6 +454,32 @@ const DECLARATIONS = {
   },
 };
 
+/**
+ * The place, with what the records say about it filled in.
+ *
+ * The site is the `site` the measured records carry, and a unit is named by the metric and reference of the record its
+ * creator wrote. Both are read from the volume rather than kept beside it, so a rename in the records moves the map.
+ */
+function placedOf(place, records) {
+  const site = records.map((record) => record.payload?.site).find(Boolean);
+  const named = new Map(
+    records
+      .filter((record) => record.payload?.metric)
+      .map((record) => {
+        const metric = String(record.payload.metric).replaceAll('_', ' ');
+        const reference = record.payload.reference;
+        return [record.creator, reference ? `${metric}, ${reference}` : metric];
+      }),
+  );
+  const units = Object.fromEntries(
+    Object.entries(place.units).map(([id, unit]) => [
+      id,
+      named.has(id) ? { ...unit, role: named.get(id) } : unit,
+    ]),
+  );
+  return { ...place, ...(site ? { store: { label: site } } : {}), units };
+}
+
 /** The project that carries the run, the key space, and the records the volume holds. */
 export function projectOf(measured, reading = 'keyspace') {
   const m = measured;
@@ -481,7 +504,10 @@ export function projectOf(measured, reading = 'keyspace') {
   // What a map needs and the run does not carry: the kinds that present a location, and the ground.
   const declared = DECLARATIONS[m.id];
   if (declared) {
-    resources.push({ kind: 'kinds', at: declared.kinds }, { kind: 'place', at: declared.place });
+    resources.push(
+      { kind: 'kinds', at: declared.kinds },
+      { kind: 'place', at: placedOf(declared.place, m.records) },
+    );
     resources.push({ kind: 'campaigns', at: declared.campaigns });
   }
   resources.push(

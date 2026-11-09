@@ -7,6 +7,9 @@ import '@ssccsorg/skene-view-graph';
 import { Frame } from '@ssccsorg/skene-frame';
 import { brand } from './brand';
 import './pack';
+// The site boundary is a layer the map draws, declared where the deployment is: the frame's map has no idea what a
+// boundary is.
+import './site';
 import './styles.css';
 
 // No StrictMode: its double mount opens the record stream twice, and the first socket has already delivered records by
