@@ -167,7 +167,8 @@ GitHub Actions runs the same flows [`run.sh`](run.sh) runs locally, one job each
 ./run.sh --gateway    # the gateway layer
 ./run.sh --apps       # the standalone app verifiers
 ./run.sh --server     # nex-server over a Unix socket
-./run.sh --demo       # the reference tool and its demonstration board
+./run.sh --demo       # the reference tool and its board, checked and then served
+./run.sh --demo-check # the same check without the server, which is what CI runs
 ./run.sh --playbooks  # the consumer playbooks
 ```
 

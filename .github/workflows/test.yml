@@ -159,7 +159,7 @@ jobs:
 
   # The demonstration is a deployment of a package it does not own, so it is checked against the frame as published
   # rather than against a copy: the clone is what a reader's first run does. The layer's runner performs the same steps
-  # from a checkout, so this job and a local `./run.sh --demo` cannot drift apart.
+  # from a checkout and then serves the board, so this job runs the check alone.
   demo:
     runs-on: ubuntu-latest
     steps:
@@ -176,4 +176,4 @@ jobs:
           cache: npm
           cache-dependency-path: storage/ref/demo/app/package-lock.json
       - name: Demonstration
-        run: bash ./run.sh --demo
+        run: bash ./run.sh --demo-check

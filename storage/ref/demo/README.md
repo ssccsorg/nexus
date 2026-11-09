@@ -222,8 +222,14 @@ From the repository root, one command:
 ```
 
 It builds the tool, puts the frame beside the checkout when it is absent, installs the application with `npm ci`, runs
-the application's tests, builds the bundle, and checks that the bundle carries the board. It is the same sequence the
-CI job runs, because the job calls this runner rather than repeating it.
+the application's tests, builds the bundle, and checks that the bundle carries the board. Then it serves the board on
+`http://localhost:5292`, so the command a reader runs to check the thing is the command that shows it.
+
+To run the check and stop, which is what CI does:
+
+```bash
+./run.sh --demo-check
+```
 
 In the application directory the steps are the same, one at a time:
 

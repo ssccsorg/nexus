@@ -12,7 +12,8 @@ set -euo pipefail
 #   ./run.sh --gateway     # Gateway layer checks (apps/nex-api, libs/serde-proxy)
 #   ./run.sh --apps        # All standalone app verification
 #   ./run.sh --server      # nex-server standalone verification
-#   ./run.sh --demo        # The storage reference's demonstration (tool + Vite app)
+#   ./run.sh --demo        # Check the demonstration, then serve it
+#   ./run.sh --demo-check  # Check the demonstration only (what CI runs)
 #   ./run.sh --playbooks   # Consumer playbooks only
 #
 
@@ -531,8 +532,10 @@ verify_nex_tagma() {
 # own, so it is checked the way CI checks it: the frame is the sibling clone, the
 # install is `npm ci`, and the runs are compared with the committed bytes.
 
+DEMO_APP="storage/ref/demo/app"
+
 verify_demo() {
-    local APP="storage/ref/demo/app"
+    local APP="$DEMO_APP"
 
     echo "=== demo ==="
     if ! command -v npm >/dev/null 2>&1; then
@@ -572,6 +575,18 @@ verify_demo() {
     fi
 
     echo "demo: passed"
+}
+
+# Serve the board, which is what a person running `--demo` asked for. CI runs the same layer with `CI` set and a job
+# that waited on a server would never finish, so the gate is the whole of it there.
+serve_demo() {
+    if [ -n "${CI:-}" ]; then
+        echo "demo: CI is set, so the board is checked and not served"
+        return 0
+    fi
+    echo "demo: serving on http://localhost:5292"
+    kill_port 5292 2>/dev/null || true
+    (cd "$DEMO_APP" && exec npm run dev)
 }
 
 # ── App suite ─────────────────────────────────────────────────────────────
@@ -618,6 +633,11 @@ case "${1:-}" in
     --demo)
         shift
         verify_demo
+        serve_demo
+        ;;
+    --demo-check)
+        shift
+        verify_demo
         ;;
     --playbooks)
         kill_port 30922
@@ -625,13 +645,14 @@ case "${1:-}" in
         ;;
     --help|-h)
         echo "Usage: $0 [OPTION]"
-        echo "  (no arg)      Core + gateway + apps + demo + playbooks [default]"
-        echo "  --core        Core checks only (nex, storage/*)"
-        echo "  --gateway     Gateway layer checks (apps/nex-api, libs/serde-proxy)"
-        echo "  --apps        Standalone app verification (spinwasi, nex-tagma, ...)"
-        echo "  --server      nex-server standalone verification"
-        echo "  --demo        The demonstration: the reference tool and its Vite app"
-        echo "  --playbooks   Consumer playbooks only"
+        echo "  (no arg)        Core + gateway + apps + demo + playbooks [default]"
+        echo "  --core          Core checks only (nex, storage/*)"
+        echo "  --gateway       Gateway layer checks (apps/nex-api, libs/serde-proxy)"
+        echo "  --apps          Standalone app verification (spinwasi, nex-tagma, ...)"
+        echo "  --server        nex-server standalone verification"
+        echo "  --demo          Check the demonstration, then serve it on 5292"
+        echo "  --demo-check    Check the demonstration and stop (what CI runs)"
+        echo "  --playbooks     Consumer playbooks only"
         ;;
     "")
         # Default: run everything
