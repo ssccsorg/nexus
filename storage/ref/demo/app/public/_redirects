@@ -1,0 +1,3 @@
+# A reading is an address, so the router owns /map, /chain and /esg and the server owns the files. A request that names
+# no file is the page, which is what lets a link to a reading land in the cockpit instead of on a 404.
+/*    /index.html    200

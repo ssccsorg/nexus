@@ -232,6 +232,40 @@ The first command starts a fresh board and the second restores the sample projec
 every project the board held. The end-to-end test performs both and compares the bytes, so the committed board and the
 runs cannot drift from the volumes.
 
+## Deploying it
+
+The board is a static build. Everything the screen reads is in the repository already: the tool printed the records and
+the importer wrote the board, so a deploy is `npm run build` and a folder of files. Nothing of the Rust side runs at the
+address, and no Tauri, WASM runtime or server sits in front of it. That also means a deploy is read-only by construction,
+which is what the header says.
+
+```bash
+cd storage/ref/demo/app
+npm ci && npm run build
+npx wrangler pages deploy dist --project-name nexus-demo --branch main
+```
+
+`public/_redirects` carries the one rule a single-page app needs on a static host: a request that names no file is the
+page, because `/map`, `/chain` and `/esg` are readings and not files. The map's tiles are the OpenStreetMap raster style
+the frame already ships, fetched by the browser and needing no key.
+
+A change to a volume, the fixture or the importer is not live until the board is regenerated and the build is uploaded:
+
+```bash
+cargo test -p nexus-storage-ref --test esg_scenario -- --ignored --nocapture   # rewrites esg-volume/
+cd storage/ref/demo/app && npm run import -- --reset --id esg-scenario \
+  --title "ESG compliance - Alpine Precision AG, 2026-Q1" \
+  --volume storage/ref/demo/esg-volume --reading map
+npm run build && npx wrangler pages deploy dist --project-name nexus-demo --branch main
+```
+
+### Custom domain
+
+`nexus-demo.ssccs.org` is added once in the Cloudflare dashboard, under the `nexus-demo` Pages project
+(`Custom domains`, then `Set up a domain`). When `ssccs.org` is a zone in the same account the CNAME is created for you;
+otherwise point `nexus-demo` at `nexus-demo-b5z.pages.dev` wherever the zone's DNS lives. Nothing in the application
+changes for it: the assets are addressed from the root, and every reading is a path under it.
+
 ## What the demo does not show
 
 - A write path. Both volumes are committed, so the demonstration reads and never writes. A branch is held in the page
