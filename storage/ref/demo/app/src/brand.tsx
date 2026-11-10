@@ -26,10 +26,15 @@ function Mark({ className }: { className?: string }) {
 }
 
 export const brand: Brand = {
-  title: 'NEXUS DEMO',
+  title: 'REF STORAGE DEMO',
   name: 'nexus storage demo',
   version: 'v0.1.0',
-  layers: ['nexus', 'chton', 'skene'],
+  // This deployment reads a committed volume and never writes, and the bar says so beside the name.
+  status: 'read-only',
+  // The board is one arrangement of the records, drawn by this application over the frame. neXus defines no view.
+  note: 'not a neXus view',
+  // The surface stands on the frame and nothing else: the board, the router, and the panels are skene packages.
+  layers: ['skene'],
   Mark,
   mark: { path: MARK, viewBox: MARK_VIEWBOX },
 };

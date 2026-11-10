@@ -1,6 +1,8 @@
 [package]
 name = "nexus-storage-ref"
 version = "0.1.0"
+# Two binaries: the reader and the smoke runner. The reader is the one a bare `cargo run` is meant.
+default-run = "nexus-storage-ref"
 edition.workspace = true
 license.workspace = true
 description = "The reference node: the storage contract answered over a volume, and the reader that shows its key space"

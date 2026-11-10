@@ -173,7 +173,83 @@ export function measure({ bin, volume, volumePath, id, title }) {
     sidecarExit: sidecar.code,
     selfCheck: contract.stdout.includes('self-check: PASS'),
     selfCheckExit: contract.code,
+    records: measureRecords(bin, volumePath, keySpace.lines),
   };
+}
+
+/**
+ * What the tool answers about an address.
+ *
+ * `verify` recomputes an address from the fields the record holds, so the answer is the tool's and not a comparison
+ * made here.
+ */
+function verifyAddress(bin, volumePath, address) {
+  const check = tool(bin, ['verify', '--volume', volumePath, '--address', address]);
+  return (field(check.stdout, 'address') || '').split(',')[0] || 'unknown';
+}
+
+/**
+ * One record as the tool prints it.
+ *
+ * `show` is the verb that reads a record and says what it holds, so the fields here are the tool's answer and not a
+ * decode of the medium. A fact carries the payload the medium holds beside it; an intent carries the transformation it
+ * declares; a hint carries its content in the record itself.
+ */
+function showRecord(bin, volumePath, key) {
+  const run = tool(bin, ['show', '--volume', volumePath, '--key', key]);
+  if (run.code !== 0) throw new Error(`show refused ${key}: ${run.stderr.trim()}`);
+  const payloadText = field(run.stdout, 'payload') || null;
+  let payload = null;
+  if (payloadText) {
+    try {
+      payload = JSON.parse(payloadText);
+    } catch {
+      payload = null;
+    }
+  }
+  const kind = field(run.stdout, 'kind');
+  const address = field(run.stdout, 'address');
+  return {
+    key,
+    kind,
+    address,
+    origin: field(run.stdout, 'origin') || null,
+    creator: field(run.stdout, 'creator') || null,
+    written: Number((field(run.stdout, 'written') || '0').split(' ')[0]),
+    record: JSON.parse(field(run.stdout, 'record')),
+    payload,
+    payloadText,
+    /** The transformation an intent declares, which the record names by hash and the tool resolves. */
+    description: field(run.stdout, 'description') || null,
+    // Filled in by `measureRecords`, for the facts whose address the tool can recompute.
+    addressState: null,
+  };
+}
+
+/** The record keys the listing handed over, which are the keys a kind prefix names. */
+function recordKeys(keys) {
+  return keys.filter((key) => /^(facts|intents|hints)\//.test(key));
+}
+
+/**
+ * The record at each key, in the order the listing reached them.
+ *
+ * A volume that holds only blobs has no records to show, and a volume with records has one entry each. Nothing here
+ * names a kind in particular: what a record is, the tool prints.
+ */
+function measureRecords(bin, volumePath, keys) {
+  const shown = recordKeys(keys).map((key) => showRecord(bin, volumePath, key));
+  // A result is filed at the address of the intent that concluded it, so its address is not derived from its own
+  // content: `verify` recomputes a content address, and for a result there is nothing to recompute from. Only the
+  // facts whose address is their own are checked.
+  const concluded = new Set(
+    shown.map((record) => record.record?.status?.Concluded?.to_fact).filter(Boolean),
+  );
+  return shown.map((record) =>
+    record.kind === 'fact' && !concluded.has(record.address)
+      ? { ...record, addressState: verifyAddress(bin, volumePath, record.address) }
+      : record,
+  );
 }
 
 /** A seed derived from the volume's own name, so the same volume writes the same run. */
@@ -196,10 +272,6 @@ export function scenarioOf(measured) {
   let facts = 0;
 
   const push = (line) => lines.push(line);
-  const position = (unit, x, y) => {
-    push(`position ${unit} ${x},${y}`);
-    facts += 1;
-  };
   const fact = (label, bytes, origin) => {
     push(`fact ${label} ${bytes} ${origin}`);
     facts += 1;
@@ -231,21 +303,19 @@ export function scenarioOf(measured) {
   push(`seed ${seedOf(m.id)}`);
   push('');
 
-  // The place: the volume, the tool's own verbs, and the reader. A storage run does not move its members.
+  // An address is a key: one fact per key, with the key as its name. Where a member stands is the place's declaration
+  // and not a record, so this run carries no position.
   push('tick 0');
-  position('sample-volume', 70, 88);
-  position('keys', 186, 52);
-  position('read', 338, 88);
-  position('verify', 452, 40);
-  count();
-  push('');
-
-  // An address is a key: one fact per key, with the key as its name.
   fact('keyspace-listed', m.keyCount, 'keys/sample');
   for (const key of m.keys) fact(key, 0, 'keys/sample');
-  const factsUnder = m.keys.filter((key) => key.startsWith('facts/')).length;
-  const blobsUnder = m.keys.filter((key) => key.startsWith('blob/')).length;
-  hint('key-count', `facts=${factsUnder},blobs=${blobsUnder},exit=${m.keyExit}`);
+  // Every key is accounted for here, because a volume that holds records holds their keys too, and the header states
+  // one total. A prefix with no keys is written as zero so the shape of the line does not move with the volume.
+  const under = (prefix) => m.keys.filter((key) => key.startsWith(`${prefix}/`)).length;
+  hint(
+    'key-count',
+    `facts=${under('facts')},blobs=${under('blob')},hints=${under('hints')},intents=${under('intents')},` +
+      `exit=${m.keyExit}`,
+  );
   count();
   push('');
 
@@ -300,34 +370,282 @@ export function scenarioOf(measured) {
   count();
   push('');
 
+  // The records the volume holds, when it holds any: the `show` verb, one entry at a time.
+  if (m.records.length) {
+    push('tick 6');
+    fact('records-held', m.records.length, 'show/volume');
+    m.records.forEach((record, at) => {
+      // The record's own key is a hint rather than the fact's label: a label that is a key would be
+      // read as one more entry in the listing above, and the listing is the tool's to report.
+      const bytes = record.payloadText ? record.payloadText.length : 0;
+      fact(`record-${at}`, bytes, record.creator ?? 'record');
+      hint(`record-key-${at}`, record.key);
+    });
+    const kinds = m.records.reduce((held, record) => {
+      held[record.kind] = (held[record.kind] ?? 0) + 1;
+      return held;
+    }, {});
+    hint(
+      'record-kinds',
+      Object.entries(kinds)
+        .map(([kind, at]) => `${kind}=${at}`)
+        .join(','),
+    );
+    // What the pack holds, stated as the artefacts a close is made of. Each mark is read from the records' own fields and
+    // written only when the record is there, so an objective built on one of them can be missed when the volume changes.
+    for (const mark of marksOf(m.records)) fact(mark.label, mark.count, 'show/volume');
+    count();
+    push('');
+  }
+
   return `${lines.join('\n')}\n`;
 }
 
-/** The project that carries the run and the key space. */
-export function projectOf(measured) {
-  const m = measured;
-  return {
-    format: 'project/1',
-    id: m.id,
-    resources: [
-      { kind: 'channel', at: 'sim' },
-      { kind: 'record', at: `scenario/${m.id}.txt` },
-      {
-        kind: 'keyspace',
-        at: {
-          volume: m.volume,
-          keys: m.keys,
-          listed: m.keyCount,
-          box: m.box,
-          records: m.box.records,
-        },
+/**
+ * The reporting artefacts a volume's records amount to.
+ *
+ * It reads the records' own fields, so a mark is written only when the record that stands for it is in the volume: a
+ * Scope 2 that states one basis writes no mark, and the close that asks for both shows the gap.
+ */
+export function marksOf(records) {
+  const payloads = records.map((record) => record.payload).filter(Boolean);
+  const marks = [
+    {
+      label: 'measurements_recorded',
+      count: payloads.filter((payload) => payload.metric && payload.unit).length,
+    },
+    { label: 'scope1_stated', count: payloads.filter((payload) => payload.scope === 1).length },
+    {
+      label: 'scope2_stated',
+      count: payloads.filter(
+        (payload) =>
+          payload.market_based_tco2e !== undefined && payload.location_based_tco2e !== undefined,
+      ).length,
+    },
+    {
+      label: 'intensity_stated',
+      count: payloads.filter((payload) => payload.kgco2e_per_unit !== undefined).length,
+    },
+    { label: 'requirement_recorded', count: records.filter((r) => r.kind === 'hint').length },
+  ];
+  return marks.filter((mark) => mark.count > 0);
+}
+
+/**
+ * Where a unit stands, at each scene the frame may have cut.
+ *
+ * A scene key is a position in the run's timeline and not a word about the unit, and the frame cuts the run into the
+ * scenes it finds: a run that opens with a named record has no first scene of plain readings, so `record` is not a key
+ * every run has. The declaration names both, because where a pin stands is not a question about which scene the run
+ * happened to start with.
+ */
+function placed([x, y]) {
+  return { record: [x, y], notice: [x, y] };
+}
+
+/**
+ * The capability the evidence panel needs, which is the project's statement that it has a chain to open.
+ *
+ * A capability is a name a project states and the frame reads (`lib/capabilities`), so the panel is drawn where the
+ * project says the surface exists and nowhere else. The name is the panel's own, because what it guards is that panel.
+ */
+const EVIDENCE = 'evidence';
+
+/** Whether a volume holds work as well as readings, which is what a record's links are made of. */
+function chained(records) {
+  return records.some((record) => record.kind === 'intent');
+}
+
+/**
+ * The readings a volume stands when it declares none of its own.
+ *
+ * The key space is what the volume was read for and the run is what the tool answered. A map is not among them: this
+ * volume declares no place, and a reading whose host surface is absent is a control into nothing.
+ */
+const VOLUME_READINGS = ['keyspace', 'records'];
+
+/**
+ * What the board declares about a volume beside what the tool answered.
+ *
+ * A map needs two declarations the run does not carry: which participant kinds present a location, and the ground they
+ * stand on. Both are the project's, so they are written here and read by the frame; the records still come from the tool.
+ *
+ * The site is a fixture like the figures. It is a schematic plant at an illustrative position, and nothing in the volume
+ * claims to be there.
+ */
+const DECLARATIONS = {
+  'esg-scenario': {
+    // What this project calls the three kinds of record. `fact`, `intent` and `hint` are the engine's names, and a
+    // reader of this board is an auditor: the same three records are evidence, a calculation, and the requirement the
+    // work answers. The words are the project's because they are this domain's, and the frame only draws them.
+    words: { fact: 'evidence', intent: 'calculation', hint: 'requirement' },
+    // The readings this project stands, and the frame's panels it does not. The map, the chain, and the evidence list
+    // are the surface; the frame's raw run panels show a record's byte count and a member's board coordinate, which are
+    // the tool's own fields and not what the pack is about.
+    readings: ['map', 'chain', 'esg'],
+    // The frame's own arrangement, and nothing else. A declaration is applied when the project opens, which is a layer
+    // over the pilot's press rather than under it: a panel this file closed would come back on the next visit whatever
+    // the pilot left. So this project declares nothing, each panel answers for itself (the declarations, the space
+    // column, the transport and the evidence panel open; the console away), and the arrangement that stands is the one
+    // the pilot left.
+    layout: {},
+    kinds: {
+      // Only a unit needs a kind: the frame asks it for the atoms a member presents. The controller and the requirement
+      // are a record and a bound rather than a place, so they stand in no unit and declare no atoms. The names are the
+      // board's glyphs, so a kind is drawn by the mark the frame already holds rather than by a shape chosen here.
+      sensor: ['reads', 'shows'],
+      station: ['reads', 'shows'],
+      pump: ['reads', 'shows'],
+      machine: ['reads', 'shows'],
+      hauler: ['reads', 'shows'],
+      store: ['reads', 'shows'],
+      // A crane is given work rather than reporting. A person stands on the map because a service visit happened
+      // somewhere on the site, and states work rather than being given it.
+      arm: ['writes', 'shows'],
+      person: ['person', 'shows'],
+    },
+    place: {
+      view: [0, 0, 400, 220],
+      // Roughly 350 m by 200 m at this latitude: one plant, drawn as a sketch of where its instruments stand.
+      geo: { bounds: [7.454, 47.1663, 7.4586, 47.1681] },
+      areas: [
+        { x: 8, y: 8, w: 118, h: 66, label: 'meter room' },
+        { x: 8, y: 82, w: 118, h: 72, label: 'boiler house' },
+        { x: 134, y: 8, w: 152, h: 146, label: 'machine hall' },
+        { x: 294, y: 8, w: 98, h: 66, label: 'loading bay' },
+        { x: 294, y: 82, w: 98, h: 72, label: 'roof array' },
+        { x: 8, y: 162, w: 384, h: 50, label: 'service yard' },
+      ],
+      // A unit is where an instrument stands. What it is called is read from the record its creator wrote, so a pin and
+      // a measurement are the same instrument twice rather than two names to keep in step.
+      units: {
+        'meter:m17': { icon: 'sensor', at: placed([36, 30]) },
+        'meter:g04': { icon: 'station', at: placed([92, 30]) },
+        'meter:w02': { icon: 'pump', at: placed([36, 58]) },
+        'meter:w05': { icon: 'pump', at: placed([92, 58]) },
+        'boiler:b02': { icon: 'machine', at: placed([36, 106]) },
+        'compressor:a01': { icon: 'pump', at: placed([92, 106]) },
+        'chiller:c01': { icon: 'machine', at: placed([36, 136]) },
+        'press:p03': { icon: 'machine', at: placed([170, 34]) },
+        'crane:k01': { icon: 'arm', at: placed([252, 34]) },
+        'hvac:h04': { icon: 'machine', at: placed([170, 84]) },
+        'charger:e01': { icon: 'station', at: placed([252, 84]) },
+        'telematics:t01': { icon: 'hauler', at: placed([343, 30]) },
+        'compactor:w03': { icon: 'hauler', at: placed([343, 58]) },
+        'inverter:pv1': { icon: 'station', at: placed([343, 122]) },
+        'scale:s01': { icon: 'store', at: placed([200, 190]) },
+        'service:contractor': { icon: 'person', at: placed([60, 190]) },
       },
-      { kind: 'views', at: { pack: 'volume', main: 'keyspace' } },
-      // The board as text stands beside the key space. The panel is the frame's own drawing of a run, so it is opened
-      // here rather than gated on a room this deployment does not have.
-      { kind: 'layout', at: { console: true } },
+    },
+    // The close, read over the run. The objectives are the artefacts a reporting period is made of, and each one is a mark
+    // the importer wrote from the records: an objective is open until the record behind it is in the volume.
+    campaigns: [
+      {
+        id: 'reporting-close',
+        title: '2026-Q1 reporting close',
+        start: { time: 0 },
+        end: { fact: 'records-held' },
+        objectives: [
+          {
+            id: 'measurements',
+            title: 'measurements for the period are in',
+            when: { fact: 'measurements_recorded' },
+          },
+          { id: 'scope1', title: 'Scope 1 is stated', when: { fact: 'scope1_stated' } },
+          {
+            id: 'scope2',
+            title: 'Scope 2 is stated on both bases',
+            when: { fact: 'scope2_stated' },
+          },
+          { id: 'intensity', title: 'the intensity is stated', when: { fact: 'intensity_stated' } },
+          {
+            id: 'requirement',
+            title: 'the requirements are on file',
+            when: { fact: 'requirement_recorded' },
+          },
+        ],
+      },
     ],
-  };
+  },
+};
+
+/**
+ * The place, with what the records say about it filled in.
+ *
+ * The site is the `site` the measured records carry, and a unit is named by the metric and reference of the record its
+ * creator wrote. Both are read from the volume rather than kept beside it, so a rename in the records moves the map.
+ */
+function placedOf(place, records) {
+  const site = records.map((record) => record.payload?.site).find(Boolean);
+  const named = new Map(
+    records
+      .filter((record) => record.payload?.metric)
+      .map((record) => {
+        const metric = String(record.payload.metric).replaceAll('_', ' ');
+        const reference = record.payload.reference;
+        return [record.creator, reference ? `${metric}, ${reference}` : metric];
+      }),
+  );
+  const units = Object.fromEntries(
+    Object.entries(place.units).map(([id, unit]) => [
+      id,
+      named.has(id) ? { ...unit, role: named.get(id) } : unit,
+    ]),
+  );
+  return { ...place, ...(site ? { store: { label: site } } : {}), units };
+}
+
+/** The project that carries the run, the key space, and the records the volume holds. */
+export function projectOf(measured, reading = 'keyspace') {
+  const m = measured;
+  const resources = [
+    { kind: 'channel', at: 'sim' },
+    { kind: 'record', at: `scenario/${m.id}.txt` },
+    {
+      kind: 'keyspace',
+      at: {
+        volume: m.volume,
+        keys: m.keys,
+        listed: m.keyCount,
+        box: m.box,
+        records: m.box.records,
+      },
+    },
+  ];
+  // The records themselves, when the volume holds any: what the `show` verb printed, one entry a record.
+  if (m.records.length) {
+    resources.push({ kind: 'esg', at: { volume: m.volume, records: m.records } });
+  }
+  // What the deployment can do beside drawing the run, stated where the volume holds the thing it needs.
+  //
+  // The evidence surface reads the links a record carries, so a volume of plain readings has nothing for it to open. The
+  // capability is declared from the volume's own shape rather than kept beside it, which is what keeps the surface off a
+  // project that would show a panel with nothing in it.
+  if (chained(m.records)) resources.push({ kind: 'abilities', at: [EVIDENCE] });
+  // What a map needs and the run does not carry: the kinds that present a location, and the ground.
+  const declared = DECLARATIONS[m.id];
+  if (declared) {
+    resources.push(
+      { kind: 'kinds', at: declared.kinds },
+      { kind: 'place', at: placedOf(declared.place, m.records) },
+    );
+    resources.push({ kind: 'campaigns', at: declared.campaigns });
+    if (declared.words) resources.push({ kind: 'words', at: declared.words });
+  }
+  resources.push(
+    {
+      kind: 'views',
+      // A project that names its readings gets exactly those. One that names none stands every reading the pack and the
+      // frame hold, which is the technical volume's own view.
+      at: declared?.readings
+        ? { pack: 'volume', main: reading, on: declared.readings }
+        : { pack: 'volume', main: reading, on: VOLUME_READINGS },
+    },
+    // The board as text stands beside the key space. The panel is the frame's own drawing of a run, so it is opened
+    // here rather than gated on a room this deployment does not have.
+    { kind: 'layout', at: declared?.layout ?? { console: true } },
+  );
+  return { format: 'project/1', id: m.id, resources };
 }
 
 function main() {
@@ -350,6 +668,7 @@ function main() {
   const id = option('id') ?? basename(volumePath);
   const title = option('title') ?? id;
   const out = resolve(option('out') ?? APP);
+  const reading = option('reading', 'keyspace');
   const reset = args.includes('--reset');
   if (reset) args.splice(args.indexOf('--reset'), 1);
   if (args.length) throw new Error(`unexpected argument ${args[0]}`);
@@ -364,7 +683,7 @@ function main() {
   const board = reset || !existsSync(boardPath)
     ? { note: NOTE, projects: [] }
     : JSON.parse(readFileSync(boardPath, 'utf8'));
-  const project = projectOf(measured);
+  const project = projectOf(measured, reading);
   const at = board.projects.findIndex((each) => each.id === id);
   if (at === -1) board.projects.push(project);
   else board.projects[at] = project;
@@ -372,7 +691,7 @@ function main() {
 
   console.log(
     `${id}: ${measured.keyCount} keys, ${measured.box.records} record(s) in the box, ` +
-      `${measured.readBytes} bytes at ${measured.coordinate}`,
+      `${measured.readBytes} bytes at ${measured.coordinate}, ${measured.records.length} shown`,
   );
 }
 

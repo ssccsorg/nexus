@@ -45,6 +45,8 @@ const measured = {
   sidecarExit: 0,
   selfCheck: true,
   selfCheckExit: 0,
+  // The sample volume holds no record under a kind prefix, so `show` has nothing to answer for it.
+  records: [],
 };
 
 test('a run built from the tool’s answer is one the reader accepts', () => {
@@ -88,30 +90,57 @@ function runs(bin: string): boolean {
 
 const bin = defaultBin();
 
-describe.skipIf(!runs(bin))('the importer over the committed volume', () => {
+describe.skipIf(!runs(bin))('the importer over the committed volumes', () => {
   test('writes the bytes that are committed', () => {
+    // Both volumes, in the order the board lists them: the first import resets the board and the second appends.
+    const volumes = [
+      {
+        volume: 'storage/ref/demo/esg-volume',
+        id: 'esg-scenario',
+        title: 'ESG compliance - Alpine Precision AG, 2026-Q1',
+        reading: 'map',
+        reset: true,
+      },
+      {
+        volume: 'storage/ref/demo/volume',
+        id: 'sample-volume',
+        title: 'Sample volume',
+        reading: 'keyspace',
+        reset: false,
+      },
+    ];
+
     const out = mkdtempSync(join(tmpdir(), 'nex-ref-demo-import-'));
     try {
-      const run = spawnSync(
-        process.execPath,
-        [
-          join(HERE, 'tools/import-volume.mjs'),
-          '--bin',
-          bin,
-          '--volume',
-          'storage/ref/demo/volume',
-          '--id',
-          'sample-volume',
-          '--title',
-          'Sample volume',
-          '--out',
-          out,
-        ],
-        { encoding: 'utf8', cwd: HERE },
-      );
-      expect(run.status, run.stderr).toBe(0);
+      for (const each of volumes) {
+        const run = spawnSync(
+          process.execPath,
+          [
+            join(HERE, 'tools/import-volume.mjs'),
+            '--bin',
+            bin,
+            '--volume',
+            each.volume,
+            '--id',
+            each.id,
+            '--title',
+            each.title,
+            '--reading',
+            each.reading,
+            '--out',
+            out,
+            ...(each.reset ? ['--reset'] : []),
+          ],
+          { encoding: 'utf8', cwd: HERE },
+        );
+        expect(run.status, run.stderr).toBe(0);
+      }
 
-      for (const path of ['scenario/sample-volume.txt', 'projects.json']) {
+      for (const path of [
+        'projects.json',
+        'scenario/esg-scenario.txt',
+        'scenario/sample-volume.txt',
+      ]) {
         expect(readFileSync(join(out, path), 'utf8'), `${path} is stale`).toBe(
           readFileSync(join(HERE, path), 'utf8'),
         );

@@ -16,24 +16,18 @@
 seed 12061
 
 tick 0
-position sample-volume 70,88
-position keys 186,52
-position read 338,88
-position verify 452,40
-count 4
-
 fact keyspace-listed 3 keys/sample
 fact blob/578e724ee7e9c587be42c260a6d7e89abf7b75d502d3946ddc473b25aa22e3b8.bin 0 keys/sample
 fact blob/578e724ee7e9c587be42c260a6d7e89abf7b75d502d3946ddc473b25aa22e3b8.bin.meta 0 keys/sample
 fact facts/f_00024o7m35346n71ge0ev7vj33q5cp6fg6ow3230ba3oo00g6mp0lm4rh0uq.fact 0 keys/sample
-hint key-count facts=1,blobs=2,exit=0
-count 8
+hint key-count facts=1,blobs=2,hints=0,intents=0,exit=0
+count 4
 
 tick 1
 fact 00024o7m35346n71ge0ev7vj33q5cp6fg6ow3230ba3oo00g6mp0lm4rh0uq 0 box/sample
 hint box-axes 0=000-000
 hint box-count 1
-count 9
+count 5
 
 intent read-sample keyspace-listed read-one-address
 claim read-sample read/sample
@@ -42,7 +36,7 @@ fact sample-record 164 read/sample
 hint read-key facts/f_00024o7m35346n71ge0ev7vj33q5cp6fg6ow3230ba3oo00g6mp0lm4rh0uq.fact
 hint read-exit 0
 conclude read-sample present
-count 11
+count 7
 
 intent verify-sample sample-record recompute-the-address
 claim verify-sample verify/sample
@@ -53,7 +47,7 @@ hint record-written 1793630807643521000ns
 hint payload-bytes 125
 hint address-state valid
 conclude verify-sample verified
-count 12
+count 8
 
 intent sidecar-sample sample-record measure-the-application-file
 claim sidecar-sample read/sample
@@ -61,12 +55,19 @@ tick 4
 hint app-bytes 9
 hint app-state unchanged
 conclude sidecar-sample unchanged
-count 13
+count 9
 
 intent self-check-sample sidecar-sample run-the-contract
 claim self-check-sample read/sample
 tick 5
 hint self-check-exit 0
 conclude self-check-sample pass
-count 14
+count 10
+
+tick 6
+fact records-held 1 show/volume
+fact record-0 125 sensor-1
+hint record-key-0 facts/f_00024o7m35346n71ge0ev7vj33q5cp6fg6ow3230ba3oo00g6mp0lm4rh0uq.fact
+hint record-kinds fact=1
+count 12
 

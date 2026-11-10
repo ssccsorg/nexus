@@ -158,7 +158,8 @@ jobs:
         run: bash ./run.sh --playbooks
 
   # The demonstration is a deployment of a package it does not own, so it is checked against the frame as published
-  # rather than against a copy: the clone is what a reader's first run does.
+  # rather than against a copy: the clone is what a reader's first run does. The layer's runner performs the same steps
+  # from a checkout and then serves the board, so this job runs the check alone.
   demo:
     runs-on: ubuntu-latest
     steps:
@@ -174,20 +175,35 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: storage/ref/demo/app/package-lock.json
-      # The application names the frame five levels up from itself, so the frame sits beside this checkout.
-      - name: Put the frame beside this checkout
-        run: git clone --depth 1 https://github.com/ssccsorg/skene "${{ github.workspace }}/../skene"
-      # The end-to-end case runs the importer against the committed volume; without this binary it skips.
-      - name: Build the reference tool
-        run: cargo build -p nexus-storage-ref
-      - name: Install the application
-        working-directory: storage/ref/demo/app
-        run: npm ci
-      - name: Test the application
-        working-directory: storage/ref/demo/app
-        run: npm test
-      - name: Build the application
-        working-directory: storage/ref/demo/app
-        run: npm run build
-      - name: The build carries the board
-        run: test -f storage/ref/demo/app/dist/projects.json && test -d storage/ref/demo/app/dist/scenario
+      - name: Demonstration
+        run: bash ./run.sh --demo-check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: demo-dist
+          path: storage/ref/demo/app/dist
+          if-no-files-found: error
+
+  # A push to main publishes the board the check just built, so what a reader opens is the bytes the suite passed rather
+  # than a second build of the same commit. A pull request stops at the artifact, because a branch is read and not
+  # published. The job waits on every other, so a commit that breaks a layer never reaches the address.
+  deploy:
+    needs: [core, server, gateway, apps, playbooks, demo]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    environment:
+      name: nexus-demo
+      url: https://nexus-demo-b5z.pages.dev
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: demo-dist
+          path: storage/ref/demo/app/dist
+      - name: Deploy the board
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bash ./run.sh --demo-deploy

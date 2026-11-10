@@ -7,11 +7,14 @@ set -euo pipefail
 # Sub-commands for focused tasks.
 #
 # Usage:
-#   ./run.sh               # Everything (default: core + gateway + apps + playbooks)
+#   ./run.sh               # Everything (default: core + gateway + apps + demo + playbooks)
 #   ./run.sh --core        # Core checks only (nex, storage/*)
 #   ./run.sh --gateway     # Gateway layer checks (apps/nex-api, libs/serde-proxy)
 #   ./run.sh --apps        # All standalone app verification
 #   ./run.sh --server      # nex-server standalone verification
+#   ./run.sh --demo        # Check the demonstration, then serve it
+#   ./run.sh --demo-check  # Check the demonstration only (what CI runs)
+#   ./run.sh --demo-deploy # Publish the built board to Cloudflare Pages (what CI runs on main)
 #   ./run.sh --playbooks   # Consumer playbooks only
 #
 
@@ -523,6 +526,91 @@ verify_nex_tagma() {
     echo "nex-tagma: passed"
 }
 
+# ── The demonstration ─────────────────────────────────────────────────────
+#
+# `storage/ref/demo/app` is the only consumer of the reference crate that runs the
+# binary and reads what it printed. It is a Vite deployment of a package it does not
+# own, so it is checked the way CI checks it: the frame is the sibling clone, the
+# install is `npm ci`, and the runs are compared with the committed bytes.
+
+DEMO_APP="storage/ref/demo/app"
+
+verify_demo() {
+    local APP="$DEMO_APP"
+
+    echo "=== demo ==="
+    if ! command -v npm >/dev/null 2>&1; then
+        echo "demo: npm is not on the path, and the demonstration is a Vite deployment (FAIL)"
+        return 1
+    fi
+
+    # The application names the frame five levels up from itself, so the frame sits beside
+    # this checkout rather than in it.
+    if [ ! -d "../skene/packages/frame" ]; then
+        echo "Putting the frame beside this checkout..."
+        git clone --depth 1 https://github.com/ssccsorg/skene ../skene 2>&1 || {
+            echo "demo: the frame could not be cloned (FAIL)"
+            return 1
+        }
+    fi
+
+    # The importer runs this binary and never builds it.
+    echo "Building the reference tool..."
+    cargo build -p nexus-storage-ref 2>&1 || { echo "demo: the tool's build FAILED"; return 1; }
+
+    # `npm ci` rather than `npm install`: a `file:` dependency is copied into
+    # node_modules, and an install that compares versions can leave the frame stale
+    # while the tests pass against the copy.
+    echo "Installing the application..."
+    (cd "$APP" && npm ci) 2>&1 || { echo "demo: the install FAILED"; return 1; }
+
+    echo "Testing the application..."
+    (cd "$APP" && npm test) 2>&1 || { echo "demo: the tests FAILED"; return 1; }
+
+    echo "Building the application..."
+    (cd "$APP" && npm run build) 2>&1 || { echo "demo: the build FAILED"; return 1; }
+
+    if [ ! -f "$APP/dist/projects.json" ] || [ ! -d "$APP/dist/scenario" ]; then
+        echo "demo: the build does not carry the board (FAIL)"
+        return 1
+    fi
+
+    echo "demo: passed"
+}
+
+# Serve the board, which is what a person running `--demo` asked for. CI runs the same layer with `CI` set and a job
+# that waited on a server would never finish, so the gate is the whole of it there.
+serve_demo() {
+    if [ -n "${CI:-}" ]; then
+        echo "demo: CI is set, so the board is checked and not served"
+        return 0
+    fi
+    echo "demo: serving on http://localhost:5292"
+    kill_port 5292 2>/dev/null || true
+    (cd "$DEMO_APP" && exec npm run dev)
+}
+
+# Publish the board `verify_demo` built. The board is static, so a deploy is the upload of `dist` and nothing else. The
+# credentials come from the environment, so a missing one fails here instead of reaching for a guessed account.
+deploy_demo() {
+    local APP="$DEMO_APP"
+
+    if [ ! -f "$APP/dist/projects.json" ] || [ ! -d "$APP/dist/scenario" ]; then
+        echo "deploy: the build does not carry the board, so run --demo-check first (FAIL)"
+        return 1
+    fi
+    if [ -n "${CI:-}" ] && { [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; }; then
+        echo "deploy: CI needs CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID (FAIL)"
+        return 1
+    fi
+
+    echo "Publishing $APP/dist to nexus-demo..."
+    (cd "$APP" && npx --yes wrangler@4.100.0 pages deploy dist \
+        --project-name nexus-demo --branch main) 2>&1 \
+        || { echo "deploy: the upload FAILED"; return 1; }
+    echo "deploy: published"
+}
+
 # ── App suite ─────────────────────────────────────────────────────────────
 
 run_apps() {
@@ -564,18 +652,34 @@ case "${1:-}" in
         verify_nex_server
         exit 0
         ;;
+    --demo)
+        shift
+        verify_demo
+        serve_demo
+        ;;
+    --demo-check)
+        shift
+        verify_demo
+        ;;
+    --demo-deploy)
+        shift
+        deploy_demo
+        ;;
     --playbooks)
         kill_port 30922
         exec ./playbooks/run.sh
         ;;
     --help|-h)
         echo "Usage: $0 [OPTION]"
-        echo "  (no arg)      Core + gateway + apps + playbooks [default]"
-        echo "  --core        Core checks only (nex, storage/*)"
-        echo "  --gateway     Gateway layer checks (apps/nex-api, libs/serde-proxy)"
-        echo "  --apps        Standalone app verification (spinwasi, nex-tagma, ...)"
-        echo "  --server      nex-server standalone verification"
-        echo "  --playbooks   Consumer playbooks only"
+        echo "  (no arg)        Core + gateway + apps + demo + playbooks [default]"
+        echo "  --core          Core checks only (nex, storage/*)"
+        echo "  --gateway       Gateway layer checks (apps/nex-api, libs/serde-proxy)"
+        echo "  --apps          Standalone app verification (spinwasi, nex-tagma, ...)"
+        echo "  --server        nex-server standalone verification"
+        echo "  --demo          Check the demonstration, then serve it on 5292"
+        echo "  --demo-check    Check the demonstration and stop (what CI runs)"
+        echo "  --demo-deploy   Publish the built board to Cloudflare Pages (what CI runs on main)"
+        echo "  --playbooks     Consumer playbooks only"
         ;;
     "")
         # Default: run everything
@@ -587,6 +691,9 @@ case "${1:-}" in
         echo ""
         echo "=== Apps ==="
         run_apps
+        echo ""
+        echo "=== Demo ==="
+        verify_demo
         echo ""
         kill_port 30922
         echo "=== Playbooks ==="

@@ -3,6 +3,1254 @@
   "projects": [
     {
       "format": "project/1",
+      "id": "esg-scenario",
+      "resources": [
+        {
+          "kind": "channel",
+          "at": "sim"
+        },
+        {
+          "kind": "record",
+          "at": "scenario/esg-scenario.txt"
+        },
+        {
+          "kind": "keyspace",
+          "at": {
+            "volume": "storage/ref/demo/esg-volume",
+            "keys": [
+              "blob/1ed70375de4c790fcebf50033e1b2cd215c0467166a867f7401f37cf89b4aa9d.bin",
+              "blob/1ed70375de4c790fcebf50033e1b2cd215c0467166a867f7401f37cf89b4aa9d.bin.meta",
+              "blob/23da3117cbdc0a0f83c5cc4ecc5f707c524aeceb318c69a374f018e56e1591bb.bin",
+              "blob/23da3117cbdc0a0f83c5cc4ecc5f707c524aeceb318c69a374f018e56e1591bb.bin.meta",
+              "blob/3aa2d6239717290bcea039142cc14237fa6c8581b7da8bc51f1796f0bbb2ff06.bin",
+              "blob/3aa2d6239717290bcea039142cc14237fa6c8581b7da8bc51f1796f0bbb2ff06.bin.meta",
+              "blob/457c25d4efb6b9fd1d39593881022af3fe024bfee173c3dc79ab9cf9dd33ccd2.bin",
+              "blob/457c25d4efb6b9fd1d39593881022af3fe024bfee173c3dc79ab9cf9dd33ccd2.bin.meta",
+              "blob/459ac6466c5519f9c2e78e5b48793da695f6e58ed8a2c457672d21341fa73dab.bin",
+              "blob/459ac6466c5519f9c2e78e5b48793da695f6e58ed8a2c457672d21341fa73dab.bin.meta",
+              "blob/46a9fdc0fe7820c4ea713d9a3d6db608bd21a1574e712341661b4b36e9895b38.bin",
+              "blob/46a9fdc0fe7820c4ea713d9a3d6db608bd21a1574e712341661b4b36e9895b38.bin.meta",
+              "blob/5bfc7cd3919681bdcd16db86a959fae6dcf08f0c9577ca772d9b48cf9ae96959.bin",
+              "blob/5bfc7cd3919681bdcd16db86a959fae6dcf08f0c9577ca772d9b48cf9ae96959.bin.meta",
+              "blob/6b1ddc9bb94cabcd100aef15f9e3cc6a019709455bb8646c24e7003fa7bb64be.bin",
+              "blob/6b1ddc9bb94cabcd100aef15f9e3cc6a019709455bb8646c24e7003fa7bb64be.bin.meta",
+              "blob/797d86a826bf20946768163caf57ef10b6a55ec8b4393c35b453f7b197e1facb.bin",
+              "blob/797d86a826bf20946768163caf57ef10b6a55ec8b4393c35b453f7b197e1facb.bin.meta",
+              "blob/8230bc447cf6233f95243e71db051ffbec24ef22a8d970457896184941bdd32d.bin",
+              "blob/8230bc447cf6233f95243e71db051ffbec24ef22a8d970457896184941bdd32d.bin.meta",
+              "blob/8c4ae1f13b64df04d05b484c543b56e9bd4194163a850bd3076ec3e82809a581.bin",
+              "blob/8c4ae1f13b64df04d05b484c543b56e9bd4194163a850bd3076ec3e82809a581.bin.meta",
+              "blob/906c3b2f0cb596b67389fef0ab0e49573c9f02890bc016b74982c1a616e66c0f.bin",
+              "blob/906c3b2f0cb596b67389fef0ab0e49573c9f02890bc016b74982c1a616e66c0f.bin.meta",
+              "blob/96939e2a7e6038b0a36d77deded4eba5f1c7a002ed51dbda3176c4bd48cc5e3c.bin",
+              "blob/96939e2a7e6038b0a36d77deded4eba5f1c7a002ed51dbda3176c4bd48cc5e3c.bin.meta",
+              "blob/977124298be15f911835564c49015cdab6b4cf3415f3672cfdf9cd6b65d2eeba.bin",
+              "blob/977124298be15f911835564c49015cdab6b4cf3415f3672cfdf9cd6b65d2eeba.bin.meta",
+              "blob/b2ea4d64ae63292f3200fce6ba4064094766c4a6e6fb9032b915f68305f29427.bin",
+              "blob/b2ea4d64ae63292f3200fce6ba4064094766c4a6e6fb9032b915f68305f29427.bin.meta",
+              "blob/bc884f7509de889157952eba1b8baff78768a5ce3f37293bb10273d39f1b8676.bin",
+              "blob/bc884f7509de889157952eba1b8baff78768a5ce3f37293bb10273d39f1b8676.bin.meta",
+              "blob/d59057ed3fb98a37f819b937d97d3d6df7eb8ed9e0f9eff0b5dd662eacdf498c.bin",
+              "blob/d59057ed3fb98a37f819b937d97d3d6df7eb8ed9e0f9eff0b5dd662eacdf498c.bin.meta",
+              "blob/da3be62796592ff17c1d26dc016633893fb3f165f6a393b703f44a36efe6cf55.bin",
+              "blob/da3be62796592ff17c1d26dc016633893fb3f165f6a393b703f44a36efe6cf55.bin.meta",
+              "blob/daedbd022957614e550fa0774714efedded0906f2352e9a7a80d87a9950c135b.bin",
+              "blob/daedbd022957614e550fa0774714efedded0906f2352e9a7a80d87a9950c135b.bin.meta",
+              "blob/dce64337c5fde8e82a79241ce9cdca33437e7fe7c2f04571903213d313e15f6e.bin",
+              "blob/dce64337c5fde8e82a79241ce9cdca33437e7fe7c2f04571903213d313e15f6e.bin.meta",
+              "blob/e8c9184d985bc21ddaebfb41987ab64a57611a332625b7e6458e8832bce8ff6b.bin",
+              "blob/e8c9184d985bc21ddaebfb41987ab64a57611a332625b7e6458e8832bce8ff6b.bin.meta",
+              "blob/ece8d179b7fdf8eb5e98ad989e4d9460c5b812efbc9916d11fd1ed5e6d407476.bin",
+              "blob/ece8d179b7fdf8eb5e98ad989e4d9460c5b812efbc9916d11fd1ed5e6d407476.bin.meta",
+              "blob/fc98b41098a19041ae6830a35cc630d41a9d0bdf0146119d3e0e0db4aca468fc.bin",
+              "blob/fc98b41098a19041ae6830a35cc630d41a9d0bdf0146119d3e0e0db4aca468fc.bin.meta",
+              "facts/f_0000121d45742zs8ey2dk0540hj5c41si5475hv7s94t50md5fe1z72ag5d0.fact",
+              "facts/f_00006t2x816s06m17q3hl0ur7t84vg4p56te1tr43x7m14qx5ju4682it39k.fact",
+              "facts/f_0002283tu0x03wg8176d442v10n3ui2jc14z0ow1u963c4pp1qt6pc5093nf.fact",
+              "facts/f_0003cb3g68382rt06z7kv6bo7601da4k511u24k7ln5dm7aq5l84x05y1422.fact",
+              "facts/f_0003ku8d90is6tb1gl5bq1ti22i6y46km7oy3o78h045e20m4ud5n52mj0w6.fact",
+              "facts/f_0003q755g43m26b4uh53i3pi5fd2i34gc49e84c6jj0435ta2092ak4n16f2.fact",
+              "facts/f_0003vl1tr5r95ej2pz1qt7yh2d33j64l65sb0up2zw7b53tk3ch18w3a277b.fact",
+              "facts/f_0004a85i903y5r25ww2js7v65nw18k46y42c7rz49i5vy69y7uz6ly07o71a.fact",
+              "facts/f_0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1.fact",
+              "facts/f_0004y947j4k97kg3p17qn6214n77xk0cp65q4xa30g0j90k04i40557qr3t6.fact",
+              "facts/f_0004yp54i4ou8ef6cd0pe3nf3n31pz4d30kf0506ft03d18w0dg5h445x1qt.fact",
+              "facts/f_0004zd4pw80f80542k5bb3923fx0d360u0294jm24f3qi7se4kd5ap73e6su.fact",
+              "facts/f_0006xm24p4da1f963860t1vo0uf74y24x6ja4kk0wz4uh6zp25g5765qt1xw.fact",
+              "facts/f_00079h3xv77s0vb17d6371z73fw7cj2uj7ja58j5fq48b84l0py7ep2ay24w.fact",
+              "facts/f_0008760k22u64wq3um1yv4vv1mi5905l66on7ck3tk5ro5qt7c43l90xj03b.fact",
+              "facts/f_0008ak4ql2q42zn5wc0lr7nz2ks7ue83t6av2ln0mx4nd1t404j35i5nu6gd.fact",
+              "facts/f_0010ww4kj2j336x3m974j3fg51o67c6pg72a7ib4v62zs5ow0z91t063j6ge.fact",
+              "facts/f_0010xi2ur0zc6mo0bt82e5aa2tf4eo2hw78w82474q4ei42u7e16ci7dx7c2.fact",
+              "facts/f_00112s25w3cb7br3m11cq7dw5tk2l45ss1gn0350dr1p473t4d46d50080o1.fact",
+              "facts/f_0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by.fact",
+              "hints/h_0003tx3ll18f1hq25l5ho20e2f523s8ac2d882s39j2ik00d72q1sb41d1sz.hint",
+              "hints/h_00063f0d48fm7s17t67ff0761r00ju1cw4o00go2vw7fx1bw7bs7et6hb6zv.hint",
+              "hints/h_0008lk0fv1kl7rv1z11ca4b365u0r15st2oq6c67kz5yr81e1l83cs6qt8bj.hint",
+              "intents/i_0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i.intent",
+              "intents/i_0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k.intent",
+              "intents/i_0011se68t04f7k94py52v7un3kj1283rn3e617b6th5mw8eb0a40k91cb1cw.intent"
+            ],
+            "listed": 72,
+            "box": {
+              "axis": 0,
+              "from": "000",
+              "until": "000",
+              "records": 16
+            },
+            "records": 16
+          }
+        },
+        {
+          "kind": "esg",
+          "at": {
+            "volume": "storage/ref/demo/esg-volume",
+            "records": [
+              {
+                "key": "facts/f_0000121d45742zs8ey2dk0540hj5c41si5475hv7s94t50md5fe1z72ag5d0.fact",
+                "kind": "fact",
+                "address": "0000121d45742zs8ey2dk0540hj5c41si5475hv7s94t50md5fe1z72ag5d0",
+                "origin": "did:example:plant-li-1",
+                "creator": "meter:g04",
+                "written": 1794311237393307000,
+                "record": {
+                  "id": "0000121d45742zs8ey2dk0540hj5c41si5475hv7s94t50md5fe1z72ag5d0",
+                  "blob_hash": "906c3b2f0cb596b67389fef0ab0e49573c9f02890bc016b74982c1a616e66c0f",
+                  "origin": "did:example:plant-li-1",
+                  "creator": "meter:g04",
+                  "submitted_at": 1794311237393307000
+                },
+                "payload": {
+                  "value": 96400,
+                  "unit": "kWh",
+                  "metric": "natural_gas_consumption",
+                  "period": "2026-Q1",
+                  "site": "plant-li-1",
+                  "reference": "G04-2023-0117",
+                  "quality": "measured",
+                  "source": "meter:g04"
+                },
+                "payloadText": "{\"value\":96400.0,\"unit\":\"kWh\",\"metric\":\"natural_gas_consumption\",\"period\":\"2026-Q1\",\"site\":\"plant-li-1\",\"reference\":\"G04-2023-0117\",\"quality\":\"measured\",\"source\":\"meter:g04\"}",
+                "description": null,
+                "addressState": "valid"
+              },
+              {
+                "key": "facts/f_00006t2x816s06m17q3hl0ur7t84vg4p56te1tr43x7m14qx5ju4682it39k.fact",
+                "kind": "fact",
+                "address": "00006t2x816s06m17q3hl0ur7t84vg4p56te1tr43x7m14qx5ju4682it39k",
+                "origin": "did:example:plant-li-1",
+                "creator": "service:contractor",
+                "written": 1794311237398689000,
+                "record": {
+                  "id": "00006t2x816s06m17q3hl0ur7t84vg4p56te1tr43x7m14qx5ju4682it39k",
+                  "blob_hash": "daedbd022957614e550fa0774714efedded0906f2352e9a7a80d87a9950c135b",
+                  "origin": "did:example:plant-li-1",
+                  "creator": "service:contractor",
+                  "submitted_at": 1794311237398689000
+                },
+                "payload": {
+                  "value": 12.5,
+                  "unit": "kg",
+                  "metric": "refrigerant_top_up",
+                  "substance": "R-410A",
+                  "gwp": 2088,
+                  "gwp_source": "IPCC AR5 GWP100",
+                  "period": "2026-Q1",
+                  "site": "plant-li-1",
+                  "reference": "WO-2026-0142",
+                  "quality": "measured",
+                  "source": "service:contractor"
+                },
+                "payloadText": "{\"value\":12.5,\"unit\":\"kg\",\"metric\":\"refrigerant_top_up\",\"substance\":\"R-410A\",\"gwp\":2088,\"gwp_source\":\"IPCC AR5 GWP100\",\"period\":\"2026-Q1\",\"site\":\"plant-li-1\",\"reference\":\"WO-2026-0142\",\"quality\":\"measured\",\"source\":\"service:contractor\"}",
+                "description": null,
+                "addressState": "valid"
+              },
+              {
+                "key": "facts/f_0002283tu0x03wg8176d442v10n3ui2jc14z0ow1u963c4pp1qt6pc5093nf.fact",
+                "kind": "fact",
+                "address": "0002283tu0x03wg8176d442v10n3ui2jc14z0ow1u963c4pp1qt6pc5093nf",
+                "origin": "did:example:plant-li-1",
+                "creator": "hvac:h04",
+                "written": 1794311237401855000,
+                "record": {
+                  "id": "0002283tu0x03wg8176d442v10n3ui2jc14z0ow1u963c4pp1qt6pc5093nf",
+                  "blob_hash": "fc98b41098a19041ae6830a35cc630d41a9d0bdf0146119d3e0e0db4aca468fc",
+                  "origin": "did:example:plant-li-1",
+                  "creator": "hvac:h04",
+                  "submitted_at": 1794311237401855000
+                },
+                "payload": {
+                  "value": 27400,
+                  "unit": "kWh",
+                  "metric": "air_handling_kwh",
+                  "period": "2026-Q1",
+                  "site": "plant-li-1",
+                  "reference": "HV-2022-0031",
+                  "quality": "measured",
+                  "source": "hvac:h04"
+                },
+                "payloadText": "{\"value\":27400.0,\"unit\":\"kWh\",\"metric\":\"air_handling_kwh\",\"period\":\"2026-Q1\",\"site\":\"plant-li-1\",\"reference\":\"HV-2022-0031\",\"quality\":\"measured\",\"source\":\"hvac:h04\"}",
+                "description": null,
+                "addressState": "valid"
+              },
+              {
+                "key": "facts/f_0003cb3g68382rt06z7kv6bo7601da4k511u24k7ln5dm7aq5l84x05y1422.fact",
+                "kind": "fact",
+                "address": "0003cb3g68382rt06z7kv6bo7601da4k511u24k7ln5dm7aq5l84x05y1422",
+                "origin": "conclusion:0011se68t04f7k94py52v7un3kj1283rn3e617b6th5mw8eb0a40k91cb1cw",
+                "creator": "sustainability-controller",
+                "written": 1794311237414159000,
+                "record": {
+                  "id": "0003cb3g68382rt06z7kv6bo7601da4k511u24k7ln5dm7aq5l84x05y1422",
+                  "blob_hash": "ece8d179b7fdf8eb5e98ad989e4d9460c5b812efbc9916d11fd1ed5e6d407476",
+                  "origin": "conclusion:0011se68t04f7k94py52v7un3kj1283rn3e617b6th5mw8eb0a40k91cb1cw",
+                  "creator": "sustainability-controller",
+                  "submitted_at": 1794311237414159000
+                },
+                "payload": {
+                  "kgco2e_per_unit": 7.07,
+                  "total_tco2e": 130.11,
+                  "denominator_units": 18400,
+                  "basis": "market-based",
+                  "period": "2026-Q1",
+                  "consolidation": "operational control",
+                  "requirement": "ESRS E1-6",
+                  "source_facts": [
+                    "0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1",
+                    "0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by",
+                    "0008ak4ql2q42zn5wc0lr7nz2ks7ue83t6av2ln0mx4nd1t404j35i5nu6gd"
+                  ]
+                },
+                "payloadText": "{\"kgco2e_per_unit\":7.07,\"total_tco2e\":130.11,\"denominator_units\":18400,\"basis\":\"market-based\",\"period\":\"2026-Q1\",\"consolidation\":\"operational control\",\"requirement\":\"ESRS E1-6\",\"source_facts\":[\"0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1\",\"0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by\",\"0008ak4ql2q42zn5wc0lr7nz2ks7ue83t6av2ln0mx4nd1t404j35i5nu6gd\"]}",
+                "description": null,
+                "addressState": null
+              },
+              {
+                "key": "facts/f_0003ku8d90is6tb1gl5bq1ti22i6y46km7oy3o78h045e20m4ud5n52mj0w6.fact",
+                "kind": "fact",
+                "address": "0003ku8d90is6tb1gl5bq1ti22i6y46km7oy3o78h045e20m4ud5n52mj0w6",
+                "origin": "did:example:plant-li-1",
+                "creator": "meter:w02",
+                "written": 1794311237399902000,
+                "record": {
+                  "id": "0003ku8d90is6tb1gl5bq1ti22i6y46km7oy3o78h045e20m4ud5n52mj0w6",
+                  "blob_hash": "8c4ae1f13b64df04d05b484c543b56e9bd4194163a850bd3076ec3e82809a581",
+                  "origin": "did:example:plant-li-1",
+                  "creator": "meter:w02",
+                  "submitted_at": 1794311237399902000
+                },
+                "payload": {
+                  "value": 1240,
+                  "unit": "m3",
+                  "metric": "water_withdrawal",
+                  "period": "2026-Q1",
+                  "site": "plant-li-1",
+                  "reference": "W02-2025-0031",
+                  "quality": "measured",
+                  "source": "meter:w02"
+                },
+                "payloadText": "{\"value\":1240.0,\"unit\":\"m3\",\"metric\":\"water_withdrawal\",\"period\":\"2026-Q1\",\"site\":\"plant-li-1\",\"reference\":\"W02-2025-0031\",\"quality\":\"measured\",\"source\":\"meter:w02\"}",
+                "description": null,
+                "addressState": "valid"
+              },
+              {
+                "key": "facts/f_0003q755g43m26b4uh53i3pi5fd2i34gc49e84c6jj0435ta2092ak4n16f2.fact",
+                "kind": "fact",
+                "address": "0003q755g43m26b4uh53i3pi5fd2i34gc49e84c6jj0435ta2092ak4n16f2",
+                "origin": "did:example:plant-li-1",
+                "creator": "meter:w05",
+                "written": 1794311237402882000,
+                "record": {
+                  "id": "0003q755g43m26b4uh53i3pi5fd2i34gc49e84c6jj0435ta2092ak4n16f2",
+                  "blob_hash": "d59057ed3fb98a37f819b937d97d3d6df7eb8ed9e0f9eff0b5dd662eacdf498c",
+                  "origin": "did:example:plant-li-1",
+                  "creator": "meter:w05",
+                  "submitted_at": 1794311237402882000
+                },
+                "payload": {
+                  "value": 380,
+                  "unit": "m3",
+                  "metric": "water_discharge",
+                  "period": "2026-Q1",
+                  "site": "plant-li-1",
+                  "reference": "W05-2025-0032",
+                  "quality": "measured",
+                  "source": "meter:w05"
+                },
+                "payloadText": "{\"value\":380.0,\"unit\":\"m3\",\"metric\":\"water_discharge\",\"period\":\"2026-Q1\",\"site\":\"plant-li-1\",\"reference\":\"W05-2025-0032\",\"quality\":\"measured\",\"source\":\"meter:w05\"}",
+                "description": null,
+                "addressState": "valid"
+              },
+              {
+                "key": "facts/f_0003vl1tr5r95ej2pz1qt7yh2d33j64l65sb0up2zw7b53tk3ch18w3a277b.fact",
+                "kind": "fact",
+                "address": "0003vl1tr5r95ej2pz1qt7yh2d33j64l65sb0up2zw7b53tk3ch18w3a277b",
+                "origin": "did:example:plant-li-1",
+                "creator": "charger:e01",
+                "written": 1794311237401149000,
+                "record": {
+                  "id": "0003vl1tr5r95ej2pz1qt7yh2d33j64l65sb0up2zw7b53tk3ch18w3a277b",
+                  "blob_hash": "da3be62796592ff17c1d26dc016633893fb3f165f6a393b703f44a36efe6cf55",
+                  "origin": "did:example:plant-li-1",
+                  "creator": "charger:e01",
+                  "submitted_at": 1794311237401149000
+                },
+                "payload": {
+                  "value": 9800,
+                  "unit": "kWh",
+                  "metric": "forklift_charging_kwh",
+                  "period": "2026-Q1",
+                  "site": "plant-li-1",
+                  "reference": "CHG-2023-0021",
+                  "quality": "measured",
+                  "source": "charger:e01"
+                },
+                "payloadText": "{\"value\":9800.0,\"unit\":\"kWh\",\"metric\":\"forklift_charging_kwh\",\"period\":\"2026-Q1\",\"site\":\"plant-li-1\",\"reference\":\"CHG-2023-0021\",\"quality\":\"measured\",\"source\":\"charger:e01\"}",
+                "description": null,
+                "addressState": "valid"
+              },
+              {
+                "key": "facts/f_0004a85i903y5r25ww2js7v65nw18k46y42c7rz49i5vy69y7uz6ly07o71a.fact",
+                "kind": "fact",
+                "address": "0004a85i903y5r25ww2js7v65nw18k46y42c7rz49i5vy69y7uz6ly07o71a",
+                "origin": "did:example:plant-li-1",
+                "creator": "crane:k01",
+                "written": 1794311237401642000,
+                "record": {
+                  "id": "0004a85i903y5r25ww2js7v65nw18k46y42c7rz49i5vy69y7uz6ly07o71a",
+                  "blob_hash": "dce64337c5fde8e82a79241ce9cdca33437e7fe7c2f04571903213d313e15f6e",
+                  "origin": "did:example:plant-li-1",
+                  "creator": "crane:k01",
+                  "submitted_at": 1794311237401642000
+                },
+                "payload": {
+                  "value": 612,
+                  "unit": "h",
+                  "metric": "crane_lift_hours",
+                  "period": "2026-Q1",
+                  "site": "plant-li-1",
+                  "reference": "CR-2017-0002",
+                  "quality": "measured",
+                  "source": "crane:k01"
+                },
+                "payloadText": "{\"value\":612.0,\"unit\":\"h\",\"metric\":\"crane_lift_hours\",\"period\":\"2026-Q1\",\"site\":\"plant-li-1\",\"reference\":\"CR-2017-0002\",\"quality\":\"measured\",\"source\":\"crane:k01\"}",
+                "description": null,
+                "addressState": "valid"
+              },
+              {
+                "key": "facts/f_0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1.fact",
+                "kind": "fact",
+                "address": "0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1",
+                "origin": "conclusion:0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k",
+                "creator": "sustainability-controller",
+                "written": 1794311237412022000,
+                "record": {
+                  "id": "0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1",
+                  "blob_hash": "797d86a826bf20946768163caf57ef10b6a55ec8b4393c35b453f7b197e1facb",
+                  "origin": "conclusion:0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k",
+                  "creator": "sustainability-controller",
+                  "submitted_at": 1794311237412022000
+                },
+                "payload": {
+                  "tco2e": 45.53,
+                  "stationary_combustion_tco2e": 19.43,
+                  "fugitive_refrigerant_tco2e": 26.1,
+                  "scope": 1,
+                  "period": "2026-Q1",
+                  "consolidation": "operational control",
+                  "gwp_source": "IPCC AR5 GWP100",
+                  "base_year": 2024,
+                  "restated": false,
+                  "requirement": "ESRS E1-6",
+                  "source_facts": [
+                    "0000121d45742zs8ey2dk0540hj5c41si5475hv7s94t50md5fe1z72ag5d0",
+                    "00006t2x816s06m17q3hl0ur7t84vg4p56te1tr43x7m14qx5ju4682it39k"
+                  ]
+                },
+                "payloadText": "{\"tco2e\":45.53,\"stationary_combustion_tco2e\":19.43,\"fugitive_refrigerant_tco2e\":26.1,\"scope\":1,\"period\":\"2026-Q1\",\"consolidation\":\"operational control\",\"gwp_source\":\"IPCC AR5 GWP100\",\"base_year\":2024,\"restated\":false,\"requirement\":\"ESRS E1-6\",\"source_facts\":[\"0000121d45742zs8ey2dk0540hj5c41si5475hv7s94t50md5fe1z72ag5d0\",\"00006t2x816s06m17q3hl0ur7t84vg4p56te1tr43x7m14qx5ju4682it39k\"]}",
+                "description": null,
+                "addressState": null
+              },
+              {
+                "key": "facts/f_0004y947j4k97kg3p17qn6214n77xk0cp65q4xa30g0j90k04i40557qr3t6.fact",
+                "kind": "fact",
+                "address": "0004y947j4k97kg3p17qn6214n77xk0cp65q4xa30g0j90k04i40557qr3t6",
+                "origin": "did:example:plant-li-1",
+                "creator": "compressor:a01",
+                "written": 1794311237400666000,
+                "record": {
+                  "id": "0004y947j4k97kg3p17qn6214n77xk0cp65q4xa30g0j90k04i40557qr3t6",
+                  "blob_hash": "8230bc447cf6233f95243e71db051ffbec24ef22a8d970457896184941bdd32d",
+                  "origin": "did:example:plant-li-1",
+                  "creator": "compressor:a01",
+                  "submitted_at": 1794311237400666000
+                },
+                "payload": {
+                  "value": 31700,
+                  "unit": "kWh",
+                  "metric": "compressed_air_kwh",
+                  "period": "2026-Q1",
+                  "site": "plant-li-1",
+                  "reference": "CA-2020-0012",
+                  "quality": "measured",
+                  "source": "compressor:a01"
+                },
+                "payloadText": "{\"value\":31700.0,\"unit\":\"kWh\",\"metric\":\"compressed_air_kwh\",\"period\":\"2026-Q1\",\"site\":\"plant-li-1\",\"reference\":\"CA-2020-0012\",\"quality\":\"measured\",\"source\":\"compressor:a01\"}",
+                "description": null,
+                "addressState": "valid"
+              },
+              {
+                "key": "facts/f_0004yp54i4ou8ef6cd0pe3nf3n31pz4d30kf0506ft03d18w0dg5h445x1qt.fact",
+                "kind": "fact",
+                "address": "0004yp54i4ou8ef6cd0pe3nf3n31pz4d30kf0506ft03d18w0dg5h445x1qt",
+                "origin": "did:example:plant-li-1",
+                "creator": "scale:s01",
+                "written": 1794311237400171000,
+                "record": {
+                  "id": "0004yp54i4ou8ef6cd0pe3nf3n31pz4d30kf0506ft03d18w0dg5h445x1qt",
+                  "blob_hash": "459ac6466c5519f9c2e78e5b48793da695f6e58ed8a2c457672d21341fa73dab",
+                  "origin": "did:example:plant-li-1",
+                  "creator": "scale:s01",
+                  "submitted_at": 1794311237400171000
+                },
+                "payload": {
+                  "value": 3.8,
+                  "unit": "t",
+                  "metric": "metal_scrap_sold",
+                  "period": "2026-Q1",
+                  "site": "plant-li-1",
+                  "reference": "SC-2026-0033",
+                  "quality": "measured",
+                  "source": "scale:s01"
+                },
+                "payloadText": "{\"value\":3.8,\"unit\":\"t\",\"metric\":\"metal_scrap_sold\",\"period\":\"2026-Q1\",\"site\":\"plant-li-1\",\"reference\":\"SC-2026-0033\",\"quality\":\"measured\",\"source\":\"scale:s01\"}",
+                "description": null,
+                "addressState": "valid"
+              },
+              {
+                "key": "facts/f_0004zd4pw80f80542k5bb3923fx0d360u0294jm24f3qi7se4kd5ap73e6su.fact",
+                "kind": "fact",
+                "address": "0004zd4pw80f80542k5bb3923fx0d360u0294jm24f3qi7se4kd5ap73e6su",
+                "origin": "did:example:plant-li-1",
+                "creator": "chiller:c01",
+                "written": 1794311237400435000,
+                "record": {
+                  "id": "0004zd4pw80f80542k5bb3923fx0d360u0294jm24f3qi7se4kd5ap73e6su",
+                  "blob_hash": "bc884f7509de889157952eba1b8baff78768a5ce3f37293bb10273d39f1b8676",
+                  "origin": "did:example:plant-li-1",
+                  "creator": "chiller:c01",
+                  "submitted_at": 1794311237400435000
+                },
+                "payload": {
+                  "value": 58200,
+                  "unit": "kWh",
+                  "metric": "cooling_kwh",
+                  "period": "2026-Q1",
+                  "site": "plant-li-1",
+                  "reference": "CH-2021-0044",
+                  "quality": "measured",
+                  "source": "chiller:c01"
+                },
+                "payloadText": "{\"value\":58200.0,\"unit\":\"kWh\",\"metric\":\"cooling_kwh\",\"period\":\"2026-Q1\",\"site\":\"plant-li-1\",\"reference\":\"CH-2021-0044\",\"quality\":\"measured\",\"source\":\"chiller:c01\"}",
+                "description": null,
+                "addressState": "valid"
+              },
+              {
+                "key": "facts/f_0006xm24p4da1f963860t1vo0uf74y24x6ja4kk0wz4uh6zp25g5765qt1xw.fact",
+                "kind": "fact",
+                "address": "0006xm24p4da1f963860t1vo0uf74y24x6ja4kk0wz4uh6zp25g5765qt1xw",
+                "origin": "did:example:plant-li-1",
+                "creator": "inverter:pv1",
+                "written": 1794311237399648000,
+                "record": {
+                  "id": "0006xm24p4da1f963860t1vo0uf74y24x6ja4kk0wz4uh6zp25g5765qt1xw",
+                  "blob_hash": "977124298be15f911835564c49015cdab6b4cf3415f3672cfdf9cd6b65d2eeba",
+                  "origin": "did:example:plant-li-1",
+                  "creator": "inverter:pv1",
+                  "submitted_at": 1794311237399648000
+                },
+                "payload": {
+                  "value": 63500,
+                  "unit": "kWh",
+                  "metric": "solar_generation",
+                  "period": "2026-Q1",
+                  "site": "plant-li-1",
+                  "reference": "INV-2022-0009",
+                  "quality": "measured",
+                  "source": "inverter:pv1"
+                },
+                "payloadText": "{\"value\":63500.0,\"unit\":\"kWh\",\"metric\":\"solar_generation\",\"period\":\"2026-Q1\",\"site\":\"plant-li-1\",\"reference\":\"INV-2022-0009\",\"quality\":\"measured\",\"source\":\"inverter:pv1\"}",
+                "description": null,
+                "addressState": "valid"
+              },
+              {
+                "key": "facts/f_00079h3xv77s0vb17d6371z73fw7cj2uj7ja58j5fq48b84l0py7ep2ay24w.fact",
+                "kind": "fact",
+                "address": "00079h3xv77s0vb17d6371z73fw7cj2uj7ja58j5fq48b84l0py7ep2ay24w",
+                "origin": "did:example:plant-li-1",
+                "creator": "meter:m17",
+                "written": 1794311237389113000,
+                "record": {
+                  "id": "00079h3xv77s0vb17d6371z73fw7cj2uj7ja58j5fq48b84l0py7ep2ay24w",
+                  "blob_hash": "457c25d4efb6b9fd1d39593881022af3fe024bfee173c3dc79ab9cf9dd33ccd2",
+                  "origin": "did:example:plant-li-1",
+                  "creator": "meter:m17",
+                  "submitted_at": 1794311237389113000
+                },
+                "payload": {
+                  "value": 412000,
+                  "unit": "kWh",
+                  "metric": "electricity_consumption",
+                  "period": "2026-Q1",
+                  "site": "plant-li-1",
+                  "reference": "M17-2024-0431",
+                  "quality": "measured",
+                  "source": "meter:m17"
+                },
+                "payloadText": "{\"value\":412000.0,\"unit\":\"kWh\",\"metric\":\"electricity_consumption\",\"period\":\"2026-Q1\",\"site\":\"plant-li-1\",\"reference\":\"M17-2024-0431\",\"quality\":\"measured\",\"source\":\"meter:m17\"}",
+                "description": null,
+                "addressState": "valid"
+              },
+              {
+                "key": "facts/f_0008760k22u64wq3um1yv4vv1mi5905l66on7ck3tk5ro5qt7c43l90xj03b.fact",
+                "kind": "fact",
+                "address": "0008760k22u64wq3um1yv4vv1mi5905l66on7ck3tk5ro5qt7c43l90xj03b",
+                "origin": "did:example:plant-li-1",
+                "creator": "press:p03",
+                "written": 1794311237401400000,
+                "record": {
+                  "id": "0008760k22u64wq3um1yv4vv1mi5905l66on7ck3tk5ro5qt7c43l90xj03b",
+                  "blob_hash": "23da3117cbdc0a0f83c5cc4ecc5f707c524aeceb318c69a374f018e56e1591bb",
+                  "origin": "did:example:plant-li-1",
+                  "creator": "press:p03",
+                  "submitted_at": 1794311237401400000
+                },
+                "payload": {
+                  "value": 41200,
+                  "unit": "cycles",
+                  "metric": "press_cycles",
+                  "period": "2026-Q1",
+                  "site": "plant-li-1",
+                  "reference": "PR-2018-0003",
+                  "quality": "measured",
+                  "source": "press:p03"
+                },
+                "payloadText": "{\"value\":41200.0,\"unit\":\"cycles\",\"metric\":\"press_cycles\",\"period\":\"2026-Q1\",\"site\":\"plant-li-1\",\"reference\":\"PR-2018-0003\",\"quality\":\"measured\",\"source\":\"press:p03\"}",
+                "description": null,
+                "addressState": "valid"
+              },
+              {
+                "key": "facts/f_0008ak4ql2q42zn5wc0lr7nz2ks7ue83t6av2ln0mx4nd1t404j35i5nu6gd.fact",
+                "kind": "fact",
+                "address": "0008ak4ql2q42zn5wc0lr7nz2ks7ue83t6av2ln0mx4nd1t404j35i5nu6gd",
+                "origin": "did:example:plant-li-1",
+                "creator": "erp:production",
+                "written": 1794311237399368000,
+                "record": {
+                  "id": "0008ak4ql2q42zn5wc0lr7nz2ks7ue83t6av2ln0mx4nd1t404j35i5nu6gd",
+                  "blob_hash": "96939e2a7e6038b0a36d77deded4eba5f1c7a002ed51dbda3176c4bd48cc5e3c",
+                  "origin": "did:example:plant-li-1",
+                  "creator": "erp:production",
+                  "submitted_at": 1794311237399368000
+                },
+                "payload": {
+                  "value": 18400,
+                  "unit": "assemblies",
+                  "metric": "production_output",
+                  "period": "2026-Q1",
+                  "site": "plant-li-1",
+                  "reference": "ERP-2026Q1",
+                  "quality": "measured",
+                  "source": "erp:production"
+                },
+                "payloadText": "{\"value\":18400.0,\"unit\":\"assemblies\",\"metric\":\"production_output\",\"period\":\"2026-Q1\",\"site\":\"plant-li-1\",\"reference\":\"ERP-2026Q1\",\"quality\":\"measured\",\"source\":\"erp:production\"}",
+                "description": null,
+                "addressState": "valid"
+              },
+              {
+                "key": "facts/f_0010ww4kj2j336x3m974j3fg51o67c6pg72a7ib4v62zs5ow0z91t063j6ge.fact",
+                "kind": "fact",
+                "address": "0010ww4kj2j336x3m974j3fg51o67c6pg72a7ib4v62zs5ow0z91t063j6ge",
+                "origin": "did:example:plant-li-1",
+                "creator": "boiler:b02",
+                "written": 1794311237400881000,
+                "record": {
+                  "id": "0010ww4kj2j336x3m974j3fg51o67c6pg72a7ib4v62zs5ow0z91t063j6ge",
+                  "blob_hash": "e8c9184d985bc21ddaebfb41987ab64a57611a332625b7e6458e8832bce8ff6b",
+                  "origin": "did:example:plant-li-1",
+                  "creator": "boiler:b02",
+                  "submitted_at": 1794311237400881000
+                },
+                "payload": {
+                  "value": 44900,
+                  "unit": "kWh",
+                  "metric": "process_heat_kwh",
+                  "period": "2026-Q1",
+                  "site": "plant-li-1",
+                  "reference": "BH-2019-0007",
+                  "quality": "measured",
+                  "source": "boiler:b02"
+                },
+                "payloadText": "{\"value\":44900.0,\"unit\":\"kWh\",\"metric\":\"process_heat_kwh\",\"period\":\"2026-Q1\",\"site\":\"plant-li-1\",\"reference\":\"BH-2019-0007\",\"quality\":\"measured\",\"source\":\"boiler:b02\"}",
+                "description": null,
+                "addressState": "valid"
+              },
+              {
+                "key": "facts/f_0010xi2ur0zc6mo0bt82e5aa2tf4eo2hw78w82474q4ei42u7e16ci7dx7c2.fact",
+                "kind": "fact",
+                "address": "0010xi2ur0zc6mo0bt82e5aa2tf4eo2hw78w82474q4ei42u7e16ci7dx7c2",
+                "origin": "did:example:plant-li-1",
+                "creator": "telematics:t01",
+                "written": 1794311237402278000,
+                "record": {
+                  "id": "0010xi2ur0zc6mo0bt82e5aa2tf4eo2hw78w82474q4ei42u7e16ci7dx7c2",
+                  "blob_hash": "6b1ddc9bb94cabcd100aef15f9e3cc6a019709455bb8646c24e7003fa7bb64be",
+                  "origin": "did:example:plant-li-1",
+                  "creator": "telematics:t01",
+                  "submitted_at": 1794311237402278000
+                },
+                "payload": {
+                  "value": 214,
+                  "unit": "t",
+                  "metric": "inbound_freight_tonnes",
+                  "period": "2026-Q1",
+                  "site": "plant-li-1",
+                  "reference": "TF-2026-0119",
+                  "quality": "measured",
+                  "source": "telematics:t01"
+                },
+                "payloadText": "{\"value\":214.0,\"unit\":\"t\",\"metric\":\"inbound_freight_tonnes\",\"period\":\"2026-Q1\",\"site\":\"plant-li-1\",\"reference\":\"TF-2026-0119\",\"quality\":\"measured\",\"source\":\"telematics:t01\"}",
+                "description": null,
+                "addressState": "valid"
+              },
+              {
+                "key": "facts/f_00112s25w3cb7br3m11cq7dw5tk2l45ss1gn0350dr1p473t4d46d50080o1.fact",
+                "kind": "fact",
+                "address": "00112s25w3cb7br3m11cq7dw5tk2l45ss1gn0350dr1p473t4d46d50080o1",
+                "origin": "did:example:plant-li-1",
+                "creator": "compactor:w03",
+                "written": 1794311237402071000,
+                "record": {
+                  "id": "00112s25w3cb7br3m11cq7dw5tk2l45ss1gn0350dr1p473t4d46d50080o1",
+                  "blob_hash": "b2ea4d64ae63292f3200fce6ba4064094766c4a6e6fb9032b915f68305f29427",
+                  "origin": "did:example:plant-li-1",
+                  "creator": "compactor:w03",
+                  "submitted_at": 1794311237402071000
+                },
+                "payload": {
+                  "value": 2.4,
+                  "unit": "t",
+                  "metric": "waste_to_landfill",
+                  "period": "2026-Q1",
+                  "site": "plant-li-1",
+                  "reference": "CP-2023-0008",
+                  "quality": "measured",
+                  "source": "compactor:w03"
+                },
+                "payloadText": "{\"value\":2.4,\"unit\":\"t\",\"metric\":\"waste_to_landfill\",\"period\":\"2026-Q1\",\"site\":\"plant-li-1\",\"reference\":\"CP-2023-0008\",\"quality\":\"measured\",\"source\":\"compactor:w03\"}",
+                "description": null,
+                "addressState": "valid"
+              },
+              {
+                "key": "facts/f_0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by.fact",
+                "kind": "fact",
+                "address": "0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by",
+                "origin": "conclusion:0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i",
+                "creator": "sustainability-controller",
+                "written": 1794311237406836000,
+                "record": {
+                  "id": "0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by",
+                  "blob_hash": "5bfc7cd3919681bdcd16db86a959fae6dcf08f0c9577ca772d9b48cf9ae96959",
+                  "origin": "conclusion:0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i",
+                  "creator": "sustainability-controller",
+                  "submitted_at": 1794311237406836000
+                },
+                "payload": {
+                  "market_based_tco2e": 84.58,
+                  "location_based_tco2e": 52.74,
+                  "scope": 2,
+                  "period": "2026-Q1",
+                  "consolidation": "operational control",
+                  "base_year": 2024,
+                  "restated": false,
+                  "factor_market_kg_per_kwh": 0.2053,
+                  "factor_location_kg_per_kwh": 0.128,
+                  "factor_source": "illustrative 2026 residual mix and EEA grid mix",
+                  "requirement": "ESRS E1-6",
+                  "source_fact": "00079h3xv77s0vb17d6371z73fw7cj2uj7ja58j5fq48b84l0py7ep2ay24w"
+                },
+                "payloadText": "{\"market_based_tco2e\":84.58,\"location_based_tco2e\":52.74,\"scope\":2,\"period\":\"2026-Q1\",\"consolidation\":\"operational control\",\"base_year\":2024,\"restated\":false,\"factor_market_kg_per_kwh\":0.2053,\"factor_location_kg_per_kwh\":0.128,\"factor_source\":\"illustrative 2026 residual mix and EEA grid mix\",\"requirement\":\"ESRS E1-6\",\"source_fact\":\"00079h3xv77s0vb17d6371z73fw7cj2uj7ja58j5fq48b84l0py7ep2ay24w\"}",
+                "description": null,
+                "addressState": null
+              },
+              {
+                "key": "hints/h_0003tx3ll18f1hq25l5ho20e2f523s8ac2d882s39j2ik00d72q1sb41d1sz.hint",
+                "kind": "hint",
+                "address": "0003tx3ll18f1hq25l5ho20e2f523s8ac2d882s39j2ik00d72q1sb41d1sz",
+                "origin": null,
+                "creator": "regulatory-baseline",
+                "written": 1794311237414591000,
+                "record": {
+                  "id": "0003tx3ll18f1hq25l5ho20e2f523s8ac2d882s39j2ik00d72q1sb41d1sz",
+                  "content": "ESRS E3-4: disclose total water consumption in cubic metres, with withdrawal and discharge by source, for the reporting period",
+                  "creator": "regulatory-baseline",
+                  "submitted_at": 1794311237414591000,
+                  "ttl_secs": null,
+                  "time_unit": "Nanos"
+                },
+                "payload": null,
+                "payloadText": null,
+                "description": null,
+                "addressState": null
+              },
+              {
+                "key": "hints/h_00063f0d48fm7s17t67ff0761r00ju1cw4o00go2vw7fx1bw7bs7et6hb6zv.hint",
+                "kind": "hint",
+                "address": "00063f0d48fm7s17t67ff0761r00ju1cw4o00go2vw7fx1bw7bs7et6hb6zv",
+                "origin": null,
+                "creator": "regulatory-baseline",
+                "written": 1794311237414681000,
+                "record": {
+                  "id": "00063f0d48fm7s17t67ff0761r00ju1cw4o00go2vw7fx1bw7bs7et6hb6zv",
+                  "content": "ESRS E5-5: disclose the total quantity of waste generated and the quantity diverted from disposal, by waste stream",
+                  "creator": "regulatory-baseline",
+                  "submitted_at": 1794311237414681000,
+                  "ttl_secs": null,
+                  "time_unit": "Nanos"
+                },
+                "payload": null,
+                "payloadText": null,
+                "description": null,
+                "addressState": null
+              },
+              {
+                "key": "hints/h_0008lk0fv1kl7rv1z11ca4b365u0r15st2oq6c67kz5yr81e1l83cs6qt8bj.hint",
+                "kind": "hint",
+                "address": "0008lk0fv1kl7rv1z11ca4b365u0r15st2oq6c67kz5yr81e1l83cs6qt8bj",
+                "origin": null,
+                "creator": "regulatory-baseline",
+                "written": 1794311237414448000,
+                "record": {
+                  "id": "0008lk0fv1kl7rv1z11ca4b365u0r15st2oq6c67kz5yr81e1l83cs6qt8bj",
+                  "content": "ESRS E1-6: disclose gross Scope 1 and Scope 2 GHG emissions separately, Scope 2 on both a location-based and a market-based basis, with the consolidation approach, the base year, and the conversion factors used",
+                  "creator": "regulatory-baseline",
+                  "submitted_at": 1794311237414448000,
+                  "ttl_secs": null,
+                  "time_unit": "Nanos"
+                },
+                "payload": null,
+                "payloadText": null,
+                "description": null,
+                "addressState": null
+              },
+              {
+                "key": "intents/i_0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i.intent",
+                "kind": "intent",
+                "address": "0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i",
+                "origin": null,
+                "creator": "sustainability-controller",
+                "written": 1794311237404418000,
+                "record": {
+                  "id": "0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i",
+                  "from_facts": [
+                    "00079h3xv77s0vb17d6371z73fw7cj2uj7ja58j5fq48b84l0py7ep2ay24w"
+                  ],
+                  "description_hash": "3aa2d6239717290bcea039142cc14237fa6c8581b7da8bc51f1796f0bbb2ff06",
+                  "creator": "sustainability-controller",
+                  "status": {
+                    "Concluded": {
+                      "to_fact": "0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by",
+                      "concluded_at": 1794311237406826000,
+                      "worker": "sustainability-controller"
+                    }
+                  },
+                  "created_at": 1794311237404418000,
+                  "time_unit": "Nanos"
+                },
+                "payload": null,
+                "payloadText": null,
+                "description": "apply the 2026 residual-mix factor (0.2053 kgCO2e/kWh) and the EEA grid factor (0.1280) to the metered electricity, and state Scope 2 on both bases for 2026-Q1",
+                "addressState": null
+              },
+              {
+                "key": "intents/i_0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k.intent",
+                "kind": "intent",
+                "address": "0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k",
+                "origin": null,
+                "creator": "sustainability-controller",
+                "written": 1794311237411556000,
+                "record": {
+                  "id": "0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k",
+                  "from_facts": [
+                    "0000121d45742zs8ey2dk0540hj5c41si5475hv7s94t50md5fe1z72ag5d0",
+                    "00006t2x816s06m17q3hl0ur7t84vg4p56te1tr43x7m14qx5ju4682it39k"
+                  ],
+                  "description_hash": "1ed70375de4c790fcebf50033e1b2cd215c0467166a867f7401f37cf89b4aa9d",
+                  "creator": "sustainability-controller",
+                  "status": {
+                    "Concluded": {
+                      "to_fact": "0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1",
+                      "concluded_at": 1794311237412009000,
+                      "worker": "sustainability-controller"
+                    }
+                  },
+                  "created_at": 1794311237411556000,
+                  "time_unit": "Nanos"
+                },
+                "payload": null,
+                "payloadText": null,
+                "description": "convert stationary combustion (0.2016 kgCO2e/kWh) and the R-410A top-up (GWP 2088, AR5) to Scope 1 for 2026-Q1",
+                "addressState": null
+              },
+              {
+                "key": "intents/i_0011se68t04f7k94py52v7un3kj1283rn3e617b6th5mw8eb0a40k91cb1cw.intent",
+                "kind": "intent",
+                "address": "0011se68t04f7k94py52v7un3kj1283rn3e617b6th5mw8eb0a40k91cb1cw",
+                "origin": null,
+                "creator": "sustainability-controller",
+                "written": 1794311237413834000,
+                "record": {
+                  "id": "0011se68t04f7k94py52v7un3kj1283rn3e617b6th5mw8eb0a40k91cb1cw",
+                  "from_facts": [
+                    "0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1",
+                    "0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by",
+                    "0008ak4ql2q42zn5wc0lr7nz2ks7ue83t6av2ln0mx4nd1t404j35i5nu6gd"
+                  ],
+                  "description_hash": "46a9fdc0fe7820c4ea713d9a3d6db608bd21a1574e712341661b4b36e9895b38",
+                  "creator": "sustainability-controller",
+                  "status": {
+                    "Concluded": {
+                      "to_fact": "0003cb3g68382rt06z7kv6bo7601da4k511u24k7ln5dm7aq5l84x05y1422",
+                      "concluded_at": 1794311237414149000,
+                      "worker": "sustainability-controller"
+                    }
+                  },
+                  "created_at": 1794311237413834000,
+                  "time_unit": "Nanos"
+                },
+                "payload": null,
+                "payloadText": null,
+                "description": "divide the reported Scope 1 and Scope 2 total (market-based) by the quarter's output to state the intensity per assembly",
+                "addressState": null
+              }
+            ]
+          }
+        },
+        {
+          "kind": "abilities",
+          "at": [
+            "evidence"
+          ]
+        },
+        {
+          "kind": "kinds",
+          "at": {
+            "sensor": [
+              "reads",
+              "shows"
+            ],
+            "station": [
+              "reads",
+              "shows"
+            ],
+            "pump": [
+              "reads",
+              "shows"
+            ],
+            "machine": [
+              "reads",
+              "shows"
+            ],
+            "hauler": [
+              "reads",
+              "shows"
+            ],
+            "store": [
+              "reads",
+              "shows"
+            ],
+            "arm": [
+              "writes",
+              "shows"
+            ],
+            "person": [
+              "person",
+              "shows"
+            ]
+          }
+        },
+        {
+          "kind": "place",
+          "at": {
+            "view": [
+              0,
+              0,
+              400,
+              220
+            ],
+            "geo": {
+              "bounds": [
+                7.454,
+                47.1663,
+                7.4586,
+                47.1681
+              ]
+            },
+            "areas": [
+              {
+                "x": 8,
+                "y": 8,
+                "w": 118,
+                "h": 66,
+                "label": "meter room"
+              },
+              {
+                "x": 8,
+                "y": 82,
+                "w": 118,
+                "h": 72,
+                "label": "boiler house"
+              },
+              {
+                "x": 134,
+                "y": 8,
+                "w": 152,
+                "h": 146,
+                "label": "machine hall"
+              },
+              {
+                "x": 294,
+                "y": 8,
+                "w": 98,
+                "h": 66,
+                "label": "loading bay"
+              },
+              {
+                "x": 294,
+                "y": 82,
+                "w": 98,
+                "h": 72,
+                "label": "roof array"
+              },
+              {
+                "x": 8,
+                "y": 162,
+                "w": 384,
+                "h": 50,
+                "label": "service yard"
+              }
+            ],
+            "units": {
+              "meter:m17": {
+                "icon": "sensor",
+                "at": {
+                  "record": [
+                    36,
+                    30
+                  ],
+                  "notice": [
+                    36,
+                    30
+                  ]
+                },
+                "role": "electricity consumption, M17-2024-0431"
+              },
+              "meter:g04": {
+                "icon": "station",
+                "at": {
+                  "record": [
+                    92,
+                    30
+                  ],
+                  "notice": [
+                    92,
+                    30
+                  ]
+                },
+                "role": "natural gas consumption, G04-2023-0117"
+              },
+              "meter:w02": {
+                "icon": "pump",
+                "at": {
+                  "record": [
+                    36,
+                    58
+                  ],
+                  "notice": [
+                    36,
+                    58
+                  ]
+                },
+                "role": "water withdrawal, W02-2025-0031"
+              },
+              "meter:w05": {
+                "icon": "pump",
+                "at": {
+                  "record": [
+                    92,
+                    58
+                  ],
+                  "notice": [
+                    92,
+                    58
+                  ]
+                },
+                "role": "water discharge, W05-2025-0032"
+              },
+              "boiler:b02": {
+                "icon": "machine",
+                "at": {
+                  "record": [
+                    36,
+                    106
+                  ],
+                  "notice": [
+                    36,
+                    106
+                  ]
+                },
+                "role": "process heat kwh, BH-2019-0007"
+              },
+              "compressor:a01": {
+                "icon": "pump",
+                "at": {
+                  "record": [
+                    92,
+                    106
+                  ],
+                  "notice": [
+                    92,
+                    106
+                  ]
+                },
+                "role": "compressed air kwh, CA-2020-0012"
+              },
+              "chiller:c01": {
+                "icon": "machine",
+                "at": {
+                  "record": [
+                    36,
+                    136
+                  ],
+                  "notice": [
+                    36,
+                    136
+                  ]
+                },
+                "role": "cooling kwh, CH-2021-0044"
+              },
+              "press:p03": {
+                "icon": "machine",
+                "at": {
+                  "record": [
+                    170,
+                    34
+                  ],
+                  "notice": [
+                    170,
+                    34
+                  ]
+                },
+                "role": "press cycles, PR-2018-0003"
+              },
+              "crane:k01": {
+                "icon": "arm",
+                "at": {
+                  "record": [
+                    252,
+                    34
+                  ],
+                  "notice": [
+                    252,
+                    34
+                  ]
+                },
+                "role": "crane lift hours, CR-2017-0002"
+              },
+              "hvac:h04": {
+                "icon": "machine",
+                "at": {
+                  "record": [
+                    170,
+                    84
+                  ],
+                  "notice": [
+                    170,
+                    84
+                  ]
+                },
+                "role": "air handling kwh, HV-2022-0031"
+              },
+              "charger:e01": {
+                "icon": "station",
+                "at": {
+                  "record": [
+                    252,
+                    84
+                  ],
+                  "notice": [
+                    252,
+                    84
+                  ]
+                },
+                "role": "forklift charging kwh, CHG-2023-0021"
+              },
+              "telematics:t01": {
+                "icon": "hauler",
+                "at": {
+                  "record": [
+                    343,
+                    30
+                  ],
+                  "notice": [
+                    343,
+                    30
+                  ]
+                },
+                "role": "inbound freight tonnes, TF-2026-0119"
+              },
+              "compactor:w03": {
+                "icon": "hauler",
+                "at": {
+                  "record": [
+                    343,
+                    58
+                  ],
+                  "notice": [
+                    343,
+                    58
+                  ]
+                },
+                "role": "waste to landfill, CP-2023-0008"
+              },
+              "inverter:pv1": {
+                "icon": "station",
+                "at": {
+                  "record": [
+                    343,
+                    122
+                  ],
+                  "notice": [
+                    343,
+                    122
+                  ]
+                },
+                "role": "solar generation, INV-2022-0009"
+              },
+              "scale:s01": {
+                "icon": "store",
+                "at": {
+                  "record": [
+                    200,
+                    190
+                  ],
+                  "notice": [
+                    200,
+                    190
+                  ]
+                },
+                "role": "metal scrap sold, SC-2026-0033"
+              },
+              "service:contractor": {
+                "icon": "person",
+                "at": {
+                  "record": [
+                    60,
+                    190
+                  ],
+                  "notice": [
+                    60,
+                    190
+                  ]
+                },
+                "role": "refrigerant top up, WO-2026-0142"
+              }
+            },
+            "store": {
+              "label": "plant-li-1"
+            }
+          }
+        },
+        {
+          "kind": "campaigns",
+          "at": [
+            {
+              "id": "reporting-close",
+              "title": "2026-Q1 reporting close",
+              "start": {
+                "time": 0
+              },
+              "end": {
+                "fact": "records-held"
+              },
+              "objectives": [
+                {
+                  "id": "measurements",
+                  "title": "measurements for the period are in",
+                  "when": {
+                    "fact": "measurements_recorded"
+                  }
+                },
+                {
+                  "id": "scope1",
+                  "title": "Scope 1 is stated",
+                  "when": {
+                    "fact": "scope1_stated"
+                  }
+                },
+                {
+                  "id": "scope2",
+                  "title": "Scope 2 is stated on both bases",
+                  "when": {
+                    "fact": "scope2_stated"
+                  }
+                },
+                {
+                  "id": "intensity",
+                  "title": "the intensity is stated",
+                  "when": {
+                    "fact": "intensity_stated"
+                  }
+                },
+                {
+                  "id": "requirement",
+                  "title": "the requirements are on file",
+                  "when": {
+                    "fact": "requirement_recorded"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "words",
+          "at": {
+            "fact": "evidence",
+            "intent": "calculation",
+            "hint": "requirement"
+          }
+        },
+        {
+          "kind": "views",
+          "at": {
+            "pack": "volume",
+            "main": "map",
+            "on": [
+              "map",
+              "chain",
+              "esg"
+            ]
+          }
+        },
+        {
+          "kind": "layout",
+          "at": {}
+        }
+      ]
+    },
+    {
+      "format": "project/1",
       "id": "sample-volume",
       "resources": [
         {
@@ -33,10 +1281,48 @@
           }
         },
         {
+          "kind": "esg",
+          "at": {
+            "volume": "storage/ref/demo/volume",
+            "records": [
+              {
+                "key": "facts/f_00024o7m35346n71ge0ev7vj33q5cp6fg6ow3230ba3oo00g6mp0lm4rh0uq.fact",
+                "kind": "fact",
+                "address": "00024o7m35346n71ge0ev7vj33q5cp6fg6ow3230ba3oo00g6mp0lm4rh0uq",
+                "origin": "did:example:asset-1",
+                "creator": "sensor-1",
+                "written": 1793630807643521000,
+                "record": {
+                  "id": "00024o7m35346n71ge0ev7vj33q5cp6fg6ow3230ba3oo00g6mp0lm4rh0uq",
+                  "blob_hash": "578e724ee7e9c587be42c260a6d7e89abf7b75d502d3946ddc473b25aa22e3b8",
+                  "origin": "did:example:asset-1",
+                  "creator": "sensor-1",
+                  "submitted_at": 1793630807643521000
+                },
+                "payload": {
+                  "asset_id": "asset-1",
+                  "event": "temperature",
+                  "observed_at": "2026-10-30T10:00:00Z",
+                  "source": "sensor-1",
+                  "unit": "C",
+                  "value": 21.5
+                },
+                "payloadText": "{\"asset_id\":\"asset-1\",\"event\":\"temperature\",\"observed_at\":\"2026-10-30T10:00:00Z\",\"source\":\"sensor-1\",\"unit\":\"C\",\"value\":21.5}",
+                "description": null,
+                "addressState": "valid"
+              }
+            ]
+          }
+        },
+        {
           "kind": "views",
           "at": {
             "pack": "volume",
-            "main": "keyspace"
+            "main": "keyspace",
+            "on": [
+              "keyspace",
+              "records"
+            ]
           }
         },
         {

@@ -428,6 +428,102 @@ fn verifying_the_sample_record_passes() {
     );
 }
 
+/// The one record key the sample volume holds, spelled as the listing spells it.
+fn sample_key() -> String {
+    let (address, _) = sample_record();
+    format!("facts/f_{address}.fact")
+}
+
+#[test]
+fn a_record_is_shown_whole_at_its_key() {
+    // `show` is the only path from bytes to what a record says, so it prints every field a caller could need and the
+    // payload beside it. A caller that decodes a record for itself has a second model of the format.
+    let (address, _) = sample_record();
+
+    let out = run(&["show", "--volume", &volume_arg(), "--key", &sample_key()]);
+
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let text = stdout(&out);
+    assert!(text.contains("kind:       fact"), "{text}");
+    assert!(text.contains(&format!("address:    {address}")), "{text}");
+    assert!(text.contains("origin:     did:example:asset-1"), "{text}");
+    assert!(text.contains("creator:    sensor-1"), "{text}");
+    assert!(text.contains("record:     {"), "{text}");
+    assert!(
+        text.contains("payload:    {\"asset_id\":"),
+        "the payload is printed as the text it is: {text}"
+    );
+    assert!(text.is_ascii(), "the rendering is ASCII: {text}");
+}
+
+#[test]
+fn a_key_that_is_not_a_record_key_is_refused_before_the_volume_is_opened() {
+    let dir = scratch("show-refused");
+    let volume = dir.join("records");
+
+    let out = run(&[
+        "show",
+        "--volume",
+        volume.to_str().expect("a path"),
+        "--key",
+        "blob/0000.bin",
+    ]);
+
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("is not a record key"),
+        "{}",
+        stderr(&out)
+    );
+    assert!(!volume.exists(), "the refused show opened the volume");
+}
+
+#[test]
+fn a_record_key_the_volume_does_not_hold_is_absent() {
+    let absent = format!("facts/f_{}.fact", "0".repeat(60));
+
+    let out = run(&["show", "--volume", &volume_arg(), "--key", &absent]);
+
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+    assert!(stderr(&out).contains("absent:"), "{}", stderr(&out));
+}
+
+#[test]
+fn an_intent_and_a_hint_are_shown_without_a_payload() {
+    // A payload belongs to a fact. The other two kinds are the record, so a payload line would be an answer the medium
+    // does not hold. An intent names the transformation it declares by a hash, and that content is printed beside the
+    // record the way a fact's payload is.
+    let volume = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("demo/esg-volume");
+    let path = volume.to_str().expect("a utf-8 path");
+
+    for (prefix, kind) in [("intents/", "intent"), ("hints/", "hint")] {
+        let listing = run(&["keys", "--volume", path, "--prefix", prefix]);
+        assert_eq!(listing.status.code(), Some(0), "{}", stderr(&listing));
+        let key = stdout(&listing)
+            .lines()
+            .next()
+            .expect("the volume holds one of each")
+            .to_string();
+
+        let out = run(&["show", "--volume", path, "--key", &key]);
+        assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+        let text = stdout(&out);
+        assert!(text.contains(&format!("kind:       {kind}")), "{text}");
+        assert!(text.contains("record:     {"), "{text}");
+        assert!(
+            !text.contains("payload:"),
+            "{kind} printed a payload: {text}"
+        );
+        // The description belongs to an intent alone: a hint carries its content in the record itself.
+        assert_eq!(
+            text.contains("description: "),
+            kind == "intent",
+            "{kind} printed the wrong content line: {text}"
+        );
+        assert!(text.is_ascii(), "the rendering is ASCII: {text}");
+    }
+}
+
 #[test]
 fn a_tampered_payload_fails_verification() {
     let dir = scratch("verify-tampered");
