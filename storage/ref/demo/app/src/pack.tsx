@@ -5,7 +5,7 @@
 // numbers on the screen are the ones the reference tool printed, carried in the resource by the importer rather than
 // counted here.
 
-import { KindTag, registerPack, registerResource, type Board } from '@ssccsorg/skene-frame';
+import { KindTag, registerPack, registerResource, useKindWords, type Board } from '@ssccsorg/skene-frame';
 import { LABEL, ROW, TITLE, cn } from '@ssccsorg/skene-frame/ui';
 import { useEffect, useRef } from 'react';
 import { editedOf, pick, useBranch, usePicked } from './workbench';
@@ -190,6 +190,7 @@ function EsgView({ project, pickedId, onPick }: Board) {
   const chain = (project as { esg?: EsgChain } | null)?.esg;
   const branch = useBranch();
   const picked = usePicked();
+  const words = useKindWords();
   const focus = useRef<HTMLDivElement | null>(null);
 
   // The record's own time is the order the chain happened. The listing arrives by key, which is the storage layer's
@@ -266,7 +267,10 @@ address is their own; a result is filed at its intent's address, and an intent a
             >
               <KindTag kind={record.kind as 'fact' | 'intent' | 'hint' | 'claim'} className="shrink-0" />
               <span className={cn(LABEL, 'w-24 shrink-0 truncate')}>
-                {roleOf(record, concluded)}
+                {/* The place in the chain, unless the kind's own word already says it: a requirement is a requirement. */}
+                {roleOf(record, concluded) === words[record.kind as 'fact' | 'intent' | 'hint']
+                  ? ''
+                  : roleOf(record, concluded)}
               </span>
               <span
                 className="min-w-0 flex-1 truncate font-mono"

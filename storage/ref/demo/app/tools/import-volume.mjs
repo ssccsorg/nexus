@@ -475,6 +475,10 @@ const VOLUME_READINGS = ['keyspace', 'records'];
  */
 const DECLARATIONS = {
   'esg-scenario': {
+    // What this project calls the three kinds of record. `fact`, `intent` and `hint` are the engine's names, and a
+    // reader of this board is an auditor: the same three records are evidence, a calculation, and the requirement the
+    // work answers. The words are the project's because they are this domain's, and the frame only draws them.
+    words: { fact: 'evidence', intent: 'calculation', hint: 'requirement' },
     // The readings this project stands, and the frame's panels it does not. The map, the chain, and the evidence list
     // are the surface; the frame's raw run panels show a record's byte count and a member's board coordinate, which are
     // the tool's own fields and not what the pack is about.
@@ -624,6 +628,7 @@ export function projectOf(measured, reading = 'keyspace') {
       { kind: 'place', at: placedOf(declared.place, m.records) },
     );
     resources.push({ kind: 'campaigns', at: declared.campaigns });
+    if (declared.words) resources.push({ kind: 'words', at: declared.words });
   }
   resources.push(
     {
