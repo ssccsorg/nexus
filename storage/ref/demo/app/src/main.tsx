@@ -5,6 +5,8 @@ import '@ssccsorg/skene-view-map';
 import { Frame } from '@ssccsorg/skene-frame';
 import { brand } from './brand';
 import './pack';
+// The chain is this deployment's own picture of a volume, so it arrives with the pack rather than from the frame.
+import './chain';
 // The site boundary is a layer the map draws, declared where the deployment is: the frame's map has no idea what a
 // boundary is.
 import './site';

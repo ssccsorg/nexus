@@ -192,7 +192,8 @@ function verifyAddress(bin, volumePath, address) {
  * One record as the tool prints it.
  *
  * `show` is the verb that reads a record and says what it holds, so the fields here are the tool's answer and not a
- * decode of the medium. A fact carries the payload the medium holds beside it; an intent and a hint are the record.
+ * decode of the medium. A fact carries the payload the medium holds beside it; an intent carries the transformation it
+ * declares; a hint carries its content in the record itself.
  */
 function showRecord(bin, volumePath, key) {
   const run = tool(bin, ['show', '--volume', volumePath, '--key', key]);
@@ -218,6 +219,8 @@ function showRecord(bin, volumePath, key) {
     record: JSON.parse(field(run.stdout, 'record')),
     payload,
     payloadText,
+    /** The transformation an intent declares, which the record names by hash and the tool resolves. */
+    description: field(run.stdout, 'description') || null,
     // Filled in by `measureRecords`, for the facts whose address the tool can recompute.
     addressState: null,
   };
@@ -447,10 +450,10 @@ const VOLUME_READINGS = ['keyspace', 'records'];
  */
 const DECLARATIONS = {
   'esg-scenario': {
-    // The readings this project stands, and the frame's panels it does not. The evidence reading and the map are the
-    // surface; the frame's raw run panels show a record's byte count and a member's board coordinate, which are the
-    // tool's own fields and not what the pack is about.
-    readings: ['map', 'esg'],
+    // The readings this project stands, and the frame's panels it does not. The map, the chain, and the evidence list
+    // are the surface; the frame's raw run panels show a record's byte count and a member's board coordinate, which are
+    // the tool's own fields and not what the pack is about.
+    readings: ['map', 'chain', 'esg'],
     layout: { console: false, rail: false, timeline: false, plan: false },
     kinds: {
       // Only a unit needs a kind: the frame asks it for the atoms a member presents. The controller and the requirement

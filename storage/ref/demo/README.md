@@ -38,7 +38,7 @@ under `blob/`, and the payload's media type beside it. The record's coordinate i
 directory decodes it.
 
 `esg-volume/` holds the same format with more records in it: facts for measured quantities, intents that state what was
-done to them, and a hint that names a disclosure requirement. It is committed, and it is read the same way, so the
+done to them, and hints that name the disclosure requirements. It is committed, and it is read the same way, so the
 chain it holds is the medium's answer and not a second model of it.
 
 `app/` holds the board, the runs, and the importer that writes both. It is a deployment of the `skene` frame, which
@@ -71,7 +71,10 @@ Each claim of the reference crate has a place on the screen.
 - A volume sits beside an application file and leaves it alone. The run carries the size the `sidecar` verb measured.
 - A record can be read whole. The `esg` reading lists one entry per record the `show` verb printed, and a run's tick
   holds the keys, the record count, and the kinds the volume carries. Each fact whose address is its own is put to the
-  `verify` verb, and the reading states how many held.
+  `verify` verb, and the reading states how many held. The content a record points at is resolved by the same verb: a
+  fact's payload, and the transformation an intent declares, so a caller reads an intent without decoding the medium.
+- A chain is the links its records carry. The `chain` reading draws the facts, the intents and the hints as one network
+  and names the place each record takes in it.
 - A place is a declaration and a record is a reading. The `esg` project declares its kinds and its ground, so the map
   reading draws the machines the volume holds facts from, at the positions the declaration gives them.
 
@@ -99,9 +102,32 @@ production system; a quality flag; the consolidation approach, the base year, an
 factor and its source; and, for Scope 2, both bases. The `esg` reading draws them in the order the medium recorded them,
 one row per record, so a reader follows measured value, transformation, result, and requirement down one screen.
 
-The project opens on the map, and the `esg` reading is beside it in the bar. Those are the two readings this project
-stands: the frame's raw run panels are closed for it, because a record's byte count and a member's board coordinate are
-the tool's own fields and not what the pack is about. The bar opens any of them for a reader who wants them.
+### The chain the records make
+
+The `chain` reading draws the same records as the network their links make, in four columns: the requirements, the
+observed records, the transformations, and the results they concluded.
+
+Every edge is a field of a record, so the drawing cannot claim more than the volume does.
+
+| Edge | Read from | Says |
+|---|---|---|
+| evidence | an intent's `from_facts` | this source was read by this transformation |
+| conclusion | an intent's `Concluded.to_fact` | this transformation filed this result |
+| bounds | the `requirement` a result states, matched to the code a hint is titled with | the work answered this requirement |
+
+The third is a derivation over two records and worth stating: a conclusion names the requirement it answers, and the
+work that reached it is the work that requirement bounded. A requirement no conclusion cites draws no edge and stands
+alone, which is what E3-4 and E5-5 are in the committed volume: on file, and answered by nothing. The drawing says so
+rather than leaving the gap to be noticed.
+
+A node is titled by a field its record holds: a measured record by the instrument that reported it, a transformation
+by the work it declares, a result by the quantity it states, and a requirement by the code it is cited by. The address
+travels as the tooltip, because a column of addresses is the panel this one replaces.
+
+The project opens on the map, with the chain and the `esg` reading beside it in the bar. Those are the three readings
+this project stands: the frame's raw run panels are closed for it, because a record's byte count and a member's board
+coordinate are the tool's own fields and not what the pack is about. The bar opens any of them for a reader who wants
+them.
 
 The same project declares a place, so the map draws the site the readings come from. Six machines stand on it, of five
 kinds: two meters, a flow meter, a weighbridge, an inverter, and the service point. The controller and the requirements
@@ -156,7 +182,7 @@ committed board was written with.
 cd storage/ref/demo/app
 npm run import -- --reset --id esg-scenario \
   --title "ESG compliance - Alpine Precision AG, 2026-Q1" \
-  --volume storage/ref/demo/esg-volume --reading esg
+  --volume storage/ref/demo/esg-volume --reading map
 npm run import -- --id sample-volume --title "Sample volume"
 ```
 
@@ -201,7 +227,7 @@ npm install
 # 4. Regenerate the board and the runs from the committed volumes.
 npm run import -- --reset --id esg-scenario \
   --title "ESG compliance - Alpine Precision AG, 2026-Q1" \
-  --volume storage/ref/demo/esg-volume --reading esg
+  --volume storage/ref/demo/esg-volume --reading map
 npm run import -- --id sample-volume --title "Sample volume"
 
 # 5. Serve it.

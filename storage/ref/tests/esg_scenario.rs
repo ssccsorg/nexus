@@ -86,6 +86,8 @@ struct Scope2<'a> {
     factor_market_kg_per_kwh: f64,
     factor_location_kg_per_kwh: f64,
     factor_source: &'a str,
+    /// The requirement this conclusion answers, which is the edge from a hint to the work it bounds.
+    requirement: &'a str,
     source_fact: &'a str,
 }
 
@@ -101,6 +103,7 @@ struct Scope1<'a> {
     gwp_source: &'a str,
     base_year: u16,
     restated: bool,
+    requirement: &'a str,
     source_facts: Vec<&'a str>,
 }
 
@@ -113,6 +116,7 @@ struct Intensity<'a> {
     basis: &'a str,
     period: &'a str,
     consolidation: &'a str,
+    requirement: &'a str,
     source_facts: Vec<&'a str>,
 }
 
@@ -294,6 +298,7 @@ fn author_the_esg_scenario() {
             factor_market_kg_per_kwh: 0.2053,
             factor_location_kg_per_kwh: 0.1280,
             factor_source: "illustrative 2026 residual mix and EEA grid mix",
+            requirement: "ESRS E1-6",
             source_fact: &electricity_text,
         }),
     ))
@@ -324,6 +329,7 @@ fn author_the_esg_scenario() {
             gwp_source: "IPCC AR5 GWP100",
             base_year: 2024,
             restated: false,
+            requirement: "ESRS E1-6",
             source_facts: vec![&gas_text, &refrigerant_text],
         }),
     ))
@@ -352,6 +358,7 @@ fn author_the_esg_scenario() {
             basis: "market-based",
             period: "2026-Q1",
             consolidation: "operational control",
+            requirement: "ESRS E1-6",
             source_facts: vec![&scope1_fact_text, &scope2_fact_text, &output_text],
         }),
     ))

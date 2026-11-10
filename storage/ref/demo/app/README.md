@@ -21,6 +21,7 @@ rather than one more application on the shelf.
 | a listing is the only scan, so a box is answered from it | a hint for the axes the box narrowed and the records it admitted |
 | a volume sits beside an application file and leaves it alone | a hint for the size the `sidecar` verb measured |
 | a record can be read whole | the `esg` reading lists one row per record the `show` verb printed |
+| a chain is the links its records carry | the `chain` reading draws the facts, the intents and the hints as one network |
 
 The board's own clock is the tool's order, and each run's `count` steps are the parser's arithmetic over the file's own
 facts. A run edited by hand has to keep its header and its counts in step or the tests fail.
@@ -58,6 +59,7 @@ Without a built binary the importer reports what it could not run. `NEX_REF_BIN`
 | `projects.json` | the board, written by the importer |
 | `scenario/<id>.txt` | one run per volume, written by the importer |
 | `src/pack.tsx` | the `volume` pack: the `keyspace` and `esg` resource kinds and their readings |
+| `src/chain.tsx` | the `chain` reading: the network the records' own links make |
 | `src/brand.tsx` | the mark, the name, the version, and the layers |
 | `tools/import-volume.mjs` | runs the reference tool and writes the board and the run |
 | `tools/run-demo.mjs` | the first run in one command: build, frame, install, import, serve |
@@ -95,3 +97,9 @@ The deployment installs one view, `@ssccsorg/skene-view-map`. A view is installe
 that is not imported is a surface the board does not offer: this board has a map and no shell, no graph, and no footage,
 and those packages are not its dependencies. The rule runs the other way for readings too. A project names the readings
 it stands, and one whose host surface is absent, such as a map over a volume that declares no place, is not named at all.
+
+The chain is this pack's reading and not the frame's graph. A graph of a run is a claim about a run, and the frame's own
+draws the participants and the work passed between them, which is the shape a run of many machines has. What an audit
+reads is the records and the links they carry, and those are this volume's terms, so the reading lives here beside the
+records it draws. The layer is the same one the map's `kinds` and `place` sit on: the frame supplies the surface and the
+mark, and the deployment supplies what is true of its own project.

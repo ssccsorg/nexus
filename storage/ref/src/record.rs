@@ -272,6 +272,11 @@ impl IntentRecord {
     pub fn key(&self) -> String {
         Self::intent_key(&self.id)
     }
+
+    /// The key the declared transformation lives at, which the record names by its hash.
+    pub fn description_key(&self) -> String {
+        format!("blob/{}.bin", self.description_hash)
+    }
 }
 
 impl HintRecord {

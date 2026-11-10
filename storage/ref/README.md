@@ -117,7 +117,7 @@ cargo run -p nexus-storage-ref -- read --volume storage/ref/demo/volume \
 cargo run -p nexus-storage-ref -- verify --volume storage/ref/demo/volume \
   --address 00024o7m35346n71ge0ev7vj33q5cp6fg6ow3230ba3oo00g6mp0lm4rh0uq
 
-# Print one record as the volume holds it: kind, address, origin, creator, time, and payload.
+# Print one record as the volume holds it: kind, address, origin, creator, time, and its content.
 cargo run -p nexus-storage-ref -- show --volume storage/ref/demo/volume \
   --key facts/f_00024o7m35346n71ge0ev7vj33q5cp6fg6ow3230ba3oo00g6mp0lm4rh0uq.fact
 
@@ -154,10 +154,11 @@ application file is large, so the check is a guard against the copy touching the
 that the record's own axis selects it from the keys, reads the record, and checks that the application file is unchanged.
 
 `show` resolves one key and prints the record the medium holds: its kind, address, origin, creator, write time, the
-record itself, and the payload beside it. A payload that is one line of text is printed as text and anything else as
-hex, so a caller reads what a record says without decoding the format, and a multi-line payload stays one line of
-output that a parser can read. A key outside `facts/`, `intents/`, and `hints/` is refused before the volume is opened,
-because those are the three kinds the format defines and a listing key is not a record.
+record itself, and the content the record points at. A fact's content is its payload and an intent's is the
+transformation it declares; a hint carries its content in the record. Content that is one line of text is printed as
+text and anything else as hex, so a caller reads what a record says without decoding the format, and a multi-line
+payload stays one line of output that a parser can read. A key outside `facts/`, `intents/`, and `hints/` is refused
+before the volume is opened, because those are the three kinds the format defines and a listing key is not a record.
 
 ## Exit codes
 

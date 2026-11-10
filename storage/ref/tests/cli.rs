@@ -491,7 +491,8 @@ fn a_record_key_the_volume_does_not_hold_is_absent() {
 #[test]
 fn an_intent_and_a_hint_are_shown_without_a_payload() {
     // A payload belongs to a fact. The other two kinds are the record, so a payload line would be an answer the medium
-    // does not hold.
+    // does not hold. An intent names the transformation it declares by a hash, and that content is printed beside the
+    // record the way a fact's payload is.
     let volume = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("demo/esg-volume");
     let path = volume.to_str().expect("a utf-8 path");
 
@@ -512,6 +513,12 @@ fn an_intent_and_a_hint_are_shown_without_a_payload() {
         assert!(
             !text.contains("payload:"),
             "{kind} printed a payload: {text}"
+        );
+        // The description belongs to an intent alone: a hint carries its content in the record itself.
+        assert_eq!(
+            text.contains("description: "),
+            kind == "intent",
+            "{kind} printed the wrong content line: {text}"
         );
         assert!(text.is_ascii(), "the rendering is ASCII: {text}");
     }

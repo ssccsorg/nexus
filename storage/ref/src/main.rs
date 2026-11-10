@@ -527,7 +527,7 @@ fn as_text(bytes: &[u8]) -> String {
     }
 }
 
-/// Print the record at a key: what it holds, and for a fact the payload the medium carries.
+/// Print the record at a key: what it holds, and the content the record points at.
 fn show(source: &Source, key: &str, kind: Kind) -> Result<(), Failure> {
     let bytes = source
         .read(key)?
@@ -561,6 +561,15 @@ fn show(source: &Source, key: &str, kind: Kind) -> Result<(), Failure> {
             let held = serde_json::to_string(&record)
                 .map_err(|e| Failure::Refused(format!("{key} does not serialize: {e}")))?;
             println!("record:     {held}");
+            // The transformation is a record's own content held beside it, the way a fact's payload is, so a caller
+            // that wants to read the intent does not have to decode the medium for it.
+            let description = source.read(&record.description_key())?.ok_or_else(|| {
+                Failure::Refused(format!(
+                    "{} is missing the transformation it declares",
+                    record.description_key()
+                ))
+            })?;
+            println!("description: {}", as_text(&description));
         }
         Kind::Hint => {
             let record: HintRecord = postcard::from_bytes(&bytes)

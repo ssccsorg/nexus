@@ -109,6 +109,8 @@ export interface EsgRecord {
   record: Record<string, unknown>;
   payload: Record<string, unknown> | null;
   payloadText: string | null;
+  /** The transformation an intent declares, which the record names by hash and the tool resolves. */
+  description: string | null;
   /** What the tool's `verify` answered for this record's address, and null where it has no answer to give. */
   addressState: string | null;
 }
