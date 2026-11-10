@@ -1234,7 +1234,7 @@
           "at": {
             "console": false,
             "rail": false,
-            "timeline": false,
+            "timeline": true,
             "plan": false,
             "evidence": true
           }

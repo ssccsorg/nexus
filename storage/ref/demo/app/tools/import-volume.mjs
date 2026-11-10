@@ -466,7 +466,10 @@ const DECLARATIONS = {
     // are the surface; the frame's raw run panels show a record's byte count and a member's board coordinate, which are
     // the tool's own fields and not what the pack is about.
     readings: ['map', 'chain', 'esg'],
-    layout: { console: false, rail: false, timeline: false, plan: false, evidence: true },
+    // The transport is declared open rather than left to its own answer. A panel the project says nothing about keeps the
+    // place the pilot left it in, and this project closed it once: the run's own axis and the controls that walk it are
+    // not a panel to be found later, so the declaration puts it back.
+    layout: { console: false, rail: false, timeline: true, plan: false, evidence: true },
     kinds: {
       // Only a unit needs a kind: the frame asks it for the atoms a member presents. The controller and the requirement
       // are a record and a bound rather than a place, so they stand in no unit and declare no atoms. The names are the
