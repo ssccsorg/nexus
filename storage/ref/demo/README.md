@@ -102,6 +102,13 @@ The thirteen readings no transformation reads are the point of having them. A qu
 no calculation picked up, and a screen that drew only the part of the plant that was used would be an inventory that
 looked settled.
 
+What the project calls those records is its own. `fact`, `intent` and `hint` are the engine's names for the three things
+a run is made of, and an auditor reads the same three as evidence, a calculation, and the requirement the work answers.
+The project says so in its bundle and the frame draws it, so no screen on this project's board spells the engine's model
+at a reader: the mark takes a letter of the project's word and the word travels as the title. The colour stays the
+kind's, because which ink a kind is drawn in is the frame's and two boards that coloured one kind two ways would be two
+boards.
+
 The records carry what a reported figure has to be able to answer for: a reference for the meter, work order, or
 production system; a quality flag; the consolidation approach, the base year, and whether the figure was restated; the
 factor and its source; and, for Scope 2, both bases. The `esg` reading draws them in the order the medium recorded them,
