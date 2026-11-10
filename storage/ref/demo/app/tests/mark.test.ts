@@ -19,8 +19,12 @@ test('the brand the bar draws is this deployment’s', () => {
   expect(brand.title).toBe('REF STORAGE DEMO');
   expect(brand.name).toBe('nexus storage demo');
   expect(brand.version).toMatch(/^v\d+\.\d+\.\d+$/);
-  expect(brand.layers, 'the layers the mark stands on are named').toContain('nexus');
-  expect(brand.layers.length).toBeGreaterThan(1);
+  expect(brand.layers, 'the surface stands on the frame and nothing else').toStrictEqual(['skene']);
+});
+
+test('the bar says the board is not a neXus view', () => {
+  expect(brand.note).toBe('not a neXus view');
+  expect(brand.layers, 'the view is not drawn over the nexus layer').not.toContain('nexus');
 });
 
 test('the mark the frame draws and the mark the bar draws are one drawing', () => {

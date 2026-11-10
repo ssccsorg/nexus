@@ -58,6 +58,16 @@ The importer counts nothing. A second model of the store would be a model free t
 number on the screen is a number the tool printed, and each `count` line in a run is the parser's arithmetic over the
 facts that run writes. An edit that moves a line has to move its count, or the tests fail.
 
+## The view and the records
+
+The screen is one rendering of the records. It imports no part of `nex/fih` and reaches them only through
+`app/projects.json`, which the importer wrote from what the tool printed. A record can be described in many ways, and
+this board is one of them.
+
+The arrangement is the demonstration's, not neXus's. neXus defines the record, the coordinate, and the read surface, and
+no screen: no panel, no chain drawing, no dashboard. A second project over the same records is free to look nothing like
+this one. The bar carries that statement beside the name.
+
 ## What the demo shows
 
 Each claim of the reference crate has a place on the screen.

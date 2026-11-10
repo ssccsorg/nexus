@@ -1,7 +1,8 @@
 # nexus-storage-ref
 
 A running instance of the demonstration is at [nexus-demo-b5z.pages.dev](https://nexus-demo-b5z.pages.dev), serving the
-committed board read-only through the `skene` frame.
+committed board read-only through the `skene` frame. That board is one rendering of the records: neXus defines the
+record, the coordinate, and the read surface, and no screen.
 
 neXus is a state fabric. Its unit is a transition: a fact, an intent, and a hint compose into a new fact,
 `F x I x H -> F'`. A coordinate addresses the fact, a record keeps it, and the transition is itself recorded, so the

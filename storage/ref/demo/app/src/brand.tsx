@@ -31,7 +31,10 @@ export const brand: Brand = {
   version: 'v0.1.0',
   // This deployment reads a committed volume and never writes, and the bar says so beside the name.
   status: 'read-only',
-  layers: ['nexus', 'chton', 'skene'],
+  // The board is one arrangement of the records, drawn by this application over the frame. neXus defines no view.
+  note: 'not a neXus view',
+  // The surface stands on the frame and nothing else: the board, the router, and the panels are skene packages.
+  layers: ['skene'],
   Mark,
   mark: { path: MARK, viewBox: MARK_VIEWBOX },
 };
