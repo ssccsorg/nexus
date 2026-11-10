@@ -99,7 +99,9 @@ production system; a quality flag; the consolidation approach, the base year, an
 factor and its source; and, for Scope 2, both bases. The `esg` reading draws them in the order the medium recorded them,
 one row per record, so a reader follows measured value, transformation, result, and requirement down one screen.
 
-The project opens on the map, and the `esg` reading is beside it in the bar.
+The project opens on the map, and the `esg` reading is beside it in the bar. Those are the two readings this project
+stands: the frame's raw run panels are closed for it, because a record's byte count and a member's board coordinate are
+the tool's own fields and not what the pack is about. The bar opens any of them for a reader who wants them.
 
 The same project declares a place, so the map draws the site the readings come from. Six machines stand on it, of five
 kinds: two meters, a flow meter, a weighbridge, an inverter, and the service point. The controller and the requirements

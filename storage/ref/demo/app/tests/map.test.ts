@@ -15,7 +15,7 @@ import {
   type BoardDocument,
   type ProjectDocument,
 } from '@ssccsorg/skene-frame';
-import { located, mappable, scenes, worldOf } from '@ssccsorg/skene-frame/lib/world';
+import { located, mappable, ownView, scenes, worldOf } from '@ssccsorg/skene-frame/lib/world';
 
 import '../src/pack';
 
@@ -63,6 +63,18 @@ test('every unit the map draws is a machine whose kind presents a location', () 
   expect(world.standing.filter(located).length, 'the map has something to draw').toBe(
     Object.keys(units).length,
   );
+});
+
+test('every located unit has a point on the earth the map can draw', () => {
+  // The map draws a marker only where `ownView` gives it a latitude and a longitude, so a unit the declaration places off
+  // the ground would be missing from the picture while every other answer said it was there.
+  const place = bundle.place;
+  expect(place, 'the project declares a place').toBeDefined();
+  const drawn = world.standing.filter(located);
+  expect(drawn.length, 'the map has machines to draw').toBeGreaterThan(0);
+  for (const unit of drawn) {
+    expect(ownView(place!, unit).geo, `${unit.id} has a point on the earth`).not.toBeNull();
+  }
 });
 
 test('every unit on the map is a participant the records name', () => {

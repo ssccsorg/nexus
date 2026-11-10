@@ -439,6 +439,11 @@ export function marksOf(records) {
  */
 const DECLARATIONS = {
   'esg-scenario': {
+    // The readings this project stands, and the frame's panels it does not. The evidence reading and the map are the
+    // surface; the frame's raw run panels show a record's byte count and a member's board coordinate, which are the
+    // tool's own fields and not what the pack is about.
+    readings: ['map', 'esg'],
+    layout: { console: false, rail: false, timeline: false, plan: false },
     kinds: {
       // Only a unit needs a kind: the frame asks it for the atoms a member presents. The controller and the requirement
       // are a record and a bound rather than a place, so they stand in no unit and declare no atoms.
@@ -559,10 +564,17 @@ export function projectOf(measured, reading = 'keyspace') {
     resources.push({ kind: 'campaigns', at: declared.campaigns });
   }
   resources.push(
-    { kind: 'views', at: { pack: 'volume', main: reading } },
+    {
+      kind: 'views',
+      // A project that names its readings gets exactly those. One that names none stands every reading the pack and the
+      // frame hold, which is the technical volume's own view.
+      at: declared?.readings
+        ? { pack: 'volume', main: reading, on: declared.readings }
+        : { pack: 'volume', main: reading },
+    },
     // The board as text stands beside the key space. The panel is the frame's own drawing of a run, so it is opened
     // here rather than gated on a room this deployment does not have.
-    { kind: 'layout', at: { console: true } },
+    { kind: 'layout', at: declared?.layout ?? { console: true } },
   );
   return { format: 'project/1', id: m.id, resources };
 }

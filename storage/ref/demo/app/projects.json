@@ -702,13 +702,20 @@
           "kind": "views",
           "at": {
             "pack": "volume",
-            "main": "map"
+            "main": "map",
+            "on": [
+              "map",
+              "esg"
+            ]
           }
         },
         {
           "kind": "layout",
           "at": {
-            "console": true
+            "console": false,
+            "rail": false,
+            "timeline": false,
+            "plan": false
           }
         }
       ]
