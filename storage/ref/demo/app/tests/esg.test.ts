@@ -27,14 +27,14 @@ const concluded = new Set(
 const facts = ordered.filter((record) => record.kind === 'fact');
 
 test('the chain reads as a measurement, a transformation, a result, and a requirement', () => {
-  expect(ordered.map((record) => roleOf(record, concluded))).toEqual([
-    'measurement',
-    'measurement',
-    'measurement',
-    'measurement',
-    'measurement',
-    'measurement',
-    'measurement',
+  // The four words are the whole of the vocabulary, and the order is the work's: the quarter's readings, the three
+  // calculations over them, and the requirements the results answer.
+  const roles = ordered.map((record) => roleOf(record, concluded));
+  expect(new Set(roles)).toEqual(
+    new Set(['measurement', 'transformation', 'result', 'requirement']),
+  );
+  expect(roles.filter((role) => role === 'measurement')).toHaveLength(17);
+  expect(roles.slice(17)).toEqual([
     'transformation',
     'result',
     'transformation',
@@ -70,6 +70,16 @@ test('a payload line follows the order the record was written in', () => {
     solar_generation: 'value=63500',
     water_withdrawal: 'value=1240',
     metal_scrap_sold: 'value=3.8',
+    cooling_kwh: 'value=58200',
+    compressed_air_kwh: 'value=31700',
+    process_heat_kwh: 'value=44900',
+    forklift_charging_kwh: 'value=9800',
+    press_cycles: 'value=41200',
+    crane_lift_hours: 'value=612',
+    air_handling_kwh: 'value=27400',
+    waste_to_landfill: 'value=2.4',
+    inbound_freight_tonnes: 'value=214',
+    water_discharge: 'value=380',
   };
   let measured = 0;
   for (const record of facts) {
@@ -82,7 +92,7 @@ test('a payload line follows the order the record was written in', () => {
       true,
     );
   }
-  expect(measured, 'the scenario carries the measured records').toBe(7);
+  expect(measured, 'the scenario carries the measured records').toBe(17);
 });
 
 test('the reported figures of every conclusion are on its row', () => {

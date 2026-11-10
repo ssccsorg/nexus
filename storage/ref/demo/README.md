@@ -88,14 +88,19 @@ structure on show is the record of the work over it.
 
 ## The ESG scenario
 
-The `esg-scenario` project reads `esg-volume/` as a chain. The volume holds sixteen records for one site and one
-quarter, shaped the way a quarterly inventory is. Seven are measured quantities: electricity, natural gas, a refrigerant
-top-up, the quarter's output, solar generation, water withdrawal, and metal scrap sold. Three are the intents that
-transform them, each claimed and then concluded by the reporting controller: Scope 2 on both a location-based and a
-market-based basis, Scope 1 split into combustion and fugitive refrigerant, and the intensity per assembly over the two
-results. Three are the facts each intent filed as its result, so a conclusion is a record of its own rather than a
-column on the intent. Three are the disclosure requirements the figures answer: E1-6 for the emissions, E3-4 for the
-water, E5-5 for the waste.
+The `esg-scenario` project reads `esg-volume/` as a chain. The volume holds twenty-six records for one site and one
+quarter, shaped the way a quarterly inventory is. Seventeen are measured quantities: electricity, natural gas, a
+refrigerant top-up, the quarter's output, solar generation, water withdrawal and discharge, metal scrap, cooling,
+compressed air, process heat, forklift charging, press cycles, crane lift hours, air handling, waste to landfill, and
+inbound freight. Three are the intents that transform four of them, each claimed and then concluded by the reporting
+controller: Scope 2 on both a location-based and a market-based basis, Scope 1 split into combustion and fugitive
+refrigerant, and the intensity per assembly over the two results. Three are the facts each intent filed as its result,
+so a conclusion is a record of its own rather than a column on the intent. Three are the disclosure requirements the
+figures answer: E1-6 for the emissions, E3-4 for the water, E5-5 for the waste.
+
+The thirteen readings no transformation reads are the point of having them. A quarter's inventory holds quantities that
+no calculation picked up, and a screen that drew only the part of the plant that was used would be an inventory that
+looked settled.
 
 The records carry what a reported figure has to be able to answer for: a reference for the meter, work order, or
 production system; a quality flag; the consolidation approach, the base year, and whether the figure was restated; the
@@ -124,16 +129,40 @@ A node is titled by a field its record holds: a measured record by the instrumen
 by the work it declares, a result by the quantity it states, and a requirement by the code it is cited by. The address
 travels as the tooltip, because a column of addresses is the panel this one replaces.
 
+A record no link touches is drawn and dimmed rather than left out, and the header counts them: thirteen of the
+seventeen readings feed no calculation. An audit's first finding is often the reading nobody picked up, so the graph
+says it instead of drawing a plant that looks fully accounted for.
+
+### The pick and the branch
+
+A press is one pick, read from both sides. Pressing a record in the chain or in the list opens it in the frame's
+`evidence` panel; pressing a machine on the map focuses the records that machine wrote, in both readings, and scrolls
+the first into view. The two sides are the same choice, so the map and the list cannot point at different things.
+
+The panel is a column of the frame and not a card over the space. It draws the record's fields, the links it carries,
+and, for a transformation or a requirement, the one field a reader may change.
+
+A change is a branch rather than a rewrite. `take the branch` holds the edited text beside the volume, and the chain is
+read against it from that record on.
+
+- A transformation's new text replaces the work it declares, and the result it concluded is drawn as `of the branch`.
+- A requirement's new text is read the way the edges are read, so a code no conclusion cites reaches no transformation
+  and the bounds edges disappear. Editing the text after the colon keeps the code and keeps the edges.
+
+What a branch does not do is recompute. The figures are the reporting controller's and the volume holds its answer, so a
+branch changes what the chain is read against and says which records rest on it. `revert` gives the volume back, and a
+reload forgets the branch because it was never written.
+
 The project opens on the map, with the chain and the `esg` reading beside it in the bar. Those are the three readings
 this project stands: the frame's raw run panels are closed for it, because a record's byte count and a member's board
 coordinate are the tool's own fields and not what the pack is about. The bar opens any of them for a reader who wants
 them.
 
-The same project declares a place, so the map draws the site the readings come from. Six machines stand on it, of five
-kinds: two meters, a flow meter, a weighbridge, an inverter, and the service point. The controller and the requirements
-do not stand on it, because a record and a bound are not things on the ground. That distinction is the frame's, not this
-demonstration's: a member is drawn on a map when its kind presents a location, and the project is what says which kinds
-do.
+The same project declares a place, so the map draws the site the readings come from. Sixteen instruments stand on it,
+of eight kinds: meters, a weighbridge, an inverter, a charger, a crane, a press, the boiler house, the machine hall's
+air handling, the loading bay, and the service point. The controller and the requirements do not stand on it, because a
+record and a bound are not things on the ground. That distinction is the frame's, not this demonstration's: a member is
+drawn on a map when its kind presents a location, and the project is what says which kinds do.
 
 The boundary is drawn as a dashed box over the ground, from the box the place itself declares, so it cannot be a fence
 around ground the units do not stand on. The site's name and each unit's name are read from the records: the label is
@@ -192,7 +221,8 @@ runs cannot drift from the volumes.
 
 ## What the demo does not show
 
-- A write path. Both volumes are committed, so the demonstration reads and never writes.
+- A write path. Both volumes are committed, so the demonstration reads and never writes. A branch is held in the page
+  and is gone when it is reloaded.
 - Performance. The demo carries no timing and no comparison, so no number on the screen is a performance claim.
 - A regulatory determination. The ESG scenario shows a chain of evidence, and it does not audit an organisation.
 - The layers a product adds above the read surface. The crate README's table separates those from what is shown here.

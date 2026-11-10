@@ -41,7 +41,7 @@ test('every record is a node, in the place the records put it', () => {
     measurement: counted('measurement'),
     transformation: counted('transformation'),
     result: counted('result'),
-  }).toEqual({ requirement: 3, measurement: 7, transformation: 3, result: 3 });
+  }).toEqual({ requirement: 3, measurement: 17, transformation: 3, result: 3 });
 });
 
 test('a source is evidence for the transformation that read it, and nothing else is', () => {
@@ -128,4 +128,74 @@ test('a node is titled by a field the record holds, never by its address', () =>
 test('a requirement is titled by the code it is cited by', () => {
   expect(codeOf('ESRS E1-6: disclose gross Scope 1 and Scope 2')).toBe('ESRS E1-6');
   expect(codeOf('a requirement with no colon')).toBe('a requirement with no colon');
+});
+
+test('a record no link touches is drawn, and counted', () => {
+  // A quarter's inventory holds readings no calculation read. The graph says so rather than showing only the part of the
+  // plant that was used, because an audit's first finding is often the reading nobody picked up.
+  const idle = chain.nodes.filter((node) => !node.linked);
+  expect(idle.length).toBe(chain.idle);
+  expect(idle.length, 'most of the inventory feeds no calculation').toBeGreaterThan(0);
+  for (const node of idle) expect(node.role).toBe('measurement');
+  expect(chain.nodes.filter((node) => node.linked).length).toBe(chain.nodes.length - chain.idle);
+});
+
+test('editing a transformation renames it and marks only what it concluded', () => {
+  // A branch changes a declaration, so the record it is taken at says the pilot's words and the result rests on them.
+  // Nothing else moves: the sources it read are still the sources, and the requirement it cites is unchanged.
+  const intent = chain.nodes.find((node) => node.role === 'transformation');
+  if (!intent) throw new Error('the volume carries a transformation');
+  const branched = chainOf(ordered, {
+    at: intent.id,
+    edit: { description: 'a different way of reaching the same figure' },
+  });
+  const node = branched.nodes.find((each) => each.id === intent.id);
+  expect(node?.title).toBe('a different way of reaching the same figure');
+  expect(node?.edited).toBe(true);
+  const derived = branched.nodes.filter((each) => each.derived);
+  expect(derived).toHaveLength(1);
+  expect(derived[0].role, 'the result it concluded').toBe('result');
+  expect(
+    branched.links.filter((link) => link.role === 'evidence'),
+    'the evidence is the record\'s, not the pilot\'s',
+  ).toEqual(chain.links.filter((link) => link.role === 'evidence'));
+});
+
+test('editing a requirement changes the code the chain is read against', () => {
+  // This is the constraint edit, and it has a consequence rather than a mark: a conclusion cites a requirement by its
+  // code, so a code no conclusion names reaches no work. The requirement stands alone and the chain loses that edge.
+  const hint = chain.nodes.find((node) => node.role === 'requirement' && node.title === 'ESRS E1-6');
+  if (!hint) throw new Error('the volume cites E1-6');
+  const before = chain.links.filter((link) => link.role === 'bounds');
+  expect(before).toHaveLength(3);
+
+  const branched = chainOf(ordered, {
+    at: hint.id,
+    edit: { content: 'ESRS E1-7: a requirement nobody has answered yet' },
+  });
+  expect(branched.nodes.find((node) => node.id === hint.id)?.title).toBe('ESRS E1-7');
+  expect(branched.links.filter((link) => link.role === 'bounds')).toEqual([]);
+  expect(
+    branched.nodes.filter((node) => node.derived),
+    'a requirement is not a change to the work that cited it',
+  ).toEqual([]);
+
+  // And the other direction: an edit that keeps the code keeps the edge.
+  const kept = chainOf(ordered, {
+    at: hint.id,
+    edit: { content: 'ESRS E1-6: the same code, stated more briefly' },
+  });
+  expect(kept.links.filter((link) => link.role === 'bounds')).toHaveLength(3);
+});
+
+test('a branch at one record leaves every other record as the volume wrote it', () => {
+  const intent = chain.nodes.find((node) => node.role === 'transformation');
+  if (!intent) throw new Error('the volume carries a transformation');
+  const branched = chainOf(ordered, { at: intent.id, edit: { description: 'edited' } });
+  for (const node of branched.nodes) {
+    if (node.id === intent.id) continue;
+    const before = chain.nodes.find((each) => each.id === node.id);
+    expect(node.title).toBe(before?.title);
+    expect(node.edited).toBe(false);
+  }
 });

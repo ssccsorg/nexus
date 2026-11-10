@@ -22,6 +22,8 @@ rather than one more application on the shelf.
 | a volume sits beside an application file and leaves it alone | a hint for the size the `sidecar` verb measured |
 | a record can be read whole | the `esg` reading lists one row per record the `show` verb printed |
 | a chain is the links its records carry | the `chain` reading draws the facts, the intents and the hints as one network |
+| a press is one pick | a record pressed in the chain or the list opens in the `evidence` panel, and a machine pressed on the map focuses its records |
+| a declaration can be branched | the panel's field takes a branch, and the chain draws what rests on it |
 
 The board's own clock is the tool's order, and each run's `count` steps are the parser's arithmetic over the file's own
 facts. A run edited by hand has to keep its header and its counts in step or the tests fail.
@@ -60,6 +62,8 @@ Without a built binary the importer reports what it could not run. `NEX_REF_BIN`
 | `scenario/<id>.txt` | one run per volume, written by the importer |
 | `src/pack.tsx` | the `volume` pack: the `keyspace` and `esg` resource kinds and their readings |
 | `src/chain.tsx` | the `chain` reading: the network the records' own links make |
+| `src/evidence.tsx` | the `evidence` panel: the picked record, its links, and the field a branch edits |
+| `src/workbench.ts` | the pick and the branch, which are the demonstration's own state and not the volume's |
 | `src/brand.tsx` | the mark, the name, the version, and the layers |
 | `tools/import-volume.mjs` | runs the reference tool and writes the board and the run |
 | `tools/run-demo.mjs` | the first run in one command: build, frame, install, import, serve |

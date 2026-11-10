@@ -9,10 +9,16 @@
 // The words are the chain's, not the format's. The frame marks a record's kind; this reading names the place a record
 // takes in a chain, which `roleOf` reads from the same links the edges are drawn from. Two readings of one volume
 // therefore agree about what each record is, because they ask the same question of the same fields.
+//
+// A record with no link on it is drawn and dimmed rather than left out. A quarter's inventory holds readings no
+// calculation read, and an audit's first finding is often that one: leaving them out would draw a plant that looks fully
+// accounted for.
 
+import { useEffect, useRef } from 'react';
 import { registerPack, type Board } from '@ssccsorg/skene-frame';
 import { LABEL, ROW, cn } from '@ssccsorg/skene-frame/ui';
 import { concludedOf, roleOf, type EsgChain, type EsgRecord } from './pack';
+import { editedOf, pick, useBranch, usePicked, type Branch } from './workbench';
 
 /** The place a record takes in the chain, which is the column it stands in. */
 export type ChainRole = 'requirement' | 'measurement' | 'transformation' | 'result';
@@ -36,6 +42,14 @@ export interface ChainNode {
   detail: string[];
   /** The whole of what the record says, for a reader who asks the node. */
   says: string;
+  /** Who wrote it, which is the unit a press on the node picks. */
+  creator: string;
+  /** Whether any record names it or it names one, which is what makes it part of the chain. */
+  linked: boolean;
+  /** Whether the branch is taken at this record. */
+  edited: boolean;
+  /** Whether this record is downstream of the branch, so what it says rests on the pilot's declaration. */
+  derived: boolean;
 }
 
 export interface ChainLink {
@@ -48,6 +62,8 @@ export interface ChainLink {
 export interface CausalChain {
   nodes: ChainNode[];
   links: ChainLink[];
+  /** How many measured records no calculation read, which is stated rather than drawn as a gap. */
+  idle: number;
 }
 
 /** A field name as a reader's words, which is all the payload's spelling needs. */
@@ -109,12 +125,59 @@ function detailOf(record: EsgRecord, role: ChainRole): string[] {
  * Every edge is a field: `from_facts` is evidence, `Concluded.to_fact` is the conclusion, and the `requirement` a
  * conclusion states is the requirement that bounded the work which reached it. A requirement no conclusion cites is a
  * node with no edge, which is a fact about the volume rather than a gap in the drawing.
+ *
+ * A branch is read here rather than downstream, because an edited requirement changes the code a conclusion is matched
+ * by: edit `ESRS E1-6` into another code and the edges that cited it stop being drawn, which is the honest answer to a
+ * constraint the evidence no longer names.
  */
-export function chainOf(records: EsgRecord[]): CausalChain {
+export function chainOf(records: EsgRecord[], branch: Branch = { at: null, edit: null }): CausalChain {
+  const spent = records.map((record) => editedOf(record, branch));
   const concluded = new Set(
-    records.map((record) => concludedOf(record)).filter((at): at is string => Boolean(at)),
+    spent.map((record) => concludedOf(record)).filter((at): at is string => Boolean(at)),
   );
-  const nodes: ChainNode[] = records.map((record) => {
+
+  // A requirement is cited by its code, which is what a conclusion names and what a hint is titled with.
+  const requirement = new Map(
+    spent
+      .filter((record) => record.kind === 'hint')
+      .map((record) => [
+        codeOf(String((record.record as { content?: string }).content ?? '')),
+        record.address,
+      ]),
+  );
+
+  const links: ChainLink[] = [];
+  const link = (from: string, to: string, role: ChainLinkRole) => {
+    links.push({ id: `${role}-${from}-${to}`, from, to, role });
+  };
+
+  const concludedBy = new Map<string, string>();
+  for (const record of spent) {
+    if (record.kind !== 'intent') continue;
+    for (const source of (record.record as { from_facts?: string[] }).from_facts ?? []) {
+      link(source, record.address, 'evidence');
+    }
+    const result = concludedOf(record);
+    if (!result) continue;
+    link(record.address, result, 'conclusion');
+    concludedBy.set(result, record.address);
+    const named = spent.find((each) => each.address === result)?.payload?.requirement;
+    if (typeof named !== 'string') continue;
+    const bounds = requirement.get(named);
+    if (bounds) link(bounds, record.address, 'bounds');
+  }
+
+  const touched = new Set(links.flatMap((each) => [each.from, each.to]));
+  // What the branch reaches: the result an edited transformation concluded. A requirement's text is not a change to the
+  // work that cited it, so nothing downstream of a requirement is marked.
+  const derived = new Set<string>();
+  if (branch.at) {
+    for (const each of links) {
+      if (each.from === branch.at && each.role === 'conclusion') derived.add(each.to);
+    }
+  }
+
+  const nodes: ChainNode[] = spent.map((record) => {
     const role = roleOf(record, concluded) as ChainRole;
     return {
       id: record.address,
@@ -125,41 +188,19 @@ export function chainOf(records: EsgRecord[]): CausalChain {
         record.description ??
         record.payloadText ??
         String((record.record as { content?: string }).content ?? ''),
+      creator: record.creator ?? '',
+      // A requirement stands on its own: it is a bound, and a volume holding an unanswered bound is the finding.
+      linked: touched.has(record.address) || record.kind === 'hint',
+      edited: branch.at === record.address,
+      derived: derived.has(record.address),
     };
   });
-  const known = new Set(nodes.map((node) => node.id));
 
-  // A requirement is cited by its code, which is what a conclusion names and what a hint is titled with.
-  const requirement = new Map(
-    records
-      .filter((record) => record.kind === 'hint')
-      .map((record) => [
-        codeOf(String((record.record as { content?: string }).content ?? '')),
-        record.address,
-      ]),
-  );
-
-  const links: ChainLink[] = [];
-  const link = (from: string, to: string, role: ChainLinkRole) => {
-    if (!known.has(from) || !known.has(to)) return;
-    links.push({ id: `${role}-${from}-${to}`, from, to, role });
+  return {
+    nodes,
+    links,
+    idle: nodes.filter((node) => !node.linked).length,
   };
-
-  for (const record of records) {
-    if (record.kind !== 'intent') continue;
-    for (const source of (record.record as { from_facts?: string[] }).from_facts ?? []) {
-      link(source, record.address, 'evidence');
-    }
-    const result = concludedOf(record);
-    if (!result) continue;
-    link(record.address, result, 'conclusion');
-    const named = records.find((each) => each.address === result)?.payload?.requirement;
-    if (typeof named !== 'string') continue;
-    const bounds = requirement.get(named);
-    if (bounds) link(bounds, record.address, 'bounds');
-  }
-
-  return { nodes, links };
 }
 
 /** The order the columns stand in, left to right, which is the order the chain runs. */
@@ -184,12 +225,14 @@ interface Placed {
   y: number;
 }
 
-/** The nodes in columns, and the size of the whole picture. */
+/** The nodes in columns, and the size of the whole picture. A node on the chain stands above one that is not. */
 function placed(nodes: ChainNode[]): { at: Placed[]; w: number; h: number } {
   const at: Placed[] = [];
   let tallest = 0;
   COLUMNS.forEach((role, column) => {
-    const held = nodes.filter((node) => node.role === role);
+    const held = nodes
+      .filter((node) => node.role === role)
+      .sort((left, right) => Number(right.linked) - Number(left.linked));
     tallest = Math.max(tallest, held.length * NODE.h + Math.max(0, held.length - 1) * GAP.y);
     held.forEach((node, row) => {
       at.push({
@@ -229,30 +272,42 @@ function wrap(text: string, width: number): string[] {
   return [text.slice(0, at), clip(text.slice(at).trimStart(), width)];
 }
 
-function ChainView({ project }: Board) {
+function ChainView({ project, pickedId, onPick }: Board) {
   const chain = (project as { esg?: EsgChain } | null)?.esg;
-  if (!chain) {
-    return <div className={cn(ROW, 'text-muted-foreground')}>this project declares no records</div>;
-  }
+  const branch = useBranch();
+  const picked = usePicked();
+  const focus = useRef<HTMLDivElement | null>(null);
 
-  // A record's own time is the order the chain happened, so the columns fill in the order the work did.
-  const records = [...chain.records].sort((left, right) => left.written - right.written);
-  const model = chainOf(records);
+  // A unit picked on the map is a focus rather than a filter: the records it wrote stay where they are in the chain,
+  // and the first of them is brought into view, because a filter would take away the edges that say what it feeds.
+  const records = chain ? [...chain.records].sort((left, right) => left.written - right.written) : [];
+  const model = chainOf(records, branch);
   const { at, w, h } = placed(model.nodes);
   const where = new Map(at.map((spot) => [spot.node.id, spot]));
   const counted = (role: ChainLinkRole) => model.links.filter((each) => each.role === role).length;
+  const isFocus = (node: ChainNode) => Boolean(pickedId) && node.creator === pickedId;
+
+  useEffect(() => {
+    if (!pickedId) return;
+    focus.current?.querySelector('[data-focus="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [pickedId, model.nodes.length]);
+
+  if (!chain) {
+    return <div className={cn(ROW, 'text-muted-foreground')}>this project declares no records</div>;
+  }
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className={cn(ROW, 'gap-3 border-b')}>
         <span className={cn(LABEL, 'shrink-0')}>Chain</span>
         <span className="min-w-0 flex-1 truncate text-muted-foreground">
-          {model.nodes.length} records · {counted('evidence')} sources cited · {counted('conclusion')}{' '}
-          conclusions · {counted('bounds')} bounded by a requirement
+          {model.nodes.filter((node) => node.linked).length} on the chain · {counted('evidence')} sources cited ·{' '}
+          {counted('conclusion')} conclusions · {counted('bounds')} bounded
+          {model.idle ? ` · ${model.idle} on file, read by nothing` : ''}
         </span>
       </div>
 
-      <div data-region="chain" className="min-h-0 flex-1 overflow-auto">
+      <div data-region="chain" ref={focus} className="min-h-0 flex-1 overflow-auto">
         <svg
           viewBox={`0 0 ${w} ${h}`}
           // The picture is as wide as four columns and as tall as the longest one, so it scales to the panel it is
@@ -297,47 +352,62 @@ function ChainView({ project }: Board) {
             );
           })}
 
-          {at.map(({ node, x, y }) => (
-            <g key={node.id}>
-              <title>{node.says}</title>
-              <rect
-                x={x}
-                y={y}
-                width={NODE.w}
-                height={NODE.h}
-                rx={5}
-                className="fill-card"
-                stroke="var(--border)"
-              />
-              <rect x={x} y={y} width={2.5} height={NODE.h} rx={1} fill={INK[node.role]} />
-              <text x={x + 12} y={y + 15} fontSize={9.5} fill={INK[node.role]} letterSpacing={0.4}>
-                {node.role}
-              </text>
-              {wrap(node.title, 27).map((line, index) => (
-                <text
-                  key={line + index}
-                  x={x + 12}
-                  y={y + 30 + index * 12}
-                  fontSize={10.5}
-                  fontWeight={500}
-                  className="fill-foreground"
-                >
-                  {line}
+          {at.map(({ node, x, y }) => {
+            const here = node.id === picked;
+            const focusHere = isFocus(node);
+            return (
+              <g
+                key={node.id}
+                data-focus={focusHere || here ? 'true' : undefined}
+                onClick={() => {
+                  pick(node.id);
+                  if (node.creator) onPick(node.creator);
+                }}
+                className="cursor-pointer"
+                opacity={node.linked ? 1 : 0.45}
+              >
+                <title>{node.says}</title>
+                <rect
+                  x={x}
+                  y={y}
+                  width={NODE.w}
+                  height={NODE.h}
+                  rx={5}
+                  className="fill-card"
+                  stroke={node.edited ? 'var(--claim)' : here || focusHere ? 'var(--foreground)' : 'var(--border)'}
+                  strokeWidth={here || focusHere ? 1.4 : 1}
+                  strokeDasharray={node.derived && !node.edited ? '3 2' : undefined}
+                />
+                <rect x={x} y={y} width={2.5} height={NODE.h} rx={1} fill={INK[node.role]} />
+                <text x={x + 12} y={y + 15} fontSize={9.5} fill={INK[node.role]} letterSpacing={0.4}>
+                  {node.edited ? 'edited' : node.derived ? 'of the branch' : node.role}
                 </text>
-              ))}
-              {node.detail.slice(0, 2).map((line, index) => (
-                <text
-                  key={line + index}
-                  x={x + 12}
-                  y={y + NODE.h - 21 + index * 11}
-                  fontSize={9.5}
-                  className="fill-muted-foreground"
-                >
-                  {clip(line, 30)}
-                </text>
-              ))}
-            </g>
-          ))}
+                {wrap(node.title, 27).map((line, index) => (
+                  <text
+                    key={line + index}
+                    x={x + 12}
+                    y={y + 30 + index * 12}
+                    fontSize={10.5}
+                    fontWeight={500}
+                    className="fill-foreground"
+                  >
+                    {line}
+                  </text>
+                ))}
+                {node.detail.slice(0, 2).map((line, index) => (
+                  <text
+                    key={line + index}
+                    x={x + 12}
+                    y={y + NODE.h - 21 + index * 11}
+                    fontSize={9.5}
+                    className="fill-muted-foreground"
+                  >
+                    {clip(line, 30)}
+                  </text>
+                ))}
+              </g>
+            );
+          })}
         </svg>
       </div>
     </div>

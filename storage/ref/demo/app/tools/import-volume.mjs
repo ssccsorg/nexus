@@ -432,6 +432,18 @@ export function marksOf(records) {
 }
 
 /**
+ * Where a unit stands, at each scene the frame may have cut.
+ *
+ * A scene key is a position in the run's timeline and not a word about the unit, and the frame cuts the run into the
+ * scenes it finds: a run that opens with a named record has no first scene of plain readings, so `record` is not a key
+ * every run has. The declaration names both, because where a pin stands is not a question about which scene the run
+ * happened to start with.
+ */
+function placed([x, y]) {
+  return { record: [x, y], notice: [x, y] };
+}
+
+/**
  * The readings a volume stands when it declares none of its own.
  *
  * The key space is what the volume was read for and the run is what the tool answered. A map is not among them: this
@@ -454,36 +466,53 @@ const DECLARATIONS = {
     // are the surface; the frame's raw run panels show a record's byte count and a member's board coordinate, which are
     // the tool's own fields and not what the pack is about.
     readings: ['map', 'chain', 'esg'],
-    layout: { console: false, rail: false, timeline: false, plan: false },
+    layout: { console: false, rail: false, timeline: false, plan: false, evidence: true },
     kinds: {
       // Only a unit needs a kind: the frame asks it for the atoms a member presents. The controller and the requirement
-      // are a record and a bound rather than a place, so they stand in no unit and declare no atoms.
-      meter: ['reads', 'shows'],
-      flowmeter: ['reads', 'shows'],
-      scale: ['reads', 'shows'],
-      // An inverter puts energy out rather than taking a reading, and the frame draws it for the same reason.
-      inverter: ['emits', 'shows'],
-      service: ['writes', 'shows'],
+      // are a record and a bound rather than a place, so they stand in no unit and declare no atoms. The names are the
+      // board's glyphs, so a kind is drawn by the mark the frame already holds rather than by a shape chosen here.
+      sensor: ['reads', 'shows'],
+      station: ['reads', 'shows'],
+      pump: ['reads', 'shows'],
+      machine: ['reads', 'shows'],
+      hauler: ['reads', 'shows'],
+      store: ['reads', 'shows'],
+      // A crane is given work rather than reporting. A person stands on the map because a service visit happened
+      // somewhere on the site, and states work rather than being given it.
+      arm: ['writes', 'shows'],
+      person: ['person', 'shows'],
     },
     place: {
       view: [0, 0, 400, 220],
-      // Roughly 350 m by 200 m at this latitude: one plant, drawn as a sketch of where its meters stand.
+      // Roughly 350 m by 200 m at this latitude: one plant, drawn as a sketch of where its instruments stand.
       geo: { bounds: [7.454, 47.1663, 7.4586, 47.1681] },
       areas: [
-        { x: 10, y: 10, w: 170, h: 90, label: 'meter room' },
-        { x: 210, y: 10, w: 170, h: 90, label: 'boiler house' },
-        { x: 10, y: 120, w: 170, h: 90, label: 'service yard' },
-        { x: 210, y: 120, w: 170, h: 90, label: 'roof array' },
+        { x: 8, y: 8, w: 118, h: 66, label: 'meter room' },
+        { x: 8, y: 82, w: 118, h: 72, label: 'boiler house' },
+        { x: 134, y: 8, w: 152, h: 146, label: 'machine hall' },
+        { x: 294, y: 8, w: 98, h: 66, label: 'loading bay' },
+        { x: 294, y: 82, w: 98, h: 72, label: 'roof array' },
+        { x: 8, y: 162, w: 384, h: 50, label: 'service yard' },
       ],
-      // A unit is where a machine stands. What it is called is read from the record its creator wrote, so a pin and a
-      // measurement are the same instrument twice rather than two names to keep in step.
+      // A unit is where an instrument stands. What it is called is read from the record its creator wrote, so a pin and
+      // a measurement are the same instrument twice rather than two names to keep in step.
       units: {
-        'meter:m17': { icon: 'meter', at: { record: [90, 55] } },
-        'meter:g04': { icon: 'meter', at: { record: [295, 55] } },
-        'inverter:pv1': { icon: 'inverter', at: { record: [295, 165] } },
-        'meter:w02': { icon: 'flowmeter', at: { record: [40, 165] } },
-        'scale:s01': { icon: 'scale', at: { record: [100, 165] } },
-        'service:contractor': { icon: 'service', at: { record: [160, 165] } },
+        'meter:m17': { icon: 'sensor', at: placed([36, 30]) },
+        'meter:g04': { icon: 'station', at: placed([92, 30]) },
+        'meter:w02': { icon: 'pump', at: placed([36, 58]) },
+        'meter:w05': { icon: 'pump', at: placed([92, 58]) },
+        'boiler:b02': { icon: 'machine', at: placed([36, 106]) },
+        'compressor:a01': { icon: 'pump', at: placed([92, 106]) },
+        'chiller:c01': { icon: 'machine', at: placed([36, 136]) },
+        'press:p03': { icon: 'machine', at: placed([170, 34]) },
+        'crane:k01': { icon: 'arm', at: placed([252, 34]) },
+        'hvac:h04': { icon: 'machine', at: placed([170, 84]) },
+        'charger:e01': { icon: 'station', at: placed([252, 84]) },
+        'telematics:t01': { icon: 'hauler', at: placed([343, 30]) },
+        'compactor:w03': { icon: 'hauler', at: placed([343, 58]) },
+        'inverter:pv1': { icon: 'station', at: placed([343, 122]) },
+        'scale:s01': { icon: 'store', at: placed([200, 190]) },
+        'service:contractor': { icon: 'person', at: placed([60, 190]) },
       },
     },
     // The close, read over the run. The objectives are the artefacts a reporting period is made of, and each one is a mark

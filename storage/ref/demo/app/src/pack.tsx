@@ -7,6 +7,8 @@
 
 import { KindTag, registerPack, registerResource, type Board } from '@ssccsorg/skene-frame';
 import { LABEL, ROW, TITLE, cn } from '@ssccsorg/skene-frame/ui';
+import { useEffect, useRef } from 'react';
+import { editedOf, pick, useBranch, usePicked } from './workbench';
 
 /** What a project declares under `{ "kind": "keyspace", "at": ... }`. */
 export interface KeySpace {
@@ -184,20 +186,37 @@ function ChainMark() {
   );
 }
 
-function EsgView({ project }: Board) {
+function EsgView({ project, pickedId, onPick }: Board) {
   const chain = (project as { esg?: EsgChain } | null)?.esg;
+  const branch = useBranch();
+  const picked = usePicked();
+  const focus = useRef<HTMLDivElement | null>(null);
+
+  // The record's own time is the order the chain happened. The listing arrives by key, which is the storage layer's
+  // order and not the audit's. What a branch changes is what a record says, so it is read here rather than kept in a
+  // second copy of the volume.
+  const records = chain
+    ? [...chain.records]
+        .sort((left, right) => left.written - right.written)
+        .map((record) => editedOf(record, branch))
+    : [];
+  const concluded = new Set(
+    records.map((record) => concludedOf(record)).filter((at): at is string => Boolean(at)),
+  );
+  const isFocus = (record: EsgRecord) => Boolean(pickedId) && record.creator === pickedId;
+
+  // A unit picked on the map brings its first record into view, which is the half of the link a press on a pin means.
+  useEffect(() => {
+    if (!pickedId) return;
+    focus.current?.querySelector('[data-focus="true"]')?.scrollIntoView({ block: 'nearest' });
+  }, [pickedId, records.length]);
+
   if (!chain) {
     return (
       <div className={cn(ROW, 'text-muted-foreground')}>this project declares no records</div>
     );
   }
 
-  // The medium writes each record a time, so sorting on it is the order the chain happened. The listing arrives by key,
-  // which is the storage layer's order and not the audit's.
-  const records = [...chain.records].sort((left, right) => left.written - right.written);
-  const concluded = new Set(
-    chain.records.map((record) => concludedOf(record)).filter((at): at is string => Boolean(at)),
-  );
   // The tool recomputed an address for the facts it can, which are the ones whose address is their own content.
   const measured = records.filter((record) => record.addressState !== null);
   const verified = measured.filter((record) => record.addressState === 'valid').length;
@@ -224,32 +243,48 @@ address is their own; a result is filed at its intent's address, and an intent a
         </span>
       </div>
 
-      <div data-region="esg" className="min-h-0 flex-1 overflow-y-auto">
-        {records.map((record) => (
-          <div
-            key={record.key}
-            className={cn(ROW, 'gap-2', record.addressState === 'invalid' && 'text-destructive')}
-          >
-            <KindTag kind={record.kind as 'fact' | 'intent' | 'hint' | 'claim'} className="shrink-0" />
-            <span className={cn(LABEL, 'w-24 shrink-0 truncate')}>
-              {roleOf(record, concluded)}
-            </span>
-            <span
-              className="min-w-0 flex-1 truncate font-mono"
-              title={[lineOf(record), record.key, record.addressState ? `address ${record.addressState}` : null]
-                .filter(Boolean)
-                .join('\n')}
+      <div data-region="esg" ref={focus} className="min-h-0 flex-1 overflow-y-auto">
+        {records.map((record) => {
+          // A press is the pick, and the pick is the pair: the record this row stands for and the unit that wrote it.
+          // The same press on a pin on the map is the other half, so the two readings cannot point at two things.
+          const here = record.address === picked;
+          const focusHere = isFocus(record);
+          return (
+            <div
+              key={record.key}
+              data-focus={focusHere || here ? 'true' : undefined}
+              onClick={() => {
+                pick(record.address);
+                if (record.creator) onPick(record.creator);
+              }}
+              className={cn(
+                ROW,
+                'cursor-pointer gap-2 hover:bg-muted/40',
+                (here || focusHere) && 'bg-muted/60',
+                record.addressState === 'invalid' && 'text-destructive',
+              )}
             >
-              {lineOf(record)}
-            </span>
-            <span className="max-w-36 shrink-0 truncate text-muted-foreground" title={record.creator ?? ''}>
-              {record.creator}
-            </span>
-            <span className="shrink-0 tabular-nums text-muted-foreground" title={`${record.written} ns`}>
-              {when(record.written)}
-            </span>
-          </div>
-        ))}
+              <KindTag kind={record.kind as 'fact' | 'intent' | 'hint' | 'claim'} className="shrink-0" />
+              <span className={cn(LABEL, 'w-24 shrink-0 truncate')}>
+                {roleOf(record, concluded)}
+              </span>
+              <span
+                className="min-w-0 flex-1 truncate font-mono"
+                title={[lineOf(record), record.key, record.addressState ? `address ${record.addressState}` : null]
+                  .filter(Boolean)
+                  .join('\n')}
+              >
+                {lineOf(record)}
+              </span>
+              <span className="max-w-36 shrink-0 truncate text-muted-foreground" title={record.creator ?? ''}>
+                {record.creator}
+              </span>
+              <span className="shrink-0 tabular-nums text-muted-foreground" title={`${record.written} ns`}>
+                {when(record.written)}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

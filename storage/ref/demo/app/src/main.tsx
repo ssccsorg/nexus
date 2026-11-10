@@ -7,6 +7,8 @@ import { brand } from './brand';
 import './pack';
 // The chain is this deployment's own picture of a volume, so it arrives with the pack rather than from the frame.
 import './chain';
+// The picked record's detail is a panel of the frame, registered where it is drawn.
+import './evidence';
 // The site boundary is a layer the map draws, declared where the deployment is: the frame's map has no idea what a
 // boundary is.
 import './site';

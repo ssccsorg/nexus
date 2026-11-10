@@ -268,6 +268,123 @@ fn author_the_esg_scenario() {
     )))
     .expect("the scrap record is accepted");
 
+    // The rest of the plant's instruments, one reading each.
+    //
+    // A quarter's inventory is not four meters: the site has cooling, compressed air, process heat, a charger, a press, a
+    // crane, the hall's air handling, the compactor, the freight record, and a second water meter on the discharge main.
+    // None of them feeds a calculation in this fixture, which is the point of having them: a volume holds readings that
+    // no transformation reads, and the screen says so rather than showing only the part of the plant that was used.
+    for reading in [
+        Measured {
+            value: 58_200.0,
+            unit: "kWh",
+            metric: "cooling_kwh",
+            period: "2026-Q1",
+            site: "plant-li-1",
+            reference: "CH-2021-0044",
+            quality: "measured",
+            source: "chiller:c01",
+        },
+        Measured {
+            value: 31_700.0,
+            unit: "kWh",
+            metric: "compressed_air_kwh",
+            period: "2026-Q1",
+            site: "plant-li-1",
+            reference: "CA-2020-0012",
+            quality: "measured",
+            source: "compressor:a01",
+        },
+        Measured {
+            value: 44_900.0,
+            unit: "kWh",
+            metric: "process_heat_kwh",
+            period: "2026-Q1",
+            site: "plant-li-1",
+            reference: "BH-2019-0007",
+            quality: "measured",
+            source: "boiler:b02",
+        },
+        Measured {
+            value: 9_800.0,
+            unit: "kWh",
+            metric: "forklift_charging_kwh",
+            period: "2026-Q1",
+            site: "plant-li-1",
+            reference: "CHG-2023-0021",
+            quality: "measured",
+            source: "charger:e01",
+        },
+        Measured {
+            value: 41_200.0,
+            unit: "cycles",
+            metric: "press_cycles",
+            period: "2026-Q1",
+            site: "plant-li-1",
+            reference: "PR-2018-0003",
+            quality: "measured",
+            source: "press:p03",
+        },
+        Measured {
+            value: 612.0,
+            unit: "h",
+            metric: "crane_lift_hours",
+            period: "2026-Q1",
+            site: "plant-li-1",
+            reference: "CR-2017-0002",
+            quality: "measured",
+            source: "crane:k01",
+        },
+        Measured {
+            value: 27_400.0,
+            unit: "kWh",
+            metric: "air_handling_kwh",
+            period: "2026-Q1",
+            site: "plant-li-1",
+            reference: "HV-2022-0031",
+            quality: "measured",
+            source: "hvac:h04",
+        },
+        Measured {
+            value: 2.4,
+            unit: "t",
+            metric: "waste_to_landfill",
+            period: "2026-Q1",
+            site: "plant-li-1",
+            reference: "CP-2023-0008",
+            quality: "measured",
+            source: "compactor:w03",
+        },
+        Measured {
+            value: 214.0,
+            unit: "t",
+            metric: "inbound_freight_tonnes",
+            period: "2026-Q1",
+            site: "plant-li-1",
+            reference: "TF-2026-0119",
+            quality: "measured",
+            source: "telematics:t01",
+        },
+        Measured {
+            value: 380.0,
+            unit: "m3",
+            metric: "water_discharge",
+            period: "2026-Q1",
+            site: "plant-li-1",
+            reference: "W05-2025-0032",
+            quality: "measured",
+            source: "meter:w05",
+        },
+    ] {
+        let source = reading.source;
+        block_on(storage.submit_fact(&Fact::new(
+            "did:example:plant-li-1".into(),
+            content(&reading),
+            source.into(),
+        )))
+        .expect("the reading is accepted");
+    }
+
     // The transformations, claimed and concluded.
     //
     // A conclusion is a fact about the intent, so the result is filed at the intent's own conclusion address and the chain
