@@ -837,6 +837,12 @@
           }
         },
         {
+          "kind": "abilities",
+          "at": [
+            "evidence"
+          ]
+        },
+        {
           "kind": "kinds",
           "at": {
             "sensor": [

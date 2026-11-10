@@ -102,6 +102,12 @@ that is not imported is a surface the board does not offer: this board has a map
 and those packages are not its dependencies. The rule runs the other way for readings too. A project names the readings
 it stands, and one whose host surface is absent, such as a map over a volume that declares no place, is not named at all.
 
+The evidence panel is held by the same rule rather than by a check of its own. It reads the links a record carries, so it
+is a surface of a project that holds a chain, and it says so with the frame's capability seam: the panel declares
+`needs: 'evidence'` and the importer writes that capability for a volume that holds work as well as readings. The
+`sample-volume` project holds one observation, declares nothing, and stands no panel, which is why a surface this demo
+offers is not a surface every project in the board has.
+
 The chain is this pack's reading and not the frame's graph. A graph of a run is a claim about a run, and the frame's own
 draws the participants and the work passed between them, which is the shape a run of many machines has. What an audit
 reads is the records and the links they carry, and those are this volume's terms, so the reading lives here beside the

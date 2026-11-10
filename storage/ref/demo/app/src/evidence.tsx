@@ -222,6 +222,10 @@ registerPanel({
   label: 'evidence',
   title: 'the picked record',
   starts: true,
+  // The panel reads the links a record carries, so it stands only for a project that says it has a chain to open. A
+  // volume of plain readings gets no panel: a surface that opened onto nothing would be a control promising a view the
+  // project does not have.
+  needs: 'evidence',
   Icon: ScrollText,
   View: EvidencePanel,
 });

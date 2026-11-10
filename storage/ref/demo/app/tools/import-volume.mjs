@@ -444,6 +444,19 @@ function placed([x, y]) {
 }
 
 /**
+ * The capability the evidence panel needs, which is the project's statement that it has a chain to open.
+ *
+ * A capability is a name a project states and the frame reads (`lib/capabilities`), so the panel is drawn where the
+ * project says the surface exists and nowhere else. The name is the panel's own, because what it guards is that panel.
+ */
+const EVIDENCE = 'evidence';
+
+/** Whether a volume holds work as well as readings, which is what a record's links are made of. */
+function chained(records) {
+  return records.some((record) => record.kind === 'intent');
+}
+
+/**
  * The readings a volume stands when it declares none of its own.
  *
  * The key space is what the volume was read for and the run is what the tool answered. A map is not among them: this
@@ -597,6 +610,12 @@ export function projectOf(measured, reading = 'keyspace') {
   if (m.records.length) {
     resources.push({ kind: 'esg', at: { volume: m.volume, records: m.records } });
   }
+  // What the deployment can do beside drawing the run, stated where the volume holds the thing it needs.
+  //
+  // The evidence surface reads the links a record carries, so a volume of plain readings has nothing for it to open. The
+  // capability is declared from the volume's own shape rather than kept beside it, which is what keeps the surface off a
+  // project that would show a panel with nothing in it.
+  if (chained(m.records)) resources.push({ kind: 'abilities', at: [EVIDENCE] });
   // What a map needs and the run does not carry: the kinds that present a location, and the ground.
   const declared = DECLARATIONS[m.id];
   if (declared) {
