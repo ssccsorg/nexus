@@ -1245,13 +1245,7 @@
         },
         {
           "kind": "layout",
-          "at": {
-            "console": false,
-            "rail": false,
-            "timeline": true,
-            "plan": false,
-            "evidence": true
-          }
+          "at": {}
         }
       ]
     },

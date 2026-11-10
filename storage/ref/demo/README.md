@@ -161,9 +161,15 @@ branch changes what the chain is read against and says which records rest on it.
 reload forgets the branch because it was never written.
 
 The project opens on the map, with the chain and the `esg` reading beside it in the bar. Those are the three readings
-this project stands: the frame's raw run panels are closed for it, because a record's byte count and a member's board
-coordinate are the tool's own fields and not what the pack is about. The bar opens any of them for a reader who wants
-them.
+this project stands: the frame's readings of the raw run are not named by it, because a record's byte count and a
+member's board coordinate are the tool's own fields and not what the pack is about. The bar opens any of them for a
+reader who wants them.
+
+The frame's own panels are the frame's arrangement. The board opens with the declarations, the space column, the
+transport and the evidence panel out, and the console away, which is what each panel answers for itself. This project
+declares no arrangement of its own. A declaration is applied when the project opens, over whatever the pilot left, so a
+panel a bundle closed would come back on every visit: the project says nothing, and the arrangement that stands is the
+one the pilot arranged.
 
 The same project declares a place, so the map draws the site the readings come from. Sixteen instruments stand on it,
 of eight kinds: meters, a weighbridge, an inverter, a charger, a crane, a press, the boiler house, the machine hall's
