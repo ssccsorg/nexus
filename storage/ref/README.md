@@ -1,5 +1,9 @@
 # nexus-storage-ref
 
+The demonstration is live at [nexus-demo-b5z.pages.dev](https://nexus-demo-b5z.pages.dev): an ESG evidence campaign
+read on the `skene` frame, with its records, the chain they compose, the plant on a map, and the campaign timeline. The
+volume behind it is committed, so the board is read-only and needs no install.
+
 neXus is a state fabric. Its unit is a transition: a fact, an intent, and a hint compose into a new fact,
 `F x I x H -> F'`. A coordinate addresses the fact, a record keeps it, and the transition is itself recorded, so the
 record is the state.
@@ -72,7 +76,8 @@ deployment work a product adds.
 | `src/main.rs` | the tool: `keys`, `box`, `read`, `verify`, `sidecar`, `show`, and `self-check` over the read surface |
 | `tests/cli.rs` | the contract, each case running the built binary |
 | `demo/volume/` | one record as the format writes it, committed so the crate has something to read without a write path |
-| `demo/app/` | the demonstration: a Vite application that reads this volume through the `skene` frame |
+| `demo/esg-volume/` | the volume behind the live board: the evidence chain of one reporting campaign |
+| `demo/app/` | the demonstration: a Vite application that reads these volumes through the `skene` frame |
 | `demo/README.md` | what the demonstration holds, and how to run it |
 | `docs/integration-seam.md` | where an external claim system attaches |
 
