@@ -239,24 +239,33 @@ the importer wrote the board, so a deploy is `npm run build` and a folder of fil
 address, and no Tauri, WASM runtime or server sits in front of it. That also means a deploy is read-only by construction,
 which is what the header says.
 
+A push to `main` publishes it once every job is green. The `demo` job builds the board and uploads it, and the `deploy`
+job uploads that artifact, so the address serves the bytes the suite passed rather than a second build of the same
+commit. A pull request stops at the artifact, because a branch is read and not published. The job reads
+`CLOUDFLARE_API_TOKEN` (Cloudflare Pages, Edit) and `CLOUDFLARE_ACCOUNT_ID` from the repository secrets, and fails when
+either is missing rather than publishing to a guessed account.
+
+The same two steps run from a checkout, which is what a one-off deploy is:
+
 ```bash
-cd storage/ref/demo/app
-npm ci && npm run build
-npx wrangler pages deploy dist --project-name nexus-demo --branch main
+./run.sh --demo-check     # build the board
+./run.sh --demo-deploy    # publish it, with the local wrangler login
 ```
 
 `public/_redirects` carries the one rule a single-page app needs on a static host: a request that names no file is the
 page, because `/map`, `/chain` and `/esg` are readings and not files. The map's tiles are the OpenStreetMap raster style
 the frame already ships, fetched by the browser and needing no key.
 
-A change to a volume, the fixture or the importer is not live until the board is regenerated and the build is uploaded:
+A change to a volume, the fixture or the importer is not live until the board is regenerated and the build is uploaded.
+An import replaces the project it names, so the sample project on the board survives it. `--reset` starts a fresh board
+and is only for the first project.
 
 ```bash
 cargo test -p nexus-storage-ref --test esg_scenario -- --ignored --nocapture   # rewrites esg-volume/
-cd storage/ref/demo/app && npm run import -- --reset --id esg-scenario \
+npm --prefix storage/ref/demo/app run import -- --id esg-scenario \
   --title "ESG compliance - Alpine Precision AG, 2026-Q1" \
   --volume storage/ref/demo/esg-volume --reading map
-npm run build && npx wrangler pages deploy dist --project-name nexus-demo --branch main
+./run.sh --demo-check && ./run.sh --demo-deploy
 ```
 
 ### Custom domain

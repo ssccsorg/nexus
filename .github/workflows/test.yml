@@ -177,3 +177,33 @@ jobs:
           cache-dependency-path: storage/ref/demo/app/package-lock.json
       - name: Demonstration
         run: bash ./run.sh --demo-check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: demo-dist
+          path: storage/ref/demo/app/dist
+          if-no-files-found: error
+
+  # A push to main publishes the board the check just built, so what a reader opens is the bytes the suite passed rather
+  # than a second build of the same commit. A pull request stops at the artifact, because a branch is read and not
+  # published. The job waits on every other, so a commit that breaks a layer never reaches the address.
+  deploy:
+    needs: [core, server, gateway, apps, playbooks, demo]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    environment:
+      name: nexus-demo
+      url: https://nexus-demo-b5z.pages.dev
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: demo-dist
+          path: storage/ref/demo/app/dist
+      - name: Deploy the board
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bash ./run.sh --demo-deploy

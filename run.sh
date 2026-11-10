@@ -14,6 +14,7 @@ set -euo pipefail
 #   ./run.sh --server      # nex-server standalone verification
 #   ./run.sh --demo        # Check the demonstration, then serve it
 #   ./run.sh --demo-check  # Check the demonstration only (what CI runs)
+#   ./run.sh --demo-deploy # Publish the built board to Cloudflare Pages (what CI runs on main)
 #   ./run.sh --playbooks   # Consumer playbooks only
 #
 
@@ -589,6 +590,27 @@ serve_demo() {
     (cd "$DEMO_APP" && exec npm run dev)
 }
 
+# Publish the board `verify_demo` built. The board is static, so a deploy is the upload of `dist` and nothing else. The
+# credentials come from the environment, so a missing one fails here instead of reaching for a guessed account.
+deploy_demo() {
+    local APP="$DEMO_APP"
+
+    if [ ! -f "$APP/dist/projects.json" ] || [ ! -d "$APP/dist/scenario" ]; then
+        echo "deploy: the build does not carry the board, so run --demo-check first (FAIL)"
+        return 1
+    fi
+    if [ -n "${CI:-}" ] && { [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; }; then
+        echo "deploy: CI needs CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID (FAIL)"
+        return 1
+    fi
+
+    echo "Publishing $APP/dist to nexus-demo..."
+    (cd "$APP" && npx --yes wrangler@4.100.0 pages deploy dist \
+        --project-name nexus-demo --branch main) 2>&1 \
+        || { echo "deploy: the upload FAILED"; return 1; }
+    echo "deploy: published"
+}
+
 # ── App suite ─────────────────────────────────────────────────────────────
 
 run_apps() {
@@ -639,6 +661,10 @@ case "${1:-}" in
         shift
         verify_demo
         ;;
+    --demo-deploy)
+        shift
+        deploy_demo
+        ;;
     --playbooks)
         kill_port 30922
         exec ./playbooks/run.sh
@@ -652,6 +678,7 @@ case "${1:-}" in
         echo "  --server        nex-server standalone verification"
         echo "  --demo          Check the demonstration, then serve it on 5292"
         echo "  --demo-check    Check the demonstration and stop (what CI runs)"
+        echo "  --demo-deploy   Publish the built board to Cloudflare Pages (what CI runs on main)"
         echo "  --playbooks     Consumer playbooks only"
         ;;
     "")
