@@ -429,6 +429,14 @@ export function marksOf(records) {
 }
 
 /**
+ * The readings a volume stands when it declares none of its own.
+ *
+ * The key space is what the volume was read for and the run is what the tool answered. A map is not among them: this
+ * volume declares no place, and a reading whose host surface is absent is a control into nothing.
+ */
+const VOLUME_READINGS = ['keyspace', 'records'];
+
+/**
  * What the board declares about a volume beside what the tool answered.
  *
  * A map needs two declarations the run does not carry: which participant kinds present a location, and the ground they
@@ -570,7 +578,7 @@ export function projectOf(measured, reading = 'keyspace') {
       // frame hold, which is the technical volume's own view.
       at: declared?.readings
         ? { pack: 'volume', main: reading, on: declared.readings }
-        : { pack: 'volume', main: reading },
+        : { pack: 'volume', main: reading, on: VOLUME_READINGS },
     },
     // The board as text stands beside the key space. The panel is the frame's own drawing of a run, so it is opened
     // here rather than gated on a room this deployment does not have.

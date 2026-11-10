@@ -788,7 +788,11 @@
           "kind": "views",
           "at": {
             "pack": "volume",
-            "main": "keyspace"
+            "main": "keyspace",
+            "on": [
+              "keyspace",
+              "records"
+            ]
           }
         },
         {

@@ -19,13 +19,10 @@ import {
 import { standing } from '@ssccsorg/skene-frame/lib/packs';
 import { declaredReadings } from '@ssccsorg/skene-frame/lib/readings';
 
-// The pack registers the `keyspace` reader where it is imported, the same way the application's `main.tsx` does. The view
-// packages are imported here too: a reading is registered where its module is, so a test that resolved the board without
-// them would be reading a register the application does not have.
-import '@ssccsorg/skene-view-graph';
+// The pack registers the `keyspace` reader where it is imported, the same way the application's `main.tsx` does. The map
+// is imported because the board opens on it: a view stands where its package is imported, so a test that resolved the
+// board against views the deployment does not install would be reading a register the application does not have.
 import '@ssccsorg/skene-view-map';
-import '@ssccsorg/skene-view-media';
-import '@ssccsorg/skene-view-shell';
 import '../src/pack';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));

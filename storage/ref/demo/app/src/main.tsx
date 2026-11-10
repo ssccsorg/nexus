@@ -1,9 +1,7 @@
 import { createRoot } from 'react-dom/client';
-// The pictures this deployment draws, each a package that installs itself.
-import '@ssccsorg/skene-view-media';
+// The one picture this deployment stands. A view is installed by importing it, so a package imported here is a surface the
+// board offers: the map is this project's, and the shell, the graph, and the footage are not installed at all.
 import '@ssccsorg/skene-view-map';
-import '@ssccsorg/skene-view-shell';
-import '@ssccsorg/skene-view-graph';
 import { Frame } from '@ssccsorg/skene-frame';
 import { brand } from './brand';
 import './pack';

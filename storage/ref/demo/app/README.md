@@ -90,3 +90,8 @@ A map is the frame's reading of two resources, and both are declared here becaus
 than about the volume: `kinds` says which participant kinds present a location, and `place` says where the ground is and
 where each member stands on it. The records on the map are still the tool's; the importer writes the declaration beside
 them and the frame draws it.
+
+The deployment installs one view, `@ssccsorg/skene-view-map`. A view is installed by importing its package, so a package
+that is not imported is a surface the board does not offer: this board has a map and no shell, no graph, and no footage,
+and those packages are not its dependencies. The rule runs the other way for readings too. A project names the readings
+it stands, and one whose host surface is absent, such as a map over a volume that declares no place, is not named at all.
