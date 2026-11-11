@@ -26,25 +26,24 @@ function Mark({ className }: { className?: string }) {
 }
 
 export const brand: Brand = {
-  title: 'REF STORAGE DEMO',
-  name: 'nexus storage demo',
+  title: 'neXus Reference Demo',
+  name: 'nexus reference storage viewer',
   version: 'v0.1.0',
   // This deployment reads a committed volume and never writes, and the bar says so beside the name.
   status: 'read-only',
   // What the bar says about this deployment in two words. The card behind the name says what it is, which is more than a
   // bar can hold.
-  note: 'Demo mode',
+  note: '',
   // The deployment's vocabulary, which a project inherits when it declares none. The ESG project declares the same three
   // words, and the projects taken from another board declare none, so they are read in these.
   words: { fact: 'evidence', intent: 'calculation', hint: 'requirement' },
   // What a reader is looking at, in the order that answers it: the infrastructure, this view's relation to it, and the
   // data. The stack below names Skene, so these lines say what it is rather than naming it twice.
   about: [
-    'neXus is a state-space fabric: one format and one identity space, joining heterogeneous systems.',
-    'This view is not part of neXus. It is one example of what an implementation on that infrastructure can build.',
-    'The screen is built with Skene, a general-purpose interface library, over the records the reference storage wrote.',
-    'Every record on the board is fictional mock data.',
-    'The page asks for no camera, microphone, location, or notification access.',
+    'neXus is the underlying state-space fabric: a deterministic record format and identity space for heterogeneous systems.',
+    'This viewer is not related to the infrastructure as an independent demonstration, showcasing what can be built on top of the neXus data model.',
+    'Rendered by Skene, a default in-house modular interface library for the data model, reading directly from the reference storage.',
+    'All displayed records are synthetic mock data for demonstration purposes.',
   ],
   // What the screen is made of, bottom up: the reference storage that wrote the records, and the frame that draws them.
   // Each carries the repository it is kept in, which is where a reader who wants the code goes.
