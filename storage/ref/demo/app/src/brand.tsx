@@ -31,8 +31,9 @@ export const brand: Brand = {
   version: 'v0.1.0',
   // This deployment reads a committed volume and never writes, and the bar says so beside the name.
   status: 'read-only',
-  // The board is one arrangement of the records, drawn by this application over the frame. neXus defines no view.
-  note: 'not a neXus view · mock data',
+  // What the bar says about this deployment in two words. The card behind the name says what it is, which is more than a
+  // bar can hold.
+  note: 'Demo mode',
   // The deployment's vocabulary, which a project inherits when it declares none. The ESG project declares the same three
   // words, and the project taken from another board declares none, so it is read in these.
   words: { fact: 'evidence', intent: 'calculation', hint: 'requirement' },
@@ -45,7 +46,11 @@ export const brand: Brand = {
     'Every record on the board is fictional mock data.',
   ],
   // What the screen is made of, bottom up: the reference storage that wrote the records, and the frame that draws them.
-  layers: ['nexus', 'skene'],
+  // Each carries the repository it is kept in, which is where a reader who wants the code goes.
+  layers: [
+    { name: 'nexus', href: 'https://github.com/ssccsorg/nexus' },
+    { name: 'skene', href: 'https://github.com/ssccsorg/skene' },
+  ],
   Mark,
   mark: { path: MARK, viewBox: MARK_VIEWBOX },
 };

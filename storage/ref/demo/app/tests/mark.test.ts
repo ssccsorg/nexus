@@ -19,12 +19,23 @@ test('the brand the bar draws is this deployment’s', () => {
   expect(brand.title).toBe('REF STORAGE DEMO');
   expect(brand.name).toBe('nexus storage demo');
   expect(brand.version).toMatch(/^v\d+\.\d+\.\d+$/);
-  expect(brand.layers, 'the storage and the frame, bottom up').toStrictEqual(['nexus', 'skene']);
 });
 
-test('the bar says the board is not a neXus view', () => {
-  expect(brand.note, 'the boundary is on the bar').toContain('not a neXus view');
-  expect(brand.note, 'so is the invented data').toContain('mock data');
+test('the stack names where each layer is kept', () => {
+  const layers = brand.layers.map((each) => (typeof each === 'string' ? { name: each } : each));
+  expect(layers.map((each) => each.name), 'the storage and the frame, bottom up').toEqual([
+    'nexus',
+    'skene',
+  ]);
+  for (const layer of layers) {
+    expect(layer.href, `${layer.name} links to its repository`).toMatch(
+      /^https:\/\/github\.com\/ssccsorg\/[a-z-]+$/,
+    );
+  }
+});
+
+test('the bar marks the deployment as a demonstration', () => {
+  expect(brand.note, 'the boundary is on the bar').toMatch(/demo/i);
 });
 
 test('the card says what this view is, and that its data is invented', () => {
