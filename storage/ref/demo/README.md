@@ -56,13 +56,14 @@ The board holds one project per committed volume, plus the two it copies from an
 `app/tools/run-demo.mjs` regenerates it whole on every launch, with `--reset` on the first volume, so a board written by
 an earlier run is replaced rather than appended to. An append cannot restore a project that run never had.
 
-The four projects are chosen so that every reading this deployment installs has a place to be read.
+The four projects are chosen so that each surface this deployment installs has a place to be read: the map pane, the
+graph reading, the shell reading, and the footage kind a member row draws.
 
 | Project | What it is | What it exercises |
 |---|---|---|
 | `esg-scenario` | one reporting quarter of a fictional manufacturer | the map and the campaign it stands on, this board's chain, the records table, the evidence panel |
 | `sample-volume` | the committed record, read by the tool | the key space it opens on, and the box the tool ran |
-| `villa` | a rescue from a villa, from another board | every reading the frame installs, including footage, because it is the only project here that declares a source |
+| `villa` | a rescue from a villa, from another board | the shell and the graph on a place that stands every member kind, and the camera a member declares (the footage rows are this bundle's, the media themselves are the source board's) |
 | `spiderwing` | a patrol and the forty-seven seconds it cannot account for | the shell and the map on a second place, and a run whose subject is missing evidence |
 
 The importer counts nothing. A second model of the store would be a model free to disagree with the store, so every
