@@ -25,9 +25,10 @@ export default defineConfig({
       output: {
         manualChunks: (id: string) => {
           if (id.includes('node_modules/maplibre-gl')) return 'maplibre';
-          if (id.includes('node_modules/three') || id.includes('node_modules/@react-three')) {
-            return 'three';
-          }
+          // The renderer sits in its own file. Its React bindings travel with the frame, because they are what the
+          // frame's shell reading is drawn with; separating those two files from each other produced a chunk cycle.
+          if (id.includes('node_modules/three/')) return 'three';
+          if (id.includes('node_modules/@react-three')) return 'skene';
           if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) return 'react';
           if (id.includes('node_modules/@ssccsorg/')) return 'skene';
           return undefined;

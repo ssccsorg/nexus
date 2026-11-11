@@ -49,18 +49,7 @@ const ids = board.projects.map((project) => project.id);
 
 /** The projects generated from the volumes this board commits, and the projects taken from another board. */
 const VOLUMES = ['esg-scenario', 'sample-volume'];
-const SHARED = [
-  'drive',
-  'pump',
-  'ecu',
-  'drone',
-  'field',
-  'digital',
-  'game',
-  'villa',
-  'spiderwing',
-  'kwaitsing',
-];
+const SHARED = ['villa', 'spiderwing'];
 
 /** A header line the importer wrote, as text. */
 function header(text: string, key: string): string {
@@ -76,7 +65,7 @@ function hint(text: string, label: string): string | undefined {
   )?.content;
 }
 
-test('the board holds one project for each committed volume, and the shared one', () => {
+test('the board holds one project for each committed volume, and the shared ones', () => {
   expect(ids).toEqual([...VOLUMES, ...SHARED]);
   expect(new Set(ids).size, 'each volume has one project').toBe(ids.length);
 });

@@ -1,8 +1,8 @@
 # The demonstration
 
 A screen over the reference crate's own reads: the key space, one point read, a verification, and one ESG reporting
-period read as a chain, drawn on the `skene` frame from the volumes committed here. Served at
-https://rf-storage-demo.nexus.ssccs.org.
+period read as a chain, drawn on the `skene` frame from the volumes committed here, beside two projects taken from
+another board. Served at https://rf-storage-demo.nexus.ssccs.org.
 
 ## Run it in one line
 
@@ -33,7 +33,7 @@ regenerated board is built on a host and committed before the image is rebuilt.
 | `volume/` | one record as the format writes it, committed so both the tool and the application have something to read |
 | `esg-volume/` | records of one reporting period, read as a chain rather than as keys |
 | `app/` | a Vite application that runs the tool over those volumes and draws what came back |
-| `shared/` | the ten projects taken from another board, kept as a board of their own so the copy between them is a copy between equals |
+| `shared/` | two projects taken from another board, kept as a board of their own so the copy between them is a copy between equals |
 
 `volume/` holds no write path and no generator. It is the bytes of one record: `facts/f_<coordinate>.fact`, the payload
 under `blob/`, and the payload's media type beside it. The record's coordinate is its file name. Nothing in this
@@ -52,9 +52,18 @@ supplies the address, the record model, the panels, and the router.
 `sidecar`, and `self-check` against a volume, keeps each exit code, and writes `app/projects.json` and one run under
 `app/scenario/` from what the tool printed.
 
-The board holds one project per committed volume, plus the ten it copies from another board, and
+The board holds one project per committed volume, plus the two it copies from another board, and
 `app/tools/run-demo.mjs` regenerates it whole on every launch, with `--reset` on the first volume, so a board written by
 an earlier run is replaced rather than appended to. An append cannot restore a project that run never had.
+
+The four projects are chosen so that every reading this deployment installs has a place to be read.
+
+| Project | What it is | What it exercises |
+|---|---|---|
+| `esg-scenario` | one reporting quarter of a fictional manufacturer | the map and the campaign it stands on, this board's chain, the records table, the evidence panel |
+| `sample-volume` | the committed record, read by the tool | the key space it opens on, and the box the tool ran |
+| `villa` | a rescue from a villa, from another board | every reading the frame installs, including footage, because it is the only project here that declares a source |
+| `spiderwing` | a patrol and the forty-seven seconds it cannot account for | the shell and the map on a second place, and a run whose subject is missing evidence |
 
 The importer counts nothing. A second model of the store would be a model free to disagree with the store, so every
 number on the screen is a number the tool printed, and each `count` line in a run is the parser's arithmetic over the
@@ -62,10 +71,9 @@ facts that run writes. An edit that moves a line has to move its count, or the t
 
 ## Projects from another board
 
-Ten of the board's twelve projects are not volumes. They are taken from another demonstration built on the same frame,
-and their subjects are nothing alike: a cell line, a brake controller on bare metal, a field logger, a warehouse array, a
-folder of files, a harbour at midnight, an insulin line, a rescue flight, a villa lift, and forty-seven seconds of a
-patrol. Each is a domain this application never heard of, and none of them asks for a change in the frame or here.
+Two of the board's four projects are not volumes. They are taken from another demonstration built on the same frame,
+and their subjects are nothing alike: a rescue from a villa, and forty-seven seconds of a patrol. Each is a domain
+this application never heard of, and neither asks for a change in the frame or here.
 
 `shared/` keeps them as a board of its own, so the copy is a copy between equals. `app/tools/sync-project.mjs` reads a
 board and writes a board, in either direction, and leaves a project the destination already holds alone unless
@@ -87,9 +95,9 @@ replaced with neutral ones in the copy, because this repository publishes no pro
 room this board does not have, so its channel declaration is dropped and it is read from the board's default room; its
 run says so.
 
-Their records are observations, commands, and participants, and nothing in them concludes a chain, so the board draws no
-chain for these projects and the evidence panel does not stand for one that has none: the capability seam doing its work
-rather than a special case.
+They do not bring this board's pack, so the chain and the records table are not offered for them: they stand the
+frame's own readings and nothing else. That is the capability seam at work rather than a special case, and it is why
+the board is not a second model of one domain.
 
 ## The view and the records
 

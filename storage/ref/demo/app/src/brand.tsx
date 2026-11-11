@@ -35,7 +35,7 @@ export const brand: Brand = {
   // bar can hold.
   note: 'Demo mode',
   // The deployment's vocabulary, which a project inherits when it declares none. The ESG project declares the same three
-  // words, and the project taken from another board declares none, so it is read in these.
+  // words, and the projects taken from another board declare none, so they are read in these.
   words: { fact: 'evidence', intent: 'calculation', hint: 'requirement' },
   // What a reader is looking at, in the order that answers it: the infrastructure, this view's relation to it, and the
   // data. The stack below names Skene, so these lines say what it is rather than naming it twice.

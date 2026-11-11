@@ -1,9 +1,14 @@
 import { createRoot } from 'react-dom/client';
 // The one picture this deployment stands. A view is installed by importing it, so a package imported here is a surface the
-// board offers: the map is this project's, and the shell, the graph, and the footage are not installed at all.
+// board offers. The frame's own set is four: the map, the graph, the shell, and the footage, which is the set another
+// deployment of this frame installs. The application's own readings, the key space and the chain, arrive with the pack.
 import '@ssccsorg/skene-view-map';
+import '@ssccsorg/skene-view-graph';
+import '@ssccsorg/skene-view-shell';
+import '@ssccsorg/skene-view-media';
 import { Frame } from '@ssccsorg/skene-frame';
 import { brand } from './brand';
+import { offTheShelf } from './host';
 import './pack';
 // The chain is this deployment's own picture of a volume, so it arrives with the pack rather than from the frame.
 import './chain';
@@ -19,4 +24,4 @@ import './styles.css';
 const root = document.getElementById('root');
 if (!root) throw new Error('the page has no root to render into');
 
-createRoot(root).render(<Frame brand={brand} />);
+createRoot(root).render(<Frame brand={brand} host={offTheShelf} />);

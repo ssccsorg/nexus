@@ -14,7 +14,7 @@ import { afterEach, expect, test } from 'vitest';
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const TOOL = join(ROOT, 'tools/sync-project.mjs');
 const SHARED = join(ROOT, '..', 'shared');
-const ID = 'ecu';
+const ID = 'villa';
 
 const made: string[] = [];
 function scratch(): string {
@@ -38,14 +38,25 @@ function projectAt(board: string, id: string): string {
   return JSON.stringify(text.projects.find((each) => each.id === id));
 }
 
+/** The run a board's project declares; a project names its own file, and the name is not the id. */
+function runPathOf(board: string, id: string): string {
+  const text = JSON.parse(readFileSync(join(board, 'projects.json'), 'utf8')) as {
+    projects: { id: string; resources: { kind: string; at: unknown }[] }[];
+  };
+  const record = text.projects
+    .find((each) => each.id === id)
+    ?.resources.find((each) => each.kind === 'record');
+  if (typeof record?.at !== 'string') throw new Error(`no record resource on ${id} in ${board}`);
+  return record.at;
+}
+
 test('the shared project copies into a board, and its run with it', () => {
   const board = scratch();
   const done = sync(['--from', SHARED, '--id', ID, '--into', board]);
   expect(done.status, done.stderr).toBe(0);
   expect(projectAt(board, ID)).toBe(projectAt(ROOT, ID));
-  expect(readFileSync(join(board, 'scenario', `${ID}.txt`), 'utf8')).toBe(
-    readFileSync(join(ROOT, 'scenario', `${ID}.txt`), 'utf8'),
-  );
+  const at = runPathOf(ROOT, ID);
+  expect(readFileSync(join(board, at), 'utf8')).toBe(readFileSync(join(ROOT, at), 'utf8'));
 });
 
 test('the same command carries it back, and the source is what comes back', () => {
@@ -55,9 +66,8 @@ test('the same command carries it back, and the source is what comes back', () =
   const done = sync(['--from', ROOT, '--id', ID, '--into', board, '--replace']);
   expect(done.status, done.stderr).toBe(0);
   expect(projectAt(board, ID)).toBe(projectAt(SHARED, ID));
-  expect(readFileSync(join(board, 'scenario', `${ID}.txt`), 'utf8')).toBe(
-    readFileSync(join(SHARED, 'scenario', `${ID}.txt`), 'utf8'),
-  );
+  const at = runPathOf(SHARED, ID);
+  expect(readFileSync(join(board, at), 'utf8')).toBe(readFileSync(join(SHARED, at), 'utf8'));
 });
 
 test('a second run is the second run saying it is already in step', () => {

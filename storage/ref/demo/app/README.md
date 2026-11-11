@@ -4,7 +4,8 @@ The storage reference, drawn on the shared frame. One board, one run per volume,
 from `nexus-storage-ref`.
 
 The application is a Vite deployment of `@ssccsorg/skene-frame`. It draws nothing of the frame: it supplies a brand, a
-board, and one pack, and the frame supplies the address, the record model, the panels, and the router.
+host, a board, and one pack, and the frame supplies the address, the record model, the panels, and the router. The host
+says the board and its runs are the files this bundle shipped with, so the frame asks no room and follows no feed.
 
 It lives inside the crate it demonstrates, beside the volume it reads, because it is the reference's own demonstration
 rather than one more application on the shelf.
@@ -65,10 +66,11 @@ Without a built binary the importer reports what it could not run. `NEX_REF_BIN`
 | `src/evidence.tsx` | the `evidence` panel: the picked record, its links, and the field a branch edits |
 | `src/workbench.ts` | the pick and the branch, which are the demonstration's own state and not the volume's |
 | `src/brand.tsx` | the mark, the name, the version, the note beside them, the lines the card opens, and the layers |
+| `src/host.ts` | the host: no shell, no room, no feed, because the board and its runs are files |
 | `tools/import-volume.mjs` | runs the reference tool and writes the board and the run |
 | `tools/sync-project.mjs` | copies one project and its run between two boards, in either direction |
 | `tools/run-demo.mjs` | the first run in one command: build, frame, install, import, serve |
-| `tests/` | the board, the mark, and the importer |
+| `tests/` | the board, the mark, the importer, and the reading each project opens on |
 
 ## Tests
 
@@ -98,10 +100,14 @@ than about the volume: `kinds` says which participant kinds present a location, 
 where each member stands on it. The records on the map are still the tool's; the importer writes the declaration beside
 them and the frame draws it.
 
-The deployment installs one view, `@ssccsorg/skene-view-map`. A view is installed by importing its package, so a package
-that is not imported is a surface the board does not offer: this board has a map and no shell, no graph, and no footage,
-and those packages are not its dependencies. The rule runs the other way for readings too. A project names the readings
-it stands, and one whose host surface is absent, such as a map over a volume that declares no place, is not named at all.
+The deployment installs four views, the same four another board on this frame installs:
+`@ssccsorg/skene-view-map`, `@ssccsorg/skene-view-graph`, `@ssccsorg/skene-view-shell`, and
+`@ssccsorg/skene-view-media`. A view is installed by importing its package, so a package that is not imported is a
+surface the board does not offer. The rule runs the other way for readings too: a project names the readings it stands,
+and one whose host surface is absent is not offered it. A project that declares no place is offered no map, a project
+that declares no source is offered no footage, and a project that does not bring this board's pack is offered neither
+the chain nor the records table. That is why the board holds four projects rather than one: each of the four surfaces
+has a project that reaches it.
 
 The evidence panel is held by the same rule rather than by a check of its own. It reads the links a record carries, so it
 is a surface of a project that holds a chain, and it says so with the frame's capability seam: the panel declares
