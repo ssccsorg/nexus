@@ -136,10 +136,25 @@ describe.skipIf(!runs(bin))('the importer over the committed volumes', () => {
         expect(run.status, run.stderr).toBe(0);
       }
 
+      // The shared project comes from another board, so it is applied the way the run applies it.
+      const shared = spawnSync(
+        process.execPath,
+        [
+          join(HERE, 'tools/sync-project.mjs'),
+          '--from',
+          join(HERE, '..', 'shared', 'ecu'),
+          '--into',
+          out,
+        ],
+        { encoding: 'utf8', cwd: HERE },
+      );
+      expect(shared.status, shared.stderr).toBe(0);
+
       for (const path of [
         'projects.json',
         'scenario/esg-scenario.txt',
         'scenario/sample-volume.txt',
+        'scenario/ecu.txt',
       ]) {
         expect(readFileSync(join(out, path), 'utf8'), `${path} is stale`).toBe(
           readFileSync(join(HERE, path), 'utf8'),

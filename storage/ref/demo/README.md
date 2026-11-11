@@ -26,13 +26,14 @@ docker run --rm -p 8080:8080 nexus-demo
 `http://localhost:8080` is the same board, served from the committed files. The image carries no Rust toolchain, so a
 regenerated board is built on a host and committed before the image is rebuilt.
 
-## The three directories
+## The directories
 
 | Path | What it holds |
 |---|---|
 | `volume/` | one record as the format writes it, committed so both the tool and the application have something to read |
 | `esg-volume/` | records of one reporting period, read as a chain rather than as keys |
 | `app/` | a Vite application that runs the tool over those volumes and draws what came back |
+| `shared/` | a project taken from another board, kept as a board of its own so the copy between them is a copy between equals |
 
 `volume/` holds no write path and no generator. It is the bytes of one record: `facts/f_<coordinate>.fact`, the payload
 under `blob/`, and the payload's media type beside it. The record's coordinate is its file name. Nothing in this
@@ -51,13 +52,39 @@ supplies the address, the record model, the panels, and the router.
 `sidecar`, and `self-check` against a volume, keeps each exit code, and writes `app/projects.json` and one run under
 `app/scenario/` from what the tool printed.
 
-The board holds one project per committed volume, and `app/tools/run-demo.mjs` regenerates it whole on every launch,
+The board holds one project per committed volume, plus one taken from another board, and `app/tools/run-demo.mjs`
+regenerates it whole on every launch,
 with `--reset` on the first volume, so a board written by an earlier run is replaced rather than appended to. An append
 cannot restore a project that run never had.
 
 The importer counts nothing. A second model of the store would be a model free to disagree with the store, so every
 number on the screen is a number the tool printed, and each `count` line in a run is the parser's arithmetic over the
 facts that run writes. An edit that moves a line has to move its count, or the tests fail.
+
+## A project from another board
+
+The third project is not a volume. It is a project taken from another demonstration built on the same frame, whose
+subject is an ABS controller on bare metal: four wheels recording pulses, two brake controllers their pressure, and no
+calculation anywhere in it. It is here to show that the board is not one domain, and that a second one asks for no change
+in the frame or in this application.
+
+`shared/ecu/` keeps it as a board of its own, so the copy is a copy between equals. `app/tools/sync-project.mjs` reads a
+board and writes a board, in either direction, and leaves a project the destination already holds alone unless
+`--replace` says which side wins.
+
+```bash
+# take it into this demonstration
+node storage/ref/demo/app/tools/sync-project.mjs --from storage/ref/demo/shared/ecu \
+  --id ecu --into storage/ref/demo/app
+
+# give this demonstration's version back
+node storage/ref/demo/app/tools/sync-project.mjs --from storage/ref/demo/app \
+  --id ecu --into storage/ref/demo/shared/ecu --replace
+```
+
+The run applies the shared project after the imports, because the first import starts the board fresh. Its records are
+observations and nothing concludes them, so the board draws no chain for it and the evidence panel does not stand for it:
+the capability seam doing its work rather than a special case.
 
 ## The view and the records
 

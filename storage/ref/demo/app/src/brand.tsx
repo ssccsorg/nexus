@@ -31,8 +31,11 @@ export const brand: Brand = {
   version: 'v0.1.0',
   // This deployment reads a committed volume and never writes, and the bar says so beside the name.
   status: 'read-only',
-  // The bar says what this is in one line: not a view neXus defines, and not a record of anything real.
+  // The board is one arrangement of the records, drawn by this application over the frame. neXus defines no view.
   note: 'not a neXus view · mock data',
+  // The deployment's vocabulary, which a project inherits when it declares none. The ESG project declares the same three
+  // words, and the project taken from another board declares none, so it is read in these.
+  words: { fact: 'evidence', intent: 'calculation', hint: 'requirement' },
   // What a reader is looking at, in the order that answers it: the infrastructure, this view's relation to it, and the
   // data. The stack below names Skene, so these lines say what it is rather than naming it twice.
   about: [

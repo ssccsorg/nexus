@@ -47,6 +47,10 @@ function read(id: string): { bundle: ReturnType<typeof bundleOf>; space: KeySpac
 
 const ids = board.projects.map((project) => project.id);
 
+/** The projects generated from the volumes this board commits, and the project taken from another board. */
+const VOLUMES = ['esg-scenario', 'sample-volume'];
+const SHARED = ['ecu'];
+
 /** A header line the importer wrote, as text. */
 function header(text: string, key: string): string {
   const match = new RegExp(`^#\\s*${key}:\\s*(\\S+)$`, 'm').exec(text);
@@ -61,13 +65,29 @@ function hint(text: string, label: string): string | undefined {
   )?.content;
 }
 
-test('the board holds one project for each committed volume', () => {
-  expect(ids).toEqual(['esg-scenario', 'sample-volume']);
+test('the board holds one project for each committed volume, and the shared one', () => {
+  expect(ids).toEqual([...VOLUMES, ...SHARED]);
   expect(new Set(ids).size, 'each volume has one project').toBe(ids.length);
 });
 
+test('the shared project resolves through the frame, and its run is a run', () => {
+  // A project from another board is not a volume: it carries no key space and no record list, so what it is held to here
+  // is that it resolves and that its run parses, and not the counts only an import can produce.
+  for (const id of SHARED) {
+    const document = board.projects.find((entry) => entry.id === id) as ProjectDocument;
+    expect(document, `the board names ${id}`).toBeDefined();
+    const bundle = bundleOf(document, board.projects);
+    expect(bundle.record, `${id} declares a run`).toMatch(/^scenario\/.+\.txt$/);
+    const text = readFileSync(`${ROOT}${bundle.record}`, 'utf8');
+    expect(titleOf(text).length, `${id}'s run names itself`).toBeGreaterThan(0);
+    const { records, unknown } = parseScenario(text);
+    expect(unknown, `${id} uses only modelled verbs`).toEqual([]);
+    expect(records.length, `${id} carries a run`).toBeGreaterThan(10);
+  }
+});
+
 test('a project resolves through the frame, and its run is where it says', () => {
-  for (const id of ids) {
+  for (const id of VOLUMES) {
     const { bundle, space, text } = read(id);
     expect(bundle.record, `${id} declares a run`).toMatch(/^scenario\/.+\.txt$/);
     expect(text.length, `${id}'s run is not empty`).toBeGreaterThan(0);
@@ -78,7 +98,7 @@ test('a project resolves through the frame, and its run is where it says', () =>
 });
 
 test('a project opens on the reading it names, and brings the pack that holds it', () => {
-  for (const id of ids) {
+  for (const id of VOLUMES) {
     const document = board.projects.find((entry) => entry.id === id) as ProjectDocument;
     const views = document.resources.find((resource) => resource.kind === 'views')?.at as
       | { pack?: string | string[]; main?: string }
@@ -95,7 +115,7 @@ test('a project opens on the reading it names, and brings the pack that holds it
 });
 
 test('every run is read whole: no verb is dropped and every count holds', () => {
-  for (const id of ids) {
+  for (const id of VOLUMES) {
     const { text } = read(id);
     const { checks, records, unknown } = parseScenario(text);
     expect(unknown, `${id} uses only modelled verbs`).toEqual([]);
@@ -110,7 +130,7 @@ test('every run is read whole: no verb is dropped and every count holds', () => 
 });
 
 test('the header agrees with the hints the run carries', () => {
-  for (const id of ids) {
+  for (const id of VOLUMES) {
     const { text } = read(id);
     const bound = hint(text, 'key-count') ?? '';
     const stated = Object.fromEntries(
@@ -135,7 +155,7 @@ test('the header agrees with the hints the run carries', () => {
 });
 
 test('the key space the panel draws is the one the run lists', () => {
-  for (const id of ids) {
+  for (const id of VOLUMES) {
     const { space, text } = read(id);
     // A key is a prefix and a name, so its label carries a slash. The synthetic labels the run uses elsewhere do not.
     const listed = parseScenario(text)
@@ -150,7 +170,7 @@ test('the key space the panel draws is the one the run lists', () => {
 });
 
 test('the records the panel draws are the ones the run lists', () => {
-  for (const id of ids) {
+  for (const id of VOLUMES) {
     const { bundle, text } = read(id);
     const chain = (bundle as unknown as { esg?: { records: { key: string }[] } }).esg;
     expect(chain, `${id} carries the records its run lists`).toBeDefined();
@@ -187,7 +207,7 @@ test('every link an intent carries lands on a record the volume holds', () => {
   // concluded. A link that names nothing would leave a reader a chain that cannot be followed, which is the one thing a
   // record of evidence may not do.
   let intents = 0;
-  for (const id of ids) {
+  for (const id of VOLUMES) {
     const { bundle } = read(id);
     const chain = (bundle as unknown as {
       esg?: { records: { key: string; kind: string; address: string; record: Record<string, unknown> }[] };
@@ -220,7 +240,7 @@ test('every link an intent carries lands on a record the volume holds', () => {
 test('the board and its runs carry no native character', () => {
   // Every address on the board is the tool's rendering, so the demo reads the same in a terminal that has no font for
   // the native alphabet. The run and the key space are the two places an address is written down.
-  for (const id of ids) {
+  for (const id of VOLUMES) {
     const { space, text } = read(id);
     expect(text, `${id}'s run is ASCII`).toMatch(/^[\x20-\x7E\n]*$/);
     expect(space.keys.join('\n'), `${id}'s keys are ASCII`).toMatch(/^[\x20-\x7E\n]*$/);

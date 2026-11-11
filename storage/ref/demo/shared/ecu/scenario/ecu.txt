@@ -1,0 +1,47 @@
+# Brake ECU Bench
+#
+# An ABS controller writes on bare metal: no operating system, no database, 128 KB of flash and
+# 20 KB of RAM. Three weeks later an auditor reads what it wrote, which is the only account of that
+# second that exists.
+#
+# The vehicle writes here and nothing declares anything: four wheels record their pulses, two brake
+# controllers their pressure, two sensors the steering angle and the yaw rate, and the auditor's
+# console keeps what it read. This is the shape a device that only observes makes, so this scenario
+# draws no chain, and the app says so by drawing none.
+#
+
+seed 3
+
+# One record per 10 ms in the field, and one a second here: what is kept is the shape, not the rate.
+tick 0
+write 6 32 wheel-front-left/abs_pulse 1
+write 6 32 wheel-front-right/abs_pulse 1
+write 6 32 wheel-rear-left/abs_pulse 1
+write 6 32 wheel-rear-right/abs_pulse 1
+count 24
+
+write 6 24 brake-controller-1/pressure 1
+write 6 24 brake-controller-2/pressure 1
+count 36
+
+write 6 24 steering-sensor-1/angle 1
+write 6 24 yaw-sensor-2/rate 1
+count 48
+
+tick 1815000
+fact pressure-before 48 brake-controller-1/pressure
+fact wheel-lock 48 wheel-front-left/speed
+count 50
+
+# What bounded the judgement: the reaction the driver had, and the one the system did.
+hint reaction-bounds brake=0.30s,abs=0.30s
+
+flush
+
+# Three weeks later, the auditor's own console keeps what it read, and the read itself is one pass
+# over the record's own time axis.
+tick 1814400
+fact reviewed 48 audit-console-1/review
+count 51
+
+query 0 3629440 * 51

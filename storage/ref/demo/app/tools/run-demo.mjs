@@ -7,8 +7,8 @@
 // are invoked by the names the platform ships. Anything this cannot do is reported as the command to run, never as a
 // stack trace.
 //
-// The board is regenerated whole on every run, one project per committed volume, so a reader never looks at a board
-// that lost a project when the file was written by an earlier one.
+// The board is regenerated whole on every run, one project per committed volume and one taken from another board, so a
+// reader never looks at a board that lost a project when the file was written by an earlier one.
 
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -98,6 +98,17 @@ function main() {
     ], APP,
       'The tool printed the reason above. Run the same command by hand to see it in full.');
   }
+
+  // A project from another board is not a volume, so it arrives by copy rather than by import, and it is applied after
+  // the imports because the first import starts the board fresh. Its source is committed beside this application, so a
+  // run of this script is the same board on every machine.
+  step('taking the shared project', process.execPath, [
+    join(APP, 'tools', 'sync-project.mjs'),
+    '--from',
+    join(APP, '..', 'shared', 'ecu'),
+    '--into',
+    APP,
+  ], APP, 'The shared project is kept at storage/ref/demo/shared/ecu; copy its files in if it is missing.');
 
   console.log('\nserving the board, with the address Vite prints below');
   const dev = spawn(NPM, ['run', 'dev'], { cwd: APP, stdio: 'inherit' });
