@@ -5,10 +5,8 @@ import { createRoot } from 'react-dom/client';
 import '@ssccsorg/skene-view-map';
 import '@ssccsorg/skene-view-shell';
 import '@ssccsorg/skene-view-media';
-import { Frame } from '@ssccsorg/skene-frame';
+import { Frame, NarrowNotice, offTheShelf } from '@ssccsorg/skene-frame';
 import { brand } from './brand';
-import { offTheShelf } from './host';
-import { Narrow } from './narrow';
 import './pack';
 // The chain is this deployment's own picture of a volume, so it arrives with the pack rather than from the frame.
 import './chain';
@@ -27,6 +25,8 @@ if (!root) throw new Error('the page has no root to render into');
 createRoot(root).render(
   <>
     <Frame brand={brand} host={offTheShelf} />
-    <Narrow />
+    <NarrowNotice title="A window is required." dismissible>
+      The columns, the split, and the map are sized for one; on a phone this board is readable and not operable.
+    </NarrowNotice>
   </>,
 );
