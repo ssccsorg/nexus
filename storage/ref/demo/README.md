@@ -118,8 +118,8 @@ Read it in this order.
   it.
 
 What is worth a reviewer's time: whether the chain reads the way an auditor would walk it, whether the three words name
-the right things in your jurisdiction, and whether the requirement texts say what the regulation says. The requirements
-carry ESRS codes, so they are a shape rather than a citation.
+the right things in your jurisdiction, and whether the requirement texts say what the rule says. The codes are the
+scenario's labels and a shape rather than a citation.
 
 ## Where a review changes something
 
@@ -196,6 +196,10 @@ figures answer: E1-6 for the emissions, E3-4 for the water, E5-5 for the waste.
 The thirteen readings no transformation reads are the point of having them. A quarter's inventory holds quantities that
 no calculation picked up, and a screen that drew only the part of the plant that was used would be an inventory that
 looked settled.
+
+The scenario is one example, not a framework. It borrows the requirement codes of a European reporting standard so the
+texts have something concrete to answer, and nothing in this crate, in the frame, or in the board depends on that choice:
+a board for another regime is another data file.
 
 What the project calls those records is its own. `fact`, `intent` and `hint` are the engine's names for the three things
 a run is made of, and an auditor reads the same three as evidence, a calculation, and the requirement the work answers.
