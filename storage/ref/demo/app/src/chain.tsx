@@ -15,7 +15,7 @@
 // accounted for.
 
 import { useEffect, useRef } from 'react';
-import { registerPack, type Board } from '@ssccsorg/skene-frame';
+import { KindTag, registerPack, useKindWords, type Board } from '@ssccsorg/skene-frame';
 import { LABEL, ROW, cn } from '@ssccsorg/skene-frame/ui';
 import { concludedOf, roleOf, type EsgChain, type EsgRecord } from './pack';
 import { editedOf, pick, useBranch, usePicked, type Branch } from './workbench';
@@ -276,6 +276,7 @@ function ChainView({ project, pickedId, onPick }: Board) {
   const chain = (project as { esg?: EsgChain } | null)?.esg;
   const branch = useBranch();
   const picked = usePicked();
+  const words = useKindWords();
   const focus = useRef<HTMLDivElement | null>(null);
 
   // A unit picked on the map is a focus rather than a filter: the records it wrote stay where they are in the chain,
@@ -409,6 +410,18 @@ function ChainView({ project, pickedId, onPick }: Board) {
             );
           })}
         </svg>
+      </div>
+
+      {/* The key under the picture, where a diagram's key belongs. The letters in the lists are the project's words, and a
+          reader handed three letters is owed them; drawing the key from the vocabulary is what keeps a project that
+          renames them from having to rename this. */}
+      <div className={cn(ROW, 'gap-1.5 border-t text-muted-foreground')}>
+        <KindTag kind="fact" />
+        {words.fact}
+        <KindTag kind="intent" className="ml-2" />
+        {words.intent}
+        <KindTag kind="hint" className="ml-2" />
+        {words.hint}
       </div>
     </div>
   );

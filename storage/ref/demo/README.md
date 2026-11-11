@@ -69,6 +69,45 @@ The arrangement is the demonstration's, not neXus's. neXus defines the record, t
 no screen: no panel, no chain drawing, no dashboard. A second project over the same records is free to look nothing like
 this one. The bar carries that statement beside the name.
 
+## For a compliance reader
+
+The board is one reporting quarter of a fictional manufacturer. Nothing in it is a real company, a real meter, or a real
+filing, and no line on it is a compliance determination. What it shows is one shape a quarter can be recorded in.
+
+Read it in this order.
+
+- The left rail is the run that produced the board: the reference tool's own checks and what each answered. The plant's
+  records are the chain in the middle and the lists beside it. The rail is on screen because the board also reports that
+  the records were read, and not only what they say.
+- The four columns are the chain: a measurement, the calculation it fed, the result that calculation concluded, and the
+  requirement that bounds the result. A record no calculation read is drawn and dimmed, because an inventory that nothing
+  read is a finding rather than an omission.
+- The letters in the lists are the project's words for the three kinds of record, drawn from the vocabulary and not
+  written into the screen: evidence, calculation, requirement. They are this board's words and not a standard's.
+- Press a record. The right panel says what it holds, which records it cites, which cite it, and the one field a branch
+  edits.
+- `take the branch` changes what a calculation declares or what a requirement says, and the chain re-reads against the
+  change. The volume is untouched: the branch is the screen's alternative, held beside the evidence, and a reload removes
+  it.
+
+What is worth a reviewer's time: whether the chain reads the way an auditor would walk it, whether the three words name
+the right things in your jurisdiction, and whether the requirement texts say what the regulation says. The requirements
+carry ESRS codes, so they are a shape rather than a citation.
+
+## Where a review changes something
+
+Two files carry what a compliance reviewer would want to change, and neither is the frame.
+
+| What | Where |
+|---|---|
+| the words the board uses for the three kinds | `app/src/brand.tsx`, under `words` |
+| the site, the measured quantities, the requirement texts, and the values | `storage/ref/tests/esg_scenario.rs` |
+
+The scenario is a Rust test that writes the volume, because the volume is committed bytes rather than a database. Its
+content is still readable to someone who does not write Rust: the entities, the quantities, the arithmetic in a
+calculation's description, and the requirement texts are plain strings in it. Moving that content into a data file is the
+change that would make the scenario editable without a build, and it is not made yet.
+
 ## What the demo shows
 
 Each claim of the reference crate has a place on the screen.

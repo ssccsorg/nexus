@@ -23,7 +23,8 @@ test('the brand the bar draws is this deployment’s', () => {
 });
 
 test('the bar says the board is not a neXus view', () => {
-  expect(brand.note).toBe('not a neXus view');
+  expect(brand.note, 'the boundary is on the bar').toContain('not a neXus view');
+  expect(brand.note, 'so is the invented data').toContain('mock data');
   expect(brand.layers, 'the view is not drawn over the nexus layer').not.toContain('nexus');
 });
 
