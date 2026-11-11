@@ -33,6 +33,14 @@ export const brand: Brand = {
   status: 'read-only',
   // The board is one arrangement of the records, drawn by this application over the frame. neXus defines no view.
   note: 'not a neXus view',
+  // What a reader is looking at, in the order that answers it: the infrastructure, this view's relation to it, and the
+  // data. The stack below names Skene, so these lines say what it is rather than naming it twice.
+  about: [
+    'neXus is a state-space fabric: one format and one identity space, joining heterogeneous systems.',
+    'This view is not part of neXus. It is one example of what an implementation on that infrastructure can build.',
+    'Nothing here is neXus-specific: the view is built with Skene, a general-purpose interface library.',
+    'Every record on the board is fictional mock data.',
+  ],
   // The surface stands on the frame and nothing else: the board, the router, and the panels are skene packages.
   layers: ['skene'],
   Mark,
