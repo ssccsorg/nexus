@@ -41,9 +41,9 @@ export const brand: Brand = {
   // data. The stack below names Skene, so these lines say what it is rather than naming it twice.
   about: [
     'neXus is the underlying state-space fabric: a deterministic record format and identity space for heterogeneous systems.',
-    'This viewer is not part of that infrastructure. It is one example of what a reader of the data model can show, and it opens any board the frame is handed.',
-    'It is drawn by a general-purpose interface library, which knows nothing about neXus, from the reference storage.',
-    'All displayed records are synthetic mock data.',
+    'This viewer is not related to the infrastructure as an independent demonstration, showcasing what can be built on top of the neXus data model.',
+    'Rendered by Skene, a default in-house modular interface library for the data model, reading directly from the reference storage.',
+    'All displayed records are synthetic mock data for demonstration purposes.',
   ],
   // What the screen is made of, bottom up: the reference storage that wrote the records, and the frame that draws them.
   // Each carries the repository it is kept in, which is where a reader who wants the code goes.
