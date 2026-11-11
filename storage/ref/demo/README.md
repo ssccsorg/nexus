@@ -100,8 +100,11 @@ Two files carry what a compliance reviewer would want to change, and neither is 
 
 | What | Where |
 |---|---|
-| the words the board uses for the three kinds | `app/src/brand.tsx`, under `words` |
+| the words the board uses for the three kinds | `app/tools/import-volume.mjs`, the `words` a project declares |
 | the site, the measured quantities, the requirement texts, and the values | `storage/ref/tests/esg_scenario.rs` |
+
+The board itself is generated: `app/projects.json` and `app/scenario/` are written by the importer from what the tool
+printed, so an edit there is undone by the next import. Change the scenario or the words, then regenerate.
 
 The scenario is a Rust test that writes the volume, because the volume is committed bytes rather than a database. Its
 content is still readable to someone who does not write Rust: the entities, the quantities, the arithmetic in a
