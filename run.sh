@@ -14,6 +14,7 @@ set -euo pipefail
 #   ./run.sh --server      # nex-server standalone verification
 #   ./run.sh --demo        # Check the demonstration, then serve it
 #   ./run.sh --demo-check  # Check the demonstration only (what CI runs)
+#   ./run.sh --demo-install # Frame beside the checkout + install only (what the deploy needs)
 #   ./run.sh --demo-deploy # Publish the built board to Cloudflare Pages (what CI runs on main)
 #   ./run.sh --playbooks   # Consumer playbooks only
 #
@@ -540,18 +541,17 @@ demo_next() {
     echo "  $*"
 }
 
-verify_demo() {
+# The frame sits beside this checkout rather than in it, because the application names it five
+# levels up. The deploy needs these two things and no build, so the install stands alone.
+install_demo() {
     local APP="$DEMO_APP"
 
-    echo "=== demo ==="
     if ! command -v npm >/dev/null 2>&1; then
         echo "demo: npm is not on the path, and the demonstration is a Vite deployment (FAIL)"
         demo_next "Install Node 22 or later from https://nodejs.org, then run this again."
         return 1
     fi
 
-    # The application names the frame five levels up from itself, so the frame sits beside
-    # this checkout rather than in it.
     if [ ! -d "../skene/packages/frame" ]; then
         echo "Putting the frame beside this checkout..."
         git clone --depth 1 https://github.com/ssccsorg/skene ../skene 2>&1 || {
@@ -561,21 +561,29 @@ verify_demo() {
         }
     fi
 
+    # `npm ci` rather than `npm install`: a `file:` dependency is copied into
+    # node_modules, and an install that compares versions can leave the frame stale
+    # while the tests pass against the copy. The deploy needs the copy too, because
+    # the upload bundles `functions/`, whose import resolves through it.
+    echo "Installing the application..."
+    (cd "$APP" && npm ci) 2>&1 || {
+        echo "demo: the install FAILED"
+        demo_next "Delete storage/ref/demo/app/node_modules and retry; the frame is copied into it here."
+        return 1
+    }
+}
+
+verify_demo() {
+    local APP="$DEMO_APP"
+
+    echo "=== demo ==="
+    install_demo || return 1
+
     # The importer runs this binary and never builds it.
     echo "Building the reference tool..."
     cargo build -p nexus-storage-ref 2>&1 || {
         echo "demo: the tool's build FAILED"
         demo_next "Install a Rust toolchain from https://rustup.rs; the importer runs the built binary."
-        return 1
-    }
-
-    # `npm ci` rather than `npm install`: a `file:` dependency is copied into
-    # node_modules, and an install that compares versions can leave the frame stale
-    # while the tests pass against the copy.
-    echo "Installing the application..."
-    (cd "$APP" && npm ci) 2>&1 || {
-        echo "demo: the install FAILED"
-        demo_next "Delete storage/ref/demo/app/node_modules and retry; the frame is copied into it here."
         return 1
     }
 
@@ -692,6 +700,10 @@ case "${1:-}" in
         shift
         verify_demo
         ;;
+    --demo-install)
+        shift
+        install_demo
+        ;;
     --demo-deploy)
         shift
         deploy_demo
@@ -709,6 +721,7 @@ case "${1:-}" in
         echo "  --server        nex-server standalone verification"
         echo "  --demo          Check the demonstration, then serve it on 5292"
         echo "  --demo-check    Check the demonstration and stop (what CI runs)"
+        echo "  --demo-install  Put the frame beside the checkout and install only (what the deploy needs)"
         echo "  --demo-deploy   Publish the built board to Cloudflare Pages (what CI runs on main)"
         echo "  --playbooks     Consumer playbooks only"
         ;;

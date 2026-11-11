@@ -218,6 +218,10 @@ jobs:
         with:
           name: demo-dist
           path: storage/ref/demo/app/dist
+      # The upload bundles the Pages Functions beside the board, and their import resolves through the application's
+      # node_modules. run.sh holds the frame and the install in one place, so the job calls it rather than restating it.
+      - name: Install the application
+        run: bash ./run.sh --demo-install
       - name: Deploy the board
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_PAGES_DEPLOY }}
