@@ -15,6 +15,7 @@ set -euo pipefail
 #   ./run.sh --demo        # Check the demonstration, then serve it
 #   ./run.sh --demo-check  # Check the demonstration only (what CI runs)
 #   ./run.sh --demo-install # Frame beside the checkout + install only (what the deploy needs)
+#   ./run.sh --demo-serve # Serve the board on 5292 without the checks
 #   ./run.sh --demo-deploy # Publish the built board to Cloudflare Pages (what CI runs on main)
 #   ./run.sh --playbooks   # Consumer playbooks only
 #
@@ -26,7 +27,8 @@ cd "$(dirname "$0")"
 kill_port() {
     local port="$1"
     local pid
-    pid=$(lsof -ti "$port" 2>/dev/null || true)
+    # `lsof -ti 5292` is a BSD usage error, and the port spec is what both lsof builds read.
+    pid=$(lsof -ti "tcp:$port" 2>/dev/null || true)
     if [ -n "$pid" ]; then
         echo "kill_port $port: killing PID $pid"
         kill -9 "$pid" 2>/dev/null || true
@@ -541,17 +543,8 @@ demo_next() {
     echo "  $*"
 }
 
-# The frame sits beside this checkout rather than in it, because the application names it five
-# levels up. The deploy needs these two things and no build, so the install stands alone.
-install_demo() {
-    local APP="$DEMO_APP"
-
-    if ! command -v npm >/dev/null 2>&1; then
-        echo "demo: npm is not on the path, and the demonstration is a Vite deployment (FAIL)"
-        demo_next "Install Node 22 or later from https://nodejs.org, then run this again."
-        return 1
-    fi
-
+# The frame sits beside this checkout rather than in it, because the application names it five levels up.
+ensure_frame() {
     if [ ! -d "../skene/packages/frame" ]; then
         echo "Putting the frame beside this checkout..."
         git clone --depth 1 https://github.com/ssccsorg/skene ../skene 2>&1 || {
@@ -560,6 +553,22 @@ install_demo() {
             return 1
         }
     fi
+}
+
+ensure_npm() {
+    if ! command -v npm >/dev/null 2>&1; then
+        echo "demo: npm is not on the path, and the demonstration is a Vite deployment (FAIL)"
+        demo_next "Install Node 22 or later from https://nodejs.org, then run this again."
+        return 1
+    fi
+}
+
+# The deploy needs the frame and the install and no build, so the install stands alone.
+install_demo() {
+    local APP="$DEMO_APP"
+
+    ensure_npm || return 1
+    ensure_frame || return 1
 
     # `npm ci` rather than `npm install`: a `file:` dependency is copied into
     # node_modules, and an install that compares versions can leave the frame stale
@@ -611,16 +620,33 @@ verify_demo() {
     echo "demo: passed"
 }
 
-# Serve the board, which is what a person running `--demo` asked for. CI runs the same layer with `CI` set and a job
-# that waited on a server would never finish, so the gate is the whole of it there.
+# Serve the committed board. `--demo` reaches this after the check and `--demo-serve` reaches it directly, so a
+# change to the application is on screen without waiting for a build. CI runs the check and never a server, because a
+# job that waited on one would not finish.
 serve_demo() {
+    local APP="$DEMO_APP"
+
     if [ -n "${CI:-}" ]; then
         echo "demo: CI is set, so the board is checked and not served"
         return 0
     fi
+
+    ensure_npm || return 1
+    ensure_frame || return 1
+
+    # `npm ci` deletes the tree before it installs, so a serve pays for it only when it is absent.
+    if [ ! -d "$APP/node_modules" ]; then
+        echo "Installing the application..."
+        (cd "$APP" && npm ci) 2>&1 || {
+            echo "demo: the install FAILED"
+            demo_next "Delete storage/ref/demo/app/node_modules and retry; the frame is copied into it here."
+            return 1
+        }
+    fi
+
     echo "demo: serving on http://localhost:5292"
     kill_port 5292 2>/dev/null || true
-    (cd "$DEMO_APP" && exec npm run dev)
+    (cd "$APP" && exec npm run dev)
 }
 
 # Publish the board `verify_demo` built. The board is static, so a deploy is the upload of `dist` and nothing else. The
@@ -704,6 +730,10 @@ case "${1:-}" in
         shift
         install_demo
         ;;
+    --demo-serve)
+        shift
+        serve_demo
+        ;;
     --demo-deploy)
         shift
         deploy_demo
@@ -722,6 +752,7 @@ case "${1:-}" in
         echo "  --demo          Check the demonstration, then serve it on 5292"
         echo "  --demo-check    Check the demonstration and stop (what CI runs)"
         echo "  --demo-install  Put the frame beside the checkout and install only (what the deploy needs)"
+        echo "  --demo-serve    Serve the committed board on 5292 without running the checks"
         echo "  --demo-deploy   Publish the built board to Cloudflare Pages (what CI runs on main)"
         echo "  --playbooks     Consumer playbooks only"
         ;;

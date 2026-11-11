@@ -489,6 +489,16 @@ To run the check and stop, which is what CI does:
 ./run.sh --demo-check
 ```
 
+To open the committed board without the check, which is the fast way to look at a change in the application:
+
+```bash
+./run.sh --demo-serve
+```
+
+It puts the frame beside the checkout, installs only when `node_modules` is absent, and serves on
+`http://localhost:5292`. Nothing is regenerated, so it shows the board in the tree rather than one built from the volumes
+a moment ago.
+
 In the application directory the steps are the same, one at a time:
 
 ```bash
