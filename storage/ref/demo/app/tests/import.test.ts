@@ -65,21 +65,22 @@ test('the same answer writes the same run, twice', () => {
   expect(scenarioOf(measured)).toBe(scenarioOf(measured));
 });
 
-test('the project carries the key space the panel draws', () => {
+test('the project carries its run, its state, and the reading it opens on', () => {
   const project = projectOf(measured);
   expect(project.id).toBe('sample-volume');
   expect(project.resources.map((resource) => resource.kind)).toEqual([
     'channel',
     'record',
-    'keyspace',
+    'status',
+    // This fixture holds no record, so the records resource a volume with one carries is absent.
     'views',
     // The board as text is a panel of the frame, and the demonstration opens it because it has no room to put beside it.
     'layout',
   ]);
-  const space = project.resources[2].at as { keys: string[]; listed: number; records: number };
-  expect(space.keys).toEqual(measured.keys);
-  expect(space.listed).toBe(3);
-  expect(space.records).toBe(1);
+  // A committed run is read and not written, so the board says the project is at rest.
+  expect(project.resources[2].at).toBe('idle');
+  // The records table is what the volume is read for, and it is the reading the project opens on.
+  expect(project.resources[3].at).toEqual({ pack: 'volume', main: 'esg' });
 });
 
 /** Whether a binary can be run here. A bare name is looked for on the path. */
@@ -105,7 +106,7 @@ describe.skipIf(!runs(bin))('the importer over the committed volumes', () => {
         volume: 'storage/ref/demo/volume',
         id: 'sample-volume',
         title: 'Sample volume',
-        reading: 'keyspace',
+        reading: 'esg',
         reset: false,
       },
     ];

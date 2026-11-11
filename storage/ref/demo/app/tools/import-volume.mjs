@@ -587,22 +587,14 @@ function placedOf(place, records) {
   return { ...place, ...(site ? { store: { label: site } } : {}), units };
 }
 
-/** The project that carries the run, the key space, and the records the volume holds. */
-export function projectOf(measured, reading = 'keyspace') {
+/** The project that carries the run and the records the volume holds. */
+export function projectOf(measured, reading = 'esg') {
   const m = measured;
   const resources = [
     { kind: 'channel', at: 'sim' },
     { kind: 'record', at: `scenario/${m.id}.txt` },
-    {
-      kind: 'keyspace',
-      at: {
-        volume: m.volume,
-        keys: m.keys,
-        listed: m.keyCount,
-        box: m.box,
-        records: m.box.records,
-      },
-    },
+    // A committed run is read, not written: the board says the project is at rest rather than live.
+    { kind: 'status', at: 'idle' },
   ];
   // The records themselves, when the volume holds any: what the `show` verb printed, one entry a record.
   if (m.records.length) {

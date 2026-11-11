@@ -1,8 +1,8 @@
 # The demonstration
 
-A screen over the reference crate's own reads: the key space, one point read, a verification, and one ESG reporting
-period read as a chain, drawn on the `skene` frame from the volumes committed here, beside two projects taken from
-another board. Served at https://rf-storage-demo.nexus.ssccs.org.
+A screen over the reference crate's own reads: the records of a volume, one point read, a verification, and one ESG
+reporting period read as a chain, drawn on the `skene` frame from the volumes committed here, beside two projects taken
+from another board. Served at https://rf-storage-demo.nexus.ssccs.org.
 
 ## Run it in one line
 
@@ -57,13 +57,13 @@ The board holds one project per committed volume, plus the two it copies from an
 an earlier run is replaced rather than appended to. An append cannot restore a project that run never had.
 
 The four projects are chosen so that each surface this deployment installs has a place to be read: the map pane, the
-graph reading, the shell reading, and the footage kind a member row draws.
+shell reading, and the footage kind a member row draws.
 
 | Project | What it is | What it exercises |
 |---|---|---|
 | `esg-scenario` | one reporting quarter of a fictional manufacturer | the map and the campaign it stands on, this board's chain, the records table, the evidence panel |
-| `sample-volume` | the committed record, read by the tool | the key space it opens on, and the box the tool ran |
-| `villa` | a rescue from a villa, from another board | the shell and the graph on a place that stands every member kind, and the camera a member declares (the footage rows are this bundle's, the media themselves are the source board's) |
+| `sample-volume` | the committed record, read by the tool | the records table it opens on |
+| `villa` | a rescue from a villa, from another board | the shell on a place that stands every member kind, and the camera a member declares (the footage rows are this bundle's, the media themselves are the source board's) |
 | `spiderwing` | a patrol and the forty-seven seconds it cannot account for | the shell and the map on a second place, and a run whose subject is missing evidence |
 
 The importer counts nothing. A second model of the store would be a model free to disagree with the store, so every
@@ -171,8 +171,6 @@ declaration and a requirement's text do not address anything, so those are read 
 
 Each claim of the reference crate has a place on the screen.
 
-- An address is a key, and it resolves by a rule. The `keyspace` reading lists one row per key, grouped by the prefix
-  the key carries.
 - A point read is one read of the medium. The run carries the byte count the `read` verb printed.
 - A record's address follows from what it holds. The run carries the fields the `verify` verb recomputed it from.
 - A listing is the only scan, so a box is answered from it. The run carries the axes the box narrowed and the records
@@ -527,7 +525,7 @@ The importer has no `--help`, so this is the list.
 | `--id` | the volume's directory name | the project's id, and the run's file name |
 | `--title` | the id | the heading the run carries |
 | `--volume` | `storage/ref/demo/volume` | the volume to read, relative to the repository root |
-| `--reading` | `keyspace` | the reading the project opens on |
+| `--reading` | `esg` | the reading the project opens on |
 | `--out` | the application directory | where the board and the run are written |
 | `--bin` | the debug build, then the release build | the tool to run |
 | `--reset` | off | start a fresh board instead of adding this project to the existing one |

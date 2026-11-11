@@ -14,92 +14,8 @@
           "at": "scenario/esg-scenario.txt"
         },
         {
-          "kind": "keyspace",
-          "at": {
-            "volume": "storage/ref/demo/esg-volume",
-            "keys": [
-              "blob/1ed70375de4c790fcebf50033e1b2cd215c0467166a867f7401f37cf89b4aa9d.bin",
-              "blob/1ed70375de4c790fcebf50033e1b2cd215c0467166a867f7401f37cf89b4aa9d.bin.meta",
-              "blob/23da3117cbdc0a0f83c5cc4ecc5f707c524aeceb318c69a374f018e56e1591bb.bin",
-              "blob/23da3117cbdc0a0f83c5cc4ecc5f707c524aeceb318c69a374f018e56e1591bb.bin.meta",
-              "blob/3aa2d6239717290bcea039142cc14237fa6c8581b7da8bc51f1796f0bbb2ff06.bin",
-              "blob/3aa2d6239717290bcea039142cc14237fa6c8581b7da8bc51f1796f0bbb2ff06.bin.meta",
-              "blob/457c25d4efb6b9fd1d39593881022af3fe024bfee173c3dc79ab9cf9dd33ccd2.bin",
-              "blob/457c25d4efb6b9fd1d39593881022af3fe024bfee173c3dc79ab9cf9dd33ccd2.bin.meta",
-              "blob/459ac6466c5519f9c2e78e5b48793da695f6e58ed8a2c457672d21341fa73dab.bin",
-              "blob/459ac6466c5519f9c2e78e5b48793da695f6e58ed8a2c457672d21341fa73dab.bin.meta",
-              "blob/46a9fdc0fe7820c4ea713d9a3d6db608bd21a1574e712341661b4b36e9895b38.bin",
-              "blob/46a9fdc0fe7820c4ea713d9a3d6db608bd21a1574e712341661b4b36e9895b38.bin.meta",
-              "blob/5bfc7cd3919681bdcd16db86a959fae6dcf08f0c9577ca772d9b48cf9ae96959.bin",
-              "blob/5bfc7cd3919681bdcd16db86a959fae6dcf08f0c9577ca772d9b48cf9ae96959.bin.meta",
-              "blob/6b1ddc9bb94cabcd100aef15f9e3cc6a019709455bb8646c24e7003fa7bb64be.bin",
-              "blob/6b1ddc9bb94cabcd100aef15f9e3cc6a019709455bb8646c24e7003fa7bb64be.bin.meta",
-              "blob/797d86a826bf20946768163caf57ef10b6a55ec8b4393c35b453f7b197e1facb.bin",
-              "blob/797d86a826bf20946768163caf57ef10b6a55ec8b4393c35b453f7b197e1facb.bin.meta",
-              "blob/8230bc447cf6233f95243e71db051ffbec24ef22a8d970457896184941bdd32d.bin",
-              "blob/8230bc447cf6233f95243e71db051ffbec24ef22a8d970457896184941bdd32d.bin.meta",
-              "blob/8c4ae1f13b64df04d05b484c543b56e9bd4194163a850bd3076ec3e82809a581.bin",
-              "blob/8c4ae1f13b64df04d05b484c543b56e9bd4194163a850bd3076ec3e82809a581.bin.meta",
-              "blob/906c3b2f0cb596b67389fef0ab0e49573c9f02890bc016b74982c1a616e66c0f.bin",
-              "blob/906c3b2f0cb596b67389fef0ab0e49573c9f02890bc016b74982c1a616e66c0f.bin.meta",
-              "blob/96939e2a7e6038b0a36d77deded4eba5f1c7a002ed51dbda3176c4bd48cc5e3c.bin",
-              "blob/96939e2a7e6038b0a36d77deded4eba5f1c7a002ed51dbda3176c4bd48cc5e3c.bin.meta",
-              "blob/977124298be15f911835564c49015cdab6b4cf3415f3672cfdf9cd6b65d2eeba.bin",
-              "blob/977124298be15f911835564c49015cdab6b4cf3415f3672cfdf9cd6b65d2eeba.bin.meta",
-              "blob/b2ea4d64ae63292f3200fce6ba4064094766c4a6e6fb9032b915f68305f29427.bin",
-              "blob/b2ea4d64ae63292f3200fce6ba4064094766c4a6e6fb9032b915f68305f29427.bin.meta",
-              "blob/bc884f7509de889157952eba1b8baff78768a5ce3f37293bb10273d39f1b8676.bin",
-              "blob/bc884f7509de889157952eba1b8baff78768a5ce3f37293bb10273d39f1b8676.bin.meta",
-              "blob/d59057ed3fb98a37f819b937d97d3d6df7eb8ed9e0f9eff0b5dd662eacdf498c.bin",
-              "blob/d59057ed3fb98a37f819b937d97d3d6df7eb8ed9e0f9eff0b5dd662eacdf498c.bin.meta",
-              "blob/da3be62796592ff17c1d26dc016633893fb3f165f6a393b703f44a36efe6cf55.bin",
-              "blob/da3be62796592ff17c1d26dc016633893fb3f165f6a393b703f44a36efe6cf55.bin.meta",
-              "blob/daedbd022957614e550fa0774714efedded0906f2352e9a7a80d87a9950c135b.bin",
-              "blob/daedbd022957614e550fa0774714efedded0906f2352e9a7a80d87a9950c135b.bin.meta",
-              "blob/dce64337c5fde8e82a79241ce9cdca33437e7fe7c2f04571903213d313e15f6e.bin",
-              "blob/dce64337c5fde8e82a79241ce9cdca33437e7fe7c2f04571903213d313e15f6e.bin.meta",
-              "blob/e8c9184d985bc21ddaebfb41987ab64a57611a332625b7e6458e8832bce8ff6b.bin",
-              "blob/e8c9184d985bc21ddaebfb41987ab64a57611a332625b7e6458e8832bce8ff6b.bin.meta",
-              "blob/ece8d179b7fdf8eb5e98ad989e4d9460c5b812efbc9916d11fd1ed5e6d407476.bin",
-              "blob/ece8d179b7fdf8eb5e98ad989e4d9460c5b812efbc9916d11fd1ed5e6d407476.bin.meta",
-              "blob/fc98b41098a19041ae6830a35cc630d41a9d0bdf0146119d3e0e0db4aca468fc.bin",
-              "blob/fc98b41098a19041ae6830a35cc630d41a9d0bdf0146119d3e0e0db4aca468fc.bin.meta",
-              "facts/f_0000121d45742zs8ey2dk0540hj5c41si5475hv7s94t50md5fe1z72ag5d0.fact",
-              "facts/f_00006t2x816s06m17q3hl0ur7t84vg4p56te1tr43x7m14qx5ju4682it39k.fact",
-              "facts/f_0002283tu0x03wg8176d442v10n3ui2jc14z0ow1u963c4pp1qt6pc5093nf.fact",
-              "facts/f_0003cb3g68382rt06z7kv6bo7601da4k511u24k7ln5dm7aq5l84x05y1422.fact",
-              "facts/f_0003ku8d90is6tb1gl5bq1ti22i6y46km7oy3o78h045e20m4ud5n52mj0w6.fact",
-              "facts/f_0003q755g43m26b4uh53i3pi5fd2i34gc49e84c6jj0435ta2092ak4n16f2.fact",
-              "facts/f_0003vl1tr5r95ej2pz1qt7yh2d33j64l65sb0up2zw7b53tk3ch18w3a277b.fact",
-              "facts/f_0004a85i903y5r25ww2js7v65nw18k46y42c7rz49i5vy69y7uz6ly07o71a.fact",
-              "facts/f_0004eq84g5ia8kz1sq0f85og0541tw8lk5uj4ag14e6135nb6kd70651d1l1.fact",
-              "facts/f_0004y947j4k97kg3p17qn6214n77xk0cp65q4xa30g0j90k04i40557qr3t6.fact",
-              "facts/f_0004yp54i4ou8ef6cd0pe3nf3n31pz4d30kf0506ft03d18w0dg5h445x1qt.fact",
-              "facts/f_0004zd4pw80f80542k5bb3923fx0d360u0294jm24f3qi7se4kd5ap73e6su.fact",
-              "facts/f_0006xm24p4da1f963860t1vo0uf74y24x6ja4kk0wz4uh6zp25g5765qt1xw.fact",
-              "facts/f_00079h3xv77s0vb17d6371z73fw7cj2uj7ja58j5fq48b84l0py7ep2ay24w.fact",
-              "facts/f_0008760k22u64wq3um1yv4vv1mi5905l66on7ck3tk5ro5qt7c43l90xj03b.fact",
-              "facts/f_0008ak4ql2q42zn5wc0lr7nz2ks7ue83t6av2ln0mx4nd1t404j35i5nu6gd.fact",
-              "facts/f_0010ww4kj2j336x3m974j3fg51o67c6pg72a7ib4v62zs5ow0z91t063j6ge.fact",
-              "facts/f_0010xi2ur0zc6mo0bt82e5aa2tf4eo2hw78w82474q4ei42u7e16ci7dx7c2.fact",
-              "facts/f_00112s25w3cb7br3m11cq7dw5tk2l45ss1gn0350dr1p473t4d46d50080o1.fact",
-              "facts/f_0012v46kc5i748y2n10xg0fl3c16dk2gq2wa4055jf8m05gj1ss2z63475by.fact",
-              "hints/h_0003tx3ll18f1hq25l5ho20e2f523s8ac2d882s39j2ik00d72q1sb41d1sz.hint",
-              "hints/h_00063f0d48fm7s17t67ff0761r00ju1cw4o00go2vw7fx1bw7bs7et6hb6zv.hint",
-              "hints/h_0008lk0fv1kl7rv1z11ca4b365u0r15st2oq6c67kz5yr81e1l83cs6qt8bj.hint",
-              "intents/i_0000yb24o89n7fm5880kt14n46a6wl0cw74n6tf56340v4tp7ky6pq03r51i.intent",
-              "intents/i_0001153kf3cf43m0kf32h61111t5ka2aa4jr7xv58r6n74pj2uk5246vf65k.intent",
-              "intents/i_0011se68t04f7k94py52v7un3kj1283rn3e617b6th5mw8eb0a40k91cb1cw.intent"
-            ],
-            "listed": 72,
-            "box": {
-              "axis": 0,
-              "from": "000",
-              "until": "000",
-              "records": 16
-            },
-            "records": 16
-          }
+          "kind": "status",
+          "at": "idle"
         },
         {
           "kind": "esg",
@@ -1257,23 +1173,8 @@
           "at": "scenario/sample-volume.txt"
         },
         {
-          "kind": "keyspace",
-          "at": {
-            "volume": "storage/ref/demo/volume",
-            "keys": [
-              "blob/578e724ee7e9c587be42c260a6d7e89abf7b75d502d3946ddc473b25aa22e3b8.bin",
-              "blob/578e724ee7e9c587be42c260a6d7e89abf7b75d502d3946ddc473b25aa22e3b8.bin.meta",
-              "facts/f_00024o7m35346n71ge0ev7vj33q5cp6fg6ow3230ba3oo00g6mp0lm4rh0uq.fact"
-            ],
-            "listed": 3,
-            "box": {
-              "axis": 0,
-              "from": "000",
-              "until": "000",
-              "records": 1
-            },
-            "records": 1
-          }
+          "kind": "status",
+          "at": "idle"
         },
         {
           "kind": "esg",
@@ -1313,7 +1214,7 @@
           "kind": "views",
           "at": {
             "pack": "volume",
-            "main": "keyspace"
+            "main": "esg"
           }
         },
         {

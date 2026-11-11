@@ -6,9 +6,8 @@
 
 import { bundleOf, declaredReadings, standing } from '@ssccsorg/skene-frame';
 import { expect, test } from 'vitest';
-// The same four packages the deployment imports, so the register this reads is the register the board offers.
+// The same three packages the deployment imports, so the register this reads is the register the board offers.
 import '@ssccsorg/skene-view-map';
-import '@ssccsorg/skene-view-graph';
 import '@ssccsorg/skene-view-shell';
 import '@ssccsorg/skene-view-media';
 import '../src/pack';
@@ -28,7 +27,7 @@ function openIn(id: string): { main: string | undefined; keys: string[] } {
 
 test.each([
   ['esg-scenario', 'map'],
-  ['sample-volume', 'keyspace'],
+  ['sample-volume', 'esg'],
 ])('%s opens on the reading it declares', (id, main) => {
   const opened = openIn(id);
   expect(opened.main).toBe(main);
@@ -40,7 +39,5 @@ test('a project that names no main opens on the frame\u2019s own first', () => {
   expect(opened.main).toBeUndefined();
   // The seat reading is the register's own first, so a project that names none opens on the shell.
   expect(opened.keys[0]).toBe('shell');
-  expect(opened.keys, 'and the map and the graph stand beside it').toEqual(
-    expect.arrayContaining(['map', 'graph']),
-  );
+  expect(opened.keys, 'and the map stands beside it').toEqual(expect.arrayContaining(['map']));
 });

@@ -31,7 +31,7 @@ const VOLUMES = [
     id: 'sample-volume',
     title: 'Sample volume',
     volume: 'storage/ref/demo/volume',
-    reading: 'keyspace',
+    reading: 'esg',
   },
 ];
 

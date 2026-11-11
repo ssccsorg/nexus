@@ -1,8 +1,8 @@
 // The board this application ships with, held to the shape the frame reads it in and to the tool's own report.
 //
 // Nothing here draws. What it pins is that each project resolves to a bundle the frame can read, that its run parses
-// with no verb dropped, that every count the run declares holds, and that the numbers on the key-space panel are the
-// ones the reference tool printed rather than a second count taken here.
+// with no verb dropped, that every count the run declares holds, and that the records on the panel are the ones the
+// reference tool printed rather than a second count taken here.
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -19,7 +19,7 @@ import {
 import { standing } from '@ssccsorg/skene-frame/lib/packs';
 import { declaredReadings } from '@ssccsorg/skene-frame/lib/readings';
 
-// The pack registers the `keyspace` reader where it is imported, the same way the application's `main.tsx` does. The map
+// The pack registers the `esg` reader where it is imported, the same way the application's `main.tsx` does. The map
 // is imported because the board opens on it: a view stands where its package is imported, so a test that resolved the
 // board against views the deployment does not install would be reading a register the application does not have.
 import '@ssccsorg/skene-view-map';
@@ -29,20 +29,17 @@ const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const board = JSON.parse(readFileSync(`${ROOT}projects.json`, 'utf8')) as BoardDocument;
 
 /** What the pack puts on the bundle under the project's own resource kind. */
-interface KeySpace {
+interface Records {
   volume: string;
-  keys: string[];
-  listed: number;
-  box: { axis: number; from: string; until: string; records: number } | null;
-  records: number;
+  records: { key: string }[];
 }
 
-function read(id: string): { bundle: ReturnType<typeof bundleOf>; space: KeySpace; text: string } {
+function read(id: string): { bundle: ReturnType<typeof bundleOf>; records: Records; text: string } {
   const document = board.projects.find((entry) => entry.id === id) as ProjectDocument;
   expect(document, `the board names ${id}`).toBeDefined();
   const bundle = bundleOf(document, board.projects);
-  const space = (bundle as unknown as { keyspace: KeySpace }).keyspace;
-  return { bundle, space, text: readFileSync(`${ROOT}${bundle.record}`, 'utf8') };
+  const records = (bundle as unknown as { esg: Records }).esg;
+  return { bundle, records, text: readFileSync(`${ROOT}${bundle.record}`, 'utf8') };
 }
 
 const ids = board.projects.map((project) => project.id);
@@ -71,8 +68,8 @@ test('the board holds one project for each committed volume, and the shared ones
 });
 
 test('the shared projects resolve through the frame, and their runs are runs', () => {
-  // A project from another board is not a volume: it carries no key space and no record list, so what it is held to here
-  // is that it resolves, that its run parses with no verb dropped, and that every count the run declares holds.
+  // A project from another board is not a volume: it carries no record list, so what it is held to here is that it
+  // resolves, that its run parses with no verb dropped, and that every count the run declares holds.
   for (const id of SHARED) {
     const document = board.projects.find((entry) => entry.id === id) as ProjectDocument;
     expect(document, `the board names ${id}`).toBeDefined();
@@ -93,12 +90,12 @@ test('the shared projects resolve through the frame, and their runs are runs', (
 
 test('a project resolves through the frame, and its run is where it says', () => {
   for (const id of VOLUMES) {
-    const { bundle, space, text } = read(id);
+    const { bundle, records, text } = read(id);
     expect(bundle.record, `${id} declares a run`).toMatch(/^scenario\/.+\.txt$/);
     expect(text.length, `${id}'s run is not empty`).toBeGreaterThan(0);
     expect(titleOf(text).length, `${id}'s run names itself`).toBeGreaterThan(0);
     // The board and the run describe one volume, and the run is the tool's own report of it.
-    expect(header(text, 'volume'), `${id}'s run names the volume it measured`).toBe(space.volume);
+    expect(header(text, 'volume'), `${id}'s run names the volume it measured`).toBe(records.volume);
   }
 });
 
@@ -156,21 +153,6 @@ test('the header agrees with the hints the run carries', () => {
       '0',
       hint(text, 'self-check-exit'),
     ]);
-  }
-});
-
-test('the key space the panel draws is the one the run lists', () => {
-  for (const id of VOLUMES) {
-    const { space, text } = read(id);
-    // A key is a prefix and a name, so its label carries a slash. The synthetic labels the run uses elsewhere do not.
-    const listed = parseScenario(text)
-      .records.filter((record) => record.kind === 'fact' && /^[a-z]+\//.test(record.label ?? ''))
-      .map((record) => record.label);
-    expect(listed, `${id} lists the keys it draws`).toEqual(space.keys);
-    expect(space.listed, `${id} draws the count the tool printed`).toBe(space.keys.length);
-    expect(space.records, `${id} draws the records the box admitted`).toBe(
-      Number(hint(text, 'box-count')),
-    );
   }
 });
 
@@ -244,11 +226,10 @@ test('every link an intent carries lands on a record the volume holds', () => {
 
 test('the board and its runs carry no native character', () => {
   // Every address on the board is the tool's rendering, so the demo reads the same in a terminal that has no font for
-  // the native alphabet. The run and the key space are the two places an address is written down.
+  // the native alphabet. The run is where an address is written down.
   for (const id of VOLUMES) {
-    const { space, text } = read(id);
+    const { text } = read(id);
     expect(text, `${id}'s run is ASCII`).toMatch(/^[\x20-\x7E\n]*$/);
-    expect(space.keys.join('\n'), `${id}'s keys are ASCII`).toMatch(/^[\x20-\x7E\n]*$/);
   }
 });
 

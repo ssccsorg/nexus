@@ -1,9 +1,8 @@
 import { createRoot } from 'react-dom/client';
 // The one picture this deployment stands. A view is installed by importing it, so a package imported here is a surface the
-// board offers. The frame's own set is four: the map, the graph, the shell, and the footage, which is the set another
-// deployment of this frame installs. The application's own readings, the key space and the chain, arrive with the pack.
+// board offers. The frame's own set is three: the map, the shell, and the footage, which is the set another deployment of
+// this frame installs. The application's own readings, the records and the chain, arrive with the pack.
 import '@ssccsorg/skene-view-map';
-import '@ssccsorg/skene-view-graph';
 import '@ssccsorg/skene-view-shell';
 import '@ssccsorg/skene-view-media';
 import { Frame } from '@ssccsorg/skene-frame';
