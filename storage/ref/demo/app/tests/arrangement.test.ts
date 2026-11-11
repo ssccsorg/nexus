@@ -31,11 +31,11 @@ test('the project declares no arrangement, so what is kept is the pilot’s', ()
   expect(declared, 'a declaration would come back over the pilot’s choice on every open').toEqual({});
 });
 
-test('the board opens with the declarations, the space column, the transport and the evidence', () => {
+test('the board opens with the declarations, the space column and the transport', () => {
   const own = starts();
   expect(own.rail, 'the declarations').toBe(true);
   expect(own.plan, 'the space column').toBe(true);
   expect(own.timeline, 'the transport').toBe(true);
-  expect(own.evidence, 'the picked record').toBe(true);
+  expect(own.evidence, 'and not the picked record').toBe(false);
   expect(own.console, 'and not the console').toBe(false);
 });

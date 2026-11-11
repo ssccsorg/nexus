@@ -51,5 +51,5 @@ test('the volume with a chain declares the capability, and the volume of reading
 test('the panel names the capability, so the declaration reaches it', () => {
   const ours = declaredPanels().find((panel) => panel.key === 'evidence');
   expect(ours?.needs).toBe('evidence');
-  expect(ours?.starts, 'and it is open where it stands').toBe(true);
+  expect(ours?.starts, 'and it is closed until a reader opens it').toBe(false);
 });
