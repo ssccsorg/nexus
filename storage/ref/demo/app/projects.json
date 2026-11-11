@@ -1611,19 +1611,6 @@
                   "fly",
                   "carry"
                 ],
-                "views": [
-                  {
-                    "id": "medevac-heli-1-eye",
-                    "src": "/media/robot_1.mp4",
-                    "status": "replaying",
-                    "cells": [
-                      1,
-                      0.6
-                    ],
-                    "from": 60,
-                    "to": 168
-                  }
-                ],
                 "at": {
                   "record": [
                     82,
@@ -1637,19 +1624,6 @@
                 "abilities": [
                   "fly",
                   "carry"
-                ],
-                "views": [
-                  {
-                    "id": "medevac-drone-1-eye",
-                    "src": "/media/robot_2.mp4",
-                    "status": "replaying",
-                    "cells": [
-                      1,
-                      0.6
-                    ],
-                    "from": 24,
-                    "to": 168
-                  }
                 ],
                 "at": {
                   "record": [
@@ -1692,19 +1666,6 @@
                   "scan",
                   "stabilize"
                 ],
-                "views": [
-                  {
-                    "id": "rescue-robot-1-eye",
-                    "src": "/media/robot_1.mp4",
-                    "status": "replaying",
-                    "cells": [
-                      1,
-                      0.6
-                    ],
-                    "from": 70,
-                    "to": 168
-                  }
-                ],
                 "at": {
                   "record": [
                     82,
@@ -1717,30 +1678,6 @@
                 "abilities": [
                   "receive",
                   "prepare"
-                ],
-                "views": [
-                  {
-                    "id": "hospital-1-eye",
-                    "src": "/media/robot_2.mp4",
-                    "status": "replaying",
-                    "cells": [
-                      1,
-                      0.6
-                    ],
-                    "from": 88,
-                    "to": 600
-                  },
-                  {
-                    "id": "hospital-1-arrival",
-                    "src": "/media/robot_1.mp4",
-                    "status": "replaying",
-                    "cells": [
-                      1,
-                      0.6
-                    ],
-                    "from": 166,
-                    "to": 600
-                  }
                 ],
                 "at": {
                   "record": [
