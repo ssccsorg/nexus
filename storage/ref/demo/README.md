@@ -57,11 +57,12 @@ The board holds one project per committed volume, plus the two it copies from an
 an earlier run is replaced rather than appended to. An append cannot restore a project that run never had.
 
 The four projects are chosen so that each surface this deployment installs has a place to be read: the map pane, the
-shell reading, and the footage kind a member row draws.
+shell reading, and the footage kind a member row draws. Each project also names the reading it opens on in its own bundle,
+so the quarter opens on its chain and the sample volume on its records.
 
 | Project | What it is | What it exercises |
 |---|---|---|
-| `esg-scenario` | one reporting quarter of a fictional manufacturer | the map and the campaign it stands on, this board's chain, the records table, the evidence panel |
+| `esg-scenario` | one reporting quarter of a fictional manufacturer | the chain it opens on, the map and the campaign it stands on, the records table, the evidence panel |
 | `sample-volume` | the committed record, read by the tool | the records table it opens on |
 | `villa` | a rescue from a villa, from another board | the shell on a place that stands every member kind, and the camera a member declares (the footage rows are this bundle's, the media themselves are the source board's) |
 | `spiderwing` | a patrol and the forty-seven seconds it cannot account for | the shell and the map on a second place, and a run whose subject is missing evidence |
