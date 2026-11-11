@@ -41,11 +41,11 @@ export const brand: Brand = {
   about: [
     'neXus is a state-space fabric: one format and one identity space, joining heterogeneous systems.',
     'This view is not part of neXus. It is one example of what an implementation on that infrastructure can build.',
-    'Nothing here is neXus-specific: the view is built with Skene, a general-purpose interface library.',
+    'The screen is built with Skene, a general-purpose interface library, over the records the reference storage wrote.',
     'Every record on the board is fictional mock data.',
   ],
-  // The surface stands on the frame and nothing else: the board, the router, and the panels are skene packages.
-  layers: ['skene'],
+  // What the screen is made of, bottom up: the reference storage that wrote the records, and the frame that draws them.
+  layers: ['nexus', 'skene'],
   Mark,
   mark: { path: MARK, viewBox: MARK_VIEWBOX },
 };

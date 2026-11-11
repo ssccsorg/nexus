@@ -19,13 +19,12 @@ test('the brand the bar draws is this deployment’s', () => {
   expect(brand.title).toBe('REF STORAGE DEMO');
   expect(brand.name).toBe('nexus storage demo');
   expect(brand.version).toMatch(/^v\d+\.\d+\.\d+$/);
-  expect(brand.layers, 'the surface stands on the frame and nothing else').toStrictEqual(['skene']);
+  expect(brand.layers, 'the storage and the frame, bottom up').toStrictEqual(['nexus', 'skene']);
 });
 
 test('the bar says the board is not a neXus view', () => {
   expect(brand.note, 'the boundary is on the bar').toContain('not a neXus view');
   expect(brand.note, 'so is the invented data').toContain('mock data');
-  expect(brand.layers, 'the view is not drawn over the nexus layer').not.toContain('nexus');
 });
 
 test('the card says what this view is, and that its data is invented', () => {

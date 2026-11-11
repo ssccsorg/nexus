@@ -70,6 +70,7 @@ Five properties hold over a committed volume, and none of them needs a write pat
 | `tests/cli.rs` | the contract, each case running the built binary |
 | `demo/volume/` | one record as the format writes it, committed so the crate has something to read without a write path |
 | `demo/esg-volume/` | the volume behind the live board: the evidence chain of one reporting campaign |
+| `demo/esg.scenario.json` | the scenario that volume is written from: the site, the readings, the figures, and the requirement texts |
 | `demo/app/` | the demonstration: a Vite application that reads these volumes through the `skene` frame |
 | `demo/README.md` | what the demonstration holds, and how to run it |
 | `docs/integration-seam.md` | where an external claim system attaches |

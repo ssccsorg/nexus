@@ -1,0 +1,216 @@
+{
+  "volume": "esg-demo",
+  "origin": "did:example:plant-li-1",
+  "site": "plant-li-1",
+  "period": "2026-Q1",
+  "quality": "measured",
+  "controller": "sustainability-controller",
+  "baseline": "regulatory-baseline",
+  "measurements": [
+    {
+      "key": "electricity",
+      "source": "meter:m17",
+      "value": 412000.0,
+      "unit": "kWh",
+      "metric": "electricity_consumption",
+      "reference": "M17-2024-0431"
+    },
+    {
+      "key": "gas",
+      "source": "meter:g04",
+      "value": 96400.0,
+      "unit": "kWh",
+      "metric": "natural_gas_consumption",
+      "reference": "G04-2023-0117"
+    },
+    {
+      "key": "refrigerant",
+      "shape": "fugitive",
+      "source": "service:contractor",
+      "value": 12.5,
+      "unit": "kg",
+      "metric": "refrigerant_top_up",
+      "substance": "R-410A",
+      "gwp": 2088,
+      "gwp_source": "IPCC AR5 GWP100",
+      "reference": "WO-2026-0142"
+    },
+    {
+      "key": "output",
+      "source": "erp:production",
+      "value": 18400.0,
+      "unit": "assemblies",
+      "metric": "production_output",
+      "reference": "ERP-2026Q1"
+    },
+    {
+      "key": "generation",
+      "source": "inverter:pv1",
+      "value": 63500.0,
+      "unit": "kWh",
+      "metric": "solar_generation",
+      "reference": "INV-2022-0009"
+    },
+    {
+      "key": "water",
+      "source": "meter:w02",
+      "value": 1240.0,
+      "unit": "m3",
+      "metric": "water_withdrawal",
+      "reference": "W02-2025-0031"
+    },
+    {
+      "key": "scrap",
+      "source": "scale:s01",
+      "value": 3.8,
+      "unit": "t",
+      "metric": "metal_scrap_sold",
+      "reference": "SC-2026-0033"
+    },
+    {
+      "key": "cooling",
+      "source": "chiller:c01",
+      "value": 58200.0,
+      "unit": "kWh",
+      "metric": "cooling_kwh",
+      "reference": "CH-2021-0044"
+    },
+    {
+      "key": "compressed_air",
+      "source": "compressor:a01",
+      "value": 31700.0,
+      "unit": "kWh",
+      "metric": "compressed_air_kwh",
+      "reference": "CA-2020-0012"
+    },
+    {
+      "key": "process_heat",
+      "source": "boiler:b02",
+      "value": 44900.0,
+      "unit": "kWh",
+      "metric": "process_heat_kwh",
+      "reference": "BH-2019-0007"
+    },
+    {
+      "key": "forklift",
+      "source": "charger:e01",
+      "value": 9800.0,
+      "unit": "kWh",
+      "metric": "forklift_charging_kwh",
+      "reference": "CHG-2023-0021"
+    },
+    {
+      "key": "press",
+      "source": "press:p03",
+      "value": 41200.0,
+      "unit": "cycles",
+      "metric": "press_cycles",
+      "reference": "PR-2018-0003"
+    },
+    {
+      "key": "crane",
+      "source": "crane:k01",
+      "value": 612.0,
+      "unit": "h",
+      "metric": "crane_lift_hours",
+      "reference": "CR-2017-0002"
+    },
+    {
+      "key": "hvac",
+      "source": "hvac:h04",
+      "value": 27400.0,
+      "unit": "kWh",
+      "metric": "air_handling_kwh",
+      "reference": "HV-2022-0031"
+    },
+    {
+      "key": "waste",
+      "source": "compactor:w03",
+      "value": 2.4,
+      "unit": "t",
+      "metric": "waste_to_landfill",
+      "reference": "CP-2023-0008"
+    },
+    {
+      "key": "freight",
+      "source": "telematics:t01",
+      "value": 214.0,
+      "unit": "t",
+      "metric": "inbound_freight_tonnes",
+      "reference": "TF-2026-0119"
+    },
+    {
+      "key": "discharge",
+      "source": "meter:w05",
+      "value": 380.0,
+      "unit": "m3",
+      "metric": "water_discharge",
+      "reference": "W05-2025-0032"
+    }
+  ],
+  "transformations": [
+    {
+      "label": "intent_scope2_2026q1",
+      "from": ["electricity"],
+      "description": "apply the 2026 residual-mix factor (0.2053 kgCO2e/kWh) and the EEA grid factor (0.1280) to the metered electricity, and state Scope 2 on both bases for 2026-Q1",
+      "scope2": {
+        "market_based_tco2e": 84.58,
+        "location_based_tco2e": 52.74,
+        "scope": 2,
+        "period": "2026-Q1",
+        "consolidation": "operational control",
+        "base_year": 2024,
+        "restated": false,
+        "factor_market_kg_per_kwh": 0.2053,
+        "factor_location_kg_per_kwh": 0.128,
+        "factor_source": "illustrative 2026 residual mix and EEA grid mix",
+        "requirement": "ESRS E1-6"
+      }
+    },
+    {
+      "label": "intent_scope1_2026q1",
+      "from": ["gas", "refrigerant"],
+      "description": "convert stationary combustion (0.2016 kgCO2e/kWh) and the R-410A top-up (GWP 2088, AR5) to Scope 1 for 2026-Q1",
+      "scope1": {
+        "tco2e": 45.53,
+        "stationary_combustion_tco2e": 19.43,
+        "fugitive_refrigerant_tco2e": 26.1,
+        "scope": 1,
+        "period": "2026-Q1",
+        "consolidation": "operational control",
+        "gwp_source": "IPCC AR5 GWP100",
+        "base_year": 2024,
+        "restated": false,
+        "requirement": "ESRS E1-6"
+      }
+    },
+    {
+      "label": "intent_intensity_2026q1",
+      "from": ["intent_scope1_2026q1", "intent_scope2_2026q1", "output"],
+      "description": "divide the reported Scope 1 and Scope 2 total (market-based) by the quarter's output to state the intensity per assembly",
+      "intensity": {
+        "kgco2e_per_unit": 7.07,
+        "total_tco2e": 130.11,
+        "denominator_units": 18400,
+        "basis": "market-based",
+        "period": "2026-Q1",
+        "consolidation": "operational control",
+        "requirement": "ESRS E1-6"
+      }
+    }
+  ],
+  "requirements": [
+    {
+      "label": "esrs_e1_6",
+      "content": "ESRS E1-6: disclose gross Scope 1 and Scope 2 GHG emissions separately, Scope 2 on both a location-based and a market-based basis, with the consolidation approach, the base year, and the conversion factors used"
+    },
+    {
+      "label": "esrs_e3_4",
+      "content": "ESRS E3-4: disclose total water consumption in cubic metres, with withdrawal and discharge by source, for the reporting period"
+    },
+    {
+      "label": "esrs_e5_5",
+      "content": "ESRS E5-5: disclose the total quantity of waste generated and the quantity diverted from disposal, by waste stream"
+    }
+  ]
+}

@@ -128,15 +128,30 @@ Two files carry what a compliance reviewer would want to change, and neither is 
 | What | Where |
 |---|---|
 | the words the board uses for the three kinds | `app/tools/import-volume.mjs`, the `words` a project declares |
-| the site, the measured quantities, the requirement texts, and the values | `storage/ref/tests/esg_scenario.rs` |
+| the site, the measured quantities, the requirement texts, and the values | `storage/ref/demo/esg.scenario.json` |
 
 The board itself is generated: `app/projects.json` and `app/scenario/` are written by the importer from what the tool
 printed, so an edit there is undone by the next import. Change the scenario or the words, then regenerate.
 
-The scenario is a Rust test that writes the volume, because the volume is committed bytes rather than a database. Its
-content is still readable to someone who does not write Rust: the entities, the quantities, the arithmetic in a
-calculation's description, and the requirement texts are plain strings in it. Moving that content into a data file is the
-change that would make the scenario editable without a build, and it is not made yet.
+The scenario is one data file. `storage/ref/demo/esg.scenario.json` holds the site, each instrument's reading, the
+figures a calculation concludes, and the requirement texts; `storage/ref/tests/esg_scenario.rs` is the writer, and it
+keeps only the shapes a record is serialized in, because a payload's field order is what a reader sees first.
+
+A change to the data is reproduced into the volume with:
+
+```bash
+cargo test -p nexus-storage-ref --test esg_scenario -- --ignored --nocapture
+```
+
+The gate runs the same writer against a temporary volume and compares the record names and payloads with the committed
+one, so a data file that no longer makes the shipped volume fails there:
+
+```bash
+cargo test -p nexus-storage-ref --test esg_scenario
+```
+
+The comparison is by name because a fact's name is its address, which is derived from what it holds. A transformation's
+declaration and a requirement's text do not address anything, so those are read out of the committed bytes.
 
 ## What the demo shows
 
