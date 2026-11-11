@@ -1,29 +1,29 @@
 # The demonstration
 
-Three directories, one purpose: to show what the reference crate claims rather than state it.
-
-`nexus-storage-ref` reads a volume and prints. This directory puts a screen on the same reads, so a developer or a
-technical auditor can see the key space, a point read, and a verification without reading the crate first.
+A screen over the reference crate's own reads: the key space, one point read, a verification, and one ESG reporting
+period read as a chain, drawn on the `skene` frame from the volumes committed here.
 
 ## Run it in one line
 
-In a shell, from the repository root:
+From the repository root, with Rust and Node installed:
 
 ```bash
 storage/ref/demo/app/run.sh
 ```
 
-That builds the tool, puts the frame beside the checkout when it is absent, regenerates the board from the committed
-volumes, and serves it on the address Vite prints. `--fresh` reinstalls from the lock file first, which is what heals a
-frame that changed under the copy npm made of it earlier.
+That builds the tool, puts the frame beside the checkout when it is absent, regenerates the board, and serves it on the
+address Vite prints. `--fresh` reinstalls from the lock file first, which heals a frame that changed under the copy npm
+made of it. `npm --prefix storage/ref/demo/app run demo` is the same work without a POSIX shell.
 
-The same work without a POSIX shell:
+With nothing installed on the host:
 
 ```bash
-npm --prefix storage/ref/demo/app run demo
+docker build -t nexus-demo storage/ref/demo
+docker run --rm -p 8080:8080 nexus-demo
 ```
 
-The steps below are the same work one at a time, for a first run you want to watch.
+`http://localhost:8080` is the same board, served from the committed files. The image carries no Rust toolchain, so a
+regenerated board is built on a host and committed before the image is rebuilt.
 
 ## The three directories
 
@@ -284,6 +284,21 @@ npm --prefix storage/ref/demo/app run import -- --id esg-scenario \
 (`Custom domains`, then `Set up a domain`). When `ssccs.org` is a zone in the same account the CNAME is created for you;
 otherwise point `nexus-demo` at `nexus-demo-b5z.pages.dev` wherever the zone's DNS lives. Nothing in the application
 changes for it: the assets are addressed from the root, and every reading is a path under it.
+
+## The container
+
+`Dockerfile` builds the board in a Node stage and serves `dist` from nginx. The build clones the frame, because an image
+has no sibling checkout, and copies the application to the depth the `file:` dependency expects. `nginx.conf` sends a
+path that names no file to the page, which is the rule `public/_redirects` states for Cloudflare.
+
+```bash
+docker build -t nexus-demo storage/ref/demo
+docker run --rm -p 8080:8080 nexus-demo
+```
+
+The image serves what is committed: it holds no volumes, no reference tool, and no write path. Regenerating the board is
+the host step above, and the image is rebuilt from the committed result. `app/node_modules`, `app/dist` and both volumes
+sit in `.dockerignore`, so the build context is the source rather than an install.
 
 ## What the demo does not show
 

@@ -49,11 +49,13 @@ function repoRoot() {
   return dir;
 }
 
-function step(what, command, args, cwd) {
+function step(what, command, args, cwd, hint) {
   console.log(`\n${what}`);
   const done = spawnSync(command, args, { cwd, stdio: 'inherit' });
-  if (done.error) throw new Error(`could not run ${command}: ${done.error.message}`);
-  if (done.status !== 0) throw new Error(`${command} ${args.join(' ')} exited ${done.status}`);
+  if (done.error) throw new Error(`${command} could not start (${done.error.message}). ${hint}`);
+  if (done.status !== 0) {
+    throw new Error(`${command} ${args.join(' ')} exited ${done.status}. ${hint}`);
+  }
 }
 
 function main() {
@@ -66,14 +68,17 @@ function main() {
       EXE('git'),
       ['clone', '--depth', '1', 'https://github.com/ssccsorg/skene', beside],
       repo,
+      'Put a checkout of ssccsorg/skene beside this one at ../skene, or install git and run this again.',
     );
   }
 
-  step('building the reference tool', EXE('cargo'), ['build', '-p', 'nexus-storage-ref'], repo);
+  step('building the reference tool', EXE('cargo'), ['build', '-p', 'nexus-storage-ref'], repo,
+    'Install a Rust toolchain from https://rustup.rs, then run this again.');
 
   // A stale tree is the one case the install cannot heal, so it is left to the reader rather than deleted here.
   if (!existsSync(join(APP, 'node_modules'))) {
-    step('installing the application', NPM, ['install'], APP);
+    step('installing the application', NPM, ['install'], APP,
+      'Install Node 20 or newer from https://nodejs.org, or delete app/node_modules and run this again.');
   }
 
   // The first import starts a fresh board and the rest add to it. A board written by an earlier run is replaced rather
@@ -90,13 +95,23 @@ function main() {
       '--reading',
       each.reading,
       ...(each.reset ? ['--reset'] : []),
-    ], APP);
+    ], APP,
+      'The tool printed the reason above. Run the same command by hand to see it in full.');
   }
 
   console.log('\nserving the board, with the address Vite prints below');
   const dev = spawn(NPM, ['run', 'dev'], { cwd: APP, stdio: 'inherit' });
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => dev.kill(signal));
-  dev.on('exit', (code) => process.exit(code ?? 0));
+  dev.on('exit', (code) => {
+    if (code) {
+      console.error(
+        '\nrun-demo: the server exited ' +
+          code +
+          '. If the port was taken, end the earlier run, then start this again.',
+      );
+    }
+    process.exit(code ?? 0);
+  });
 }
 
 try {

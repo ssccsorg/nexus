@@ -535,12 +535,18 @@ verify_nex_tagma() {
 
 DEMO_APP="storage/ref/demo/app"
 
+# A failure names the next thing to run, so a reader does not have to read this file to recover.
+demo_next() {
+    echo "  $*"
+}
+
 verify_demo() {
     local APP="$DEMO_APP"
 
     echo "=== demo ==="
     if ! command -v npm >/dev/null 2>&1; then
         echo "demo: npm is not on the path, and the demonstration is a Vite deployment (FAIL)"
+        demo_next "Install Node 22 or later from https://nodejs.org, then run this again."
         return 1
     fi
 
@@ -550,28 +556,47 @@ verify_demo() {
         echo "Putting the frame beside this checkout..."
         git clone --depth 1 https://github.com/ssccsorg/skene ../skene 2>&1 || {
             echo "demo: the frame could not be cloned (FAIL)"
+            demo_next "Put a checkout of ssccsorg/skene beside this one at ../skene, or check the network."
             return 1
         }
     fi
 
     # The importer runs this binary and never builds it.
     echo "Building the reference tool..."
-    cargo build -p nexus-storage-ref 2>&1 || { echo "demo: the tool's build FAILED"; return 1; }
+    cargo build -p nexus-storage-ref 2>&1 || {
+        echo "demo: the tool's build FAILED"
+        demo_next "Install a Rust toolchain from https://rustup.rs; the importer runs the built binary."
+        return 1
+    }
 
     # `npm ci` rather than `npm install`: a `file:` dependency is copied into
     # node_modules, and an install that compares versions can leave the frame stale
     # while the tests pass against the copy.
     echo "Installing the application..."
-    (cd "$APP" && npm ci) 2>&1 || { echo "demo: the install FAILED"; return 1; }
+    (cd "$APP" && npm ci) 2>&1 || {
+        echo "demo: the install FAILED"
+        demo_next "Delete storage/ref/demo/app/node_modules and retry; the frame is copied into it here."
+        return 1
+    }
 
     echo "Testing the application..."
-    (cd "$APP" && npm test) 2>&1 || { echo "demo: the tests FAILED"; return 1; }
+    (cd "$APP" && npm test) 2>&1 || {
+        echo "demo: the tests FAILED"
+        demo_next "The failing case names itself. The board is compared with the volumes byte for byte,"
+        demo_next "so a volume change needs the board regenerated with the import in demo/README.md."
+        return 1
+    }
 
     echo "Building the application..."
-    (cd "$APP" && npm run build) 2>&1 || { echo "demo: the build FAILED"; return 1; }
+    (cd "$APP" && npm run build) 2>&1 || {
+        echo "demo: the build FAILED"
+        demo_next "Run the same command in storage/ref/demo/app to see the output without the runner's."
+        return 1
+    }
 
     if [ ! -f "$APP/dist/projects.json" ] || [ ! -d "$APP/dist/scenario" ]; then
         echo "demo: the build does not carry the board (FAIL)"
+        demo_next "dist should hold projects.json and scenario/. Regenerate the board, then build again."
         return 1
     fi
 
@@ -597,17 +622,23 @@ deploy_demo() {
 
     if [ ! -f "$APP/dist/projects.json" ] || [ ! -d "$APP/dist/scenario" ]; then
         echo "deploy: the build does not carry the board, so run --demo-check first (FAIL)"
+        demo_next "The upload refuses a directory it cannot read a board from, rather than publishing an empty one."
         return 1
     fi
     if [ -n "${CI:-}" ] && { [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; }; then
         echo "deploy: CI needs CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID (FAIL)"
+        demo_next "Add both to the repository secrets. demo/README.md, Deploying it, names the token's scope."
         return 1
     fi
 
     echo "Publishing $APP/dist to nexus-demo..."
     (cd "$APP" && npx --yes wrangler@4.100.0 pages deploy dist \
         --project-name nexus-demo --branch main) 2>&1 \
-        || { echo "deploy: the upload FAILED"; return 1; }
+        || {
+            echo "deploy: the upload FAILED"
+            demo_next "The wrangler output above names the account or the token it refused."
+            return 1
+        }
     echo "deploy: published"
 }
 
