@@ -192,7 +192,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: nexus-demo
-      url: https://nexus-demo-b5z.pages.dev
+      url: https://rf-storage-demo.nexus.ssccs.org
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v4

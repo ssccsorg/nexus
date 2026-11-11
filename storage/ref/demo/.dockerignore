@@ -1,0 +1,8 @@
+# The board and its runs are committed, so the volumes are not part of a build that serves them.
+esg-volume
+volume
+
+# What an install and a build leave behind.
+app/node_modules
+app/dist
+app/.wrangler

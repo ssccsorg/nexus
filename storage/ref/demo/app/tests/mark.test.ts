@@ -19,12 +19,33 @@ test('the brand the bar draws is this deployment’s', () => {
   expect(brand.title).toBe('REF STORAGE DEMO');
   expect(brand.name).toBe('nexus storage demo');
   expect(brand.version).toMatch(/^v\d+\.\d+\.\d+$/);
-  expect(brand.layers, 'the surface stands on the frame and nothing else').toStrictEqual(['skene']);
 });
 
-test('the bar says the board is not a neXus view', () => {
-  expect(brand.note).toBe('not a neXus view');
-  expect(brand.layers, 'the view is not drawn over the nexus layer').not.toContain('nexus');
+test('the stack names where each layer is kept', () => {
+  const layers = brand.layers.map((each) => (typeof each === 'string' ? { name: each } : each));
+  expect(layers.map((each) => each.name), 'the storage and the frame, bottom up').toEqual([
+    'nexus',
+    'skene',
+  ]);
+  for (const layer of layers) {
+    expect(layer.href, `${layer.name} links to its repository`).toMatch(
+      /^https:\/\/github\.com\/ssccsorg\/[a-z-]+$/,
+    );
+  }
+});
+
+test('the bar marks the deployment as a demonstration', () => {
+  expect(brand.note, 'the boundary is on the bar').toMatch(/demo/i);
+});
+
+test('the card says what this view is, and that its data is invented', () => {
+  const card = (brand.about ?? []).join(' ');
+  expect(card, 'the infrastructure is named').toContain('state-space fabric');
+  expect(card, 'the view is not part of it').toContain('not part of neXus');
+  expect(card, 'the frame is a general-purpose library').toContain(
+    'Skene, a general-purpose interface library',
+  );
+  expect(card, 'the records are invented').toContain('fictional mock data');
 });
 
 test('the mark the frame draws and the mark the bar draws are one drawing', () => {

@@ -1,8 +1,8 @@
 # nexus-storage-ref
 
-A running instance of the demonstration is at [nexus-demo-b5z.pages.dev](https://nexus-demo-b5z.pages.dev), serving the
-committed board read-only through the `skene` frame. That board is one rendering of the records: neXus defines the
-record, the coordinate, and the read surface, and no screen.
+A running instance of the demonstration is at [rf-storage-demo.nexus.ssccs.org](https://rf-storage-demo.nexus.ssccs.org),
+serving the committed board read-only through the `skene` frame. That board is one rendering of the records: neXus
+defines the record, the coordinate, and the read surface, and no screen.
 
 neXus is a state fabric. Its unit is a transition: a fact, an intent, and a hint compose into a new fact,
 `F x I x H -> F'`. A coordinate addresses the fact, a record keeps it, and the transition is itself recorded, so the
@@ -70,6 +70,7 @@ Five properties hold over a committed volume, and none of them needs a write pat
 | `tests/cli.rs` | the contract, each case running the built binary |
 | `demo/volume/` | one record as the format writes it, committed so the crate has something to read without a write path |
 | `demo/esg-volume/` | the volume behind the live board: the evidence chain of one reporting campaign |
+| `demo/esg.scenario.json` | the scenario that volume is written from: the site, the readings, the figures, and the requirement texts |
 | `demo/app/` | the demonstration: a Vite application that reads these volumes through the `skene` frame |
 | `demo/README.md` | what the demonstration holds, and how to run it |
 | `docs/integration-seam.md` | where an external claim system attaches |

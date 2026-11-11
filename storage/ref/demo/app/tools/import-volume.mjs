@@ -457,14 +457,6 @@ function chained(records) {
 }
 
 /**
- * The readings a volume stands when it declares none of its own.
- *
- * The key space is what the volume was read for and the run is what the tool answered. A map is not among them: this
- * volume declares no place, and a reading whose host surface is absent is a control into nothing.
- */
-const VOLUME_READINGS = ['keyspace', 'records'];
-
-/**
  * What the board declares about a volume beside what the tool answered.
  *
  * A map needs two declarations the run does not carry: which participant kinds present a location, and the ground they
@@ -595,22 +587,14 @@ function placedOf(place, records) {
   return { ...place, ...(site ? { store: { label: site } } : {}), units };
 }
 
-/** The project that carries the run, the key space, and the records the volume holds. */
-export function projectOf(measured, reading = 'keyspace') {
+/** The project that carries the run and the records the volume holds. */
+export function projectOf(measured, reading = 'esg') {
   const m = measured;
   const resources = [
     { kind: 'channel', at: 'sim' },
     { kind: 'record', at: `scenario/${m.id}.txt` },
-    {
-      kind: 'keyspace',
-      at: {
-        volume: m.volume,
-        keys: m.keys,
-        listed: m.keyCount,
-        box: m.box,
-        records: m.box.records,
-      },
-    },
+    // A committed run is read, not written: the board says the project is at rest rather than live.
+    { kind: 'status', at: 'idle' },
   ];
   // The records themselves, when the volume holds any: what the `show` verb printed, one entry a record.
   if (m.records.length) {
@@ -635,11 +619,9 @@ export function projectOf(measured, reading = 'keyspace') {
   resources.push(
     {
       kind: 'views',
-      // A project that names its readings gets exactly those. One that names none stands every reading the pack and the
-      // frame hold, which is the technical volume's own view.
-      at: declared?.readings
-        ? { pack: 'volume', main: reading, on: declared.readings }
-        : { pack: 'volume', main: reading, on: VOLUME_READINGS },
+      // The reading the project opens on, and the pack its readings come from. The frame's own readings stand beside the
+      // pack's, which is what a board is: the project is the space, and the readings are ways of looking at it.
+      at: { pack: 'volume', main: reading },
     },
     // The board as text stands beside the key space. The panel is the frame's own drawing of a run, so it is opened
     // here rather than gated on a room this deployment does not have.

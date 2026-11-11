@@ -1,37 +1,39 @@
 # The demonstration
 
-Three directories, one purpose: to show what the reference crate claims rather than state it.
-
-`nexus-storage-ref` reads a volume and prints. This directory puts a screen on the same reads, so a developer or a
-technical auditor can see the key space, a point read, and a verification without reading the crate first.
+A screen over the reference crate's own reads: the records of a volume, one point read, a verification, and one ESG
+reporting period read as a chain, drawn on the `skene` frame from the volumes committed here, beside two projects taken
+from another board. Served at https://rf-storage-demo.nexus.ssccs.org.
 
 ## Run it in one line
 
-In a shell, from the repository root:
+From the repository root, with Rust and Node installed:
 
 ```bash
 storage/ref/demo/app/run.sh
 ```
 
-That builds the tool, puts the frame beside the checkout when it is absent, regenerates the board from the committed
-volumes, and serves it on the address Vite prints. `--fresh` reinstalls from the lock file first, which is what heals a
-frame that changed under the copy npm made of it earlier.
+That builds the tool, puts the frame beside the checkout when it is absent, regenerates the board, and serves it on the
+address Vite prints. `--fresh` reinstalls from the lock file first, which heals a frame that changed under the copy npm
+made of it. `npm --prefix storage/ref/demo/app run demo` is the same work without a POSIX shell.
 
-The same work without a POSIX shell:
+With nothing installed on the host:
 
 ```bash
-npm --prefix storage/ref/demo/app run demo
+docker build -t nexus-demo storage/ref/demo
+docker run --rm -p 8080:8080 nexus-demo
 ```
 
-The steps below are the same work one at a time, for a first run you want to watch.
+`http://localhost:8080` is the same board, served from the committed files. The image carries no Rust toolchain, so a
+regenerated board is built on a host and committed before the image is rebuilt.
 
-## The three directories
+## The directories
 
 | Path | What it holds |
 |---|---|
 | `volume/` | one record as the format writes it, committed so both the tool and the application have something to read |
 | `esg-volume/` | records of one reporting period, read as a chain rather than as keys |
 | `app/` | a Vite application that runs the tool over those volumes and draws what came back |
+| `shared/` | two projects taken from another board, kept as a board of their own so the copy between them is a copy between equals |
 
 `volume/` holds no write path and no generator. It is the bytes of one record: `facts/f_<coordinate>.fact`, the payload
 under `blob/`, and the payload's media type beside it. The record's coordinate is its file name. Nothing in this
@@ -50,13 +52,53 @@ supplies the address, the record model, the panels, and the router.
 `sidecar`, and `self-check` against a volume, keeps each exit code, and writes `app/projects.json` and one run under
 `app/scenario/` from what the tool printed.
 
-The board holds one project per committed volume, and `app/tools/run-demo.mjs` regenerates it whole on every launch,
-with `--reset` on the first volume, so a board written by an earlier run is replaced rather than appended to. An append
-cannot restore a project that run never had.
+The board holds one project per committed volume, plus the two it copies from another board, and
+`app/tools/run-demo.mjs` regenerates it whole on every launch, with `--reset` on the first volume, so a board written by
+an earlier run is replaced rather than appended to. An append cannot restore a project that run never had.
+
+The four projects are chosen so that each surface this deployment installs has a place to be read: the map pane, the
+shell reading, and the footage kind a member row draws.
+
+| Project | What it is | What it exercises |
+|---|---|---|
+| `esg-scenario` | one reporting quarter of a fictional manufacturer | the map and the campaign it stands on, this board's chain, the records table, the evidence panel |
+| `sample-volume` | the committed record, read by the tool | the records table it opens on |
+| `villa` | a rescue from a villa, from another board | the shell on a place that stands every member kind, and the camera a member declares (the footage rows are this bundle's, the media themselves are the source board's) |
+| `spiderwing` | a patrol and the forty-seven seconds it cannot account for | the shell and the map on a second place, and a run whose subject is missing evidence |
 
 The importer counts nothing. A second model of the store would be a model free to disagree with the store, so every
 number on the screen is a number the tool printed, and each `count` line in a run is the parser's arithmetic over the
 facts that run writes. An edit that moves a line has to move its count, or the tests fail.
+
+## Projects from another board
+
+Two of the board's four projects are not volumes. They are taken from another demonstration built on the same frame,
+and their subjects are nothing alike: a rescue from a villa, and forty-seven seconds of a patrol. Each is a domain
+this application never heard of, and neither asks for a change in the frame or here.
+
+`shared/` keeps them as a board of its own, so the copy is a copy between equals. `app/tools/sync-project.mjs` reads a
+board and writes a board, in either direction, and leaves a project the destination already holds alone unless
+`--replace` says which side wins.
+
+```bash
+# take them into this demonstration
+node storage/ref/demo/app/tools/sync-project.mjs --from storage/ref/demo/shared --all \
+  --into storage/ref/demo/app
+
+# give this demonstration's version back
+node storage/ref/demo/app/tools/sync-project.mjs --from storage/ref/demo/app --all \
+  --into storage/ref/demo/shared --replace
+```
+
+The run applies them after the imports, because the first import starts the board fresh. Two things travel differently
+from a verbatim copy, and both are stated here rather than left to be noticed. The source deployment's product names are
+replaced with neutral ones in the copy, because this repository publishes no product name. And one project declares a
+room this board does not have, so its channel declaration is dropped and it is read from the board's default room; its
+run says so.
+
+They do not bring this board's pack, so the chain and the records table are not offered for them: they stand the
+frame's own readings and nothing else. That is the capability seam at work rather than a special case, and it is why
+the board is not a second model of one domain.
 
 ## The view and the records
 
@@ -68,12 +110,71 @@ The arrangement is the demonstration's, not neXus's. neXus defines the record, t
 no screen: no panel, no chain drawing, no dashboard. A second project over the same records is free to look nothing like
 this one. The bar carries that statement beside the name.
 
+The arrangement is a desktop one: three columns, a split, and a map, each sized for a window. Below the desktop
+breakpoint the page says a window is required at the foot of the screen, rather than offering a cramped layout as if it
+were the same board.
+
+## For a compliance reader
+
+The board is one reporting quarter of a fictional manufacturer. Nothing in it is a real company, a real meter, or a real
+filing, and no line on it is a compliance determination. What it shows is one shape a quarter can be recorded in.
+
+Read it in this order.
+
+- The left rail is the run that produced the board: the reference tool's own checks and what each answered. The plant's
+  records are the chain in the middle and the lists beside it. The rail is on screen because the board also reports that
+  the records were read, and not only what they say.
+- The four columns are the chain: a measurement, the calculation it fed, the result that calculation concluded, and the
+  requirement that bounds the result. A record no calculation read is drawn and dimmed, because an inventory that nothing
+  read is a finding rather than an omission.
+- The letters in the lists are the project's words for the three kinds of record, drawn from the vocabulary and not
+  written into the screen: evidence, calculation, requirement. They are this board's words and not a standard's.
+- Press a record. The right panel says what it holds, which records it cites, which cite it, and the one field a branch
+  edits.
+- `take the branch` changes what a calculation declares or what a requirement says, and the chain re-reads against the
+  change. The volume is untouched: the branch is the screen's alternative, held beside the evidence, and a reload removes
+  it.
+
+What is worth a reviewer's time: whether the chain reads the way an auditor would walk it, whether the three words name
+the right things in your jurisdiction, and whether the requirement texts say what the rule says. The codes are the
+scenario's labels and a shape rather than a citation.
+
+## Where a review changes something
+
+Two files carry what a compliance reviewer would want to change, and neither is the frame.
+
+| What | Where |
+|---|---|
+| the words the board uses for the three kinds | `app/tools/import-volume.mjs`, the `words` a project declares |
+| the site, the measured quantities, the requirement texts, and the values | `storage/ref/demo/esg.scenario.json` |
+
+The board itself is generated: `app/projects.json` and `app/scenario/` are written by the importer from what the tool
+printed, so an edit there is undone by the next import. Change the scenario or the words, then regenerate.
+
+The scenario is one data file. `storage/ref/demo/esg.scenario.json` holds the site, each instrument's reading, the
+figures a calculation concludes, and the requirement texts; `storage/ref/tests/esg_scenario.rs` is the writer, and it
+keeps only the shapes a record is serialized in, because a payload's field order is what a reader sees first.
+
+A change to the data is reproduced into the volume with:
+
+```bash
+cargo test -p nexus-storage-ref --test esg_scenario -- --ignored --nocapture
+```
+
+The gate runs the same writer against a temporary volume and compares the record names and payloads with the committed
+one, so a data file that no longer makes the shipped volume fails there:
+
+```bash
+cargo test -p nexus-storage-ref --test esg_scenario
+```
+
+The comparison is by name because a fact's name is its address, which is derived from what it holds. A transformation's
+declaration and a requirement's text do not address anything, so those are read out of the committed bytes.
+
 ## What the demo shows
 
 Each claim of the reference crate has a place on the screen.
 
-- An address is a key, and it resolves by a rule. The `keyspace` reading lists one row per key, grouped by the prefix
-  the key carries.
 - A point read is one read of the medium. The run carries the byte count the `read` verb printed.
 - A record's address follows from what it holds. The run carries the fields the `verify` verb recomputed it from.
 - A listing is the only scan, so a box is answered from it. The run carries the axes the box narrowed and the records
@@ -111,6 +212,10 @@ figures answer: E1-6 for the emissions, E3-4 for the water, E5-5 for the waste.
 The thirteen readings no transformation reads are the point of having them. A quarter's inventory holds quantities that
 no calculation picked up, and a screen that drew only the part of the plant that was used would be an inventory that
 looked settled.
+
+The scenario is one example, not a framework. It borrows the requirement codes of a European reporting standard so the
+texts have something concrete to answer, and nothing in this crate, in the frame, or in the board depends on that choice:
+a board for another regime is another data file.
 
 What the project calls those records is its own. `fact`, `intent` and `hint` are the engine's names for the three things
 a run is made of, and an auditor reads the same three as evidence, a calculation, and the requirement the work answers.
@@ -280,10 +385,25 @@ npm --prefix storage/ref/demo/app run import -- --id esg-scenario \
 
 ### Custom domain
 
-`nexus-demo.ssccs.org` is added once in the Cloudflare dashboard, under the `nexus-demo` Pages project
-(`Custom domains`, then `Set up a domain`). When `ssccs.org` is a zone in the same account the CNAME is created for you;
-otherwise point `nexus-demo` at `nexus-demo-b5z.pages.dev` wherever the zone's DNS lives. Nothing in the application
-changes for it: the assets are addressed from the root, and every reading is a path under it.
+`https://rf-storage-demo.nexus.ssccs.org` is a custom domain on the `nexus-demo` Pages project. `ssccs.org` is a zone in
+the same Cloudflare account, so the dashboard's `Custom domains` step created the CNAME, and nothing in the application
+changed for it: the assets are addressed from the root, and every reading is a path under it.
+
+## The container
+
+`Dockerfile` builds the board in a Node stage and serves `dist` from nginx. The build clones the frame, because an image
+has no sibling checkout, and copies the application to the depth the `file:` dependency expects. `nginx.conf` sends a
+path that names no file to the page, which is the rule `public/_redirects` states for Cloudflare, and sends the same
+`Permissions-Policy` that `public/_headers` does: the page asks the browser for no device.
+
+```bash
+docker build -t nexus-demo storage/ref/demo
+docker run --rm -p 8080:8080 nexus-demo
+```
+
+The image serves what is committed: it holds no volumes, no reference tool, and no write path. Regenerating the board is
+the host step above, and the image is rebuilt from the committed result. `app/node_modules`, `app/dist` and both volumes
+sit in `.dockerignore`, so the build context is the source rather than an install.
 
 ## What the demo does not show
 
@@ -410,7 +530,7 @@ The importer has no `--help`, so this is the list.
 | `--id` | the volume's directory name | the project's id, and the run's file name |
 | `--title` | the id | the heading the run carries |
 | `--volume` | `storage/ref/demo/volume` | the volume to read, relative to the repository root |
-| `--reading` | `keyspace` | the reading the project opens on |
+| `--reading` | `esg` | the reading the project opens on |
 | `--out` | the application directory | where the board and the run are written |
 | `--bin` | the debug build, then the release build | the tool to run |
 | `--reset` | off | start a fresh board instead of adding this project to the existing one |

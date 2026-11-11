@@ -19,6 +19,8 @@
     "@ssccsorg/skene-kernel": "file:../../../../../skene/packages/kernel",
     "@ssccsorg/skene-ui": "file:../../../../../skene/packages/ui",
     "@ssccsorg/skene-view-map": "file:../../../../../skene/packages/view-map",
+    "@ssccsorg/skene-view-media": "file:../../../../../skene/packages/view-media",
+    "@ssccsorg/skene-view-shell": "file:../../../../../skene/packages/view-shell",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

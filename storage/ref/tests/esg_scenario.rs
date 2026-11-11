@@ -1,17 +1,21 @@
-// The ESG scenario the demonstration reads, authored here so the volume can be rebuilt.
+// The ESG scenario the demonstration reads, authored from the data beside it.
 //
-// The volume is committed data, so this is not part of the gate: it writes the bytes a person
-// later commits. Run it deliberately:
+// The scenario is `demo/esg.scenario.json`: the site, the measured quantities, the requirement texts, and the
+// transformations with the figures they conclude. This file is the writer, so a person who wants a different plant changes
+// data rather than Rust, and a person who wants a different shape changes this.
+//
+// The volume is committed data, so this is not part of the gate when it writes. Run it deliberately:
 //
 //   cargo test -p nexus-storage-ref --test esg_scenario -- --ignored --nocapture
 //
-// It writes `storage/ref/demo/esg-volume`, replacing what is there.
+// It writes `storage/ref/demo/esg-volume`, replacing what is there. The check that runs in the gate writes to a temporary
+// directory and compares the records with the committed ones, so a change to the data file that is not in the volume
+// fails there rather than at a review.
 //
-// The scenario is one reporting period of a synthetic manufacturer, shaped the way a quarterly
-// inventory is: four measured quantities, two scope calculations that report Scope 2 on both a
-// location-based and a market-based basis, an intensity metric over the two results, and the
-// disclosure requirement they answer. Every number below is a fixture, and the arithmetic in the
-// transformation descriptions is the only claim the data makes.
+// The scenario is one reporting period of a synthetic manufacturer, shaped the way a quarterly inventory is: measured
+// quantities from the site's instruments, two scope calculations that report Scope 2 on both a location-based and a
+// market-based basis, an intensity metric over the two results, and the disclosure requirement they answer. Every number
+// in the data file is a fixture, and the arithmetic in a transformation's description is the only claim the data makes.
 
 use futures_executor::block_on;
 use nex_fih::FihId20 as _;
@@ -20,18 +24,81 @@ use nex_fih::{
 };
 use nex_io::fs_io::FsIo;
 use nexus_storage_ref::RefFihStorage;
-use serde::Serialize;
-use std::path::PathBuf;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+fn demo() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("demo")
+}
 
 fn volume() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("demo/esg-volume")
+    demo().join("esg-volume")
+}
+
+/// The scenario as data, which is the whole of what a different plant changes.
+#[derive(Deserialize)]
+struct Scenario {
+    volume: String,
+    origin: String,
+    site: String,
+    period: String,
+    quality: String,
+    /// The creator of every transformation's conclusion.
+    controller: String,
+    /// The creator of the requirements.
+    baseline: String,
+    measurements: Vec<Measurement>,
+    transformations: Vec<Transformation>,
+    requirements: Vec<Requirement>,
+}
+
+#[derive(Deserialize)]
+struct Measurement {
+    /// The name a transformation cites this record by.
+    key: String,
+    source: String,
+    /// `measured` when it is a reading with a unit, `fugitive` when it is a mass and a warming potential.
+    #[serde(default)]
+    shape: Option<String>,
+    value: f64,
+    unit: String,
+    metric: String,
+    reference: String,
+    #[serde(default)]
+    substance: Option<String>,
+    #[serde(default)]
+    gwp: Option<u16>,
+    #[serde(default)]
+    gwp_source: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct Transformation {
+    label: String,
+    /// The records it read, by the key of a measurement or the label of an earlier transformation.
+    from: Vec<String>,
+    description: String,
+    #[serde(default)]
+    scope1: Option<Scope1>,
+    #[serde(default)]
+    scope2: Option<Scope2>,
+    #[serde(default)]
+    intensity: Option<Intensity>,
+}
+
+#[derive(Deserialize)]
+struct Requirement {
+    label: String,
+    content: String,
 }
 
 /// A payload as the author wrote it.
 ///
 /// The fields keep the order of the struct, and the screen reads a payload in the order it arrives: a record that leads
 /// with its figure is a record whose author said the figure leads. Serializing an unordered map instead would leave the
-/// order to the format and put `base_year` where the result belongs.
+/// order to the format and put `base_year` where the result belongs. That is why the data file carries values and this
+/// file carries the shape.
 fn content(body: &impl Serialize) -> Content {
     Content {
         mime_type: "application/json".into(),
@@ -48,85 +115,89 @@ fn text(body: &impl Serialize) -> String {
 #[derive(Serialize)]
 struct Measured {
     value: f64,
-    unit: &'static str,
-    metric: &'static str,
-    period: &'static str,
-    site: &'static str,
-    reference: &'static str,
-    quality: &'static str,
-    source: &'static str,
+    unit: String,
+    metric: String,
+    period: String,
+    site: String,
+    reference: String,
+    quality: String,
+    source: String,
 }
 
 /// A refrigerant top-up, which is a mass and a global warming potential rather than an energy reading.
 #[derive(Serialize)]
 struct Fugitive {
     value: f64,
-    unit: &'static str,
-    metric: &'static str,
-    substance: &'static str,
+    unit: String,
+    metric: String,
+    substance: String,
     gwp: u16,
-    gwp_source: &'static str,
-    period: &'static str,
-    site: &'static str,
-    reference: &'static str,
-    quality: &'static str,
-    source: &'static str,
+    gwp_source: String,
+    period: String,
+    site: String,
+    reference: String,
+    quality: String,
+    source: String,
 }
 
 /// Scope 2 as ESRS E1-6 asks for it: the same energy on both bases, with the factors named.
-#[derive(Serialize)]
-struct Scope2<'a> {
+#[derive(Clone, Serialize, Deserialize)]
+struct Scope2 {
     market_based_tco2e: f64,
     location_based_tco2e: f64,
     scope: u8,
-    period: &'a str,
-    consolidation: &'a str,
+    period: String,
+    consolidation: String,
     base_year: u16,
     restated: bool,
     factor_market_kg_per_kwh: f64,
     factor_location_kg_per_kwh: f64,
-    factor_source: &'a str,
+    factor_source: String,
     /// The requirement this conclusion answers, which is the edge from a hint to the work it bounds.
-    requirement: &'a str,
-    source_fact: &'a str,
+    requirement: String,
+    /// The source it read, which is the edge from a fact to the work that read it. Filled here, not in the data.
+    #[serde(skip_deserializing)]
+    source_fact: String,
 }
 
 /// Scope 1 split by the source it came from, because combustion and fugitive emissions are reported apart.
-#[derive(Serialize)]
-struct Scope1<'a> {
+#[derive(Clone, Serialize, Deserialize)]
+struct Scope1 {
     tco2e: f64,
     stationary_combustion_tco2e: f64,
     fugitive_refrigerant_tco2e: f64,
     scope: u8,
-    period: &'a str,
-    consolidation: &'a str,
-    gwp_source: &'a str,
+    period: String,
+    consolidation: String,
+    gwp_source: String,
     base_year: u16,
     restated: bool,
-    requirement: &'a str,
-    source_facts: Vec<&'a str>,
+    requirement: String,
+    #[serde(skip_deserializing)]
+    source_facts: Vec<String>,
 }
 
 /// The intensity metric, which is what a reader compares across periods and sites.
-#[derive(Serialize)]
-struct Intensity<'a> {
+#[derive(Clone, Serialize, Deserialize)]
+struct Intensity {
     kgco2e_per_unit: f64,
     total_tco2e: f64,
     denominator_units: u32,
-    basis: &'a str,
-    period: &'a str,
-    consolidation: &'a str,
-    requirement: &'a str,
-    source_facts: Vec<&'a str>,
+    basis: String,
+    period: String,
+    consolidation: String,
+    requirement: String,
+    #[serde(skip_deserializing)]
+    source_facts: Vec<String>,
 }
 
-fn intent(label: &str, from: Vec<CoordId>, description: &str) -> Intent {
+fn intent(label: &str, from: Vec<CoordId>, description: &str, creator: &str) -> Intent {
     Intent {
         id: CoordId::from_label(label),
         from_facts: from,
         to_fact_id: None,
         description: description.into(),
-        creator: "sustainability-controller".into(),
+        creator: creator.into(),
         worker: None,
         last_heartbeat_at: None,
         created_at: None,
@@ -135,382 +206,189 @@ fn intent(label: &str, from: Vec<CoordId>, description: &str) -> Intent {
     }
 }
 
-#[test]
-#[ignore = "authors the committed ESG volume rather than checking anything"]
-fn author_the_esg_scenario() {
-    let dir = volume();
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("the volume directory is created");
+fn load() -> Scenario {
+    let path = demo().join("esg.scenario.json");
+    let text = std::fs::read_to_string(&path).expect("the scenario is readable");
+    serde_json::from_str(&text).expect("the scenario parses")
+}
+
+/// Write the scenario's records into a volume, which is the whole of what this file does.
+fn author(dir: &Path, scenario: &Scenario) {
     let storage =
-        RefFihStorage::with_auto_flush(FsIo::new(&dir).expect("the medium opens"), "esg-demo");
+        RefFihStorage::with_auto_flush(FsIo::new(dir).expect("the medium opens"), &scenario.volume);
 
-    // The measured source records.
-    //
-    // One plant, one quarter. The meters, the service record, and the production system are the origins, so a reader can
-    // ask who reported each number, on which reference, and when it was read.
+    // The name a transformation cites, and the address it names.
+    let mut written: BTreeMap<String, CoordId> = BTreeMap::new();
 
-    let electricity = block_on(storage.submit_fact(&Fact::new(
-        "did:example:plant-li-1".into(),
-        content(&Measured {
-            value: 412_000.0,
-            unit: "kWh",
-            metric: "electricity_consumption",
-            period: "2026-Q1",
-            site: "plant-li-1",
-            reference: "M17-2024-0431",
-            quality: "measured",
-            source: "meter:m17",
-        }),
-        "meter:m17".into(),
-    )))
-    .expect("the electricity reading is accepted");
-
-    let gas = block_on(storage.submit_fact(&Fact::new(
-        "did:example:plant-li-1".into(),
-        content(&Measured {
-            value: 96_400.0,
-            unit: "kWh",
-            metric: "natural_gas_consumption",
-            period: "2026-Q1",
-            site: "plant-li-1",
-            reference: "G04-2023-0117",
-            quality: "measured",
-            source: "meter:g04",
-        }),
-        "meter:g04".into(),
-    )))
-    .expect("the gas reading is accepted");
-
-    let refrigerant = block_on(storage.submit_fact(&Fact::new(
-        "did:example:plant-li-1".into(),
-        content(&Fugitive {
-            value: 12.5,
-            unit: "kg",
-            metric: "refrigerant_top_up",
-            substance: "R-410A",
-            gwp: 2088,
-            gwp_source: "IPCC AR5 GWP100",
-            period: "2026-Q1",
-            site: "plant-li-1",
-            reference: "WO-2026-0142",
-            quality: "measured",
-            source: "service:contractor",
-        }),
-        "service:contractor".into(),
-    )))
-    .expect("the refrigerant record is accepted");
-
-    let output = block_on(storage.submit_fact(&Fact::new(
-        "did:example:plant-li-1".into(),
-        content(&Measured {
-            value: 18_400.0,
-            unit: "assemblies",
-            metric: "production_output",
-            period: "2026-Q1",
-            site: "plant-li-1",
-            reference: "ERP-2026Q1",
-            quality: "measured",
-            source: "erp:production",
-        }),
-        "erp:production".into(),
-    )))
-    .expect("the output record is accepted");
-
-    // The rest of the site's instruments, which are not meters of one kind: an inverter that generates, a flow meter on
-    // the water main, and a weighbridge at the scrap bay. They are the same volume and the same read path, which is the
-    // point of the demonstration.
-
-    let _generation = block_on(storage.submit_fact(&Fact::new(
-        "did:example:plant-li-1".into(),
-        content(&Measured {
-            value: 63_500.0,
-            unit: "kWh",
-            metric: "solar_generation",
-            period: "2026-Q1",
-            site: "plant-li-1",
-            reference: "INV-2022-0009",
-            quality: "measured",
-            source: "inverter:pv1",
-        }),
-        "inverter:pv1".into(),
-    )))
-    .expect("the generation record is accepted");
-
-    let _water = block_on(storage.submit_fact(&Fact::new(
-        "did:example:plant-li-1".into(),
-        content(&Measured {
-            value: 1_240.0,
-            unit: "m3",
-            metric: "water_withdrawal",
-            period: "2026-Q1",
-            site: "plant-li-1",
-            reference: "W02-2025-0031",
-            quality: "measured",
-            source: "meter:w02",
-        }),
-        "meter:w02".into(),
-    )))
-    .expect("the water record is accepted");
-
-    let _scrap = block_on(storage.submit_fact(&Fact::new(
-        "did:example:plant-li-1".into(),
-        content(&Measured {
-            value: 3.8,
-            unit: "t",
-            metric: "metal_scrap_sold",
-            period: "2026-Q1",
-            site: "plant-li-1",
-            reference: "SC-2026-0033",
-            quality: "measured",
-            source: "scale:s01",
-        }),
-        "scale:s01".into(),
-    )))
-    .expect("the scrap record is accepted");
-
-    // The rest of the plant's instruments, one reading each.
-    //
-    // A quarter's inventory is not four meters: the site has cooling, compressed air, process heat, a charger, a press, a
-    // crane, the hall's air handling, the compactor, the freight record, and a second water meter on the discharge main.
-    // None of them feeds a calculation in this fixture, which is the point of having them: a volume holds readings that
-    // no transformation reads, and the screen says so rather than showing only the part of the plant that was used.
-    for reading in [
-        Measured {
-            value: 58_200.0,
-            unit: "kWh",
-            metric: "cooling_kwh",
-            period: "2026-Q1",
-            site: "plant-li-1",
-            reference: "CH-2021-0044",
-            quality: "measured",
-            source: "chiller:c01",
-        },
-        Measured {
-            value: 31_700.0,
-            unit: "kWh",
-            metric: "compressed_air_kwh",
-            period: "2026-Q1",
-            site: "plant-li-1",
-            reference: "CA-2020-0012",
-            quality: "measured",
-            source: "compressor:a01",
-        },
-        Measured {
-            value: 44_900.0,
-            unit: "kWh",
-            metric: "process_heat_kwh",
-            period: "2026-Q1",
-            site: "plant-li-1",
-            reference: "BH-2019-0007",
-            quality: "measured",
-            source: "boiler:b02",
-        },
-        Measured {
-            value: 9_800.0,
-            unit: "kWh",
-            metric: "forklift_charging_kwh",
-            period: "2026-Q1",
-            site: "plant-li-1",
-            reference: "CHG-2023-0021",
-            quality: "measured",
-            source: "charger:e01",
-        },
-        Measured {
-            value: 41_200.0,
-            unit: "cycles",
-            metric: "press_cycles",
-            period: "2026-Q1",
-            site: "plant-li-1",
-            reference: "PR-2018-0003",
-            quality: "measured",
-            source: "press:p03",
-        },
-        Measured {
-            value: 612.0,
-            unit: "h",
-            metric: "crane_lift_hours",
-            period: "2026-Q1",
-            site: "plant-li-1",
-            reference: "CR-2017-0002",
-            quality: "measured",
-            source: "crane:k01",
-        },
-        Measured {
-            value: 27_400.0,
-            unit: "kWh",
-            metric: "air_handling_kwh",
-            period: "2026-Q1",
-            site: "plant-li-1",
-            reference: "HV-2022-0031",
-            quality: "measured",
-            source: "hvac:h04",
-        },
-        Measured {
-            value: 2.4,
-            unit: "t",
-            metric: "waste_to_landfill",
-            period: "2026-Q1",
-            site: "plant-li-1",
-            reference: "CP-2023-0008",
-            quality: "measured",
-            source: "compactor:w03",
-        },
-        Measured {
-            value: 214.0,
-            unit: "t",
-            metric: "inbound_freight_tonnes",
-            period: "2026-Q1",
-            site: "plant-li-1",
-            reference: "TF-2026-0119",
-            quality: "measured",
-            source: "telematics:t01",
-        },
-        Measured {
-            value: 380.0,
-            unit: "m3",
-            metric: "water_discharge",
-            period: "2026-Q1",
-            site: "plant-li-1",
-            reference: "W05-2025-0032",
-            quality: "measured",
-            source: "meter:w05",
-        },
-    ] {
-        let source = reading.source;
-        block_on(storage.submit_fact(&Fact::new(
-            "did:example:plant-li-1".into(),
-            content(&reading),
-            source.into(),
+    // The measured source records, one reading each. The record's creator is the instrument, so a reader can ask who
+    // reported each number, on which reference, and when it was read.
+    for each in &scenario.measurements {
+        let body = match each.shape.as_deref() {
+            Some("fugitive") => content(&Fugitive {
+                value: each.value,
+                unit: each.unit.clone(),
+                metric: each.metric.clone(),
+                substance: each.substance.clone().expect("a fugitive reading names its substance"),
+                gwp: each.gwp.expect("a fugitive reading states its warming potential"),
+                gwp_source: each.gwp_source.clone().expect("a fugitive reading names its source"),
+                period: scenario.period.clone(),
+                site: scenario.site.clone(),
+                reference: each.reference.clone(),
+                quality: scenario.quality.clone(),
+                source: each.source.clone(),
+            }),
+            _ => content(&Measured {
+                value: each.value,
+                unit: each.unit.clone(),
+                metric: each.metric.clone(),
+                period: scenario.period.clone(),
+                site: scenario.site.clone(),
+                reference: each.reference.clone(),
+                quality: scenario.quality.clone(),
+                source: each.source.clone(),
+            }),
+        };
+        let id = block_on(storage.submit_fact(&Fact::new(
+            scenario.origin.clone(),
+            body,
+            each.source.clone(),
         )))
         .expect("the reading is accepted");
+        written.insert(each.key.clone(), id);
     }
 
     // The transformations, claimed and concluded.
     //
     // A conclusion is a fact about the intent, so the result is filed at the intent's own conclusion address and the chain
     // from the sources to the result is the intent's `from_facts`.
+    for each in &scenario.transformations {
+        let from: Vec<CoordId> = each
+            .from
+            .iter()
+            .map(|key| {
+                *written
+                    .get(key)
+                    .unwrap_or_else(|| panic!("{} cites {key}, which nothing writes", each.label))
+            })
+            .collect();
+        let sources: Vec<String> = from.iter().map(|each| each.to_string()).collect();
 
-    // 412,000 kWh at 0.2053 and at 0.1280 kgCO2e/kWh.
-    let electricity_text = electricity.to_string();
-    let scope2 = intent(
-        "intent_scope2_2026q1",
-        vec![electricity],
-        "apply the 2026 residual-mix factor (0.2053 kgCO2e/kWh) and the EEA grid factor (0.1280) to the metered \
-         electricity, and state Scope 2 on both bases for 2026-Q1",
-    );
-    let scope2_id = block_on(storage.submit_intent(&scope2)).expect("the intent is accepted");
-    let scope2_text = scope2_id.to_string();
-    block_on(storage.claim_intent(&scope2_text, "sustainability-controller"))
-        .expect("the controller claims the intent");
-    let scope2_fact = block_on(storage.conclude_intent(
-        &scope2_text,
-        &text(&Scope2 {
-            market_based_tco2e: 84.58,
-            location_based_tco2e: 52.74,
-            scope: 2,
-            period: "2026-Q1",
-            consolidation: "operational control",
-            base_year: 2024,
-            restated: false,
-            factor_market_kg_per_kwh: 0.2053,
-            factor_location_kg_per_kwh: 0.1280,
-            factor_source: "illustrative 2026 residual mix and EEA grid mix",
-            requirement: "ESRS E1-6",
-            source_fact: &electricity_text,
-        }),
-    ))
-    .expect("the conclusion is recorded");
+        let work = intent(&each.label, from, &each.description, &scenario.controller);
+        let id = block_on(storage.submit_intent(&work)).expect("the intent is accepted");
+        let id_text = id.to_string();
+        block_on(storage.claim_intent(&id_text, &scenario.controller))
+            .expect("the controller claims the intent");
 
-    // 96,400 kWh at 0.2016 kgCO2e/kWh, and 12.5 kg at GWP 2088.
-    let gas_text = gas.to_string();
-    let refrigerant_text = refrigerant.to_string();
-    let scope1 = intent(
-        "intent_scope1_2026q1",
-        vec![gas, refrigerant],
-        "convert stationary combustion (0.2016 kgCO2e/kWh) and the R-410A top-up (GWP 2088, AR5) to Scope 1 for \
-         2026-Q1",
-    );
-    let scope1_id = block_on(storage.submit_intent(&scope1)).expect("the intent is accepted");
-    let scope1_text = scope1_id.to_string();
-    block_on(storage.claim_intent(&scope1_text, "sustainability-controller"))
-        .expect("the controller claims the intent");
-    let scope1_fact = block_on(storage.conclude_intent(
-        &scope1_text,
-        &text(&Scope1 {
-            tco2e: 45.53,
-            stationary_combustion_tco2e: 19.43,
-            fugitive_refrigerant_tco2e: 26.10,
-            scope: 1,
-            period: "2026-Q1",
-            consolidation: "operational control",
-            gwp_source: "IPCC AR5 GWP100",
-            base_year: 2024,
-            restated: false,
-            requirement: "ESRS E1-6",
-            source_facts: vec![&gas_text, &refrigerant_text],
-        }),
-    ))
-    .expect("the conclusion is recorded");
+        let body = if let Some(mut result) = each.scope2.clone() {
+            result.source_fact = sources.first().cloned().expect("scope 2 reads a source");
+            text(&result)
+        } else if let Some(mut result) = each.scope1.clone() {
+            result.source_facts = sources.clone();
+            text(&result)
+        } else if let Some(mut result) = each.intensity.clone() {
+            result.source_facts = sources.clone();
+            text(&result)
+        } else {
+            panic!("{} declares no result", each.label);
+        };
 
-    // 130.11 tCO2e over 18,400 assemblies.
-    let scope1_fact_text = scope1_fact.id.to_string();
-    let scope2_fact_text = scope2_fact.id.to_string();
-    let output_text = output.to_string();
-    let intensity = intent(
-        "intent_intensity_2026q1",
-        vec![scope1_fact.id, scope2_fact.id, output],
-        "divide the reported Scope 1 and Scope 2 total (market-based) by the quarter's output to state the intensity \
-         per assembly",
-    );
-    let intensity_id = block_on(storage.submit_intent(&intensity)).expect("the intent is accepted");
-    let intensity_text = intensity_id.to_string();
-    block_on(storage.claim_intent(&intensity_text, "sustainability-controller"))
-        .expect("the controller claims the intent");
-    block_on(storage.conclude_intent(
-        &intensity_text,
-        &text(&Intensity {
-            kgco2e_per_unit: 7.07,
-            total_tco2e: 130.11,
-            denominator_units: 18_400,
-            basis: "market-based",
-            period: "2026-Q1",
-            consolidation: "operational control",
-            requirement: "ESRS E1-6",
-            source_facts: vec![&scope1_fact_text, &scope2_fact_text, &output_text],
-        }),
-    ))
-    .expect("the conclusion is recorded");
+        let concluded = block_on(storage.conclude_intent(&id_text, &body))
+            .expect("the conclusion is recorded");
+        written.insert(each.label.clone(), concluded.id);
+    }
 
     // The requirements the results answer.
-
-    block_on(storage.submit_hint(&Hint {
-        id: CoordId::from_label("esrs_e1_6"),
-        content: "ESRS E1-6: disclose gross Scope 1 and Scope 2 GHG emissions separately, Scope 2 on both a \
-                  location-based and a market-based basis, with the consolidation approach, the base year, and the \
-                  conversion factors used"
-            .into(),
-        creator: "regulatory-baseline".into(),
-    }))
-    .expect("the emissions requirement is recorded");
-
-    block_on(storage.submit_hint(&Hint {
-        id: CoordId::from_label("esrs_e3_4"),
-        content: "ESRS E3-4: disclose total water consumption in cubic metres, with withdrawal and discharge by \
-                  source, for the reporting period"
-            .into(),
-        creator: "regulatory-baseline".into(),
-    }))
-    .expect("the water requirement is recorded");
-
-    block_on(storage.submit_hint(&Hint {
-        id: CoordId::from_label("esrs_e5_5"),
-        content: "ESRS E5-5: disclose the total quantity of waste generated and the quantity diverted from disposal, \
-                  by waste stream"
-            .into(),
-        creator: "regulatory-baseline".into(),
-    }))
-    .expect("the waste requirement is recorded");
+    for each in &scenario.requirements {
+        block_on(storage.submit_hint(&Hint {
+            id: CoordId::from_label(&each.label),
+            content: each.content.clone(),
+            creator: scenario.baseline.clone(),
+        }))
+        .expect("the requirement is recorded");
+    }
 
     block_on(storage.flush_pending()).expect("every write reaches the medium");
+}
+
+/// Every record and payload a volume holds, by name.
+///
+/// A fact's name is its address, and the address is derived from what the record holds, so two volumes with the same
+/// names hold the same records and the same payloads. The timestamp a record is filed with is the clock's rather than the
+/// scenario's, which is why the comparison is by name.
+fn entries(dir: &Path) -> Vec<String> {
+    let mut found = Vec::new();
+    for part in ["facts", "intents", "hints", "blob"] {
+        let read = std::fs::read_dir(dir.join(part)).expect("the volume holds this part");
+        for each in read {
+            let name = each
+                .expect("the volume is readable")
+                .file_name()
+                .into_string()
+                .expect("a volume names its records in ASCII");
+            if name.ends_with(".meta") {
+                continue;
+            }
+            found.push(format!("{part}/{name}"));
+        }
+    }
+    found.sort();
+    found
+}
+
+#[test]
+#[ignore = "authors the committed ESG volume rather than checking anything"]
+fn author_the_esg_scenario() {
+    let scenario = load();
+    let dir = volume();
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("the volume directory is created");
+    author(&dir, &scenario);
     println!("wrote {}", dir.display());
+}
+
+#[test]
+fn the_scenario_file_makes_the_committed_records() {
+    // The scenario is data, so what the gate checks is that the data still makes the volume this repository committed.
+    // The data file is what a person edits, and this is the line that makes an edit land.
+    let scenario = load();
+    let scratch = tempfile::tempdir().expect("a scratch volume");
+    author(scratch.path(), &scenario);
+
+    let committed = volume();
+    assert_eq!(
+        entries(scratch.path()),
+        entries(&committed),
+        "the scenario makes the records and payloads the volume holds"
+    );
+
+    // The names carry what a fact holds, because a fact is addressed by its content. A transformation's declaration is
+    // not a fact: the volume keeps it as the payload the intent points at, so it is checked as one, and a requirement's
+    // text is held in the record itself.
+    let payloads: Vec<Vec<u8>> = std::fs::read_dir(committed.join("blob"))
+        .expect("the volume holds its payloads")
+        .filter(|each| {
+            each.as_ref()
+                .map(|entry| entry.file_name().to_string_lossy().ends_with(".bin"))
+                .unwrap_or(false)
+        })
+        .map(|each| std::fs::read(each.expect("the payload is readable").path()).expect("readable"))
+        .collect();
+    for each in &scenario.transformations {
+        assert!(
+            payloads.iter().any(|bytes| bytes == each.description.as_bytes()),
+            "{} declares the description the data file states",
+            each.label
+        );
+    }
+    for each in &scenario.requirements {
+        let path = committed
+            .join("hints")
+            .join(format!("h_{}.hint", CoordId::from_label(&each.label)));
+        let bytes = std::fs::read(&path).expect("the volume holds this requirement");
+        assert!(
+            String::from_utf8_lossy(&bytes).contains(&each.content),
+            "{} states the text the data file states",
+            each.label
+        );
+    }
 }

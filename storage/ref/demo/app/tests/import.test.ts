@@ -5,7 +5,7 @@
 // and it says so when the binary is not there rather than pretending the file is right.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -65,21 +65,22 @@ test('the same answer writes the same run, twice', () => {
   expect(scenarioOf(measured)).toBe(scenarioOf(measured));
 });
 
-test('the project carries the key space the panel draws', () => {
+test('the project carries its run, its state, and the reading it opens on', () => {
   const project = projectOf(measured);
   expect(project.id).toBe('sample-volume');
   expect(project.resources.map((resource) => resource.kind)).toEqual([
     'channel',
     'record',
-    'keyspace',
+    'status',
+    // This fixture holds no record, so the records resource a volume with one carries is absent.
     'views',
     // The board as text is a panel of the frame, and the demonstration opens it because it has no room to put beside it.
     'layout',
   ]);
-  const space = project.resources[2].at as { keys: string[]; listed: number; records: number };
-  expect(space.keys).toEqual(measured.keys);
-  expect(space.listed).toBe(3);
-  expect(space.records).toBe(1);
+  // A committed run is read and not written, so the board says the project is at rest.
+  expect(project.resources[2].at).toBe('idle');
+  // The records table is what the volume is read for, and it is the reading the project opens on.
+  expect(project.resources[3].at).toEqual({ pack: 'volume', main: 'esg' });
 });
 
 /** Whether a binary can be run here. A bare name is looked for on the path. */
@@ -105,7 +106,7 @@ describe.skipIf(!runs(bin))('the importer over the committed volumes', () => {
         volume: 'storage/ref/demo/volume',
         id: 'sample-volume',
         title: 'Sample volume',
-        reading: 'keyspace',
+        reading: 'esg',
         reset: false,
       },
     ];
@@ -136,10 +137,27 @@ describe.skipIf(!runs(bin))('the importer over the committed volumes', () => {
         expect(run.status, run.stderr).toBe(0);
       }
 
+      // The shared projects come from another board, so they are applied the way the run applies them.
+      const shared = spawnSync(
+        process.execPath,
+        [
+          join(HERE, 'tools/sync-project.mjs'),
+          '--from',
+          join(HERE, '..', 'shared'),
+          '--all',
+          '--into',
+          out,
+        ],
+        { encoding: 'utf8', cwd: HERE },
+      );
+      expect(shared.status, shared.stderr).toBe(0);
+
+      const runs = readdirSync(join(HERE, '..', 'shared', 'scenario')).map((each) => `scenario/${each}`);
       for (const path of [
         'projects.json',
         'scenario/esg-scenario.txt',
         'scenario/sample-volume.txt',
+        ...runs,
       ]) {
         expect(readFileSync(join(out, path), 'utf8'), `${path} is stale`).toBe(
           readFileSync(join(HERE, path), 'utf8'),
