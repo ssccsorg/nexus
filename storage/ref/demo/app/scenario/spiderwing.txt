@@ -1,0 +1,119 @@
+# The 47 seconds we could not prove
+#
+# 03:47:01, Yard Nine. The drone reads a heat source, the spider crosses its path, and a forklift
+# nobody admitted comes through the south gate. The cloud never saw it; the run did.
+#
+# Every time is a second from 03:47:01, so the last record is the 47th second of the replay. The
+# telemetry runs through the incident rather than around it: the devices keep writing while the
+# link dies, which is the point, because their own chain is the only one left.
+
+seed 271
+time 0
+write 1 48 spiderpi/legs 0
+write 1 48 spiderpi/sonar 0
+write 1 48 litewing/rotor 0
+write 1 48 litewing/thermal 0
+write 1 48 litewing/camera 0
+write 1 48 workspace/note 0
+write 1 48 forklift-1/axle 0
+position spiderpi 200,110
+position litewing 420,140
+position forklift-1 470,140
+hint cloud-record cloud=unavailable,reason=link-lost
+count 10
+
+time 1
+fact thermal-anomaly 48 litewing/thermal
+hint thermal-reading reading=47.2C,cell=9,threshold=55C,ignored=below-threshold
+hint thermal-hold duration=0.5s,cell=9,operator=unread
+count 11
+
+time 2
+write 1 48 litewing/camera 0
+write 1 48 spiderpi/sonar 0
+count 13
+
+time 4
+hint fire-risk-zone zone=corridor-3,injected=Baseline
+hint gate-state south=closed,registry=night
+
+time 5
+write 1 48 litewing/thermal 0
+write 1 48 litewing/rotor 0
+count 15
+
+time 6
+hint link-quality rssi=-91dbm,loss=12percent
+
+time 7
+fact link-lost 32 workspace/link
+write 1 48 workspace/link 0
+count 17
+
+time 8
+write 1 48 spiderpi/legs 0
+write 1 48 spiderpi/sonar 0
+count 19
+
+time 9
+intent return-to-base thermal-anomaly return-to-the-pad
+claim return-to-base litewing
+hint local-record scope=device,cloud=unavailable
+
+time 10
+write 1 48 litewing/rotor 0
+write 1 48 spiderpi/legs 0
+count 21
+
+time 11
+path spiderpi 200,110 300,90 6 0
+fact path-crossed 32 spiderpi/legs
+count 28
+
+time 12
+path litewing 420,140 380,100 6 0
+fact emergency-evasion 32 litewing/rotor
+hint evasion-report contact=spiderpi,outcome=collision-avoided
+write 1 48 litewing/camera 0
+count 36
+
+time 13
+path forklift-1 470,140 340,110 5 0
+fact forklift-breach 32 forklift-1/axle
+hint unauthorized-vehicle vehicle=forklift-1,access=denied,gate=south
+write 1 48 forklift-1/axle 0
+count 43
+
+time 14
+write 1 48 litewing/thermal 0
+write 1 48 spiderpi/sonar 0
+count 45
+
+time 16
+hint vehicle-registry match=none,plate=unread
+
+time 18
+path litewing 380,100 420,140 4 0
+count 49
+
+time 20
+write 1 48 litewing/rotor 0
+write 1 48 litewing/thermal 0
+count 51
+
+time 24
+write 1 48 spiderpi/legs 0
+write 1 48 spiderpi/sonar 0
+count 53
+
+time 30
+hint audit-chain records=local,signature=operator-1
+
+time 36
+write 1 48 workspace/note 0
+count 54
+
+time 47
+conclude return-to-base incident-closed
+fact audit-report 48 workspace/note
+count 56

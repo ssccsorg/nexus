@@ -1,0 +1,101 @@
+# Penang Cell
+#
+# A packaging cell in Penang. Eighteen things are on the floor and every one of them writes its own
+# readings to the cell's record: four servo drives their cycles, four conveyors their speeds, three
+# cameras the frames they inspect, two consoles the operators' setpoints, two historians the shift's
+# roll-up, and three robots that service the line. The cell runs on a 32-bit MCU with no operating
+# system and no database, and this file is the whole of what it does with its own record.
+#
+# The scale is a rehearsal's. The field drive writes one reading a cycle at 8 ms, so a shift is
+# millions of records, which is not what a demonstration needs; what is kept is the shape, and
+# the shape is what the record layer is held to.
+#
+# Run it on this host:
+#
+#   demo-sim apps/demo-sim/scenario/drive.txt /tmp/drive-volume --reset
+#
+# The same file runs on riscv32imac with no operating system, which is the point: the scenario
+# is not the mock, the host is.
+
+seed 7
+
+# The shift's readings, each unit writing where it stands. One reading a cycle for each drive:
+# current draw, winding temperature, and the time it was taken. This is the bulk of the record,
+# and it is written where the reading happens.
+tick 0
+write 24 32 servo-drive-1/cycle 8
+write 24 32 servo-drive-2/cycle 8
+write 24 32 servo-drive-3/cycle 8
+write 24 32 servo-drive-4/cycle 8
+count 96
+
+# The conveyors and the cameras share the line with the drives. The clock is the cell's, so a unit's
+# run sits where its readings were taken rather than where this file happens to list it.
+write 8 24 conveyor-5/speed 8
+write 8 24 conveyor-6/speed 8
+write 8 24 conveyor-7/speed 8
+write 8 24 conveyor-8/speed 8
+count 128
+
+write 6 48 vision-camera-1/frame 8
+write 6 48 vision-camera-2/frame 8
+write 6 48 vision-camera-3/frame 8
+count 146
+
+# The consoles the operators sit at, writing the one setpoint a minute the line is run to.
+write 4 24 operator-console-1/setpoint 60
+write 4 24 operator-console-2/setpoint 60
+count 154
+
+# The historians' roll-up, one an hour: the cell's record kept by a program rather than by a machine.
+write 2 32 line-historian/shift 3600
+write 2 32 line-historian-2/shift 3600
+count 158
+
+# The drive reads its own record and finds the signature it saw a long time ago. Two windows
+# are named, because the finding is a relation between them.
+tick 5184000
+fact window-earlier 48 servo-drive-3/current
+fact window-now 48 servo-drive-3/current
+count 160
+
+# What bounded the judgement, kept apart from the reading because it is a different kind of
+# record: the wear measured against the allowance the line permits.
+hint bearing-bounds wear=0.30mm,allowance=0.35mm
+
+# The work the drive declares, starting from the reading it found it in. The drive does not
+# act on its own authority; it declares, and the declaration names what it started from.
+intent replace-bearing window-now schedule-before-next-shift
+
+# The maintenance robot takes the work, which is how a declaration becomes someone's job.
+claim replace-bearing maintenance-robot-1
+
+# The robot records its own work as it does it. The result is observed by the party that
+# produced it rather than inferred from the repair afterwards, which is why both entities in
+# this room are writers.
+fact torque-trace 48 maintenance-robot-1/torque
+count 161
+
+# The result. This is the fact the intent produced, and the intent reaches it, so the record
+# carries ask, taker and outcome as one chain rather than three logs to be joined afterwards.
+conclude replace-bearing bearing-replaced
+count 162
+
+# The cell has more work in it than the one repair, and a queue with one row is not a queue. These
+# are declared over the same record: one the second robot has taken and is still doing, and one nobody
+# has, which is the state a reader looks for and the one that says who is free.
+intent log-handover torque-trace write-the-shift-notes
+claim log-handover maintenance-robot-2
+intent inspect-line window-earlier check-the-other-drives
+
+flush
+
+# The drive reads the new fact and resumes. Its current is back to baseline, and the
+# declaration is closed by a reading rather than by a person.
+tick 6132000
+fact resumed 48 servo-drive-3/current
+count 163
+
+# One read over the record's own time axis, which is the question an auditor asks: what
+# happened between the two shifts.
+query 0 11324640 * 163

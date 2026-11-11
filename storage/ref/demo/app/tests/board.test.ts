@@ -47,9 +47,20 @@ function read(id: string): { bundle: ReturnType<typeof bundleOf>; space: KeySpac
 
 const ids = board.projects.map((project) => project.id);
 
-/** The projects generated from the volumes this board commits, and the project taken from another board. */
+/** The projects generated from the volumes this board commits, and the projects taken from another board. */
 const VOLUMES = ['esg-scenario', 'sample-volume'];
-const SHARED = ['ecu'];
+const SHARED = [
+  'drive',
+  'pump',
+  'ecu',
+  'drone',
+  'field',
+  'digital',
+  'game',
+  'villa',
+  'spiderwing',
+  'kwaitsing',
+];
 
 /** A header line the importer wrote, as text. */
 function header(text: string, key: string): string {
@@ -70,9 +81,9 @@ test('the board holds one project for each committed volume, and the shared one'
   expect(new Set(ids).size, 'each volume has one project').toBe(ids.length);
 });
 
-test('the shared project resolves through the frame, and its run is a run', () => {
+test('the shared projects resolve through the frame, and their runs are runs', () => {
   // A project from another board is not a volume: it carries no key space and no record list, so what it is held to here
-  // is that it resolves and that its run parses, and not the counts only an import can produce.
+  // is that it resolves, that its run parses with no verb dropped, and that every count the run declares holds.
   for (const id of SHARED) {
     const document = board.projects.find((entry) => entry.id === id) as ProjectDocument;
     expect(document, `the board names ${id}`).toBeDefined();
@@ -80,9 +91,14 @@ test('the shared project resolves through the frame, and its run is a run', () =
     expect(bundle.record, `${id} declares a run`).toMatch(/^scenario\/.+\.txt$/);
     const text = readFileSync(`${ROOT}${bundle.record}`, 'utf8');
     expect(titleOf(text).length, `${id}'s run names itself`).toBeGreaterThan(0);
-    const { records, unknown } = parseScenario(text);
+    const { checks, records, unknown } = parseScenario(text);
     expect(unknown, `${id} uses only modelled verbs`).toEqual([]);
     expect(records.length, `${id} carries a run`).toBeGreaterThan(10);
+    for (const check of checks) {
+      expect(check.derived, `${id} at ${check.at}s: the file says ${check.expected}`).toBe(
+        check.expected,
+      );
+    }
   }
 });
 

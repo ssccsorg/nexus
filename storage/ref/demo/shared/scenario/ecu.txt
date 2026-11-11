@@ -9,6 +9,7 @@
 # console keeps what it read. This is the shape a device that only observes makes, so this scenario
 # draws no chain, and the app says so by drawing none.
 #
+#   demo-sim apps/demo-sim/scenario/ecu.txt /tmp/ecu-volume --reset
 
 seed 3
 

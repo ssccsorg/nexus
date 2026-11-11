@@ -1,0 +1,74 @@
+# Array Nine
+#
+# A solar array in the Nevada desert where rounds are run for their own sake: a rover, a hexapod and a
+# drone on the ground, a gate and a board to read, and three people who watch, call and walk. Every
+# machine writes where it stands, so the round is the record and the record is the round.
+#
+# This is the space that is a game and not a story about one. Nothing here scores the pilot and no
+# round can be lost: what a round produces is a run of readings, one piece of work somebody declared
+# and somebody else took, and the bounds the call was made under. What the frame draws of it is the
+# same frame it draws a packaging cell in, which is the point of it being here at all.
+#
+# Run it on this host:
+#
+#   demo-sim apps/delta/scenario/game.txt /tmp/game-volume --reset
+
+seed 31
+
+# The round: every machine on the array writes where it stands, one reading a cycle. The wheels, the
+# joints and the frames are the bulk of it, and they are written where the reading happens.
+tick 0
+write 12 24 rover-1/wheel 500
+write 11 24 hexapod-1/joint 500
+write 8 48 camera-1/frame 1500
+count 31
+
+# The drone overhead and the board the round is kept on, which are the other half of what the array
+# watches: a round is not one machine's account of itself.
+write 6 24 drone-2/rotor 900
+write 5 32 board-1/score 1800
+count 42
+
+# What the referee found at the end of the round: the gate read twice, a quarter of an hour apart.
+tick 900000
+fact gate-earlier 48 gate-1/tag
+fact gate-now 48 gate-1/tag
+count 44
+
+# What bounded the call, kept apart from the reading because it is a different kind of record: the
+# line the rover may not cross, and the tag the gate must still read.
+hint yard-bounds line=12m,tag=readable
+
+# The work the referee declares, starting from the reading it found it in. The referee does not walk
+# the line itself; it declares, and the declaration names what it started from.
+intent re-tag-gate gate-now walk-the-line-again
+
+# The anchor takes it, which is how a declaration becomes somebody's job.
+claim re-tag-gate anchor-3
+
+# The anchor records its own work as it does it, so the result is observed by the party that
+# produced it rather than inferred from the array afterwards.
+fact line-walked 48 anchor-3/walk
+count 45
+
+flush
+
+# The result. This is the fact the intent produced, and the intent reaches it, so the record carries
+# ask, taker and outcome as one chain rather than three logs to be joined afterwards.
+conclude re-tag-gate gate-re-tagged
+count 46
+
+# The array has more work in it than the one round. One the rover has taken and is still doing, and
+# one nobody has, which is the state a reader looks for and the one that says who is free.
+intent score-check line-walked read-the-board
+claim score-check rover-1
+intent inspect-yard gate-earlier check-the-other-gates
+
+# The referee's own call, which closes the round on the record.
+tick 600000
+fact round-closed 48 referee-1/call
+count 47
+
+# One read over the record's own time axis, which is the question a spectator asks: what happened
+# between the first round and the last.
+query 0 7200000 * 47

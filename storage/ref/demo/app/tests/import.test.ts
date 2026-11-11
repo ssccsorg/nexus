@@ -5,7 +5,7 @@
 // and it says so when the binary is not there rather than pretending the file is right.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -136,13 +136,14 @@ describe.skipIf(!runs(bin))('the importer over the committed volumes', () => {
         expect(run.status, run.stderr).toBe(0);
       }
 
-      // The shared project comes from another board, so it is applied the way the run applies it.
+      // The shared projects come from another board, so they are applied the way the run applies them.
       const shared = spawnSync(
         process.execPath,
         [
           join(HERE, 'tools/sync-project.mjs'),
           '--from',
-          join(HERE, '..', 'shared', 'ecu'),
+          join(HERE, '..', 'shared'),
+          '--all',
           '--into',
           out,
         ],
@@ -150,11 +151,12 @@ describe.skipIf(!runs(bin))('the importer over the committed volumes', () => {
       );
       expect(shared.status, shared.stderr).toBe(0);
 
+      const runs = readdirSync(join(HERE, '..', 'shared', 'scenario')).map((each) => `scenario/${each}`);
       for (const path of [
         'projects.json',
         'scenario/esg-scenario.txt',
         'scenario/sample-volume.txt',
-        'scenario/ecu.txt',
+        ...runs,
       ]) {
         expect(readFileSync(join(out, path), 'utf8'), `${path} is stale`).toBe(
           readFileSync(join(HERE, path), 'utf8'),

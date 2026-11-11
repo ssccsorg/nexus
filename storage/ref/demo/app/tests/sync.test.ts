@@ -13,7 +13,7 @@ import { afterEach, expect, test } from 'vitest';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const TOOL = join(ROOT, 'tools/sync-project.mjs');
-const SHARED = join(ROOT, '..', 'shared', 'ecu');
+const SHARED = join(ROOT, '..', 'shared');
 const ID = 'ecu';
 
 const made: string[] = [];
