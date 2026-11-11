@@ -209,7 +209,7 @@ const COLUMNS: ChainRole[] = ['requirement', 'measurement', 'transformation', 'r
 /** What a column is headed with, which names the place rather than the record. */
 const HEADING: Record<ChainRole, string> = {
   requirement: 'requirements',
-  measurement: 'observed',
+  measurement: 'measurements',
   transformation: 'transformations',
   result: 'results',
 };
