@@ -64,7 +64,7 @@ Without a built binary the importer reports what it could not run. `NEX_REF_BIN`
 | `src/chain.tsx` | the `chain` reading: the network the records' own links make |
 | `src/evidence.tsx` | the `evidence` panel: the picked record, its links, and the field a branch edits |
 | `src/workbench.ts` | the pick and the branch, which are the demonstration's own state and not the volume's |
-| `src/brand.tsx` | the mark, the name, the version, and the layers |
+| `src/brand.tsx` | the mark, the name, the version, the note beside them, the lines the card opens, and the layers |
 | `tools/import-volume.mjs` | runs the reference tool and writes the board and the run |
 | `tools/run-demo.mjs` | the first run in one command: build, frame, install, import, serve |
 | `tests/` | the board, the mark, and the importer |

@@ -1,7 +1,8 @@
 # The demonstration
 
 A screen over the reference crate's own reads: the key space, one point read, a verification, and one ESG reporting
-period read as a chain, drawn on the `skene` frame from the volumes committed here.
+period read as a chain, drawn on the `skene` frame from the volumes committed here. Served at
+https://rf-storage-demo.nexus.ssccs.org.
 
 ## Run it in one line
 
@@ -280,10 +281,9 @@ npm --prefix storage/ref/demo/app run import -- --id esg-scenario \
 
 ### Custom domain
 
-`nexus-demo.ssccs.org` is added once in the Cloudflare dashboard, under the `nexus-demo` Pages project
-(`Custom domains`, then `Set up a domain`). When `ssccs.org` is a zone in the same account the CNAME is created for you;
-otherwise point `nexus-demo` at `nexus-demo-b5z.pages.dev` wherever the zone's DNS lives. Nothing in the application
-changes for it: the assets are addressed from the root, and every reading is a path under it.
+`https://rf-storage-demo.nexus.ssccs.org` is a custom domain on the `nexus-demo` Pages project. `ssccs.org` is a zone in
+the same Cloudflare account, so the dashboard's `Custom domains` step created the CNAME, and nothing in the application
+changed for it: the assets are addressed from the root, and every reading is a path under it.
 
 ## The container
 
