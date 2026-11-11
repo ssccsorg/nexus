@@ -29,14 +29,13 @@ The full model, coordinate identity, storage tiers, runtime architecture, and me
 ## Repository Structure
 
 Root workspace, and a nested workspace under [`nex/`](nex) for the state model, the IO seam,
-the reference store, and the process layer.
+the wire, the router, the hub, and the process layer.
 
 | Path | Contents |
 |---|---|
 | [`fih/`](fih) | `Fact`, `Intent`, `Hint`, `CoordId`, capability traits, `Now`, cold query contract. `no_std + alloc` |
 | [`nex/`](nex) | the state model (`nex-fih`, `fih-model`), the IO seam (`nex-io`), the wire (`nex-protocol`), the routing table (`nex-router`), the hub (`nex-hub`), and the process layer (`nex`) |
-| [`nex-server/`](nex-server), [`nexd/`](nexd) | the board served over a Unix socket, and the daemon that supervises it |
-| [`nex_client`](nex_client) | typed client for `nexd` |
+| [`nex-server/`](nex-server), [`nexd/`](nexd) | the board served over a Unix socket, its typed client (`nex-client`), and the daemon that supervises it |
 | [`storage/ref/`](storage/ref) | reference node: read a volume by key, answer a box from the keys, check a record by recomputing its address |
 | [`apps/`](apps) | applications built on the model, each with its own workspace and verifier |
 | [`libs/`](libs) | shared host libraries |
@@ -48,6 +47,8 @@ the reference store, and the process layer.
 ### The reference node
 
 `storage/ref` demonstrates the storage contract at its simplest. It reads a key, lists a prefix, answers a box, and checks a record by recomputing its address. A box is answered by listing the keys and comparing their coordinates, so its cost is one pass over the key space.
+
+The board at [rf-storage-demo.nexus.ssccs.org](https://rf-storage-demo.nexus.ssccs.org) draws those reads over committed volumes, read-only.
 
 The contract states what a reader receives. What a node holds, how it finds it, and what it costs to find are the node's own decisions. The table is the whole of the distinction this repository draws.
 
@@ -76,16 +77,17 @@ Two entry points, one line each.
 | Entry point | Requirements | Behavior |
 |---|---|---|
 | `cargo run -q -p nexus-storage-ref -- self-check` | a Rust toolchain | runs the storage contract in a temporary volume and prints the coordinate it derived |
-| `npm --prefix storage/ref/demo/app run demo` | a Rust toolchain and Node 20+ | builds the reference, imports the committed volume, serves the board |
+| `./run.sh --demo` | a Rust toolchain and Node 20+ | builds the reference, checks the demonstration, and serves the board on `http://localhost:5292` |
 
-Both are the same line on macOS, Linux, and Windows.
+Both run on macOS, Linux, and Windows. `npm --prefix storage/ref/demo/app run demo` is the same demonstration run
+without a POSIX shell.
 
 The wasm check and the no_std anchor check require targets beyond the default build.
 
 | Check | Requirements | Execution |
 |---|---|---|
 | wasm gate | `wasm32-unknown-unknown`, `wasm32-wasip2` | cargo, on the host |
-| no_std anchors | `riscv32imac-unknown-none-elf` | `cargo check -p nex-io --no-default-features` |
+| no_std anchors | `wasm32-unknown-unknown`, `riscv32imac-unknown-none-elf` | `cargo check --no-default-features` over the core crates, and the anchor tests |
 
 CI installs all three targets. Local runs of those checks require installing them first.
 
@@ -97,13 +99,14 @@ Pin the repository by revision.
 [dependencies]
 nex = { git = "https://github.com/ssccsorg/nexus", package = "nex", rev = "<commit>" }
 nex-fih = { git = "https://github.com/ssccsorg/nexus", package = "nex-fih", rev = "<commit>" }
+nexus-storage-ref = { git = "https://github.com/ssccsorg/nexus", package = "nexus-storage-ref", rev = "<commit>" }
 tokio = { version = "1", features = ["full"] }
 ```
 
 ```rust
 use nex::io::FsIo;
-use nex_fih::RefFihStorage;
 use nex_fih::{AsyncFactCapable, Content, Fact};
+use nexus_storage_ref::RefFihStorage;
 
 let io = FsIo::new("/tmp/nexus-store")?;
 let store = RefFihStorage::new(io, "my-app");
@@ -136,7 +139,7 @@ Targets without an operating system require three things.
 - Provide `alloc` and a `critical-section` implementation.
 - Inject a clock through `Now`.
 
-The reference node is `RefFihStorage` in [`storage/ref`](storage/ref). Its record path builds for `riscv32imac-unknown-none-elf` with `--no-default-features`; the command-line reader is a host transport behind its own `reader` feature.
+The reference node is `RefFihStorage` in [`storage/ref`](storage/ref), the crate `nexus-storage-ref`. Its record path builds for `riscv32imac-unknown-none-elf` with `--no-default-features`; the command-line reader is a host transport behind its own `reader` feature.
 
 ## Minimal Examples
 
@@ -154,22 +157,26 @@ GitHub Actions runs the same flows [`run.sh`](run.sh) runs locally, one job each
 
 | Job | Scope |
 |---|---|
-| core | fmt, clippy, tests, the wasm gate, the MCU runtime under QEMU |
+| core | fmt, clippy, tests, the wasm gates, and the no_std anchors |
 | server | `nex-server` and `nex-client` over a Unix socket |
 | gateway | the HTTP API in `apps/nex-api` and the serialization proxy in `libs/serde-proxy` |
 | apps | the standalone app verifiers |
 | demo | the reference tool and the Vite demonstration: install, tests, bundle, and the board the bundle carries |
 | playbooks | the consumer playbook scenarios |
+| deploy | publishes the built board to Cloudflare Pages, on `main` and after every job |
 
 ```bash
-./run.sh              # everything
-./run.sh --core       # core only
-./run.sh --gateway    # the gateway layer
-./run.sh --apps       # the standalone app verifiers
-./run.sh --server     # nex-server over a Unix socket
-./run.sh --demo       # the reference tool and its board, checked and then served
-./run.sh --demo-check # the same check without the server, which is what CI runs
-./run.sh --playbooks  # the consumer playbooks
+./run.sh                # everything
+./run.sh --core         # core only
+./run.sh --gateway      # the gateway layer
+./run.sh --apps         # the standalone app verifiers
+./run.sh --server       # nex-server over a Unix socket
+./run.sh --demo         # the reference tool and its board, checked and then served
+./run.sh --demo-serve   # serve the committed board, no check
+./run.sh --demo-check   # the same check without the server, which is what CI runs
+./run.sh --demo-install # the frame and the install alone, which is what the deploy needs
+./run.sh --demo-deploy  # publish the built board to Cloudflare Pages
+./run.sh --playbooks    # the consumer playbooks
 ```
 
 [`scripts/run-core.sh`](scripts/run-core.sh) takes `--check`, `--clippy`, and `--test` for a focused local run.
