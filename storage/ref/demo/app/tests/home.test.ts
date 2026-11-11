@@ -6,8 +6,11 @@
 
 import { bundleOf, declaredReadings, standing } from '@ssccsorg/skene-frame';
 import { expect, test } from 'vitest';
+// The same four packages the deployment imports, so the register this reads is the register the board offers.
 import '@ssccsorg/skene-view-map';
 import '@ssccsorg/skene-view-graph';
+import '@ssccsorg/skene-view-shell';
+import '@ssccsorg/skene-view-media';
 import '../src/pack';
 import '../src/chain';
 import board from '../projects.json';
@@ -35,6 +38,9 @@ test.each([
 test('a project that names no main opens on the frame\u2019s own first', () => {
   const opened = openIn('villa');
   expect(opened.main).toBeUndefined();
-  // The register's own order, which is the one the frame opens on when a project names none: the graph is first.
-  expect(opened.keys[0]).toBe('graph');
+  // The seat reading is the register's own first, so a project that names none opens on the shell.
+  expect(opened.keys[0]).toBe('shell');
+  expect(opened.keys, 'and the map and the graph stand beside it').toEqual(
+    expect.arrayContaining(['map', 'graph']),
+  );
 });
