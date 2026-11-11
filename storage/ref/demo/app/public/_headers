@@ -1,0 +1,8 @@
+# What this deployment allows, which is the browser's own surface and nothing else.
+#
+# The board reads files it shipped with and asks the browser for no device: no camera, no microphone, no location, no
+# notifications, no clipboard, no serial or USB. A feature that needs one is refused by the policy rather than prompted
+# for, so a reader is never asked to hand a device to a demonstration. Fullscreen and autoplay stay available because
+# the frame's own controls use them.
+/*
+  Permissions-Policy: accelerometer=(), camera=(), clipboard-read=(), clipboard-write=(), display-capture=(), geolocation=(), gyroscope=(), hid=(), idle-detection=(), local-fonts=(), magnetometer=(), microphone=(), midi=(), notifications=(), payment=(), screen-wake-lock=(), serial=(), usb=(), xr-spatial-tracking=()

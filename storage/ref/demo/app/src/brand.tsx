@@ -44,6 +44,7 @@ export const brand: Brand = {
     'This view is not part of neXus. It is one example of what an implementation on that infrastructure can build.',
     'The screen is built with Skene, a general-purpose interface library, over the records the reference storage wrote.',
     'Every record on the board is fictional mock data.',
+    'The page asks for no camera, microphone, location, or notification access.',
   ],
   // What the screen is made of, bottom up: the reference storage that wrote the records, and the frame that draws them.
   // Each carries the repository it is kept in, which is where a reader who wants the code goes.

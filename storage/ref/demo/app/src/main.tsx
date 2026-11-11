@@ -8,6 +8,7 @@ import '@ssccsorg/skene-view-media';
 import { Frame } from '@ssccsorg/skene-frame';
 import { brand } from './brand';
 import { offTheShelf } from './host';
+import { Narrow } from './narrow';
 import './pack';
 // The chain is this deployment's own picture of a volume, so it arrives with the pack rather than from the frame.
 import './chain';
@@ -23,4 +24,9 @@ import './styles.css';
 const root = document.getElementById('root');
 if (!root) throw new Error('the page has no root to render into');
 
-createRoot(root).render(<Frame brand={brand} host={offTheShelf} />);
+createRoot(root).render(
+  <>
+    <Frame brand={brand} host={offTheShelf} />
+    <Narrow />
+  </>,
+);

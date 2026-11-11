@@ -110,6 +110,10 @@ The arrangement is the demonstration's, not neXus's. neXus defines the record, t
 no screen: no panel, no chain drawing, no dashboard. A second project over the same records is free to look nothing like
 this one. The bar carries that statement beside the name.
 
+The arrangement is a desktop one: three columns, a split, and a map, each sized for a window. Below the desktop
+breakpoint the page says a window is required at the foot of the screen, rather than offering a cramped layout as if it
+were the same board.
+
 ## For a compliance reader
 
 The board is one reporting quarter of a fictional manufacturer. Nothing in it is a real company, a real meter, or a real
@@ -389,7 +393,8 @@ changed for it: the assets are addressed from the root, and every reading is a p
 
 `Dockerfile` builds the board in a Node stage and serves `dist` from nginx. The build clones the frame, because an image
 has no sibling checkout, and copies the application to the depth the `file:` dependency expects. `nginx.conf` sends a
-path that names no file to the page, which is the rule `public/_redirects` states for Cloudflare.
+path that names no file to the page, which is the rule `public/_redirects` states for Cloudflare, and sends the same
+`Permissions-Policy` that `public/_headers` does: the page asks the browser for no device.
 
 ```bash
 docker build -t nexus-demo storage/ref/demo

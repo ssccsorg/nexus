@@ -66,6 +66,8 @@ Without a built binary the importer reports what it could not run. `NEX_REF_BIN`
 | `src/workbench.ts` | the pick and the branch, which are the demonstration's own state and not the volume's |
 | `src/brand.tsx` | the mark, the name, the version, the note beside them, the lines the card opens, and the layers |
 | `src/host.ts` | the host: no shell, no room, no feed, because the board and its runs are files |
+| `src/narrow.tsx` | the notice a window too narrow for the three columns reads |
+| `public/_headers` | what the deployment allows the browser, which is no device at all |
 | `tools/import-volume.mjs` | runs the reference tool and writes the board and the run |
 | `tools/sync-project.mjs` | copies one project and its run between two boards, in either direction |
 | `tools/run-demo.mjs` | the first run in one command: build, frame, install, import, serve |
@@ -87,6 +89,14 @@ on nothing.
 A record list is the storage layer's own shape, so it arrives as a pack. Nothing in this application names a commercial
 product, and the frame learns no storage vocabulary: a record, an address, and an exit code are the demo's, and each one
 is a resource, a reading, or a run line.
+
+The page asks the browser for no device. `public/_headers` denies camera, microphone, location, notifications, the
+clipboard, and the serial, USB, HID, and MIDI surfaces, so a feature added later that reaches for one is refused by the
+deployment rather than prompted for. Fullscreen and autoplay stay allowed, because the frame's own controls use them.
+
+The board is three columns, a split, and a map, and every one of them is sized for a window. `src/narrow.tsx` says so at
+the foot of a page narrower than the desktop breakpoint, rather than letting a reader take a cramped screen for a broken
+one.
 
 A record's kind is a term of the format, so its mark is the frame's: `KindTag` draws one colour and one letter, and this
 application imports it rather than choosing either. The word beside the mark is the application's own reading of the
