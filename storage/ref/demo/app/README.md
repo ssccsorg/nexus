@@ -112,10 +112,10 @@ them and the frame draws it.
 The deployment installs the three packages another board on this frame installs. Two are readings: the map, which is a
 pane of the space, and the shell, which is the seat the map paints its region for. One is a kind rather than a reading:
 footage, which a member row draws when the member declares a camera. A package that is not imported is a surface the
-board does not offer, and the rule runs the other way for readings too: a project names the readings it stands, and one
-whose host surface is absent is not offered it. A project that declares no place is offered no map, a project that
-declares no camera stands no footage row, and a project that does not bring this board's pack is offered neither the
-chain nor the records table. That is why the board holds four projects rather than one.
+board does not offer, and the rule runs the other way for readings too: a project names the readings it stands and the
+one it opens on, and a reading whose host surface is absent is not offered it. A project that declares no place is offered
+no map, a project that declares no camera stands no footage row, and a project that does not bring this board's pack is
+offered neither the chain nor the records table. That is why the board holds four projects rather than one.
 
 The evidence panel is held by the same rule rather than by a check of its own. It reads the links a record carries, so it
 is a surface of a project that holds a chain, and it says so with the frame's capability seam: the panel declares

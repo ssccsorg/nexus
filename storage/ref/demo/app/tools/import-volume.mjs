@@ -471,10 +471,6 @@ const DECLARATIONS = {
     // reader of this board is an auditor: the same three records are evidence, a calculation, and the requirement the
     // work answers. The words are the project's because they are this domain's, and the frame only draws them.
     words: { fact: 'evidence', intent: 'calculation', hint: 'requirement' },
-    // The readings this project stands, and the frame's panels it does not. The map, the chain, and the evidence list
-    // are the surface; the frame's raw run panels show a record's byte count and a member's board coordinate, which are
-    // the tool's own fields and not what the pack is about.
-    readings: ['map', 'chain', 'esg'],
     // The frame's own arrangement, and nothing else. A declaration is applied when the project opens, which is a layer
     // over the pilot's press rather than under it: a panel this file closed would come back on the next visit whatever
     // the pilot left. So this project declares nothing, each panel answers for itself (the declarations, the space

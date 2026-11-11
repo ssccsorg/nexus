@@ -26,7 +26,7 @@ function openIn(id: string): { main: string | undefined; keys: string[] } {
 }
 
 test.each([
-  ['esg-scenario', 'map'],
+  ['esg-scenario', 'chain'],
   ['sample-volume', 'esg'],
 ])('%s opens on the reading it declares', (id, main) => {
   const opened = openIn(id);

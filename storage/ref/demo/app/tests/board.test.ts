@@ -24,6 +24,8 @@ import { declaredReadings } from '@ssccsorg/skene-frame/lib/readings';
 // board against views the deployment does not install would be reading a register the application does not have.
 import '@ssccsorg/skene-view-map';
 import '../src/pack';
+// The chain is this deployment's own reading, and the project opens on it.
+import '../src/chain';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const board = JSON.parse(readFileSync(`${ROOT}projects.json`, 'utf8')) as BoardDocument;

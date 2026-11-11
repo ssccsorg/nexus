@@ -93,7 +93,15 @@ jobs:
           cache-targets: true
           cache-on-failure: true
       - name: Install socat
-        run: sudo apt-get update && sudo apt-get install -y socat
+        # The hosted runner's resolver has failed on the Ubuntu archive and taken the job with it, so the install is
+        # tried again before the job gives up.
+        run: |
+          for attempt in 1 2 3 4 5; do
+            sudo apt-get update -o Acquire::Retries=5 && sudo apt-get install -y socat && exit 0
+            echo "the archive was not reachable (attempt ${attempt}); waiting"
+            sleep 20
+          done
+          exit 1
       - name: nex-server verification
         run: bash ./run.sh --server
 
@@ -129,7 +137,15 @@ jobs:
           cache-targets: true
           cache-on-failure: true
       - name: Install socat (required for Unix socket RPC)
-        run: sudo apt-get update && sudo apt-get install -y socat
+        # The hosted runner's resolver has failed on the Ubuntu archive and taken the job with it, so the install is
+        # tried again before the job gives up.
+        run: |
+          for attempt in 1 2 3 4 5; do
+            sudo apt-get update -o Acquire::Retries=5 && sudo apt-get install -y socat && exit 0
+            echo "the archive was not reachable (attempt ${attempt}); waiting"
+            sleep 20
+          done
+          exit 1
       - uses: fermyon/actions/spin/setup@v1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -204,6 +220,6 @@ jobs:
           path: storage/ref/demo/app/dist
       - name: Deploy the board
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_PAGES_DEPLOY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
         run: bash ./run.sh --demo-deploy
