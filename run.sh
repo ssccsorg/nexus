@@ -666,14 +666,22 @@ deploy_demo() {
     fi
 
     echo "Publishing $APP/dist to nexus-demo..."
-    (cd "$APP" && npx --yes wrangler@4.100.0 pages deploy dist \
-        --project-name nexus-demo --branch main) 2>&1 \
-        || {
-            echo "deploy: the upload FAILED"
-            demo_next "The wrangler output above names the account or the token it refused."
-            return 1
-        }
-    echo "deploy: published"
+    local attempt
+    for attempt in 1 2 3; do
+        if (cd "$APP" && npx --yes wrangler@4.100.0 pages deploy dist \
+            --project-name nexus-demo --branch main) 2>&1; then
+            echo "deploy: published"
+            return 0
+        fi
+        if [ "$attempt" -lt 3 ]; then
+            # The Pages API throttles a burst of uploads with code 971, and a burst of pushes is what a run of commits is.
+            echo "deploy: the upload was refused (attempt $attempt of 3); waiting before the next one"
+            sleep 45
+        fi
+    done
+    echo "deploy: the upload FAILED"
+    demo_next "The wrangler output above names the account or the token it refused."
+    return 1
 }
 
 # ── App suite ─────────────────────────────────────────────────────────────
