@@ -14,7 +14,7 @@ set -euo pipefail
 #   ./run.sh --server      # nex-server standalone verification
 #   ./run.sh --demo        # Check the demonstration, then serve it
 #   ./run.sh --demo-check  # Check the demonstration only (what CI runs)
-#   ./run.sh --demo-install # Frame beside the checkout + install only (what the deploy needs)
+#   ./run.sh --demo-install # Frame beside the checkout + install only
 #   ./run.sh --demo-serve # Serve the board on 5292 without the checks
 #   ./run.sh --demo-deploy # Publish the built board to Cloudflare Pages (what CI runs on main)
 #   ./run.sh --playbooks   # Consumer playbooks only
@@ -751,7 +751,7 @@ case "${1:-}" in
         echo "  --server        nex-server standalone verification"
         echo "  --demo          Check the demonstration, then serve it on 5292"
         echo "  --demo-check    Check the demonstration and stop (what CI runs)"
-        echo "  --demo-install  Put the frame beside the checkout and install only (what the deploy needs)"
+        echo "  --demo-install  Put the frame beside the checkout and install only"
         echo "  --demo-serve    Serve the committed board on 5292 without running the checks"
         echo "  --demo-deploy   Publish the built board to Cloudflare Pages (what CI runs on main)"
         echo "  --playbooks     Consumer playbooks only"

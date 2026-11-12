@@ -101,8 +101,8 @@ A push to `main` publishes the board once every job is green. The `demo` job bui
 request stops at the artifact.
 
 `CF_PAGES_DEPLOY` (Cloudflare Pages, Edit) and `CF_ACCOUNT_ID` come from the secrets the organisation keeps, and a
-missing one fails the job rather than publishing to a guessed account. The job also runs `--demo-install`, because the
-upload bundles the Pages Functions, and their import of the frame resolves through the application's `node_modules`.
+missing one fails the job rather than publishing to a guessed account. What is uploaded is the artifact and nothing else:
+the deployment is static files, with no Pages Function beside them.
 
 `public/_redirects` sends a request that names no file to the page, because `/chain`, `/map`, and `/esg` are readings and
 not files. `public/_headers` denies camera, microphone, location, and the other device APIs, so the page asks a browser
