@@ -45,7 +45,7 @@ export const brand: Brand = {
     'This viewer is not related to the infrastructure as an independent demonstration, showcasing what can be built on top of the neXus data model.',
     'Rendered by Skene, a default in-house modular interface library for the data model, reading directly from the reference storage.',
     'Signal and command transport is not this layer: the io seam belongs to chton, and a transport is a consumer of it.',
-    'A row of an existing database can become a fact. The mapping is for the consumer to write, and a converter over this contract performs it.',
+    'Any existing database row can be mapped to a fact. We provide the base conversion tool, while the consumer defines the specific schema and mapping rules.',
     'All displayed records are synthetic mock data for demonstration purposes.',
   ],
   // What the screen is made of, bottom up: the reference storage that wrote the records, and the frame that draws them.
