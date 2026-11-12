@@ -37,12 +37,15 @@ export const brand: Brand = {
   // The deployment's vocabulary, which a project inherits when it declares none. The ESG project declares the same three
   // words, and the projects taken from another board declare none, so they are read in these.
   words: { fact: 'evidence', intent: 'calculation', hint: 'requirement' },
-  // What a reader is looking at, in the order that answers it: the infrastructure, this view's relation to it, and the
-  // data. The stack below names Skene, so these lines say what it is rather than naming it twice.
+  // What a reader is looking at, in the order that answers it: the infrastructure, this view's relation to it, the two
+  // questions a reader asks next (how the bytes move, and what becomes of the data already held), and the data. The stack
+  // below names Skene, so these lines say what it is rather than naming it twice.
   about: [
     'neXus is the underlying state-space fabric: a deterministic record format and identity space for heterogeneous systems.',
     'This viewer is not related to the infrastructure as an independent demonstration, showcasing what can be built on top of the neXus data model.',
     'Rendered by Skene, a default in-house modular interface library for the data model, reading directly from the reference storage.',
+    'Signal and command transport is not this layer: the io seam belongs to chton, and a transport is a consumer of it.',
+    'A row of an existing database can become a fact. The mapping is for the consumer to write, and a converter over this contract performs it.',
     'All displayed records are synthetic mock data for demonstration purposes.',
   ],
   // What the screen is made of, bottom up: the reference storage that wrote the records, and the frame that draws them.
