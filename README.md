@@ -181,6 +181,16 @@ GitHub Actions runs the same flows [`run.sh`](run.sh) runs locally, one job each
 
 [`scripts/run-core.sh`](scripts/run-core.sh) takes `--check`, `--clippy`, and `--test` for a focused local run.
 
+## Roadmap
+
+Two questions follow from storage in a real deployment: where the bytes move, and what becomes of the data already held. Neither is answered here alone, and both have a place already.
+
+- Transport, signal and command traffic both, is a consumer of the io seam, and the seam belongs to [`chton`](https://github.com/ssccsorg/chton). This repository carries a reference wire over a Unix socket, not a transport for a field bus or a network.
+- A host database engine is attached rather than replaced: [`nex-ext`](https://github.com/ssccsorg/nex-ext) is the adapter for that.
+- A foreign schema is carried in by a converter on top of the same contract. The mapping from a schema to the axis space is declared rather than inferred, because the decisions that matter (which column is the identity, how an update becomes a record, what "current" means) are the consumer's.
+
+The reference node is read-only, so a write path, storage tiers, and a seal are layers a product adds rather than work outstanding here.
+
 ## Documentation
 
 - **Whitepaper**: <https://docs.ssccs.org/projects/nexus/whitepaper> — the model, coordinate identity, storage tiers, runtime architecture, and verified behavior.

@@ -93,10 +93,18 @@ The records and the read path do not change with any of this.
 | Multi-axis read | a listing and a prefix filter | a range over several coordinate positions, answered from the keys alone |
 | Medium | a host directory | a log a part can take, with segments, an index on the medium, and recovery from a power cut |
 | Target | a host program | a host and a no_std target under a stated memory budget |
+| Transport | a client of the hub's socket, when one is named | a transport for the consumer's bus or network |
+| An existing database | none; the volumes are committed fixtures | an adapter that attaches a host engine, and a converter from a foreign schema with a declared mapping |
 | Search and seal | none | text and semantic search, and a key held in a secure element |
 
 The seam an external claim system attaches at is `docs/integration-seam.md`, a mapping rather than an integration. No
 number in this crate is a performance claim.
+
+Transport is not this crate's either. The io seam the records sit on belongs to
+[`chton`](https://github.com/ssccsorg/chton), and what a transport does over it is a consumer's. A foreign schema arrives
+through a converter over the same contract, and the mapping from that schema to the axes is declared rather than inferred:
+which column is the identity, how an update becomes a record, and what "current" means are the consumer's decisions, and
+the converter carries them out.
 
 ## Layout
 
