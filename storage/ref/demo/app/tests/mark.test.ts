@@ -3,7 +3,8 @@
 // The frame draws `mark.path` in a `mark.viewBox` and `Mark` in the bar. The two are one drawing, so they are held equal
 // here: a mark edited in one place and not the other is a tab and a bar showing two logos.
 //
-// The words on the bar and the card are this deployment's to change, so nothing here reads them.
+// The words on the bar and the card are this deployment's to change, so nothing here reads them. What the frame
+// prints from them is not copy: the version is a release tag, and its format is what a reader and a tool both rely on.
 
 import { expect, test } from 'vitest';
 
@@ -15,6 +16,10 @@ test('the mark is a path in a view box', () => {
     /^[MmLlHhVvCcSsQqTtAaZz0-9.,\-\s]+$/,
   );
   expect(MARK_VIEWBOX, 'the box is a positive square').toBeGreaterThan(0);
+});
+
+test('the version is a release tag', () => {
+  expect(brand.version).toMatch(/^v\d+\.\d+\.\d+$/);
 });
 
 test('the stack links each layer to its repository', () => {
