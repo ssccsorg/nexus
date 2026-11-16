@@ -12,11 +12,11 @@
 | Knows | IPC protocol, process management, device control, OTA | FIH semantics, coordinate indexing, storage I/O |
 | Does not know | FIH internal structure, coordinate index layout, storage backend details | Runtime environment, process model, network topology |
 | Communication | Unix socket JSON-RPC (wire protocol only) | Internal API consumed by apps via the `nex` crate |
-| Deployment | Native daemon (macOS, Linux), embedded (Rem) | Library crate, standalone server binary (future) |
+| Deployment | Native daemon (macOS, Linux), embedded (Rem) | Library crate, server binary |
 
-## Current Status (Phase 1 MVP)
+## Status
 
-> **Note**: Phase 1 embeds `nex` as a Rust crate at compile time (`nex::create_blackboard()`). This is a pragmatic shortcut. The target architecture separates `nex` as an independent process — see Roadmap.
+`nexd` links `nex` as a Rust crate and calls `nex::create_blackboard()`.
 
 ### What works
 
@@ -56,7 +56,7 @@ Line-delimited JSON-RPC over Unix domain socket (`/tmp/nexd.sock` by default).
 |  +-------+-------+  +----+-----+  +------+-------+  |
 |          │               │               │          |
 |  +-------+---------------+-------------+ |          |
-|  |    HybridBlackboard (Phase 1: embedded) |        |
+|  |    HybridBlackboard (embedded)          |        |
 |  |    nex::create_blackboard()           |          |
 |  +--------------------------------------+          |
 |  +------------------------------------------------+ |
@@ -76,61 +76,9 @@ echo '{"id":1,"method":"write_fact","params":{"origin":"test","content":"hello",
   socat - UNIX-CONNECT:/tmp/nexd.sock
 ```
 
-## Roadmap
-
-### Phase 2: nex as independent blackboard server (tracked in #138)
-
-Extract `nex` from embedded crate to standalone process:
-
-```
-nexd (daemon)                              nex (standalone server)
-  ├── process manager (spawn nex)               └── FIH blackboard
-  ├── IPC router (socket ─► nex)                └── storage layer
-  ├── no nex crate dependency                    └── Unix socket server
-  └── knows only wire protocol
-```
-
-- `nexd` loses `nex` crate dependency. All FIH knowledge removed from nexd source.
-- `nex` becomes a standalone binary with its own Unix socket.
-- `nexd` spawns and manages the `nex` process.
-- Wire protocol becomes the **contract** between the two layers.
-
-### Phase 3: proc-daemon → built-in daemon runtime ✅
-
-Full copy of proc-daemon (8,001 lines, 14 files, 5 upstream tests) embedded as `nexd::daemon`. External `proc-daemon` crate replaced with built-in module. Rendered branch obsolete (`137-proc-daemon-replace`).
-
-**Remaining (post-embedding):**
-- Strip unnecessary modules (memory pools, metrics, profiling).
-- Remove ~70 transitive dependencies inherited from original.
-- Iteratively refactor toward nexd-optimized minimal daemon runtime.
-- Target: sub-5MB static binary for embedded deployment.
-
-### Phase 4: Embedded / Rem support
-
-- USB Gadget Mode (Mass Storage + CDC ACM).
-- OTA update mechanism.
-- Power management (battery, USB suspend).
-- P2P network sync between Rem devices.
-
-### Phase 5: nexd as orchestration hub
-
-- Manage multiple `nex` instances (sharding, replication).
-- Route IPC between remote daemons (multi-node FIH sync).
-- Health dashboard and metrics.
-
-## Issue Map
-
-| Issue | Title | Status |
-|-------|-------|--------|
-| #135 | nexd Phase 1 MVP | ✅ Merged |
-| #138 | nex as isolated server, nexd as pure OS | 🔲 Epic (next) |
-| #137 | proc-daemon → built-in rt.rs | 🔲 Superseded by #140 |
-| #140 | proc-daemon full embedding | ✅ Merged |
-| #139 | FIH coordinate system formalization | 🔲 Epic (nex side) |
-
 ## Dependencies
 
-- [nex](https://crates.io/crates/nex) — FIH blackboard engine (to be extracted in Phase 2)
+- [nex](https://crates.io/crates/nex) — FIH blackboard engine
 - [nexus-model](https://crates.io/crates/nexus-model) — FIH primitives
 - Tokio — async runtime
 - Daemon framework is built-in (`nexd::daemon`, derived from [proc-daemon](https://github.com/jamesgober/proc-daemon))

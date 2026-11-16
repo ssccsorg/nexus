@@ -181,7 +181,7 @@ GitHub Actions runs the same flows [`run.sh`](run.sh) runs locally, one job each
 
 [`scripts/run-core.sh`](scripts/run-core.sh) takes `--check`, `--clippy`, and `--test` for a focused local run.
 
-## Roadmap
+## Scope and adjacent projects
 
 Two questions follow from storage in a real deployment: where the bytes move, and what becomes of the data already held. Neither is answered here alone, and both have a place already.
 

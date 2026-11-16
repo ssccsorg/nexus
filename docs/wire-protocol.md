@@ -2,7 +2,7 @@
 
 The nexd daemon and the nex-server blackboard process communicate over
 Unix domain sockets using line-delimited JSON-RPC 2.0. This document is
-the contract for that surface (issue #138, Phase 2a).
+the contract for that surface.
 
 ## Transport
 
