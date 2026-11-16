@@ -22,7 +22,7 @@ Status: pre-1.0 (0.1.0), Apache-2.0, not published to crates.io. Pin by git revi
 | value, `CoordId<20>` | 40 bytes | every in-process structure: indexes, maps, comparisons |
 | canonical text | 60 bytes | a storage key, a file name, a wire field, a log line |
 
-Both spellings are sixty UTF-8 bytes, so a volume's keys, segments, and indexes are the same size either way. The rule and its measurement are in [the address is a value and the text is a boundary](docs/2026-11-06-the-address-is-a-value-and-the-text-is-a-boundary.md).
+Both spellings are sixty UTF-8 bytes, so a volume's keys, segments, and indexes are the same size either way. The rule and its measurement are kept with the product.
 
 The full model, coordinate identity, storage tiers, runtime architecture, and measured behavior are specified in the [whitepaper](https://docs.ssccs.org/projects/nexus/whitepaper).
 
@@ -196,7 +196,7 @@ The reference node is read-only, so a write path, storage tiers, and a seal are 
 - **Whitepaper**: <https://docs.ssccs.org/projects/nexus/whitepaper> — the model, coordinate identity, storage tiers, runtime architecture, and verified behavior.
 - Development guide: <https://docs.ssccs.org/projects/nexus/development>
 - Project documentation: <https://docs.ssccs.org/projects/nexus/>
-- Design records: [`docs/`](docs), including the cold query direction, the wire protocol, and [the boundary between an address and its text](docs/2026-11-06-the-address-is-a-value-and-the-text-is-a-boundary.md). The storage implementation's own design, measurement, and rejected alternatives are kept with the product rather than published here.
+- Design records: [`docs/`](docs) holds the [wire protocol](docs/wire-protocol.md). The design reasoning, measurement, and rejected alternatives are kept with the product rather than published here.
 
 ## Contributing
 
