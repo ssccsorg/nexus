@@ -48,7 +48,7 @@ the wire, the router, the hub, and the process layer.
 
 `storage/ref` demonstrates the storage contract at its simplest. It reads a key, lists a prefix, answers a box, and checks a record by recomputing its address. A box is answered by listing the keys and comparing their coordinates, so its cost is one pass over the key space.
 
-The board at [rf-storage-demo.nexus.ssccs.org](https://rf-storage-demo.nexus.ssccs.org) draws those reads over committed volumes, read-only.
+The board in `storage/ref/demo` draws those reads over committed volumes, read-only.
 
 The contract states what a reader receives. What a node holds, how it finds it, and what it costs to find are the node's own decisions. The table is the whole of the distinction this repository draws.
 

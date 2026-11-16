@@ -2,7 +2,7 @@
 
 A board over the reference crate's own reads: one point read, one verification, one ESG reporting quarter read as a
 chain, and two projects taken from another board. Drawn by the `skene` frame, from the volumes committed here, and
-served read-only at [rf-storage-demo.nexus.ssccs.org](https://rf-storage-demo.nexus.ssccs.org).
+served read-only.
 
 Everything on it is synthetic. No real company, meter, or filing, and no line on it is a compliance determination.
 
@@ -18,8 +18,7 @@ From the repository root, with a Rust toolchain and Node 20 or newer:
 ```
 
 `storage/ref/demo/app/run.sh` performs the first one on a POSIX shell, and `--fresh` makes it reinstall from the lock
-file, which is how a frame that changed under the copy npm made of it is healed. `npm --prefix storage/ref/demo/app run
-demo` is the same run without a shell, which is the form Windows uses.
+file. `npm --prefix storage/ref/demo/app run demo` is the same run without a shell, which is the form Windows uses.
 
 With nothing installed on the host:
 
@@ -47,28 +46,14 @@ The image serves the committed board. It carries no Rust toolchain, no volumes, 
 | `villa` | a rescue, from another board |
 | `spiderwing` | a patrol and the forty-seven seconds it cannot account for |
 
-The last two are not volumes. They are copied from `shared/`, which keeps them as a board of their own so the copy is a
-copy between equals, and `app/tools/sync-project.mjs` moves a project in either direction, leaving what the destination
-already holds alone unless `--replace` names the side that wins. They share no subject with the ESG quarter, and that is
-the point: the same records and the same frame carry another domain without a change on either side.
+The last two are copies of `shared/`, and `app/tools/sync-project.mjs` moves a project in either direction between two
+boards. `app/tools/import-volume.mjs` is the only path between the volumes and the screen: it runs `keys`, `box`,
+`read`, `verify`, `show`, `sidecar`, and `self-check`, and writes `app/projects.json` and one run from what the tool
+printed. Every number on the board is the tool's output.
 
-`app/tools/import-volume.mjs` is the only path between the volumes and the screen. It runs `keys`, `box`, `read`,
-`verify`, `show`, `sidecar`, and `self-check`, and writes `app/projects.json` and one run from what the tool printed. The
-board is therefore the tool's output, and no number on it is the screen's own.
-
-## What the screen shows
-
-- The left rail is the run that produced the board: the tool's checks and what each answered.
-- The chain reads left to right as a measurement, the calculation it fed, the result that calculation concluded, and the
-  requirement that bounds it. A record nothing read is drawn and dimmed, because an inventory that no calculation picked
-  up is a finding rather than an omission.
-- The lists use the project's words for the three kinds: evidence, calculation, and requirement. Those are this board's
-  words, not a standard's.
-- A press picks a record. The panel says what it holds, what it cites, what cites it, and the one field a branch may edit.
-- `take the branch` reads the chain against edited text and leaves the volume alone. A reload removes it, because it was
-  never written.
-- The map draws the site the readings come from, from the place the project declares. A pin is a declared position and
-  not a device reading, so nothing here is signed by hardware.
+The board reads as a run down the left, a chain across the middle, the picked record's panel beside it, and a map of
+the site. A press picks a record; `take the branch` reads the chain against edited text and leaves the volume alone, so
+a reload removes it. The words for the three kinds are the project's, not a standard's.
 
 ## Regenerating it
 
@@ -84,35 +69,11 @@ storage/ref/demo/app/run.sh
 
 `app/README.md` covers the importer on its own, which writes the board without starting a server.
 
-The gate runs the same writer against a temporary volume and fails when the committed bytes differ:
-
-```bash
-cargo test -p nexus-storage-ref --test esg_scenario
-```
-
 A change to the site, a reading, or a requirement text goes in `esg.scenario.json`. The words the board uses for the
-three kinds are the `words` a project declares in `app/tools/import-volume.mjs`. Those two files are where a review
-starts. `app/projects.json` and `app/scenario/` are generated, so an edit there is undone by the next import.
-
-## Deploying it
-
-A push to `main` publishes the board once every job is green. The `demo` job builds it and uploads the artifact, and the
-`deploy` job publishes that artifact, so the address serves the bytes the suite passed rather than a second build. A pull
-request stops at the artifact.
-
-`CF_PAGES_DEPLOY` (Cloudflare Pages, Edit) and `CF_ACCOUNT_ID` come from the secrets the organisation keeps, and a
-missing one fails the job rather than publishing to a guessed account. What is uploaded is the artifact and nothing else:
-the deployment is static files, with no Pages Function beside them.
-
-`public/_redirects` sends a request that names no file to the page, because `/chain`, `/map`, and `/esg` are readings and
-not files. `public/_headers` denies camera, microphone, location, and the other device APIs, so the page asks a browser
-for nothing.
+three kinds are the `words` a project declares in `app/tools/import-volume.mjs`. `app/projects.json` and `app/scenario/`
+are generated, so an edit there is undone by the next import.
 
 ## What it does not show
 
-- A write path. Both volumes are committed, and a branch lives in the page.
-- Performance. Nothing on the screen is a timing.
-- A regulatory determination. It shows the evidence a chain carries, not whether a filing satisfies a regulation.
-
-If the dev server refuses port 5292, another process holds it; the port is strict and the tests do not expect it to
-move. If the board is empty, run the import `app/README.md` describes.
+A write path, a timing, or a regulatory determination. Both volumes are committed, nothing on the screen is a
+measurement of speed, and it shows the evidence a chain carries rather than whether a filing satisfies a regulation.

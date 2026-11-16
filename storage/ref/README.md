@@ -1,33 +1,7 @@
 # nexus-storage-ref
 
-The reference implementation of the neXus storage contract's read half.
-
-A running instance is at [rf-storage-demo.nexus.ssccs.org](https://rf-storage-demo.nexus.ssccs.org): a read-only board
-over the volumes committed here, drawn by the `skene` frame. The board is one rendering of the records, because neXus
-defines the record, the coordinate, and the read surface, and no screen.
-
-neXus is a state fabric whose unit is a transition: a fact, an intent, and a hint compose into a new fact,
-`F x I x H -> F'`. A coordinate addresses the fact, a record keeps it, and the transition is itself recorded, so the
-record is the state. This crate answers what a committed volume holds. It has no write path.
-
-## What it provides
-
-- An address is a key, and it resolves by a rule rather than by a lookup.
-- A point read is one read of the medium, and it reads nothing else.
-- A record's address follows from what it holds, so verification is recomputation.
-- A listing is the only scan. A question over several axes is answered from it and reads no record.
-- A volume sits beside an existing application file and leaves that file alone.
-
-## Records
-
-| Record | What it is |
-|---|---|
-| Fact | an immutable observation, addressed by its coordinate |
-| Intent | a stateful exploration with a lifecycle |
-| Hint | a read-only signal that bounds the work |
-
-The same three records carry a calculation, a process, or an agent's accumulation of knowledge. The write path, the
-intent lifecycle, and the wire are other consumers of them, and this crate depends on none of them.
+The reference implementation of the neXus storage contract's read half. It opens a committed volume and answers what
+the volume holds. There is no write path. The board over the volumes is under `demo/`.
 
 ## Quick start
 
@@ -45,7 +19,15 @@ The board, from a checkout with Rust and Node:
 ./run.sh --demo-serve    # serve the committed board, no check
 ```
 
-`demo/README.md` covers what the board shows, and a container that needs nothing installed on the host.
+`demo/README.md` covers the board, the container, and the deployment.
+
+## Records
+
+| Record | What it is |
+|---|---|
+| Fact | an immutable observation, addressed by its coordinate |
+| Intent | a stateful exploration with a lifecycle |
+| Hint | a read-only signal that bounds the work |
 
 ## Commands
 
@@ -83,29 +65,6 @@ from `demo/esg.scenario.json`.
 A read never creates the directory it reads. `keys` answers 0 or 1 only, so a script that needs to know whether a prefix
 found anything reads the count it prints.
 
-## What a product adds
-
-The records and the read path do not change with any of this.
-
-| Area | Here | A product on the same contract |
-|---|---|---|
-| Write | none; the volumes are fixtures | records written at an assigned or a content address, with a conflict and idempotence rule |
-| Multi-axis read | a listing and a prefix filter | a range over several coordinate positions, answered from the keys alone |
-| Medium | a host directory | a log a part can take, with segments, an index on the medium, and recovery from a power cut |
-| Target | a host program | a host and a no_std target under a stated memory budget |
-| Transport | a client of the hub's socket, when one is named | a transport for the consumer's bus or network |
-| An existing database | none; the volumes are committed fixtures | an adapter that attaches a host engine, and a converter from a foreign schema with a declared mapping |
-| Search and seal | none | text and semantic search, and a key held in a secure element |
-
-The seam an external claim system attaches at is `docs/integration-seam.md`, a mapping rather than an integration. No
-number in this crate is a performance claim.
-
-Transport is not this crate's either. The io seam the records sit on belongs to
-[`chton`](https://github.com/ssccsorg/chton), and what a transport does over it is a consumer's. A foreign schema arrives
-through a converter over the same contract, and the mapping from that schema to the axes is declared rather than inferred:
-which column is the identity, how an update becomes a record, and what "current" means are the consumer's decisions, and
-the converter carries them out.
-
 ## Layout
 
 | Path | What it is |
@@ -114,6 +73,8 @@ the converter carries them out.
 | `tests/` | the contract, each case running the built binary |
 | `demo/` | the volumes, the scenario they are written from, and the board over them |
 | `docs/integration-seam.md` | where an external claim system attaches |
+
+No number in this crate is a performance claim.
 
 ## License
 

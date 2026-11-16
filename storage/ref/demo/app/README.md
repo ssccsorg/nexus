@@ -3,36 +3,14 @@
 The storage reference, drawn on the shared frame. One board, one run per volume, and every number on the screen came
 from `nexus-storage-ref`.
 
-The application is a Vite deployment of `@ssccsorg/skene-frame`. It draws nothing of the frame: it supplies a brand, a
-host, a board, and one pack, and the frame supplies the address, the record model, the panels, and the router. The host
-says the board and its runs are the files this bundle shipped with, so the frame asks no room and follows no feed.
-
-It lives inside the crate it demonstrates, beside the volume it reads, because it is the reference's own demonstration
-rather than one more application on the shelf.
-
-## What it shows
-
-`nexus-storage-ref` makes its claims, and each one has a place on the board.
-
-| Claim | Where it is drawn |
-|---|---|
-| a point read is one read of the medium | a fact for the record the `read` verb reached, with the byte count it printed |
-| a record's address follows from what it holds | a hint for the address the `verify` verb recomputed, with the fields it used |
-| a listing is the only scan, so a box is answered from it | a hint in the run's own records, for the axes the box narrowed and the records it admitted |
-| a volume sits beside an application file and leaves it alone | a hint for the size the `sidecar` verb measured |
-| a record can be read whole | the `esg` reading lists one row per record the `show` verb printed |
-| a chain is the links its records carry | the `chain` reading draws the facts, the intents and the hints as one network |
-| a press is one pick | a record pressed in the chain or the list opens in the `evidence` panel, and a machine pressed on the map focuses its records |
-| a declaration can be branched | the panel's field takes a branch, and the chain draws what rests on it |
-
-The board's own clock is the tool's order, and each run's `count` steps are the parser's arithmetic over the file's own
-facts. A run edited by hand has to keep its header and its counts in step or the tests fail.
+The application is a Vite deployment of `@ssccsorg/skene-frame`. It supplies a brand, a host, a board, and one pack;
+the frame supplies the address, the record model, the panels, and the router. The host says the board and its runs are
+the files this bundle shipped with, so the frame asks no room and follows no feed.
 
 ## Running it
 
-The prerequisites, the step by step first run, and the troubleshooting table live in `../README.md`, which is the
-demonstration's entry point. `./run.sh` here, or `npm run demo` in `../README.md`, performs the whole first run in one
-step. The scripts this application offers:
+The prerequisites, the first run, and the troubleshooting table live in `../README.md`, which is the demonstration's
+entry point. `./run.sh` here, or `npm run demo`, performs the whole first run in one step.
 
 | Script | What it does |
 |---|---|
@@ -45,12 +23,10 @@ step. The scripts this application offers:
 | `npm test` | the board, the brand, and the importer |
 | `npm run typecheck` | `tsc --noEmit` alone |
 
-`npm run import` runs `keys`, `box`, `read`, `verify`, `show`, `sidecar`, and `self-check` against the volume and
-writes `projects.json` and `scenario/<id>.txt`. Every verb prints the address in the identity's own base-36 text, so the
-board and the run carry that form and nothing outside ASCII. It counts nothing and evaluates nothing: a second model of
-the store would be a model free to disagree with the store. A path given to `--volume` is read relative to the repository
-root, so the command works from this directory and the board stays machine independent. `--reading` names the reading a
-project opens on, which is `esg` unless a volume is better read as a chain.
+`npm run import` runs `keys`, `box`, `read`, `verify`, `show`, `sidecar`, and `self-check` against the volume and writes
+`projects.json` and `scenario/<id>.txt`. A path given to `--volume` is read relative to the repository root, so the
+command works from this directory and the board stays machine independent. `--reading` names the reading a project
+opens on, which is `esg` unless a volume is better read as a chain.
 
 Without a built binary the importer reports what it could not run. `NEX_REF_BIN` names one elsewhere.
 
@@ -83,48 +59,3 @@ npm run build   # typecheck, then a production bundle carrying the board
 The end-to-end case in `tests/import.test.ts` runs the importer against both committed volumes and compares the bytes
 with the ones committed. It is skipped when no `nexus-storage-ref` binary is present, and it says so rather than passing
 on nothing.
-
-## The boundary
-
-A record list is the storage layer's own shape, so it arrives as a pack. Nothing in this application names a commercial
-product, and the frame learns no storage vocabulary: a record, an address, and an exit code are the demo's, and each one
-is a resource, a reading, or a run line.
-
-The page asks the browser for no device. `public/_headers` denies camera, microphone, location, notifications, the
-clipboard, and the serial, USB, HID, and MIDI surfaces, so a feature added later that reaches for one is refused by the
-deployment rather than prompted for. Fullscreen and autoplay stay allowed, because the frame's own controls use them.
-
-The board is three columns, a split, and a map, and every one of them is sized for a window. `src/narrow.tsx` says so at
-the foot of a page narrower than the desktop breakpoint, rather than letting a reader take a cramped screen for a broken
-one.
-
-A record's kind is a term of the format, so its mark is the frame's: `KindTag` draws one colour and one letter, and this
-application imports it rather than choosing either. The word beside the mark is the application's own reading of the
-chain, because what a record does in a chain is a question about these records and not about the format: an intent
-concluded a fact, so that fact is a result rather than an observation. The two sit side by side because they answer
-different questions, and the word is derived from the links the records carry rather than from a list kept here.
-
-A map is the frame's reading of two resources, and both are declared here because both are about this project rather
-than about the volume: `kinds` says which participant kinds present a location, and `place` says where the ground is and
-where each member stands on it. The records on the map are still the tool's; the importer writes the declaration beside
-them and the frame draws it.
-
-The deployment installs the three packages another board on this frame installs. Two are readings: the map, which is a
-pane of the space, and the shell, which is the seat the map paints its region for. One is a kind rather than a reading:
-footage, which a member row draws when the member declares a camera. A package that is not imported is a surface the
-board does not offer, and the rule runs the other way for readings too: a project names the readings it stands and the
-one it opens on, and a reading whose host surface is absent is not offered it. A project that declares no place is offered
-no map, a project that declares no camera stands no footage row, and a project that does not bring this board's pack is
-offered neither the chain nor the records table. That is why the board holds four projects rather than one.
-
-The evidence panel is held by the same rule rather than by a check of its own. It reads the links a record carries, so it
-is a surface of a project that holds a chain, and it says so with the frame's capability seam: the panel declares
-`needs: 'evidence'` and the importer writes that capability for a volume that holds work as well as readings. The
-`sample-volume` project holds one observation, declares nothing, and stands no panel, which is why a surface this demo
-offers is not a surface every project in the board has.
-
-The chain is this pack's reading and not a graph of the run. A graph of a run is a claim about a run, and it draws the
-participants and the work passed between them, which is the shape a run of many machines has. What an audit reads is the
-records and the links they carry, and those are this volume's terms, so the reading lives here beside the records it
-draws. The layer is the same one the map's `kinds` and `place` sit on: the frame supplies the surface and the
-mark, and the deployment supplies what is true of its own project.
