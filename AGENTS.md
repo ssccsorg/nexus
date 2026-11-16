@@ -18,6 +18,8 @@
 
 ## Documentation Guidelines
 
+- Write for the reader the document is for, not as a report back to the team: no account of what was received, attempted, or is planned next, and no confession of process. State the subject, what it does, what it does not cover, and the evidence.
+
 - Don't put emojis.
 - When a sentence would contain `.ss`, rewrite to use the full technical term appropriate to the context.
 - Avoid sequential enumerations like “Week 1, Week 2”. Use numbered experiments, phases, or milestones instead.
