@@ -17,7 +17,7 @@ SYNC_ROOT="${1:-/tmp/ssccs}"
 
 echo "=== Syncing artifacts from R2 ==="
 aws s3 sync "s3://ssccs-nexus-af/ssccs" "$SYNC_ROOT" \
-    --endpoint-url "${CFR2_USR_API_HOST:-https://fda2afbec0a19b01c76d98e81f45be41.r2.cloudflarestorage.com}" \
+    --endpoint-url "${CFR2_USR_API_HOST:?CFR2_USR_API_HOST is required}" \
     --delete
 
 echo "=== Running transforms ==="
