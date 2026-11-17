@@ -1,4 +1,4 @@
-// ── Phase 2 (#166): search.json scenario over the materialized CoordMap ──
+// ── search.json scenario over the materialized CoordMap ──
 //
 // Documents are indexed into a coordinate space (each axis is a
 // vocabulary term, the coordinate is the term count), and a CoordCubeMap

@@ -1,9 +1,7 @@
 // ── Ordered index and set intersection utils ───────────────────────────
 //
-// These are the remaining index utilities after FihCoord removal (Phase 3)
-// and after the Cell2 interior-mutability primitive moved to chton (the
-// behavior layer). OrderedIndex is an append-only key→u32 index kept for
-// backward compat; intersect_2/intersect_3 are standalone set-intersection
+// OrderedIndex is an append-only key-to-u32 index, kept for the callers that
+// use it. intersect_2 and intersect_3 are standalone set-intersection
 // helpers.
 
 use alloc::vec::Vec;
