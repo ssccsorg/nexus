@@ -65,6 +65,15 @@ digraph DOTGraph {
 
 - When code DOT, do not use `graph` for node or class name.
 
+## What this tree publishes
+
+The contract, the surface a consumer composes against (`nex-api`'s router and `nex/process`'s
+tasks), the deliberately naive reference node, and the harnesses that make the published claims
+checkable. A tuned read path, a durable medium, a channel with recovery, and a measurement tier
+belong to an implementation and stay out of this tree: `storage/ref` answers by listing keys and
+comparing coordinates, and a node that prunes, caches, or bounds a read is a different
+implementation.
+
 ## Git
 
 - Do commit only: do not push to remote.
