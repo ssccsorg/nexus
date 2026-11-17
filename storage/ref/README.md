@@ -3,6 +3,9 @@
 The reference implementation of the neXus storage contract's read half. It opens a committed volume and answers what
 the volume holds. There is no write path. The board over the volumes is under `demo/`.
 
+This node answers by listing keys and comparing coordinates. It is the reference: a node that prunes, caches, or
+bounds a read is a different implementation and does not belong here.
+
 ## Quick start
 
 From the repository root:
