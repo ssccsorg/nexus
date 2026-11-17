@@ -67,12 +67,8 @@ digraph DOTGraph {
 
 ## What this tree publishes
 
-The contract, the surface a consumer composes against (`nex-api`'s router and `nex/process`'s
-tasks), the deliberately naive reference node, and the harnesses that make the published claims
-checkable. A tuned read path, a durable medium, a channel with recovery, and a measurement tier
-belong to an implementation and stay out of this tree: `storage/ref` answers by listing keys and
-comparing coordinates, and a node that prunes, caches, or bounds a read is a different
-implementation.
+Contract, composition surface (`nex-api`, `nex/process`), naive reference node, and the harnesses
+that check the claims. A tuned read, a medium, and a channel belong to an implementation.
 
 ## Git
 
