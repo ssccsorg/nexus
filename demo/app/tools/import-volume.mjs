@@ -398,7 +398,8 @@ export function scenarioOf(measured) {
     push('');
   }
 
-  return `${lines.join('\n')}\n`;
+  // A run ends with one newline: the blank line that separates scenes is not a line the last scene needs.
+  return `${lines.join('\n').replace(/\n+$/, '')}\n`;
 }
 
 /**
