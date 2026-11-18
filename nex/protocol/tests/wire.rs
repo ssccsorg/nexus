@@ -1,7 +1,7 @@
 // The wire round-trips, and a malformed frame is refused rather than guessed at.
 
 use nex_protocol::{
-    decode_request, decode_response, encode_request, encode_response, RpcRequest, RpcResponse,
+    RpcRequest, RpcResponse, decode_request, decode_response, encode_request, encode_response,
 };
 use serde_json::json;
 
@@ -36,6 +36,9 @@ fn a_response_carries_a_result_or_an_error_and_not_both() {
 
 #[test]
 fn a_frame_that_is_not_a_request_is_refused() {
-    assert!(decode_request(b"{\"id\":1}").is_err(), "a method is required");
+    assert!(
+        decode_request(b"{\"id\":1}").is_err(),
+        "a method is required"
+    );
     assert!(decode_request(b"not json").is_err());
 }

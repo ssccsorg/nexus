@@ -1,0 +1,456 @@
+// Integration tests for export/import bundle functionality.
+//
+// These tests verify the full FIH bundle export and import cycle:
+// encoding, decoding, corrupt/malformed input detection, version
+// handling, and end-to-end round trips with various storage backends.
+
+use nex_fih::CoordId;
+use nex_fih::FihId20 as _;
+use nex_io::SimIo;
+use nex_io::{BlockingIo, FileIo, SyncFileIo, WriteOp};
+use nex_refstorage::RecordTimeUnit;
+use nex_refstorage::{
+    ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus, export_from_io, import_into_io,
+};
+
+// ── Helper: seed a SimIo with sample records ─────────────────────────────
+
+/// The id the record layer keys a record by, derived from a label so the source stays readable.
+///
+/// A record's id is a canonical `CoordId` since the migration in #176, and a fixture that seeds
+/// a volume has to write one: the record maps are keyed by it, and `place_record` refuses a key
+/// that is not one.
+fn id_of(tag: &str) -> String {
+    CoordId::from_label(tag).to_string()
+}
+
+fn seeded_io() -> SimIo {
+    let io = SimIo::new();
+    let sync = SyncFileIo::new(io.clone());
+
+    let fact = FactRecord {
+        id: id_of("f001"),
+        blob_hash: "deadbeef".into(),
+        origin: "test".into(),
+        creator: "alice".into(),
+        submitted_at: 1000,
+    };
+    sync.write(&fact.key(), &postcard::to_allocvec(&fact).unwrap())
+        .unwrap();
+
+    let intent = IntentRecord {
+        id: id_of("i001"),
+        from_facts: vec![id_of("f001")],
+        description_hash: String::new(),
+        creator: "bob".into(),
+        status: IntentStatus::Submitted,
+        created_at: 1001,
+        time_unit: RecordTimeUnit::Nanos,
+    };
+    sync.write(&intent.key(), &postcard::to_allocvec(&intent).unwrap())
+        .unwrap();
+
+    let hint = HintRecord {
+        id: id_of("h001"),
+        content: "test hint".into(),
+        creator: "tester".into(),
+        submitted_at: 1002,
+        ttl_secs: None,
+        time_unit: RecordTimeUnit::Nanos,
+    };
+    sync.write(&hint.key(), &postcard::to_allocvec(&hint).unwrap())
+        .unwrap();
+
+    sync.write("blob/deadbeef.bin", b"hello world").unwrap();
+    let meta = ContentMeta {
+        mime_type: "text/plain".into(),
+        size: 11,
+    };
+    sync.write(
+        "blob/deadbeef.bin.meta",
+        &postcard::to_allocvec(&meta).unwrap(),
+    )
+    .unwrap();
+
+    io
+}
+
+// ── Round-trip test ──────────────────────────────────────────────────────
+
+#[test]
+fn test_export_round_trip() {
+    let io = seeded_io();
+    let sync = SyncFileIo::new(io);
+    let bundle = export_from_io(&sync).unwrap();
+    assert!(!bundle.is_empty());
+
+    let dst = SimIo::new();
+    let dst_sync = SyncFileIo::new(dst);
+    import_into_io(&dst_sync, &bundle).unwrap();
+
+    let fact_id = id_of("f001");
+    let intent_id = id_of("i001");
+    let hint_id = id_of("h001");
+
+    assert!(
+        dst_sync
+            .read(&FactRecord::fact_key(&fact_id))
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        dst_sync
+            .read(&format!("intents/i_{intent_id}.intent"))
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        dst_sync
+            .read(&format!("hints/h_{hint_id}.hint"))
+            .unwrap()
+            .is_some()
+    );
+    assert!(dst_sync.read("blob/deadbeef.bin").unwrap().is_some());
+    assert!(dst_sync.read("blob/deadbeef.bin.meta").unwrap().is_some());
+}
+
+// ── Empty IO test ────────────────────────────────────────────────────────
+
+#[test]
+fn test_export_empty_io() {
+    let io = SimIo::new();
+    let sync = SyncFileIo::new(io);
+    let bundle = export_from_io(&sync).unwrap();
+    let dst = SimIo::new();
+    let dst_sync = SyncFileIo::new(dst);
+    import_into_io(&dst_sync, &bundle).unwrap();
+    assert!(dst_sync.list("facts/").unwrap().is_empty());
+}
+
+// ── Invalid magic rejected ───────────────────────────────────────────────
+
+#[test]
+fn test_invalid_magic_rejected() {
+    let io = SimIo::new();
+    let sync = SyncFileIo::new(io);
+    let result = import_into_io(&sync, b"NOTABUNDL");
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("bad magic"));
+}
+
+// ── Filesystem to Sim round-trip ─────────────────────────────────────────
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_export_import_fs_to_sim() {
+    let dir = std::env::temp_dir().join(format!("fih_export_test_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+
+    let fs_io = nex_io::fs_io::FsIo::new(&dir).unwrap();
+    let sync = SyncFileIo::new(fs_io);
+
+    let fact = FactRecord {
+        id: id_of("f_fs"),
+        blob_hash: "cafe01".into(),
+        origin: "fs_test".into(),
+        creator: "fs_user".into(),
+        submitted_at: 2000,
+    };
+    sync.write(&fact.key(), &postcard::to_allocvec(&fact).unwrap())
+        .unwrap();
+
+    let bundle = export_from_io(&sync).unwrap();
+
+    let sim_io = SimIo::new();
+    let sim_sync = SyncFileIo::new(sim_io);
+    import_into_io(&sim_sync, &bundle).unwrap();
+
+    let loaded: FactRecord =
+        postcard::from_bytes(&sim_sync.read(&fact.key()).unwrap().unwrap()).unwrap();
+    assert_eq!(loaded.id, fact.id);
+    assert_eq!(loaded.blob_hash, "cafe01");
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+// ── Scenario: full FIH lifecycle via export/import ───────────────────────
+
+#[test]
+fn test_export_full_fih_lifecycle() {
+    use nex_refstorage::RefFihStorage;
+
+    // Seed a SimIo directly with records (not through RefFihStorage).
+    let io = SimIo::new();
+    let sync = SyncFileIo::new(io.clone());
+
+    let fa = FactRecord {
+        id: id_of("f_a"),
+        blob_hash: String::new(),
+        origin: "lifecycle".into(),
+        creator: "tester".into(),
+        submitted_at: 100,
+    };
+    sync.write(&fa.key(), &postcard::to_allocvec(&fa).unwrap())
+        .unwrap();
+
+    let fb = FactRecord {
+        id: id_of("f_b"),
+        blob_hash: String::new(),
+        origin: "lifecycle".into(),
+        creator: "tester".into(),
+        submitted_at: 101,
+    };
+    sync.write(&fb.key(), &postcard::to_allocvec(&fb).unwrap())
+        .unwrap();
+
+    let fc = FactRecord {
+        id: id_of("f_c"),
+        blob_hash: String::new(),
+        origin: "lifecycle".into(),
+        creator: "tester".into(),
+        submitted_at: 102,
+    };
+    sync.write(&fc.key(), &postcard::to_allocvec(&fc).unwrap())
+        .unwrap();
+
+    let intent1 = IntentRecord {
+        id: id_of("i_a"),
+        from_facts: vec![id_of("f_a"), id_of("f_b")],
+        description_hash: String::new(),
+        creator: "tester".into(),
+        status: IntentStatus::Submitted,
+        created_at: 200,
+        time_unit: RecordTimeUnit::Nanos,
+    };
+    sync.write(&intent1.key(), &postcard::to_allocvec(&intent1).unwrap())
+        .unwrap();
+
+    let intent2 = IntentRecord {
+        id: id_of("i_b"),
+        from_facts: vec![id_of("f_b"), id_of("f_c")],
+        description_hash: String::new(),
+        creator: "tester".into(),
+        status: IntentStatus::Submitted,
+        created_at: 201,
+        time_unit: RecordTimeUnit::Nanos,
+    };
+    sync.write(&intent2.key(), &postcard::to_allocvec(&intent2).unwrap())
+        .unwrap();
+
+    let hint1 = HintRecord {
+        id: id_of("h_a"),
+        content: "lifecycle hint".into(),
+        creator: "tester".into(),
+        submitted_at: 300,
+        ttl_secs: None,
+        time_unit: RecordTimeUnit::Nanos,
+    };
+    sync.write(&hint1.key(), &postcard::to_allocvec(&hint1).unwrap())
+        .unwrap();
+
+    // Export from the seeded IO.
+    let bundle = export_from_io(&sync).unwrap();
+
+    // Import into a fresh SimIo.
+    let fresh_io = SimIo::new();
+    let fresh_sync = SyncFileIo::new(fresh_io.clone());
+    import_into_io(&fresh_sync, &bundle).unwrap();
+
+    // Rebuild a RefFihStorage on top of the fresh IO and verify.
+    let storage = RefFihStorage::new(fresh_io, "lifecycle");
+    futures_executor::block_on(storage.rebuild_cache()).unwrap();
+
+    let state = futures_executor::block_on(storage.read_state());
+    assert_eq!(state.facts.len(), 3, "should have 3 facts");
+    assert_eq!(state.intents.len(), 2, "should have 2 intents");
+    assert_eq!(state.hints.len(), 1, "should have 1 hint");
+}
+
+// ── Scenario: corrupt bundle rejected ────────────────────────────────────
+
+#[test]
+fn test_export_corrupt_bundle_rejected() {
+    let io = SimIo::new();
+    let sync = SyncFileIo::new(io);
+
+    // Random garbage bytes instead of a valid bundle.
+    let garbage: Vec<u8> = (0..64).map(|i| (i * 17) as u8).collect();
+    let result = import_into_io(&sync, &garbage);
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(
+        err.contains("bad magic") || err.contains("invalid bundle"),
+        "error should mention bad magic or invalid bundle, got: {err}"
+    );
+}
+
+// ── Scenario: version mismatch rejected ──────────────────────────────────
+
+/// Mirror of the crate-internal Bundle struct, used here only to produce
+/// a postcard payload with an alternative version number.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct TestBundle {
+    version: u16,
+    facts: Vec<FactRecord>,
+    intents: Vec<IntentRecord>,
+    hints: Vec<HintRecord>,
+    blobs: Vec<TestBlobEntry>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct TestBlobEntry {
+    hash: String,
+    data: Vec<u8>,
+    meta: ContentMeta,
+}
+
+/// The version 1 bundle shape, with records written before the time-unit field.
+#[derive(serde::Serialize)]
+struct TestBundleV1 {
+    version: u16,
+    facts: Vec<FactRecord>,
+    intents: Vec<TestLegacyIntent>,
+    hints: Vec<TestLegacyHint>,
+    blobs: Vec<TestBlobEntry>,
+}
+
+#[derive(serde::Serialize)]
+struct TestLegacyIntent {
+    id: String,
+    from_facts: Vec<String>,
+    description_hash: String,
+    creator: String,
+    status: IntentStatus,
+    created_at: u64,
+}
+
+#[derive(serde::Serialize)]
+struct TestLegacyHint {
+    id: String,
+    content: String,
+    creator: String,
+    submitted_at: u64,
+    ttl_secs: Option<u64>,
+}
+
+#[test]
+fn test_export_version_1_lifts_legacy_timestamps_on_import() {
+    let intent_id = id_of("i_legacy");
+    let hint_id = id_of("h_legacy");
+    let legacy = TestBundleV1 {
+        version: 1,
+        facts: vec![],
+        intents: vec![TestLegacyIntent {
+            id: intent_id.clone(),
+            from_facts: vec![],
+            description_hash: String::new(),
+            creator: "tester".into(),
+            status: IntentStatus::Submitted,
+            created_at: 1_700_000_000,
+        }],
+        hints: vec![TestLegacyHint {
+            id: hint_id.clone(),
+            content: "a legacy hint".into(),
+            creator: "tester".into(),
+            submitted_at: 1_700_000_001,
+            ttl_secs: None,
+        }],
+        blobs: vec![],
+    };
+    let mut bundle = Vec::new();
+    bundle.extend_from_slice(b"FIHBUNDL");
+    bundle.extend_from_slice(&postcard::to_allocvec(&legacy).unwrap());
+
+    let io = SimIo::new();
+    let sync = SyncFileIo::new(io);
+    import_into_io(&sync, &bundle).expect("a version 1 bundle imports");
+
+    let intent_bytes = sync
+        .read(&IntentRecord::intent_key(&intent_id))
+        .unwrap()
+        .expect("the intent landed");
+    let intent = postcard::from_bytes::<IntentRecord>(&intent_bytes).expect("the intent decodes");
+    assert_eq!(intent.created_at, 1_700_000_000_000_000_000);
+    assert_eq!(intent.time_unit, RecordTimeUnit::Nanos);
+
+    let hint_bytes = sync
+        .read(&HintRecord::hint_key(&hint_id))
+        .unwrap()
+        .expect("the hint landed");
+    let hint = postcard::from_bytes::<HintRecord>(&hint_bytes).expect("the hint decodes");
+    assert_eq!(hint.submitted_at, 1_700_000_001_000_000_000);
+    assert_eq!(hint.time_unit, RecordTimeUnit::Nanos);
+}
+
+#[test]
+fn test_export_version_mismatch_rejected() {
+    // Build a bundle with version 99 (unsupported — the current version is 2).
+    let bad_bundle = {
+        let bad_struct = TestBundle {
+            version: 99,
+            facts: vec![],
+            intents: vec![],
+            hints: vec![],
+            blobs: vec![],
+        };
+        let mut buf = Vec::with_capacity(8 + 1024);
+        buf.extend_from_slice(b"FIHBUNDL");
+        let payload = postcard::to_allocvec(&bad_struct).unwrap();
+        buf.extend_from_slice(&payload);
+        buf
+    };
+
+    let io = SimIo::new();
+    let sync = SyncFileIo::new(io);
+    let result = import_into_io(&sync, &bad_bundle);
+
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(
+        err.contains("unsupported bundle version"),
+        "error should mention unsupported version, got: {err}"
+    );
+    assert!(err.contains("99"), "error should mention version 99");
+}
+
+// ── The export path asks for the capability, not the adapter ─────────────
+
+/// A channel that blocks by nature, with no async-to-blocking adapter between it
+/// and the caller.
+struct Direct(SimIo);
+
+impl BlockingIo for Direct {
+    fn read(&self, path: &str) -> Result<Option<Vec<u8>>, String> {
+        futures_executor::block_on(FileIo::read(&self.0, path))
+    }
+
+    fn write(&self, path: &str, data: &[u8]) -> Result<(), String> {
+        futures_executor::block_on(FileIo::write(&self.0, path, data))
+    }
+
+    fn list(&self, prefix: &str) -> Result<Vec<String>, String> {
+        futures_executor::block_on(FileIo::list(&self.0, prefix))
+    }
+
+    fn delete(&self, path: &str) -> Result<(), String> {
+        futures_executor::block_on(FileIo::delete(&self.0, path))
+    }
+
+    fn apply_batch(&self, ops: &[WriteOp]) -> Result<(), String> {
+        futures_executor::block_on(FileIo::apply_batch(&self.0, ops))
+    }
+}
+
+#[test]
+fn the_export_takes_the_blocking_capability_not_the_adapter() {
+    // `SyncFileIo` is one provider of `BlockingIo`. If the export path asked for
+    // it again, this channel would not be accepted and this test would not build.
+    let io = seeded_io();
+    let direct = Direct(io);
+
+    let bundle = export_from_io(&direct).expect("an export from a directly blocking channel");
+    import_into_io(&direct, &bundle).expect("an import back into the same channel");
+
+    assert_eq!(direct.list("facts/").expect("a listing").len(), 1);
+}

@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use nex_protocol::NO_NODE;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 

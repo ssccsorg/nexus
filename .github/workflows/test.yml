@@ -11,7 +11,7 @@ on:
       - "nexd/**"
       - "nex-server/**"
       - "apps/nex-api/**"
-      - "nex-refstorage/**"
+      - "nex-storage-ref/**"
       - "demo/**"
       - "libs/**"
       - "verify/**"
@@ -35,7 +35,7 @@ on:
       - "nexd/**"
       - "nex-server/**"
       - "apps/nex-api/**"
-      - "nex-refstorage/**"
+      - "nex-storage-ref/**"
       - "demo/**"
       - "libs/**"
       - "verify/**"
@@ -191,7 +191,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: nex-refstorage
+          workspaces: nex-storage-ref
           cache-targets: true
           cache-on-failure: true
       - uses: actions/setup-node@v4

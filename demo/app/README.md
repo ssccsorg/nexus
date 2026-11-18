@@ -1,7 +1,7 @@
 # nexus-refstorage-demo
 
 The storage reference, drawn on the shared frame. One board, one run per volume, and every number on the screen came
-from `nex-refstorage`.
+from `nex-storage-ref`.
 
 The application is a Vite deployment of `@ssccsorg/skene-frame`. It supplies a brand, a host, a board, and one pack;
 the frame supplies the address, the record model, the panels, and the router. The host says the board and its runs are
@@ -58,5 +58,5 @@ npm run build   # typecheck, then a production bundle carrying the board
 ```
 
 The end-to-end case in `tests/import.test.ts` runs the importer against both committed volumes and compares the bytes
-with the ones committed. It is skipped when no `nex-refstorage` binary is present, and it says so rather than passing
+with the ones committed. It is skipped when no `nex-storage-ref` binary is present, and it says so rather than passing
 on nothing.

@@ -61,7 +61,7 @@ The board and the runs are committed, so a first look needs none of this.
 
 ```bash
 # the volume, from the scenario data
-cargo test -p nex-refstorage --test esg_scenario -- --ignored --nocapture
+cargo test -p nex-storage-ref --test esg_scenario -- --ignored --nocapture
 
 # the board and the runs, from the volumes
 demo/app/run.sh

@@ -2,7 +2,7 @@
 #
 # Imported from demo/volume by `npm run import`.
 #
-# tool:      nex-refstorage
+# tool:      nex-storage-ref
 # volume:    demo/volume
 # keys:      3
 # records:   1
@@ -11,7 +11,7 @@
 # Every number below came from the tool. Each count is the arithmetic of this file over
 # the facts it writes, so an edit that moves a line has to move its count.
 #
-#   nex-refstorage keys --volume demo/volume --prefix ""
+#   nex-storage-ref keys --volume demo/volume --prefix ""
 
 seed 12061
 
@@ -70,4 +70,3 @@ fact record-0 125 sensor-1
 hint record-key-0 facts/f_00024o7m35346n71ge0ev7vj33q5cp6fg6ow3230ba3oo00g6mp0lm4rh0uq.fact
 hint record-kinds fact=1
 count 12
-

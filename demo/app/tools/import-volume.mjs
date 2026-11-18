@@ -49,7 +49,7 @@ function repoRoot() {
 }
 
 /** The tool's file name, which carries an extension on Windows. */
-const BIN = process.platform === 'win32' ? 'nex-refstorage.exe' : 'nex-refstorage';
+const BIN = process.platform === 'win32' ? 'nex-storage-ref.exe' : 'nex-storage-ref';
 
 /** The tool beside this checkout, debug first. */
 export function defaultBin() {
@@ -289,7 +289,7 @@ export function scenarioOf(measured) {
   push('#');
   push(`# Imported from ${m.volume} by \`npm run import\`.`);
   push('#');
-  push('# tool:      nex-refstorage');
+  push('# tool:      nex-storage-ref');
   push(`# volume:    ${m.volume}`);
   push(`# keys:      ${m.keyCount}`);
   push(`# records:   ${m.box.records}`);
@@ -298,7 +298,7 @@ export function scenarioOf(measured) {
   push('# Every number below came from the tool. Each count is the arithmetic of this file over');
   push('# the facts it writes, so an edit that moves a line has to move its count.');
   push('#');
-  push(`#   nex-refstorage keys --volume ${m.volume} --prefix ""`);
+  push(`#   nex-storage-ref keys --volume ${m.volume} --prefix ""`);
   push('');
   push(`seed ${seedOf(m.id)}`);
   push('');

@@ -10,9 +10,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use nex::io::fs_io::FsIo;
-use nex_refstorage::RefFihStorage;
 use nex_client::{RpcRequest, RpcResponse};
 use nex_protocol::{METHOD_REGISTER, NodeRegistration};
+use nex_refstorage::RefFihStorage;
 use nex_server::handler;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
@@ -126,7 +126,10 @@ async fn serve_via_hub(
     }
 }
 
-async fn write_frame(writer: &mut tokio::io::WriteHalf<tokio::net::UnixStream>, bytes: &[u8]) -> std::io::Result<()> {
+async fn write_frame(
+    writer: &mut tokio::io::WriteHalf<tokio::net::UnixStream>,
+    bytes: &[u8],
+) -> std::io::Result<()> {
     tokio::io::AsyncWriteExt::write_all(writer, bytes).await?;
     tokio::io::AsyncWriteExt::write_all(writer, b"\n").await
 }

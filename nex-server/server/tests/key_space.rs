@@ -8,9 +8,9 @@ use std::sync::Arc;
 use nex::io::fs_io::FsIo;
 use nex_client::RpcRequest;
 use nex_io::FileIo;
-use nex_server::handler::{dispatch, METHODS};
 use nex_refstorage::RefFihStorage;
-use serde_json::{json, Value};
+use nex_server::handler::{METHODS, dispatch};
+use serde_json::{Value, json};
 
 fn volume() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../demo/volume")
@@ -90,10 +90,7 @@ async fn a_key_the_volume_does_not_hold_reads_as_nothing() {
         json!({ "key": "facts/f_000000000000000000000000000000000000000000000000000000000000.fact" }),
     )
     .await;
-    assert!(
-        answered["data"].is_null(),
-        "an absent key is a null answer"
-    );
+    assert!(answered["data"].is_null(), "an absent key is a null answer");
 }
 
 #[tokio::test]
@@ -120,8 +117,5 @@ fn the_node_registers_the_key_space_methods() {
         METHODS.contains(&"storage.keys"),
         "the node owns the listing"
     );
-    assert!(
-        METHODS.contains(&"storage.read"),
-        "the node owns the read"
-    );
+    assert!(METHODS.contains(&"storage.read"), "the node owns the read");
 }

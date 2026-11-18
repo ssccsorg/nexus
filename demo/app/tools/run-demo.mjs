@@ -76,7 +76,7 @@ function main() {
   step('taking the frame', process.execPath, [join(APP, 'tools', 'frame.mjs')], APP,
     'skene is read from the network on every run: check the network, then run this again.');
 
-  step('building the reference tool', EXE('cargo'), ['build', '-p', 'nex-refstorage'], repo,
+  step('building the reference tool', EXE('cargo'), ['build', '-p', 'nex-storage-ref'], repo,
     'Install a Rust toolchain from https://rustup.rs, then run this again.');
 
   // The frame's packages are packed into the tree, so a copy made from another commit stays stale until it is replaced:

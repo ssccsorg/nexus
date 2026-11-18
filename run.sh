@@ -8,7 +8,7 @@ set -euo pipefail
 #
 # Usage:
 #   ./run.sh               # Everything (default: core + gateway + apps + demo + playbooks)
-#   ./run.sh --core        # Core checks only (nex/*, nexd, nex-refstorage)
+#   ./run.sh --core        # Core checks only (nex/*, nexd, nex-storage-ref)
 #   ./run.sh --gateway     # Gateway layer checks (apps/nex-api, libs/serde-proxy)
 #   ./run.sh --apps        # All standalone app verification
 #   ./run.sh --server      # nex-server standalone verification
@@ -589,7 +589,7 @@ verify_demo() {
 
     # The importer runs this binary and never builds it.
     echo "Building the reference tool..."
-    cargo build -p nex-refstorage 2>&1 || {
+    cargo build -p nex-storage-ref 2>&1 || {
         echo "demo: the tool's build FAILED"
         demo_next "Install a Rust toolchain from https://rustup.rs; the importer runs the built binary."
         return 1
@@ -755,7 +755,7 @@ case "${1:-}" in
     --help|-h)
         echo "Usage: $0 [OPTION]"
         echo "  (no arg)        Core + gateway + apps + demo + playbooks [default]"
-        echo "  --core          Core checks only (nex/*, nexd, nex-refstorage)"
+        echo "  --core          Core checks only (nex/*, nexd, nex-storage-ref)"
         echo "  --gateway       Gateway layer checks (apps/nex-api, libs/serde-proxy)"
         echo "  --apps          Standalone app verification (spinwasi, nex-tagma, ...)"
         echo "  --server        nex-server standalone verification"

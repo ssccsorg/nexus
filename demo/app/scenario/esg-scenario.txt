@@ -2,7 +2,7 @@
 #
 # Imported from demo/esg-volume by `npm run import`.
 #
-# tool:      nex-refstorage
+# tool:      nex-storage-ref
 # volume:    demo/esg-volume
 # keys:      72
 # records:   16
@@ -11,7 +11,7 @@
 # Every number below came from the tool. Each count is the arithmetic of this file over
 # the facts it writes, so an edit that moves a line has to move its count.
 #
-#   nex-refstorage keys --volume demo/esg-volume --prefix ""
+#   nex-storage-ref keys --volume demo/esg-volume --prefix ""
 
 seed 35396
 
@@ -194,4 +194,3 @@ fact scope2_stated 1 show/volume
 fact intensity_stated 1 show/volume
 fact requirement_recorded 3 show/volume
 count 111
-

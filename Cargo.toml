@@ -8,7 +8,7 @@ members = [
     "libs/serde-proxy",
     "libs/session-server",
     "playbooks/agents",
-    "nex-refstorage",
+    "nex-storage-ref",
     "apps/nex-calc",
     "apps/nex-derive",
     "verify/support",
