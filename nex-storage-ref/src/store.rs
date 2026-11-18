@@ -78,7 +78,7 @@ pub enum Record {
 /// medium on `rebuild_cache` and updated on every write. A write is buffered in `pending`
 /// and reaches the medium on `flush_pending`; a read materializes a payload from the buffer
 /// first, so a session reads what it has written.
-pub struct RefFihStorage<I: FileIo> {
+pub struct FihStorageRef<I: FileIo> {
     pub io: I,
     project_id: String,
     clock: Box<dyn Now + Send + Sync>,
@@ -95,7 +95,7 @@ pub struct RefFihStorage<I: FileIo> {
     semantic_ids: Cell2<Vec<String>>,
 }
 
-impl<I: FileIo> RefFihStorage<I> {
+impl<I: FileIo> FihStorageRef<I> {
     /// Create storage with a system wall clock. Std-only.
     #[cfg(feature = "std")]
     pub fn new(io: I, project_id: &str) -> Self {
@@ -1075,17 +1075,17 @@ fn wanted(ids: Option<&Vec<String>>) -> Option<Vec<CoordId>> {
 
 // ── The read surface ───────────────────────────────────────────────────
 
-impl<I: FileIo> nex_fih::AsyncStorageRead for RefFihStorage<I> {
+impl<I: FileIo> nex_fih::AsyncStorageRead for FihStorageRef<I> {
     fn project_id(&self) -> &str {
         &self.project_id
     }
 
     async fn read_state(&self) -> BoardState {
-        RefFihStorage::read_state(self).await
+        FihStorageRef::read_state(self).await
     }
 }
 
-impl<I: FileIo> nex_fih::AsyncFactCapable for RefFihStorage<I> {
+impl<I: FileIo> nex_fih::AsyncFactCapable for FihStorageRef<I> {
     async fn submit_fact(&self, fact: &Fact) -> Result<CoordId, BlackboardError> {
         let id = fact.id.to_string();
 
@@ -1152,7 +1152,7 @@ impl<I: FileIo> nex_fih::AsyncFactCapable for RefFihStorage<I> {
     }
 }
 
-impl<I: FileIo> nex_fih::AsyncHintCapable for RefFihStorage<I> {
+impl<I: FileIo> nex_fih::AsyncHintCapable for FihStorageRef<I> {
     async fn submit_hint(&self, hint: &Hint) -> Result<(), BlackboardError> {
         let record = HintRecord {
             id: hint.id.to_string(),
@@ -1178,7 +1178,7 @@ impl<I: FileIo> nex_fih::AsyncHintCapable for RefFihStorage<I> {
     }
 }
 
-impl<I: FileIo> nex_fih::AsyncIntentCapable for RefFihStorage<I> {
+impl<I: FileIo> nex_fih::AsyncIntentCapable for FihStorageRef<I> {
     async fn submit_intent(&self, intent: &Intent) -> Result<CoordId, BlackboardError> {
         // An intent is work over facts, so it names at least one and every one has to exist.
         if intent.from_facts.is_empty() {
@@ -1383,7 +1383,7 @@ impl<I: FileIo> nex_fih::AsyncIntentCapable for RefFihStorage<I> {
     }
 }
 
-impl<I: FileIo> RefFihStorage<I> {
+impl<I: FileIo> FihStorageRef<I> {
     /// Apply a lifecycle move and write the record back.
     ///
     /// The transition reports its refusal as a sentence about the state it found, and the
@@ -1434,51 +1434,51 @@ impl<I: FileIo> RefFihStorage<I> {
     }
 }
 
-impl<I: FileIo> nex_fih::AsyncFilterCapable for RefFihStorage<I> {
+impl<I: FileIo> nex_fih::AsyncFilterCapable for FihStorageRef<I> {
     async fn read_state_filtered(&self, filter: &StateFilter) -> BoardState {
-        RefFihStorage::read_state_filtered(self, filter).await
+        FihStorageRef::read_state_filtered(self, filter).await
     }
 }
 
-impl<I: FileIo> nex_fih::AsyncEvictCapable for RefFihStorage<I> {
+impl<I: FileIo> nex_fih::AsyncEvictCapable for FihStorageRef<I> {
     async fn approximate_size(&self) -> usize {
-        RefFihStorage::record_count(self)
+        FihStorageRef::record_count(self)
     }
 
     async fn evict_before(&self, before: &str) -> Result<u64, String> {
-        RefFihStorage::evict_before(self, before).await
+        FihStorageRef::evict_before(self, before).await
     }
 
     async fn evict_stale_intents(&self, older_than_ns: u64) -> Result<u64, String> {
-        RefFihStorage::evict_stale_intents(self, older_than_ns).await
+        FihStorageRef::evict_stale_intents(self, older_than_ns).await
     }
 }
 
-impl<I: FileIo> nex_fih::AsyncScanCapable for RefFihStorage<I> {
+impl<I: FileIo> nex_fih::AsyncScanCapable for FihStorageRef<I> {
     async fn scan_partition(&self, partition: &str) -> Result<PartitionData, String> {
-        RefFihStorage::scan_partition(self, partition).await
+        FihStorageRef::scan_partition(self, partition).await
     }
 }
 
-impl<I: FileIo> nex_fih::AsyncTimeRangeCapable for RefFihStorage<I> {
+impl<I: FileIo> nex_fih::AsyncTimeRangeCapable for FihStorageRef<I> {
     async fn time_range(&self) -> Option<Range<String>> {
-        RefFihStorage::fact_time_range(self)
+        FihStorageRef::fact_time_range(self)
     }
 }
 
-impl<I: FileIo> nex_fih::FactById for RefFihStorage<I> {
+impl<I: FileIo> nex_fih::FactById for FihStorageRef<I> {
     async fn fact_by_id(&self, id: &str) -> Option<(Content, FihHash, String, String)> {
-        RefFihStorage::get_fact_by_id(self, id).await
+        FihStorageRef::get_fact_by_id(self, id).await
     }
 
     async fn fact_framing(&self, id: &str) -> Option<nex_fih::FactFraming> {
-        RefFihStorage::get_fact_framing(self, id)
+        FihStorageRef::get_fact_framing(self, id)
             .await
             .map(|record| record.framing())
     }
 }
 
-impl<I: FileIo> nex_fih::FactWalk for RefFihStorage<I> {
+impl<I: FileIo> nex_fih::FactWalk for FihStorageRef<I> {
     async fn for_each_fact<F>(&self, mut visit: F) -> Result<(), String>
     where
         F: FnMut(&nex_fih::FactFraming, Content) -> bool,

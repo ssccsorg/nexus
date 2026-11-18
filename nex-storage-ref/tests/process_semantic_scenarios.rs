@@ -748,9 +748,9 @@ fn scenario_manual_score_verification() {
     });
 }
 
-// ── RefFihStorage end-to-end: auto-index into semantic stores ─────────────
+// ── FihStorageRef end-to-end: auto-index into semantic stores ─────────────
 
-/// Submit fact via RefFihStorage → auto-index into MockBm25Store →
+/// Submit fact via FihStorageRef → auto-index into MockBm25Store →
 /// search and verify result. Uses AsyncFactCapable path to exercise
 /// the async semantic_insert replacement (FihCoord removed).
 #[test]
@@ -758,11 +758,11 @@ fn scenario_fihstorage_e2e_auto_index() {
     futures_executor::block_on(async {
         use nex::io::FsIo;
         use nex_fih::{AsyncFactCapable, AsyncStorageRead, Content, CoordId, Fact};
-        use nex_storage_ref::RefFihStorage;
+        use nex_storage_ref::FihStorageRef;
 
         let tmp = tempfile::TempDir::new().unwrap();
         let io = FsIo::new(tmp.path()).unwrap();
-        let storage = RefFihStorage::with_clock(io, "test-proj", Box::new(nex_core::SystemClock));
+        let storage = FihStorageRef::with_clock(io, "test-proj", Box::new(nex_core::SystemClock));
 
         // Configure MockBm25Store for text-based semantic search
         storage.register_semantic_store(Box::new(MockBm25Store::new()));
@@ -788,7 +788,7 @@ fn scenario_fihstorage_e2e_auto_index() {
         let state = AsyncStorageRead::read_state(&storage).await;
         assert_eq!(state.facts.len(), 1, "should have 1 fact");
 
-        // Verify auto-index by searching via RefFihStorage
+        // Verify auto-index by searching via FihStorageRef
         let results = storage
             .semantic_search(
                 &common::semantic::FeatureLoad::new(vec![], Some("rust compiler".into())),

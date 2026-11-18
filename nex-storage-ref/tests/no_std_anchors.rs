@@ -8,7 +8,7 @@
 //
 //   - `FihContract::with_clock` is available without std,
 //   - `FihContract::new` (SystemClock) exists only under `std`,
-//   - `RefFihStorage` and the `FileIo` contract do not leak std types.
+//   - `FihStorageRef` and the `FileIo` contract do not leak std types.
 //
 // Run with:
 //

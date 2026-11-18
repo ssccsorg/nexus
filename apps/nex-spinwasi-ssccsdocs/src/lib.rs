@@ -23,7 +23,7 @@ use nex_fih::semantic::Query as SemanticQuery;
 use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, Content, CoordId, Fact, Hint, Intent,
 };
-use nex_storage_ref::RefFihStorage;
+use nex_storage_ref::FihStorageRef;
 use serde::{Deserialize, Serialize};
 
 use crate::bm25::InMemoryBm25;
@@ -32,14 +32,14 @@ use crate::kv_io::KvIo;
 const LLMS_TXT_URL: &str = "https://docs.ssccs.org/llms.txt";
 const DOCS_BASE_URL: &str = "https://docs.ssccs.org";
 
-type AppStorage = RefFihStorage<KvIo>;
+type AppStorage = FihStorageRef<KvIo>;
 static STORAGE: OnceLock<AppStorage> = OnceLock::new();
 static INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 fn get_storage() -> &'static AppStorage {
     STORAGE.get_or_init(|| {
         tracing::info!("init FIH (KV store)");
-        let s = RefFihStorage::new(KvIo::new().expect("KvIo"), "spin-ssccsdocs");
+        let s = FihStorageRef::new(KvIo::new().expect("KvIo"), "spin-ssccsdocs");
         s.register_semantic_store(Box::new(InMemoryBm25::new()));
         s
     })
@@ -111,7 +111,7 @@ struct Snapshot {
 }
 
 /// Write a full checkpoint snapshot. Call periodically (not on every ingest).
-async fn write_checkpoint(s: &RefFihStorage<impl FileIo>) -> Result<(), String> {
+async fn write_checkpoint(s: &FihStorageRef<impl FileIo>) -> Result<(), String> {
     let facts: Vec<FactRecord> = s.fact_records.borrow().values().cloned().collect();
     let intents: Vec<IntentRecord> = s.intent_records.borrow().values().cloned().collect();
     let snapshot = Snapshot {
@@ -156,7 +156,7 @@ async fn restore_from_snapshot(s: &AppStorage) -> Result<bool, String> {
 // ── Ingestion ────────────────────────────────────────────────────────
 
 async fn ingest_document(
-    s: &RefFihStorage<impl FileIo>,
+    s: &FihStorageRef<impl FileIo>,
     text: &str,
     origin: &str,
 ) -> Result<String, String> {
@@ -631,10 +631,10 @@ mod tests {
     use super::*;
     use nex::io::FsIo;
 
-    fn test_storage() -> RefFihStorage<FsIo> {
+    fn test_storage() -> FihStorageRef<FsIo> {
         let dir = tempfile::tempdir().unwrap();
         let io = FsIo::new(dir.path()).unwrap();
-        let s = RefFihStorage::new(io, "test");
+        let s = FihStorageRef::new(io, "test");
         s.register_semantic_store(Box::new(InMemoryBm25::new()));
         s
     }

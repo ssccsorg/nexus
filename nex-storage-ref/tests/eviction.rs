@@ -14,7 +14,7 @@ use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, Content, CoordId, Fact, Hint, Intent,
 };
 use nex_io::{FileIo, SimIo};
-use nex_storage_ref::RefFihStorage;
+use nex_storage_ref::FihStorageRef;
 
 /// Clock start at exactly t=100s, far from the next second boundary even
 /// after the per-call step increments of the fake clock.
@@ -61,7 +61,7 @@ fn evict_before_removes_only_old_hints() {
         let io = SimIo::new();
         let clock = FakeClock::new(START_NS);
         let advance = clock.clone();
-        let store = RefFihStorage::with_clock(io.clone(), "evict", Box::new(clock));
+        let store = FihStorageRef::with_clock(io.clone(), "evict", Box::new(clock));
 
         store.submit_hint(&hint("h_old", "old")).await.unwrap(); // t=100s
         advance.advance_secs(1);
@@ -90,7 +90,7 @@ fn evict_before_removes_only_old_hints() {
 fn evict_before_deletes_io_records() {
     block_on(async {
         let io = SimIo::new();
-        let store = RefFihStorage::new(io.clone(), "evict");
+        let store = FihStorageRef::new(io.clone(), "evict");
         store.submit_hint(&hint("h_a", "a")).await.unwrap();
         store.submit_hint(&hint("h_b", "b")).await.unwrap();
 
@@ -116,7 +116,7 @@ fn evict_stale_intents_removes_old_submitted() {
         let io = SimIo::new();
         let clock = FakeClock::new(START_NS);
         let advance = clock.clone();
-        let store = RefFihStorage::with_clock(io.clone(), "evict", Box::new(clock));
+        let store = FihStorageRef::with_clock(io.clone(), "evict", Box::new(clock));
 
         store.submit_fact(&fact("f_base")).await.unwrap();
         store.submit_intent(&intent("i_old")).await.unwrap(); // created_at = 100s

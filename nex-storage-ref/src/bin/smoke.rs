@@ -12,7 +12,7 @@ use nex_fih::{
     AsyncStorageRead, Content, CoordId, Fact, Hint, Intent, StateFilter,
 };
 use nex_io::SimIo;
-use nex_storage_ref::{RefFihStorage, intent_status};
+use nex_storage_ref::{FihStorageRef, intent_status};
 
 fn fact(id: &str, data: &[u8]) -> Fact {
     Fact::with_id(
@@ -106,7 +106,7 @@ fn main() {
     // ── 1. Basic FIH lifecycle ────────────────────────────────────────
 
     check_async!("submit_fact + read_state", {
-        let store = RefFihStorage::new(SimIo::new(), "verify");
+        let store = FihStorageRef::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(&store, &fact("f001", b"hello world"))
             .await
             .unwrap();
@@ -116,7 +116,7 @@ fn main() {
     });
 
     check_async!("submit_intent requires existing fact", {
-        let store = RefFihStorage::new(SimIo::new(), "verify");
+        let store = FihStorageRef::new(SimIo::new(), "verify");
         let result =
             AsyncIntentCapable::submit_intent(&store, &intent("i001", "f_nonexistent")).await;
         assert!(
@@ -126,7 +126,7 @@ fn main() {
     });
 
     check_async!("full intent lifecycle", {
-        let store = RefFihStorage::new(SimIo::new(), "verify");
+        let store = FihStorageRef::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(&store, &fact("f_base", b"base data"))
             .await
             .unwrap();
@@ -152,7 +152,7 @@ fn main() {
     });
 
     check_async!("double claim rejected", {
-        let store = RefFihStorage::new(SimIo::new(), "verify");
+        let store = FihStorageRef::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(&store, &fact("f_base", b"x"))
             .await
             .unwrap();
@@ -169,7 +169,7 @@ fn main() {
     // ── 2. Hint operations ────────────────────────────────────────────
 
     check_async!("submit_hint + read_state", {
-        let store = RefFihStorage::new(SimIo::new(), "verify");
+        let store = FihStorageRef::new(SimIo::new(), "verify");
         AsyncHintCapable::submit_hint(
             &store,
             &Hint {
@@ -188,12 +188,12 @@ fn main() {
 
     check_async!("flush + rebuild preserves data", {
         let io = SimIo::new();
-        let store = RefFihStorage::new(io.clone(), "verify");
+        let store = FihStorageRef::new(io.clone(), "verify");
         AsyncFactCapable::submit_fact(&store, &fact("f_flush", b"flush test"))
             .await
             .unwrap();
         store.flush_pending().await.unwrap();
-        let store2 = RefFihStorage::new(io, "verify");
+        let store2 = FihStorageRef::new(io, "verify");
         store2.rebuild_cache().await.unwrap();
         let state = AsyncStorageRead::read_state(&store2).await;
         assert_eq!(state.facts.len(), 1);
@@ -203,7 +203,7 @@ fn main() {
     // ── 4. Filtering ──────────────────────────────────────────────────
 
     check_async!("time_index since filter", {
-        let store = RefFihStorage::new(SimIo::new(), "verify");
+        let store = FihStorageRef::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(&store, &fact("f_since", b"data"))
             .await
             .unwrap();
@@ -216,7 +216,7 @@ fn main() {
     });
 
     check_async!("time_index until filter (time travel)", {
-        let store = RefFihStorage::new(SimIo::new(), "verify");
+        let store = FihStorageRef::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(&store, &fact("f_until", b"data"))
             .await
             .unwrap();
@@ -231,7 +231,7 @@ fn main() {
     // ── 5. Eviction ───────────────────────────────────────────────────
 
     check_async!("evict_before removes old hints", {
-        let store = RefFihStorage::new(SimIo::new(), "verify");
+        let store = FihStorageRef::new(SimIo::new(), "verify");
         AsyncHintCapable::submit_hint(
             &store,
             &Hint {
@@ -256,7 +256,7 @@ fn main() {
     // ── 6. Ref count / orphan detection ───────────────────────────────
 
     check_async!("ref_count orphan detection via conclude", {
-        let store = RefFihStorage::new(SimIo::new(), "verify");
+        let store = FihStorageRef::new(SimIo::new(), "verify");
         AsyncFactCapable::submit_fact(&store, &fact("f_orphan", b"orphan"))
             .await
             .unwrap();

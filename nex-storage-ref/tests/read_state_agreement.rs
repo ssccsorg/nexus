@@ -10,12 +10,12 @@ use nex_fih::{
     StateFilter,
 };
 use nex_io::SimIo;
-use nex_storage_ref::RefFihStorage;
+use nex_storage_ref::FihStorageRef;
 
 #[test]
 fn test_read_state_and_filtered_agree_in_order() {
     block_on(async {
-        let store = RefFihStorage::new(SimIo::new(), "agree");
+        let store = FihStorageRef::new(SimIo::new(), "agree");
 
         for id in ["z", "a", "m", "b"] {
             store
@@ -98,7 +98,7 @@ fn test_read_state_and_filtered_agree_in_order() {
 #[test]
 fn test_read_state_struct_without_content() {
     block_on(async {
-        let store = RefFihStorage::new(SimIo::new(), "light");
+        let store = FihStorageRef::new(SimIo::new(), "light");
         store
             .submit_fact(&Fact::with_id(
                 CoordId::resolve("f1"),

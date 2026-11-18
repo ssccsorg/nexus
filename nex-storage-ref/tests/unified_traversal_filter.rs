@@ -22,7 +22,7 @@ use nex_fih::{
     StateFilter,
 };
 use nex_io::SimIo;
-use nex_storage_ref::RefFihStorage;
+use nex_storage_ref::FihStorageRef;
 
 use crate::common::{fact, intent};
 
@@ -30,7 +30,7 @@ use crate::common::{fact, intent};
 
 #[test]
 fn test_creator_filter_returns_intents_and_hints() {
-    let store = RefFihStorage::new(SimIo::new(), "unified_creator");
+    let store = FihStorageRef::new(SimIo::new(), "unified_creator");
     block_on(store.submit_fact(&fact("f1"))).unwrap();
     block_on(store.submit_intent(&intent("i1", vec!["f1"]))).unwrap();
     block_on(store.submit_hint(&Hint {
@@ -73,7 +73,7 @@ fn test_creator_filter_returns_intents_and_hints() {
 
 #[test]
 fn test_offset_and_limit_on_creator_filter() {
-    let store = RefFihStorage::new(SimIo::new(), "unified_offset");
+    let store = FihStorageRef::new(SimIo::new(), "unified_offset");
     for i in 0..4 {
         let mut f = fact(&format!("f{i}"));
         f.creator = "alice".into();
@@ -100,7 +100,7 @@ fn test_offset_and_limit_on_creator_filter() {
 
 #[test]
 fn test_fact_content_materialized_from_record() {
-    let store = RefFihStorage::new(SimIo::new(), "unified_content");
+    let store = FihStorageRef::new(SimIo::new(), "unified_content");
     let f = Fact::with_id(
         CoordId::resolve("f_body"),
         "t".into(),
@@ -125,7 +125,7 @@ fn test_fact_content_materialized_from_record() {
 
 #[test]
 fn test_intent_since_filter_over_unified_store() {
-    let store = RefFihStorage::with_clock(
+    let store = FihStorageRef::with_clock(
         SimIo::new(),
         "unified_intent_since",
         Box::new(common::FakeClock::with_step(1_000_000_000, 1_000_000_000)),
@@ -171,7 +171,7 @@ fn test_intent_since_filter_over_unified_store() {
 
 #[test]
 fn test_hint_ids_filter_over_unified_store() {
-    let store = RefFihStorage::new(SimIo::new(), "unified_hint_ids");
+    let store = FihStorageRef::new(SimIo::new(), "unified_hint_ids");
     for i in 0..3 {
         block_on(store.submit_hint(&Hint {
             id: CoordId::resolve(&format!("h{i}")),
@@ -197,7 +197,7 @@ fn test_hint_ids_filter_over_unified_store() {
 #[test]
 fn test_intent_description_materialized_after_flush() {
     let io = SimIo::new();
-    let store = RefFihStorage::new(io.clone(), "unified_desc");
+    let store = FihStorageRef::new(io.clone(), "unified_desc");
     block_on(store.submit_fact(&fact("f1"))).unwrap();
     let mut i = intent("i1", vec!["f1"]);
     i.description = "persisted description".into();

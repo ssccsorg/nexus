@@ -35,4 +35,4 @@ pub use intent_status::IntentStatus;
 pub use record::{ContentMeta, FactRecord, HintRecord, IntentRecord, RecordTimeUnit};
 #[cfg(feature = "std")]
 pub use session::FihSession;
-pub use store::{Record, RefFihStorage};
+pub use store::{Record, FihStorageRef};

@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 use nex_fih::{Cell2, CoordId};
 use nex_io::FileIo;
-use nex_storage_ref::{FactRecord, HintRecord, IntentRecord, RefFihStorage};
+use nex_storage_ref::{FactRecord, HintRecord, IntentRecord, FihStorageRef};
 
 /// A box is answered from the listing, so the node links no index over the axes.
 #[test]
@@ -28,7 +28,7 @@ fn the_node_links_no_index_over_the_axes() {
 /// The body is never called: it is here to be type-checked, which is what makes the key type
 /// a property of the build rather than of a review.
 #[allow(dead_code)]
-fn the_maps_are_keyed_by_the_address<I: FileIo>(storage: &RefFihStorage<I>) {
+fn the_maps_are_keyed_by_the_address<I: FileIo>(storage: &FihStorageRef<I>) {
     let _: &Cell2<BTreeMap<CoordId, FactRecord>> = &storage.fact_records;
     let _: &Cell2<BTreeMap<CoordId, IntentRecord>> = &storage.intent_records;
     let _: &Cell2<BTreeMap<CoordId, HintRecord>> = &storage.hint_records;

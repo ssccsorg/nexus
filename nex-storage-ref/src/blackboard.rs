@@ -1,30 +1,30 @@
-// ── FihBlackboard: Optional sync wrapper over RefFihStorage ────────────
+// ── FihBlackboard: Optional sync wrapper over FihStorageRef ────────────
 //
-// FihBlackboard wraps RefFihStorage and implements sync Blackboard traits
+// FihBlackboard wraps FihStorageRef and implements sync Blackboard traits
 // (StorageRead, FactCapable, etc.) by calling
 // futures_executor::block_on internally.
 //
 // This exists only for legacy consumers that require a synchronous
 // interface on native platforms. It is NOT the recommended interface
 // for new code. The sync wrapper lives at this layer, not in
-// RefFihStorage itself, because RefFihStorage is an async-only execution
-// unit. Adding sync trait impls to RefFihStorage would imply that
+// FihStorageRef itself, because FihStorageRef is an async-only execution
+// unit. Adding sync trait impls to FihStorageRef would imply that
 // blocking on I/O is acceptable, when in fact it would stall the
 // sole thread and starve all pending operations.
 //
 // The sync wrapper requires the `std` feature: `block_on` needs an
 // executor, which needs std. On no_std targets (MCU) the caller
-// drives RefFihStorage's async methods directly from the launcher's own
+// drives FihStorageRef's async methods directly from the launcher's own
 // executor (e.g. embassy).
 //
 // Usage (native only):
 //   let bb = FihBlackboard::new(io, "project");
 
 #[cfg(feature = "std")]
-use crate::store::RefFihStorage;
+use crate::store::FihStorageRef;
 #[cfg(feature = "std")]
 use nex_fih::io::FileIo;
-// Async* traits are needed for method resolution on RefFihStorage in non-WASM impl blocks.
+// Async* traits are needed for method resolution on FihStorageRef in non-WASM impl blocks.
 // The wasm32 check flags them as unused (impl blocks are cfg-gated).
 #[cfg(feature = "std")]
 #[cfg_attr(target_arch = "wasm32", allow(unused_imports))]
@@ -39,7 +39,7 @@ use nex_fih::{
 #[cfg(feature = "std")]
 use alloc::string::String;
 
-/// Blackboard implementation backed by RefFihStorage.
+/// Blackboard implementation backed by FihStorageRef.
 ///
 /// Generic over any FileIo implementation. The IO backend is
 /// injected at construction time (e.g., `CfFihIo` for R2, `FsIo` for
@@ -47,19 +47,19 @@ use alloc::string::String;
 ///
 /// The synchronous wrapper (all methods) requires the `std` feature:
 /// it uses `futures_executor::block_on` internally. The async surface
-/// of RefFihStorage itself is std-free and available on no_std targets.
+/// of FihStorageRef itself is std-free and available on no_std targets.
 #[cfg(feature = "std")]
 pub struct FihBlackboard<I: FileIo> {
-    pub storage: RefFihStorage<I>,
+    pub storage: FihStorageRef<I>,
 }
 
 #[cfg(feature = "std")]
 impl<I: FileIo> FihBlackboard<I> {
     /// Create a new FihBlackboard with the given IO backend.
-    /// Use RefFihStorage::with_auto_flush for immediate durability.
+    /// Use FihStorageRef::with_auto_flush for immediate durability.
     pub fn new(io: I, project_id: &str) -> Self {
         Self {
-            storage: RefFihStorage::new(io, project_id),
+            storage: FihStorageRef::new(io, project_id),
         }
     }
 }

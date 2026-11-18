@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use futures_executor::block_on;
 use nex_fih::{AsyncFactCapable, Content, Fact};
 use nex_io::SimIo;
-use nex_storage_ref::RefFihStorage;
+use nex_storage_ref::FihStorageRef;
 
 struct CountingAlloc;
 
@@ -49,8 +49,8 @@ const READS_PER_BATCH: usize = 64;
 const BATCHES: usize = 8;
 
 /// A store holding `count` facts, every write committed.
-fn seeded(count: usize) -> (RefFihStorage<SimIo>, String) {
-    let storage = RefFihStorage::new(SimIo::new(), "read-shape");
+fn seeded(count: usize) -> (FihStorageRef<SimIo>, String) {
+    let storage = FihStorageRef::new(SimIo::new(), "read-shape");
     let mut first = None;
     for at in 0..count {
         let fact = Fact::new(
@@ -71,7 +71,7 @@ fn seeded(count: usize) -> (RefFihStorage<SimIo>, String) {
 }
 
 /// Allocations per read, as the smallest batch, so interference only ever raises a count.
-fn allocations_per_read(storage: &RefFihStorage<SimIo>, id: &str) -> usize {
+fn allocations_per_read(storage: &FihStorageRef<SimIo>, id: &str) -> usize {
     let _ = block_on(storage.get_fact_by_id(id));
     let mut cheapest = usize::MAX;
     for _ in 0..BATCHES {

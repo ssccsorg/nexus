@@ -18,7 +18,7 @@ use nex_fih::{
     AsyncFactCapable, AsyncIntentCapable, BlackboardError, Content, CoordId, Fact, FihContract,
     HintRule, Intent,
 };
-use nex_storage_ref::RefFihStorage;
+use nex_storage_ref::FihStorageRef;
 
 /// An in-memory medium shared by every storage that holds a clone of it.
 #[derive(Clone, Default)]
@@ -69,7 +69,7 @@ fn fact(payload: &str) -> Fact {
 }
 
 /// An intent has to name at least one fact, so each conclusion test seeds one.
-fn seed_fact(storage: &RefFihStorage<MemoryIo>) -> Fact {
+fn seed_fact(storage: &FihStorageRef<MemoryIo>) -> Fact {
     let fact = fact("the fact an intent refers to");
     block_on(storage.submit_fact(&fact)).expect("the fact is accepted");
     fact
@@ -77,7 +77,7 @@ fn seed_fact(storage: &RefFihStorage<MemoryIo>) -> Fact {
 
 #[test]
 fn a_governed_fact_passes_the_gate_and_is_recorded() {
-    let storage = RefFihStorage::new(MemoryIo::default(), "contract");
+    let storage = FihStorageRef::new(MemoryIo::default(), "contract");
     let contract = FihContract::new();
     contract.register_default_schemas();
 
@@ -99,7 +99,7 @@ fn a_governed_fact_passes_the_gate_and_is_recorded() {
 
 #[test]
 fn a_schema_the_gate_does_not_know_leaves_the_store_and_the_chain_untouched() {
-    let storage = RefFihStorage::new(MemoryIo::default(), "contract");
+    let storage = FihStorageRef::new(MemoryIo::default(), "contract");
     let contract = FihContract::new();
     contract.register_default_schemas();
 
@@ -121,7 +121,7 @@ fn a_schema_the_gate_does_not_know_leaves_the_store_and_the_chain_untouched() {
 
 #[test]
 fn a_conclusion_is_checked_against_the_hints_and_recorded() {
-    let storage = RefFihStorage::new(MemoryIo::default(), "contract");
+    let storage = FihStorageRef::new(MemoryIo::default(), "contract");
     let contract = FihContract::new();
     contract.register_default_schemas();
     contract.hints.add("positive", HintRule::Gt(0));
@@ -149,7 +149,7 @@ fn a_conclusion_is_checked_against_the_hints_and_recorded() {
 
 #[test]
 fn a_result_the_hints_reject_does_not_conclude_the_intent() {
-    let storage = RefFihStorage::new(MemoryIo::default(), "contract");
+    let storage = FihStorageRef::new(MemoryIo::default(), "contract");
     let contract = FihContract::new();
     contract.register_default_schemas();
     contract.hints.add("positive", HintRule::Gt(0));

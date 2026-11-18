@@ -15,7 +15,7 @@ use nex_fih::FihId6 as _;
 use nex_fih::FihId20 as _;
 use nex_fih::{AsyncFactCapable, Content, CoordId, Fact, StateFilter};
 use nex_io::SimIo;
-use nex_storage_ref::RefFihStorage;
+use nex_storage_ref::FihStorageRef;
 
 use crate::common::{FakeClock, fact};
 
@@ -59,7 +59,7 @@ fn test_axis_boundary_values() {
 #[test]
 fn test_filter_by_creator() {
     let io = SimIo::new();
-    let store = RefFihStorage::new(io, "axis_test");
+    let store = FihStorageRef::new(io, "axis_test");
 
     // Facts with distinct creator record fields.
     let coord_a = CoordId::from_label("axis-creator-10");
@@ -124,7 +124,7 @@ fn test_filter_by_time_range() {
     // Use FakeClock for deterministic timestamps.
     // Clock starts at 1_000_000_000 ns, steps by 1_000_000_000 ns per call.
     let clock = Box::new(FakeClock::with_step(1_000_000_000, 1_000_000_000));
-    let store = RefFihStorage::with_clock(SimIo::new(), "axis_time", clock);
+    let store = FihStorageRef::with_clock(SimIo::new(), "axis_time", clock);
 
     // First fact: submitted_at = 1_000_000_000 (clock call 1).
     block_on(store.submit_fact(&fact("f_early"))).unwrap();
@@ -213,7 +213,7 @@ fn test_filter_by_time_range() {
 #[test]
 fn test_filter_by_origin_and_time() {
     let io = SimIo::new();
-    let store = RefFihStorage::new(io, "axis_origin_time");
+    let store = FihStorageRef::new(io, "axis_origin_time");
 
     // Facts with different origins and creators as record fields. Each
     // record gets a unique deterministic label-derived id.
@@ -312,7 +312,7 @@ fn test_axis_entity_type_values() {
 #[test]
 fn test_multi_dimensional_tagma_query() {
     let io = SimIo::new();
-    let store = RefFihStorage::new(io, "tagma_query");
+    let store = FihStorageRef::new(io, "tagma_query");
 
     // Create a 3D grid of facts: 4 origins × 3 creators × 5 time buckets = 60 facts.
     // Each fact gets a deterministic label-derived id; origin and creator

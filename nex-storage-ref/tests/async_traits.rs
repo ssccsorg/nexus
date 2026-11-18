@@ -10,14 +10,14 @@ use nex_fih::{
     AsyncTimeRangeCapable, CoordId, Hint, StateFilter,
 };
 use nex_io::SimIo;
-use nex_storage_ref::RefFihStorage;
+use nex_storage_ref::FihStorageRef;
 
 mod common;
 
-fn setup() -> RefFihStorage<SimIo> {
+fn setup() -> FihStorageRef<SimIo> {
     let io = SimIo::new();
     let clock = Box::new(common::FakeClock::new(1_000_000_000));
-    RefFihStorage::with_clock(io, "test", clock)
+    FihStorageRef::with_clock(io, "test", clock)
 }
 
 // ── AsyncStorageRead + AsyncFactCapable ────────────────────────────────

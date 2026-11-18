@@ -14,7 +14,7 @@ use nex_fih::{
     CoordId, Fact, Hint, Intent,
 };
 use nex_io::SimIo;
-use nex_storage_ref::{IntentStatus, RefFihStorage};
+use nex_storage_ref::{IntentStatus, FihStorageRef};
 
 fn fact(id: &str, data: &[u8]) -> Fact {
     fact_with(id, data, "coord")
@@ -68,7 +68,7 @@ fn submit_paths_populate_id_enumeration_after_reopen() {
     block_on(async {
         let io = SimIo::new();
         {
-            let store = RefFihStorage::new(io.clone(), "coord");
+            let store = FihStorageRef::new(io.clone(), "coord");
             store.submit_fact(&fact("f_a", b"a")).await.unwrap();
             store.submit_intent(&intent("i_a", "f_a")).await.unwrap();
             store.submit_hint(&hint("h_a", "note")).await.unwrap();
@@ -81,7 +81,7 @@ fn submit_paths_populate_id_enumeration_after_reopen() {
         {
             // Reopen: the record maps are empty, so enumeration reads
             // from the record maps that rebuild_cache must have filled.
-            let store = RefFihStorage::new(io, "coord");
+            let store = FihStorageRef::new(io, "coord");
             store.rebuild_cache().await.unwrap();
             let fids = store.all_fact_ids();
             assert_eq!(fids.len(), 1, "fact ids must survive reopen via the store");
@@ -100,7 +100,7 @@ fn intent_status_moves_are_visible_after_reopen() {
     block_on(async {
         let io = SimIo::new();
         {
-            let store = RefFihStorage::new(io.clone(), "coord");
+            let store = FihStorageRef::new(io.clone(), "coord");
             store.submit_fact(&fact("f_base", b"base")).await.unwrap();
             store
                 .submit_intent(&intent("i_mv", "f_base"))
@@ -111,7 +111,7 @@ fn intent_status_moves_are_visible_after_reopen() {
             store.flush_pending().await.unwrap();
         }
         {
-            let store = RefFihStorage::new(io, "coord");
+            let store = FihStorageRef::new(io, "coord");
             store.rebuild_cache().await.unwrap();
             let canonical = CoordId::resolve("i_mv").to_string();
             let (_, _, _, status, _) = store
@@ -148,7 +148,7 @@ impl nex_core::Now for DayClock {
 fn time_range_bounds_from_the_coordinate_store() {
     block_on(async {
         let io = SimIo::new();
-        let store = RefFihStorage::with_clock(
+        let store = FihStorageRef::with_clock(
             io,
             "coord",
             Box::new(DayClock(std::sync::Mutex::new(1_000_000_000_000_000_000))),
@@ -184,7 +184,7 @@ impl nex_core::Now for HourClock {
 #[test]
 fn time_range_is_exact_within_a_day() {
     block_on(async {
-        let store = RefFihStorage::with_clock(
+        let store = FihStorageRef::with_clock(
             SimIo::new(),
             "coord",
             Box::new(HourClock(std::sync::Mutex::new(1_000_000_000_000))),
@@ -204,7 +204,7 @@ fn time_range_is_exact_within_a_day() {
 #[test]
 fn conclusion_fact_carries_the_conclude_time() {
     block_on(async {
-        let store = RefFihStorage::new(SimIo::new(), "coord");
+        let store = FihStorageRef::new(SimIo::new(), "coord");
         store.submit_fact(&fact("f_base", b"base")).await.unwrap();
         store
             .submit_intent(&intent("i_ts", "f_base"))
@@ -239,7 +239,7 @@ fn conclusion_fact_content_survives_reopen() {
         let io = SimIo::new();
         let intent_id = "i_c";
         {
-            let store = RefFihStorage::new(io.clone(), "coord");
+            let store = FihStorageRef::new(io.clone(), "coord");
             store.submit_fact(&fact("f_base", b"base")).await.unwrap();
             store
                 .submit_intent(&intent(intent_id, "f_base"))
@@ -251,7 +251,7 @@ fn conclusion_fact_content_survives_reopen() {
         {
             // The conclusion fact is blob-backed, so a reopen materializes
             // its content and a consistent hash from io.
-            let store = RefFihStorage::new(io, "coord");
+            let store = FihStorageRef::new(io, "coord");
             store.rebuild_cache().await.unwrap();
             // Derive the conclusion id from the intent's canonical id, which is the
             // identity the record layer stores.
@@ -274,7 +274,7 @@ fn conclusion_fact_content_survives_reopen() {
 #[test]
 fn scan_partition_matches_partition_strings() {
     block_on(async {
-        let store = RefFihStorage::new(SimIo::new(), "coord");
+        let store = FihStorageRef::new(SimIo::new(), "coord");
         store
             .submit_fact(&fact_with("f_p1", b"a", "partition:alpha"))
             .await

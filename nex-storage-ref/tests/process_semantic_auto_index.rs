@@ -13,7 +13,7 @@ use futures_executor::block_on;
 use nex_fih::semantic::{Query, RecordLoad, SemanticStore};
 use nex_fih::{AsyncFactCapable, AsyncIntentCapable, Content, CoordId, Fact};
 use nex_io::SimIo;
-use nex_storage_ref::RefFihStorage;
+use nex_storage_ref::FihStorageRef;
 
 #[derive(Debug, Clone, Default)]
 struct Recorder(Arc<Mutex<Vec<Call>>>);
@@ -49,8 +49,8 @@ impl SemanticStore for Recorder {
     }
 }
 
-fn storage_with(recorder: &Recorder) -> RefFihStorage<SimIo> {
-    let storage = RefFihStorage::new(SimIo::new(), "auto-index");
+fn storage_with(recorder: &Recorder) -> FihStorageRef<SimIo> {
+    let storage = FihStorageRef::new(SimIo::new(), "auto-index");
     storage.register_semantic_store(Box::new(recorder.clone()));
     storage
 }
@@ -140,7 +140,7 @@ fn rebuilding_the_semantic_index_hands_text_and_no_features_again() {
 
 #[test]
 fn rebuilding_the_index_needs_maps_and_a_registered_store() {
-    let empty = RefFihStorage::new(SimIo::new(), "auto-index");
+    let empty = FihStorageRef::new(SimIo::new(), "auto-index");
     block_on(empty.rebuild_semantic()).expect("with no stores the rebuild is a no-op");
 }
 
@@ -220,7 +220,7 @@ impl Query for TextQuery {
 
 #[test]
 fn a_store_that_refuses_an_insert_reports_the_error_and_stays_registered() {
-    let storage = RefFihStorage::new(SimIo::new(), "auto-index");
+    let storage = FihStorageRef::new(SimIo::new(), "auto-index");
     storage.register_semantic_store(Box::new(Rejecting));
 
     let error =
@@ -240,7 +240,7 @@ fn a_store_that_refuses_an_insert_reports_the_error_and_stays_registered() {
 
 #[test]
 fn a_search_with_no_store_says_so_and_one_with_a_store_answers() {
-    let empty = RefFihStorage::new(SimIo::new(), "auto-index");
+    let empty = FihStorageRef::new(SimIo::new(), "auto-index");
     let error = block_on(empty.semantic_search(&TextQuery, 5)).expect_err("nothing to search");
     assert!(error.contains("no semantic stores"), "{error}");
 

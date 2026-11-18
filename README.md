@@ -107,10 +107,10 @@ tokio = { version = "1", features = ["full"] }
 ```rust
 use nex::io::FsIo;
 use nex_fih::{AsyncFactCapable, Content, Fact};
-use nex_storage_ref::RefFihStorage;
+use nex_storage_ref::FihStorageRef;
 
 let io = FsIo::new("/tmp/nexus-store")?;
-let store = RefFihStorage::new(io, "my-app");
+let store = FihStorageRef::new(io, "my-app");
 store.rebuild_cache().await?;
 
 let fact = Fact::new("user-note".to_string(), Content::from("remember this"), "my-app".into());
@@ -140,7 +140,7 @@ Targets without an operating system require three things.
 - Provide `alloc` and a `critical-section` implementation.
 - Inject a clock through `Now`.
 
-The reference node is `RefFihStorage` in [`nex-storage-ref`](nex-storage-ref), the crate `nex-storage-ref`. Its record path builds for `riscv32imac-unknown-none-elf` with `--no-default-features`; the command-line reader is a host transport behind its own `reader` feature.
+The reference node is `FihStorageRef` in [`nex-storage-ref`](nex-storage-ref), the crate `nex-storage-ref`. Its record path builds for `riscv32imac-unknown-none-elf` with `--no-default-features`; the command-line reader is a host transport behind its own `reader` feature.
 
 ## Minimal Examples
 

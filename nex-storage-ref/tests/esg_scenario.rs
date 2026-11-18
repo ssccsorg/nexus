@@ -23,7 +23,7 @@ use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, Content, CoordId, Fact, Hint, Intent,
 };
 use nex_io::fs_io::FsIo;
-use nex_storage_ref::RefFihStorage;
+use nex_storage_ref::FihStorageRef;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -215,7 +215,7 @@ fn load() -> Scenario {
 /// Write the scenario's records into a volume, which is the whole of what this file does.
 fn author(dir: &Path, scenario: &Scenario) {
     let storage =
-        RefFihStorage::with_auto_flush(FsIo::new(dir).expect("the medium opens"), &scenario.volume);
+        FihStorageRef::with_auto_flush(FsIo::new(dir).expect("the medium opens"), &scenario.volume);
 
     // The name a transformation cites, and the address it names.
     let mut written: BTreeMap<String, CoordId> = BTreeMap::new();

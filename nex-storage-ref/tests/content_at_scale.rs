@@ -8,7 +8,7 @@ use futures_executor::block_on;
 use nex_fih::FihId20 as _;
 use nex_fih::{AsyncFactCapable, Content, CoordId, Fact};
 use nex_io::SimIo;
-use nex_storage_ref::RefFihStorage;
+use nex_storage_ref::FihStorageRef;
 
 /// More records than a bounded cache would hold, so nothing is served from one.
 const N_FACTS: u32 = 10_100;
@@ -16,7 +16,7 @@ const N_FACTS: u32 = 10_100;
 #[test]
 fn every_record_reads_its_content_back() {
     block_on(async {
-        let store = RefFihStorage::new(SimIo::new(), "cache");
+        let store = FihStorageRef::new(SimIo::new(), "cache");
 
         for i in 0..N_FACTS {
             store

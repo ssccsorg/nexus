@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
 use nex_fih::{AsyncFactCapable, AsyncIntentCapable, Content, CoordId, Fact, Intent};
-use nex_storage_ref::RefFihStorage;
+use nex_storage_ref::FihStorageRef;
 
 #[derive(Clone, Default)]
 struct MemoryIo {
@@ -62,7 +62,7 @@ impl FileIo for MemoryIo {
 
 /// Conclude the same intent through `reference`, on a volume of its own.
 fn conclude_through(reference: &str) -> Fact {
-    let storage = RefFihStorage::new(MemoryIo::default(), "identity");
+    let storage = FihStorageRef::new(MemoryIo::default(), "identity");
     let base = Fact::with_id(
         CoordId::resolve("f_base"),
         "origin/one".into(),

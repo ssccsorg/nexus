@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
 use nex_fih::{AsyncFactCapable, Content, CoordId, Fact};
-use nex_storage_ref::RefFihStorage;
+use nex_storage_ref::FihStorageRef;
 
 #[derive(Clone, Default)]
 struct MemoryIo {
@@ -116,7 +116,7 @@ fn fact(id: &str, payload: &str) -> Fact {
 #[test]
 fn a_framing_walk_reports_a_pending_fact_without_its_payload() {
     let medium = MemoryIo::default();
-    let storage = RefFihStorage::new(medium.clone(), "walk");
+    let storage = FihStorageRef::new(medium.clone(), "walk");
     let fact = fact("f_pending", "the payload");
     block_on(storage.submit_fact(&fact)).expect("the fact is accepted");
 
@@ -135,7 +135,7 @@ fn a_framing_walk_reports_a_pending_fact_without_its_payload() {
 #[test]
 fn a_walk_that_stops_reports_the_first_pending_fact_and_returns() {
     let medium = MemoryIo::default();
-    let storage = RefFihStorage::new(medium.clone(), "walk");
+    let storage = FihStorageRef::new(medium.clone(), "walk");
     for id in ["f_one", "f_two"] {
         block_on(storage.submit_fact(&fact(id, id))).expect("the fact is accepted");
     }
@@ -215,7 +215,7 @@ fn a_walk_reports_a_pending_record_the_partial_flush_left_on_the_medium_once() {
         fail_after: 3,
         ..Default::default()
     };
-    let storage = RefFihStorage::new(medium, "walk");
+    let storage = FihStorageRef::new(medium, "walk");
     let first = fact("f_one", "one");
     let second = fact("f_two", "two");
     block_on(storage.submit_fact(&first)).expect("the fact is accepted");
@@ -236,7 +236,7 @@ fn a_walk_reports_a_pending_record_the_partial_flush_left_on_the_medium_once() {
 
 #[test]
 fn a_listed_key_the_channel_cannot_read_is_skipped() {
-    let storage = RefFihStorage::new(
+    let storage = FihStorageRef::new(
         ListingIo {
             key: "facts/f_ghost.fact",
             bytes: None,
@@ -256,7 +256,7 @@ fn a_listed_key_the_channel_cannot_read_is_skipped() {
 
 #[test]
 fn a_listed_key_whose_bytes_do_not_decode_is_skipped() {
-    let storage = RefFihStorage::new(
+    let storage = FihStorageRef::new(
         ListingIo {
             key: "facts/f_garbled.fact",
             bytes: Some(b"not a record"),
