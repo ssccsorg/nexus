@@ -11,6 +11,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
+    "frame": "node tools/frame.mjs",
+    "preinstall": "node tools/frame.mjs",
     "import": "node tools/import-volume.mjs"
   },
   "dependencies": {

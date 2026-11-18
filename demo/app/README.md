@@ -14,8 +14,8 @@ entry point. `./run.sh` here, or `npm run demo`, performs the whole first run in
 
 | Script | What it does |
 |---|---|
-| `./run.sh` | the whole first run in a shell: build, frame, install when absent, board, serve. `--fresh` reinstalls first |
-| `npm run demo` | the whole first run: build, frame, install, import, serve |
+| `./run.sh` | the whole first run in a shell: build, fetch the frame, install, board, serve. `--fresh` reinstalls first |
+| `npm run demo` | the whole first run: build, fetch the frame, install, import, serve |
 | `npm run import` | runs the reference tool over a volume and writes the board and the run |
 | `npm run dev` | serves the application on 5292, with the board injected |
 | `npm run build` | typechecks, then writes a production bundle carrying the board |
@@ -46,7 +46,8 @@ Without a built binary the importer reports what it could not run. `NEX_REF_BIN`
 | `public/_headers` | what the deployment allows the browser, which is no device at all |
 | `tools/import-volume.mjs` | runs the reference tool and writes the board and the run |
 | `tools/sync-project.mjs` | copies one project and its run between two boards, in either direction |
-| `tools/run-demo.mjs` | the first run in one command: build, frame, install, import, serve |
+| `tools/run-demo.mjs` | the first run in one command: build, fetch the frame, install, import, serve |
+| `tools/frame.mjs` | leaves the sibling skene checkout on skene's main and prints the commit |
 | `tests/` | the board, the mark, the importer, and the reading each project opens on |
 
 ## Tests

@@ -4,6 +4,8 @@ target/
 
 # Dependencies
 node_modules/
+# The commit a frontend's frame packages were installed from, written by demo/app/tools/frame.mjs.
+.skene-frame
 *.d.ts
 
 # Python (LightRAG)
