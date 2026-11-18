@@ -8,7 +8,7 @@ set -euo pipefail
 #
 # Usage:
 #   ./run.sh               # Everything (default: core + gateway + apps + demo + playbooks)
-#   ./run.sh --core        # Core checks only (nex, storage/*)
+#   ./run.sh --core        # Core checks only (nex/*, nexd, nex-refstorage)
 #   ./run.sh --gateway     # Gateway layer checks (apps/nex-api, libs/serde-proxy)
 #   ./run.sh --apps        # All standalone app verification
 #   ./run.sh --server      # nex-server standalone verification
@@ -755,7 +755,7 @@ case "${1:-}" in
     --help|-h)
         echo "Usage: $0 [OPTION]"
         echo "  (no arg)        Core + gateway + apps + demo + playbooks [default]"
-        echo "  --core          Core checks only (nex, storage/*)"
+        echo "  --core          Core checks only (nex/*, nexd, nex-refstorage)"
         echo "  --gateway       Gateway layer checks (apps/nex-api, libs/serde-proxy)"
         echo "  --apps          Standalone app verification (spinwasi, nex-tagma, ...)"
         echo "  --server        nex-server standalone verification"

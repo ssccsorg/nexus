@@ -8,12 +8,11 @@
 
 FROM node:22-bookworm-slim AS board
 
-# The frame is a sibling checkout on a host. An image has no sibling, so it is cloned, which is what `run.sh` does when a
-# checkout has none.
+# The frame is a sibling checkout on a host. An image has no sibling, so the install fetches it: `preinstall`
+# leaves it at skene's main and prints the commit, which is the same step a host runs.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates \
  && rm -rf /var/lib/apt/lists/*
-RUN git clone --depth 1 https://github.com/ssccsorg/skene /src/skene
 
 # The application names the frame three levels up from itself, so it is copied to the depth that path expects.
 COPY app /src/nexus/demo/app
