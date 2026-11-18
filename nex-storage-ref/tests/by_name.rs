@@ -17,7 +17,7 @@ use nex_fih::io::file_io::{FileIo, IoFuture};
 use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, Content, CoordId, Fact, Hint, Intent,
 };
-use nex_refstorage::{FactRecord, HintRecord, IntentRecord, RefFihStorage};
+use nex_storage_ref::{FactRecord, HintRecord, IntentRecord, RefFihStorage};
 
 #[derive(Clone, Default)]
 struct MemoryIo {

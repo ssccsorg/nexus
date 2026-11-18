@@ -18,7 +18,7 @@ use nex_client::NexClient;
 use nex_fih::{Content, CoordId, Fact};
 use nex_io::FileIo;
 use nex_io::fs_io::FsIo;
-use nex_refstorage::{FactRecord, HintRecord, IntentRecord};
+use nex_storage_ref::{FactRecord, HintRecord, IntentRecord};
 use std::cell::RefCell;
 use tagma_core::DIGITS_PER_AXIS;
 use tokio::runtime::Runtime;

@@ -14,7 +14,7 @@ use nex_fih::{
     CoordId, Fact, Hint, Intent,
 };
 use nex_io::SimIo;
-use nex_refstorage::{IntentStatus, RefFihStorage};
+use nex_storage_ref::{IntentStatus, RefFihStorage};
 
 fn fact(id: &str, data: &[u8]) -> Fact {
     fact_with(id, data, "coord")

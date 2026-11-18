@@ -12,7 +12,7 @@ use futures_executor::block_on;
 use nex_fih::FihId20 as _;
 use nex_fih::{AsyncFactCapable, BlackboardError, Content, CoordId, Fact};
 use nex_io::SimIo;
-use nex_refstorage::{FactRecord, RefFihStorage};
+use nex_storage_ref::{FactRecord, RefFihStorage};
 
 fn fact(id: &str, data: &[u8]) -> Fact {
     Fact::with_id(

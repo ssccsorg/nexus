@@ -12,7 +12,7 @@ use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, Content, CoordId, Fact, Hint, Intent,
 };
 use nex_io::{FileIo, SimIo};
-use nex_refstorage::RefFihStorage;
+use nex_storage_ref::RefFihStorage;
 
 fn fact(id: &str, data: &str) -> Fact {
     Fact::with_id(
@@ -294,7 +294,7 @@ fn test_scenario_storage_migration() {
 #[test]
 fn test_scenario_malformed_blob_hash_recomputes_content_hash() {
     use nex_fih::BlackboardError;
-    use nex_refstorage::{ContentMeta, FactRecord};
+    use nex_storage_ref::{ContentMeta, FactRecord};
 
     let io = SimIo::new();
     let bad_key = "legacy-non-hex-blob-key";

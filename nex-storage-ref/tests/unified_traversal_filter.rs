@@ -22,7 +22,7 @@ use nex_fih::{
     StateFilter,
 };
 use nex_io::SimIo;
-use nex_refstorage::RefFihStorage;
+use nex_storage_ref::RefFihStorage;
 
 use crate::common::{fact, intent};
 

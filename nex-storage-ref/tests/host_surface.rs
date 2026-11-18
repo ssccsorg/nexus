@@ -18,7 +18,7 @@ use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, Content, CoordId, EvictCapable, Fact,
     FactCapable, Hint, HintCapable, Intent, StorageRead,
 };
-use nex_refstorage::{
+use nex_storage_ref::{
     ContentMeta, FihBlackboard, FihSession, RefFihStorage, export_from_io, import_into_io,
 };
 

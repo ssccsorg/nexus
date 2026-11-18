@@ -412,7 +412,7 @@ dependencies = [
  "nex-core",
  "nex-fih",
  "nex-io",
- "nex-refstorage",
+ "nex-storage-ref",
  "postcard",
  "serde",
  "sha2",
@@ -470,7 +470,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "nex-refstorage"
+name = "nex-storage-ref"
 version = "0.1.0"
 dependencies = [
  "async-trait",

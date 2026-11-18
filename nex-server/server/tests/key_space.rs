@@ -8,8 +8,8 @@ use std::sync::Arc;
 use nex::io::fs_io::FsIo;
 use nex_client::RpcRequest;
 use nex_io::FileIo;
-use nex_refstorage::RefFihStorage;
 use nex_server::handler::{METHODS, dispatch};
+use nex_storage_ref::RefFihStorage;
 use serde_json::{Value, json};
 
 fn volume() -> PathBuf {

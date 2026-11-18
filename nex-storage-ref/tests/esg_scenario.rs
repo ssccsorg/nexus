@@ -23,7 +23,7 @@ use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, Content, CoordId, Fact, Hint, Intent,
 };
 use nex_io::fs_io::FsIo;
-use nex_refstorage::RefFihStorage;
+use nex_storage_ref::RefFihStorage;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 use nex_fih::{Cell2, CoordId};
 use nex_io::FileIo;
-use nex_refstorage::{FactRecord, HintRecord, IntentRecord, RefFihStorage};
+use nex_storage_ref::{FactRecord, HintRecord, IntentRecord, RefFihStorage};
 
 /// A box is answered from the listing, so the node links no index over the axes.
 #[test]

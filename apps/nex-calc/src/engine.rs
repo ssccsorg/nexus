@@ -25,9 +25,9 @@ use sha2::{Digest, Sha256};
 use nex::FileIo;
 use nex_fih::{Content, CoordId, FihHash};
 use nex_io::SimIo;
-use nex_refstorage::ContentMeta;
-use nex_refstorage::IntentStatus;
-use nex_refstorage::{Record, RefFihStorage};
+use nex_storage_ref::ContentMeta;
+use nex_storage_ref::IntentStatus;
+use nex_storage_ref::{Record, RefFihStorage};
 
 use crate::hint::Constraint;
 use crate::ops::OpType;

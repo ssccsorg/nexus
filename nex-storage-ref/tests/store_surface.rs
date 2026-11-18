@@ -19,7 +19,7 @@ use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, BlackboardError, Content, CoordId,
     Fact, Hint, Intent,
 };
-use nex_refstorage::{FactRecord, HintRecord, IntentStatus, RecordTimeUnit, RefFihStorage};
+use nex_storage_ref::{FactRecord, HintRecord, IntentStatus, RecordTimeUnit, RefFihStorage};
 
 #[derive(Clone, Default)]
 struct MemoryIo {
@@ -396,7 +396,7 @@ fn a_legacy_intent_timestamp_is_lifted_once_on_every_read() {
         created_at: 1_700_000_000, // seconds
     };
     medium.put(
-        &nex_refstorage::IntentRecord::intent_key(&id),
+        &nex_storage_ref::IntentRecord::intent_key(&id),
         &postcard::to_allocvec(&legacy).expect("the legacy record serializes"),
     );
 

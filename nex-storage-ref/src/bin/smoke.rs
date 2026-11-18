@@ -12,7 +12,7 @@ use nex_fih::{
     AsyncStorageRead, Content, CoordId, Fact, Hint, Intent, StateFilter,
 };
 use nex_io::SimIo;
-use nex_refstorage::{RefFihStorage, intent_status};
+use nex_storage_ref::{RefFihStorage, intent_status};
 
 fn fact(id: &str, data: &[u8]) -> Fact {
     Fact::with_id(

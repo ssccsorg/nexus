@@ -38,7 +38,7 @@ use nex_fih::{
     IntentCapable, StorageRead,
 };
 use nex_io::SimIo;
-use nex_refstorage::FihBlackboard;
+use nex_storage_ref::FihBlackboard;
 
 // ── Helpers ────────────────────────────────────────────────────────────
 

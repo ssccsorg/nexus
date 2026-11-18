@@ -107,7 +107,7 @@ tokio = { version = "1", features = ["full"] }
 ```rust
 use nex::io::FsIo;
 use nex_fih::{AsyncFactCapable, Content, Fact};
-use nex_refstorage::RefFihStorage;
+use nex_storage_ref::RefFihStorage;
 
 let io = FsIo::new("/tmp/nexus-store")?;
 let store = RefFihStorage::new(io, "my-app");

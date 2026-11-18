@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 use futures_executor::block_on;
 use nex_fih::io::file_io::{FileIo, IoFuture};
 use nex_fih::{AsyncFactCapable, Content, Fact, FactById, FactWalk};
-use nex_refstorage::RefFihStorage;
+use nex_storage_ref::RefFihStorage;
 
 /// An in-memory medium, shared by every network that holds a clone of it.
 #[derive(Clone, Default)]
@@ -142,7 +142,7 @@ fn the_read_surface_answers_over_a_held_volume() {
     // records it did not name itself.
     let mut ids: Vec<String> = Vec::new();
     block_on(
-        network.for_each_fact_record(|record: &nex_refstorage::FactRecord| {
+        network.for_each_fact_record(|record: &nex_storage_ref::FactRecord| {
             ids.push(record.id.clone());
             true
         }),
@@ -171,7 +171,7 @@ fn the_read_surface_answers_a_network_another_session_wrote() {
     let reader = RefFihStorage::new(medium, "contract");
     let mut ids: Vec<String> = Vec::new();
     block_on(
-        reader.for_each_fact_record(|record: &nex_refstorage::FactRecord| {
+        reader.for_each_fact_record(|record: &nex_storage_ref::FactRecord| {
             ids.push(record.id.clone());
             true
         }),

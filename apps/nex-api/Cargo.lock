@@ -1009,27 +1009,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "nexus-gateway-api"
-version = "0.1.0"
-dependencies = [
- "axum",
- "nex",
- "nex-core",
- "nex-fih",
- "nex-io",
- "nex-refstorage",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "nex-refstorage"
+name = "nex-storage-ref"
 version = "0.1.0"
 dependencies = [
  "async-trait",
@@ -1046,6 +1026,26 @@ dependencies = [
  "sha2",
  "tagma-core",
  "tokio",
+]
+
+[[package]]
+name = "nexus-gateway-api"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "nex",
+ "nex-core",
+ "nex-fih",
+ "nex-io",
+ "nex-storage-ref",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

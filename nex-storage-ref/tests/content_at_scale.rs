@@ -8,7 +8,7 @@ use futures_executor::block_on;
 use nex_fih::FihId20 as _;
 use nex_fih::{AsyncFactCapable, Content, CoordId, Fact};
 use nex_io::SimIo;
-use nex_refstorage::RefFihStorage;
+use nex_storage_ref::RefFihStorage;
 
 /// More records than a bounded cache would hold, so nothing is served from one.
 const N_FACTS: u32 = 10_100;

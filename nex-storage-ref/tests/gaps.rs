@@ -6,7 +6,7 @@ mod common;
 
 use nex_fih::{AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, CoordId, Hint};
 use nex_io::SimIo;
-use nex_refstorage::RefFihStorage;
+use nex_storage_ref::RefFihStorage;
 
 fn store() -> RefFihStorage<SimIo> {
     RefFihStorage::new(SimIo::new(), "test")

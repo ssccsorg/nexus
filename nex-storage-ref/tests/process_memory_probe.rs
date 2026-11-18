@@ -28,7 +28,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use futures_executor::block_on;
 use nex_fih::{AsyncFactCapable, Content, CoordId, Fact};
 use nex_io::SimIo;
-use nex_refstorage::RefFihStorage;
+use nex_storage_ref::RefFihStorage;
 
 struct CountingAlloc;
 static LIVE: AtomicUsize = AtomicUsize::new(0);

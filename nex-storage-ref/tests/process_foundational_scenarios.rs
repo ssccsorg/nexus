@@ -24,7 +24,7 @@ use nex_fih::{
     StorageRead,
 };
 use nex_io::SimIo;
-use nex_refstorage::FihBlackboard;
+use nex_storage_ref::FihBlackboard;
 
 fn claim(id: &str, origin: &str, claim_text: &str, topic: &str, position: &str) -> Fact {
     Fact::with_id(

@@ -14,7 +14,7 @@ use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, Content, CoordId, Fact, Hint, Intent,
 };
 use nex_io::{FileIo, SimIo};
-use nex_refstorage::RefFihStorage;
+use nex_storage_ref::RefFihStorage;
 
 /// Clock start at exactly t=100s, far from the next second boundary even
 /// after the per-call step increments of the fake clock.

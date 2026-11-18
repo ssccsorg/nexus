@@ -8,7 +8,7 @@ mod common;
 
 use nex_fih::{AsyncFactCapable, CoordId, StateFilter};
 use nex_io::SimIo;
-use nex_refstorage::RefFihStorage;
+use nex_storage_ref::RefFihStorage;
 
 fn make_clocked() -> RefFihStorage<SimIo> {
     RefFihStorage::with_clock(

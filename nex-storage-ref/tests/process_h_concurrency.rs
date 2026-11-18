@@ -8,7 +8,7 @@
 use nex_fih::FihId20 as _;
 use nex_fih::{Blackboard, BlackboardError, Content, CoordId, Fact, Intent};
 use nex_io::SimIo;
-use nex_refstorage::FihBlackboard;
+use nex_storage_ref::FihBlackboard;
 use std::sync::{Arc, Mutex};
 use std::thread;
 

@@ -10,7 +10,7 @@ use nex_fih::io::file_io::{FileIo, IoFuture};
 use nex_fih::{
     AsyncFactCapable, AsyncIntentCapable, BlackboardError, Content, CoordId, Fact, Intent,
 };
-use nex_refstorage::RefFihStorage;
+use nex_storage_ref::RefFihStorage;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};

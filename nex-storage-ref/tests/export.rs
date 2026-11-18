@@ -8,8 +8,8 @@ use nex_fih::CoordId;
 use nex_fih::FihId20 as _;
 use nex_io::SimIo;
 use nex_io::{BlockingIo, FileIo, SyncFileIo, WriteOp};
-use nex_refstorage::RecordTimeUnit;
-use nex_refstorage::{
+use nex_storage_ref::RecordTimeUnit;
+use nex_storage_ref::{
     ContentMeta, FactRecord, HintRecord, IntentRecord, IntentStatus, export_from_io, import_into_io,
 };
 
@@ -177,7 +177,7 @@ fn test_export_import_fs_to_sim() {
 
 #[test]
 fn test_export_full_fih_lifecycle() {
-    use nex_refstorage::RefFihStorage;
+    use nex_storage_ref::RefFihStorage;
 
     // Seed a SimIo directly with records (not through RefFihStorage).
     let io = SimIo::new();

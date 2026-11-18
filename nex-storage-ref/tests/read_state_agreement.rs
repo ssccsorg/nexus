@@ -10,7 +10,7 @@ use nex_fih::{
     StateFilter,
 };
 use nex_io::SimIo;
-use nex_refstorage::RefFihStorage;
+use nex_storage_ref::RefFihStorage;
 
 #[test]
 fn test_read_state_and_filtered_agree_in_order() {

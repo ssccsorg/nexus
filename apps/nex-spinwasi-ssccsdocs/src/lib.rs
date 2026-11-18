@@ -23,7 +23,7 @@ use nex_fih::semantic::Query as SemanticQuery;
 use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, Content, CoordId, Fact, Hint, Intent,
 };
-use nex_refstorage::RefFihStorage;
+use nex_storage_ref::RefFihStorage;
 use serde::{Deserialize, Serialize};
 
 use crate::bm25::InMemoryBm25;
@@ -90,7 +90,7 @@ impl SemanticQuery for TextQuery {
 
 // ── Snapshot ─────────────────────────────────────────────────────────
 
-use nex_refstorage::{FactRecord, IntentRecord};
+use nex_storage_ref::{FactRecord, IntentRecord};
 
 const SNAPSHOT_KEY: &str = "_snapshot/facts.bin";
 

@@ -21,7 +21,7 @@ use nex_fih::{
     AsyncFactCapable, AsyncHintCapable, AsyncIntentCapable, BoardState, Content, CoordId, Fact,
     Hint, Intent, Now, PartitionData, StateFilter,
 };
-use nex_refstorage::{IntentStatus, RefFihStorage};
+use nex_storage_ref::{IntentStatus, RefFihStorage};
 
 /// An in-memory medium shared by every storage that holds a clone of it.
 #[derive(Clone, Default)]
