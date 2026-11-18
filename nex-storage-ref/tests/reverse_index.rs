@@ -1,0 +1,139 @@
+// ── by_from_fact reverse index tests ────────────────────────────────────
+//
+// Validates the reverse index mapping fact_id -> [intent_id].
+// Covered scenarios:
+//   - Multiple Intents referencing the same Fact
+//   - An Intent referencing multiple Facts
+//   - Nonexistent Fact returns empty vec
+//   - Index cleared on conclude (intent no longer references its from_facts)
+//   - Index survives flush + rebuild_cache round-trip
+
+use nex_fih::FihId20 as _;
+mod common;
+
+use crate::common::FakeClock;
+use futures_executor::block_on;
+use nex_fih::{AsyncFactCapable, AsyncIntentCapable, Content, CoordId, Fact, Intent};
+use nex_io::SimIo;
+use nex_storage_ref::FihStorageRef;
+
+fn storage() -> FihStorageRef<SimIo> {
+    FihStorageRef::new(SimIo::new(), "test")
+}
+
+fn fact(id: &str) -> Fact {
+    Fact::with_id(
+        CoordId::resolve(id),
+        "t".into(),
+        Content {
+            mime_type: "text/plain".into(),
+            data: id.as_bytes().to_vec(),
+        },
+        "t".into(),
+    )
+}
+
+fn intent(id: &str, from: Vec<&str>) -> Intent {
+    Intent {
+        id: CoordId::resolve(id),
+        from_facts: from.into_iter().map(CoordId::resolve).collect(),
+        description: format!("intent {}", id),
+        creator: "t".into(),
+        worker: None,
+        to_fact_id: None,
+        last_heartbeat_at: None,
+        created_at: None,
+        is_concluded: false,
+        concluded_at: None,
+    }
+}
+
+#[test]
+fn test_by_from_fact_returns_intents_for_fact() {
+    let store = storage();
+
+    block_on(store.submit_fact(&fact("f_a"))).unwrap();
+    block_on(store.submit_fact(&fact("f_b"))).unwrap();
+
+    block_on(store.submit_intent(&intent("i1", vec!["f_a"]))).unwrap();
+    block_on(store.submit_intent(&intent("i2", vec!["f_a", "f_b"]))).unwrap();
+
+    let refs_a = store.intents_by_fact("f_a");
+    assert_eq!(refs_a.len(), 2);
+    let id_i1 = CoordId::resolve("i1").to_string();
+    let id_i2 = CoordId::resolve("i2").to_string();
+    assert!(refs_a.contains(&id_i1));
+    assert!(refs_a.contains(&id_i2));
+
+    let refs_b = store.intents_by_fact("f_b");
+    assert_eq!(refs_b.len(), 1);
+    assert!(refs_b.contains(&id_i2));
+
+    assert!(store.intents_by_fact("nonexistent").is_empty());
+}
+
+#[test]
+fn test_by_from_fact_cleared_on_evict_stale() {
+    // evict_stale_intents removes Submitted intents older than the
+    // cutoff; vacate_record must unlink the reverse index so the evicted
+    // intent no longer appears for its from-fact.
+    let clock = FakeClock::new(1_000_000_000_000); // t = 1000s
+    let store = FihStorageRef::with_clock(SimIo::new(), "evict-rev", Box::new(clock.clone()));
+
+    block_on(store.submit_fact(&fact("f_ev"))).unwrap();
+    block_on(store.submit_intent(&intent("i_ev", vec!["f_ev"]))).unwrap();
+    assert_eq!(store.intents_by_fact("f_ev").len(), 1);
+
+    // Advance the clock so the intent's created_at is older than the
+    // cutoff computed by evict_stale_intents(60s).
+    clock.advance_secs(100);
+    let evicted = block_on(store.evict_stale_intents(60_000_000_000)).unwrap();
+    assert_eq!(evicted, 1, "the stale Submitted intent is evicted");
+
+    assert!(
+        store.intents_by_fact("f_ev").is_empty(),
+        "evicted intent must not appear in the reverse index"
+    );
+    assert_eq!(
+        store.all_intent_ids().len(),
+        0,
+        "the evicted intent record is removed"
+    );
+}
+
+#[test]
+fn test_by_from_fact_cleared_on_conclude() {
+    let store = storage();
+
+    block_on(store.submit_fact(&fact("f_base"))).unwrap();
+    block_on(store.submit_intent(&intent("i_concl", vec!["f_base"]))).unwrap();
+
+    assert_eq!(store.intents_by_fact("f_base").len(), 1);
+
+    block_on(store.claim_intent("i_concl", "alice")).unwrap();
+    block_on(store.conclude_intent("i_concl", "done")).unwrap();
+
+    // Note: after conclude, the intent remains in the by_from_fact reverse
+    // index but its status changes to Concluded (see test_scenario_concluded_intent_references_preserved
+    // in store_restore_scenarios for the rebuild-based reference check).
+    assert_eq!(store.intents_by_fact("f_base").len(), 1);
+}
+
+#[test]
+fn test_by_from_fact_rebuild_from_io() {
+    let io = SimIo::new();
+    let store = FihStorageRef::new(io.clone(), "test");
+
+    block_on(store.submit_fact(&fact("f_x"))).unwrap();
+    block_on(store.submit_intent(&intent("i_ref", vec!["f_x"]))).unwrap();
+
+    block_on(store.flush_pending()).unwrap();
+
+    let store2 = FihStorageRef::new(io, "test");
+    block_on(store2.rebuild_cache()).unwrap();
+
+    let refs = store2.intents_by_fact("f_x");
+    assert_eq!(refs.len(), 1);
+    let id_i_ref = CoordId::resolve("i_ref").to_string();
+    assert!(refs.contains(&id_i_ref));
+}

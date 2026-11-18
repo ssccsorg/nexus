@@ -202,11 +202,7 @@ impl ProcessManager {
             self.children.remove(&pid);
         }
         for respawn in respawns {
-            let Respawn {
-                command,
-                args,
-                env,
-            } = respawn;
+            let Respawn { command, args, env } = respawn;
             if let Ok(handle) = self.spawn_managed_env(&command, &args, true, &env) {
                 info!(command = %command, pid = handle.pid, "respawned crashed child");
             }

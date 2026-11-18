@@ -36,7 +36,8 @@ the wire, the router, the hub, and the process layer.
 | [`fih/`](fih) | `Fact`, `Intent`, `Hint`, `CoordId`, capability traits, `Now`, cold query contract. `no_std + alloc` |
 | [`nex/`](nex) | the state model (`nex-fih`, `fih-model`), the IO seam (`nex-io`), the wire (`nex-protocol`), the routing table (`nex-router`), the hub (`nex-hub`), and the process layer (`nex`) |
 | [`nex-server/`](nex-server), [`nexd/`](nexd) | the board served over a Unix socket, its typed client (`nex-client`), and the daemon that supervises it |
-| [`storage/ref/`](storage/ref) | reference node: read a volume by key, answer a box from the keys, check a record by recomputing its address |
+| [`nex-storage-ref/`](nex-storage-ref) | reference node: read a volume by key, answer a box from the keys, check a record by recomputing its address |
+| [`demo/`](demo) | the reference node's visual demonstration: a Vite board over its committed volumes, and the importer that writes it |
 | [`apps/`](apps) | applications built on the model, each with its own workspace and verifier |
 | [`libs/`](libs) | shared host libraries |
 | [`playbooks/`](playbooks) | consumer playbooks |
@@ -46,9 +47,9 @@ the wire, the router, the hub, and the process layer.
 
 ### The reference node
 
-`storage/ref` demonstrates the storage contract at its simplest. It reads a key, lists a prefix, answers a box, and checks a record by recomputing its address. A box is answered by listing the keys and comparing their coordinates, so its cost is one pass over the key space.
+`nex-storage-ref` demonstrates the storage contract at its simplest. It reads a key, lists a prefix, answers a box, and checks a record by recomputing its address. A box is answered by listing the keys and comparing their coordinates, so its cost is one pass over the key space.
 
-The board in `storage/ref/demo` draws those reads over committed volumes, read-only.
+The board in `demo` draws those reads over committed volumes, read-only.
 
 The contract states what a reader receives. What a node holds, how it finds it, and what it costs to find are the node's own decisions. The table is the whole of the distinction this repository draws.
 
@@ -76,10 +77,10 @@ Two entry points, one line each.
 
 | Entry point | Requirements | Behavior |
 |---|---|---|
-| `cargo run -q -p nexus-storage-ref -- self-check` | a Rust toolchain | runs the storage contract in a temporary volume and prints the coordinate it derived |
+| `cargo run -q -p nex-storage-ref -- self-check` | a Rust toolchain | runs the storage contract in a temporary volume and prints the coordinate it derived |
 | `./run.sh --demo` | a Rust toolchain and Node 20+ | builds the reference, checks the demonstration, and serves the board on `http://localhost:5292` |
 
-Both run on macOS, Linux, and Windows. `npm --prefix storage/ref/demo/app run demo` is the same demonstration run
+Both run on macOS, Linux, and Windows. `npm --prefix demo/app run demo` is the same demonstration run
 without a POSIX shell.
 
 The wasm check and the no_std anchor check require targets beyond the default build.
@@ -99,17 +100,17 @@ Pin the repository by revision.
 [dependencies]
 nex = { git = "https://github.com/ssccsorg/nexus", package = "nex", rev = "<commit>" }
 nex-fih = { git = "https://github.com/ssccsorg/nexus", package = "nex-fih", rev = "<commit>" }
-nexus-storage-ref = { git = "https://github.com/ssccsorg/nexus", package = "nexus-storage-ref", rev = "<commit>" }
+nex-storage-ref = { git = "https://github.com/ssccsorg/nexus", package = "nex-storage-ref", rev = "<commit>" }
 tokio = { version = "1", features = ["full"] }
 ```
 
 ```rust
 use nex::io::FsIo;
 use nex_fih::{AsyncFactCapable, Content, Fact};
-use nexus_storage_ref::RefFihStorage;
+use nex_storage_ref::FihStorageRef;
 
 let io = FsIo::new("/tmp/nexus-store")?;
-let store = RefFihStorage::new(io, "my-app");
+let store = FihStorageRef::new(io, "my-app");
 store.rebuild_cache().await?;
 
 let fact = Fact::new("user-note".to_string(), Content::from("remember this"), "my-app".into());
@@ -139,7 +140,7 @@ Targets without an operating system require three things.
 - Provide `alloc` and a `critical-section` implementation.
 - Inject a clock through `Now`.
 
-The reference node is `RefFihStorage` in [`storage/ref`](storage/ref), the crate `nexus-storage-ref`. Its record path builds for `riscv32imac-unknown-none-elf` with `--no-default-features`; the command-line reader is a host transport behind its own `reader` feature.
+The reference node is `FihStorageRef` in [`nex-storage-ref`](nex-storage-ref), the crate `nex-storage-ref`. Its record path builds for `riscv32imac-unknown-none-elf` with `--no-default-features`; the command-line reader is a host transport behind its own `reader` feature.
 
 ## Minimal Examples
 
@@ -148,7 +149,8 @@ Each is one part of the project in its smallest complete form.
 | Path | Scope |
 |---|---|
 | [`apps/nex-calc`](apps/nex-calc) | the FIH model itself: a calculation is a recorded traversal, and the traversal is the computation |
-| [`storage/ref`](storage/ref) | the storage surface: read a volume by key, answer a multi-axis question from the keys, check a record by recomputing its address. Carries a [demonstration board](storage/ref/demo) that draws the same reads |
+| [`nex-storage-ref`](nex-storage-ref) | the storage surface: read a volume by key, answer a multi-axis question from the keys, check a record by recomputing its address |
+| [`demo`](demo) | the reference node's visual demonstration: one board over committed volumes, and the importer that writes it |
 | [`apps/nex-derive`](apps/nex-derive) | a directed goal space: a goal is work, intent, and contract, and resolving it derives a fact |
 
 ## Testing

@@ -9,10 +9,10 @@
 // Usage:
 //   cd tests/agents && cargo run
 
-use nexus_storage_ref::FihBlackboard;
 use nex_fih::FihId20 as _;
 use nex_fih::{CoordId, Fact, FactCapable, Intent, IntentCapable, StorageRead};
 use nex_io::SimIo;
+use nex_storage_ref::FihBlackboard;
 
 fn main() {
     println!("=== Rust Privileged Agent: Direct Blackboard Access (FihBlackboard) ===\n");

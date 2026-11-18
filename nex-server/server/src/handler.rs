@@ -1,4 +1,4 @@
-// ── Handler — JSON-RPC 2.0 method dispatch for RefFihStorage ────────────────
+// ── Handler — JSON-RPC 2.0 method dispatch for FihStorageRef ────────────────
 
 use nex_fih::FihId20 as _;
 use std::sync::Arc;
@@ -10,7 +10,7 @@ use nex_fih::{
     Fact, Hint, Intent,
 };
 use nex_io::FileIo;
-use nexus_storage_ref::RefFihStorage;
+use nex_storage_ref::FihStorageRef;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -42,7 +42,7 @@ pub const METHODS: &[&str] = &[
     "storage.read",
 ];
 
-pub async fn dispatch(req: RpcRequest, storage: &Arc<RefFihStorage<FsIo>>) -> RpcResponse {
+pub async fn dispatch(req: RpcRequest, storage: &Arc<FihStorageRef<FsIo>>) -> RpcResponse {
     let id = req.id;
 
     match req.method.as_str() {
@@ -72,7 +72,7 @@ pub async fn dispatch(req: RpcRequest, storage: &Arc<RefFihStorage<FsIo>>) -> Rp
 async fn handle_storage_keys(
     id: Value,
     params: &Value,
-    storage: &Arc<RefFihStorage<FsIo>>,
+    storage: &Arc<FihStorageRef<FsIo>>,
 ) -> RpcResponse {
     #[derive(Deserialize)]
     struct Params {
@@ -92,7 +92,7 @@ async fn handle_storage_keys(
 async fn handle_storage_read(
     id: Value,
     params: &Value,
-    storage: &Arc<RefFihStorage<FsIo>>,
+    storage: &Arc<FihStorageRef<FsIo>>,
 ) -> RpcResponse {
     #[derive(Deserialize)]
     struct Params {
@@ -122,7 +122,7 @@ fn to_hex(bytes: &[u8]) -> String {
 async fn handle_write_fact(
     id: Value,
     params: &Value,
-    storage: &Arc<RefFihStorage<FsIo>>,
+    storage: &Arc<FihStorageRef<FsIo>>,
 ) -> RpcResponse {
     #[derive(Deserialize)]
     struct Params {
@@ -163,12 +163,12 @@ async fn handle_write_fact(
     }
 }
 
-async fn handle_read_state(id: Value, storage: &Arc<RefFihStorage<FsIo>>) -> RpcResponse {
+async fn handle_read_state(id: Value, storage: &Arc<FihStorageRef<FsIo>>) -> RpcResponse {
     let state = storage.read_state().await;
     RpcResponse::success(id, serde_json::to_value(state).unwrap_or_default())
 }
 
-async fn handle_read_state_struct(id: Value, storage: &Arc<RefFihStorage<FsIo>>) -> RpcResponse {
+async fn handle_read_state_struct(id: Value, storage: &Arc<FihStorageRef<FsIo>>) -> RpcResponse {
     let state = storage.read_state_struct().await;
     RpcResponse::success(id, serde_json::to_value(state).unwrap_or_default())
 }
@@ -176,7 +176,7 @@ async fn handle_read_state_struct(id: Value, storage: &Arc<RefFihStorage<FsIo>>)
 async fn handle_read_fact(
     id: Value,
     params: &Value,
-    storage: &Arc<RefFihStorage<FsIo>>,
+    storage: &Arc<FihStorageRef<FsIo>>,
 ) -> RpcResponse {
     #[derive(Deserialize)]
     struct Params {
@@ -200,7 +200,7 @@ async fn handle_read_fact(
 async fn handle_read_intent(
     id: Value,
     params: &Value,
-    storage: &Arc<RefFihStorage<FsIo>>,
+    storage: &Arc<FihStorageRef<FsIo>>,
 ) -> RpcResponse {
     #[derive(Deserialize)]
     struct Params {
@@ -224,7 +224,7 @@ async fn handle_read_intent(
 async fn handle_read_hint(
     id: Value,
     params: &Value,
-    storage: &Arc<RefFihStorage<FsIo>>,
+    storage: &Arc<FihStorageRef<FsIo>>,
 ) -> RpcResponse {
     #[derive(Deserialize)]
     struct Params {
@@ -250,7 +250,7 @@ async fn handle_read_hint(
 async fn handle_write_intent(
     id: Value,
     params: &Value,
-    storage: &Arc<RefFihStorage<FsIo>>,
+    storage: &Arc<FihStorageRef<FsIo>>,
 ) -> RpcResponse {
     #[derive(Deserialize)]
     struct Params {
@@ -292,7 +292,7 @@ async fn handle_write_intent(
 async fn handle_claim_intent(
     id: Value,
     params: &Value,
-    storage: &Arc<RefFihStorage<FsIo>>,
+    storage: &Arc<FihStorageRef<FsIo>>,
 ) -> RpcResponse {
     #[derive(Deserialize)]
     struct Params {
@@ -316,7 +316,7 @@ async fn handle_claim_intent(
 async fn handle_heartbeat_intent(
     id: Value,
     params: &Value,
-    storage: &Arc<RefFihStorage<FsIo>>,
+    storage: &Arc<FihStorageRef<FsIo>>,
 ) -> RpcResponse {
     #[derive(Deserialize)]
     struct Params {
@@ -340,7 +340,7 @@ async fn handle_heartbeat_intent(
 async fn handle_release_intent(
     id: Value,
     params: &Value,
-    storage: &Arc<RefFihStorage<FsIo>>,
+    storage: &Arc<FihStorageRef<FsIo>>,
 ) -> RpcResponse {
     #[derive(Deserialize)]
     struct Params {
@@ -364,7 +364,7 @@ async fn handle_release_intent(
 async fn handle_conclude_intent(
     id: Value,
     params: &Value,
-    storage: &Arc<RefFihStorage<FsIo>>,
+    storage: &Arc<FihStorageRef<FsIo>>,
 ) -> RpcResponse {
     #[derive(Deserialize)]
     struct Params {
@@ -395,7 +395,7 @@ async fn handle_conclude_intent(
 async fn handle_write_hint(
     id: Value,
     params: &Value,
-    storage: &Arc<RefFihStorage<FsIo>>,
+    storage: &Arc<FihStorageRef<FsIo>>,
 ) -> RpcResponse {
     #[derive(Deserialize)]
     struct Params {

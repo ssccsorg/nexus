@@ -13,11 +13,11 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use nex_protocol::{NodeRegistration, RpcRequest, RpcResponse, METHOD_REGISTER, NO_NODE};
+use nex_protocol::{METHOD_REGISTER, NO_NODE, NodeRegistration, RpcRequest, RpcResponse};
 use nex_router::Router;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::{mpsc, oneshot, RwLock};
+use tokio::sync::{RwLock, mpsc, oneshot};
 
 /// How long a client waits for the node to answer.
 const NODE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -110,7 +110,11 @@ async fn serve_node(
     let registration: NodeRegistration = match serde_json::from_value(first.params.clone()) {
         Ok(registration) => registration,
         Err(error) => {
-            reply(&mut write, RpcResponse::invalid_params(first.id, error.to_string())).await?;
+            reply(
+                &mut write,
+                RpcResponse::invalid_params(first.id, error.to_string()),
+            )
+            .await?;
             return Ok(());
         }
     };
@@ -127,7 +131,11 @@ async fn serve_node(
             .await
             .insert(registration.node.clone(), job_tx);
     }
-    reply(&mut write, RpcResponse::success(first.id, serde_json::json!({ "ok": true }))).await?;
+    reply(
+        &mut write,
+        RpcResponse::success(first.id, serde_json::json!({ "ok": true })),
+    )
+    .await?;
     tracing::info!(node = %registration.node, methods = ?registration.methods, "node registered");
 
     // The reader feeds responses to the job loop. A node speaks only when spoken to, so the

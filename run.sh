@@ -8,7 +8,7 @@ set -euo pipefail
 #
 # Usage:
 #   ./run.sh               # Everything (default: core + gateway + apps + demo + playbooks)
-#   ./run.sh --core        # Core checks only (nex, storage/*)
+#   ./run.sh --core        # Core checks only (nex/*, nexd, nex-storage-ref)
 #   ./run.sh --gateway     # Gateway layer checks (apps/nex-api, libs/serde-proxy)
 #   ./run.sh --apps        # All standalone app verification
 #   ./run.sh --server      # nex-server standalone verification
@@ -531,28 +531,27 @@ verify_nex_tagma() {
 
 # ── The demonstration ─────────────────────────────────────────────────────
 #
-# `storage/ref/demo/app` is the only consumer of the reference crate that runs the
+# `demo/app` is the only consumer of the reference crate that runs the
 # binary and reads what it printed. It is a Vite deployment of a package it does not
 # own, so it is checked the way CI checks it: the frame is the sibling clone, the
 # install is `npm ci`, and the runs are compared with the committed bytes.
 
-DEMO_APP="storage/ref/demo/app"
+DEMO_APP="demo/app"
 
 # A failure names the next thing to run, so a reader does not have to read this file to recover.
 demo_next() {
     echo "  $*"
 }
 
-# The frame sits beside this checkout rather than in it, because the application names it five levels up.
+# The frame sits beside this checkout rather than in it, because the application names it three levels up.
 ensure_frame() {
-    if [ ! -d "../skene/packages/frame" ]; then
-        echo "Putting the frame beside this checkout..."
-        git clone --depth 1 https://github.com/ssccsorg/skene ../skene 2>&1 || {
-            echo "demo: the frame could not be cloned (FAIL)"
-            demo_next "Put a checkout of ssccsorg/skene beside this one at ../skene, or check the network."
-            return 1
-        }
-    fi
+    # The frame is fetched at skene's main rather than left as whatever sits beside this checkout, and the step prints
+    # the commit the board is built from.
+    ( cd "$DEMO_APP" && npm run --silent frame ) 2>&1 || {
+        echo "demo: the frame could not be fetched (FAIL)"
+        demo_next "skene is read from the network on every run: check the network, then run this again."
+        return 1
+    }
 }
 
 ensure_npm() {
@@ -577,7 +576,7 @@ install_demo() {
     echo "Installing the application..."
     (cd "$APP" && npm ci) 2>&1 || {
         echo "demo: the install FAILED"
-        demo_next "Delete storage/ref/demo/app/node_modules and retry; the frame is copied into it here."
+        demo_next "Delete demo/app/node_modules and retry; the frame is copied into it here."
         return 1
     }
 }
@@ -590,7 +589,7 @@ verify_demo() {
 
     # The importer runs this binary and never builds it.
     echo "Building the reference tool..."
-    cargo build -p nexus-storage-ref 2>&1 || {
+    cargo build -p nex-storage-ref 2>&1 || {
         echo "demo: the tool's build FAILED"
         demo_next "Install a Rust toolchain from https://rustup.rs; the importer runs the built binary."
         return 1
@@ -607,7 +606,7 @@ verify_demo() {
     echo "Building the application..."
     (cd "$APP" && npm run build) 2>&1 || {
         echo "demo: the build FAILED"
-        demo_next "Run the same command in storage/ref/demo/app to see the output without the runner's."
+        demo_next "Run the same command in demo/app to see the output without the runner's."
         return 1
     }
 
@@ -634,12 +633,15 @@ serve_demo() {
     ensure_npm || return 1
     ensure_frame || return 1
 
-    # `npm ci` deletes the tree before it installs, so a serve pays for it only when it is absent.
-    if [ ! -d "$APP/node_modules" ]; then
+    # `npm ci` deletes the tree before it installs, so a serve pays for it only when the packages are not the ones the
+    # lock and the frame describe: the frame's packages are packed, so a copy from another commit stays stale.
+    if [ ! -d "$APP/node_modules" ] ||
+        [ "$APP/package-lock.json" -nt "$APP/node_modules/.package-lock.json" ] ||
+        [ "$APP/.skene-frame" -nt "$APP/node_modules/.package-lock.json" ]; then
         echo "Installing the application..."
         (cd "$APP" && npm ci) 2>&1 || {
             echo "demo: the install FAILED"
-            demo_next "Delete storage/ref/demo/app/node_modules and retry; the frame is copied into it here."
+            demo_next "Delete demo/app/node_modules and retry; the frame is copied into it here."
             return 1
         }
     fi
@@ -753,7 +755,7 @@ case "${1:-}" in
     --help|-h)
         echo "Usage: $0 [OPTION]"
         echo "  (no arg)        Core + gateway + apps + demo + playbooks [default]"
-        echo "  --core          Core checks only (nex, storage/*)"
+        echo "  --core          Core checks only (nex/*, nexd, nex-storage-ref)"
         echo "  --gateway       Gateway layer checks (apps/nex-api, libs/serde-proxy)"
         echo "  --apps          Standalone app verification (spinwasi, nex-tagma, ...)"
         echo "  --server        nex-server standalone verification"

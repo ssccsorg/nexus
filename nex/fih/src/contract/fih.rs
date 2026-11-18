@@ -3,7 +3,7 @@
 // The FIH contract layer orchestrates governance primitives into a
 // coherent pipeline: gate to storage to evidence. Apps that want governed
 // FIH operations create a `FihContract` and call its methods.
-// Apps without governance use RefFihStorage directly.
+// Apps without governance use FihStorageRef directly.
 //
 // The contract layer is a semantic model plus storage specification: it
 // never reads wall-clock time or executes async I/O itself. Time comes

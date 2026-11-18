@@ -694,7 +694,7 @@ dependencies = [
  "nex",
  "nex-core",
  "nex-fih",
- "nexus-storage-ref",
+ "nex-storage-ref",
  "postcard",
  "serde",
  "serde_json",
@@ -706,7 +706,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "nexus-storage-ref"
+name = "nex-storage-ref"
 version = "0.1.0"
 dependencies = [
  "async-trait",

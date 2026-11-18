@@ -18,7 +18,7 @@ extern crate std;
 //   detection   — DetectionCapable trait family
 //   interner    — Deprecated string interner (moved from nexus-model)
 //
-// An implementation of the storage contract is a node, and it lives in storage/ref here
+// An implementation of the storage contract is a node, and it lives in nex-storage-ref here
 // or in the storage layer it belongs to.
 
 // Re-export everything from fih-model (pure types + traits)

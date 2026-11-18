@@ -8,20 +8,20 @@ use std::sync::Arc;
 use nex::io::fs_io::FsIo;
 use nex_client::RpcRequest;
 use nex_io::FileIo;
-use nex_server::handler::{dispatch, METHODS};
-use nexus_storage_ref::RefFihStorage;
-use serde_json::{json, Value};
+use nex_server::handler::{METHODS, dispatch};
+use nex_storage_ref::FihStorageRef;
+use serde_json::{Value, json};
 
 fn volume() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../storage/ref/demo/volume")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../demo/volume")
 }
 
-fn node() -> Arc<RefFihStorage<FsIo>> {
+fn node() -> Arc<FihStorageRef<FsIo>> {
     let io = FsIo::new(volume()).expect("the demo volume opens");
-    Arc::new(RefFihStorage::new(io, "nex-server-test"))
+    Arc::new(FihStorageRef::new(io, "nex-server-test"))
 }
 
-async fn ask(node: &Arc<RefFihStorage<FsIo>>, method: &str, params: Value) -> Value {
+async fn ask(node: &Arc<FihStorageRef<FsIo>>, method: &str, params: Value) -> Value {
     let response = dispatch(
         RpcRequest {
             id: json!(1),
@@ -90,10 +90,7 @@ async fn a_key_the_volume_does_not_hold_reads_as_nothing() {
         json!({ "key": "facts/f_000000000000000000000000000000000000000000000000000000000000.fact" }),
     )
     .await;
-    assert!(
-        answered["data"].is_null(),
-        "an absent key is a null answer"
-    );
+    assert!(answered["data"].is_null(), "an absent key is a null answer");
 }
 
 #[tokio::test]
@@ -120,8 +117,5 @@ fn the_node_registers_the_key_space_methods() {
         METHODS.contains(&"storage.keys"),
         "the node owns the listing"
     );
-    assert!(
-        METHODS.contains(&"storage.read"),
-        "the node owns the read"
-    );
+    assert!(METHODS.contains(&"storage.read"), "the node owns the read");
 }

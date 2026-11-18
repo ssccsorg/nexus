@@ -14,7 +14,7 @@ layer.
 | `hub` (`nex-hub`) | the hub as a process: a client's request reaches the node that answers it |
 | `process` (`nex`) | the process layer: scheduling and detection over a blackboard |
 
-A storage implementation is a node, and it is not here. `storage/ref` is the reference node: it
+A storage implementation is a node, and it is not here. `nex-storage-ref` is the reference node: it
 keeps records in maps, writes them at the keys the format publishes, and answers the read
 surface, so a consumer sees the shape before choosing an implementation. Durability, an index
 over the axes, and a bounded device read are a storage layer's decisions.

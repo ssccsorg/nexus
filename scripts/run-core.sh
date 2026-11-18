@@ -46,7 +46,7 @@ run_dep_refresh() {
     cargo update -p chton 2>&1
 }
 
-run_check()  { run_dep_refresh && cargo check -p nex && cargo check -p nexd && cargo check -p nexus-storage-ref && (cd nex && cargo check -p nex-protocol -p nex-router -p nex-hub -p nex-io -p nex-fih); }
+run_check()  { run_dep_refresh && cargo check -p nex && cargo check -p nexd && cargo check -p nex-storage-ref && (cd nex && cargo check -p nex-protocol -p nex-router -p nex-hub -p nex-io -p nex-fih); }
 
 # ── WASM check: every core crate builds for the wasm32 target ──────────
 
@@ -80,7 +80,7 @@ run_wasm_check() {
         -not -path './apps/*' \
         -not -path './verify/*' \
         -not -path './storage/ve-composite/*' \
-        -not -path './storage/ref/*' \
+        -not -path './nex-storage-ref/*' \
         -not -path './nexd/*' \
         -not -path './nex-server/*' \
         -not -path './nex/hub/*' \
@@ -141,7 +141,7 @@ run_nostd_check() {
     done
     echo "=== no_std anchor tests ==="
     (cd nex && cargo test -p nex-core --no-default-features --test no_std_anchors) 2>&1
-    cargo test -p nexus-storage-ref --no-default-features --test no_std_anchors 2>&1
+    cargo test -p nex-storage-ref --no-default-features --test no_std_anchors 2>&1
     echo "=== true no_std target: wasm32-unknown-unknown ==="
     (cd nex && cargo check -p nex-core --no-default-features --target wasm32-unknown-unknown) 2>&1
     (cd nex && cargo check -p nex-fih --no-default-features --target wasm32-unknown-unknown) 2>&1
@@ -154,7 +154,7 @@ run_nostd_check() {
     # and nothing a host provides, so it has to reach the MCU target with the wire.
     (cd nex && cargo check -p nex-router --no-default-features --target riscv32imac-unknown-none-elf) 2>&1
     # The README says the record path reaches the MCU target, so the claim is held here.
-    cargo build -p nexus-storage-ref --no-default-features --target riscv32imac-unknown-none-elf 2>&1
+    cargo build -p nex-storage-ref --no-default-features --target riscv32imac-unknown-none-elf 2>&1
 }
 
 
@@ -238,10 +238,10 @@ run_test()   {
     # The reference's own contract: exit codes, the read that creates nothing,
     # and the prefix filter. It has no test elsewhere, so it runs here or
     # nowhere.
-    cargo test -p nexus-storage-ref -- --nocapture 2>&1
+    cargo test -p nex-storage-ref -- --nocapture 2>&1
     echo "---"
     # smoke verification runner: exercises every storage capability end to end
-    cargo run -p nexus-storage-ref --bin storage-smoke 2>&1
+    cargo run -p nex-storage-ref --bin storage-smoke 2>&1
     echo "---"
 }
 run_all() {
