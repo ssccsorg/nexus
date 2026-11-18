@@ -22,11 +22,11 @@ use sha2::{Digest, Sha256};
 
 use nex::contract::fih::FihContract;
 use nex::io::FileIo;
-use nexus_storage_ref::IntentStatus;
-use nexus_storage_ref::{ContentMeta, FactRecord, HintRecord, IntentRecord};
-use nexus_storage_ref::RefFihStorage;
+use nex_refstorage::IntentStatus;
+use nex_refstorage::{ContentMeta, FactRecord, HintRecord, IntentRecord};
+use nex_refstorage::RefFihStorage;
 use nex_fih::{Content, CoordId, FihHash};
-use nexus_storage_ref::{RecordTimeUnit};
+use nex_refstorage::{RecordTimeUnit};
 use nex_io::SimIo;
 
 use crate::hint::Constraint;

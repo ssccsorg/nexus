@@ -7,7 +7,7 @@ license.workspace = true
 [dependencies]
 nex-io = { path = "../../nex/io" }
 nex-protocol = { path = "../../nex/protocol" }
-nexus-storage-ref = { path = "../../storage/ref" }
+nex-refstorage = { path = "../../nex-refstorage" }
 nex = { path = "../../nex/process" }
 nex-client = { path = "../client" }
 nex-core = { path = "../../nex/core" }

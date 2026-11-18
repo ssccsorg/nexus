@@ -531,19 +531,19 @@ verify_nex_tagma() {
 
 # ── The demonstration ─────────────────────────────────────────────────────
 #
-# `storage/ref/demo/app` is the only consumer of the reference crate that runs the
+# `demo/app` is the only consumer of the reference crate that runs the
 # binary and reads what it printed. It is a Vite deployment of a package it does not
 # own, so it is checked the way CI checks it: the frame is the sibling clone, the
 # install is `npm ci`, and the runs are compared with the committed bytes.
 
-DEMO_APP="storage/ref/demo/app"
+DEMO_APP="demo/app"
 
 # A failure names the next thing to run, so a reader does not have to read this file to recover.
 demo_next() {
     echo "  $*"
 }
 
-# The frame sits beside this checkout rather than in it, because the application names it five levels up.
+# The frame sits beside this checkout rather than in it, because the application names it three levels up.
 ensure_frame() {
     if [ ! -d "../skene/packages/frame" ]; then
         echo "Putting the frame beside this checkout..."
@@ -577,7 +577,7 @@ install_demo() {
     echo "Installing the application..."
     (cd "$APP" && npm ci) 2>&1 || {
         echo "demo: the install FAILED"
-        demo_next "Delete storage/ref/demo/app/node_modules and retry; the frame is copied into it here."
+        demo_next "Delete demo/app/node_modules and retry; the frame is copied into it here."
         return 1
     }
 }
@@ -590,7 +590,7 @@ verify_demo() {
 
     # The importer runs this binary and never builds it.
     echo "Building the reference tool..."
-    cargo build -p nexus-storage-ref 2>&1 || {
+    cargo build -p nex-refstorage 2>&1 || {
         echo "demo: the tool's build FAILED"
         demo_next "Install a Rust toolchain from https://rustup.rs; the importer runs the built binary."
         return 1
@@ -607,7 +607,7 @@ verify_demo() {
     echo "Building the application..."
     (cd "$APP" && npm run build) 2>&1 || {
         echo "demo: the build FAILED"
-        demo_next "Run the same command in storage/ref/demo/app to see the output without the runner's."
+        demo_next "Run the same command in demo/app to see the output without the runner's."
         return 1
     }
 
@@ -639,7 +639,7 @@ serve_demo() {
         echo "Installing the application..."
         (cd "$APP" && npm ci) 2>&1 || {
             echo "demo: the install FAILED"
-            demo_next "Delete storage/ref/demo/app/node_modules and retry; the frame is copied into it here."
+            demo_next "Delete demo/app/node_modules and retry; the frame is copied into it here."
             return 1
         }
     fi

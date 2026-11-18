@@ -23,9 +23,9 @@ use std::fmt;
 use sha2::{Digest, Sha256};
 
 use nex::FileIo;
-use nexus_storage_ref::IntentStatus;
-use nexus_storage_ref::ContentMeta;
-use nexus_storage_ref::{Record, RefFihStorage};
+use nex_refstorage::IntentStatus;
+use nex_refstorage::ContentMeta;
+use nex_refstorage::{Record, RefFihStorage};
 use nex_fih::{Content, CoordId, FihHash};
 use nex_io::SimIo;
 

@@ -9,7 +9,7 @@ description = "FIH-based calculator with FihContract layer — demonstrates gove
 
 [dependencies]
 nex-io = { path = "../../nex/io" }
-nexus-storage-ref = { path = "../../storage/ref" }
+nex-refstorage = { path = "../../nex-refstorage" }
 nex-core = { path = "../../nex/core" }
 nex-fih = { path = "../../nex/fih" }
 nex = { path = "../../nex/process" }

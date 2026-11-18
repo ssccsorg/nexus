@@ -7,7 +7,7 @@ description = "FIH-based calculator — computation as state space traversal"
 
 [dependencies]
 nex-io = { path = "../../nex/io" }
-nexus-storage-ref = { path = "../../storage/ref" }
+nex-refstorage = { path = "../../nex-refstorage" }
 nex-core = { path = "../../nex/core" }
 nex-fih = { path = "../../nex/fih" }
 nex = { path = "../../nex/process" }

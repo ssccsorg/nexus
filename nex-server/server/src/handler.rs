@@ -10,7 +10,7 @@ use nex_fih::{
     Fact, Hint, Intent,
 };
 use nex_io::FileIo;
-use nexus_storage_ref::RefFihStorage;
+use nex_refstorage::RefFihStorage;
 use serde::Deserialize;
 use serde_json::{Value, json};
 

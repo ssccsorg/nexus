@@ -9,11 +9,11 @@ use nex::io::fs_io::FsIo;
 use nex_client::RpcRequest;
 use nex_io::FileIo;
 use nex_server::handler::{dispatch, METHODS};
-use nexus_storage_ref::RefFihStorage;
+use nex_refstorage::RefFihStorage;
 use serde_json::{json, Value};
 
 fn volume() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../storage/ref/demo/volume")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../demo/volume")
 }
 
 fn node() -> Arc<RefFihStorage<FsIo>> {

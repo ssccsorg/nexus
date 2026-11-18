@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use nex::io::fs_io::FsIo;
-use nexus_storage_ref::RefFihStorage;
+use nex_refstorage::RefFihStorage;
 use nex_client::{RpcRequest, RpcResponse};
 use nex_protocol::{METHOD_REGISTER, NodeRegistration};
 use nex_server::handler;
