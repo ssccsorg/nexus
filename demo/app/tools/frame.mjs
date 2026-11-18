@@ -56,7 +56,14 @@ function main() {
       ['-C', FRAME, 'fetch', ...depth, 'origin', REF],
       `the fetch of ${REF} from ${REMOTE} failed`,
     );
-    run(['-C', FRAME, 'reset', '--hard', 'FETCH_HEAD'], `the checkout could not be moved to ${REF}`);
+    // A checkout on another branch is moved without it: resetting there would move that branch's own pointer.
+    const on = git('rev-parse', '--abbrev-ref', 'HEAD');
+    run(
+      on === REF
+        ? ['-C', FRAME, 'reset', '--hard', 'FETCH_HEAD']
+        : ['-C', FRAME, 'checkout', '--detach', 'FETCH_HEAD'],
+      `the checkout could not be moved to ${REF}`,
+    );
   }
 
   const commit = git('rev-parse', 'HEAD');
