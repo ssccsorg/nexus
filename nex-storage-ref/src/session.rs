@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── FihSession: hydrate/buffer/flush session for FihStorageRef ──────
 //
 // Wraps FihStorageRef<I> and provides the hydrate/flush lifecycle that

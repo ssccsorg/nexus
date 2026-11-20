@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // MapEntityStore: CoordMapStore-backed EntityStore durability.
 //
 // The store is an EntityStore whose backing is chton's materialized

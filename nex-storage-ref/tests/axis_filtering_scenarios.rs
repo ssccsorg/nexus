@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── Filtering scenario tests ──────────────────────────────────────────
 //
 // Record ids are opaque since the CoordId migration: the default

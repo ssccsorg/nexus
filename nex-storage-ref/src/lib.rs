@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── nex-storage-ref: the reference node ──────────────────────────────
 //
 // The reference implementation of the storage contract, and the reader that shows the key

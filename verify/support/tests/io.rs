@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // The FileIo contract this stand-in claims.
 //
 // The verification gates assert against this harness, so a change that breaks it has to fail

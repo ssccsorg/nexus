@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 //! Subsystem management for concurrent lifecycle coordination.
 //!
 //! This module provides a framework for managing multiple concurrent subsystems

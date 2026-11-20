@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // nex-derive CLI: a goal (work x intent x contract) resolves to a fact by
 // intersecting posting bitsets.
 

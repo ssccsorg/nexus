@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // nex-storage-ref: the smallest consumer of the neXus storage key space.
 //
 // A volume is read through the storage contract: a listing hands over the keys,

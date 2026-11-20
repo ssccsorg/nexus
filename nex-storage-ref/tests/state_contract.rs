@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // The state network's read surface, held to its behaviour.
 //
 // The traits in `nex_fih::contract::state` are what a network answers without saying where

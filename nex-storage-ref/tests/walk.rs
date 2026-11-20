@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Walking a volume one record at a time.
 //
 // The record maps answer a read by materializing the whole state, which a device with tens of

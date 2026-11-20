@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // The reference node's boundary, held as a test rather than as a review rule.
 //
 // The node demonstrates the contract. It is not the engine that lives elsewhere: it links no

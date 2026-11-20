@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // A read costs the same whatever the store holds.
 //
 // This is the property the layer rests on: reading one record must not walk or copy the rest

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Record-layer content hash conflict detection (#176).
 //
 // The record layer keys facts by id. Since the CoordId migration the

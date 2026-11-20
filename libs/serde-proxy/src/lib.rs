@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 /// Serialization boundary proxy for cross-boundary FIH communication.
 ///
 /// A transparent proxy that round-trips structured FIH types (Fact, Intent,

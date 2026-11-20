@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 //! File-based locking mechanism to prevent multiple daemon instances.
 //!
 //! This module provides cross-platform file locking capabilities to ensure

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // The host's filtered read: every kind, every predicate, and every place content can
 // come from.
 //

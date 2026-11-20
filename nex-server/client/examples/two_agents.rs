@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 //! Two agents sharing a blackboard through the nex-client SDK.
 //!
 //! Run against a running nex-server (spawned by nexd):

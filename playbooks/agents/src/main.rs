@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Rust privileged agent: direct Blackboard trait consumer.
 //
 // Demonstrates how an internal (privileged) agent imports the nex crate

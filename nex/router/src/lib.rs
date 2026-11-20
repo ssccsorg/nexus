@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── nex-router: which node answers which method ────────────────────────
 //
 // The hub holds no records. It holds this: a map from a method to the node that answers it,

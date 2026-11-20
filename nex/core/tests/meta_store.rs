@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // The metadata store contract: the two methods a backend owns and the two defaults the
 // blanket impl supplies.
 //

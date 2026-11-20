@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // The lifecycle configuration and status the contract layer exposes.
 //
 // A nex instance is started from a `NexConfig`, and its health is reported as one of

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Deterministic time-index filter tests using FakeClock.
 //
 // Tests: since, until (as_of), range (since+until), empty results.

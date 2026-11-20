@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Conjunctive queries.
 //
 // A query is a conjunction of per-axis conditions. Each condition names the

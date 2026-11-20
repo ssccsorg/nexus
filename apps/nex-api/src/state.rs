@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Shared application state for the gateway API server.
 
 use nex_storage_ref::FihBlackboard;

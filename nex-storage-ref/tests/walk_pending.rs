@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // The walk over a volume: what it does with writes the medium has not taken, and with
 // keys a channel lists but cannot hand over.
 //

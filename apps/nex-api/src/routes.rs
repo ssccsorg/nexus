@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // HTTP route handlers for the FIH Blackboard API.
 //
 // Each handler maps one HTTP endpoint to a Blackboard trait method.

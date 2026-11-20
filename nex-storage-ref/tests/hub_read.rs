@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // A reader reaches the node through the hub: the same address answered over a socket and
 // over a volume. The connection therefore adds nothing to the answer, which is the whole
 // claim of the hub. The node here is a stand-in that answers the key space, because what

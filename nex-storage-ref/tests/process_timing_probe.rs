@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Timing probe: conflict-check latency in the record layer (#176).
 //
 // Measurement tooling, not part of the regular gate. Run with:

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Semantic id layer contract tests.
 //
 // The semantic layer derives full-injective CoordId addresses:

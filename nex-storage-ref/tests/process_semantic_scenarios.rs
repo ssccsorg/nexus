@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── SemanticStore scenario tests ────────────────────────────────────────
 //
 // These tests exercise SemanticStore + MockSemanticStore against realistic

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── nex-server: standalone FIH blackboard server ─────────────────────────
 //
 // Serves the FIH blackboard over a Unix domain socket using JSON-RPC 2.0.

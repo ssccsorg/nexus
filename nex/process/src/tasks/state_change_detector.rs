@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // nexus-process — State change detector: Cairn-style ReasonCheckpoint pattern.
 //
 // Detects when the Blackboard state has changed sufficiently to warrant

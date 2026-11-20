@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // The wire round-trips, and a malformed frame is refused rather than guessed at.
 
 use nex_protocol::{

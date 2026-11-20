@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Gap coverage tests for FihStorageRef<SimIo>.
 // Tests basic storage invariants not covered by existing scenario tests.
 

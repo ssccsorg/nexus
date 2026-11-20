@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── nex-protocol: the wire the hub speaks ──────────────────────────────
 //
 // A request names a method and carries parameters. A response carries a result or an error.

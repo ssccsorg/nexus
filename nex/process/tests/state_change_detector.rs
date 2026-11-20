@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 use nex::helper::ContentJsonExt;
 use nex::process::tasks::state_change_detector::StateChangeDetector;
 use nex_fih::FihId20 as _;

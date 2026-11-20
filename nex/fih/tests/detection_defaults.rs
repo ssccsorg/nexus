@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // The detection capability's defaults: a detector that does not persist state is
 // stateless, and a restore into it changes nothing.
 //

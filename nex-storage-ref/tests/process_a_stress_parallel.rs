@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Parallel stress test: many threads concurrently reading/writing the Blackboard.
 //
 // Uses Arc<Mutex<HybridBlackboard>> to allow true concurrent access.

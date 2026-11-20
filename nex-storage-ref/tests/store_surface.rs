@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // The storage surface around the record maps: constructors, the structured read, the
 // bounded blob cache, and the fallbacks for a medium that lost a blob.
 //

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Flagship path: FihStorageRef over the materialized CoordMap (chton
 // CoordMapStore) with a file origin. Insert -> flush -> reopen -> read:
 // a fact written in the first session survives a reopened store.

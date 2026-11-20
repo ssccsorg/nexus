@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Integration tests for export/import bundle functionality.
 //
 // These tests verify the full FIH bundle export and import cycle:

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── storage-smoke: the node's capabilities, end to end ───────────────────
 //
 // Usage: cargo run -p nex-storage-ref --bin storage-smoke

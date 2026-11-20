@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Full lifecycle test for FihStorageRef<SimIo>.
 
 use nex_fih::FihId20 as _;

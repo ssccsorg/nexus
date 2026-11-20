@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // The contract a developer or an auditor runs once: the exit codes, the read
 // that creates nothing, and the prefix filter.
 

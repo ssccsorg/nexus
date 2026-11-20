@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // gateway-api binary entry point.
 //
 // Thin wrapper around the library crate. Starts an axum HTTP server

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // A client reaches the node that names its method, and a method no node owns is refused by
 // the hub rather than forwarded.
 

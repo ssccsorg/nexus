@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Mock SemanticStore implementations for testing similarity search.
 //
 // Each integration test binary compiles this module but may not use every mock.

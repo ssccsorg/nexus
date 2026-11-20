@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Spin WASI SSCCS docs server (Spin 3.x compatible).
 //
 // FIH Blackboard + document ingestion + semantic search.

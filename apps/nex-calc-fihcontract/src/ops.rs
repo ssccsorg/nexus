@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Operator types for nex-calc.
 //
 // Each operator is a directional function: it maps operand Facts

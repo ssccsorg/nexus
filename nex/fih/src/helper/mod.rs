@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── Helper modules ──────────────────────────────────────────────────────
 //
 // Protocol extension helpers for Content and other core types.

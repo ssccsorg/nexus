@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 //! Every record's content materializes at scale.
 //!
 //! A read resolves its content from the medium and this node keeps no cache, so a store

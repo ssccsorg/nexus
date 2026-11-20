@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // The storage traits' default implementations and blanket impls.
 //
 // A consumer implements a published trait and plugs it in. Two things make that work

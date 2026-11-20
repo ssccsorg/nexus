@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── by_from_fact reverse index tests ────────────────────────────────────
 //
 // Validates the reverse index mapping fact_id -> [intent_id].

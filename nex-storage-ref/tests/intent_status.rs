@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // IntentStatus state machine tests.
 // Tests: submit→claim→conclude lifecycle, double claim rejection,
 // wrong worker heartbeat rejection, concluded is not active, conclude unclaimed.

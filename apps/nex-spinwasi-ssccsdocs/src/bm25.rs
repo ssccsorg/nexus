@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // InMemoryBm25: brute-force BM25 semantic store.
 //
 // Pure Rust BM25 implementation. No external dependencies or API calls.

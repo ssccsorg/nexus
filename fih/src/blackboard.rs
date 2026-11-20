@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 use crate::storage::{FactCapable, HintCapable, IntentCapable, StorageRead};
 
 // ── Blackboard trait — FIH lifecycle (public, stable) ─────────────────────

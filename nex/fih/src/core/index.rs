@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── Ordered index and set intersection utils ───────────────────────────
 //
 // OrderedIndex is an append-only key-to-u32 index, kept for the callers that

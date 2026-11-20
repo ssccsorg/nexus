@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── nexd integration tests ──────────────────────────────────────────────
 //
 // nexd is a microkernel/OS for nex-* agents. Tests focus on:

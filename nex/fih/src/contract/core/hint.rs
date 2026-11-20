@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── HintEngine: constraint evaluation for Intent resolution ────────────
 //
 // The HintEngine manages a registry of HintRules that gate whether an

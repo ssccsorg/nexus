@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // nexus-process — Scheduler: OODA loop polling, Intent dispatch, heartbeat monitor.
 //
 // The scheduler drives the OODA cycle for any Blackboard implementation:

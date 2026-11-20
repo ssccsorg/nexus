@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── nex: process layer ─────────────────────────────────────────────────
 //
 // nex is the OODA loop process layer. It depends on nex-fih for the state

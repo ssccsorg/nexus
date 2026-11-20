@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── NexdConfig — daemon configuration ──────────────────────────────────
 //
 // Configuration for the nexd daemon. Controls socket path, scheduling

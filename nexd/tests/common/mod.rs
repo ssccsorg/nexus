@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── Test helpers for nexd integration tests ──────────────────────────────
 //
 // Provides DaemonHandle: starts nexd as child process, manages lifecycle.

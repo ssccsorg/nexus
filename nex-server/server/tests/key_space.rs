@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // The node answers the key space the volume answers: which keys a prefix holds, the bytes
 // at one key, and nothing at a key the volume does not hold. A reader that reaches the node
 // through the hub therefore reads what a reader that opens the volume reads.

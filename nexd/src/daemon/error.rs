@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 //! Error handling for the proc-daemon framework.
 //!
 //! This module provides comprehensive error types for all daemon operations,

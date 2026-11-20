@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Hint processing is not yet implemented in the detection layer.
 // Hint governance and human feedback injection belong in a future
 // agent-level module, not in automated detectors.

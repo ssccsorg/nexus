@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 use crate::error::BlackboardError;
 use crate::fih::{CoordId, Fact};
 use crate::storage::read::StorageRead;

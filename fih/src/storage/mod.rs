@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 pub mod aggregate;
 pub mod async_impl;
 pub mod cold;

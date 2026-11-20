@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── IO re-exports from nex-io ─────────────────────────────────────────
 //
 // This module re-exports IO types from the nex-io crate so that

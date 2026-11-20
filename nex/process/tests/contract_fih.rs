@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── FIH-specific contract tests ───────────────────────────────────────
 
 use nex::contract::{core::GovernanceGate, fih};

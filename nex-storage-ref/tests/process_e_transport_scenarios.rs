@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Multi-transport scenario tests.
 //
 // Each scenario simulates a different real-world transport and agent type,

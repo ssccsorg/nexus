@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 //! Metrics collection and monitoring for proc-daemon.
 //!
 //! This module provides optional metrics collection capabilities for monitoring

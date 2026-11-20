@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── Tagma index tests (FihCoord removed — intersect helpers remain) ─────
 
 use nex_fih::core::index::{OrderedIndex, intersect_2, intersect_3};

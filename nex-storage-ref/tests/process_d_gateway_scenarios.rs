@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Scenario tests routed through SerdeProxy.
 //
 // Validates that the FIH protocol produces identical results when all

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Copyright 2023 James Gober. All rights reserved.
 // Use of this source code is governed by Apache License
 // that can be found in the LICENSE file.

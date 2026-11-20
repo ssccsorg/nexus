@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── Clock abstraction ───────────────────────────────────────────────────
 //
 // The `Now` and `Monotonic` traits are the std-free clock contracts. Any

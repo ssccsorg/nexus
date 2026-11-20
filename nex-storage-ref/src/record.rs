@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── FIH record types ────────────────────────────────────────────────────
 //
 // The reference node's reading of the published record format. A Fact, an Intent, and a

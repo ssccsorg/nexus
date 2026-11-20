@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── Core primitives ─────────────────────────────────────────────────────
 //
 // The entity-store family chton owns, and the ordered index. A record, its lifecycle, and

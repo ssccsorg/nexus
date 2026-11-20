@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Cold query contract: the FIH tabular query surface.
 //
 // These types describe a tabular query against a cold storage backend

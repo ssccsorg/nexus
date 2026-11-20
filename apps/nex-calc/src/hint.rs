@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Hint definitions for nex-calc.
 //
 // Hints are dynamic constraints or transforms that modify computation

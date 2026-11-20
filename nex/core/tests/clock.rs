@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // EpochClock unit tests (issue #181, MCU wall-clock source).
 //
 // EpochClock pins a wall-clock epoch at boot and advances from a

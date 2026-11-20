@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // The board: goals as points in the work x intent x contract product space.
 //
 // A derivation records that a goal yielded a fact, so the board holds one

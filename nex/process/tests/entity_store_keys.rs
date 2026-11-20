@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // EntityStore key mapping: injective length-prefix encoding.
 //
 // The legacy byte-fold fallback conflated distinct keys (for example

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── nexd — Unified daemon for the nex ecosystem ─────────────────────────
 //
 // nexd is the pure OS/supervisor layer. It spawns nex-server as a child

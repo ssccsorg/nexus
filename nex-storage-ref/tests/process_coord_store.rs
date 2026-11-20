@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Record-layer synchronization after reopen (#170, L2 restructure #176).
 //
 // The submit paths place records into the record layer (record maps +

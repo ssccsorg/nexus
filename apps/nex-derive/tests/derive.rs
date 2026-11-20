@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Integration tests for nex-derive.
 //
 // The load-bearing test is `resolve_matches_scan_over_a_population`: the

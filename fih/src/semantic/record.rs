@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── Pure semantic record traits — no FIH concepts ────────────────────
 //
 // These traits define the minimal interface for loading record data

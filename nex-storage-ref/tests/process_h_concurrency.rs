@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // nexus-graph — Blackboard concurrency tests.
 //
 // Verifies that the Blackboard trait contract holds under concurrent access.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── Async trait integration tests ──────────────────────────────────────
 //
 // Tests that AsyncStorageRead, AsyncFactCapable, etc. delegate correctly

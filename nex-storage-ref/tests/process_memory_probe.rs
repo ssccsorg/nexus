@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Memory probe: marginal live-heap cost per fact in the reference node.
 //
 // Measurement tool, not a gate. Run with:

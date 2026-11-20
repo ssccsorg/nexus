@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── EvidenceChain: append-only SHA-256 hash chain ──────────────────────
 //
 // Tamper-evident audit trail for all governance-admitted state transitions.

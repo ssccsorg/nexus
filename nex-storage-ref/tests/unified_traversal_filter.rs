@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── Record-layer traversal filter tests ─────────────────────────────
 //
 // read_state_filtered iterates the application-layer record maps (the

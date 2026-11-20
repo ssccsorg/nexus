@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── Handler — JSON-RPC 2.0 method dispatch for FihStorageRef ────────────────
 
 use nex_fih::FihId20 as _;

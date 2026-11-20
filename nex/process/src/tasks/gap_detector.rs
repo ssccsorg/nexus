@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // nexus-process — Gap detector: identifies unexplored concept pairs.
 //
 // Detects orphaned Facts at two levels and records them as Facts:

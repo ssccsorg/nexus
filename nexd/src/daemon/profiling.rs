@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 //! Optional profiling utilities (CPU and heap) behind the `profiling` and
 //! `heap-profiling` features.
 //!

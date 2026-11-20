@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── Contract core primitives ───────────────────────────────────────────
 //
 // Implementation-level governance building blocks. These are pure

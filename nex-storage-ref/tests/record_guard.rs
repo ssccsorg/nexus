@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // The conflict guard across sessions.
 //
 // `submit_fact` refuses a second fact at the same identifier unless it carries the

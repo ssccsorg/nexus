@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── FihExport / FihImport: portable StateSpace bundle ──────────────────
 //
 // Export full FIH StateSpace (chain files + blob store) into a single

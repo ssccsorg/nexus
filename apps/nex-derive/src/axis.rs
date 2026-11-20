@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // The three axes and the coordinate packing.
 //
 // A goal is a point in the product of the three axes: work is the domain the

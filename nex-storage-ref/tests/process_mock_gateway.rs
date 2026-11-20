@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 use nex_fih::FihId20 as _;
 use nex_fih::{CoordId, Fact, FactCapable, StorageRead};
 use nex_io::SimIo;

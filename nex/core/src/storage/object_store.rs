@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 use alloc::string::String;
 
 /// Atomic CAS store for cross-worker coordination.

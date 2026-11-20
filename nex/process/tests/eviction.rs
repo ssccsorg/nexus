@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // try_evict: the eviction cycle logic.
 //
 // The cycle skips eviction below the size threshold, then delegates to

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── MemoryIo: the in-memory medium ─────────────────────────────────────
 //
 // A flat key space in a map. A consumer that needs a medium without a file system, an

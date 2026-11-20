@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // EntityStore unit tests for MemoryEntityStore.
 // Tests: insert, get, remove, contains_key, len, values, clear, retain, replace_from.
 

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Reading one named record's framing.
 //
 // A record's address is computed from what it holds, so a reader that has the identifier has the

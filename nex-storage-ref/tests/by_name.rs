@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // The named reads: one fact, one intent, one hint, and the lookups beside them.
 //
 // These are the reads a device makes instead of materializing a state: a framing read

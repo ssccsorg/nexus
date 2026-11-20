@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // What the engine hands a semantic store when it auto-indexes a submitted fact.
 //
 // A store is written against `RecordLoad`, and the two accessors answer different

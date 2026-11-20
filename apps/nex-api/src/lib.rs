@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // gateway-api library crate.
 //
 // Exports the router builder and shared state so integration tests,

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Calculator engine — FIH-based computation via FihStorageRef<SimIo>.
 //
 //   F (Fact)  = number stored as immutable, content-addressed Fact

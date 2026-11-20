@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // no_std anchors for the reference node.
 //
 // The node is built with no operating system: it models

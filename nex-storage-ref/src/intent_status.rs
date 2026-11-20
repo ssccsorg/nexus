@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── intent_status: Intent lifecycle transitions ─────────────────────────
 //
 // IntentStatus enum with compile-time enforcement of valid transitions.

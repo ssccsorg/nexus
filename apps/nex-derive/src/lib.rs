@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // nex-derive: a goal derives a fact.
 //
 // The FIH primitives read as a directed relation. A goal is a point in the

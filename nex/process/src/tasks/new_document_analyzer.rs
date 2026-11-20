@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // nexus-process — New-document analyzer: evaluates incoming facts against existing knowledge.
 //
 // When new Facts appear, the analyzer compares each against the existing

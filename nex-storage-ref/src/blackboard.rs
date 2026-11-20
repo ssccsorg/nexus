@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── FihBlackboard: Optional sync wrapper over FihStorageRef ────────────
 //
 // FihBlackboard wraps FihStorageRef and implements sync Blackboard traits

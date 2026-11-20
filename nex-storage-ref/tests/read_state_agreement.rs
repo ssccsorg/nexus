@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 //! read_state and read_state_filtered must agree on identical states,
 //! including record order (issue #173 acceptance). Both enumerate the
 //! application-layer record maps in id-sorted order and materialize the

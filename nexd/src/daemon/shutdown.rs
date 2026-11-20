@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 //! Shutdown coordination system for graceful daemon termination.
 //!
 //! This module provides a robust shutdown coordination system that allows

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 #![warn(clippy::all)]

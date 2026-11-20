@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── SemanticStore: semantic feature store for similarity search ────────
 //
 // Another kind of Store, like EntityStore for identity-based access.

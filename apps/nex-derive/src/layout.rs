@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Fixed geometry of the product space.
 //
 // The space is the Cartesian product of three axes of equal, fixed radix:

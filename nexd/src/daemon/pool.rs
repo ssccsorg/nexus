@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 use parking_lot::Mutex;
 use std::collections::VecDeque;
 use std::fmt::{self, Debug};

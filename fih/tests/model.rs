@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // The model's own surface: identifiers, hashes, content, and errors.
 //
 // These are the types every layer above matches on, and the parts a record layer does not

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── The FIH identity over a tagma coordinate ─────────────────────────
 //
 // The identity type is the coordinate model's: `tagma_core::CoordId` prints,

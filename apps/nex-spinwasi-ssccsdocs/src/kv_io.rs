@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // KvIo: Spin KV Store-backed FileIo for Fermyon Cloud persistence.
 //
 // Each key is prefixed with "fih:" to namespace within the KV store.

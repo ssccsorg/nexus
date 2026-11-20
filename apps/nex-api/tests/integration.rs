@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Integration tests for the gateway API.
 //
 // Starts the server on a random port, exercises every endpoint,

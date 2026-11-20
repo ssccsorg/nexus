@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // The governed path: gate, storage, and evidence in one call.
 //
 // `FihContract` is what an application uses when it wants governance rather than a raw

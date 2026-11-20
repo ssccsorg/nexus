@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // The ESG scenario the demonstration reads, authored from the data beside it.
 //
 // The scenario is `demo/esg.scenario.json`: the site, the measured quantities, the requirement texts, and the

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Filesystem-backed IO tests. Only available on non-wasm32 targets.
 // Tests: write/read roundtrip, read nonexistent, delete, list prefix,
 // deep path creates dirs, list empty prefix, delete nonexistent, invalid path.

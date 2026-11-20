@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── GovernanceGate: schema-based write admission ─────────────────────────
 //
 // Single choke-point for all write operations. Inspired by mind-mem's

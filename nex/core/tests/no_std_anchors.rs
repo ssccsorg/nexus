@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // no_std anchors for nex-core (issue #181).
 //
 // nex-core is the foundation storage layer: it must stay std-free so the

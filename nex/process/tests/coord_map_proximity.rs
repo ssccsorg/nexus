@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── search.json scenario over the materialized CoordMap ──
 //
 // Documents are indexed into a coordinate space (each axis is a

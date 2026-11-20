@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // nexus-process — Contradiction detector: finds conflicting claims across documents.
 //
 // Detects pairs of Facts that share a topic but hold different positions.

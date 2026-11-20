@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 //! Lightweight coordination primitives with optional lock-free backend.
 //!
 //! When built with the `lockfree-coordination` feature, this module uses

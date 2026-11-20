@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // SessionServer — serializes access to a synchronous session via a request queue.
 //
 // Generic over `S: SessionExecute` (defined in nexus-model). Multiple

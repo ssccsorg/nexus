@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // The process error surface: one category per failure origin, and the conversion that
 // keeps a blackboard failure's message intact.
 //

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── nex-hub: the connection layer ──────────────────────────────────────
 //
 // A client sends a request; the hub finds the node that answers the method and forwards it.

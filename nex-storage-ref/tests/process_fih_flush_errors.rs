@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // FihStorageRef flush error surfacing.
 //
 // Intent operations flush pending writes before reading the intent record

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Shared support software for the nexus verification topics (issue #181).
 //
 // Provides two pieces the storage core needs but does not itself own:

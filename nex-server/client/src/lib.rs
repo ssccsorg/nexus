@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── nex-client: the host transport for the wire ────────────────────────
 //
 // A byte channel over a Unix socket and the JSON framing the protocol names. The wire

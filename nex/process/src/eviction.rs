@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // nexus-process — Eviction: evict_before cycle for hot memory management.
 //
 // The eviction cycle bounds hot storage memory by:

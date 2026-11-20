@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 pub use tagma_core::Coord;
 pub use tagma_core::CoordSpace;
 

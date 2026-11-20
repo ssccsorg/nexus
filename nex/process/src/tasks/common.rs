@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Common helpers shared across detection task implementations.
 
 use crate::ContentJsonExt;

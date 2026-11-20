@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 //! Unit tests for nexd process supervision logic.
 //!
 //! The respawn circuit breaker is extracted as a pure decision function

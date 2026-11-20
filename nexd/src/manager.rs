@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── ProcessManager — child process lifecycle ──────────────────────────
 //
 // Manages child processes spawned by nexd. Each child is tracked by PID

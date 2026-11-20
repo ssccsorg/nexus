@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // nexus-process — Task handlers implementing model detection traits.
 //
 // Each module implements one or more detection capability traits from

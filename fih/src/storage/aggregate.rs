@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 use super::evict::EvictCapable;
 use super::scan::ScanCapable;
 use super::time_range::TimeRangeCapable;

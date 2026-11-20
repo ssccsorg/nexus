@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // SimIo in-memory IO tests.
 // Tests: write/read roundtrip, read nonexistent, delete, list prefix,
 // failure injection, clear.

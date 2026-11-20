@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Foundational document scenario tests.
 // Claims extracted exclusively from:
 //   manifesto.llms.md           — ontology ("what SSCCS is")

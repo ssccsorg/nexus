@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // What a fact submission does when the address it is given is already taken.
 //
 // A fact's id is derived from content, origin, and creator, so a caller that supplies the

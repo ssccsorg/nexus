@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── Eviction durability tests ───────────────────────────────────────────
 //
 // Eviction removes records from io, not just from the in-memory stores:

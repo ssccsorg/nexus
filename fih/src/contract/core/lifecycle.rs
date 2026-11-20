@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── NexLifecycle: abstract lifecycle for nex instances ─────────────────
 //
 // Defines the lifecycle contract for a nex blackboard instance.

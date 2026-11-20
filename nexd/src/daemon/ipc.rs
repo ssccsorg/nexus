@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 //! IPC primitives (feature-gated)
 //!
 //! Minimal scaffold for cross-platform IPC channels used for control and health.

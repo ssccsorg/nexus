@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // The table refuses an ambiguous method, forgets a node that left, and answers by lookup.
 
 use nex_router::Router;

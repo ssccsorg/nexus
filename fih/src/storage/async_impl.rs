@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── Async storage traits: async counterparts of sync storage traits.
 //
 // These traits mirror the sync versions but use `async fn` (AFIT, Rust 1.75+).

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── Real-use scenarios: FIH lifecycle + Store/Restore ──────────────────
 //
 // Validates complete FihStorageRef workflows using rebuild_cache for

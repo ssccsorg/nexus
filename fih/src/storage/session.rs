@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Session capability traits — bridge async I/O to sync storage execution.
 //
 // Follows the same fine-grained capability pattern used by

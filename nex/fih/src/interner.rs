@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 use alloc::rc::Rc;
 use alloc::string::ToString;
 use alloc::vec::Vec;

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // The eviction and lease contracts: what leaving the volume means for a record.
 //
 // Eviction removes a record from the maps and the medium, so a reopen does not bring it

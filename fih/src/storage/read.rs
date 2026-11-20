@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 use crate::fih::BoardState;
 
 /// Core storage trait. Every backend must implement at least this.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // The host surface of the storage core: the portable bundle, the session lifecycle, and
 // the synchronous blackboard.
 //

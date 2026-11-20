@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── The state network's read surface ─────────────────────────────────────
 //
 // nexus is a network of states: it names a record, bounds how a record changes, and answers

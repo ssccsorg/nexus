@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 //! Cross-platform signal handling for graceful daemon shutdown.
 //!
 //! This module provides a unified interface for handling shutdown signals

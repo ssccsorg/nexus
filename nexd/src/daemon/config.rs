@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 //! Configuration management for the proc-daemon framework.
 //!
 //! This module provides a flexible configuration system that can load settings

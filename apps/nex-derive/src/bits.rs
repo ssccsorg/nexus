@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // Fixed-width bitset over the coordinate space.
 //
 // Every set the board keeps (occupancy, and one posting per axis value) is a

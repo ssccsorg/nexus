@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Taeho Lee
+
 // ── nex-io: re-export shim ─────────────────────────────────────────────
 //
 // The pure IO abstraction layer has moved to chton (io module) as part of
